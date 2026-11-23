@@ -1242,6 +1242,42 @@ test('a re-signed promoted engine of the same build that refuses the rollback\'s
   assert.equal(candidate.stopped, false);
   assert.match(out, new RegExp(`pid ${candidate.pid}\\b.*keeps serving new sessions.*cua engine stop`));
   assert.doesNotMatch(out, /sessions refuse/);
+  assert.match(out, /next cua engine build or approve also stops it/, 'recorded, so the automatic stop is promised');
+});
+
+// The promoted engine busy at the rollback's stop, and candidate.json not saved: the disk full when it is written, or
+// the engine's pid unreadable so there is nothing to record. The previous bundle is back either way, and the owner is
+// given only the remedy that will happen: cua engine stop by hand.
+test('a promoted engine left running that could not be recorded: the previous bundle is back first, and only the manual cua engine stop is promised', async t => {
+  for (const why of ['the record cannot be written', 'the pid is unknown']) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    w.placePending();
+    w.state.captured = false;
+    let approvesSeen = 0;
+    w.state.onApprove = state => {
+      if (++approvesSeen !== 2) return;
+      state.connections = 1;
+      if (why === 'the pid is unknown') state.onStatus = () => { throw new EngineFailure(-32603, 'status unavailable', 'internalError'); };
+    };
+    if (why === 'the record cannot be written') {
+      const real = fs.writeFileSync;
+      t.after(() => { fs.writeFileSync = real; syncBuiltinESMExports(); });
+      fs.writeFileSync = (path, ...rest) => {
+        if (String(path).startsWith(join(w.dir, 'candidate.json'))) throw Object.assign(new Error('ENOSPC: no space left on device'), {code: 'ENOSPC'});
+        return real(path, ...rest);
+      };
+      syncBuiltinESMExports();
+    }
+    const {status, out} = await approveThroughCli(t, w);
+    assert.equal(status, 1, why);
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead})?.build, OLD_BUILD, `the previous bundle is back: ${why}`);
+    assert.equal(w.pendingBuild(), NEW_BUILD, why);
+    assert.ok(!existsSync(join(w.dir, 'candidate.json')), why);
+    assert.equal(w.engines.at(-1).stopped, false, why);
+    assert.match(out, /run cua engine stop once it is idle/, why);
+    assert.doesNotMatch(out, /next cua engine build or approve/, why);
+  }
 });
 
 test('the next build or approve stops a promoted engine a rollback left running, once it is idle, and leaves it while it is busy', async t => {

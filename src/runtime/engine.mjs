@@ -741,9 +741,10 @@ function recoverPrevious(ctx, {lockHeld}) {
 // A promoted engine that refuses the stop (a session connected to it) still runs from the moved bundle and holds the
 // engine's socket until it stops. Sessions check only its version and build against the bundle at the approved path,
 // so one of another build is refused, while the same build re-signed under another identity (`servesSessions`) keeps
-// serving new sessions: either is reported, not hidden, and candidate.json names it, so the next build or approve stops
-// it once it is idle (stopLeftCandidate).
-// -> {previousRestored, pendingAgain, candidateRunning: {pid, servesSessions} | null}.
+// serving new sessions: either is reported, not hidden. Once the previous bundle is back, candidate.json names it
+// (`recorded`), so the next build or approve stops it once it is idle (stopLeftCandidate); with its pid unknown or the
+// record unsaved, only the owner's cua engine stop retires it.
+// -> {previousRestored, pendingAgain, candidateRunning: {pid, servesSessions, recorded} | null}.
 async function restore(ctx, {hadBundle, previousBuild, build}) {
   const {paths, log} = ctx;
   let candidateRunning = null;
@@ -751,11 +752,16 @@ async function restore(ctx, {hadBundle, previousBuild, build}) {
     if (!(error instanceof CuaError)) throw error;
     let pid = null;
     try { pid = (await statusOf(ctx))?.pid ?? null; } catch { /* unreadable: the pid stays unknown */ }
-    candidateRunning = {pid, servesSessions: hadBundle && build === previousBuild};
-    if (pid !== null) writeRecord(paths.candidate, {pid, build});
+    candidateRunning = {pid, servesSessions: hadBundle && build === previousBuild, recorded: false};
     log(`could not stop the promoted engine: ${error.message}`);
   }
   const {previousRestored, pendingAgain} = putBack(paths, {hadPrevious: hadBundle});
+  // Only after the previous bundle is back: a record that cannot be saved costs the automatic stop, never the restore.
+  if (candidateRunning?.pid != null) {
+    try { writeRecord(paths.candidate, {pid: candidateRunning.pid, build}); candidateRunning.recorded = true; } catch (error) {
+      log(`could not record the promoted engine for the next build or approve to stop (${error.code ?? error.message})`);
+    }
+  }
   const where = previousRestored ? `the approved build ${shortBuild(previousBuild)} is back at ${paths.bundle}` : 'no approved engine was in place before it';
   const slot = pendingAgain === null ? null : pendingAgain ? `build ${shortBuild(build)} is pending again (cua engine approve to retry)`
     : `build ${shortBuild(build)} was dropped, since a build published meanwhile holds the pending slot`;
@@ -764,11 +770,12 @@ async function restore(ctx, {hadBundle, previousBuild, build}) {
   return {previousRestored, pendingAgain, candidateRunning};
 }
 
-// The promoted engine still running after the rollback, in the owner's words.
-export const candidateRunningText = ({pid, servesSessions = false}) => `the promoted build's engine (${pid === null ? 'pid unknown' : `pid ${pid}`}) still runs and holds the engine's socket, `
+// The promoted engine still running after the rollback, in the owner's words: the automatic stop is promised only for
+// one recorded in candidate.json.
+export const candidateRunningText = ({pid, servesSessions = false, recorded = false}) => `the promoted build's engine (${pid === null ? 'pid unknown' : `pid ${pid}`}) still runs and holds the engine's socket, `
   + (servesSessions ? 'and, being the restored bundle\'s build (sessions check the build, not the signature), it keeps serving new sessions until it stops'
     : 'so sessions refuse its build until it stops')
-  + ': run cua engine stop once it is idle (the next cua engine build or approve also stops it then), and the next session launches the bundle now at the approved path';
+  + `: run cua engine stop once it is idle${recorded ? ' (the next cua engine build or approve also stops it then)' : ''}, and the next session launches the bundle now at the approved path`;
 
 // The promoted engine a rolled-back approve could not stop (candidate.json, restore's), stopped once it is idle: only
 // while it is still the engine answering at the socket (its pid and build) and has no other connection; a busy one is

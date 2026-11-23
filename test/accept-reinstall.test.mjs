@@ -143,6 +143,30 @@ test('cua pinned: the approved bundle or approved.json touched, or an answer the
   }
 });
 
+// T1's builder discards a pending copy of the approved build with the approved identity while answering "nothing to do"
+// (engine.mjs buildEngine): that one removal is the contract. A different pending build must never disappear.
+test('cua pinned: a no-op reinstall may discard only a redundant pending copy of the approved build and identity', async t => {
+  const cases = [
+    ['the approved build, the approved identity', APPROVED, 'f'.repeat(40), 'PASS'],
+    ['another build', OTHER, 'f'.repeat(40), 'FAIL'],
+    ['the approved build under another identity', APPROVED, 'adhoc', 'FAIL'],
+    ['the approved build with no pending.json to name its identity', APPROVED, null, 'FAIL'],
+  ];
+  for (const [name, build, identity, status] of cases) {
+    const options = engineFixture(t);
+    writeBundle(options.paths.pendingBundle, build);
+    if (identity) writeFileSync(options.paths.pending, JSON.stringify({build, identity, builtAt: '2026-11-23T00:00:00.000Z'}));
+    const checks = await reinstallCheck({...options, run: async () => {
+      rmSync(options.paths.pendingDir, {recursive: true, force: true});
+      rmSync(options.paths.pending, {force: true});
+      return noOp(options.paths);
+    }});
+    const engine = named(checks, ENGINE_CHECK);
+    assert.equal(engine.status, status, `${name}: ${engine.detail}`);
+    if (status === 'PASS') assert.match(engine.detail, /redundant pending copy .* discarded/);
+  }
+});
+
 test('cua pinned: the runtime tree is still compared, apart from the engine', async t => {
   const options = engineFixture(t);
   const checks = await reinstallCheck({...options, run: async () => {

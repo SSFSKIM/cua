@@ -18,9 +18,13 @@ import {windowInventory} from './window-close.mjs';
 // ps in the C locale and in UTC: `lstart` carries no UTC offset, so local time would be ambiguous in a fall-back hour.
 const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: {...process.env, LC_ALL: 'C', TZ: 'UTC'}, timeout: 10_000});
 
-// The running pids of an executable name (pgrep -x), or [] when none runs.
+// The running pids of an executable name (pgrep -x), or [] when none runs (pgrep's exit 1). Any other failure throws:
+// a pgrep that could not run is not "none running".
 export function pidsOf(name, {exec = run} = {}) {
-  try { return String(exec('/usr/bin/pgrep', ['-x', name])).split('\n').filter(Boolean).map(Number); } catch { return []; }
+  try { return String(exec('/usr/bin/pgrep', ['-x', name])).split('\n').filter(Boolean).map(Number); } catch (error) {
+    if (error.status === 1) return [];
+    throw new Error(`pgrep -x ${name} failed (${error.status ?? error.code ?? 'unknown'})`, {cause: error});
+  }
 }
 
 // `ps -o lstart=` text in the C locale and UTC ("Sun Oct 18 02:51:07 2026", as `run` invokes ps) -> epoch ms, or null.
@@ -92,8 +96,10 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
 // is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null)}.
 // `alone` must be exactly true, the caller's positive confirmation that the app holds no window but the fixture's; without
 // it nothing is signalled and a live recorded launch is returned as `leftRunning`. `pids` is read only to report which
-// processes running before are still there; it never selects anything to quit. When `readWindows` is supplied, quitting
-// requires both the caller's confirmed document close and a fresh list with no window at all. The list is still reported
+// processes running before are still there; it never selects anything to quit (null when they cannot be listed). When
+// `readWindows` is supplied (window-close.mjs's, `pids => windows | null`), it is asked for the recorded launch's pid
+// alone, and quitting requires both the caller's confirmed document close and that read succeeding with no window at
+// all; a failed read signals nothing. The list is still reported
 // after an unconfirmed close, and the process identity is rechecked after the read. Off-screen windows can be restored
 // owner documents even at the run's own launch, so none is classified as internal (#196). Evidence is numbers/bounds only.
 // -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front, windowCheck?}.
@@ -103,7 +109,8 @@ export async function cleanUpFixtureApp({name, bundle, run: started, alone = fal
   let windowCheck = null;
   if (live && readWindows) {
     let windows;
-    try { windows = await readWindows(); } catch { windows = null; }
+    try { windows = await readWindows([started.launch.pid]); } catch { windows = null; }
+    if (!Array.isArray(windows)) windows = null;
     const inventory = windows && windowInventory(windows);
     const foreign = windows?.some(w => w.ownerPid !== started.launch.pid);
     confirmed = confirmed && Boolean(windows && windows.length === 0);
@@ -118,7 +125,8 @@ export async function cleanUpFixtureApp({name, bundle, run: started, alone = fal
     live = isSameLaunch(started.launch, {launchOf: launch});  // the window probe may have taken time
   }
   const {quit: quitPids, remaining} = live && confirmed ? await quit([started.launch.pid]) : {quit: [], remaining: []};
-  const running = pids();
+  let running = null;
+  try { running = pids(); } catch { /* unknown: keptBefore reports null */ }
   const front = await restoreFront(started.front, {frontmost, app: bundle, ...(activate ? {activate} : {}), ...(sleep ? {sleep} : {})});
-  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: started.before.filter(pid => running.includes(pid)), front, ...(windowCheck ? {windowCheck} : {})};
+  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: running && started.before.filter(pid => running.includes(pid)), front, ...(windowCheck ? {windowCheck} : {})};
 }

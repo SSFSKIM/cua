@@ -818,6 +818,34 @@ for (const [why, setup] of [
   });
 }
 
+// `promote: false` (acceptance item 14, which must approve the build it tested): decided under the approve lock, so a
+// build published before it cannot be promoted, and `expectedBuild` is checked before anything prompts.
+test('approve with promote: false refuses a pending build under its lock, moving and launching nothing', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending();
+  const approved = w.text('approved.json');
+  await assert.rejects(approveEngine({...w.deps, promote: false, expectedBuild: OLD_BUILD}), {code: 'engine_pending_build'});
+  assert.equal(w.plistBuild(), OLD_BUILD);
+  assert.equal(w.pendingBuild(), NEW_BUILD, 'the pending build stays where it was');
+  assert.equal(w.text('approved.json'), approved);
+  assert.deepEqual(opened(w), []);
+  assert.ok(!existsSync(join(w.dir, 'promoting.json')), 'the lock is released');
+});
+
+test('approve with promote: false approves the bundle at the approved path when nothing is pending, and only the expected build', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  const result = await approveEngine({...w.deps, promote: false, expectedBuild: OLD_BUILD});
+  assert.equal(result.approved, true);
+  assert.equal(result.build, OLD_BUILD);
+  const other = world(t);
+  other.placeBundle({approved: true});
+  await assert.rejects(approveEngine({...other.deps, promote: false, expectedBuild: NEW_BUILD}), {code: 'engine_unexpected_build'});
+  assert.deepEqual(opened(other), [], 'refused before launching or prompting');
+  assert.equal(other.engines.length, 0);
+});
+
 test('approve with a pending build refuses while another connection is open, before moving anything', async t => {
   const w = world(t, {engineAnswers: {connections: 1}});
   w.placeBundle({approved: true});

@@ -4,7 +4,9 @@
 // Model-facing errors and service relaunch are proved on one MCP connection BEFORE approveEngine. runTextEdit
 // cannot be used here: it binds/captures before returning. One manually prepared blank document receives two Xs.
 // The engine must be approved at this checkout's build with no build pending beside it (T1's pending slot), checked
-// before the owner window and again before approve, which would otherwise promote the pending build.
+// before the owner window and again before approve; approve itself runs with promote: false and the tested build, so a
+// build published in between is refused under its lock, never promoted. Before anything stops the engine, the terminal
+// must confirm someone is at the console (console readiness, bounded); a TTY alone is not an attending operator.
 // What each stage observed is kept apart from the owner's prompts, for a driver that sets the stages another way
 // (the pre-flight's T3b, by TCC rows on a hosted runner): the permission error and its cua/permission
 // (permissionGuidance), the capabilities read (observations.statuses, doctorFacts), the relaunch (observations.relaunch)
@@ -36,7 +38,7 @@ export function ownerWindowMinutes(value = DEFAULT_OWNER_WINDOW_MINUTES) {
   return Number(value);
 }
 const ownerWindow = minutes => `Reserve ${minutes} minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each owner alert-observation question waits at most 5 minutes, clipped by the remaining overall budget; manual Settings/fixture and approval confirmations use the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual, by the owner or an operator at the console; only the owner answers system alerts. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.`;
-const STAGES = ['preconditions', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
+const STAGES = ['preconditions', 'console readiness', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
   'manual Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'manual Screen Recording grant',
   'service relaunch recovery', 'owner recovery prompt observation', 'post-recovery input', 'owner input prompt observation',
   'post-recovery input: capability stability', 'post-recovery input: input completion', 'post-recovery input: metadata', 'post-recovery input: doctor', 'manual Input Monitoring grant', 'engine approval',
@@ -141,6 +143,8 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     ownerBudget: {minutes, observationLimitMs: OWNER_OBSERVATION_MS, startedAt: null, deadlineAt: null, expiredAt: null},
     ownerWaits: [], windows: [], cells: [], statuses: [], doctors: [], recoveryPrompts: []};
   const now = deps.now ?? Date.now;
+  // The timer every bounded wait uses ({set, clear}); a test drives it by hand.
+  const timers = deps.timers ?? {set: (fn, ms) => setTimeout(fn, ms), clear: id => clearTimeout(id)};
   let ownerDeadline = null;
   const record = (name, status, detail) => checks.push({name, status, detail});
   const finish = () => {
@@ -215,7 +219,7 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     const expired = Symbol('expired'), cancelled = Symbol('cancelled');
     let timer, abort;
     try {
-      const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(expired), evidence.waitMs); });
+      const timeout = new Promise(resolve => { timer = timers.set(() => resolve(expired), evidence.waitMs); });
       const cancellation = new Promise(resolve => {
         abort = () => resolve(cancelled);
         signal?.addEventListener('abort', abort, {once: true});
@@ -232,9 +236,28 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
       }
       return typeof reply === 'string' ? reply.trim().toLowerCase() : null;
     } finally {
-      clearTimeout(timer);
+      timers.clear(timer);
       signal?.removeEventListener('abort', abort);
     }
+  };
+  // A terminal is not an attending operator: before the owner window starts, and before anything stops the engine,
+  // someone must say at the terminal that the owner or an operator is at the console. Bounded, outside the window's
+  // budget; no answer, or any other answer, stops with nothing changed.
+  const admit = async () => {
+    stage = 'console readiness';
+    const evidence = observations.admission = {startedAt: now(), waitMs: OWNER_OBSERVATION_MS, finishedAt: null, expired: false, confirmed: false};
+    log(`CONSOLE READINESS: item 14 needs the owner, or an operator, at this Mac's console for the next ${minutes} minutes, from the first step to the last. Nothing has been stopped or changed yet. Type ready here once someone is at the console (anything else, or no answer within 5 minutes, stops with nothing changed).`);
+    const expired = Symbol('expired');
+    let timer;
+    try {
+      const reply = await Promise.race([new Promise(resolve => { timer = timers.set(() => resolve(expired), OWNER_OBSERVATION_MS); }), operator.next()]);
+      evidence.finishedAt = now();
+      evidence.expired = reply === expired;
+      require(!evidence.expired, 'no one confirmed being at the console within 5 minutes; nothing was stopped or changed', 'BLOCKED');
+      evidence.confirmed = typeof reply === 'string' && reply.trim().toLowerCase() === 'ready';
+      require(evidence.confirmed, 'console readiness was not confirmed at the terminal; nothing was stopped or changed', 'BLOCKED');
+    } finally { timers.clear(timer); }
+    record(stage, 'PASS', 'terminal confirmed someone at the console before anything was stopped; who is not inferred');
   };
   const ask = async (name, message, word) => {
     stage = name;
@@ -315,6 +338,7 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     require(await textEditStopped(), 'TextEdit must be quit before this owner window; existing documents are left alone', 'BLOCKED');
     record(stage, 'PASS', 'approved engine verified; no live engine connection or TextEdit to disturb');
     log(observations.ownerWindow);
+    await admit();
     observations.ownerBudget.startedAt = now();
     ownerDeadline = observations.ownerBudget.deadlineAt = observations.ownerBudget.startedAt + minutes * 60_000;
     // Stop before the owner removes entries: the first model request must read fresh grants, not a cached process.
@@ -444,8 +468,13 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
       try { return await answer({signal: approvalReads.signal}); }
       catch (error) { approvalWaitError ??= error; return 'n'; }
     }};
-    try { approved = await (deps.approve ?? approveEngine)({operator: approvalOperator, log}); }
-    finally { approvalReads.abort(); }
+    // promote: false, under approve's own lock: a build published since the check above is refused, never promoted.
+    try { approved = await (deps.approve ?? approveEngine)({operator: approvalOperator, log, promote: false, expectedBuild: expected.build}); }
+    catch (error) {
+      if (['engine_pending_build', 'engine_unexpected_build'].includes(error.code))
+        require(false, `cua engine approve refused: ${error.message}; item 14 approves only the build it tested`, 'BLOCKED');
+      throw error;
+    } finally { approvalReads.abort(); }
     if (approvalWaitError) throw approvalWaitError;
     checkOwnerBudget();
     require(approved.approved === true && approved.build === expected.build, 'approve did not approve the expected build');

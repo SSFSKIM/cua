@@ -120,3 +120,20 @@ test('raw TAP is not diagnostic evidence; missing completion, malformed records 
   assert.equal(tapDiagnostics(record, {maxRecordChars: 10}).truncated, true);
   assert.equal(tapDiagnostics(FAILURE_PREFIX + '{bad json}\n').truncated, true);
 });
+
+// A test process's warnings reach TAP as its stderr, which the structured reporter never forwards: it keeps only their
+// count, so acceptance's "output has warnings" still sees them and no warning text crosses into the report.
+test('the structured reporter counts warnings from test processes without forwarding their text', t => {
+  const scratchDir = scratch('cua warning '); t.after(scratchDir.cleanup);
+  const dir = realpathSync(scratchDir.dir), file = join(dir, 'warns.mjs');
+  writeFileSync(file, "import {test} from 'node:test';\ntest('warns', () => { process.emitWarning('private-warning-text', 'DeprecationWarning'); });\n");
+  const run = (reporter, path = file) => spawnSync(process.execPath, ['--test', `--test-reporter=${reporter}`, path], {cwd: dir, encoding: 'utf8', env: outsideRunner()});
+  const tap = run('tap'), structured = run(REPORTER);
+  assert.match(tap.stdout + tap.stderr, /DeprecationWarning/, 'TAP shows it');
+  assert.match(structured.stdout, /^# warnings 1$/m);
+  assert.ok(!(structured.stdout + structured.stderr).includes('private-warning-text'));
+  assert.equal(testSummary(structured.stdout).totals?.pass, 1, 'the summary still reads whole');
+  const quiet = join(dir, 'quiet.mjs');
+  writeFileSync(quiet, "import {test} from 'node:test';\ntest('quiet', () => {});\n");
+  assert.match(run(REPORTER, quiet).stdout, /^# warnings 0$/m);
+});

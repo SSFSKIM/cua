@@ -503,7 +503,11 @@ async function watchedApprove(ctx) {
 // the approved path, as before. Approval is exclusive (takeApproveLock, before the slot is read), and a promote an
 // earlier approve left cut short is recovered first.
 // -> {approved, reason?, grants, build, approvedAt?, captureConfirmation, rollback?: restore's answer}.
-export async function approveEngine({foreground = false, signal, ...deps} = {}) {
+// `promote: false` approves only the bundle already at the approved path: a pending build, read under the lock, is
+// refused (engine_pending_build) rather than promoted. `expectedBuild` refuses (engine_unexpected_build) a bundle at
+// the approved path of another build, before anything is launched or prompted. Both are for a caller that must
+// approve exactly the build it tested (acceptance item 14, scripts/accept/onboarding.mjs).
+export async function approveEngine({foreground = false, signal, promote = true, expectedBuild = null, ...deps} = {}) {
   const ctx = context({operator: {next: () => Promise.resolve(null)}, watchCaptureAlerts, ...deps});
   ctx.signal = signal;
   ctx.whenInterrupted = new Promise(resolve => {
@@ -512,7 +516,7 @@ export async function approveEngine({foreground = false, signal, ...deps} = {}) 
     else signal.addEventListener('abort', resolve, {once: true});
   });
   takeApproveLock(ctx);
-  try { return await approveExclusively(ctx, {foreground}); } finally { rmSync(ctx.paths.promoting, {force: true}); }
+  try { return await approveExclusively(ctx, {foreground, promotes: promote, expectedBuild}); } finally { rmSync(ctx.paths.promoting, {force: true}); }
 }
 
 // One approve holds promoting.json {pid}, created exclusively (O_EXCL), from before it reads the pending slot until it
@@ -537,15 +541,18 @@ function takeApproveLock(ctx) {
 }
 
 // approveEngine's body, under its lock.
-async function approveExclusively(ctx, {foreground}) {
+async function approveExclusively(ctx, {foreground, promotes, expectedBuild}) {
   const {paths} = ctx;
   recoverInterruptedPromote(ctx, {lockHeld: true});
   const waiting = bundleOnDisk(paths.pendingBundle, ctx.runSync);
-  if (!waiting.exists) return approveAtPath(ctx, {foreground});
+  if (waiting.exists && !promotes)
+    fail('engine_pending_build', `build ${shortBuild(waiting.build)} is pending beside the approved engine, and this approve does not promote`,
+      {hint: 'run cua engine approve to promote it, or remove it, then run this again'});
+  if (!waiting.exists) return approveAtPath(ctx, {foreground, expectedBuild});
   signedIdentity(waiting, paths.pendingBundle);
   const promoted = await promote(ctx, waiting);
   let result;
-  try { result = await approveAtPath(ctx, {foreground}); } catch (error) {
+  try { result = await approveAtPath(ctx, {foreground, expectedBuild}); } catch (error) {
     await restore(ctx, promoted);
     throw error;
   }
@@ -671,10 +678,12 @@ export const candidateRunningText = ({pid}) => `the promoted build's engine (${p
   + 'so sessions refuse its build until it stops: run cua engine stop once it is idle, and the next session launches the bundle now at the approved path';
 
 // The approve loop on the bundle at the approved path.
-async function approveAtPath(ctx, {foreground}) {
+async function approveAtPath(ctx, {foreground, expectedBuild = null}) {
   const {paths, log} = ctx;
   const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
   if (!onDisk.exists) fail('engine_not_built', `no engine bundle at ${paths.bundle}`, {hint: 'build it first: cua install --engine (or cua engine build)'});
+  if (expectedBuild && onDisk.build !== expectedBuild)
+    fail('engine_unexpected_build', `the bundle at ${paths.bundle} is build ${shortBuild(onDisk.build)}, not the expected ${shortBuild(expectedBuild)}`, {hint: 'approve the expected build, or build it first'});
   const identity = signedIdentity(onDisk, paths.bundle);
 
   let status = await statusOf(ctx);

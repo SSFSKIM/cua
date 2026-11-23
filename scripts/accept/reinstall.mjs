@@ -43,7 +43,8 @@ export async function reinstallCheck({runtimeRoot, cli, archivePath, env, run, p
 }
 
 // What the build-beside contract is judged by: the approved bundle's tree and approved.json's bytes, and the pending
-// slot's tree and build. Files only; nothing is launched or signed.
+// slot's tree, build and recorded identity (pending.json's, when it names the slot's build). Files only; nothing is
+// launched or signed.
 function engineState(paths) {
   const tree = path => (existsSync(path) ? snapshotTree(path) : null);
   const text = path => { try { return readFileSync(path, 'utf8'); } catch { return null; } };
@@ -51,7 +52,11 @@ function engineState(paths) {
   const approvedText = text(paths.approved);
   let approvedRecord = null;
   try { approvedRecord = JSON.parse(approvedText); } catch { /* absent or unreadable: judged below */ }
-  return {bundle: tree(paths.bundle), approvedText, approvedRecord, slot: tree(paths.pendingBundle), slotBuild: build(paths.pendingBundle)};
+  const slotBuild = build(paths.pendingBundle);
+  let pendingRecord = null;
+  try { pendingRecord = JSON.parse(text(paths.pending)); } catch { /* absent or unreadable: the slot's identity is unknown */ }
+  return {bundle: tree(paths.bundle), approvedText, approvedRecord, slot: tree(paths.pendingBundle), slotBuild,
+    slotIdentity: slotBuild !== null && pendingRecord?.build === slotBuild ? pendingRecord.identity ?? null : null};
 }
 
 const sameTree = (a, b) => (a === null || b === null ? a === b : diffSnapshots(a, b).same);
@@ -65,11 +70,17 @@ function engineCheck({installed, answer, before, after, paths}) {
   if (kept.length) return fail(`${kept.join(' and ')}: a build must leave the approved engine untouched`);
   const approved = shortBuild(before.approvedRecord.build);
   if (answer.pending === false) {
+    // The one slot change a no-op build makes: a pending copy of the approved build under the approved identity, which
+    // buildEngine discards as redundant. Its identity is pending.json's, so a slot without one is never taken as it.
+    const redundant = before.slot !== null && after.slot === null && before.slotBuild === before.approvedRecord.build
+      && before.slotIdentity !== null && before.slotIdentity === before.approvedRecord.identity;
+    const slotKept = sameTree(before.slot, after.slot);
     const ok = answer.changed === false && answer.approved === true && answer.build === before.approvedRecord.build && answer.bundlePath === paths.bundle
-      && sameTree(before.slot, after.slot);
-    return ok ? {name: ENGINE, status: 'PASS', detail: `this checkout's engine is already the approved build ${approved}; nothing changed (bundle, approved.json and pending slot as they were)`}
+      && (slotKept || redundant);
+    return ok ? {name: ENGINE, status: 'PASS', detail: `this checkout's engine is already the approved build ${approved}; nothing changed (bundle and approved.json as they were; `
+        + `${redundant ? 'the redundant pending copy of that build and identity was discarded' : 'pending slot as it was'})`}
       : fail(`the answer says nothing is pending (build ${shortBuild(answer.build)}, changed ${answer.changed}, approved ${answer.approved}, at ${answer.bundlePath === paths.bundle ? 'the approved path' : 'another path'}), `
-        + `but ${sameTree(before.slot, after.slot) ? 'that is not the approved build left as it was' : 'the pending slot changed'}`);
+        + `but ${slotKept || redundant ? 'that is not the approved build left as it was' : 'the pending slot changed, and not by discarding a copy of the approved build and identity'}`);
   }
   if (answer.pending === true) {
     const ok = answer.bundlePath === paths.pendingBundle && after.slotBuild !== null && after.slotBuild === answer.build;

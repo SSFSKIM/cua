@@ -63,7 +63,7 @@ try {
   const cleanB = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: b, alone: ALONE, frontmost: localFrontmost});
   report.runningBefore.cleanup = cleanB;
   check('running before: the run\'s document went to that TextEdit (no new pid)', preexisting.length === 1 && report.runningBefore.runningDuring.join() === preexisting.join(), `before ${preexisting.join(', ')}; during ${report.runningBefore.runningDuring.join(', ')}`);
-  check('running before: the cleanup quit nothing and that TextEdit survives it', !cleanB.launch && !cleanB.quit.length && preexisting.every(pid => textEdits().includes(pid)), `launch recorded ${cleanB.launch?.pid ?? 'none'}; kept ${cleanB.keptBefore.join(', ')}; running ${textEdits().join(', ')}`);
+  check('running before: the cleanup quit nothing and that TextEdit survives it', !cleanB.launch && !cleanB.quit.length && preexisting.every(pid => textEdits().includes(pid)), `launch recorded ${cleanB.launch?.pid ?? 'none'}; kept ${cleanB.keptBefore?.join(', ') ?? 'unknown'}; running ${textEdits().join(', ')}`);
   check('running before: the front is handed back', cleanB.front.restored && localFrontmost() === b.front, `before ${b.front}, at cleanup ${cleanB.front.before}, after ${localFrontmost()}`);
   // The witness's own teardown, apart from the harness cleanup: it quits the TextEdit it started for this case.
   report.runningBefore.witnessTeardown = await quitOwned(isSameLaunch(pre) ? [pre.pid] : []);

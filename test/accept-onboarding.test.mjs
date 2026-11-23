@@ -24,7 +24,7 @@ const errorText = permission => `Computer Use server error -10014: ${grantSteps(
 // the resulting model replies, statuses, operator answers and cleanup. No GUI, TCC, engine or subprocess is started.
 function fixture(over = {}) {
   const events = [], logs = [];
-  let phase = 'revoked', pid = 10, calls = 0, owners = 0, value = '', activated = false, clock = 1_000;
+  let phase = 'revoked', pid = 10, calls = 0, owners = 0, value = '', activated = false, clock = 1_000, readied = false;
   const context = {};
   let activeMeta;
   const status = () => ({bundlePath: path, exists: true, build: expected.build, engineVersion: expected.version,
@@ -90,6 +90,8 @@ function fixture(over = {}) {
     },
     approve: async () => { events.push('approve'); return {approved: !over.approveFailed, grants: {accessibility: true, screenRecording: true, inputMonitoring: true}, build: expected.build}; },
     operator: {next: async () => {
+      // The console-readiness confirmation comes first, before anything is stopped.
+      if (!readied) { readied = true; events.push('ready'); return 'readiness' in over ? over.readiness : 'ready'; }
       events.push('owner'); owners++;
       if (over.abort) return null;
       if (owners === 1) { if (over.expireWindow) clock += 26 * 60_000; return 'revoked'; }
@@ -115,6 +117,20 @@ function fixture(over = {}) {
   return {deps, events, logs, advance: ms => { clock += ms; }};
 }
 
+// The timer seam (deps.timers) driven by hand: tick(ms) fires what falls due, in order.
+function manualTimers() {
+  let at = 0, next = 0;
+  const due = new Map();
+  return {
+    set: (fn, ms) => { const id = ++next; due.set(id, {fn, at: at + ms}); return id; },
+    clear: id => { due.delete(id); },
+    tick: ms => {
+      at += ms;
+      for (const [id, timer] of [...due].sort((a, b) => a[1].at - b[1].at)) if (timer.at <= at) { due.delete(id); timer.fn(); }
+    },
+  };
+}
+
 const run = async (f, options = {}) => {
   const {runFreshOnboarding} = await import('../scripts/accept/onboarding.mjs');
   return runFreshOnboarding({home: '/scratch', engine: {engine: 'cua'}, requested: true, ...options}, f.deps);
@@ -123,7 +139,7 @@ const run = async (f, options = {}) => {
 test('owner sequence proves both model errors, same-session relaunch, then approval, with no automated revocation', async () => {
   const f = fixture(), report = await run(f);
   assert.equal(report.status, 'PASS', JSON.stringify(report));
-  assert.deepEqual(f.events, ['stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'doctor:ax', 'owner', 'cell', 'owner', 'focus', 'cell', 'doctor:granted', 'owner', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
+  assert.deepEqual(f.events, ['ready', 'stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'doctor:ax', 'owner', 'cell', 'owner', 'focus', 'cell', 'doctor:granted', 'owner', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
   assert.equal(report.observations.recoveryPrompts[0].source, 'owner-observed');
   assert.deepEqual(report.observations.recoveryPrompts[0].prompts, []);
   assert.match(f.logs.join('\n'), /owner.*only|OWNER/);
@@ -197,6 +213,32 @@ test('a stale but approved installed build is refused before stopping the engine
   assert.deepEqual(f.events, []);
 });
 
+test('nothing is stopped until the terminal confirms someone is at the console', async () => {
+  for (const readiness of ['later', '', null]) {
+    const f = fixture({readiness}), report = await run(f);
+    assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+    assert.deepEqual(f.events, ['ready'], 'the engine is not stopped and no grant step is asked');
+    assert.match(report.checks.find(c => c.name === 'console readiness').detail, /nothing was stopped/);
+    assert.equal(report.observations.ownerBudget.startedAt, null, 'the owner window never started');
+  }
+});
+
+test('an unanswered console-readiness question ends after its bound, with nothing stopped', async () => {
+  const timers = manualTimers();
+  const f = fixture();
+  f.deps.timers = timers;
+  let reached;
+  const asked = new Promise(resolve => { reached = resolve; });
+  f.deps.operator.next = () => { reached(); return new Promise(() => {}); };
+  const running = run(f);
+  await asked;
+  timers.tick(5 * 60_000);
+  const report = await running;
+  assert.equal(report.status, 'BLOCKED');
+  assert.ok(!f.events.includes('stop'));
+  assert.equal(report.observations.admission.expired, true);
+});
+
 test('a build pending beside the approved engine is refused before stopping the engine or asking for owner revocation', async () => {
   // Item 14 never serves or promotes a pending build: its last stage runs cua engine approve, which would promote it.
   const f = fixture({pendingBefore: true}), report = await run(f);
@@ -210,6 +252,20 @@ test('a build published beside the engine during the owner window stops the run 
   assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
   assert.match(report.checks.find(c => c.name === 'engine approval').detail, /pending beside the approved engine/);
   assert.ok(!f.events.includes('approve'));
+});
+
+test('approve itself never promotes: item 14 asks it for exactly the tested build, and its own refusal under the lock is BLOCKED', async () => {
+  // A build published between item 14's status read and approve's lock is refused by approve (engine_pending_build).
+  const seen = [];
+  const f = fixture();
+  f.deps.approve = async options => {
+    seen.push({promote: options.promote, expectedBuild: options.expectedBuild});
+    throw Object.assign(new Error('build bbbbbbbbbbbb is pending beside the approved engine, and this approve does not promote'), {code: 'engine_pending_build'});
+  };
+  const report = await run(f);
+  assert.deepEqual(seen, [{promote: false, expectedBuild: expected.build}]);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  assert.match(report.checks.find(c => c.name === 'engine approval').detail, /pending beside the approved engine/);
 });
 
 test('guidance must identify the precise permission and approved path, not merely mention permissions', async () => {
@@ -620,19 +676,20 @@ test('invalid direct owner budgets refuse before engine or permission work', asy
 
 for (const [minutes, expiredBound, waitMs] of [[25, 'observation', 5 * 60_000], [1, 'overall', 60_000]]) {
   test(`${expiredBound} timeout bounds an unanswered owner alert observation`, async t => {
-    t.mock.timers.enable({apis: ['setTimeout']});
+    const timers = manualTimers();
     const f = fixture(), next = f.deps.operator.next;
+    f.deps.timers = timers;
     let reached, release, calls = 0;
     const waiting = new Promise(resolve => { reached = resolve; });
     f.deps.operator.next = () => {
-      if (++calls < 4) return next();
+      if (++calls < 5) return next();
       reached();
       return new Promise(resolve => { release = resolve; });
     };
     const running = run(f, {ownerWindowMinutes: minutes});
     await waiting;
     f.advance(waitMs);
-    t.mock.timers.tick(waitMs);
+    timers.tick(waitMs);
     release(null); // also settles an implementation missing the timer, so RED cannot hang
     const report = await running;
     assert.equal(report.status, 'BLOCKED');
@@ -678,8 +735,9 @@ for (const boundary of ['focus', 'close', 'approve']) test(`automatic work consu
 });
 
 test('approve respects the remaining overall budget and cannot turn its expired wait into approval', async t => {
-  t.mock.timers.enable({apis: ['setTimeout']});
+  const timers = manualTimers();
   const f = fixture();
+  f.deps.timers = timers;
   let reached, release;
   const waiting = new Promise(resolve => { reached = resolve; });
   f.deps.approve = async ({operator}) => {
@@ -691,7 +749,7 @@ test('approve respects the remaining overall budget and cannot turn its expired 
   const running = run(f);
   await waiting;
   f.advance(25 * 60_000);
-  t.mock.timers.tick(25 * 60_000);
+  timers.tick(25 * 60_000);
   release(null);
   const report = await running;
   assert.equal(report.status, 'BLOCKED');
@@ -702,7 +760,7 @@ test('approve respects the remaining overall budget and cannot turn its expired 
 test('expired input observation preserves independent verdicts without inventing an owner report timestamp', async () => {
   const f = fixture(), next = f.deps.operator.next;
   let calls = 0;
-  f.deps.operator.next = async () => { if (++calls === 5) f.advance(6 * 60_000); return next(); };
+  f.deps.operator.next = async () => { if (++calls === 6) f.advance(6 * 60_000); return next(); };
   const report = await run(f);
   assert.equal(report.status, 'BLOCKED');
   for (const part of ['input completion', 'metadata', 'doctor']) {
@@ -737,7 +795,7 @@ test('approval cancels an unused terminal wait when grant polling finishes first
 test('manual revocation and fixture preparation may take over five minutes within the overall budget', async () => {
   const f = fixture(), next = f.deps.operator.next;
   let calls = 0;
-  f.deps.operator.next = async () => { if (++calls === 1) f.advance(6 * 60_000); return next(); };
+  f.deps.operator.next = async () => { if (++calls === 2) f.advance(6 * 60_000); return next(); };
   const report = await run(f);
   assert.equal(report.status, 'PASS', JSON.stringify(report));
   assert.equal(report.observations.ownerWaits[0].expiredBound, null);

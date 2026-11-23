@@ -21,7 +21,8 @@
 //
 // It reads no window titles: kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds, kCGWindowLayer, kCGWindowAlpha,
 // kCGWindowIsOnscreen and (only for `order`) kCGWindowOwnerName need no Screen Recording grant. App metadata is NSRunningApplication's, so
-// it never raises a permission dialog. Exit 0 with the JSON; exit 2 with {"error"} on a usage error.
+// it never raises a permission dialog. Exit 0 with the JSON; exit 2 with {"error"} on a usage error; exit 3 with {"error"}
+// when `windows` cannot read the window server's list (`front` and `order` still read it as empty).
 import AppKit
 import CoreGraphics
 import Foundation
@@ -55,8 +56,9 @@ func frontmost() -> [String: Any]? {
   return ["pid": pid, "bundleId": bundleId as Any? ?? NSNull()]
 }
 
-func windows(_ option: CGWindowListOption, owners: Bool = false) -> [[String: Any]] {
-  guard let list = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else { return [] }
+// nil when the window server's list cannot be read: `windows <pid>` reports that as an error, never as no window.
+func windows(_ option: CGWindowListOption, owners: Bool = false) -> [[String: Any]]? {
+  guard let list = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else { return nil }
   return list.compactMap { entry in
     guard (entry[kCGWindowLayer as String] as? Int) == 0,
           let pid = entry[kCGWindowOwnerPID as String] as? Int,
@@ -105,17 +107,18 @@ func skippedPids(_ command: String) -> Set<Int> {
 switch arguments.first ?? "front" {
 case "front":
   let skipped = skippedPids("front")
-  let top = windows([.optionOnScreenOnly, .excludeDesktopElements]).first { !skipped.contains($0["ownerPid"] as? Int ?? -1) }
+  let top = (windows([.optionOnScreenOnly, .excludeDesktopElements]) ?? []).first { !skipped.contains($0["ownerPid"] as? Int ?? -1) }
   emit(["at": now, "frontmost": frontmost() as Any? ?? NSNull(), "topWindow": top as Any? ?? NSNull()])
 case "order":
   let skipped = skippedPids("order")
-  emit(["at": now, "windows": windows([.optionOnScreenOnly, .excludeDesktopElements], owners: true)
+  emit(["at": now, "windows": (windows([.optionOnScreenOnly, .excludeDesktopElements], owners: true) ?? [])
     .filter { !skipped.contains($0["ownerPid"] as? Int ?? -1) }])
 case "windows":
   guard arguments.count == 2, let pid = Int(arguments[1]), pid > 0 else { emit(["error": "usage: windows <pid>"], status: 2) }
   let hidden = NSRunningApplication(processIdentifier: pid_t(pid))?.isHidden
+  guard let all = windows([.optionAll, .excludeDesktopElements]) else { emit(["error": "the window list could not be read"], status: 3) }
   emit(["at": now, "pid": pid, "hidden": hidden as Any? ?? NSNull(),
-        "windows": windows([.optionAll, .excludeDesktopElements]).filter { ($0["ownerPid"] as? Int) == pid }])
+        "windows": all.filter { ($0["ownerPid"] as? Int) == pid }])
 default:
   emit(["error": "usage: front [--skip-pid <pid>]... | order [--skip-pid <pid>]... | windows <pid>"], status: 2)
 }

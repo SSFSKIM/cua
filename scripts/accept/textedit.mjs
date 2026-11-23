@@ -424,12 +424,12 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     }
     if (opened) {
       const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null},
-        alone: !docOpen && !guiStopped, readWindows: () => readWindows(textEditPids()), frontmost});
+        alone: !docOpen && !guiStopped, readWindows, frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
       observations.textEdit.leftRunning = app.leftRunning ? app.launch : null;
       if (app.windowCheck) observations.textEdit.quitWindowCheck = app.windowCheck;
       observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
-      const kept = app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
+      const kept = app.keptBefore === null ? '; which TextEdits ran before could not be listed now' : app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
       const [quitStatus, quitDetail] = app.remaining.length ? ['FAIL', `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`]
         : app.quit.length ? ['PASS', `quit the TextEdit this run started (pid ${app.quit.join(', ')}, identified by its launch right after the open)${kept}`]
           : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? app.windowCheck?.detail ?? 'the fixture document close was not confirmed'}); nothing was signalled. Stop and report the remaining process and windows for a per-case cleanup decision; do not discard another document to force cleanup`]

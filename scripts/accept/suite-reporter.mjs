@@ -1,12 +1,17 @@
 // Acceptance-only node:test reporter. The runner's structured events are the sole source of facts: no raw child
-// output or t.diagnostic text is forwarded. Nested runners' output arrives as stdout events and is ignored too.
+// output or t.diagnostic text is forwarded. Nested runners' output arrives as stdout events and is ignored too. A test
+// process's warnings (its stderr, which TAP shows) are counted, never forwarded: `# warnings <n>` after the summary.
 import {realpathSync} from 'node:fs';
 import {diagnosticName, failureDiagnostic, FAILURE_PREFIX, COMPLETE_PREFIX} from './tap-diagnostics.mjs';
 
+// The same words acceptance's own output check looks for (accept-native.mjs `noisy`).
+const WARNING = /\b(ExperimentalWarning|DeprecationWarning|Warning:)/;
+
 export default async function* reporter(source) {
   const root = realpathSync(process.cwd());
-  let failures = 0, skips = 0, truncated = false;
+  let failures = 0, skips = 0, truncated = false, warnings = 0;
   for await (const {type, data} of source) {
+    if (type === 'test:stderr' && WARNING.test(String(data.message))) warnings++;
     if (type === 'test:fail') {
       if (failures++ < 100) yield FAILURE_PREFIX + JSON.stringify(failureDiagnostic(data, {root})) + '\n';
       else truncated = true;
@@ -18,6 +23,7 @@ export default async function* reporter(source) {
       yield COMPLETE_PREFIX + truncated + '\n';
       for (const [name, key] of Object.entries({tests: 'tests', suites: 'suites', pass: 'passed', fail: 'failed', cancelled: 'cancelled', skipped: 'skipped', todo: 'todo'}))
         yield `# ${name} ${data.counts[key]}\n`;
+      yield `# warnings ${warnings}\n`;
     }
   }
 }

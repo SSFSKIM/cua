@@ -47,3 +47,19 @@ test('readWindows lists every pid\'s windows by owner, number and whether on scr
   assert.deepEqual(await readWindows([], {probe}), []);
   assert.equal(await readWindows([7], {probe: async () => { throw new Error('swift failed'); }}), null);
 });
+
+// FrontWindowProbe's `windows <pid>` exits 3 with {"error"} when the window server's list cannot be read: the reading
+// fails, never an empty list (the fixture's cleanup reads an empty list as "no document left" and may quit TextEdit).
+test('readWindows fails closed on the probe\'s own failure, a malformed reading, or a reading of another pid', async () => {
+  const exec = answer => async (file, args) => {
+    assert.equal(file, '/usr/bin/swift');
+    assert.deepEqual(args.slice(1), ['windows', '7']);
+    return answer();
+  };
+  const exited = () => { throw Object.assign(new Error('Command failed'), {code: 3, stdout: '{"error":"the window list could not be read"}\n'}); };
+  assert.equal(await readWindows([7], {exec: exec(exited)}), null);
+  for (const stdout of ['{"error":"the window list could not be read"}', '{"at":1,"pid":7}', '{"at":1,"pid":8,"windows":[]}', 'not json']) {
+    assert.equal(await readWindows([7], {exec: exec(() => ({stdout}))}), null, stdout);
+  }
+  assert.deepEqual(await readWindows([7], {exec: exec(() => ({stdout: '{"at":1,"pid":7,"hidden":false,"windows":[]}'}))}), []);
+});

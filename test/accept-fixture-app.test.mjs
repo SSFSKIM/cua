@@ -4,7 +4,8 @@
 // mid-run, is never touched, and the front goes back to the app that had it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {awaitLaunch, captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
+import {awaitLaunch, captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, pidsOf, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
+import {readWindows as readWindowList} from '../scripts/accept/window-close.mjs';
 
 test('ps lstart text (C locale, UTC) parses to epoch ms; anything else is null', () => {
   assert.equal(parseLaunch('Sun Oct 18 02:51:07 2026    \n'), Date.parse('2026-10-18T02:51:07Z'));
@@ -62,10 +63,10 @@ test('restoreFront activates the previous front only when another app holds it, 
 const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
 const ours = {pid: 42, at: startedAt + 2000};
 // A cleanup with fakes: `running` pids and their launch times; `quit` records what it was asked to signal.
-async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}, readWindows, launchWindows} = {}) {
+async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}, readWindows, launchWindows, pids = () => running} = {}) {
   const quitCalls = []; let front = 'com.apple.TextEdit';
   const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch, launchWindows}, alone,
-    pids: () => running, launchOf: pid => launches[pid] ?? null, readWindows,
+    pids, launchOf: pid => launches[pid] ?? null, readWindows,
     quit: async pids => { quitCalls.push(pids); return {quit: pids, remaining: []}; },
     frontmost: () => front, activate: id => { front = id; }, sleep: async () => {}});
   return {r, quitCalls};
@@ -126,6 +127,33 @@ test('a failed window probe keeps cleanup blocked and the process unsignalled', 
   assert.equal(r.windowCheck.status, 'BLOCKED');
   assert.match(r.windowCheck.detail, /unreadable/);
   assert.equal(r.windowCheck.remainingWindows, null);
+});
+
+// From the producer to the signal: the window read goes through window-close.mjs's readWindows for the recorded pid only,
+// and a failed probe (FrontWindowProbe's exit 3) signals nothing.
+test('the pre-quit window read is of the recorded pid alone, and a failed probe there signals nothing', async () => {
+  const asked = [];
+  const listed = await cleanup({readWindows: async pids => { asked.push(pids); return []; }});
+  assert.deepEqual(asked, [[42]], 'the recorded launch\'s pid, never a pgrep listing');
+  assert.deepEqual(listed.quitCalls, [[42]]);
+  const failing = async () => { throw Object.assign(new Error('Command failed'), {code: 3, stdout: '{"error":"the window list could not be read"}'}); };
+  const {r, quitCalls} = await cleanup({readWindows: pids => readWindowList(pids, {exec: failing})});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.leftRunning, 42);
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, /unreadable/);
+});
+
+test('pidsOf: no process is an empty list, a pgrep that fails is an error, never "none running"', () => {
+  assert.deepEqual(pidsOf('TextEdit', {exec: () => '42\n7\n'}), [42, 7]);
+  assert.deepEqual(pidsOf('TextEdit', {exec: () => { throw Object.assign(new Error('exit 1'), {status: 1}); }}), []);
+  for (const error of [Object.assign(new Error('exit 2'), {status: 2}), Object.assign(new Error('spawn'), {code: 'ENOENT'})])
+    assert.throws(() => pidsOf('TextEdit', {exec: () => { throw error; }}), /pgrep/);
+});
+
+test('a pgrep failure after the quit leaves the cleanup\'s report of earlier processes unknown, not empty', async () => {
+  const {r} = await cleanup({pids: () => { throw new Error('pgrep failed'); }, readWindows: async () => []});
+  assert.equal(r.keptBefore, null);
 });
 
 test('a PID reused during the window check is not signalled', async () => {

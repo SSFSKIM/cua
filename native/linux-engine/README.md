@@ -353,8 +353,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the end read the pointer stops the tail before the next visit, so nothing undoes it, and the end is judged as an
   interrupted tail (`interrupted_unconfirmed`).
   It has no gate (a handle has no floor); `--drag-dnd-release-sync off` restores the earlier end, and `--stats`
-  `handle.release_sync` records whether it ran and why not. The residual bound: no false ok in
-  200 measured long Chrome drags at arm64 twice the load (95% upper bound 1.5%). Electron's drops (settled, below),
+  `handle.release_sync` records whether it ran and why not. The residual bound, measured on 0.4.3 and carried by
+  0.4.4, whose Chrome long-drag path is unchanged: no false ok in 200 measured long Chrome drags at arm64 twice the load
+  (95% upper bound 1.5%). Electron's drops (settled, below),
   guarded drags and the release at the accept are unchanged. Option (c), which answers such a drop unconfirmed when
   Chrome's activation request is its only confirmation (`Pending from your last drag, an unconfirmed drop: your drag
   into <app> began a drag and drop and went on past the engine's settle time, …`), is built and off
@@ -385,11 +386,12 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   between them. When the first answer came after the rest, the end rests a second time if both rests still end within
   150 ms of the first ping (ruling 3a), and otherwise judges the drop as it would have without it. An application that
   does not answer, or lists no ping, leaves the drop unconfirmed with that reason ("… did not answer in time for its drop
-  to be confirmed …"). `--stats` records each drop's `drop_cursor.settle` and the engine's `drop_settles` counts;
+  to be confirmed …"). `--stats` records each drop's `drop_cursor.settle`, with the rest it took
+  (`drop_cursor.settle.rest_ms`, since 0.4.4), and the engine's `drop_settles` counts;
   `--drop-no-settle` (measurement only) releases and judges as 0.4.0 did.
   Since 0.4.4 the settle's rest is the source's family's (#487): a drag named to a window that rests not at all (GTK 4)
-  whose path starts in Electron rests Electron's 30 ms between the two pings, where 0.4.3 rested the named window's
-  none; and a handle's end settles a take its hold saw at its first read, though the cursor watch had not read it yet
+  whose path starts in Electron rests Electron's 30 ms between the two pings, and its floor's keepalives end those
+  30 ms early (`hold.floor_until_ms`), where 0.4.3 rested the named window's none; and a handle's end settles a take its hold saw at its first read, though the cursor watch had not read it yet
   (#488), where 0.4.3 skipped the settle and answered the drop unconfirmed.
   With no request (or no accept) in time the drop is unconfirmed, never ok: `Pending from
   your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting

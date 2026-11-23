@@ -23,11 +23,21 @@ Both lanes share the following:
 - the harness checkout at `0b44493ef562d0fd6d04441202b6a2bf1f50f3b7`, whose engine build is the approved one, and the run directory `/Users/new/Library/Caches/cua-harness/native-goldens` on the device;
 - Chrome for Testing 155.0.8059.84 and the Electron fixture 44.9.0-23c8b77691d0.
 
-The Electron fixture the harness builds today is 44.9.0-1357256d7cf8 (`fixtureSourceHash()`, 2026-11-23): its source
-moved after the recording, for #117 M5's matrix-only switches (ruling 1168's `--cua-fixture-page`, ruling 1169's
-`--cua-fixture-bounds` and `--cua-fixture-focus`), none of which the goldens' recorder passes, so the page these goldens
-show is unchanged. The goldens render offline from the recorded skyshots and stand as recorded on 23c8b77691d0; a run
-on today's fixture builds and records 1357256d7cf8, whose web area's URL line names that build.
+The Electron fixture the harness builds today is 44.9.0-1357256d7cf8 (`fixtureSourceHash()`, 2026-11-23; the
+recording's 23c8b77691d0 recomputed at the harness checkout above). What feeds the hash and what moved since:
+`package.json` (Electron 44.9.0), `index.html`, `preload.js`, `counters.js` and `fixture.css` are unchanged; the builder
+(`electron-fixture.mjs`) gained exported constants only; `main.js` records Chromium's accessibility mode to a file (reads
+only: `app.isAccessibilitySupportEnabled()` and its change event), and reads two switches, `--cua-fixture-page=pointerdown`
+(the matrix's page with ruling 1168's pointerdown pair, which `renderer.js` adds only under `?page=pointerdown`) and
+`--cua-fixture-focus` (the window made key once shown). Launched with neither switch, the fixture's tree, window and page
+are the recording's. The harness's `up` passes `--cua-fixture-focus` on every bring-up (ruling 1169's key-window
+requirement), so a live Electron scene is key where the recording's was shown inactive, and its focus-dependent content
+(the window's focused state, the focused-element line) can differ from these goldens.
+
+They are not re-recorded (the design session): no live sitting reads the Electron recording as an expected value, and
+that is enforced, not argued: a live sitting's steps carry `CUA_LIVE_SITTING` (`scripts/hosted-sittings/run.mjs`), under
+which `goldens.mjs` `read` and `source.mjs` `fromSource` refuse the Electron scene (`live-guard.mjs`;
+`test/hosted-sittings/live-goldens.test.mjs`). A later cell that needs the recording live takes a hosted re-record with it.
 
 Each scene's window frame in points, as cua's observations read it (Finder's one window holds every capture of its
 scene, so its frame is the same throughout), and how many attempts the fixed state took:

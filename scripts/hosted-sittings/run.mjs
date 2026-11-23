@@ -12,6 +12,7 @@
 // The sitting's exit, the first that applies: 1 a step failed, 4 NO VERDICT, 5 a full sitting holds a step not built
 // yet (INCOMPLETE), 3 OWNER, 0 PASS (the matrix judge's codes, ../native-matrix.mjs, and 5 for what it has not).
 import {spawn} from 'node:child_process';
+import {LIVE_SITTING_ENV} from '../../test/native-goldens/live-guard.mjs';
 import {copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {CHECKS} from './checks.mjs';
@@ -33,7 +34,7 @@ export async function execStep(step, {logPath, cwd = process.cwd(), env = proces
   let logError = null;
   file.on('error', error => { logError ??= error; });
   const ended = await new Promise(resolve => {
-    const child = spawn(step.argv[0], step.argv.slice(1), {cwd, env: {...env, ...step.env}, stdio: ['ignore', 'pipe', 'pipe']});
+    const child = spawn(step.argv[0], step.argv.slice(1), {cwd, env: {...env, [LIVE_SITTING_ENV]: '1', ...step.env}, stdio: ['ignore', 'pipe', 'pipe']});
     for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { file.write(chunk); echo.write(chunk); });
     child.on('error', error => { file.write(`${error.message}\n`); resolve({exit: null, signal: null, error: error.message}); });
     child.on('close', (code, signal) => resolve({exit: code, signal}));

@@ -7,6 +7,7 @@ import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {diff} from '../../src/services/engine/diff.mjs';
 import {compare, correct} from './compare.mjs';
 import {STRUCTURAL} from './source.mjs';
+import {refuseLiveRecording} from './live-guard.mjs';
 
 export const DIR = dirname(fileURLToPath(import.meta.url));
 export const SCENES = ['textedit', 'finder', 'chrome', 'electron'];
@@ -14,7 +15,7 @@ export const SCENES = ['textedit', 'finder', 'chrome', 'electron'];
 // (./source.json); a live recording's Finder carries nothing the run does not own and is compared as full text.
 export {STRUCTURAL};
 
-export const read = (scene, name) => fs.readFileSync(join(DIR, scene, name), 'utf8');
+export const read = (scene, name) => { refuseLiveRecording(scene); return fs.readFileSync(join(DIR, scene, name), 'utf8'); };
 export const shot = (scene, name) => JSON.parse(read(scene, name));
 export const EXPECTED = JSON.parse(fs.readFileSync(join(DIR, 'expected.json'), 'utf8')).declarations;
 

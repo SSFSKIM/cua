@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {SOURCED, fromSource as fromM0} from './rekey.mjs';
+import {refuseLiveRecording} from './live-guard.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(HERE, '../..');
@@ -18,6 +19,7 @@ export const STRUCTURAL = new Set(SOURCE.redacted ?? []);
 
 // The content of one golden file as its source gives it.
 export function fromSource(scene, name, source = SOURCE) {
+  refuseLiveRecording(scene);
   if (source.kind === 'm0') return fromM0(scene, name);
   if (source.kind === 'live') return fs.readFileSync(join(ROOT, source.dir, scene, name), 'utf8');
   throw new Error(`unknown golden source kind ${source.kind}`);

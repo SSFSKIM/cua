@@ -1,0 +1,1579 @@
+{
+  "scenario": "accept-native",
+  "status": "BLOCKED",
+  "suiteQualification": "The hosted Node 24 gate is the unit-suite authority (#198). Local whole-suite failures remain FAIL and need per-failure classification; no environmental exception promotes an item to PASS.",
+  "options": {
+    "freshOnboarding": false,
+    "liveSecrets": true,
+    "liveTextedit": true,
+    "callerSecretKey": false,
+    "items": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      10,
+      11
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": "26.928.40906-darwin-arm64",
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v24.22.0",
+  "startedAt": "2026-10-23T18:21:44.339Z",
+  "finishedAt": "2026-10-23T18:25:39.314Z",
+  "summary": {
+    "1": "BLOCKED",
+    "2": "BLOCKED",
+    "3": "BLOCKED",
+    "4": "PASS",
+    "5": "BLOCKED",
+    "6": "BLOCKED",
+    "7": "BLOCKED",
+    "8": "BLOCKED",
+    "10": "BLOCKED",
+    "11": "PASS"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 1,
+      "title": "npm test",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "npm test",
+          "status": "BLOCKED",
+          "detail": "72 skipped and 0 TODO of 4282: required coverage did not run; not declared: 1 × \"calls the prompting Accessibility request: GitHub-hosted runners only (RUNNER_ENVIRONMENT=github-hosted)\"; 0 failed, 72 skipped, 0 TODO in 78.3 s",
+          "totals": {
+            "tests": 4282,
+            "pass": 4210,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 72,
+            "todo": 0
+          },
+          "diagnostics": {
+            "failures": [],
+            "truncated": false,
+            "complete": true
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Pinned install: verified private tree, idempotent reinstall, refusal of bad archives, download mode",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "installed release",
+          "status": "PASS",
+          "detail": "active 26.928.40906-darwin-arm64 (pin 26.928.40906-darwin-arm64), installed from archive, archive sha256 93bf16b32c80…, 687457051 bytes"
+        },
+        {
+          "name": "verified private runtime tree",
+          "status": "PASS",
+          "detail": "runtime.files pass; runtime.vendor-manifest pass; runtime.ipc pass; runtime.signatures pass (3 components signed by team 2DC432GLL2)"
+        },
+        {
+          "name": "reinstall mutates nothing",
+          "status": "PASS",
+          "detail": "install --json → ok true, changed false; engine not_selected; 2936 entries compared (type, mode, size, mtime, inode): identical"
+        },
+        {
+          "name": "bad hash, length, manifest or signature never activates",
+          "status": "BLOCKED",
+          "detail": "npm test was BLOCKED in item 1; see test/runtime-install.test.mjs, test/runtime-manifest.test.mjs, test/cli.test.mjs"
+        },
+        {
+          "name": "download mode (official pinned URL)",
+          "status": "PASS",
+          "evidence": "cited",
+          "detail": "cited, not rerun: docs/evidence/2026-10-22-own-native-engine-m4/download-proof.json; sandbox-live run 39874406930 tested f4745620f497675582ec7c8378cd8fc93bdc6093, with acquisition unchanged from ced790b042bc228c9d7ee8a7b32f3833b19ced27; persistent.oaistatic.com, SHA-256 verified, 687457051 bytes"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "doctor --json: release, paths, signatures, compatibility; runtime health apart from live evidence",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "doctor --json on the installed home",
+          "status": "PASS",
+          "detail": "exit 1; ok false; informational, not gating: secrets.store pass, agent.installed pass, agent.running pass, agent.enrolled fail, agent.console pass; release 26.928.40906-darwin-arm64; platform pass, runtime.installed pass, runtime.files pass, runtime.vendor-manifest pass, runtime.ipc pass, runtime.signatures pass, helper.live blocked, helper.permissions blocked, secrets.store pass",
+          "checks": [
+            {
+              "name": "platform",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.installed",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.files",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.vendor-manifest",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.ipc",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.signatures",
+              "status": "pass"
+            },
+            {
+              "name": "sandbox",
+              "status": "pass"
+            },
+            {
+              "name": "sandbox.launcher",
+              "status": "pass"
+            },
+            {
+              "name": "run.stale",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.leftovers",
+              "status": "pass"
+            },
+            {
+              "name": "helper.live",
+              "status": "blocked"
+            },
+            {
+              "name": "helper.permissions",
+              "status": "blocked"
+            },
+            {
+              "name": "secrets.store",
+              "status": "pass"
+            },
+            {
+              "name": "secrets.project",
+              "status": "skip"
+            },
+            {
+              "name": "repl.host",
+              "status": "pass"
+            },
+            {
+              "name": "engine",
+              "status": "pass"
+            },
+            {
+              "name": "chrome.route",
+              "status": "blocked"
+            },
+            {
+              "name": "chrome.host.registered",
+              "status": "blocked"
+            },
+            {
+              "name": "chrome.hosts.live",
+              "status": "blocked"
+            },
+            {
+              "name": "maws.hosts",
+              "status": "skip"
+            },
+            {
+              "name": "agent.installed",
+              "status": "pass"
+            },
+            {
+              "name": "agent.running",
+              "status": "pass"
+            },
+            {
+              "name": "agent.enrolled",
+              "status": "fail"
+            },
+            {
+              "name": "agent.console",
+              "status": "pass"
+            },
+            {
+              "name": "agent.relay",
+              "status": "skip"
+            },
+            {
+              "name": "chrome.agent",
+              "status": "blocked"
+            }
+          ]
+        },
+        {
+          "name": "runtime health reported apart from live helper and permission evidence",
+          "status": "PASS",
+          "detail": "helper.live blocked and helper.permissions blocked are separate checks; a blocked live check does not fail runtime health"
+        },
+        {
+          "name": "doctor's engine row: sessions here drive the pinned cua engine",
+          "status": "PASS",
+          "detail": "selected cua; preferred cua (explicit); row pass; permissions accessibility true, screenRecording true, inputMonitoring true; build the approved one"
+        },
+        {
+          "name": "missing runtime gives install guidance and a nonzero exit",
+          "status": "PASS",
+          "detail": "exit 1; runtime.installed fail: no runtime is installed in /private<empty home>; run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)"
+        },
+        {
+          "name": "unsupported platform, incompatible helper, secret store state explicit",
+          "status": "BLOCKED",
+          "detail": "npm test was BLOCKED in item 1; see test/runtime-doctor.test.mjs, test/secrets-store.test.mjs"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "serve and verify.mjs: the tool surface on the serving host's own binaries and configuration, the pinned engine attested",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "node verify.mjs",
+          "status": "PASS",
+          "detail": "exit 0; tools js, js_reset, end_task, secrets_list, devices_list, devices_use; task stable across calls, end ended, repeat noop; problems: none"
+        },
+        {
+          "name": "runtime executables as the serving host expects; no installed-desktop runtime path",
+          "status": "PASS",
+          "detail": "5 processes (server, anchor, runtime) (cua host): <host node> bin/cua.mjs serve; <host node>"
+        },
+        {
+          "name": "verify pinned the cua engine and every result attested it",
+          "status": "PASS",
+          "detail": "verify pinned cua (--engine) on the cua host; 3 result(s) attested; engine socket: 0 bound, 0 client(s), 0 unseen; 5 process(es) started from cua's roots"
+        },
+        {
+          "name": "native without an account (owned empty CODEX_HOME)",
+          "status": "PASS",
+          "detail": "the runtime's CODEX_HOME ($CUA_HOME/state/codex) holds no auth file and nothing was copied from ~/.codex; the verify run above loaded the vendor API and reached the native helper without any account"
+        }
+      ],
+      "evidence": {
+        "nativeHelper": [],
+        "secretsList": {
+          "status": "ok",
+          "labelCount": 2
+        },
+        "elicitationsDeclined": 0,
+        "engine": {
+          "engine": "cua",
+          "pinnedBy": "--engine",
+          "host": "cua",
+          "expected": {
+            "engine": "cua",
+            "version": "0.1.0",
+            "build": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc"
+          },
+          "attested": 3,
+          "bundle": "~/Library/Application Support/cua/engine/cua Engine.app",
+          "socket": {
+            "bound": [],
+            "clients": [],
+            "unseenClients": 0
+          },
+          "startedFromCuaRoots": [
+            {
+              "pid": 6506,
+              "executable": "<host node>"
+            },
+            {
+              "pid": 6568,
+              "executable": "<host node>"
+            },
+            {
+              "pid": 6569,
+              "executable": "<host node>"
+            },
+            {
+              "pid": 6575,
+              "executable": "<host node>"
+            },
+            {
+              "pid": 6589,
+              "executable": "<host node>"
+            }
+          ],
+          "runningBefore": [
+            {
+              "pid": 6481,
+              "executable": "<host node>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Live native fixture: its own disposable TextEdit document",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "live TextEdit fixture verdict (own document)",
+          "status": "BLOCKED",
+          "detail": "scenario status BLOCKED; 14 steps; not passed: quit the TextEdit this run started, and only it: BLOCKED"
+        },
+        {
+          "name": "preconditions",
+          "status": "PASS",
+          "detail": "preconditions: PASS (runtime 26.928.40906-darwin-arm64; the cua engine pinned (--engine), version 0.1.0 build cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc; TextEdit not running)"
+        },
+        {
+          "name": "open the fixture document",
+          "status": "PASS",
+          "detail": "open the fixture document: PASS (a new RTF with a fixed placeholder and proportional regular font, in a directory created for this run under $CUA_HOME, opened in TextEdit (started by the open: pid 8427))"
+        },
+        {
+          "name": "connection A: bind TextEdit",
+          "status": "PASS",
+          "detail": "connection A: bind TextEdit: PASS (front window is the fixture's own document; the policy asked for approval 1 time(s) during this bind)"
+        },
+        {
+          "name": "connection A: bind TextEdit again in the same connection",
+          "status": "PASS",
+          "detail": "connection A: bind TextEdit again in the same connection: PASS (front window is the fixture's own document; the policy asked for approval 0 time(s) during this bind)"
+        },
+        {
+          "name": "connection A: type and observe the marker",
+          "status": "PASS",
+          "detail": "connection A: type and observe the marker: PASS (accessibility value is exactly the typed marker; rendered value: plain; 21 characters, expected 21; screenshot jpeg 82749 bytes (metadata only))"
+        },
+        {
+          "name": "connection A: close",
+          "status": "PASS",
+          "detail": "connection A: close: PASS (exit 0)"
+        },
+        {
+          "name": "connection B: bind TextEdit",
+          "status": "PASS",
+          "detail": "connection B: bind TextEdit: PASS (front window is the fixture's own document; the policy asked for approval 1 time(s) during this bind)"
+        },
+        {
+          "name": "connection B: close only the fixture document",
+          "status": "PASS",
+          "detail": "connection B: close only the fixture document: PASS (super+w closed the verified fixture window; 5 other TextEdit window(s) remain, left as they are)"
+        },
+        {
+          "name": "connection B: close",
+          "status": "PASS",
+          "detail": "connection B: close: PASS (exit 0)"
+        },
+        {
+          "name": "every server the fixture started has exited",
+          "status": "PASS",
+          "detail": "every server the fixture started has exited: PASS (connection A: exit 0; connection B: exit 0)"
+        },
+        {
+          "name": "quit the TextEdit this run started, and only it",
+          "status": "BLOCKED",
+          "detail": "quit the TextEdit this run started, and only it: BLOCKED (the TextEdit this run started (pid 8427) was left running because its windows could not be confirmed to be only the fixture's (off-screen window remains; ownership cannot be inferred from visibility or launch time); nothing was signalled. Stop and report the remaining process and windows for a per-case cleanup decision; do not discard another document to force cleanup)"
+        },
+        {
+          "name": "remove the fixture document",
+          "status": "PASS",
+          "detail": "remove the fixture document: PASS (the temporary file and the directory created for it are gone)"
+        },
+        {
+          "name": "hand the front back to the application frontmost before the run",
+          "status": "PASS",
+          "detail": "hand the front back to the application frontmost before the run: PASS (com.apple.Terminal is frontmost again (it was com.apple.TextEdit))"
+        },
+        {
+          "name": "every result attests the pinned engine",
+          "status": "PASS",
+          "detail": "every result attests the pinned engine: PASS (9 result(s), each attesting the cua engine, version 0.1.0 build cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc)"
+        }
+      ],
+      "evidence": {
+        "nativeHelper": {
+          "before": [],
+          "after": [],
+          "reused": false
+        },
+        "textEdit": {
+          "runningBefore": false,
+          "launch": {
+            "captured": true,
+            "candidates": 1,
+            "waitedMs": 42,
+            "missed": false
+          },
+          "quitByFixture": false,
+          "leftRunning": {
+            "pid": 8427,
+            "at": 1792779840000
+          },
+          "quitWindowCheck": {
+            "status": "BLOCKED",
+            "detail": "off-screen window remains; ownership cannot be inferred from visibility or launch time",
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              }
+            ],
+            "remainingCount": 5,
+            "remainingWindows": [
+              {
+                "number": 19039,
+                "bounds": {
+                  "x": 0,
+                  "y": 940,
+                  "width": 500,
+                  "height": 500
+                }
+              },
+              {
+                "number": 19038,
+                "bounds": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 2560,
+                  "height": 30
+                }
+              },
+              {
+                "number": 19036,
+                "bounds": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 2560,
+                  "height": 30
+                }
+              },
+              {
+                "number": 19037,
+                "bounds": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 2560,
+                  "height": 30
+                }
+              },
+              {
+                "number": 19035,
+                "bounds": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 2560,
+                  "height": 30
+                }
+              }
+            ]
+          },
+          "runningAfter": true,
+          "startedByFixture": true
+        },
+        "screenshot": {
+          "bytes": 82749,
+          "format": "jpeg"
+        },
+        "elicitations": [
+          {
+            "connection": "connection A",
+            "method": "elicitation/create",
+            "app": "com.apple.TextEdit",
+            "message": "Allow Computer Use to use \"텍스트 편집기\"?",
+            "answer": "accept (session)"
+          },
+          {
+            "connection": "connection B",
+            "method": "elicitation/create",
+            "app": "com.apple.TextEdit",
+            "message": "Allow Computer Use to use \"텍스트 편집기\"?",
+            "answer": "accept (session)"
+          }
+        ],
+        "connections": [
+          {
+            "name": "connection A",
+            "bound": true,
+            "binds": [
+              {
+                "asked": 1,
+                "accepted": 1,
+                "error": false
+              },
+              {
+                "asked": 0,
+                "accepted": 0,
+                "error": false
+              }
+            ],
+            "declined": 0
+          },
+          {
+            "name": "connection B",
+            "bound": true,
+            "binds": [
+              {
+                "asked": 1,
+                "accepted": 1,
+                "error": false
+              }
+            ],
+            "declined": 0
+          }
+        ],
+        "guiInputStopped": null,
+        "engine": {
+          "engine": "cua",
+          "pinnedBy": "--engine",
+          "expected": {
+            "engine": "cua",
+            "version": "0.1.0",
+            "build": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc"
+          },
+          "attested": 9
+        },
+        "note": "cold start of the pinned helper is not shown here: see item 9"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Secrets: terminal-only masked set, key-only listing, live store roundtrip",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "secrets set requires a terminal",
+          "status": "PASS",
+          "detail": "without a terminal: exit 1, \"  run it in a terminal; in Claude Code, the cua plugin's /secret KEY stores a secret in the same store, for the session's project (/secret -g KEY: for every project), and is preferred\"; nothing was stored"
+        },
+        {
+          "name": "secrets set at a terminal: masked, typed twice, stored exactly, 0600 in 0700",
+          "status": "PASS",
+          "detail": "on a pty: exit 0, 2 prompt(s) answered, value never echoed; the file reads back exactly the typed value; directory 700, file 600"
+        },
+        {
+          "name": "secrets list returns keys only",
+          "status": "PASS",
+          "detail": "{ok, project, labels, scopes}: the stored key, in the global tier, and no value (1 key(s))"
+        },
+        {
+          "name": "secrets remove deletes the key's file",
+          "status": "PASS",
+          "detail": "exit 0; the key is gone"
+        },
+        {
+          "name": "the temporary store home is removed",
+          "status": "PASS",
+          "detail": "key file gone; home removed"
+        },
+        {
+          "name": "MCP secrets_list returns keys only",
+          "status": "PASS",
+          "detail": "verify.mjs: {\"status\":\"ok\",\"labelCount\":2}"
+        },
+        {
+          "name": "masked prompt: no-terminal refusal, nothing echoed, mismatch, empty and cancel store nothing",
+          "status": "BLOCKED",
+          "detail": "npm test was BLOCKED in item 1; see test/secrets-cli.test.mjs"
+        },
+        {
+          "name": "live: scripts/probe-secrets.mjs verdict",
+          "status": "PASS",
+          "detail": "scenario status PASS; 38 steps, all passed; informational: sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20); steps no phase expects: target-first value: teardown: PASS; target-replaced value: teardown: PASS; real-serve: teardown: PASS; real-serve sandbox disabled: teardown: PASS; fail-closed secrets off: teardown: PASS; fail-closed store unreadable: teardown: PASS"
+        },
+        {
+          "name": "live: preconditions and create (generated sentinel, cua secrets set at a pty, temporary $HOME)",
+          "status": "PASS",
+          "detail": "preconditions: PASS; create: PASS"
+        },
+        {
+          "name": "live: first substitution through store file → trusted wrapper → controlled target",
+          "status": "PASS",
+          "detail": "first value: paste substitution: PASS; first value: type_text substitution: PASS; first value: set_value substitution: PASS"
+        },
+        {
+          "name": "live: replace with a second generated sentinel and substitute it",
+          "status": "PASS",
+          "detail": "replace: PASS; replaced value: type_text substitution: PASS"
+        },
+        {
+          "name": "live: failure output stays value-free (induced and real vendor failures)",
+          "status": "PASS",
+          "detail": "first value: induced substituted-command failure: PASS; first value: cell timeout during a substituted call: PASS; real vendor: failure after substitution: PASS; real vendor: unknown label: PASS"
+        },
+        {
+          "name": "live: fail closed before any input (secrets off; store unreadable: the launch is refused)",
+          "status": "PASS",
+          "detail": "secrets off: type_text reference fails closed: PASS; secrets off: paste reference fails closed: PASS; secrets off: set_value reference fails closed: PASS; secrets off: close: PASS; store unreadable: the launch is refused: PASS"
+        },
+        {
+          "name": "live: every connection closed cleanly",
+          "status": "PASS",
+          "detail": "first value: close: PASS; replaced value: close: PASS; real serve: close: PASS; real serve (sandbox disabled): close: PASS"
+        },
+        {
+          "name": "live: no value in any observed channel or report",
+          "status": "PASS",
+          "detail": "scanner self-check: PASS; sentinel scan: PASS"
+        },
+        {
+          "name": "live: finally cleanup of the scenario-owned key and temporary homes",
+          "status": "PASS",
+          "detail": "cleanup: PASS (the probe's key file and its temporary homes were removed)"
+        },
+        {
+          "name": "live: every result attests the pinned cua engine",
+          "status": "PASS",
+          "detail": "every result attests the pinned engine: PASS (28 result(s), each attesting the cua engine, version 0.1.0 build cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc)"
+        },
+        {
+          "name": "UI delivery (optional, combined): the value in a fixture store",
+          "status": "PASS",
+          "detail": "secret: the value in a fixture store: PASS (a generated value stored under a generated key by cua secrets set at a pty, in a temporary $HOME)"
+        },
+        {
+          "name": "UI delivery (optional, combined): type the reference",
+          "status": "PASS",
+          "detail": "secret: type the reference: PASS (typeText({{secret:<KEY>}}) returned; nothing so far carried the value (MCP transport, server/runtime stderr))"
+        },
+        {
+          "name": "UI delivery (optional, combined): the document holds exactly the stored value (compared by hash inside the cell)",
+          "status": "PASS",
+          "detail": "secret: the document holds exactly the stored value (compared by hash inside the cell): PASS (the document holds the marker followed by exactly the stored value (SHA-256 computed inside the cell, compared by the controller); the value appears nowhere in the MCP transport or stderr)"
+        },
+        {
+          "name": "UI delivery (optional, combined): cleanup",
+          "status": "PASS",
+          "detail": "secret: cleanup: PASS (the generated key file and its temporary $HOME were removed)"
+        }
+      ],
+      "evidence": {
+        "liveSecrets": {
+          "status": "PASS",
+          "key": "CUA_PROBE_0CC85594E4548029",
+          "steps": [
+            {
+              "name": "preconditions",
+              "status": "PASS",
+              "detail": "runtime 26.928.40906-darwin-arm64; key CUA_PROBE_0CC85594E4548029 in a temporary $HOME; the cua engine pinned (CUA_NATIVE_ENGINE), version 0.1.0 build cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc"
+            },
+            {
+              "name": "create",
+              "status": "PASS",
+              "detail": "stored by cua secrets set, typed twice at its masked prompt on a pty, in the probe's temporary $HOME"
+            },
+            {
+              "name": "first value: paste substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "first value: type_text substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "first value: set_value substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "first value: ordinary input",
+              "status": "PASS",
+              "detail": "ordinary text reaches the target unchanged"
+            },
+            {
+              "name": "first value: unsupported method",
+              "status": "PASS",
+              "detail": "a marker in press_key is delegated literally, not expanded"
+            },
+            {
+              "name": "first value: unknown label",
+              "status": "PASS",
+              "detail": "failed before input with secret_not_found"
+            },
+            {
+              "name": "first value: invalid label",
+              "status": "PASS",
+              "detail": "failed before input with invalid_secret_label"
+            },
+            {
+              "name": "first value: unsupported shape",
+              "status": "PASS",
+              "detail": "failed before input with unsupported_secret_shape"
+            },
+            {
+              "name": "first value: induced substituted-command failure",
+              "status": "PASS",
+              "detail": "the target received the value and threw an error containing it; the cell got only the fixed diagnostic"
+            },
+            {
+              "name": "first value: cell timeout during a substituted call",
+              "status": "PASS",
+              "detail": "the cell timed out while the target held the substituted request; node_repl logged the redacted cell source (stderr is scanned below)"
+            },
+            {
+              "name": "first value: target saw only what it should",
+              "status": "PASS",
+              "detail": "7 target calls recorded"
+            },
+            {
+              "name": "first value: close",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false
+              }
+            },
+            {
+              "name": "replace",
+              "status": "PASS",
+              "detail": "stored by cua secrets set, typed twice at its masked prompt on a pty, in the probe's temporary $HOME"
+            },
+            {
+              "name": "replaced value: type_text substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "replaced value: close",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false
+              }
+            },
+            {
+              "name": "real vendor: failure after substitution",
+              "status": "PASS",
+              "detail": "value-free diagnostic: type_text with secret \"CUA_PROBE_0CC85594E4548029\" failed (invalidApp) after the secret was read; it may have been partly entered. The runtime's error is withhe"
+            },
+            {
+              "name": "real vendor: unknown label",
+              "status": "PASS",
+              "detail": "fails before input with secret_not_found"
+            },
+            {
+              "name": "sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable",
+              "status": "PASS",
+              "detail": "4 trusted roots: state/codex ENOENT, src/services EPERM, src/secrets EPERM, vendor modules EPERM; run directory written, $TMPDIR written"
+            },
+            {
+              "name": "real serve: close",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false
+              }
+            },
+            {
+              "name": "sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20)",
+              "status": "INFO",
+              "detail": "writable: src/services, src/secrets, vendor modules; refused: state/codex (ENOENT); for comparison, own cwd written, tmpDir written; every file the probe wrote was removed and verified removed; accepted under the trust model (owner decision, #20): code integrity is the user's responsibility; the scoped default keeps them read-only"
+            },
+            {
+              "name": "real serve (sandbox disabled): close",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false
+              }
+            },
+            {
+              "name": "secrets off: type_text reference fails closed",
+              "status": "PASS",
+              "detail": "failed with secrets_disabled; the target received nothing"
+            },
+            {
+              "name": "secrets off: paste reference fails closed",
+              "status": "PASS",
+              "detail": "failed with secrets_disabled; the target received nothing"
+            },
+            {
+              "name": "secrets off: set_value reference fails closed",
+              "status": "PASS",
+              "detail": "failed with secrets_disabled; the target received nothing"
+            },
+            {
+              "name": "secrets off: close",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false
+              }
+            },
+            {
+              "name": "store unreadable: the launch is refused",
+              "status": "PASS",
+              "detail": "refused before the handshake with sandbox_state_invalid, naming the secret store, /private/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cua-probe-unreadable-pKrXBN/.config/claude-secrets; the target received nothing"
+            },
+            {
+              "name": "target-first value: teardown",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false,
+                "streamsComplete": true
+              }
+            },
+            {
+              "name": "target-replaced value: teardown",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false,
+                "streamsComplete": true
+              }
+            },
+            {
+              "name": "real-serve: teardown",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false,
+                "streamsComplete": true
+              }
+            },
+            {
+              "name": "real-serve sandbox disabled: teardown",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false,
+                "streamsComplete": true
+              }
+            },
+            {
+              "name": "fail-closed secrets off: teardown",
+              "status": "PASS",
+              "detail": {
+                "code": 0,
+                "signal": null,
+                "forced": false,
+                "stuck": false,
+                "streamsComplete": true
+              }
+            },
+            {
+              "name": "fail-closed store unreadable: teardown",
+              "status": "PASS",
+              "detail": {
+                "code": 1,
+                "signal": null,
+                "forced": false,
+                "stuck": false,
+                "streamsComplete": true
+              }
+            },
+            {
+              "name": "cleanup",
+              "status": "PASS",
+              "detail": "the probe's key file and its temporary homes were removed"
+            },
+            {
+              "name": "every result attests the pinned engine",
+              "status": "PASS",
+              "detail": "28 result(s), each attesting the cua engine, version 0.1.0 build cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc"
+            },
+            {
+              "name": "scanner self-check",
+              "status": "PASS",
+              "detail": "a generated value is found raw and as base64 at every byte offset"
+            },
+            {
+              "name": "sentinel scan",
+              "status": "PASS",
+              "detail": "no generated value (raw or base64) in 12 streams (target-first value MCP transport; target-first value stderr (serve, runtime, node_repl, kernel, trusted worker); target-replaced value MCP transport; target-replaced value stderr (serve, runtime, node_repl, kernel, trusted worker); real-serve MCP transport; real-serve stderr (serve, runtime, node_repl, kernel, trusted worker); real-serve sandbox disabled MCP transport; real-serve sandbox disabled stderr (serve, runtime, node_repl, kernel, trusted worker); fail-closed secrets off MCP transport; fail-closed secrets off stderr (serve, runtime, node_repl, kernel, trusted worker); fail-closed store unreadable MCP transport; fail-closed store unreadable stderr (serve, runtime, node_repl, kernel, trusted worker)) or in 1 runtime files read whole (0 symbolic links not followed)"
+            }
+          ],
+          "runtimeFiles": {
+            "scanned": 1,
+            "unread": [],
+            "symbolicLinks": 0
+          },
+          "channels": [
+            {
+              "name": "target-first value MCP transport",
+              "bytes": 31297,
+              "containsReference": true
+            },
+            {
+              "name": "target-first value stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "target-replaced value MCP transport",
+              "bytes": 22881,
+              "containsReference": true
+            },
+            {
+              "name": "target-replaced value stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "real-serve MCP transport",
+              "bytes": 26225,
+              "containsReference": true
+            },
+            {
+              "name": "real-serve stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "real-serve sandbox disabled MCP transport",
+              "bytes": 23703,
+              "containsReference": false
+            },
+            {
+              "name": "real-serve sandbox disabled stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "fail-closed secrets off MCP transport",
+              "bytes": 24942,
+              "containsReference": true
+            },
+            {
+              "name": "fail-closed secrets off stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "fail-closed store unreadable MCP transport",
+              "bytes": 162,
+              "containsReference": false
+            },
+            {
+              "name": "fail-closed store unreadable stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 398,
+              "containsReference": false
+            }
+          ]
+        },
+        "uiDelivery": {
+          "key": "CUA_ACCEPT_UI_D43BF95FCE94D303",
+          "callerKey": false
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Native input substitution: methods, rejection before dispatch, store refusals",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "exact reference expansion per method, ordinary input, invalid/missing/refused-file rejection before dispatch, value-free errors, unsupported shapes",
+          "status": "BLOCKED",
+          "detail": "npm test was BLOCKED in item 1; see test/services-sky.test.mjs, test/secrets-reference.test.mjs, test/services-sky-trust.test.mjs"
+        },
+        {
+          "name": "the store reads only a regular, owned, 0600 file without following links; every refusal is classified and value-free",
+          "status": "BLOCKED",
+          "detail": "npm test was BLOCKED in item 1; see test/secrets-store.test.mjs"
+        },
+        {
+          "name": "live: scripts/probe-secrets.mjs verdict",
+          "status": "PASS",
+          "detail": "scenario status PASS; 38 steps, all passed; informational: sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20); steps no phase expects: target-first value: teardown: PASS; target-replaced value: teardown: PASS; real-serve: teardown: PASS; real-serve sandbox disabled: teardown: PASS; fail-closed secrets off: teardown: PASS; fail-closed store unreadable: teardown: PASS"
+        },
+        {
+          "name": "live: first substitution through store file → trusted wrapper → controlled target",
+          "status": "PASS",
+          "detail": "first value: paste substitution: PASS; first value: type_text substitution: PASS; first value: set_value substitution: PASS"
+        },
+        {
+          "name": "live: ordinary input, unsupported method, unknown/invalid label, unsupported shape",
+          "status": "PASS",
+          "detail": "first value: ordinary input: PASS; first value: unsupported method: PASS; first value: unknown label: PASS; first value: invalid label: PASS; first value: unsupported shape: PASS; first value: target saw only what it should: PASS"
+        },
+        {
+          "name": "live: sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable",
+          "status": "PASS",
+          "detail": "sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable: PASS (4 trusted roots: state/codex ENOENT, src/services EPERM, src/secrets EPERM, vendor modules EPERM; run directory written, $TMPDIR written)"
+        },
+        {
+          "name": "live (informational): sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write, accepted under the trust model (#20)",
+          "status": "INFO",
+          "detail": "sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20): INFO (writable: src/services, src/secrets, vendor modules; refused: state/codex (ENOENT); for comparison, own cwd written, tmpDir written; every file the probe wrote was removed and verified removed; accepted under the trust model (owner decision, #20): code integrity is the user's responsibility; the scoped default keeps them read-only)"
+        },
+        {
+          "name": "live: fail closed before any input (secrets off; store unreadable: the launch is refused)",
+          "status": "PASS",
+          "detail": "secrets off: type_text reference fails closed: PASS; secrets off: paste reference fails closed: PASS; secrets off: set_value reference fails closed: PASS; secrets off: close: PASS; store unreadable: the launch is refused: PASS"
+        },
+        {
+          "name": "live: every result attests the pinned cua engine",
+          "status": "PASS",
+          "detail": "every result attests the pinned engine: PASS (28 result(s), each attesting the cua engine, version 0.1.0 build cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc)"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "lifecycle state machine, races, deadlines, EOF, elicitation routing, bounded teardown",
+          "status": "BLOCKED",
+          "detail": "npm test was BLOCKED in item 1; see test/mcp-lifecycle.test.mjs, test/mcp-server.test.mjs, test/mcp-upstream.test.mjs, test/serve-cli.test.mjs"
+        },
+        {
+          "name": "observed: cancel does not stop a running cell (it replies normally)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task after a cancelled cell ends",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task with work in flight rejects new work as task_ending and ends after it",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: uncertain completion fails closed (completion_timeout, native cleanup unconfirmed, exit 1, no runtime left)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: idle EOF closes cleanly with no runtime left",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "probe-lifecycle pinned the cua engine, every result attested it, and no closed connection holds its socket",
+          "status": "PASS",
+          "detail": "pinned cua (--engine) on the cua host; 7 result(s) attested"
+        },
+        {
+          "name": "per-connection app approvals observed by behaviour",
+          "status": "PASS",
+          "detail": "connection A: 2 binds, asked 1, 0; accepted 1, 0; declined 0; connection B: 1 bind, asked 1; accepted 1; declined 0"
+        }
+      ],
+      "evidence": {
+        "cancelReplyMs": 2509,
+        "uncertainExitCode": 1,
+        "idleCloseMs": 164
+      }
+    },
+    {
+      "id": 10,
+      "title": "Packaging, plugin README, tracked files, clean checkout",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "README: standalone requirements, limitations and exact commands",
+          "status": "PASS",
+          "detail": "mentions npm test, cua.mjs install, doctor, secrets set, claude-secrets, serve, claude mcp add, accept-native.mjs, Chrome"
+        },
+        {
+          "name": "plugin launches the standalone server; no Stop/SubagentStop hooks",
+          "status": "PASS",
+          "detail": "cua_repl: node --disable-sigusr1 ${CLAUDE_PLUGIN_ROOT}/cua-shim.mjs; shell hooks Elicitation"
+        },
+        {
+          "name": "nothing tracked is an archive, runtime, credential, log or machine-specific token",
+          "status": "PASS",
+          "detail": "3845 tracked files; forbidden: none; code/config naming this user's home or holding token-like strings: none (the mini's own layout is declared: 5 files, home rule only)"
+        },
+        {
+          "name": "package files: what runs and diagnoses; nothing else",
+          "status": "PASS",
+          "detail": "309 files"
+        },
+        {
+          "name": "existing MCP registration untouched",
+          "status": "PASS",
+          "detail": "no tracked code runs `claude` or edits ~/.claude; registration is documented (README) and never executed by acceptance"
+        },
+        {
+          "name": "clean clone: npm test",
+          "status": "BLOCKED",
+          "detail": "107 skipped and 0 TODO of 4282: required coverage did not run; not declared: 1 × \"calls the prompting Accessibility request: GitHub-hosted runners only (RUNNER_ENVIRONMENT=github-hosted)\"; 0 failed, 107 skipped, 0 TODO in 72.5 s",
+          "totals": {
+            "tests": 4282,
+            "pass": 4175,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 107,
+            "todo": 0
+          },
+          "diagnostics": {
+            "failures": [],
+            "truncated": false,
+            "complete": true
+          }
+        },
+        {
+          "name": "clean clone needs no research trees",
+          "status": "PASS",
+          "detail": "no code or config outside docs refers to the local research trees (citations in comments aside)"
+        }
+      ],
+      "evidence": {
+        "head": "5d8148fb",
+        "branch": "HEAD",
+        "workingTreeDirty": false,
+        "cloneRemoved": true
+      }
+    },
+    {
+      "id": 11,
+      "title": "cua's own sandbox (#115): the own host's deny list, writes, links and network, no codex",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "scoped: denied: store",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: ~/.config/cua",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: another session's run directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: the run directory is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: TMPDIR is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: a write outside the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a hard link of the store sentinel fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a clone (cp -c) of the store sentinel fails",
+          "status": "PASS",
+          "detail": "exit 1"
+        },
+        {
+          "name": "scoped: a TCP connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: an AF_UNIX connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: the kernel is Node itself, the supervisor's child, marked seatbelt",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: denied: store",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: ~/.config/cua",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: another session's run directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: the run directory is not writable",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: TMPDIR is not writable",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a write outside the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a hard link of the store sentinel fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a clone (cp -c) of the store sentinel fails",
+          "status": "PASS",
+          "detail": "exit 1"
+        },
+        {
+          "name": "default: a TCP connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: an AF_UNIX connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: the kernel is Node itself, the supervisor's child, marked seatbelt",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: ~/.config/cua",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: another session's run directory",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: the run directory is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: TMPDIR is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: a write outside the session succeeds",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root missing at launch is not created",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root created mid-session stays denied",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root created mid-session cannot be listed",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root missing at launch is not created (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root created mid-session stays denied (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root created mid-session cannot be listed (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "EPERM"
+        }
+      ],
+      "evidence": {
+        "modes": [
+          "scoped",
+          "default",
+          "disabled"
+        ],
+        "package": "@img/colour"
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "settle",
+  "device": "mini",
+  "started": "2026-10-23T21:35:00.418Z",
+  "finished": "2026-10-23T21:37:00.235Z",
+  "lanes": [
+    {
+      "host": "vendor",
+      "engine": "vendor",
+      "build": "26.928.40906-darwin-arm64",
+      "version": "26.924.1001281"
+    }
+  ],
+  "complete": true,
+  "verdict": "pass",
+  "problems": [],
+  "rows": [
+    {
+      "section": "settle",
+      "id": "textedit/settle",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "outcome": {
+        "settled": true
+      }
+    },
+    {
+      "section": "settle",
+      "id": "finder/settle",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "outcome": {
+        "settled": true
+      }
+    },
+    {
+      "section": "settle",
+      "id": "chrome/settle",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "chrome",
+      "outcome": {
+        "settled": true
+      }
+    },
+    {
+      "section": "settle",
+      "id": "electron/settle",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "electron",
+      "outcome": {
+        "settled": true
+      }
+    }
+  ],
+  "meta": {
+    "suite": "native-mac",
+    "commit": "2f71911eadc693a3ba089631639913a4b16b9348"
+  }
+}

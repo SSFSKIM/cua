@@ -1,0 +1,10 @@
+{
+  "source": "/Users/new/.claude/jobs/1ea561bc/tmp/117/hold11-item14-timeout.log",
+  "method": "JSON extracted from saved local console log; original verdict/operands unchanged",
+  "remoteOriginal": "/tmp/cua-m4.u5B2eG/onboarding-d0.json",
+  "remoteOriginalFetched": false,
+  "reason": "hold released; no further mini access",
+  "controller": "7c8efac437fe62c23ed762b05546c38d79f683ae",
+  "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "consoleExit": 3
+}

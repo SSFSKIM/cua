@@ -1,0 +1,14 @@
+{
+  "source": "unchanged original report and executor putback JSON fetched from /tmp/cua-m4.u5B2eG/",
+  "runtimeController": "929b817c19ea611d111e9d4ab40116fd3cd041da",
+  "actors": {
+    "console": "coordinator, SSH PTY/FIFO",
+    "recoveryAlert": "coordinator relays owner saw Accessibility request naming cua Engine, buttons Open System Settings and Deny; owner clicked Open System Settings",
+    "reportedToken": "other:answered because existing token vocabulary lacked that response",
+    "alertOrigin": "requesting process and exact TCC service not established from the recorded reply",
+    "inputObservation": "no answer received before five-minute cap; not inferred from silence",
+    "guiPutback": "coordinator reports IM re-added ON/Later, unsaved TextEdit document deleted and app quit, System Settings TERM",
+    "enginePutback": "executor protocol-stopped55385; narrow cold inspect75832 grants alltrue/signature/build/zeroclients, stopped again, independent finalRunningfalse"
+  },
+  "qualification": "Original BLOCKED verdict unchanged. Overall25-minute budget did not expire; owner-input observation five-minute cap did. Later explicit grant/approve/finalinput/cleanup stages not proven by separate putback. Open System Settings is not itself evidence that a grant changed."
+}

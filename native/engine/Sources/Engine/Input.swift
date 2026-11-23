@@ -211,10 +211,13 @@ struct InputMeta {
   }
 }
 
-/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName).
+/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName), in place of any meta it
+/// had, except the permission boundary's marker (Permissions.swift), which an input method's permissionsPending keeps.
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
-  error.extra["meta"] = meta.wire
+  var wire = meta.wire
+  if let permission = (error.extra["meta"] as? [String: Any])?["permission"] { wire["permission"] = permission }
+  error.extra["meta"] = wire
   return error
 }
 

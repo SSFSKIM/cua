@@ -37,8 +37,8 @@
 //   reaches the client again; an answer that arrives after its runtime stopped is remembered for its app and not
 //   forwarded.
 // - tools/list passes the runtime's tools through surface.mjs modelTools, which puts cua's rules ahead of the js
-//   description; on Linux their text rule follows `engine` ('vendor' | 'cua', the native engine the connection
-//   selected at its open; null without the computer surface, which keeps the vendor engine's rule).
+//   description; on either platform the computer rules follow `engine` ('vendor' | 'cua', the native engine the
+//   connection selected at its open; null without the computer surface, which keeps the vendor engine's rules).
 // - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
 //   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
 //   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).

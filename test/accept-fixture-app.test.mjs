@@ -4,7 +4,8 @@
 // mid-run, is never touched, and the front goes back to the app that had it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {awaitLaunch, captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
+import {awaitLaunch, captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, pidsOf, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
+import {readWindows as readWindowList} from '../scripts/accept/window-close.mjs';
 
 test('ps lstart text (C locale, UTC) parses to epoch ms; anything else is null', () => {
   assert.equal(parseLaunch('Sun Oct 18 02:51:07 2026    \n'), Date.parse('2026-10-18T02:51:07Z'));
@@ -62,14 +63,105 @@ test('restoreFront activates the previous front only when another app holds it, 
 const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
 const ours = {pid: 42, at: startedAt + 2000};
 // A cleanup with fakes: `running` pids and their launch times; `quit` records what it was asked to signal.
-async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}} = {}) {
+async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}, readWindows, launchWindows, pids = () => running} = {}) {
   const quitCalls = []; let front = 'com.apple.TextEdit';
-  const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch}, alone,
-    pids: () => running, launchOf: pid => launches[pid] ?? null,
+  const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch, launchWindows}, alone,
+    pids, launchOf: pid => launches[pid] ?? null, readWindows,
     quit: async pids => { quitCalls.push(pids); return {quit: pids, remaining: []}; },
     frontmost: () => front, activate: id => { front = id; }, sleep: async () => {}});
   return {r, quitCalls};
 }
+
+const offScreenWindows = Array.from({length: 5}, (_, i) => ({ownerPid: 42, number: 100 + i, onScreen: false, bounds: {x: -1000, y: 0, width: 400, height: 300}, title: 'private title never recorded'}));
+
+test('a restored off-screen document present at owned launch stays unsignalled even with the old launch classification', async () => {
+  // A minimized/other-Space document restored at launch is indistinguishable from the former "internal" inventory.
+  const restored = {ownerPid: 42, number: 300, onScreen: false, bounds: {x: 10, y: 20, width: 800, height: 600}, title: 'owner restored document'};
+  const launchWindows = {...ours, windows: [restored].map(({number, bounds}) => ({number, bounds}))};
+  const {r, quitCalls} = await cleanup({readWindows: async () => [restored], launchWindows});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.leftRunning, 42);
+  assert.deepEqual(r.launch, ours, 'leftover process evidence retains PID and start time');
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, /off-screen window remains/);
+  assert.deepEqual(r.windowCheck.remainingWindows, [{number: 300, bounds: {x: 10, y: 20, width: 800, height: 600}}]);
+  assert.ok(!JSON.stringify(r).includes('owner restored document'));
+});
+
+for (const [name, windows, reason] of [
+  ['off-screen windows', offScreenWindows, /off-screen window remains/],
+  ['a visible window', [{ownerPid: 42, number: 200, onScreen: true}], /on-screen window remains/],
+  ['unknown visibility', [{ownerPid: 42, number: 200}], /on-screen window remains/],
+  ['a foreign PID', [{ownerPid: 77, number: 200, onScreen: false}], /another PID/],
+  ['an unreadable window list', null, /unreadable/],
+]) test(`fresh pre-quit check: ${name} leaves the fixture process running, BLOCKED`, async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => windows});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.leftRunning, 42);
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, reason);
+  assert.equal(r.windowCheck.remainingCount, windows?.length ?? null);
+  assert.ok(!JSON.stringify(r).includes('private title'));
+});
+
+test('a fresh empty window list permits quitting only the recorded process', async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => []});
+  assert.deepEqual(quitCalls, [[42]]);
+  assert.equal(r.windowCheck.status, 'PASS');
+  assert.deepEqual(r.windowCheck.remainingWindows, []);
+});
+
+test('an unconfirmed document close still reports remaining windows and never authorizes a quit', async () => {
+  for (const windows of [offScreenWindows, []]) {
+    const {r, quitCalls} = await cleanup({alone: false, readWindows: async () => windows});
+    assert.deepEqual(quitCalls, []);
+    assert.equal(r.leftRunning, 42);
+    assert.equal(r.windowCheck.status, 'BLOCKED');
+    assert.equal(r.windowCheck.remainingCount, windows.length);
+  }
+});
+
+test('a failed window probe keeps cleanup blocked and the process unsignalled', async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => { throw new Error('probe failed'); }});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, /unreadable/);
+  assert.equal(r.windowCheck.remainingWindows, null);
+});
+
+// From the producer to the signal: the window read goes through window-close.mjs's readWindows for the recorded pid only,
+// and a failed probe (FrontWindowProbe's exit 3) signals nothing.
+test('the pre-quit window read is of the recorded pid alone, and a failed probe there signals nothing', async () => {
+  const asked = [];
+  const listed = await cleanup({readWindows: async (pids, options) => { asked.push([pids, options]); return []; }});
+  assert.deepEqual(asked, [[[42], {all: true}]], 'the recorded launch\'s pid, never a pgrep listing, and every window it has, visible or not');
+  assert.deepEqual(listed.quitCalls, [[42]]);
+  const failing = async () => { throw Object.assign(new Error('Command failed'), {code: 3, stdout: '{"error":"the window list could not be read"}'}); };
+  const {r, quitCalls} = await cleanup({readWindows: pids => readWindowList(pids, {exec: failing})});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.leftRunning, 42);
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, /unreadable/);
+});
+
+test('pidsOf: no process is an empty list, a pgrep that fails is an error, never "none running"', () => {
+  assert.deepEqual(pidsOf('TextEdit', {exec: () => '42\n7\n'}), [42, 7]);
+  assert.deepEqual(pidsOf('TextEdit', {exec: () => { throw Object.assign(new Error('exit 1'), {status: 1}); }}), []);
+  for (const error of [Object.assign(new Error('exit 2'), {status: 2}), Object.assign(new Error('spawn'), {code: 'ENOENT'})])
+    assert.throws(() => pidsOf('TextEdit', {exec: () => { throw error; }}), /pgrep/);
+});
+
+test('a pgrep failure after the quit leaves the cleanup\'s report of earlier processes unknown, not empty', async () => {
+  const {r} = await cleanup({pids: () => { throw new Error('pgrep failed'); }, readWindows: async () => []});
+  assert.equal(r.keptBefore, null);
+});
+
+test('a PID reused during the window check is not signalled', async () => {
+  const launches = {42: ours.at};
+  const {r, quitCalls} = await cleanup({launches, readWindows: async () => { launches[42]++; return []; }});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.live, false);
+});
 
 test('cleanup: the recorded launch, confirmed alone, is quit; a TextEdit running before is kept; the front is handed back', async () => {
   const {r, quitCalls} = await cleanup();

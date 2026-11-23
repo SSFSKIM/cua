@@ -1,0 +1,811 @@
+{
+  "schema": "native-mac-1",
+  "suite": "native-mac",
+  "device": "mini",
+  "platform": "darwin",
+  "host": "cua",
+  "engine": "cua",
+  "sitting": "2026-10-23T21:33:58.263Z",
+  "commit": "2f71911eadc693a3ba089631639913a4b16b9348",
+  "approvedRuntime": "/Users/new/Library/Application Support/cua-spike-vendor",
+  "approvedEngine": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+  "started": "2026-10-23T21:38:20.602Z",
+  "plan": {
+    "scenes": [
+      "textedit",
+      "finder",
+      "chrome",
+      "electron"
+    ]
+  },
+  "problems": [],
+  "scenes": {
+    "textedit": {
+      "sideReads": [
+        {
+          "read": "observe",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "x": 309,
+            "y": 103,
+            "width": 610,
+            "height": 860
+          },
+          "timings": {
+            "nodes": 61,
+            "screenshotWindowNumberMs": 0.149,
+            "monitorMs": 0.496,
+            "prepareMs": 0.292,
+            "screenshotEncodeMs": 7.673,
+            "webShaped": false,
+            "screenshotWriteMs": 0.293,
+            "screenshotWindowListMs": 0.838,
+            "markdownMs": 0.498,
+            "focusableMs": 1.456,
+            "resolveMs": 0.012,
+            "estimatedBytes": 39250,
+            "focusMs": 0.266,
+            "menuBarMs": 0.426,
+            "actionsMs": 5.19,
+            "attributesMs": 32.262,
+            "fetchFailures": 0,
+            "windowMs": 0.078,
+            "screenshotJoinMs": 8.483,
+            "markdownFetches": 1,
+            "settableMs": 1.92,
+            "walkMs": 45.185,
+            "totalMs": 56.875,
+            "screenshotCaptureMs": 44.871,
+            "screenshotContentCached": true,
+            "watchedProcesses": 1,
+            "actionDescriptionsMs": 0.037
+          }
+        },
+        {
+          "read": "verify",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "x": 309,
+            "width": 610,
+            "height": 860,
+            "y": 103
+          },
+          "timings": {
+            "nodes": 61,
+            "screenshotWindowNumberMs": 0.064,
+            "monitorMs": 0.419,
+            "prepareMs": 0.204,
+            "screenshotEncodeMs": 9.958,
+            "webShaped": false,
+            "screenshotWriteMs": 0.388,
+            "screenshotWindowListMs": 0.517,
+            "markdownMs": 0.8,
+            "focusableMs": 1.722,
+            "resolveMs": 0.011,
+            "estimatedBytes": 39250,
+            "focusMs": 0.346,
+            "menuBarMs": 0.404,
+            "actionsMs": 8.433,
+            "attributesMs": 36.294,
+            "fetchFailures": 0,
+            "windowMs": 0.121,
+            "screenshotJoinMs": 0.001,
+            "markdownFetches": 1,
+            "settableMs": 3.855,
+            "walkMs": 60.287,
+            "totalMs": 63.364,
+            "screenshotCaptureMs": 44.333,
+            "screenshotContentCached": true,
+            "watchedProcesses": 1,
+            "actionDescriptionsMs": 0.057
+          }
+        },
+        {
+          "read": "verify",
+          "step": "action",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "y": 103,
+            "width": 610,
+            "x": 309,
+            "height": 860
+          },
+          "timings": {
+            "nodes": 61,
+            "screenshotWindowNumberMs": 0.051,
+            "monitorMs": 0.223,
+            "prepareMs": 0.126,
+            "screenshotEncodeMs": 4.598,
+            "webShaped": false,
+            "screenshotWriteMs": 0.196,
+            "screenshotWindowListMs": 0.277,
+            "markdownMs": 1.738,
+            "focusableMs": 1.13,
+            "resolveMs": 0.007,
+            "estimatedBytes": 39250,
+            "focusMs": 0.186,
+            "menuBarMs": 0.214,
+            "actionsMs": 4.691,
+            "attributesMs": 34.296,
+            "fetchFailures": 0,
+            "windowMs": 0.057,
+            "screenshotJoinMs": 0.001,
+            "markdownFetches": 1,
+            "settableMs": 3.174,
+            "walkMs": 53.675,
+            "totalMs": 55.301,
+            "screenshotCaptureMs": 44.127,
+            "screenshotContentCached": true,
+            "watchedProcesses": 1,
+            "actionDescriptionsMs": 0.023
+          }
+        }
+      ],
+      "fixedAttempts": 1,
+      "frame": {
+        "x": 309,
+        "width": 610,
+        "height": 860,
+        "y": 103
+      },
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    },
+    "finder": {
+      "sideReads": [
+        {
+          "read": "observe",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "height": 520,
+            "x": 80,
+            "y": 80,
+            "width": 920
+          },
+          "timings": {
+            "focusMs": 0.106,
+            "monitorMs": 0.21,
+            "menuBarMs": 0.273,
+            "watchedProcesses": 1,
+            "totalMs": 99.677,
+            "focusableMs": 7.199,
+            "screenshotJoinMs": 0.006,
+            "settableMs": 3.205,
+            "webShaped": false,
+            "walkMs": 97.805,
+            "screenshotContentCached": true,
+            "disclosableMs": 0.746,
+            "windowMs": 0.076,
+            "selectableMs": 3.736,
+            "fetchFailures": 0,
+            "attributesMs": 59.124,
+            "screenshotEncodeMs": 5.416,
+            "markdownMs": 2.639,
+            "resolveMs": 0.006,
+            "actionsMs": 11.885,
+            "estimatedBytes": 178528,
+            "widthMs": 0.21,
+            "actionDescriptionsMs": 0.088,
+            "nodes": 264,
+            "prepareMs": 0.142,
+            "screenshotWindowListMs": 0.302,
+            "markdownFetches": 22,
+            "screenshotWriteMs": 0.186,
+            "screenshotCaptureMs": 32.705,
+            "screenshotWindowNumberMs": 0.047
+          }
+        },
+        {
+          "read": "verify",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "height": 520,
+            "x": 80,
+            "y": 80,
+            "width": 920
+          },
+          "timings": {
+            "focusMs": 0.094,
+            "monitorMs": 0.718,
+            "menuBarMs": 0.772,
+            "watchedProcesses": 1,
+            "totalMs": 116.84,
+            "focusableMs": 7.13,
+            "screenshotJoinMs": 0.001,
+            "settableMs": 3.221,
+            "webShaped": false,
+            "walkMs": 111.753,
+            "screenshotContentCached": true,
+            "disclosableMs": 0.766,
+            "windowMs": 0.188,
+            "selectableMs": 3.797,
+            "fetchFailures": 0,
+            "attributesMs": 71.487,
+            "screenshotEncodeMs": 6.786,
+            "markdownMs": 2.947,
+            "resolveMs": 0.017,
+            "actionsMs": 12.812,
+            "estimatedBytes": 178528,
+            "widthMs": 0.36,
+            "actionDescriptionsMs": 0.14,
+            "nodes": 264,
+            "prepareMs": 0.435,
+            "screenshotWindowListMs": 5.122,
+            "markdownFetches": 22,
+            "screenshotWriteMs": 0.242,
+            "screenshotCaptureMs": 44.713,
+            "screenshotWindowNumberMs": 0.123
+          }
+        },
+        {
+          "read": "verify",
+          "step": "action",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "width": 920,
+            "y": 80,
+            "x": 80,
+            "height": 520
+          },
+          "timings": {
+            "focusMs": 0.097,
+            "monitorMs": 0.771,
+            "menuBarMs": 0.671,
+            "watchedProcesses": 1,
+            "totalMs": 120.663,
+            "screenshotJoinMs": 0.001,
+            "settableMs": 3.806,
+            "focusableMs": 8.517,
+            "webShaped": false,
+            "walkMs": 115.339,
+            "screenshotContentCached": true,
+            "disclosableMs": 0.854,
+            "windowMs": 0.192,
+            "selectableMs": 4.476,
+            "fetchFailures": 0,
+            "screenshotEncodeMs": 8.532,
+            "attributesMs": 69.97,
+            "resolveMs": 0.015,
+            "markdownMs": 3.146,
+            "actionsMs": 13.95,
+            "estimatedBytes": 178528,
+            "widthMs": 0.302,
+            "actionDescriptionsMs": 0.142,
+            "nodes": 264,
+            "prepareMs": 0.433,
+            "markdownFetches": 22,
+            "screenshotWindowListMs": 0.552,
+            "screenshotWriteMs": 0.298,
+            "screenshotWindowNumberMs": 0.051,
+            "screenshotCaptureMs": 51.658
+          }
+        }
+      ],
+      "fixedAttempts": 1,
+      "frame": {
+        "height": 520,
+        "x": 80,
+        "y": 80,
+        "width": 920
+      },
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    },
+    "chrome": {
+      "sideReads": [
+        {
+          "read": "observe",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "y": 60,
+            "width": 1000,
+            "height": 760,
+            "x": 80
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.083,
+            "monitorMs": 0.566,
+            "menuBarMs": 0.641,
+            "watchedProcesses": 1,
+            "totalMs": 44.222,
+            "focusableMs": 3.269,
+            "screenshotJoinMs": 1.891,
+            "walkMs": 37.496,
+            "webShaped": true,
+            "settableMs": 0.147,
+            "screenshotContentCached": true,
+            "disclosableMs": 1.444,
+            "windowMs": 0.134,
+            "selectableMs": 2.458,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 1.061,
+            "screenshotEncodeMs": 5.859,
+            "attributesMs": 19.828,
+            "markdownMs": 0.237,
+            "resolveMs": 0.014,
+            "actionsMs": 4.848,
+            "estimatedBytes": 64864,
+            "enableMs": 0.174,
+            "actionDescriptionsMs": 0.024,
+            "nodes": 94,
+            "enablementPrior": "true",
+            "prepareMs": 0.232,
+            "screenshotWindowListMs": 0.567,
+            "markdownFetches": 1,
+            "screenshotWriteMs": 0.16,
+            "webAreaSeen": true,
+            "screenshotCaptureMs": 32.647,
+            "screenshotWindowNumberMs": 0.118
+          }
+        },
+        {
+          "read": "verify",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "height": 760,
+            "y": 60,
+            "x": 80,
+            "width": 1000
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.153,
+            "monitorMs": 0.546,
+            "menuBarMs": 0.632,
+            "watchedProcesses": 1,
+            "totalMs": 51.035,
+            "screenshotJoinMs": 1.634,
+            "focusableMs": 3.405,
+            "walkMs": 44.557,
+            "webShaped": true,
+            "settableMs": 0.193,
+            "screenshotContentCached": true,
+            "disclosableMs": 1.519,
+            "windowMs": 0.145,
+            "selectableMs": 2.984,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 1.07,
+            "screenshotEncodeMs": 9.732,
+            "attributesMs": 24.51,
+            "markdownMs": 0.235,
+            "resolveMs": 0.014,
+            "estimatedBytes": 64864,
+            "actionsMs": 6.416,
+            "enableMs": 0.15,
+            "actionDescriptionsMs": 0.038,
+            "enablementPrior": "true",
+            "nodes": 94,
+            "prepareMs": 0.255,
+            "screenshotWindowListMs": 0.328,
+            "markdownFetches": 1,
+            "screenshotWriteMs": 0.323,
+            "webAreaSeen": true,
+            "screenshotCaptureMs": 35.847,
+            "screenshotWindowNumberMs": 0.054
+          }
+        },
+        {
+          "read": "verify",
+          "step": "action",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "height": 760,
+            "x": 80,
+            "y": 60,
+            "width": 1000
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.197,
+            "monitorMs": 0.491,
+            "menuBarMs": 0.516,
+            "watchedProcesses": 1,
+            "totalMs": 55.779,
+            "screenshotJoinMs": 3.388,
+            "focusableMs": 3.335,
+            "walkMs": 47.706,
+            "webShaped": true,
+            "settableMs": 0.148,
+            "screenshotContentCached": true,
+            "disclosableMs": 1.486,
+            "windowMs": 0.079,
+            "selectableMs": 3.062,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 1.249,
+            "attributesMs": 28.077,
+            "screenshotEncodeMs": 7.778,
+            "markdownMs": 0.42,
+            "resolveMs": 0.019,
+            "estimatedBytes": 64864,
+            "actionsMs": 6.388,
+            "enableMs": 0.143,
+            "actionDescriptionsMs": 0.047,
+            "nodes": 94,
+            "enablementPrior": "true",
+            "prepareMs": 0.401,
+            "markdownFetches": 1,
+            "screenshotWindowListMs": 0.697,
+            "screenshotWriteMs": 0.269,
+            "webAreaSeen": true,
+            "screenshotCaptureMs": 42.366,
+            "screenshotWindowNumberMs": 0.057
+          }
+        }
+      ],
+      "fixedAttempts": 1,
+      "frame": {
+        "height": 760,
+        "y": 60,
+        "x": 80,
+        "width": 1000
+      },
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    },
+    "electron": {
+      "sideReads": [
+        {
+          "read": "observe",
+          "step": "fixed 1",
+          "engine": "cua",
+          "problems": [
+            "page_filling"
+          ],
+          "frame": {
+            "y": 100,
+            "height": 560,
+            "x": 140,
+            "width": 720
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.086,
+            "monitorMs": 0.591,
+            "menuBarMs": 0.478,
+            "watchedProcesses": 1,
+            "focusRead": "AXError -25212",
+            "totalMs": 1181.56,
+            "screenshotJoinMs": 44.208,
+            "focusableMs": 0.764,
+            "webAreaFound": false,
+            "webShaped": true,
+            "walkMs": 15.772,
+            "screenshotContentCached": true,
+            "windowMs": 0.063,
+            "selectableMs": 0.336,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 0.583,
+            "screenshotEncodeMs": 6.796,
+            "attributesMs": 10.582,
+            "resolveMs": 0.006,
+            "estimatedBytes": 11826,
+            "webAreaWaitMs": 1117.198,
+            "actionsMs": 2.09,
+            "enableMs": 0.523,
+            "actionDescriptionsMs": 0.125,
+            "enabled": "AXManualAccessibility",
+            "nodes": 19,
+            "enablementPrior": "false",
+            "prepareMs": 0.146,
+            "markdownFetches": 0,
+            "screenshotWindowListMs": 0.981,
+            "screenshotWriteMs": 0.49,
+            "screenshotCaptureMs": 51.573,
+            "screenshotWindowNumberMs": 0.082
+          }
+        },
+        {
+          "read": "observe",
+          "step": "fixed 2",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "height": 560,
+            "width": 720,
+            "x": 140,
+            "y": 100
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.321,
+            "monitorMs": 0.362,
+            "menuBarMs": 0.337,
+            "watchedProcesses": 1,
+            "totalMs": 65.501,
+            "settableMs": 0.071,
+            "screenshotJoinMs": 36.182,
+            "walkMs": 23.3,
+            "webShaped": true,
+            "focusableMs": 2.086,
+            "screenshotContentCached": true,
+            "disclosableMs": 0.936,
+            "windowMs": 0.195,
+            "selectableMs": 1.469,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 1.347,
+            "attributesMs": 12.383,
+            "screenshotEncodeMs": 5.989,
+            "resolveMs": 0.016,
+            "estimatedBytes": 21535,
+            "actionsMs": 3.328,
+            "enableMs": 1.566,
+            "actionDescriptionsMs": 0.068,
+            "enabled": "AXManualAccessibility",
+            "enablementPrior": "false",
+            "nodes": 32,
+            "prepareMs": 0.414,
+            "markdownFetches": 0,
+            "screenshotWindowListMs": 3.967,
+            "screenshotWriteMs": 0.4,
+            "webAreaSeen": true,
+            "screenshotCaptureMs": 49.505,
+            "screenshotWindowNumberMs": 0.059
+          }
+        },
+        {
+          "read": "verify",
+          "step": "fixed 2",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "x": 140,
+            "y": 100,
+            "width": 720,
+            "height": 560
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.327,
+            "monitorMs": 0.814,
+            "menuBarMs": 0.393,
+            "watchedProcesses": 1,
+            "totalMs": 51.177,
+            "settableMs": 0.058,
+            "screenshotJoinMs": 25.883,
+            "walkMs": 19.97,
+            "webShaped": true,
+            "focusableMs": 1.484,
+            "screenshotContentCached": true,
+            "disclosableMs": 0.745,
+            "windowMs": 0.14,
+            "selectableMs": 1.067,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 1.151,
+            "attributesMs": 11.61,
+            "screenshotEncodeMs": 6.368,
+            "resolveMs": 0.014,
+            "estimatedBytes": 21535,
+            "actionsMs": 2.675,
+            "enableMs": 0.965,
+            "actionDescriptionsMs": 0.077,
+            "enabled": "AXManualAccessibility",
+            "enablementPrior": "false",
+            "nodes": 32,
+            "prepareMs": 0.26,
+            "markdownFetches": 0,
+            "screenshotWindowListMs": 0.524,
+            "screenshotWriteMs": 0.28,
+            "webAreaSeen": true,
+            "screenshotCaptureMs": 38.709,
+            "screenshotWindowNumberMs": 0.069
+          }
+        },
+        {
+          "read": "verify",
+          "step": "action",
+          "engine": "cua",
+          "problems": [],
+          "frame": {
+            "height": 560,
+            "x": 140,
+            "y": 100,
+            "width": 720
+          },
+          "timings": {
+            "chromium": true,
+            "focusMs": 0.233,
+            "monitorMs": 0.589,
+            "menuBarMs": 0.481,
+            "watchedProcesses": 1,
+            "totalMs": 60.863,
+            "settableMs": 0.042,
+            "screenshotJoinMs": 30.864,
+            "walkMs": 23.245,
+            "webShaped": true,
+            "focusableMs": 1.605,
+            "screenshotContentCached": true,
+            "disclosableMs": 0.846,
+            "windowMs": 0.141,
+            "selectableMs": 1.14,
+            "fetchFailures": 0,
+            "chromiumCheckMs": 1.546,
+            "attributesMs": 14.03,
+            "screenshotEncodeMs": 5.701,
+            "resolveMs": 0.015,
+            "estimatedBytes": 21534,
+            "actionsMs": 2.983,
+            "enableMs": 1.392,
+            "actionDescriptionsMs": 0.075,
+            "enabled": "AXManualAccessibility",
+            "nodes": 32,
+            "enablementPrior": "false",
+            "prepareMs": 0.37,
+            "markdownFetches": 0,
+            "screenshotWindowListMs": 0.743,
+            "screenshotWriteMs": 0.256,
+            "webAreaSeen": true,
+            "screenshotCaptureMs": 47.465,
+            "screenshotWindowNumberMs": 0.092
+          }
+        }
+      ],
+      "fixedAttempts": 2,
+      "frame": {
+        "x": 140,
+        "y": 100,
+        "width": 720,
+        "height": 560
+      },
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-23T21:38:31.471Z",
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-23T21:39:04.486Z",
+      "app": "com.apple.finder",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-23T21:39:35.059Z",
+      "app": "com.google.chrome.for.testing",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-23T21:39:54.548Z",
+      "app": "io.github.ssfskim.cua.fixture.electron",
+      "action": "accept"
+    }
+  ],
+  "complete": true,
+  "harness": {
+    "commit": "2f71911eadc693a3ba089631639913a4b16b9348",
+    "dirty": false
+  },
+  "frontmost": {
+    "bundleId": "com.apple.Terminal",
+    "putBack": {
+      "reactivated": true,
+      "inFront": true
+    }
+  },
+  "fixtures": {
+    "chrome": {
+      "version": "155.0.8059.84"
+    },
+    "electron": {
+      "electronVersion": "44.9.0",
+      "sourceHash": "faee60a202d5"
+    }
+  },
+  "engineStop": {
+    "start": {
+      "wasRunning": false
+    },
+    "end": {
+      "wasRunning": true,
+      "pid": 60253
+    }
+  },
+  "runtimeRelease": "26.928.40906-darwin-arm64",
+  "checkoutBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "approved": {
+    "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+    "engineVersion": "0.1.0",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "hardware": {
+    "model": "Mac14,12",
+    "chip": "Apple M2 Pro",
+    "memoryBytes": 17179869184
+  },
+  "os": {
+    "name": "macOS",
+    "version": "27.0",
+    "build": "26A428"
+  },
+  "display": {
+    "pixels": "5120 x 2880",
+    "resolution": "2560 x 1440",
+    "scale": 2,
+    "virtual": true
+  },
+  "engineAttestation": {
+    "attested": [
+      {
+        "engine": "cua",
+        "version": "0.1.0",
+        "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+      }
+    ],
+    "unattested": 0
+  },
+  "hostAttestation": {
+    "host": "cua",
+    "serverInfo": {
+      "name": "cua-repl-host",
+      "version": "0.5.0"
+    },
+    "_meta": {
+      "cua/serviceMs": 2.412,
+      "codex/nodeReplExecutionDurationMs": 73,
+      "cua/replHost": {
+        "host": "cua",
+        "version": "0.5.0"
+      },
+      "cua/nativeEngine": {
+        "engine": "cua",
+        "version": "0.1.0",
+        "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+      },
+      "cua/taskId": "3a049c6c-a755-4621-80a9-ebb4e9f4f530",
+      "cua/nativeExecution": {
+        "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+        "version": "v24.22.0"
+      },
+      "cua/sandboxLaunch": {
+        "launcher": "cua",
+        "tmpdir": "session"
+      }
+    }
+  },
+  "probeSettlement": {
+    "ok": true,
+    "survivors": [],
+    "probeWait": null
+  },
+  "preparationCleanup": {
+    "removed": true
+  },
+  "finished": "2026-10-23T21:40:24.305Z"
+}

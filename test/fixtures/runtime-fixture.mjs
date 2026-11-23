@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {loadPins, selectPin} from '../../src/runtime/manifest.mjs';
+import {fakeModuleTree} from './own-linux-runtime.mjs';
 
 export const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const REAL_PIN_FILE = join(REPO, 'runtime', 'releases', '26.928.40906-darwin-arm64.json');
@@ -128,9 +129,12 @@ const pinFor = host => selectPin(loadPins(), host ?? {platform: process.platform
 
 // A home whose active release is the checked-in pin of `host`, laid out with placeholder files (no vendor code), so
 // the CLI's real pin resolution finds it. Signatures are never checked on this path (resolveRuntime checks structure
-// only). `files` maps layout keys to file contents; executables start with "#!".
-export function forgeActiveRuntime(home, files = {}, {host} = {}) {
+// only). `files` maps layout keys to file contents; executables start with "#!". For a Linux host (#171 M6a), whose
+// resolution answers cua's own runtime, the home also holds the module tree of the checked-in lock, unless
+// `ownRuntime` is false (the home an older cua's install leaves: the vendor tree alone).
+export function forgeActiveRuntime(home, files = {}, {host, ownRuntime = true} = {}) {
   const pin = pinFor(host);
+  if (pin.platform === 'linux' && ownRuntime) fakeModuleTree(home, {platform: pin.platform, arch: pin.arch});
   const root = join(home, 'runtimes', pin.release);
   const dirs = new Set(['moduleDir', 'skyServiceApp']);
   for (const [key, rel] of Object.entries(pin.layout)) {

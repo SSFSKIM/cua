@@ -15,7 +15,7 @@ import {fileStore} from '../src/secrets/store.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {LINUX_HOST_NOTES} from '../src/mcp/surface.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
-import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {helperFor} from '../src/sandbox/linux.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
@@ -52,8 +52,8 @@ test('a real Linux connection: Linux host notes, secrets_list lists the store, t
   // its supervisor, logging under CODEX_HOME; the own host's Node, the helper check and the user-namespace probe are
   // injected.
   const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
-  const runtime = resolveRuntime({home, host: LINUX});
-  const prepareLaunch = launch => ({...launch, command: runtime.paths.node, args: [runtime.paths.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+  const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
+  const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
     resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'})});
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };

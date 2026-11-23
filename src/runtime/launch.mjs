@@ -191,6 +191,7 @@ import {assertTrustedServicesContained} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
 import {NODE_FLOOR, managedNode, nodeVersion} from './managed-node.mjs';
+import {vendorLinuxRuntime} from './manifest.mjs';
 import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {helperFor} from '../sandbox/linux.mjs';
@@ -289,7 +290,13 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
   env.TMPDIR = sessionTmp;
   if (linux) Object.assign(env, desktopSessionEnv(ambient));
+  // A Linux computer session on the vendor's engine takes the helper and the service from the vendor's tree, and trusts
+  // its modules, which that service imports. A Linux runtime resolved since #171 M6a is cua's own and names none of
+  // them, so the tree is found by its pin here, until M6a's T3 resolves it at the selection.
+  const vendorEngine = linux && enabled.includes('computer') && replHost.engine?.engine !== 'cua'
+    ? (p.skyLinuxBin ? p : vendorLinuxRuntime({home: owned.home, host: {platform: 'linux', arch: runtime.manifest.arch}}).paths) : null;
   const trustedCodePaths = own ? [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR, BIN_DIR] : [p.moduleDir, SANDBOX_DIR, BIN_DIR];
+  if (vendorEngine && !trustedCodePaths.includes(vendorEngine.moduleDir)) trustedCodePaths.push(vendorEngine.moduleDir);
   Object.assign(env, {PATH: FIXED_PATH}, denyRead ? {CUA_SANDBOX_DENY_READ: JSON.stringify(denyRead)} : {}, compat ? {CODEX_HOME: owned.codexHome} : {});
   Object.assign(env, own
     ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
@@ -324,7 +331,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     if (linux) {
       Object.assign(env, linuxEngine
         ? {CUA_SKY_SERVICE: LINUX_ENGINE_SERVICE, CUA_ENGINE_BIN: linuxEngine.path, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode}
-        : {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
+        : {OAI_SKY_LINUX_BIN: vendorEngine.skyLinuxBin, CUA_SKY_SERVICE: vendorEngine.skyVendorService});
     } else {
       Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode,
         ...cursorEnv(cursor ?? cursorContext({env: ambient}))}

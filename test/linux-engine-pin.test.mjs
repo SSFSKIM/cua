@@ -5,21 +5,25 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {PIN_PATH, assetName, parseSha256Sums, pinRelease, versionOfTag} from '../scripts/linux-engine-pin.mjs';
+import {PIN_PATH, RECORD_PATH, assetName, parseSha256Sums, pinRelease, versionOfTag} from '../scripts/linux-engine-pin.mjs';
+import {loadLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {REPO} from './fixtures/runtime-fixture.mjs';
 
 const COMMIT = 'a'.repeat(40);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
-// A checkout whose engine is at `version`.
+// A checkout whose engine is at `version`, with the checked-in Linux runtime record (its engine at whatever this
+// checkout's pin says).
 function checkout(t, version = '0.1.0') {
   const root = mkdtempSync(join(tmpdir(), 'cua-engine-pin-'));
   t.after(() => rmSync(root, {recursive: true, force: true}));
   mkdirSync(join(root, 'native/linux-engine'), {recursive: true});
   writeFileSync(join(root, 'native/linux-engine/Cargo.toml'),
     `[package]\nname = "cua-linux-engine"\n# a comment\nversion = "${version}"\nedition = "2024"\n\n[dependencies]\nserde = { version = "1.0.228" }\n`);
+  cpSync(join(REPO, RECORD_PATH), join(root, RECORD_PATH));
   return root;
 }
 
@@ -138,4 +142,53 @@ test('a release built from other engine sources than the checkout\'s is refused:
   const diff = calls.find(c => c[0] === 'git');
   assert.deepEqual(diff.slice(-5), ['--quiet', COMMIT, 'HEAD', '--', 'native/linux-engine']);
   assert.equal(calls.some(c => c[1] === 'release'), false);
+});
+
+// #171 M6a: the Linux runtime record (runtime/linux-runtime.json) repeats the engine pin's version, so the pin script
+// writes both, and an engine release stays one command (the M6a pre-flight's §2).
+
+test('the script rewrites the Linux runtime record\'s engine version with the pin, and nothing else in it', t => {
+  const root = checkout(t);
+  const before = readFileSync(join(root, RECORD_PATH), 'utf8');
+  pinRelease({tag: 'linux-engine-v0.1.0', root, run: fake().run});
+  const expected = {...JSON.parse(before), engine: {version: '0.1.0'}};
+  assert.equal(readFileSync(join(root, RECORD_PATH), 'utf8'), `${JSON.stringify(expected, null, 2)}\n`);
+});
+
+test('a refused release leaves the record as it was; a record missing or malformed refuses before anything is fetched', t => {
+  let root = checkout(t);
+  const before = readFileSync(join(root, RECORD_PATH), 'utf8');
+  assert.throws(() => pinRelease({tag: 'linux-engine-v0.1.0', root, run: fake({attested: []}).run}), /gh attestation verify failed/);
+  assert.equal(readFileSync(join(root, RECORD_PATH), 'utf8'), before);
+
+  for (const [name, plant] of [['missing', r => rmSync(join(r, RECORD_PATH))], ['malformed', r => writeFileSync(join(r, RECORD_PATH), '{"schema": 1}\n')]]) {
+    root = checkout(t);
+    plant(root);
+    const {run, calls} = fake();
+    assert.throws(() => pinRelease({tag: 'linux-engine-v0.1.0', root, run}), /runtime\/linux-runtime\.json/, name);
+    assert.deepEqual(calls, [], name);
+    assert.equal(existsSync(join(root, PIN_PATH)), false, name);
+  }
+});
+
+// The merge this branch will take: main pins engine 0.4.4 while the record here says 0.4.3. The pins alone moved, the
+// record no longer loads; the script run for that release rewrites it, and the record loads again against every pin.
+test('a checkout whose engine pin moved past its record: the record refuses to load until the script, run for that release, rewrites it', t => {
+  const root = checkout(t, '0.4.4');
+  for (const rel of ['runtime/linux-runtime.json', 'runtime/modules', 'runtime/releases/node', 'runtime/sandbox/linux-sandbox.json', 'runtime/engine/linux-engine.json'])
+    cpSync(join(REPO, rel), join(root, rel), {recursive: true});
+  const files = {file: join(root, RECORD_PATH), modulesDir: join(root, 'runtime/modules'), nodePinsDir: join(root, 'runtime/releases/node'),
+    helperPinFile: join(root, 'runtime/sandbox/linux-sandbox.json'), enginePinFile: join(root, PIN_PATH)};
+  const was = JSON.parse(readFileSync(files.file, 'utf8')).engine.version;
+  assert.notEqual(was, '0.4.4');
+  const {run} = fake({tag: 'linux-engine-v0.4.4', version: '0.4.4'});
+  const merged = {version: '0.4.4', release: 'linux-engine-v0.4.4', assets: Object.fromEntries(['x64', 'arm64'].map(arch =>
+    [arch, {url: `https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.4/${assetName('0.4.4', arch)}`, sha256: sha256(Buffer.from(`${arch} engine`))}]))};
+  writeFileSync(files.enginePinFile, `${JSON.stringify(merged, null, 2)}\n`);
+  for (const host of [{platform: 'linux', arch: 'x64'}, {platform: 'linux', arch: 'arm64'}])
+    assert.throws(() => loadLinuxRuntime({host, ...files}), error => error.code === 'invalid_pin' && error.message.includes(was) && error.message.includes('0.4.4'));
+  pinRelease({tag: 'linux-engine-v0.4.4', root, run});
+  assert.deepEqual(pinned(root), merged);
+  for (const host of [{platform: 'linux', arch: 'x64'}, {platform: 'linux', arch: 'arm64'}])
+    assert.equal(loadLinuxRuntime({host, ...files}).engine.version, '0.4.4');
 });

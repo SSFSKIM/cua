@@ -10,16 +10,23 @@
 // It refuses a release whose version is not the checkout's native/linux-engine/Cargo.toml, or whose commit's engine
 // sources differ from HEAD's: the pin is committed to the pull request the release was built from, and names the
 // engine that pull request merges. Nothing is written unless every check passes.
+//
+// The Linux runtime record, runtime/linux-runtime.json (#171 M6a; src/runtime/manifest.mjs), repeats the engine pin's
+// version, and its load refuses a record that disagrees with the pin. So the script rewrites the record's
+// `engine.version` with the pin and changes nothing else in it, and an engine release stays one command. A record
+// missing or malformed refuses before anything is fetched.
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {parseLinuxRuntime} from '../src/runtime/manifest.mjs';
 
 export const REPO = 'SSFSKIM/cua';
 export const WORKFLOW = '.github/workflows/linux-engine.yml';
 export const PIN_PATH = 'runtime/engine/linux-engine.json';
+export const RECORD_PATH = 'runtime/linux-runtime.json';
 export const ENGINE_DIR = 'native/linux-engine';
 export const ARCHES = ['x64', 'arm64'];
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -66,6 +73,7 @@ export function pinRelease({tag, root = ROOT, run = runCommand}) {
   const checkoutVersion = cargoVersion(readFileSync(join(root, ENGINE_DIR, 'Cargo.toml'), 'utf8'));
   if (checkoutVersion !== version)
     throw new Error(`${ENGINE_DIR}/Cargo.toml is ${checkoutVersion}, not the release's ${version}: pin from the checkout the release was built from`);
+  const record = readRecord(root);
 
   const commit = must(run('gh', ['api', `repos/${REPO}/commits/${tag}`, '--jq', '.sha']), `resolving ${tag}`).trim();
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`${tag} resolves to ${JSON.stringify(commit)}, not a commit`);
@@ -93,10 +101,19 @@ export function pinRelease({tag, root = ROOT, run = runCommand}) {
     const pin = {version, release: tag, assets};
     mkdirSync(dirname(join(root, PIN_PATH)), {recursive: true});
     writeFileSync(join(root, PIN_PATH), `${JSON.stringify(pin, null, 2)}\n`);
+    writeFileSync(join(root, RECORD_PATH), `${JSON.stringify({...record, engine: {version}}, null, 2)}\n`);
     return pin;
   } finally {
     rmSync(dir, {recursive: true, force: true});
   }
+}
+
+// The checkout's Linux runtime record, parsed as strictly as the runtime parses it.
+function readRecord(root) {
+  const file = join(root, RECORD_PATH);
+  let json;
+  try { json = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { throw new Error(`${RECORD_PATH} is not readable JSON (${error.code ?? error.message}): the engine pin is written with it`); }
+  return parseLinuxRuntime(json, {file: RECORD_PATH});
 }
 
 function runCommand(command, args) {

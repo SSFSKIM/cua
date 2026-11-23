@@ -27,7 +27,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {isRealDirectory} from './manifest.mjs';
+import {isRealDirectory, ownInstaller} from './manifest.mjs';
 import {assertTargetFree, download, moveIntoPlace, verifyArchive} from './install.mjs';
 import {unpackTarball} from './tarball.mjs';
 
@@ -53,7 +53,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const summary = problems => problems.slice(0, 5).join('; ') + (problems.length > 5 ? `; and ${problems.length - 5} more` : '');
 
-export const moduleRecoveryHint = root => `stop any \`cua serve\` using it, remove ${root}, then run \`cua install\` again`;
+export const moduleRecoveryHint = root => `stop any \`cua serve\` using it, remove ${root}, then ${ownInstaller().hint}`;
 
 // The host a closure is computed for: npm's os and cpu names, and on Linux the C library, which decides between the
 // glibc and musl builds of a native package.

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {existsSync, readFileSync, readdirSync, realpathSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
-import {parsePin, resolveRuntime} from '../src/runtime/manifest.mjs';
+import {parsePin, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {scratch, debFixture, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
@@ -44,13 +44,13 @@ for (const arch of ['x64', 'arm64']) {
 test('an installed Linux release resolves, re-installs as a no-op without the archive, and runtime use selects it', async t => {
   const ctx = setup(t);
   await install(ctx);
-  const runtime = resolveRuntime({home: ctx.home, pins: [ctx.pin], host: ctx.host});
+  const runtime = vendorLinuxRuntime({home: ctx.home, pins: [ctx.pin], host: ctx.host});
   assert.equal('codexCli' in runtime.paths, false);
   assert.equal(runtime.paths.skyLinuxBin, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
   const again = await install(ctx, {archivePath: join(ctx.dir, 'gone.deb')});
   assert.equal(again.changed, false);
   assert.equal((await useRuntime({home: ctx.home, release: ctx.pin.release, pins: [ctx.pin], verifySignatures: noSignatures, host: ctx.host})).release, ctx.pin.release);
-  assert.throws(() => resolveRuntime({home: ctx.home, pins: [ctx.pin], host: {platform: 'darwin', arch: 'arm64'}}), expectCode('unsupported_platform'));
+  assert.throws(() => vendorLinuxRuntime({home: ctx.home, pins: [ctx.pin], host: {platform: 'darwin', arch: 'arm64'}}), expectCode('unsupported_platform'));
 });
 
 test('a missing ar, tar or xz is refused before any download, naming the tool and the package that provides it', async t => {

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "platform": "linux",
+  "modules": {
+    "lock": "b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c"
+  },
+  "node": {
+    "version": "24.22.0"
+  },
+  "sandbox": {
+    "upstreamTag": "rust-v0.163.0"
+  },
+  "engine": {
+    "version": "0.4.3"
+  }
+}

@@ -17,7 +17,7 @@ import {assertSandboxConfines} from '../src/runtime/sandbox.mjs';
 import {bwrapUserns} from '../src/runtime/linux-desktop.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends, listingSandboxMode} from '../src/profiles/inventory.mjs';
-import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 
@@ -149,7 +149,8 @@ test('a disabled connection lists its profiles under disabled, unprobed, where a
   // Linux runs cua's own host; the fake release's upstream stands in for its supervisor, in the listing too.
   const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SANDBOX: 'disabled'};
   const runtime = resolveRuntime({home, host: LINUX});
-  const prepareLaunch = launch => ({...launch, command: runtime.paths.node, args: [runtime.paths.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+  const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
+  const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
   const verifyHelper = helperCheck();
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, resolveOwnNode: ownNode, prepareLaunch, verifyHelper,
     listBackends: () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox: 'disabled', probeUserns: probe, verifyHelper, resolveOwnNode: ownNode, prepareLaunch}),

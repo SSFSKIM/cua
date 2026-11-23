@@ -18,7 +18,7 @@ import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {openConnection} from '../src/mcp/connection.mjs';
-import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
@@ -493,12 +493,12 @@ test('a Linux connection shows the js rule of the engine it selected', async t =
   writeFileSync(engineBin, '#!/bin/sh\n', {mode: 0o755});
   for (const [selected, rule] of [['cua', CUA_TEXT_RULE], ['vendor', GTK3_RULE]]) {
     const home = fakeInstalledHome(t, {host: LINUX});
-    const runtime = resolveRuntime({home, host: LINUX});
+    const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
     const input = new PassThrough(), output = new PassThrough();
     const frames = [];
     createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
     const env = {PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
-    const prepareLaunch = launch => ({...launch, command: runtime.paths.node, args: [runtime.paths.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+    const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
     const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
       resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'}),
       engine: {config: () => ({engine: selected}), installed: () => ({path: engineBin})}});

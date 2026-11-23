@@ -59,6 +59,11 @@ test('the npm package carries the ModuleTree\'s pin: its package file, its lock 
   for (const path of ['runtime/modules/package.json', 'runtime/modules/package-lock.json', 'runtime/modules/provenance.json']) assert.ok(files.has(path), path);
 });
 
+// #171 M6a: every Linux connection resolves cua's own runtime from runtime/linux-runtime.json (src/runtime/manifest.mjs).
+test('the npm package carries the Linux runtime record', () => {
+  assert.ok(packed().has('runtime/linux-runtime.json'));
+});
+
 test('the package floor stays Node 22 while the own host\'s floor is Node 24, resolved per connection', () => {
   const {engines} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(engines.node, '^22.14 || >=23.7', 'cua itself, and the vendor host route, keep running on Node 22');

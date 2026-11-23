@@ -24,7 +24,7 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
     assert.equal(report.ok, false);
     const installed = report.checks.find(c => c.name === 'runtime.installed');
     assert.equal(installed.status, 'fail');
-    assert.match(installed.detail, /cua install/);
+    assert.match(installed.detail, process.platform === 'linux' ? / `node \S+\/bin\/cua\.mjs install`/ : /cua install/);  // Linux: this cua's own installer (#171 M6a)
     for (const c of report.checks) assert.ok(['pass', 'warn', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
     for (const name of ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'])
       assert.equal(report.checks.find(c => c.name === name)?.status, 'skip', name);

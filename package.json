@@ -26,6 +26,7 @@
     "runtime/sandbox/",
     "runtime/engine/",
     "runtime/modules/",
+    "runtime/linux-runtime.json",
     "scripts/probe/lib.mjs",
     "scripts/probe/pinned-engine.mjs",
     "scripts/accept/window-close.mjs",

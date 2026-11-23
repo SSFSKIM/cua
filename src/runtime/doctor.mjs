@@ -82,7 +82,7 @@ import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
-import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
+import {loadPins, selectPin, locateRuntime, recoveryHint, vendorLinuxRuntime} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
@@ -139,7 +139,9 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
 
   let runtime;
   try {
-    runtime = locateRuntime({home, pins, host});
+    // On Linux these rows describe the vendor's tree, which resolution no longer answers there (#171 M6a T2): until
+    // T4 gives Linux the own runtime's rows (the pre-flight's §4.5), they find it by its pin.
+    runtime = host.platform === 'linux' ? vendorLinuxRuntime({home, pins, host}) : locateRuntime({home, pins, host});
     checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;

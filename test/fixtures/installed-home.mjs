@@ -4,11 +4,14 @@
 // under $TMPDIR is the misconfiguration `inTmpdir` sets up). `mode` selects the fake upstream's teardown behavior.
 // `host` installs the checked-in pin of another host instead (a Linux one, say), for code that takes the host injected;
 // the fake upstream runs under this Node either way.
+// For a Linux host (#171 M6a) the home also holds cua's own runtime, which is what a Linux host resolves: the module
+// tree of the checked-in lock (own-linux-runtime.mjs). The vendor tree stays beside it, for the vendor selection.
 import {mkdirSync, writeFileSync, symlinkSync, realpathSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {loadPins, selectPin} from '../../src/runtime/manifest.mjs';
 import {REPO, scratch, shortScratch} from './runtime-fixture.mjs';
+import {fakeModuleTree} from './own-linux-runtime.mjs';
 import {bwrapUserns} from '../../src/runtime/linux-desktop.mjs';
 
 export const FAKE_UPSTREAM = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
@@ -40,5 +43,6 @@ export function fakeInstalledHome(t, {inTmpdir = false, mode, host} = {}) {
   }
   writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: pin.release}));
+  if (pin.platform === 'linux') fakeModuleTree(home, {platform: pin.platform, arch: pin.arch});
   return home;
 }

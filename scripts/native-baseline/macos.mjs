@@ -13,8 +13,10 @@
 // refuses it when an alert window overlaps one of the run's TextEdit's windows or the Open panel's, or the alert holds
 // the front or the key; before each key cell, when the alert holds the key (the key-cell premise: route 3's activation
 // click goes to TextEdit's pid only, and the key guard checks the front); before each screenshot sample, when the alert
-// overlaps TextEdit's windows (the vendor may crop a display capture to the window). A refusal sends nothing, writes
-// the sample's row with its cause (NO VERDICT `alert` or `unread`; a held screenshot series' samples already taken are
+// overlaps TextEdit's windows (the vendor may crop a display capture to the window); and before each click or key cell
+// but the scratch document's, when TextEdit does not hold the window it acts in as its own key window (the key-window
+// requirement, keyWindowGuard). A refusal sends nothing, writes
+// the sample's row with its cause (NO VERDICT `alert`, `unread` or `keyWindow`; a held screenshot series' samples already taken are
 // written first, invalid), keeps it in meta.alertGuards (per cell, with meta.alertGuardCounts) and stops the run
 // (meta.alertGuardStop, the first), which the hosted record check reads as NO VERDICT; nothing is retried. The cleanup
 // after it still quits TextEdit as after any failure: from its scratch document by ⌘Q, under the key guard (refused
@@ -27,7 +29,7 @@
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {quote} from '../browser-parity/topology.mjs';
-import {captureCause, guardCause, keyCause, placeWindows, recordKeyUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
+import {captureCause, guardCause, keyCause, keyWindowCause, placeWindows, recordKeyUnread, recordKeyWindowReading, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
@@ -72,7 +74,7 @@ export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}
     terminateTextEdit: pid => remote(`/bin/kill -TERM ${Number(pid)}`),
     // The alert guard's fresh reading of the run's TextEdit's windows (and the Open panel's), with the key when asked
     // (../hosted-sittings/guard-device.mjs read), and a window of it placed (place).
-    guard: ({pid, key = false}) => lastJson(remote(guardDevice(checkout, ['read', '--target', `textedit:${Number(pid)}`, ...(key ? ['--key'] : [])]))),
+    guard: ({pid, key = false, keyWindow = false}) => lastJson(remote(guardDevice(checkout, ['read', '--target', `textedit:${Number(pid)}`, ...(key ? ['--key'] : []), ...(keyWindow ? ['--key-window'] : [])]))),
     place: ({pid = null, panel = false, window, frame}) => lastJson(remote(guardDevice(checkout, ['place', ...(panel ? ['--panel'] : ['--pid', String(Number(pid))]),
       '--window', String(Number(window)), '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')]))),
   };
@@ -86,8 +88,19 @@ const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 // never as clear. The key guard refuses nothing on a key reading not taken (the key-cell premise,
 // ../hosted-sittings/alert-guard.mjs keyCause): the cell goes unguarded against the alert holding the key, which the
 // front check cannot see, and is counted in meta.keyUnread (recordKeyUnread).
-function reading(ctx, {key = false} = {}) {
-  try { return ctx.device.guard({pid: ctx.meta.textEdit?.pid, key}) ?? null; } catch { return null; }
+function reading(ctx, {key = false, keyWindow = false} = {}) {
+  try { return ctx.device.guard({pid: ctx.meta.textEdit?.pid, key, ...(keyWindow ? {keyWindow} : {})}) ?? null; } catch { return null; }
+}
+// The key-window requirement (../hosted-sittings/alert-guard.mjs keyWindowCause): the run's TextEdit holds the window
+// the cell acts in, its frontmost (the scratch document, a task's document), as its own key window, or the cell is
+// refused unsent; otherwise its reading is counted, taken (meta.keyWindowRead) or not (meta.keyWindowUnread). The scratch document's own cells are exempt: a
+// fresh TextEdit shows only its Open panel, served by another process, and no document of its own yet.
+const KEY_WINDOW_EXEMPT = new Set(['setup.newDocument']);
+function keyWindowGuard(ctx, op, sample, r) {
+  if (KEY_WINDOW_EXEMPT.has(op)) return;
+  const cause = keyWindowCause(r?.ownKey);
+  if (cause) refuse(ctx, op, sample, cause);
+  recordKeyWindowReading(ctx.meta, op, r?.ownKey ?? null);
 }
 // A refused sample: its row with the cause, the per-cell record, the run's stop (recordRefusal). Nothing of the cell
 // was sent. `held`: a held series' samples already taken (measure's hold), written first, each invalid since the
@@ -102,18 +115,23 @@ function refuse(ctx, op, sample, cause, held = []) {
 // holding neither front nor key. `keyCell`: the cell sends keys as well (a task's close), so its key reading not taken
 // is counted as a key cell's. -> the reading.
 function pointerGuard(ctx, op, sample, {keyCell = false} = {}) {
-  const r = reading(ctx, {key: true});
+  const r = reading(ctx, {key: true, keyWindow: !KEY_WINDOW_EXEMPT.has(op)});
   const cause = guardCause(r?.bounds ?? null, {front: r?.front ?? null, key: r?.key ?? null}, {scenes: ['textedit']});
   if (cause) refuse(ctx, op, sample, cause);
   if (keyCell && !r?.key) recordKeyUnread(ctx.meta, op);
+  keyWindowGuard(ctx, op, sample, r);
   return r;
 }
-// Before a key cell: the alert does not hold the key; a key reading not taken is counted (see reading).
+// Before a key cell: the alert does not hold the key, and TextEdit holds its own key window; a reading not taken is
+// counted (see reading, keyWindowGuard).
 function keyGuard(ctx, op, sample) {
-  const r = reading(ctx, {key: true});
-  if (!r?.key) { recordKeyUnread(ctx.meta, op); return; }
-  const cause = keyCause({key: r.key});
-  if (cause) refuse(ctx, op, sample, cause);
+  const r = reading(ctx, {key: true, keyWindow: !KEY_WINDOW_EXEMPT.has(op)});
+  if (!r?.key) recordKeyUnread(ctx.meta, op);
+  else {
+    const cause = keyCause({key: r.key});
+    if (cause) refuse(ctx, op, sample, cause);
+  }
+  keyWindowGuard(ctx, op, sample, r);
 }
 // Before a screenshot sample: the window it captures clear of every alert. `held`: the series' samples taken so far.
 function captureGuard(ctx, op, sample, held) {

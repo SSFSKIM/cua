@@ -16,7 +16,8 @@
 // the window's frame, stamped with its window number, around a paste, a keyed typeText or an element action, and an
 // element action's held activation (a secondary action's Scroll Down among them) may do the same. The window test does
 // not place those; avoidance below keeps the run's windows, and so their surroundings, clear of the alerts it saw.
-// The refused sample is NO VERDICT, `alert` or `unread` (./front-key.mjs sampleCause). A keyboard cell is refused when the
+// The refused sample is NO VERDICT, `alert` or `unread` (./front-key.mjs sampleCause); one the key-window requirement refused
+// (./steps.mjs keyWindowGuard), `keyWindow`. A keyboard cell is refused when the
 // alert holds the key (./steps.mjs sendKeys). Screenshots: cua's engine captures the target's window alone
 // (SCContentFilter(desktopIndependentWindow:)); the vendor captures by window too, but falls back to a display capture
 // cropped to the window's frame when the window is absent from shareable content (F-helper-logic.md §15 item 3), which

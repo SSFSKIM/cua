@@ -78,7 +78,7 @@ import {basename, join, isAbsolute} from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, PAGE_VARIANTS, startScenePage} from '../native-matrix/fixtures/scene-page.mjs';
-import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, FOCUS_SWITCH, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
   activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, enginePids, frontmostProcess, frontWindow, windowOrder, openApp, readFinderPreferences, runningApps,
@@ -92,6 +92,7 @@ import {windowTitleOf} from './scenes-mac-text.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
+import {readRunnerRecord, venueFramesOf} from '../hosted-sittings/runner.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const TEXTEDIT_BUNDLE_ID = 'com.apple.TextEdit';
@@ -299,12 +300,13 @@ export const guardOf = (id, record) => ({pid: record.pid, bundleId: sceneOf(id).
 // toggle and saved beside the keys) and one `{chrome: <part>, shown: false}` per part (its toggle sent only while the
 // window still shows it, at most twice; scenes-mac-finder.mjs toggleUntil). The preference keys do not say what the
 // window draws, so they choose nothing here. Finally UserProbe pins the outer frame after the toggles that resize
-// Finder, with checked CG read-back. The other scenes come up in their fixed state. -> [step].
-export function setupSteps(id, record) {
+// Finder, with checked CG read-back: at `finderFrame` (FINDER_FRAME; on a hosted runner the venue's, ruling 1169). The
+// other scenes come up in their fixed state. -> [step].
+export function setupSteps(id, record, {finderFrame = FINDER_FRAME} = {}) {
   if (sceneOf(id).id !== 'finder') return [];
   const guard = guardOf(id, record);
   return [{activate: 'finder'}, {pressKey: LIST_VIEW_KEY, guard}, {pressKey: DESELECT_ALL_KEY, guard}, {visibleState: 'record', guard},
-    ...FINDER_PARTS.map(part => ({chrome: part, shown: false, guard})), {finderFrame: FINDER_FRAME}];
+    ...FINDER_PARTS.map(part => ({chrome: part, shown: false, guard})), {finderFrame}];
 }
 // The steps before `down`: Finder in front, each part toggled by observation until the window shows the saved
 // `visible` chrome, `{visibleState: 'restored'}` (marked in the saved record), then the run's window closed. Without a
@@ -377,12 +379,13 @@ export function writeState(run, state) {
 }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const defaultIo = () => ({
+export const defaultIo = () => ({
   runningApps, appWindows, appWindowState, openApp, activateApp, showFolder, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(), windowOrder: ({skipPids}) => windowOrder({skipPids}), enginePids: () => enginePids(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
+  venueFrames: () => venueFramesOf(readRunnerRecord()),
 });
 
 // What the refusal check reads on the device.
@@ -505,13 +508,19 @@ function freshChromeProfile(run) {
 // `extra`: Chromium switches the fixture is launched with besides its own (#244's variant: a feature turned on), each a
 // `--` switch, since Electron would take any other argument for a path to open.
 export const electronArgs = ({userDataDir, placement = SCENES.electron.placement, extra = []}) => [
-  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`, ...extra];
+  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`, FOCUS_SWITCH, ...extra];
 
 // Brings one scene up. -> the scene's record: {scene, app, bundleId, pid, at?, window, setup, ...}, where `setup` lists
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
 // window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
 // from earlier (this run's earlier up, or a run that died before restoring them). `electronExtra`: the fixture's extra
 // switches (electronArgs), kept in its record as `extraArgs`.
+// On a GitHub-hosted runner the device's runner record names the venue setup chose clear of replayd's alerts (ruling
+// 1169; ../hosted-sittings/venue.mjs): Chrome for Testing and the fixture are launched at its frames and Finder's
+// window pinned at its own, so every scene the device brings up there, whichever driver asks, stands where both sides
+// stand. Elsewhere (no record) each scene keeps its own frame. Chrome's and the fixture's record keep the frame they
+// were launched at (`launchFrame`: {frame, from: 'venue' | 'scene'}).
+const launchFrameOf = (id, frames) => (frames?.[id] ? {frame: frames[id], from: 'venue'} : {frame: SCENES[id].placement, from: 'scene'});
 export async function upScene(id, {run, chromeApp, electronApp, electronExtra = [], layout, page, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
@@ -523,6 +532,7 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
   if (notSwitch !== undefined) throw new Error(`--electron-arg takes a switch (--name or --name=value), not ${JSON.stringify(notSwitch)}`);
   const checked = preflight({run, io});
   if (checked.refusals.length) throw new Refused(checked.refusals);
+  const frames = io.venueFrames?.() ?? null;
   let record;
   if (id === 'textedit') {
     const doc = textEditDocument({layout}), dir = join(run, 'textedit'), file = join(dir, doc.name);
@@ -554,12 +564,12 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
     record = {app: scene.app, folder, pid, window, preferences, savedPreferences: {savedAt, kept}};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = freshChromeProfile(run);
-    record = {scene: id, bundleId: scene.bundleId, app, userDataDir};
+    record = {scene: id, bundleId: scene.bundleId, app, userDataDir, launchFrame: launchFrameOf(id, frames)};
     try {
       record.page = await io.spawnPage(run, page === undefined ? {} : {page});
       // An open can start Chrome without yielding an unambiguous launch identity.
       record.launchAttempted = true;
-      Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url, popups: page === 'popup'}), io}));
+      Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url, popups: page === 'popup', placement: record.launchFrame.frame}), io}));
       // On screen only: a fresh Chrome for Testing can list another document-size window ahead of the one it shows, and
       // up recorded that one (#187's slot of 2026-11-05: 64065 recorded, 64056 the only one on screen).
       record.window = await awaitWindow(record.pid, {io, onScreenOnly: true});
@@ -575,11 +585,12 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
   } else {
     const app = electronApp ?? io.buildElectron().appPath, userDataDir = join(run, 'electron-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});
-    record = {app, userDataDir, ...(electronExtra.length ? {extraArgs: [...electronExtra]} : {}),
-      ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir, extra: electronExtra}), io})};
+    const launchFrame = launchFrameOf(id, frames);
+    record = {app, userDataDir, ...(electronExtra.length ? {extraArgs: [...electronExtra]} : {}), launchFrame,
+      ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir, extra: electronExtra, placement: launchFrame.frame}), io})};
   }
   record = {scene: id, bundleId: scene.bundleId, ...record};
-  record.setup = setupSteps(id, record);
+  record.setup = setupSteps(id, record, frames?.finder ? {finderFrame: frames.finder} : {});
   writeState(run, {...state, scenes: {...state.scenes, [id]: record}});
   return record;
 }

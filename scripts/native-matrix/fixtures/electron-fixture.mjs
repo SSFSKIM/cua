@@ -40,6 +40,10 @@ export const FIXTURE_CONTROLS = Object.freeze([
 // page's pair (./scene-page.mjs POINTERDOWN). Only the native matrix's run passes it (../plan.mjs
 // MATRIX_SCENE_ARGS); without it the fixture is the one every recording was taken on.
 export const POINTERDOWN_SWITCH = '--cua-fixture-page=pointerdown';
+// The switch that makes the fixture's window its app's key window once shown (./electron/main.js; the key-window
+// requirement, ruling 1169's addition): the harness's `up` passes it on both sides alike
+// (../../repl-parity/scenes-mac.mjs electronArgs); a launch without it (the matrix's launch row) takes nothing.
+export const FOCUS_SWITCH = '--cua-fixture-focus';
 // The side-effect counters' file in the fixture's user-data directory (./electron/counters.js), read by the harness.
 export const FIXTURE_COUNTERS_FILE = 'cua-fixture-counters.json';
 // The fixture's record of Chromium's accessibility mode in its user-data directory (./electron/main.js): JSON lines

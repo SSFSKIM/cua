@@ -58,7 +58,7 @@ import {awaitLaunch, CAPTURE_ALERT_APP, cleanUpFixtureApp} from './fixture-app.m
 import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
-import {captureCause, keyCause, recordKeyUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
+import {captureCause, keyCause, keyWindowCause, recordKeyUnread, recordKeyWindowReading, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -186,12 +186,14 @@ export function createFixtureDocument(home) {
 // keyCause), the alert holding the key; with `captures` (a cell that captures TextEdit's window after typing, markerCell),
 // the capture rule too (captureCause, window kind). A key reading not taken refuses nothing: the cell goes unguarded
 // against the alert holding the key, which the key guard's front check cannot see, and is counted (recordKeyUnread).
-// -> the cause, or null to send.
+// The key-window requirement too (keyWindowCause): TextEdit holds its frontmost document as its own key window; a
+// sent cell's reading is counted, taken or not (recordKeyWindowReading). -> the cause, or null to send.
 function fixtureRefusal(guard, {step, captures, observations}) {
   let r = null;
-  try { r = guard.read({key: true}) ?? null; } catch { r = null; }
-  const cause = keyCause({key: r?.key ?? null}) ?? (captures ? captureCause(r?.bounds ?? null, {kind: 'window', scenes: ['textedit']}) : null);
+  try { r = guard.read({key: true, keyWindow: true}) ?? null; } catch { r = null; }
+  const cause = keyCause({key: r?.key ?? null}) ?? (captures ? captureCause(r?.bounds ?? null, {kind: 'window', scenes: ['textedit']}) : null) ?? keyWindowCause(r?.ownKey);
   if (!cause && !r?.key) recordKeyUnread(observations, step);
+  if (!cause) recordKeyWindowReading(observations, step, r?.ownKey ?? null);
   return cause;
 }
 
@@ -224,6 +226,8 @@ export function frontStep(front, frontBefore) {
 export const fixtureGuardRecord = observations => ({
   ...(observations?.alertGuardStop ? {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts ?? null} : {}),
   ...(observations?.keyUnread ? {keyUnread: observations.keyUnread} : {}),
+  ...(observations?.keyWindowRead ? {keyWindowRead: observations.keyWindowRead} : {}),
+  ...(observations?.keyWindowUnread ? {keyWindowUnread: observations.keyWindowUnread, keyWindowUnreadReasons: observations.keyWindowUnreadReasons} : {}),
 });
 
 // `guard` (a GitHub-hosted runner's only, scripts/hosted-sittings/textedit-guard.mjs; rulings 1154, 1160, 1164): the

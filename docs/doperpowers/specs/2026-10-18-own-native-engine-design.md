@@ -433,7 +433,8 @@ Skyshot  {app: {bundleIdentifier, displayName, appPath, pid, catalyst: boolean},
           trailer names. settle: "capped" when the settle that preceded this observation hit the 5 s cap — on the
           observation result, since the settle runs at the next get_app_state, not inside the action, R/sky-behaviour.md §23.
           timings, the engine's diagnostics, carries focusRead when the focus read named no node: the AXError, "notAnElement"
-          or "outsideTheWalk"; M1a.2b), which the service passes on in `cua/observation` beside the focused element's
+          or "outsideTheWalk"; M1a.2b), and focusFallback "webArea" when an Electron app's web area stood in for a focus
+          the app did not name (#527), which the service passes on in `cua/observation` beside the focused element's
           index and role (#188), and #301's recordOnlyNodes. truncated.count: the omitted parts (each unread child of a
           read element, once, whatever it holds); above and below: how many of them lie past the visible area's top and
           bottom, present on a walk of the window, which the renderer turns into a direction (#301, ruling 66f90453)
@@ -975,7 +976,7 @@ M4 on `feat/117-m4` (2026-10-22 to 2026-10-24; closed PR #211, head a8c3bc1c): i
 - Decision (M1a.2b, the engine derivations the goldens refuted, 2026-10-19; 85341dae, review fixes 907d1213 and 0862bf2d): each predicate read from the vendor's code, with its address in the engine's comments (`Derivations.swift`), none fitted to the goldens; the hypotheses are in Surprises.
   1. **Node derivations** follow `FUN_10074cb90`: `disclosable` is AXDisclosing supported and settable, its value `expanded`; on Chromium `settable` is the role rule of `FUN_100751614` (combo box, incrementor outside a date or time field, text area, text field; radio button with tab button), taking the parent's role; `valueType` is `FUN_10074a794`'s (a switch or toggle checkbox Boolean, then `CFNumberIsFloatType`, CFBoolean, CFString, CFDate), so integral floats print `float`; `selected` is AXSelected, else AXTraits bit 3; `selectable` is AXSelected supported and settable, never on a menu or menu-bar item (`FUN_10077d1e4`), and AXSelectable is not read; a window without a URL reads AXDocument.
   2. **The header title** is the window server's name for the window, even when empty, AXTitle only when there is none (`FUN_10076e174`), `Desktop` for Finder's desktop-level window; an absent AXTitle is null, so `Unknown` comes from the renderer as the vendor's `llmDescription` defaults it. The window server's name needs Screen Recording: without the grant the engine falls back to AXTitle, as the vendor's process would.
-  3. **Focus** is the app-level AXFocusedUIElement only (`focusedUIElementContext` 0x100774a9c); `timings.focusRead` records why a read named no node, a diagnostic.
+  3. **Focus** is the app-level AXFocusedUIElement only (`focusedUIElementContext` 0x100774a9c); `timings.focusRead` records why a read named no node, a diagnostic. *(Amended by #527, 2026-11-23: an Electron app that names none falls back to the window's web area holding a selection, for the trailer alone.)*
   4. **Action descriptions** follow `FUN_1007816a0`: a fixed English word for 18 actions (`FUN_100783260`; Press, Pick, Increment, Decrement, Confirm, Cancel, Show Default UI, Show Alternate UI, Raise, Show Menu, Scroll to Visible, the four page scrolls, Delete, Expand, Collapse), then a custom action's `Name:` text (`FUN_100783928`, NSScanner semantics), then the system's `AXUIElementCopyActionDescription`, then the action's name. The Skyshot carries `actionDescriptions` with null for the first two (the renderer holds the words; the system is not asked for them), cached per walk by (pid, action). The system's descriptions are localized (ko on the mini).
   5. **filterActions** is `FUN_100782c24`, in the renderer (`keepsAction`): `AXShowDefaultUI` and `AXShowAlternateUI` never; `AXCancel` not in a Catalyst app, nor on the menu bar or a menu item; `AXPick` not on a menu item; `AXConfirm` not on a text field; a page scroll only along an axis whose scroll bar the element answers; `AXIncrement` and `AXDecrement` not where the value is settable (witness +0xb8, `isValueSettable`). The engine carries `Node.scrollBars` and `app.catalyst` (`isCatalystApp` 0x100704c88, `_AXExhibitsMacCatalystBehavior`; that this is the context's flag is an inference) and leaves `actions` unfiltered. This supersedes M1a.3's item 1 on actions: the menu-bar-item half of "`AXCancel` on menu and menu-bar items" had no evidence, since the vendor clears every menu-bar item's actions. **M2a's secondary-action validation uses the same predicate**, as the vendor refuses an action filterActions removed as "not a valid secondary action" (`R/sky-behaviour.md` §5).
   6. **The menu bar** is the AXMenuBar node followed by its top-level items without index 0 (the Apple menu, never read) and without any whose title contains `Debug` (`addMenuBarWithImmediateItems` 0x1007569b8), each read through its listed attributes (`FUN_1007542cc`), and a menu-bar token re-resolves through the same read over the same candidates; the renderer prints the items with their actions cleared. cua's own choice: a bar whose read fails gives no menu-bar nodes, an item whose read fails is skipped (the vendor builds a node from whatever the read returns). A click on the bar's node is refused as `menuBarItemUnsupported`, whose sentence names `pressKey` with the app's shortcut. This supersedes M1a.3's synthetic `#menuBar`.
@@ -8883,6 +8884,50 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     optional (1172), its question now whether S occurs often enough for the refusal to cost runs (`pointerRefusal`
     counts it).
   Date/Author: 2026-11-23, cursor235's builder for #538.
+- Decision (#527, 2026-11-23, `fix/527-electron-focused-trailer` from 093c91e9; amends M1a.2b's item 3, "Focus is the
+  app-level AXFocusedUIElement only"): **when the application's AXFocusedUIElement names no element and the app is
+  Electron (`NSPrincipalClass` `AtomApplication`), the observation's focused element is the window's first web area,
+  breadth first, that holds a selection; it feeds the trailer only.**
+  - Cause. M5 pilot B (run 45226949355), Electron scene, frontmost with no key window: the vendor's full and before texts
+    end `The focused UI element is 3 HTML content cua Electron fixture, URL: file:///…/index.html`; cua's print no
+    trailer. cua's engine reads of that state in both sides' sittings record `focusRead: AXError -25212` (no value) for
+    the application's focus: Electron named no focused element, and the vendor's trailer came from a fallback cua
+    lacked. In the placed run 45274556933 (window keyed) Electron names its text entry area and both sides are
+    byte-identical, trailer included.
+  - The vendor's rule, read in the pinned helper. `focusedUIElementContext` 0x100774a9c is unchanged: the application's
+    AXFocusedUIElement, nil on −25212, −25205 or any error. The skyshot tree builder `FUN_10022cb30` then, when the
+    context names no focused element and `ApplicationUIElement.isElectronApp` 0x10070725c holds (disassembly
+    0x10022cf0c–0x10022cf80: the `cbnz` past the branch, the call at 0x10022cf1c, the search at 0x10022cf80 with
+    0x10022e0c0 as its test), searches the window with `UIElementProtocol.descendant(ofType: WebAreaUIElement.self,
+    passingTest:)` 0x10079fbc0 (symbol names from the binary's own table). `NSBundle.isElectronApp` 0x100248438 reads
+    the running app's bundle's `NSPrincipalClass` and compares it with `AtomApplication`; Chrome's
+    `BrowserCrApplication` does not match. The search is breadth first over AXChildren from the window's children; each
+    element whose role is the type's static role (AXWebArea by the type's name; the static's initializer was not read)
+    goes to the test `FUN_10022e0c0`, which disassembles to `selectedTextRange.length > 0 || selectedTextMarkerRange !=
+    nil` (`UIElementProtocol.selectedTextRange` 0x10077d110, `selectedTextMarkerRange` 0x10077cdb8). The result
+    becomes the tree's focused element, looked up in the tree (`FUN_10022fd80`) and printed as any focused element is.
+    The selection reader `FUN_10022e448` is not passed it **[inference: the selected text and elements do not come from
+    it]**. Whether the window is key does not enter the rule; it decides only whether Electron names a focus.
+  - cua (Skyshot.swift `observedFocus`, `electronWebAreaFocus`, `webAreaHoldsSelection`; Enablement.swift
+    `isElectron`): the same rule. The search reads live AXChildren and roles as the vendor's does, bounded as the
+    web-area wait's search is (`webAreaSearchLimit`, 1,000 elements; the vendor sets no bound). A marker range counts
+    only when its type is AXTextMarkerRange's (`ReadbackMarkerSymbols`). The fallback sets `focused` only;
+    `selectedText` and `selectedElements` stay the application focus's, and `timings.focusFallback: "webArea"`
+    (whitelisted as an observation diagnostic) marks it. A web area the walk did not reach reads `focusRead:
+    outsideTheWalk`, as before. The trailer's format needed nothing: the renderer prints a focused web area's own line,
+    `HTML content`, title and `URL:` included. Native apps and Chrome never search.
+  - Tests. `ElectronFocusTests` (8): the principal-class rule, the keyed case kept, the unkeyed Electron case falling
+    back, a native app or Chrome naming none, an unselected web area passed over and descended into, breadth-first
+    order with the window no candidate, the bound, and the selection test. Red on 093c91e9: the file does not compile
+    (no `electronApp`, `observedFocus`, `electronWebAreaFocus` or `webAreaHoldsSelection`;
+    `~/.local/share/527/red-093c91e9.log`). The renderer's test pins the web area's trailer against its tree line on the
+    recorded Electron Skyshot, and the keyed text entry area's; the four scenes' goldens pin the native trailers.
+  - Open. Not proved live: M5's sitting B now keys every scene, so no M5 cell reaches this state. In the unkeyed run the
+    vendor's diff and later texts name the text entry area after the click (its application focus answered then), while
+    cua's still read −25212; with this fix cua names the web area there, so a second difference remains in that state:
+    the click's effect on Electron's application focus, not the trailer rule. Where the vendor's selected text comes
+    from stays sky-behaviour.md §6's open item; cua keeps it from the application's focus.
+  Date/Author: 2026-11-23, cursor235's builder for #527.
 
 ## Outcomes & Retrospective
 

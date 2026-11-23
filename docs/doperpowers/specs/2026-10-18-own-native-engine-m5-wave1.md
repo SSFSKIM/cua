@@ -65,6 +65,29 @@ or the owner is prepared and named in its gate's disposition file under
   the build hash covers (`native/engine/` minus `Tests/` and build products) and fails unless the version rose. Its
   granularity is the pull request: one move covers every engine change a branch carries, so T8's engine changes on this
   branch ride on 0.2.0 and the build hash tells intermediate builds apart.
+- 2026-11-23, ruling 1126 (T9 split): `MIN_ENGINE_VERSION` stays where today's approved builds (0.1.0) meet it; the
+  enforcement, the remedy text and the `engine-version` gate stay. The raise to 0.2.0 moves into T11's flip commit,
+  which merges only after O1. `engineVersion` still moves to 0.2.0 on this branch, so an M5 pull request before the
+  flip moves `engineVersion` only. Supersedes T9's "MIN_ENGINE_VERSION is 0.2.0" above. Landed as a fix on T9 with a
+  test that an approved 0.1.0 selects while the minimum is 0.1.0, the below-minimum rows exercised with a fixture
+  minimum.
+- 2026-11-23, T8a (#186): a keyed unit counts as entered once its key down is posted, the event the app inserts text
+  on; the source check still runs before every event, so `inputSourceChanged`'s count is the field's committed prefix.
+  The spec's Text paragraph (S L158) needs to say where a character now counts as entered.
+- 2026-11-23, T8a (#190): the expected file was wrong, not cua's sentence. In Chrome both engines answer "Could not
+  find the requested text to select in the element" (hold 3, both engines, both runs), since Chromium reports the
+  checkbox's selection range as settable (the vendor's order of checks, F §16.2). Only the Chrome row changed.
+- 2026-11-23, T8a (#420): in Chromium and Electron apps only, a non-secret text holding a character above U+FFFF takes
+  the paste route (pasteboard saved and restored around it), whether or not the field would have dropped it: the
+  engine cannot tell before typing. Safari, AppKit and Firefox keep typing it. Secret text is never pasted, so it is
+  still typed and the read-back reports the dropped character; how secret text should behave is with the design
+  session. The spec's Text paragraph (S L158: a character the layout cannot type goes as a Unicode key event) needs
+  the Chromium exception.
+- 2026-11-23, version coordination (the design session): M4's re-cut also moves `engineVersion` 0.1.0 → 0.2.0 with
+  the minimum at 0.1.0; whichever of M4 and M5 merges second moves to 0.3.0 at its merge (origin/main merged in, then
+  the bump; no rebase). M4 builds ruling 1118's layout (c021e44a, in re-review): builds go to
+  `<engine dir>/pending/cua Engine.app`; `cua engine approve` promotes the pending build and restores the previous one
+  on failure. T9's pending row is re-checked against it.
 - 2026-11-23, the design session on T9: the per-pull-request version move and the `cua install --engine` wording are
   accepted; the approve-only row stays unit-proven and is re-checked when M4's fix wave lands ruling 1118's layout.
   The minimum's effect on explicit `cua` sessions before O1 (MAWS's repository sets `CUA_NATIVE_ENGINE=cua`) is with

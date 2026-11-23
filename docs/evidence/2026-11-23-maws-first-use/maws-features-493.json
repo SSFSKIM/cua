@@ -1,0 +1,112 @@
+{
+ "summary": {
+  "profiles": "PASS",
+  "service": "PASS",
+  "firstUse": "PASS",
+  "mawsKey": "PASS",
+  "chromeKey": "SKIP",
+  "keyMiss": "PASS",
+  "literalVendor": "SKIP",
+  "createTab": "SKIP",
+  "locator": "SKIP",
+  "viewport": "SKIP",
+  "popup": "SKIP",
+  "download": "SKIP",
+  "alert": "SKIP",
+  "confirm": "SKIP",
+  "chooser": "SKIP",
+  "cleanup": "SKIP",
+  "isolation": "SKIP"
+ },
+ "status": "PASS",
+ "backends": [
+  "/Users/new/Library/Application Support/MAWS/mawsd/cua/59453718007e9149.sock"
+ ],
+ "other": null,
+ "chromeKey": null,
+ "only": [
+  "profiles",
+  "service",
+  "firstUse",
+  "mawsKey",
+  "keyMiss"
+ ],
+ "details": {
+  "profiles": {
+   "status": "ok",
+   "profiles": [
+    {
+     "key": "maws",
+     "ready": true,
+     "extensionInstanceId": "maws:a4207cea-fed7-4ef7-9402-ede5a0e8940c"
+    },
+    {
+     "key": "personal",
+     "ready": true,
+     "extensionInstanceId": "584f0152-5fcf-40f8-a961-d3998022c45d"
+    },
+    {
+     "key": "school",
+     "ready": false,
+     "reason": "binding_stale"
+    },
+    {
+     "key": "work",
+     "ready": false,
+     "reason": "extension_not_installed"
+    }
+   ],
+   "guidance": "school is not ready (binding_stale): its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (open a window in Chrome profile \"Profile 6\" (one line: cua profiles open school; Chrome unloads a profile and its extension host when the profile's last window closes, including a window a cua task opened and then closed) and open the cua extension's popup (its toolbar icon) if it still has no backend: that wakes it and shows whether its host is connected, and if not why, then retry), or the cua extension was reinstalled (or its unpacked load removed and loaded again), which mints a new instance id (bind it again with cua profiles bind school).\nwork is not ready (extension_not_installed): the cua extension is not installed or loaded in this Chrome profile (load the checkout's extension/ directory unpacked there, README \"Chrome\"; cua never installs it).\nTell the user; do not bind or pick a profile for them."
+  },
+  "service": {
+   "requested": "cua",
+   "served": "cua browser service 0.1.0"
+  },
+  "firstUse": {
+   "browserId": "1",
+   "instance": "maws:a4207cea-fed7-4ef7-9402-ede5a0e8940c",
+   "named": "- Name: MAWS in-app browser (maws)",
+   "visible": {
+    "tabId": "1",
+    "closed": true,
+    "markerMatches": true
+   }
+  },
+  "mawsKey": {
+   "key": "maws",
+   "browserId": "1",
+   "instance": "maws:a4207cea-fed7-4ef7-9402-ede5a0e8940c",
+   "tab": {
+    "tabId": "2",
+    "closed": true,
+    "markerMatches": true
+   }
+  },
+  "chromeKey": "not selected",
+  "keyMiss": {
+   "selected": false,
+   "error": "Browser is not available: iab. Browser ids: \"1\", \"2\"; profiles_list keys: \"maws\", \"personal\"."
+  },
+  "literalVendor": "not selected",
+  "createTab": "not selected",
+  "locator": "not selected",
+  "viewport": "not selected",
+  "popup": "not selected",
+  "download": "not selected",
+  "alert": "not selected",
+  "confirm": "not selected",
+  "chooser": "not selected",
+  "cleanup": "not selected",
+  "isolation": "not selected",
+  "serve": {
+   "code": 0,
+   "signal": null
+  }
+ },
+ "elicitations": [],
+ "pageRequests": {
+  "total": 2,
+  "served": 2,
+  "refused": 0
+ }
+}

@@ -119,10 +119,14 @@ const liveEnv=row=>({...envFor(row),...(row.maws?{CUA_BROWSER_BACKENDS:'/maws-fi
 const doctorAs=(t,row,registration=row.registration)=>doctorReplHost(t,{platform:row.platform,env:liveEnv(row),node:MANAGED,registration});
 // The real call's result on a macOS computer session carries the proxy's engine attestation (#117).
 const attestation=engine=>engine?{'cua/nativeEngine':engine==='cua'?{engine,version:'0.0.0-selection',build:'f'.repeat(64)}:{engine,version:'26.924.1001281',build:'26.928.40906-darwin-arm64'}}:{};
+// A deliberate fallback row's first result also carries the engine notice (ruling 1148), the exact line: the live lane's
+// scratch home holds no build, pending or failed.
+const NOT_BUILT='cua: this session keeps the vendor engine: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+const noticeFor=expected=>(expected.engine==='vendor'&&expected.reason==='engine_not_installed'?{'cua/engineNotice':NOT_BUILT}:{});
 const observationFor=(row,commit)=>{
  const expected=expectedSelection(row),engine=attestation(expected.engine);
  if(expected.host==='cua'){const own=ownObservation(commit);return {...own,_meta:{...own._meta,...engine}};}
- return {host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:expected.engine?engine:null};
+ return {host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:expected.engine?{...engine,...noticeFor(expected)}:null};
 };
 test('every selectable row passes on doctor\'s actual row, whatever the registration ordering or MAWS',async t=>{
  const reviewed=reviewedSource(t);
@@ -230,7 +234,20 @@ test('every engine row agrees with doctor\'s actual row and the real call\'s att
   assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,...attestation(other)}}},reviewed),/attests engine/,'another attested engine');
   assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,'cua/nativeEngine':undefined}}},reviewed),/attests engine/,'no attestation');
   assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:doctor.detail.replace(`native engine ${expected.engine} (`,`native engine ${other} (`)},observation},reviewed),/Doctor engine/,'another engine in doctor\'s row');
+  // Ruling 1148: the engine notice, the exact line on a deliberate fallback row, and none anywhere else.
+  if(observation._meta?.['cua/engineNotice']){
+   assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,'cua/engineNotice':undefined}}},reviewed),/engine notice/,'a fallback row without the notice');
+   assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,'cua/engineNotice':NOT_BUILT.replace('not built','build failed: x')}}},reviewed),/engine notice/,'another line');
+  }else assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,'cua/engineNotice':NOT_BUILT}}},reviewed),/engine notice/,'a notice where none belongs');
  });
+});
+test('the engine notice\'s rows: the default\'s fallback carries it; cua\'s engine, an explicit vendor engine and no computer surface never do',()=>{
+ const rows=selectionCases('darwin').filter(r=>r.engine&&r.override==='unset'&&r.node24&&!expectedSelection(r).error);
+ const kinds=rows.map(r=>[r,expectedSelection(r)]);
+ assert.ok(kinds.some(([,e])=>e.reason==='engine_not_installed'),'a deliberate fallback row');
+ assert.ok(kinds.some(([,e])=>e.engine==='cua'),'a cua row');
+ assert.ok(kinds.some(([r,e])=>r.engine==='vendor'&&e.engine==='vendor'),'an explicit vendor row');
+ for(const [r,e] of kinds)assert.equal(Boolean(noticeFor(e)['cua/engineNotice']),e.reason==='engine_not_installed'&&r.engine!=='vendor',JSON.stringify(r));
 });
 test('rows outside the macOS computer surface must attest no engine, and doctor names none',async t=>{
  const reviewed=reviewedSource(t),row=ownRows[0],doctor=await doctorFor(t,row),observation=ownObservation(reviewed.reviewedCommit);

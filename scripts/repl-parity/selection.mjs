@@ -98,6 +98,10 @@ function doctorSelection(sentence){
  const m=/^(cua|vendor) host \(([a-z0-9_]+)\)(?: on Node (\/.*?))?: /s.exec(sentence??'');
  return m&&{host:m[1],reason:m[2],node:m[3]??null,engine:/; native engine (cua|vendor) \([a-z_]+\): /.exec(sentence)?.[1]??null};
 }
+// The engine notice a row's first result carries (src/runtime/engine-notice.mjs, stated here independently): the
+// default's fallback for want of an approved engine, on a home with nothing built.
+export const NOT_BUILT_NOTICE='cua: this session keeps the vendor engine: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+export const expectedEngineNotice=expected=>(expected.engine==='vendor'&&expected.reason==='engine_not_installed'?NOT_BUILT_NOTICE:null);
 export function assertSelection(row,{doctor,observation,error,errorMessage},reviewedSource){
  const expected=expectedSelection(row);assert.ok(doctor,'Missing doctor repl.host row');
  const detail=laneSentence(row,doctor.detail);
@@ -119,6 +123,10 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
  const attested=observation._meta?.['cua/nativeEngine']??null;
  assert.ok((attested?.engine??null)===(expected.engine??null),`Real call attests engine ${JSON.stringify(attested)} where the independent table expects ${expected.engine??'none'}`);
  if(attested)assert.ok(typeof attested.build==='string'&&attested.build.length>0,`Real call's engine attestation names no build: ${JSON.stringify(attested)}`);
+ // Ruling 1148: a deliberate fallback row's first result carries the engine notice, the exact line (the row's scratch
+ // home holds no build, pending or failed); cua's engine, an explicit vendor engine and no computer surface carry none.
+ const notice=observation._meta?.['cua/engineNotice'],wanted=expectedEngineNotice(expected);
+ assert.ok(notice===(wanted??undefined),`Real call's engine notice ${JSON.stringify(notice)} where the independent table expects ${wanted?JSON.stringify(wanted):'none'}`);
  if(row.managedNode&&expected.host==='cua'){
   const actual=assertManagedNode(observation.executionFacts);
   assert.ok(selected.node===actual.path,`Doctor must name the managed Node that actually answered (${actual.path}) in its on-Node clause, not ${selected.node}`);

@@ -613,3 +613,131 @@ No full `npm test`, hosted run, GUI, TCC write or push.
 - **A held sample can leave state behind** (I3, decision 7). This is not verified on a runner.
 - **I3's paths outside the save sheet and `caseRow`** (Unicode mid-switch, `openPanel`) are covered by code, but by
   no test of their own.
+
+## Fix wave 3
+
+Round 3 of the review returned three Important findings (I3a, I3b, I1) and one Minor, all fixed on `feat/117-m5` from
+`28fd8d1f3`, which includes the #518 merge and two doctor fixes. I re-read each file before editing it. Nothing in this
+wave touches native-matrix's summary or lane files.
+
+### What changed, finding by finding
+
+- **I3a: a held row never gets a verdict** (`eb1944dd4`).
+  - `AlertHeld.reading` now holds the guard's own observation:
+    - `front` is the app the key guard saw, UserNotificationCenter;
+    - `key` is read just after.
+    - Before this fix, the reading was taken later, so an alert that had left the front made the row look clean.
+  - Every row a hold affected carries `AlertHeld.row`:
+    - `alertHeld: {keys, front}`;
+    - `invalid` as a backstop.
+  - `front-key.mjs` `sampleCause` checks `alertHeld` first. A row carrying it is `alert`: NO VERDICT, counted per
+    cell, whatever the readings say.
+  - Rows get the mark in four places:
+    - `caseRow`;
+    - `probe-run.mjs` `sampled`;
+    - the Unicode mid-switch;
+    - `run.mjs` `openPanel`, for both regimes. `skippedTarget` and the background `caseRows` add the mark to every
+      case and timing row.
+  - Regression test, the reviewer's case:
+    - ⌘O is held while the alert is in front for the guard's read only. Every later read shows TextEdit.
+    - Every Open-panel row, frontmost and background, is `alert` and carries the backstop.
+    - The cell is not FAIL. The run is complete.
+  - With the old code, `sampleCause` was null for these rows, as the reviewer found.
+- **I3b: a held attempt still undoes its fixture** (`492c6c278`).
+  - Cleanup is registered when the fixture is made:
+    - The attempt's span now carries `made(scene, cleanup)`.
+    - The save sheet and the sheet variant call it right after ⌘N, so a hold anywhere after that has the cleanup to
+      run.
+    - On `AlertHeld`, `sampled` ends the attempt with that cleanup, which runs as any attempt's cleanup does, after the
+      row is recorded.
+  - If the alert holds the cleanup's own keys:
+    - The row records `outcome.cleanupHeld`.
+    - The fixture is kept as the run's held fixture, and listed in `meta.fixturesHeld` as `{row, sample, scene, reset}`.
+  - Before any further sample, and once the probe cells end, `resetHeldFixture` handles a held fixture:
+    - It activates the fixture's scene first ("alert up, scene activated first"), then runs the cleanup again.
+    - If the cleanup runs, it records `reset: true`.
+    - If it still does not run, it records `reset: false` and stops the run with "… could not be reset …; the run
+      stopped collecting evidence". The rows already kept stay NO VERDICT.
+  - Tests, each a hosted save sheet whose typing is held after the document opened:
+    - **Alert up only for the guard:** the sheet is cancelled and the document closed, and the run completes.
+    - **Alert up until the next activation:** the cleanup is held, `cleanupHeld` is recorded, and the reset closes the
+      document (`reset: true`).
+    - **Alert that never leaves:** the run stops with `reset: false`.
+  - With the old code, the cleanup never ran, the run completed, and nothing marked the document as left open.
+- **I1: examples of the entry do not pass the O0 guard, and the override must come from a reviewed source**
+  (`10777055e`).
+  - `decisionEntryProblem` now tracks fenced code blocks, at any indent:
+    - A fence opens on ```` ``` ```` or `~~~`.
+    - It closes on the same character, at least as long, with nothing after it.
+    - Lines inside a fence are skipped, and each fence ends the entry before it.
+  - Indented code was already rejected, because an entry must start at column 0 with `- `. It is now a test case.
+  - The zero-store-call refusal table gains three cases: a ```` ``` ```` fence, a `~~~` fence and indented code.
+  - The real spec at `db775127` still passes; I checked this by reading it on this Mac.
+  - `pin.mjs`, for any commit other than `O0_COMMIT`:
+    1. It fetches `docs/117-progress` into `refs/remotes/origin/docs/117-progress`. A failed fetch only means the
+       check below refuses.
+    2. It accepts the commit only if `merge-base --is-ancestor` finds it in `O0_COMMIT`'s history or in that branch's.
+    3. Otherwise it refuses, before reading or writing the spec.
+    - The check costs one fetch and two `merge-base` calls, and the workflow's checkout already has full history.
+  - The workflow input's description now says the override must come from that branch.
+- **Minor: the Unicode mid-switch's held row** (`c33dd2a4f`). A focused test on a hosted run with the alert at the
+  mid-switch's guard. It checks that:
+  - the typing is never sent;
+  - the input-source probe is finished;
+  - Latin is selected again and read back;
+  - the row is `alert` with the backstop;
+  - the run is complete.
+  It passes on the existing code. Changing the catch to rethrow makes it fail.
+
+### TDD
+
+**RED**, each run before its implementation:
+
+| Finding | Command | Failure |
+|---|---|---|
+| I3a | `node --test test/native-matrix/front-key.test.mjs test/native-matrix/run.test.mjs` | `not ok 9` (an `alertHeld` row with clean readings: no cause), `not ok 24` (Open panel: `sampleCause` null, as in the review); pass 31 fail 2 |
+| I3b | `node --test test/native-matrix/probe-run.test.mjs` | `not ok 26` (no `savesheet.cancel`, no `sheet.cleanup` after the held typing), `not ok 27`; pass 25 fail 2 |
+| I1 | `node --test test/hosted-sittings/tcc.test.mjs test/hosted-sittings/pin.test.mjs` | `not ok 2` (pin: an override not on a reviewed source accepted), `not ok 10`, `not ok 11` (the two fenced examples accepted: store reached), `not ok 16`; pass 16 fail 4. The indented-code case already refused |
+| Minor | `node --test --test-name-pattern="mid-switch row on a hosted run" test/native-matrix/unicode-run.test.mjs` | passes on the existing code; with the catch changed to rethrow: `not ok 1`, pass 0 fail 1 |
+
+**GREEN:** front-key and run, 33/33. probe-run, 27/27. tcc and pin, 20/20. `test/hosted-sittings/*`, 65/65.
+`test/native-matrix/*`, all of them.
+
+### The focused suites, at `c33dd2a4f`
+
+```
+node --test test/hosted-sittings/*.test.mjs test/native-matrix/*.test.mjs test/accept*.test.mjs test/native-baseline/*.test.mjs test/repl-parity/*.test.mjs test/browser-parity/*.test.mjs
+# tests 2134
+# pass 2134
+# fail 0
+RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1 node --test <the same files>
+# tests 2134
+# pass 2134
+# fail 0
+```
+
+The workflow still parses with ci-kit's YAML parser. I made no full `npm test`, hosted run, GUI action, TCC write or
+push.
+
+### Decisions
+
+1. **The mark decides, not the readings** (I3a). `alertHeld` is a row field that `sampleCause` reads first. The
+   front/key readings stay as observed: the guard's front, then whatever came after. The `invalid` reason is a second
+   way the row can never count.
+2. **A dirty fixture is reset or ends the run** (I3b). Reset is tried with the scene activated, before the next
+   sample and at the end of the probe cells. If it fails, the run stops (`complete: false`) instead of collecting more
+   evidence beside an open document. This is fail-safe, but a hosted run whose alert never leaves TextEdit's front ends
+   incomplete, not NO VERDICT.
+3. **What counts as "reviewed"** (I1). A reviewed commit is `O0_COMMIT`, an ancestor of it, or any commit reachable
+   from `origin/docs/117-progress`. That branch is the one the owner's entry was recorded on. Any commit there is in
+   its reviewed history.
+4. **Fences are judged the CommonMark way** (I1): ```` ``` ```` or `~~~`, three or more, closed by the same character
+   at least as long. An unclosed fence hides the rest of the section, so a broken spec refuses.
+
+### Concerns
+
+- **An alert that never leaves the front now ends a run incomplete** (decision 2). C's observation check reads an
+  incomplete record as a runtime error, so the sitting fails rather than giving NO VERDICT. It never passes either way.
+- **The ancestry check depends on fetching the branch.** In a shallow checkout, or one without credentials for a
+  private repository, the branch fetch fails and any override is refused. This affects only the override; the
+  default pin is unaffected.

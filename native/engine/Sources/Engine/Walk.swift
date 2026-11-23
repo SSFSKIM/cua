@@ -931,7 +931,7 @@ final class TreeWalk {
                                                 title: data.title, description: data.description, frame: data.frame,
                                                 actions: item.read.actions, childCount: data.children.count, children: data.children,
                                                 actionsRead: item.read.actionsRead, roleRead: !data.unreadable.contains(kAXRoleAttribute),
-                                                childrenRead: data.childrenRead,
+                                                childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
                                                 labelsUnread: screenshotLabelsUnread(role: data.role, data.unreadable)))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
@@ -1127,7 +1127,7 @@ final class TreeWalk {
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
                                                 actions: read.actions, childCount: read.data.children.count, children: read.data.children,
                                                 actionsRead: read.actionsRead, roleRead: !read.data.unreadable.contains(kAXRoleAttribute),
-                                                childrenRead: read.data.childrenRead,
+                                                childrenRead: read.data.childrenRead, childrenLeaf: read.data.childrenLeaf,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
                                                 labelsUnread: screenshotLabelsUnread(role: read.data.role, read.data.unreadable)))
     }

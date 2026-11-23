@@ -126,6 +126,9 @@ struct InputMeta {
   /// its effect and the restore of the person's window order, the refusal of a combo box with no pressable arrow, or why
   /// main's path was kept.
   var popUpClick: PopUpClickRecord?
+  /// #453's click on a row of a window the app shows over the observed one (OverlayClick.swift): carried by the row's
+  /// AXPress and whether its effect was seen, or why #452's refusal stood.
+  var overlayClick: OverlayClickRecord?
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
   var pendingClick: PendingClickRecord?
@@ -200,6 +203,7 @@ struct InputMeta {
     if let menu { wire["menu"] = menu.wire }
     if let menuItemClick { wire["menuItemClick"] = menuItemClick.wire }
     if let popUpClick { wire["popUpClick"] = popUpClick.wire }
+    if let overlayClick { wire["overlayClick"] = overlayClick.wire }
     if let pendingClick { wire["pendingClick"] = pendingClick.wire }
     if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
@@ -433,6 +437,9 @@ extension Engine {
   /// is none, and goes by route 3; it is refused, nothing posted, when what that screenshot showed at the point has gone,
   /// moved off it, or given way to another interactive element (`screenChangedSinceScreenshot`, #296, StalePoint.swift);
   /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. A
+  /// plain left click refused there on a row of one of the app's own overlays (its omnibox popup, `<datalist>` list,
+  /// permission bubble, or an AppKit popover) goes as the AXPress of the row the screenshot's record holds at the point,
+  /// by its recorded handle, confirmed by the overlay closing, or the refusal stands (#453, OverlayClick.swift). A
   /// kept plain left click on an item of a menu open in a window of the app's own goes as the item's AXPick or AXPress,
   /// confirmed by its effect, or is refused, never posted (#454, MenuItemPoint.swift); one on a closed pop-up button goes
   /// as the button's AXPress, one on a native combo box's arrow as the arrow's, each confirmed by what it opens and the
@@ -586,6 +593,14 @@ extension Engine {
           pointerHit = recovered
           if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
           pointer.staleRefusal = stale.refusal
+        }
+        // #453 (ruling 1071): where #452 refused a plain left click on a window of the app's own over the observed one, a
+        // row of one of the overlays it lists that the screenshot showed at the point is carried by AXPress on its recorded
+        // handle; anything else keeps the refusal, which main's path throws below. Never posted, never activated.
+        if overlayPressApplies(stale.verdict, button: button, count: count, forced: forced != nil),
+           try overlayPointClick(stale.verdict, answered: latest.outcome.answered, shift: stale.shift, point: placed.point,
+                                 observedWindow: windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta) {
+          return ["meta": meta.wire]
         }
         // #454: a kept point on an open menu's item is carried by the item's own action, or refused; never posted.
         if stale.refusal == nil, forced == nil, button == .left, count == 1 {

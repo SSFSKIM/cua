@@ -47,8 +47,10 @@ const SENTENCES = {
   tab_not_found: (tabId, tabs = []) => `Tab not found: ${tabId}. Existing tabs: ${tabs.length
     ? tabs.map(t => `${t.id}|${t.title ?? '<no title>'}|${t.url ?? '<no url>'}`).join(', ') : 'none'}`,
   // cua's addition (#493): a selection's miss names what would have been found, the vendor's sentence first.
+  // A profile registered under a backend type or family (`selectorKey`, its instance) is pointed to its instance id.
   browser_not_found: (id, available) => `Browser is not available: ${id}${available?.ids === undefined ? ''
-    : `. Browser ids: ${quotedList(available.ids)}; profiles_list keys: ${quotedList(available.keys ?? [])}.`}`,
+    : `. Browser ids: ${quotedList(available.ids)}; profiles_list keys: ${quotedList(available.keys ?? [])}.`}${available?.selectorKey === undefined ? ''
+    : ` ${JSON.stringify(id)} names a browser type or family, not the profile registered under it: select that profile with cua.getBrowser({extensionInstanceId: ${JSON.stringify(available.selectorKey)}}).`}`,
   dialog_open: type => `A ${type} JavaScript dialog is active in this tab. Use \`tab.getJsDialog()\` to get it and dismiss it first.`,
   timeout: () => DEADLINE_EXCEEDED,
   tab_detached: () => 'Debugger unattached',

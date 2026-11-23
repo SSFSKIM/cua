@@ -28,7 +28,7 @@ import {ACTION_HANDLERS} from './actions.mjs';
 import {ASSET_HANDLERS} from './assets.mjs';
 import {AUTH_HANDOFF_HANDLERS} from './authhandoff.mjs';
 import {BOT_DETECTION_HANDLERS} from './botdetect.mjs';
-import {BrowserContext, SELECTION_HANDLERS, browserKeys} from './browsers.mjs';
+import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {CHOOSER_HANDLERS} from './chooser.mjs';
 import {StrandedPageClipboards} from './clipboard-bridge.mjs';
 import {CLIPBOARD_HANDLERS} from './clipboard.mjs';
@@ -118,7 +118,7 @@ class ServiceRuntime {
     this.context = new BrowserContext(runtime);
     this.docs = new Documentation({
       apiManifest: API_MANIFEST, disabledMemberIds: this.disabledMemberIds, serviceVersion: SERVICE_VERSION,
-      undocumentedApiMembers, excludedDocumentation, addendum: documentationAddendum(this.env), browserKeys: browserKeys(this.env),
+      undocumentedApiMembers, excludedDocumentation, addendum: documentationAddendum(this.env),
     });
   }
 

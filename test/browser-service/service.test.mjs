@@ -97,8 +97,15 @@ test('browsers: listed in the vendor\'s shape, selected by id, type or family, b
   assert.equal((await rejection(execute(service, {type: 'list_tabs'}))).message, 'Browser ID must be provided');
 });
 
+// The call's profiles_list keys, as the proxy puts them on its request metadata (src/mcp/server.mjs).
+const withKeys = (runtime, keys) => {
+  const turn = Object.getOwnPropertyDescriptor(runtime, 'requestMeta').get;
+  Object.defineProperty(runtime, 'requestMeta', {configurable: true, get: () => ({...turn.call(runtime), 'cua/browserKeys': keys})});
+};
+
 test('browsers: a profiles_list key selects the browser carrying its instance; a miss names the ids and the live keys (#493)', async t => {
-  const {service} = await serviceOnHost(t, {env: {CUA_BROWSER_KEYS: JSON.stringify({personal: 'instance-elsewhere', work: null})}});
+  const {service, runtime: first} = await serviceOnHost(t);
+  withKeys(first, {personal: 'instance-elsewhere', work: null});
   await service.handleRpc({method: 'setup', params: {environment: 'codex-app'}});
   const [listed] = await execute(service, {type: 'list_browsers'});
   const away = await rejection(execute(service, {type: 'get_browser', id: 'personal'}));
@@ -106,7 +113,7 @@ test('browsers: a profiles_list key selects the browser carrying its instance; a
   assert.equal(away.message, `Browser is not available: personal. Browser ids: "${listed.id}"; profiles_list keys: none.`, 'a key whose instance is not listed is a miss, and is not offered');
 
   const {service: keyed, ext: other, runtime} = await serviceOnHost(t);
-  runtime.env.CUA_BROWSER_KEYS = JSON.stringify({personal: other.instanceId});   // read at setup
+  withKeys(runtime, {personal: other.instanceId});
   await keyed.handleRpc({method: 'setup', params: {environment: 'codex-app'}});
   const [browser] = await execute(keyed, {type: 'list_browsers'});
   const selected = await execute(keyed, {type: 'get_browser', id: 'personal'});

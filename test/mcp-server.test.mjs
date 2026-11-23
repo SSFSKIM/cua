@@ -455,3 +455,30 @@ test('js and js_reset results carry the connection\'s engine attestation; the se
   none.upstream.reply(await none.upstream.nextCall('js'), {content: [{type: 'text', text: 'c'}], isError: false});
   assert.equal(Object.hasOwn((await call.response).result._meta, 'cua/nativeEngine'), false);
 });
+
+test('with the browser surface each relayed call carries profiles_list\'s keys as read for that call, never the client\'s (#493)', async () => {
+  const {BROWSER_KEYS_META} = await import('../src/mcp/server.mjs');
+  assert.equal(BROWSER_KEYS_META, (await import('../src/browser-service/browsers.mjs')).BROWSER_KEYS_META, 'the proxy and the service name one key');
+  let binding = 'inst-a';
+  const h = harness({server: {browserKeys: () => ({maws: 'maws:x', work: binding})}});
+  await initialized(h);
+  const first = h.client.call('js', {code: 'a'}, {meta: {[BROWSER_KEYS_META]: {work: 'forged'}}});
+  const up1 = await h.upstream.nextCall('js');
+  h.upstream.text(up1, 'a');
+  await first.response;
+  binding = 'inst-b';   // the key rebound while the runtime lives
+  const second = h.client.call('js', {code: 'b'});
+  const up2 = await h.upstream.nextCall('js', {after: h.upstream.sent.indexOf(up1) + 1});
+  h.upstream.text(up2, 'b');
+  await second.response;
+  assert.deepEqual(up1.params._meta[BROWSER_KEYS_META], {maws: 'maws:x', work: 'inst-a'});
+  assert.deepEqual(up2.params._meta[BROWSER_KEYS_META], {maws: 'maws:x', work: 'inst-b'});
+
+  const plain = harness();
+  await initialized(plain);
+  const call = plain.client.call('js', {code: 'c'}, {meta: {[BROWSER_KEYS_META]: {work: 'forged'}}});
+  const up = await plain.upstream.nextCall('js');
+  plain.upstream.text(up, 'c');
+  await call.response;
+  assert.equal(Object.hasOwn(up.params._meta, BROWSER_KEYS_META), false, 'without the browser surface a client\'s keys are dropped');
+});

@@ -59,6 +59,7 @@ import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
+import {currentBrowserKeys} from '../chrome/discovery.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
 import {resolveCursorContext} from '../runtime/cursor-identity.mjs';
 
@@ -114,7 +115,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       ...extra, runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
-      browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance(), keys: browserBackends.keys()},
+      browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
     });
     // The open checks the launch as it would be built now, so a misconfiguration fails the connection before its
     // handshake; nothing is spawned or created for it.
@@ -155,6 +156,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
       sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), nativeEngine: planned.nativeEngine,
+      // profiles_list's keys as browser ids, read at each call (#493).
+      browserKeys: serverSettings.surfaces.includes('browser') ? () => currentBrowserKeys(home, {mawsKeys: browserBackends?.keys() ?? null}) : null,
       // The engine every launch of this connection drives, for the js rules (src/mcp/surface.mjs jsRulesFor).
       engine: replHost.engine?.engine ?? null,
       cursorContext: cursorContext ? () => cursorContext : null,

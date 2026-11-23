@@ -1,27 +1,60 @@
-// #493: profiles_list keys as browser ids (CUA_BROWSER_KEYS), and the Selected Browser block's name for a MAWS backend.
+// #493: profiles_list keys as browser ids (the call's `cua/browserKeys` metadata), and the Selected Browser block's name
+// for a MAWS backend.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {BrowserContext, documentedName} from '../../src/browser-service/browsers.mjs';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {BROWSER_KEYS_META, BrowserContext, documentedName} from '../../src/browser-service/browsers.mjs';
 import {Documentation} from '../../src/browser-service/docs.mjs';
 import {API_MANIFEST} from '../../src/browser-service/manifest.mjs';
+import {currentBrowserKeys} from '../../src/chrome/discovery.mjs';
 
 const extension = (id, instance, extra = {}) => ({id, info: {type: 'extension', family: 'chrome', name: 'cua', metadata: {extensionInstanceId: instance}, ...extra}});
 
-// A context over a fixed list of browsers (no sockets): the selection logic alone.
+// A context over a fixed list of browsers (no sockets): the selection logic alone. `keys()` is the current call's.
 function contextOver(browsers, keys) {
-  const context = new BrowserContext({env: keys === undefined ? {} : {CUA_BROWSER_KEYS: JSON.stringify(keys)}, addTurnEndedHandler: () => () => {}});
+  const meta = {current: keys};
+  const context = new BrowserContext({env: {}, get requestMeta() { return meta.current === undefined ? {} : {[BROWSER_KEYS_META]: meta.current}; }, addTurnEndedHandler: () => () => {}});
   context.browsers = browsers;
-  return context;
+  return Object.assign(context, {callWith: keys => { meta.current = keys; }});
 }
+const selected = async (context, id) => { try { return (await context.get(id)).id; } catch (error) { return {miss: error.message}; } };
 
-test('a key selects the browser carrying its instance; ids, types and families keep their meaning first', async () => {
-  const maws = extension('1', 'maws:app-1', {profileName: 'MAWS'});
-  const chrome = extension('2', 'chrome-personal');
-  const context = contextOver([maws, chrome], {maws: 'maws:app-1', personal: 'chrome-personal', extension: 'chrome-personal'});
-  assert.equal(await context.get('maws'), maws);
-  assert.equal(await context.get('personal'), chrome);
-  assert.equal(await context.get('2'), chrome);
-  assert.equal(await context.get('extension'), maws, 'a key named like a backend type does not shadow the type');
+// Ruling 1112's invariant: a selection lands in a Chrome profile only when it names that profile exactly, by its id or
+// by its registered key; never through a built-in selector, a MAWS key or a stale alias. One MAWS session with two
+// panels (listed first, as client-mode hosts are) and Chrome profiles registered under hostile keys.
+test('a selection lands in a Chrome profile only when it names that profile, by id or by its current key', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'cua-keys-'));
+  t.after(() => rmSync(home, {recursive: true, force: true}));
+  const register = profiles => writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: Object.fromEntries(Object.entries(profiles)
+    .map(([key, extensionInstanceId], i) => [key, {chromeProfileDirectory: `Profile ${i}`, extensionInstanceId, boundAt: 'x', route: 'cua'}]))}));
+  const registry = {personal: 'inst-personal', iab: 'inst-iab', chrome: 'inst-chrome', extension: 'inst-extension', maws: 'inst-maws', 'maws-2': 'inst-maws-2',
+    work: 'inst-personal', school: 'inst-school'};
+  const maws1 = extension('1', 'maws:app-1', {profileName: 'MAWS'}), maws2 = extension('2', 'maws:app-2', {profileName: 'MAWS'});
+  const chrome = Object.fromEntries(['personal', 'iab', 'chrome', 'extension', 'maws', 'maws-2', 'work'].map((key, i) => [key, extension(String(10 + i), `inst-${key}`)]));
+  const context = contextOver([maws1, maws2, ...Object.values(chrome)]);
+
+  // At the first call maws-2 has not said hello yet, and `work` is bound to the personal profile.
+  register(registry);
+  context.callWith(currentBrowserKeys(home, {mawsKeys: {maws: 'maws:app-1'}}));
+  assert.equal(await selected(context, 'work'), chrome.personal.id);
+  assert.match((await selected(context, 'maws-2')).miss, /^Browser is not available: maws-2\./, 'a MAWS key before its hello is never the Chrome profile registered under it');
+  // Then maws-2 connects, and `work` is rebound to its own profile.
+  register({...registry, work: 'inst-work'});
+  context.callWith(currentBrowserKeys(home, {mawsKeys: {maws: 'maws:app-1', 'maws-2': 'maws:app-2'}}));
+
+  const rows = [
+    ['iab', 'miss'], ['chrome', maws1.id], ['extension', maws1.id], ['maws', maws1.id], ['maws-2', maws2.id], ['work', chrome.work.id],
+    ['school', 'miss'], ['personal', chrome.personal.id], [chrome.iab.id, chrome.iab.id],
+  ];
+  for (const [selector, expected] of rows) {
+    const got = await selected(context, selector);
+    assert.deepEqual(expected === 'miss' ? Object.keys(got) : got, expected === 'miss' ? ['miss'] : expected, `${selector} -> ${JSON.stringify(got)}`);
+  }
+  const miss = (await selected(context, 'iab')).miss;
+  assert.match(miss, /profiles_list keys: "personal", "work", "maws", "maws-2"\. "iab" names a browser type or family, not the profile registered under it: select that profile with cua\.getBrowser\(\{extensionInstanceId: "inst-iab"\}\)\.$/);
+  assert.doesNotMatch((await selected(context, 'school')).miss, /"iab"|"chrome"|"extension"|"school"/, 'a colliding or missing key is never offered');
 });
 
 test('maws falls back as the unqualified default does: its instance unknown (the marker) or not listed, the first MAWS instance', async () => {
@@ -33,27 +66,38 @@ test('maws falls back as the unqualified default does: its instance unknown (the
   await assert.rejects(contextOver([chrome], {maws: 'maws:'}).get('maws'), {message: 'Browser is not available: maws. Browser ids: "1"; profiles_list keys: none.'}, 'never to Chrome');
 });
 
-test('two listed browsers carrying a key\'s instance: the key selects the first listed', async () => {
+test('two listed browsers carrying a key\'s instance: the key selects the first listed; a call without keys has none', async () => {
   const first = extension('4', 'chrome-personal');
   const second = extension('5', 'chrome-personal');
   assert.equal(await contextOver([first, second], {personal: 'chrome-personal'}).get('personal'), first);
+  await assert.rejects(contextOver([first]).get('personal'), {message: 'Browser is not available: personal. Browser ids: "4"; profiles_list keys: none.'});
 });
 
-test('a miss names every listed id and the keys that select a browser now', async () => {
-  const context = contextOver([extension('1', 'maws:app-1'), extension('2', 'chrome-personal')], {maws: 'maws:app-1', personal: 'chrome-personal', work: 'chrome-work'});
-  await assert.rejects(context.get('iab'), {code: 'browser_not_found', message: 'Browser is not available: iab. Browser ids: "1", "2"; profiles_list keys: "maws", "personal".'});
-  await assert.rejects(contextOver([], undefined).get('maws'), {message: 'Browser is not available: maws. Browser ids: none; profiles_list keys: none.'});
+test('the key map: a reserved MAWS key is never Chrome\'s while MAWS backends are configured; without them it is an ordinary key', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'cua-keys-'));
+  t.after(() => rmSync(home, {recursive: true, force: true}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {
+    maws: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-old', boundAt: 'x', route: 'cua'},
+    personal: {chromeProfileDirectory: 'Profile 1', extensionInstanceId: 'inst-personal', boundAt: 'x', route: 'cua'},
+    legacy: {chromeProfileDirectory: 'Profile 2', extensionInstanceId: 'inst-legacy', boundAt: 'x'},
+    unbound: {chromeProfileDirectory: 'Profile 3'},
+  }}));
+  assert.deepEqual(currentBrowserKeys(home, {mawsKeys: {maws: 'maws:'}}), {personal: 'inst-personal', maws: 'maws:'});
+  assert.deepEqual(currentBrowserKeys(home, {mawsKeys: {}}), {personal: 'inst-personal'}, 'not even before the first hello');
+  assert.deepEqual(currentBrowserKeys(home), {maws: 'inst-old', personal: 'inst-personal'});
+  writeFileSync(join(home, 'profiles.json'), 'not json');
+  assert.deepEqual(currentBrowserKeys(home, {mawsKeys: {maws: 'maws:app-1'}}), {maws: 'maws:app-1'}, 'a damaged registry contributes no keys and fails nothing');
 });
 
-test('the Selected Browser block names a MAWS backend "MAWS in-app browser (<key>)" and every other browser by its name', async () => {
+test('the Selected Browser block names a MAWS backend "MAWS in-app browser (<key>)" by its own key, and every other browser by its name', async () => {
   const keys = {maws: 'maws:app-1', 'maws-2': 'maws:app-2', personal: 'chrome-personal'};
   assert.equal(documentedName({name: 'cua', metadata: {extensionInstanceId: 'maws:app-1'}}, keys), 'MAWS in-app browser (maws)');
   assert.equal(documentedName({name: 'cua', metadata: {extensionInstanceId: 'maws:app-2'}}, keys), 'MAWS in-app browser (maws-2)');
-  assert.equal(documentedName({name: 'cua', metadata: {extensionInstanceId: 'maws:late'}}, {maws: 'maws:'}), 'MAWS in-app browser (maws)', 'an instance not known at launch is the first backend\'s');
+  assert.equal(documentedName({name: 'cua', metadata: {extensionInstanceId: 'maws:app-2'}}, {maws: 'maws:'}), 'MAWS in-app browser', 'no key carries it: no key is guessed');
   assert.equal(documentedName({name: 'cua', metadata: {extensionInstanceId: 'chrome-personal'}}, keys), 'cua');
-  const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '0.1.0', browserKeys: keys});
-  const text = await docs.readBrowser({id: '1', name: 'cua', type: 'extension', metadata: {extensionInstanceId: 'maws:app-1'}, capabilities: {browser: [], tab: []}});
-  assert.deepEqual(text.split('\n').slice(0, 5), ['# Selected Browser', '- Name: MAWS in-app browser (maws)', '- Type: extension', '- ID: 1', '- Service: cua browser service 0.1.0']);
-  const chrome = await docs.readBrowser({id: '2', name: 'cua', type: 'extension', metadata: {extensionInstanceId: 'chrome-personal'}, capabilities: {browser: [], tab: []}});
-  assert.equal(chrome.split('\n')[1], '- Name: cua');
+  const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '0.1.0'});
+  const read = (instance, id) => docs.readBrowser({id, name: 'cua', type: 'extension', metadata: {extensionInstanceId: instance}, capabilities: {browser: [], tab: []}}, {browserKeys: keys});
+  assert.deepEqual((await read('maws:app-1', '1')).split('\n').slice(0, 5), ['# Selected Browser', '- Name: MAWS in-app browser (maws)', '- Type: extension', '- ID: 1', '- Service: cua browser service 0.1.0']);
+  assert.equal((await read('maws:app-2', '2')).split('\n')[1], '- Name: MAWS in-app browser (maws-2)');
+  assert.equal((await read('chrome-personal', '3')).split('\n')[1], '- Name: cua');
 });

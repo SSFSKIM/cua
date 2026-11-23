@@ -20,7 +20,7 @@ const DOCUMENT_NAME = /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+$/u;   // Sz
 
 export class Documentation {
   // {apiManifest, disabledMemberIds: Set, serviceVersion, undocumentedApiMembers?, excludedDocumentation?, addendum?,
-  // documentManifest?, documents?, browserKeys?} (browserKeys: the launch's profiles_list keys, browsers.mjs browserKeys)
+  // documentManifest?, documents?}
   constructor(options) {
     this.options = {documentManifest: DOCUMENT_MANIFEST, documents: DOCUMENTS, ...options};
   }
@@ -35,8 +35,9 @@ export class Documentation {
     return text;
   }
 
-  // `browser` is a selected browser ({id, name, type, capabilities, apiSupportOverrides?}).
-  async readBrowser(browser) {
+  // `browser` is a selected browser ({id, name, type, capabilities, apiSupportOverrides?}); `browserKeys` the call's
+  // profiles_list keys (browsers.mjs browserKeys), which name a MAWS backend.
+  async readBrowser(browser, {browserKeys = {}} = {}) {
     const {apiManifest, disabledMemberIds, documentManifest, excludedDocumentation, undocumentedApiMembers} = this.options;
     const hidden = unsupportedMembers({apiManifest, browserInfo: browser, disabledMemberIds});
     for (const id of undocumentedApiMembers ?? []) hidden.add(id);
@@ -44,7 +45,7 @@ export class Documentation {
     const guidance = selected.guidanceNames.filter(name => !excludedDocumentation?.includes(name)).map(name => this.readDocument(name));
     const header = [
       '# Selected Browser',
-      `- Name: ${documentedName(browser, this.options.browserKeys ?? {})}`,
+      `- Name: ${documentedName(browser, browserKeys)}`,
       `- Type: ${browser.type}`,
       `- ID: ${browser.id}`,
       `- Service: cua browser service ${this.options.serviceVersion}`,
@@ -155,7 +156,7 @@ export function apiReference(manifest, browserType, hidden = new Set()) {
 export const DOCUMENTATION_HANDLERS = {
   async get_browser_documentation(params, runtime) {
     const browser = await runtime.context.get(params.browser_id);
-    return await runtime.docs.readBrowser(runtime.context.selection(browser));
+    return await runtime.docs.readBrowser(runtime.context.selection(browser), {browserKeys: runtime.context.keys()});
   },
   async get_documentation(params, runtime) {
     return await runtime.docs.read(params.name);

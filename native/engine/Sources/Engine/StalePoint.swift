@@ -179,7 +179,8 @@ struct ScreenshotNodeRead<Element> {
   /// Whether its action names were read (the review's finding 4): a failed read leaves `actions` empty, and the element
   /// not known to be inert.
   var actionsRead = true
-  /// Whether its AXRole read (#431's review of 849bcdad, finding 6): a failed read decodes as AXUnknown.
+  /// Whether its AXRole read (#431's review of 849bcdad, finding 6): a failed read decodes as AXUnknown, and so does a null
+  /// slot (#501, `ElementData.roleRead`).
   var roleRead = true
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).

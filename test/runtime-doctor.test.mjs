@@ -13,7 +13,7 @@ import {agentUnitPath, installAgent as installUnit} from '../src/remote/systemd.
 import {fakeLoginctl, fakeSystemctl} from './fixtures/fake-systemctl.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {sweepRun} from '../src/runtime/run-dir.mjs';
-import {parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
+import {ownInstaller, parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
 import {scratch, shortScratch, zipFixture, fixturePin, acceptSignatures} from './fixtures/runtime-fixture.mjs';
 
 const darwin = process.platform === 'darwin';
@@ -620,7 +620,9 @@ test('Linux: sandbox.launcher passes for the pinned helper and fails, with the r
   const run = linuxHelper => inspectRuntime({home, host: linuxHost, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, inspectLinux: async () => [], linuxHelper});
   const missing = check(await run(undefined), 'sandbox.launcher');
   assert.equal(missing.status, 'fail');
-  assert.match(missing.detail, new RegExp(`cua's Linux sandbox helper ${join(home, 'sandbox', pin.upstreamTag, 'codex-linux-sandbox')} is not installed .*; run \`cua install\``));
+  // the remedy names this checkout's own installer by its absolute path (#171 M6a, F9)
+  const installer = ownInstaller().command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.match(missing.detail, new RegExp(`cua's Linux sandbox helper ${join(home, 'sandbox', pin.upstreamTag, 'codex-linux-sandbox')} is not installed .*; run \`${installer}\``));
   mkdirSync(join(home, 'sandbox', pin.upstreamTag), {recursive: true});
   writeFileSync(join(home, 'sandbox', pin.upstreamTag, 'codex-linux-sandbox'), 'tampered', {mode: 0o755});
   assert.match(check(await run(undefined), 'sandbox.launcher').detail, /has SHA-256 [0-9a-f]{64}, not the pinned [0-9a-f]{64}.*remove/);

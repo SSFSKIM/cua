@@ -123,7 +123,7 @@ export async function openDriven({name, engine, env, scenes, guard, device = nul
     // A local session's first result must attest the pinned engine; a device's attests the device's own.
     if (!device && first.engine !== engine) throw new Error(`${name}: the first result attests ${first.engine ?? 'no engine'}, not the pinned ${engine}`);
     for (const scene of Array.isArray(bind) ? scenes.filter(s => bind.includes(s.id)) : bind ? scenes : []) {
-      const bound = await run(BIND(scene.id, scene.app));
+      const bound = await run(BIND(scene.id, scene.app, engine));
       if (!bound.ok) throw new Error(`${name}: binding ${scene.id} failed: ${bound.error}`);
     }
   } catch (error) {

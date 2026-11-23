@@ -99,3 +99,25 @@ test('a session opened with bind false sends only its first cell, and its scene 
   assert.deepEqual(bare.sent, [FIRST]);
   assert.equal((await bare.session.run('/* cursor-sitting:scene electron */ 1')).ok, true, 'the guard knows the scene');
 });
+
+test('#526: the session\'s bind records its engine\'s rendering, so item 188\'s multi-line read-back holds on cua\'s lane', async () => {
+  const {valueOfIndex, indexOfTarget} = await import('../../scripts/native-matrix/matrix-text.mjs');
+  const {CLICK_VALUE} = await import('../../scripts/cursor-sitting/item-188.mjs');
+  const {advanceNumbering, render} = await import('../../src/services/engine/render.mjs');
+  const {node, skyshot} = await import('../native-goldens/builder.mjs');
+  assert.ok(CLICK_VALUE.includes('\n'), 'item 188 writes a multi-line value');
+  const {sent} = await opened(undefined);
+  const recorded = /globalThis\.__axRendering = ("[a-z]+");/.exec(sent[1]);
+  assert.ok(recorded, 'the bind cell records the rendering');
+  // The cell's assignment, run as the REPL runs it; then item 188's check (fieldWithValue) on cua's rendering.
+  const shot = skyshot([node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W'}),
+    node('f', 1, 'AXTextArea', {roleDescription: 'text entry area', title: 'Fixture text', value: CLICK_VALUE, valueType: 'string', flags: {settable: true}})]);
+  const now = render(shot, advanceNumbering(null, shot));
+  assert.ok(!now.includes(`${CLICK_VALUE.split('\n')[0]}\n`), 'cua prints it on one line');
+  const plain = text => String(text ?? '').replace(/\*\*/g, '');
+  try {
+    globalThis.__axRendering = JSON.parse(recorded[1]);
+    assert.equal(globalThis.__axRendering, 'cua');
+    assert.equal(plain(valueOfIndex(now, indexOfTarget(now, 'Fixture text'))), CLICK_VALUE);
+  } finally { delete globalThis.__axRendering; }
+});

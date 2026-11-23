@@ -1,0 +1,19 @@
+{
+  "complete": true,
+  "rawVerdict": "fail",
+  "rowCount": 563,
+  "putBack": true,
+  "counts": {
+    "ok": 397,
+    "invalid: not prepared: a point of the drag is not in the field": 1,
+    "failed-section: method": 6,
+    "invalid: the user window (textedit) did not come to the front": 20,
+    "invalid: not prepared: the field could not be given the focus": 1,
+    "invalid: not prepared: the word to replace is not in the field once": 1,
+    "invalid: the user window (electron) did not come to the front": 8,
+    "invalid: the untitled document's text was not typed (not sent)": 1,
+    "invalid: textedit's window was not in front": 2,
+    "failed-section: unicode": 72,
+    "invalid: the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held": 54
+  }
+}

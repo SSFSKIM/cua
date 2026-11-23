@@ -1,0 +1,40 @@
+{
+  "start": "2026-10-23T21:24:00Z",
+  "measurementsEnded": "2026-10-23T22:51:30Z",
+  "finalPosture": "2026-10-23T22:52:40Z",
+  "elapsedToFinalSeconds": 5320,
+  "controller": "2f71911eadc693a3ba089631639913a4b16b9348",
+  "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "nativeMac": {
+    "completeBoth": true,
+    "unexpectedDifferences": 0
+  },
+  "matrix": {
+    "vendor": {
+      "complete": true,
+      "rawVerdict": "fail",
+      "rows": 563,
+      "ok": 397,
+      "invalid": 88,
+      "otherFailed": 78,
+      "putBackOk": true
+    },
+    "cua": {
+      "complete": true,
+      "rawVerdict": "fail",
+      "rows": 562,
+      "ok": 444,
+      "invalid": 90,
+      "otherFailed": 28,
+      "putBackOk": true
+    }
+  },
+  "routeAbJudged": "incomplete six-valid-sample proof; raw pass preserved",
+  "electronFocus": {
+    "complete": true,
+    "rawVerdict": "fail",
+    "validArms": 5
+  },
+  "finalState": "clean put-back, Terminal front, approved engine stopped, parity clean",
+  "remaining": "A/B release/verdict harness residue; final-build triple; product and invalid matrix rows; #188 predicate/end-to-end follow-up"
+}

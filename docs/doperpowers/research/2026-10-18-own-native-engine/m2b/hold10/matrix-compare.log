@@ -1,0 +1,135 @@
+wrote /Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/matrix-comparison.txt
+VERDICT: FAIL
+  blocking: method: electron/background/click.button@finder is worse on cua
+  blocking: method: electron/background/drag.select@finder is worse on cua
+  blocking: method: electron/background/selectText.text@finder is worse on cua
+  blocking: method: electron/background/setValue.text@finder is worse on cua
+  blocking: not interfering: finder/concurrent@textedit failed on cua
+  blocking: not interfering: chrome/concurrent@textedit failed on cua
+  blocking: not interfering: electron/background/launch@finder failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.acceptance4 failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.combining failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.emoji failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.hangul failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.jamo failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.kanji failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.latin failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.lines failed on cua
+  blocking: unicode: chrome/composing@textedit/paste.mixed failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.acceptance4 failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.combining failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.emoji failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.hangul failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.jamo failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.kanji failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.latin failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.lines failed on cua
+  blocking: unicode: chrome/composing@textedit/typeText.mixed failed on cua
+  blocking: unicode: chrome/korean/pressKey.rk failed on cua
+  blocking: unicode: chrome/korean/typeText.lines failed on cua
+  blocking: unicode: chrome/midSwitch/typeText.long failed on cua
+  blocking: unicode: electron/korean/pressKey.rk failed on cua
+  blocking: unicode: textedit/korean/pressKey.rk failed on cua
+  missing: runs: 1 complete, attested full matrix run(s) on vendor, 3 are the rule
+  missing: runs: 1 complete, attested full matrix run(s) on cua, 3 are the rule
+  missing: method: chrome/background/click.apply@textedit has no valid cua sample
+  missing: method: chrome/background/click.checkbox@textedit has no valid cua sample
+  missing: method: chrome/background/drag.select@textedit has no valid cua sample
+  missing: method: chrome/background/getAXState.tree@textedit has no valid cua sample
+  missing: method: chrome/background/listApps.running@textedit has no valid cua sample
+  missing: method: chrome/background/paste.replace@textedit has no valid cua sample
+  missing: method: chrome/background/pressKey.tab@textedit has no valid cua sample
+  missing: method: chrome/background/selectText.name@textedit has no valid cua sample
+  missing: method: chrome/background/selectText.notText@textedit has no valid cua sample
+  missing: method: chrome/background/setValue.name@textedit has no valid cua sample
+  missing: method: chrome/background/setValue.notSettable@textedit has no valid cua sample
+  missing: method: chrome/background/typeText.replace@textedit has no valid cua sample
+  missing: method: chrome/frontmost/drag.select has no valid cua sample
+  missing: method: electron/background/paste.replace@finder has no valid cua sample
+  missing: method: electron/background/pressKey.tab@finder has no valid cua sample
+  missing: method: electron/background/typeText.replace@finder has no valid cua sample
+  missing: method: electron/frontmost/paste.replace has no valid cua sample
+  missing: method: finder/background/click.row@electron has no valid cua sample
+  missing: method: finder/background/click.row@textedit has no valid cua sample
+  missing: method: finder/background/getAXState.tree@electron has no valid cua sample
+  missing: method: finder/background/getAXState.tree@textedit has no valid cua sample
+  missing: method: finder/background/listApps.running@electron has no valid cua sample
+  missing: method: finder/background/listApps.running@textedit has no valid cua sample
+  missing: method: finder/background/performSecondaryAction.down@electron has no valid cua sample
+  missing: method: finder/background/performSecondaryAction.down@textedit has no valid cua sample
+  missing: method: finder/background/pressKey.down@electron has no valid cua sample
+  missing: method: finder/background/pressKey.down@textedit has no valid cua sample
+  missing: method: finder/background/scroll.down@electron has no valid cua sample
+  missing: method: finder/background/scroll.down@textedit has no valid cua sample
+  missing: method: finder/background/selectText.notText@electron has no valid cua sample
+  missing: method: finder/background/selectText.notText@textedit has no valid cua sample
+  missing: method: finder/background/typeText.typeSelect@electron has no valid cua sample
+  missing: method: finder/background/typeText.typeSelect@textedit has no valid cua sample
+  missing: concurrent use: textedit/concurrent.sheet@electron has no valid cua sample
+  missing: intervention: textedit/intervention.fires has no valid cua sample
+  missing: intervention: textedit/intervention.preAction has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.acceptance4 has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.combining has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.emoji has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.hangul has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.jamo has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.kanji has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.latin has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.lines has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/paste.mixed has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.acceptance4 has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.combining has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.emoji has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.hangul has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.jamo has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.kanji has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.latin has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.lines has no valid cua sample
+  missing: unicode: chrome/perContext@textedit/typeText.mixed has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.acceptance4 has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.combining has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.emoji has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.hangul has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.jamo has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.kanji has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.latin has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.lines has no valid cua sample
+  missing: unicode: electron/perContext@textedit/paste.mixed has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.acceptance4 has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.combining has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.emoji has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.hangul has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.jamo has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.kanji has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.latin has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.lines has no valid cua sample
+  missing: unicode: electron/perContext@textedit/typeText.mixed has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.acceptance4 has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.combining has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.emoji has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.hangul has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.jamo has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.kanji has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.latin has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.lines has no valid cua sample
+  missing: unicode: textedit/perContext@electron/paste.mixed has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.acceptance4 has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.combining has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.emoji has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.hangul has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.jamo has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.kanji has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.latin has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.lines has no valid cua sample
+  missing: unicode: textedit/perContext@electron/typeText.mixed has no valid cua sample
+  missing: speed: electron/method.paste.replace has no measure on one engine
+  owner: speed: chrome/method.listApps.running missed the 10% beat (cua 21.2 ms against 23 ms, p95 21.2 against 23)
+  owner: speed: electron/getAXState missed the 10% beat (cua 59.3 ms against 54.3 ms, p95 80.8 against 76.7)
+  owner: speed: electron/getScreenshot missed the 10% beat (cua 61.4 ms against 46.3 ms, p95 73.1 against 55.1)
+  owner: speed: finder/method.pressKey.down missed the 10% beat (cua 6.6 ms against 6.8 ms, p95 6.6 against 6.8)
+  owner: speed: finder/method.selectText.notText missed the 10% beat (cua 4.8 ms against 4.3 ms, p95 4.8 against 4.3)
+  owner: speed: textedit/getAXState missed the 10% beat (cua 66.3 ms against 59.3 ms, p95 83.8 against 77.5)
+  owner: speed: textedit/getScreenshot missed the 10% beat (cua 66.2 ms against 49.8 ms, p95 74.2 against 58.4)
+  owner: speed: textedit/method.panel.getAXState.panel missed the 10% beat (cua 148.4 ms against 142.6 ms, p95 148.4 against 142.6)
+  owner: speed: textedit/method.pressKey.selectAll missed the 10% beat (cua 8.1 ms against 7.9 ms, p95 8.1 against 7.9)
+  owner: finding elements: parity on the resolved sum (the owner decides)

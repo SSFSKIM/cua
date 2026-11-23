@@ -1,0 +1,2 @@
+compareExit=1
+summaryExit=1

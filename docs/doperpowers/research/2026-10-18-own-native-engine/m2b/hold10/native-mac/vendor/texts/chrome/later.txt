@@ -1,0 +1,2 @@
+There has been no change in the accessibility tree for Window: "cua scene page".
+The focused UI element is 25 체크박스 Scene option, Value: 1

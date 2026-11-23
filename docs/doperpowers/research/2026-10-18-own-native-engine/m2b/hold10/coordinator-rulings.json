@@ -1,0 +1,42 @@
+{
+  "routeAb": {
+    "rawVerdict": "pass",
+    "judged": "incomplete six-sample proof: sample 5 invalid by release check",
+    "forced1ValidEffectMs": [
+      543,
+      470
+    ],
+    "natural3ValidEffectMs": [
+      443,
+      447,
+      411
+    ],
+    "reason": "Sample4 after-counters already balanced become3/resign3; next release demanded a later resignation. Raw complete/pass failed to account for invalid mandatory sample.",
+    "disposition": "Keep raw output unchanged; no 3/3 forced-route claim; offline #184 release-check/reporting residue. Proceed independent #188 and native-mac lanes."
+  },
+  "matrixAdmission": {
+    "freshReadsAt": "2026-10-23T21:41:04Z",
+    "engineRunning": false,
+    "electronFixtureCount": 0,
+    "frontBundleId": "com.apple.Terminal",
+    "freshCounterReading": null,
+    "lastVerifiedCounters": {
+      "appDidBecomeActive": 10,
+      "appDidResignActive": 10
+    },
+    "lastReleaseVerified": true,
+    "coordinatorRuling": "Sufficient: activation hold lives in engine process; stopped engine and removed fixture mean no hold can survive. Last counters balanced and Terminal front. Start pair.",
+    "measurementCutoff": "2026-10-23T22:56:00Z",
+    "hardEnd": "2026-10-23T23:30:00Z",
+    "latestPairStart": "2026-10-23T22:04:00Z"
+  },
+  "cuaCutoffExtension": {
+    "originalCutoff": "2026-10-23T22:56:00Z",
+    "condition": "lane visibly progressing at original cutoff",
+    "extendedCutoff": "2026-10-23T23:05:00Z",
+    "hardEnd": "2026-10-23T23:30:00Z",
+    "instruction": "If still running at23:05, one normal harness interrupt, then recovery; no hard-end extension.",
+    "used": false,
+    "actualCompletion": "2026-10-23T22:51:30Z"
+  }
+}

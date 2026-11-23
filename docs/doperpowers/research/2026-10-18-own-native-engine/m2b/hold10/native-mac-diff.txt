@@ -1,0 +1,162 @@
+{
+  "suite": "native-mac",
+  "vendor": {
+    "dir": "/Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/native-mac/vendor",
+    "host": "vendor",
+    "engine": "vendor",
+    "commit": "2f71911eadc693a3ba089631639913a4b16b9348",
+    "approvedBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+    "runtimeRelease": "26.928.40906-darwin-arm64"
+  },
+  "cua": {
+    "dir": "/Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/native-mac/cua",
+    "host": "cua",
+    "engine": "cua",
+    "commit": "2f71911eadc693a3ba089631639913a4b16b9348",
+    "approvedBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+    "runtimeRelease": "26.928.40906-darwin-arm64"
+  },
+  "scenes": {
+    "textedit": {
+      "full": {
+        "compared": true,
+        "added": 0,
+        "lines": 59,
+        "differences": []
+      },
+      "before": {
+        "compared": true,
+        "added": 0,
+        "lines": 59,
+        "differences": []
+      },
+      "diff": {
+        "compared": true,
+        "added": 0,
+        "lines": 0,
+        "differences": []
+      },
+      "settle": {
+        "vendor": true,
+        "cua": true
+      }
+    },
+    "finder": {
+      "full": {
+        "compared": true,
+        "added": 0,
+        "lines": 257,
+        "differences": []
+      },
+      "before": {
+        "compared": true,
+        "added": 0,
+        "lines": 257,
+        "differences": []
+      },
+      "diff": {
+        "compared": true,
+        "added": 0,
+        "lines": 8,
+        "differences": []
+      },
+      "settle": {
+        "vendor": true,
+        "cua": true
+      }
+    },
+    "chrome": {
+      "full": {
+        "compared": true,
+        "added": 0,
+        "lines": 61,
+        "differences": []
+      },
+      "before": {
+        "compared": true,
+        "added": 0,
+        "lines": 61,
+        "differences": []
+      },
+      "diff": {
+        "compared": true,
+        "added": 0,
+        "lines": 1,
+        "differences": []
+      },
+      "settle": {
+        "vendor": true,
+        "cua": true
+      }
+    },
+    "electron": {
+      "full": {
+        "compared": true,
+        "added": 0,
+        "lines": 25,
+        "differences": []
+      },
+      "before": {
+        "compared": true,
+        "added": 0,
+        "lines": 25,
+        "differences": []
+      },
+      "diff": {
+        "compared": true,
+        "added": 0,
+        "lines": 1,
+        "differences": []
+      },
+      "settle": {
+        "vendor": true,
+        "cua": true
+      }
+    }
+  },
+  "declared": [
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "header",
+      "fault": "scene state",
+      "cause": "Scene state, not rendering (carried from the renderer goldens' recording, test/native-goldens/expected.json): the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged, so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "cause": "Scene state, as the header entry above: the vendor's click scrolled the document to its end and cua's did not.",
+      "count": 1
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "cause": "Scene state, as the header entry above: the vendor's click scrolled the document to its end and cua's did not.",
+      "count": 1
+    },
+    {
+      "scene": "finder",
+      "golden": "full",
+      "kind": "subsetCount",
+      "fault": "vendor",
+      "cause": "Vendor defect, declared for the renderer goldens by the spec's Decision Log \"M1b closing wave\" item 1c: the vendor's subset count of the run's file list reads `of 100 items` where cua reads the true count. availableSubsetDescription (0x10063e220) counts the element's childCount through get_childCount (0x10079e94c), over the hierarchy its prefetch read with _AXUIElementCopyHierarchy with AXChildren capped at MaxArrayCount 100 (docs/doperpowers/research/2026-10-18-own-native-engine/F-helper-logic.md §1 item 1), so its N never exceeds 100. cua keeps the true count: a model looking for item 150 must not be told the list ends at 100. Only N may differ; the visible ranges and the rest of the line must match.",
+      "count": 1
+    },
+    {
+      "scene": "finder",
+      "golden": "before",
+      "kind": "subsetCount",
+      "fault": "vendor",
+      "cause": "Vendor defect, declared for the renderer goldens by the spec's Decision Log \"M1b closing wave\" item 1c: the vendor's subset count of the run's file list reads `of 100 items` where cua reads the true count. availableSubsetDescription (0x10063e220) counts the element's childCount through get_childCount (0x10079e94c), over the hierarchy its prefetch read with _AXUIElementCopyHierarchy with AXChildren capped at MaxArrayCount 100 (docs/doperpowers/research/2026-10-18-own-native-engine/F-helper-logic.md §1 item 1), so its N never exceeds 100. cua keeps the true count: a model looking for item 150 must not be told the list ends at 100. Only N may differ; the visible ranges and the rest of the line must match.",
+      "count": 1
+    }
+  ],
+  "differences": [],
+  "ok": true,
+  "summary": "0 unexpected differences"
+}
+summary: 0 unexpected differences

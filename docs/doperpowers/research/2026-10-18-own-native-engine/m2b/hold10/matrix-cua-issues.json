@@ -1,0 +1,6007 @@
+[
+  {
+    "section": "method",
+    "id": "chrome/frontmost/drag.select",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "frontmost",
+    "method": "drag",
+    "case": "select",
+    "expect": "outcome",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 290.936,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.053,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "invalid": "not prepared: a point of the drag is not in the field"
+  },
+  {
+    "section": "method",
+    "id": "chrome/frontmost/selectText.notText",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "frontmost",
+    "method": "selectText",
+    "case": "notText",
+    "expect": "refusal",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": null,
+          "startedAt": null
+        },
+        "receivedAt": 1792794234653
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 5.621125000005122,
+    "wallMs": 224.5848340000084,
+    "inputRoute": 1,
+    "outcome": {
+      "refused": true,
+      "expected": false,
+      "unchanged": true,
+      "errorName": "Error",
+      "message": "Computer Use server error -10005: Could not find the requested text to select in the element"
+    },
+    "activations": 0
+  },
+  {
+    "section": "method",
+    "id": "electron/frontmost/paste.replace",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "frontmost",
+    "method": "paste",
+    "case": "replace",
+    "expect": "outcome",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.274,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.045,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "invalid": "not prepared: the field could not be given the focus"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/getAXState.tree@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "getAXState",
+    "case": "tree",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/listApps.running@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "listApps",
+    "case": "running",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/click.row@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "click",
+    "case": "row",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/pressKey.down@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "pressKey",
+    "case": "down",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/typeText.typeSelect@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "typeText",
+    "case": "typeSelect",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/selectText.notText@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "selectText",
+    "case": "notText",
+    "expect": "refusal",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/scroll.down@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "scroll",
+    "case": "down",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/performSecondaryAction.down@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "performSecondaryAction",
+    "case": "down",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/getAXState.tree@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "getAXState",
+    "case": "tree",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/listApps.running@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "listApps",
+    "case": "running",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/click.checkbox@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "click",
+    "case": "checkbox",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/typeText.replace@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "replace",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/pressKey.tab@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "pressKey",
+    "case": "tab",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/setValue.name@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "setValue",
+    "case": "name",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/selectText.name@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "selectText",
+    "case": "name",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/paste.replace@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "replace",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/click.apply@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "click",
+    "case": "apply",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/drag.select@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "drag",
+    "case": "select",
+    "expect": "outcome",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/setValue.notSettable@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "setValue",
+    "case": "notSettable",
+    "expect": "refusal",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "chrome/background/selectText.notText@textedit",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "selectText",
+    "case": "notText",
+    "expect": "refusal",
+    "user": "textedit",
+    "invalid": "the user window (textedit) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "electron/background/click.button@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "click",
+    "case": "button",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792794428727,
+          "startedAt": 1792794428726
+        },
+        "receivedAt": 1792794428671,
+        "activationGuardMs": 40.006,
+        "activationClick": "posted"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 259.433,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 250.702,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 60.898374999989755,
+    "wallMs": 214.49525000003632,
+    "inputRoute": 3,
+    "actAt": [
+      1792794428668,
+      1792794428729
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792794427392
+    },
+    "outcome": {
+      "pressedOnce": false
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "method",
+    "id": "electron/background/typeText.replace@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "replace",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.179,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.043,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "invalid": "not prepared: the field could not be given the focus"
+  },
+  {
+    "section": "method",
+    "id": "electron/background/pressKey.tab@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "pressKey",
+    "case": "tab",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.736,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.053,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "invalid": "not prepared: the field could not be given the focus"
+  },
+  {
+    "section": "method",
+    "id": "electron/background/setValue.text@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "setValue",
+    "case": "text",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792794433335,
+          "startedAt": 1792794433335
+        },
+        "receivedAt": 1792794433331
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.542,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.038,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 6.490457999985665,
+    "wallMs": 63.456708000041544,
+    "inputRoute": 3,
+    "actAt": [
+      1792794433329,
+      1792794433336
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792794432307
+    },
+    "outcome": {
+      "equal": false,
+      "selection": {
+        "selectedLength": 33,
+        "selectedHash": "e55130c7be1f319b6eec209a5ba0551d366590c59c5ae176c0e6f050b1a08fc2",
+        "valueLength": 89,
+        "valueHash": "ff7d66509217c4f727e497c8c56964cbcc2693b5395a1b143d8e55f6105287eb",
+        "valueChanged": false,
+        "selectionChanged": false
+      }
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "method",
+    "id": "electron/background/selectText.text@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "selectText",
+    "case": "text",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.851,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.054,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792794437614,
+          "startedAt": 1792794437614
+        },
+        "receivedAt": 1792794437612
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 265.326,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.935,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 3.8575420000124723,
+    "wallMs": 109.31166700000176,
+    "inputRoute": 3,
+    "actAt": [
+      1792794437611,
+      1792794437614
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792794436433
+    },
+    "outcome": {
+      "selected": false,
+      "selection": {
+        "selectedLength": null,
+        "selectedHash": null,
+        "valueLength": 30,
+        "valueHash": "8e9d829582a7d85ba246ce34d257f9e852c109eda9110455a8b7a73a1b33d88c",
+        "valueChanged": true,
+        "selectionChanged": false
+      }
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "method",
+    "id": "electron/background/paste.replace@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "replace",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.488,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.043,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "invalid": "not prepared: the word to replace is not in the field once"
+  },
+  {
+    "section": "method",
+    "id": "electron/background/drag.select@finder",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "drag",
+    "case": "select",
+    "expect": "outcome",
+    "user": "finder",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792794443272,
+          "startedAt": 1792794443272
+        },
+        "receivedAt": 1792794443268
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 261.921,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.942,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 6.3672500000102445,
+    "wallMs": 156.3087500000256,
+    "inputRoute": 3,
+    "actAt": [
+      1792794443266,
+      1792794443272
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792794442044
+    },
+    "outcome": {
+      "selected": false,
+      "spansLines": false,
+      "unchanged": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "method",
+    "id": "finder/background/getAXState.tree@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "getAXState",
+    "case": "tree",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/listApps.running@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "listApps",
+    "case": "running",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/click.row@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "click",
+    "case": "row",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/pressKey.down@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "pressKey",
+    "case": "down",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/typeText.typeSelect@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "typeText",
+    "case": "typeSelect",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/selectText.notText@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "selectText",
+    "case": "notText",
+    "expect": "refusal",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/scroll.down@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "scroll",
+    "case": "down",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "method",
+    "id": "finder/background/performSecondaryAction.down@electron",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "finder",
+    "target": "finder",
+    "regime": "background",
+    "method": "performSecondaryAction",
+    "case": "down",
+    "expect": "outcome",
+    "user": "electron",
+    "invalid": "the user window (electron) did not come to the front"
+  },
+  {
+    "section": "concurrent",
+    "id": "textedit/concurrent.sheet@electron",
+    "scene": "textedit",
+    "user": "electron",
+    "regime": "background",
+    "method": "pressKey",
+    "case": "sheet",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "invalid": "the untitled document's text was not typed (not sent)",
+    "attempts": 1
+  },
+  {
+    "section": "intervention",
+    "id": "textedit/intervention.fires",
+    "scene": "textedit",
+    "regime": "frontmost",
+    "method": "typeText",
+    "case": "fires",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "invalid": "textedit's window was not in front",
+    "attempts": 1
+  },
+  {
+    "section": "intervention",
+    "id": "textedit/intervention.preAction",
+    "scene": "textedit",
+    "regime": "frontmost",
+    "method": "typeText",
+    "case": "preAction",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "invalid": "textedit's window was not in front",
+    "attempts": 1
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/midSwitch/typeText.long",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "frontmost",
+    "method": "typeText",
+    "case": "long",
+    "expect": "outcome",
+    "condition": "midSwitch",
+    "inCellMs": 422.9162500000093,
+    "wallMs": 2645.588624999975,
+    "inputRoute": "2'",
+    "outcome": {
+      "stopped": true,
+      "errorName": "Error",
+      "message": "Computer Use server error -10005: The input source changed after 192 of 1079 characters were entered; get the app's state to see what was typed.",
+      "entered": 192,
+      "length": 193,
+      "exact": false,
+      "intervalSource": "engine",
+      "switchOffsetMs": 398
+    },
+    "attempts": 1
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/korean/pressKey.rk",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "frontmost",
+    "method": "pressKey",
+    "case": "rk",
+    "expect": "outcome",
+    "condition": "korean",
+    "inCellMs": 13.857667000032961,
+    "wallMs": 164.21495900000446,
+    "inputRoute": "2'",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 1,
+      "expectedLength": 2
+    },
+    "activations": 0
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/korean/typeText.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "frontmost",
+    "method": "typeText",
+    "case": "lines",
+    "expect": "outcome",
+    "condition": "korean",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 290.967,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.055,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792794955642,
+          "startedAt": 1792794955589
+        },
+        "receivedAt": 1792794955585,
+        "entered": 5
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 274.413,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.738,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 111.87462500005495,
+    "wallMs": 206.47654100006912,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 2,
+      "expectedLength": 5
+    },
+    "activations": 0
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/korean/pressKey.rk",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "frontmost",
+    "method": "pressKey",
+    "case": "rk",
+    "expect": "outcome",
+    "condition": "korean",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 294.776,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.035,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792794970708,
+          "startedAt": 1792794970707
+        },
+        "receivedAt": 1792794970705
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 292.254,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.406,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 4.524207999929786,
+    "wallMs": 144.3990000000922,
+    "inputRoute": "2'",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 1,
+      "expectedLength": 2
+    },
+    "activations": 0
+  },
+  {
+    "section": "unicode",
+    "id": "electron/korean/pressKey.rk",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "frontmost",
+    "method": "pressKey",
+    "case": "rk",
+    "expect": "outcome",
+    "condition": "korean",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.268,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.025,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795064560,
+          "startedAt": 1792795064559
+        },
+        "receivedAt": 1792795064557
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 271.517,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 254.98,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 5.844082999974489,
+    "wallMs": 176.5454580000369,
+    "inputRoute": "2'",
+    "actAt": [
+      1792795064555,
+      1792795064561
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795064953
+    },
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 1,
+      "expectedLength": 2
+    },
+    "activations": 0
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795195216,
+          "startedAt": 1792795195215
+        },
+        "receivedAt": 1792795195161,
+        "entered": 0,
+        "activationGuardMs": 41.899,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 284.258,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.02,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2065.911834000144,
+    "wallMs": 2202.9577920001466,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 44,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795202074,
+          "startedAt": 1792795202073
+        },
+        "receivedAt": 1792795202020,
+        "activationGuardMs": 45.239,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 292.362,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.032,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2066.10079200007,
+    "wallMs": 2153.622750000097,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 44,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795209695,
+          "startedAt": 1792795209694
+        },
+        "receivedAt": 1792795209641,
+        "entered": 0,
+        "activationGuardMs": 42.088,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 280.539,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.179,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2060.668709000107,
+    "wallMs": 2154.8602499999106,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795217269,
+          "startedAt": 1792795217268
+        },
+        "receivedAt": 1792795217216,
+        "activationGuardMs": 42.955,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 295.552,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.045,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2066.176124999998,
+    "wallMs": 2226.559291999787,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795224513,
+          "startedAt": 1792795224511
+        },
+        "receivedAt": 1792795224458,
+        "entered": 0,
+        "activationGuardMs": 41.889,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 277.113,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.673,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2065.9830419998616,
+    "wallMs": 2244.9810840000864,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795231592,
+          "startedAt": 1792795231591
+        },
+        "receivedAt": 1792795231534,
+        "activationGuardMs": 43.747,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 293.286,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.874,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2066.892833000049,
+    "wallMs": 2253.2952920000535,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795239072,
+          "startedAt": 1792795239071
+        },
+        "receivedAt": 1792795239023,
+        "entered": 0,
+        "activationGuardMs": 38.801,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 280.611,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.031,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2061.6223749998026,
+    "wallMs": 2323.3475410002284,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 11,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795246009,
+          "startedAt": 1792795246008
+        },
+        "receivedAt": 1792795245958,
+        "activationGuardMs": 42.531,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 289.76,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.042,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2067.532292000018,
+    "wallMs": 2217.2785410000943,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 11,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795252678,
+          "startedAt": 1792795252678
+        },
+        "receivedAt": 1792795252630,
+        "entered": 0,
+        "activationGuardMs": 41.593,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 294.807,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.038,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2061.3647499999497,
+    "wallMs": 2153.9202920000535,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795258900,
+          "startedAt": 1792795258899
+        },
+        "receivedAt": 1792795258847,
+        "activationGuardMs": 43.944,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 288.49,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.613,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2063.4125830000266,
+    "wallMs": 2127.8513329999987,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795265711,
+          "startedAt": 1792795265710
+        },
+        "receivedAt": 1792795265656,
+        "entered": 0,
+        "activationGuardMs": 40.808,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 287.527,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.405,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2062.7665419999976,
+    "wallMs": 2165.7721669999883,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 2,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795273261,
+          "startedAt": 1792795273259
+        },
+        "receivedAt": 1792795273210,
+        "activationGuardMs": 41.287,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 296.443,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.038,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2059.3000420001335,
+    "wallMs": 2212.0890830000862,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 2,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795280186,
+          "startedAt": 1792795280185
+        },
+        "receivedAt": 1792795280138,
+        "entered": 0,
+        "activationGuardMs": 40.176,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 277.069,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 254.621,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2054.511124999961,
+    "wallMs": 2168.4930829999503,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795288037,
+          "startedAt": 1792795288037
+        },
+        "receivedAt": 1792795287991,
+        "activationGuardMs": 39.358,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 291.932,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 254.496,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2057.2619580000173,
+    "wallMs": 2271.7729579999577,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795295325,
+          "startedAt": 1792795295323
+        },
+        "receivedAt": 1792795295270,
+        "entered": 0,
+        "activationGuardMs": 43.429,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 296.468,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.722,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2063.4485839998815,
+    "wallMs": 2138.437249999959,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 5,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795302962,
+          "startedAt": 1792795302961
+        },
+        "receivedAt": 1792795302907,
+        "activationGuardMs": 43.594,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 299.084,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.043,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2064.1722080002073,
+    "wallMs": 2148.669125000015,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 5,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/typeText.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795309746,
+          "startedAt": 1792795309744
+        },
+        "receivedAt": 1792795309687,
+        "entered": 0,
+        "activationGuardMs": 47.089,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 276.746,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.026,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2072.218333999859,
+    "wallMs": 2177.480290999869,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 9,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/composing@textedit/paste.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "composing",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795317164,
+          "startedAt": 1792795317164
+        },
+        "receivedAt": 1792795317116,
+        "activationGuardMs": 37.817,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 295.172,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.039,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2054.589957999997,
+    "wallMs": 2135.0515000000596,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 9,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error",
+      "userKept": true
+    },
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 111.44854100001976,
+    "wallMs": 255.5185829999391,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 44,
+      "expectedLength": 44
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 68.3494579999242,
+    "wallMs": 199.7564170002006,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 44,
+      "expectedLength": 44
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 67.58479200000875,
+    "wallMs": 178.00487499986775,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 89.77824999997392,
+    "wallMs": 306.14770899992436,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 88.42079199990258,
+    "wallMs": 344.74270800012164,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 80.03595900000073,
+    "wallMs": 201.089791999897,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 64.23641699994914,
+    "wallMs": 373.3421249999665,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 11,
+      "expectedLength": 11
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 46.157791999867186,
+    "wallMs": 205.47025000001304,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 11,
+      "expectedLength": 11
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 77.05537499999627,
+    "wallMs": 308.7602500000503,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 77.54858299996704,
+    "wallMs": 321.2180000001099,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 63.781791999936104,
+    "wallMs": 174.87104099988937,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 2,
+      "expectedLength": 2
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 50.95391599996947,
+    "wallMs": 207.98250000015832,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 2,
+      "expectedLength": 2
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 65.72325000003912,
+    "wallMs": 219.00662499992177,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 67.1007090001367,
+    "wallMs": 257.05770800006576,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 119.25562499999069,
+    "wallMs": 224.5874170002062,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 5,
+      "expectedLength": 5
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 66.95699999993667,
+    "wallMs": 179.00633300002664,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 5,
+      "expectedLength": 5
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/typeText.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "typeText",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 64.88387500005774,
+    "wallMs": 273.85229200008325,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 9,
+      "expectedLength": 9
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "textedit/perContext@electron/paste.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "textedit",
+    "target": "textedit",
+    "regime": "background",
+    "method": "paste",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "electron",
+    "condition": "perContext",
+    "inCellMs": 69.18666699994355,
+    "wallMs": 173.39749999996275,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 9,
+      "expectedLength": 9
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795587198,
+          "startedAt": 1792795587197
+        },
+        "receivedAt": 1792795587146,
+        "entered": 0,
+        "activationGuardMs": 42.68,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 274.201,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.937,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2062.5047919999342,
+    "wallMs": 2123.9302920000628,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 44,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795595513,
+          "startedAt": 1792795595512
+        },
+        "receivedAt": 1792795595449,
+        "activationGuardMs": 52.493,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 290.729,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.073,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2073.271082999883,
+    "wallMs": 2185.935749999946,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 44,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795604794,
+          "startedAt": 1792795604793
+        },
+        "receivedAt": 1792795604731,
+        "entered": 0,
+        "activationGuardMs": 47.186,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 293.264,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.366,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2073.640208999859,
+    "wallMs": 2230.798167000059,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795612295,
+          "startedAt": 1792795612293
+        },
+        "receivedAt": 1792795612249,
+        "activationGuardMs": 38.112,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 287.201,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.04,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2054.084499999881,
+    "wallMs": 2499.1128340000287,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795620873,
+          "startedAt": 1792795620872
+        },
+        "receivedAt": 1792795620824,
+        "entered": 0,
+        "activationGuardMs": 39.717,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 279.182,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.023,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2058.238582999911,
+    "wallMs": 2290.359082999872,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795628074,
+          "startedAt": 1792795628073
+        },
+        "receivedAt": 1792795628022,
+        "activationGuardMs": 39.762,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 300.569,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.369,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2065.228166999994,
+    "wallMs": 2235.9405829999596,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795634732,
+          "startedAt": 1792795634731
+        },
+        "receivedAt": 1792795634672,
+        "entered": 0,
+        "activationGuardMs": 42.264,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 295.751,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 254.771,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2070.6323750000447,
+    "wallMs": 2136.884917000076,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 11,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795641910,
+          "startedAt": 1792795641909
+        },
+        "receivedAt": 1792795641852,
+        "activationGuardMs": 43.654,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 297.833,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.027,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2070.767417000141,
+    "wallMs": 2342.475916000083,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 11,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795647998,
+          "startedAt": 1792795647996
+        },
+        "receivedAt": 1792795647937,
+        "entered": 0,
+        "activationGuardMs": 49.858,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 295.132,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.04,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2078.0670829999726,
+    "wallMs": 2275.2485829999205,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795654966,
+          "startedAt": 1792795654965
+        },
+        "receivedAt": 1792795654913,
+        "activationGuardMs": 42.353,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 291.6,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.038,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2065.496207999997,
+    "wallMs": 2273.357290999964,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 6,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795662335,
+          "startedAt": 1792795662334
+        },
+        "receivedAt": 1792795662286,
+        "entered": 0,
+        "activationGuardMs": 41.161,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 292.2,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.137,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2058.9014580000658,
+    "wallMs": 2236.3298330002,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 2,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795669199,
+          "startedAt": 1792795669197
+        },
+        "receivedAt": 1792795669143,
+        "activationGuardMs": 43.611,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 295.482,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.032,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2069.1940830000676,
+    "wallMs": 2168.4777079999913,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 2,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795676513,
+          "startedAt": 1792795676511
+        },
+        "receivedAt": 1792795676460,
+        "entered": 0,
+        "activationGuardMs": 43.791,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 275.601,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 250.752,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2065.048875000095,
+    "wallMs": 2201.289416000014,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795684088,
+          "startedAt": 1792795684087
+        },
+        "receivedAt": 1792795684035,
+        "activationGuardMs": 43.4,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 290.163,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.033,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2062.8568330002017,
+    "wallMs": 2164.0470420001075,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 3,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795691268,
+          "startedAt": 1792795691267
+        },
+        "receivedAt": 1792795691213,
+        "entered": 0,
+        "activationGuardMs": 43.141,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 282.435,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.437,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2066.590916000074,
+    "wallMs": 2228.531707999995,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 5,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795698850,
+          "startedAt": 1792795698849
+        },
+        "receivedAt": 1792795698794,
+        "activationGuardMs": 44.619,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 293.402,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.034,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2070.0849169997964,
+    "wallMs": 2155.4604169998784,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 5,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/typeText.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "typeText",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795706092,
+          "startedAt": 1792795706091
+        },
+        "receivedAt": 1792795706040,
+        "entered": 0,
+        "activationGuardMs": 42.491,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 271.894,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.396,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2062.3004999998957,
+    "wallMs": 2199.172874999931,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 9,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "chrome/perContext@textedit/paste.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "chrome",
+    "target": "chrome",
+    "regime": "background",
+    "method": "paste",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795713779,
+          "startedAt": 1792795713777
+        },
+        "receivedAt": 1792795713727,
+        "activationGuardMs": 41.155,
+        "activationClick": "outsideFrame"
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enablementPrior": "true",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 291.787,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.746,
+          "settleTreeReused": true,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 2065.2079169999342,
+    "wallMs": 2177.3440829999745,
+    "inputRoute": "paste",
+    "outcome": {
+      "exact": false,
+      "nfcEqual": false,
+      "length": 0,
+      "expectedLength": 9,
+      "threw": "Computer Use server error -10005: Timed out waiting for the application to read the clipboard",
+      "errorName": "Error"
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.17,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.029,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795740148,
+          "startedAt": 1792795740148
+        },
+        "receivedAt": 1792795740141,
+        "hidIdleMs": 660346,
+        "entered": 44
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.941,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.319,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 49.265208000084385,
+    "wallMs": 275.8796250000596,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795740139,
+      1792795740188
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795737695
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 44,
+      "expectedLength": 44
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.latin",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "latin",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.967,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.039,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795746278,
+          "startedAt": 1792795746276
+        },
+        "receivedAt": 1792795746272,
+        "hidIdleMs": 666477
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.943,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.288,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 57.95320800016634,
+    "wallMs": 174.82791600003839,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795746269,
+      1792795746327
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795743431
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 44,
+      "expectedLength": 44
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.635,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.02,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795752031,
+          "startedAt": 1792795752029
+        },
+        "receivedAt": 1792795752022,
+        "hidIdleMs": 672227,
+        "entered": 6
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.345,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.039,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 59.197457999922335,
+    "wallMs": 175.82108299992979,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795752019,
+      1792795752079
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795749727
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.hangul",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "hangul",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.509,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.024,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795758207,
+          "startedAt": 1792795758204
+        },
+        "receivedAt": 1792795758199,
+        "hidIdleMs": 678404
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 263.956,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.121,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 66.1475840001367,
+    "wallMs": 166.54550000000745,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795758196,
+      1792795758263
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795755463
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.105,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.035,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795763996,
+          "startedAt": 1792795763994
+        },
+        "receivedAt": 1792795763990,
+        "hidIdleMs": 684195,
+        "entered": 3
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.164,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.554,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 52.22904199990444,
+    "wallMs": 304.01808300009,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795763989,
+      1792795764041
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795761324
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.jamo",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "jamo",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.305,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.046,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795770450,
+          "startedAt": 1792795770449
+        },
+        "receivedAt": 1792795770444,
+        "hidIdleMs": 690649
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.747,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.431,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 50.457750000059605,
+    "wallMs": 218.72462500003166,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795770441,
+      1792795770492
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795767684
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.903,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.029,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795777232,
+          "startedAt": 1792795777231
+        },
+        "receivedAt": 1792795777225,
+        "hidIdleMs": 697430,
+        "entered": 11
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 259.108,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 250.577,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 68.58170900004916,
+    "wallMs": 205.90791699988768,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795777222,
+      1792795777291
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795774303
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 11,
+      "expectedLength": 11
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.mixed",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "mixed",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 265.25,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.033,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795782869,
+          "startedAt": 1792795782867
+        },
+        "receivedAt": 1792795782863,
+        "hidIdleMs": 703068
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 261.994,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 250.587,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 63.352540999883786,
+    "wallMs": 262.32433400000446,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795782860,
+      1792795782924
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795780630
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 11,
+      "expectedLength": 11
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 265.084,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.026,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795788158,
+          "startedAt": 1792795788157
+        },
+        "receivedAt": 1792795788154,
+        "hidIdleMs": 708359,
+        "entered": 6
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.647,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.044,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 56.5845420002006,
+    "wallMs": 179.9987080001738,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795788152,
+      1792795788209
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795785940
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.emoji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "emoji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.518,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.059,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795793664,
+          "startedAt": 1792795793663
+        },
+        "receivedAt": 1792795793660,
+        "hidIdleMs": 713865
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.082,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 250.219,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 55.48516699997708,
+    "wallMs": 232.0704169999808,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795793658,
+      1792795793714
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795791163
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 6,
+      "expectedLength": 6
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.484,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.044,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795799363,
+          "startedAt": 1792795799361
+        },
+        "receivedAt": 1792795799354,
+        "hidIdleMs": 719559,
+        "entered": 2
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 263.566,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.016,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 57.33729199995287,
+    "wallMs": 179.38558300002478,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795799352,
+      1792795799409
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795797033
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 2,
+      "expectedLength": 2
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.combining",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "combining",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.706,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.078,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795804646,
+          "startedAt": 1792795804645
+        },
+        "receivedAt": 1792795804642,
+        "hidIdleMs": 724847
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 261.948,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.824,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 50.62783299991861,
+    "wallMs": 312.5169580001384,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795804640,
+      1792795804691
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795802747
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 2,
+      "expectedLength": 2
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 261.608,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 250.242,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795810382,
+          "startedAt": 1792795810380
+        },
+        "receivedAt": 1792795810377,
+        "hidIdleMs": 730582,
+        "entered": 3
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.516,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.677,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 43.2740829999093,
+    "wallMs": 149.15016600000672,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795810375,
+      1792795810418
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795807861
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.kanji",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "kanji",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.35,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.033,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795816114,
+          "startedAt": 1792795816113
+        },
+        "receivedAt": 1792795816109,
+        "hidIdleMs": 736314
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.553,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.035,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 47.50412499997765,
+    "wallMs": 147.76674999995157,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795816107,
+      1792795816155
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795813325
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 3,
+      "expectedLength": 3
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 267.165,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.043,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795821381,
+          "startedAt": 1792795821322
+        },
+        "receivedAt": 1792795821315,
+        "hidIdleMs": 741520,
+        "entered": 5
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 268.524,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.041,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 110.94716600002721,
+    "wallMs": 195.44095900002867,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795821313,
+      1792795821424
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795819033
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 5,
+      "expectedLength": 5
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.lines",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "lines",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.331,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.035,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795826175,
+          "startedAt": 1792795826174
+        },
+        "receivedAt": 1792795826169,
+        "hidIdleMs": 746374
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 261.834,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 253.3,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 47.40691699995659,
+    "wallMs": 229.59349999995902,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795826167,
+      1792795826215
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795824280
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 5,
+      "expectedLength": 5
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/typeText.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "typeText",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.232,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.039,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795831684,
+          "startedAt": 1792795831674
+        },
+        "receivedAt": 1792795831669,
+        "hidIdleMs": 751874,
+        "entered": 9
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 266.273,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 252.566,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 60.170125000178814,
+    "wallMs": 159.44041699985974,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795831667,
+      1792795831727
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795829396
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 9,
+      "expectedLength": 9
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  },
+  {
+    "section": "unicode",
+    "id": "electron/perContext@textedit/paste.acceptance4",
+    "engine": "cua",
+    "sample": 1,
+    "ok": false,
+    "scene": "electron",
+    "target": "electron",
+    "regime": "background",
+    "method": "paste",
+    "case": "acceptance4",
+    "expect": "outcome",
+    "user": "textedit",
+    "condition": "perContext",
+    "engineMeta": {
+      "prepare": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 269.2,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 255.045,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      },
+      "act": {
+        "actionInterval": {
+          "endedAt": 1792795837727,
+          "startedAt": 1792795837726
+        },
+        "receivedAt": 1792795837723,
+        "hidIdleMs": 757928
+      },
+      "check": {
+        "observation": {
+          "chromium": true,
+          "enabled": "AXManualAccessibility",
+          "enablementPrior": "false",
+          "settle": "settled",
+          "settleBusyVetoes": 0,
+          "settleBusyWalks": 1,
+          "settleMs": 264.251,
+          "settleNotificationCounts": {},
+          "settleNotifications": 0,
+          "settleObserved": true,
+          "settleQuietAtMs": 251.856,
+          "settleTreeReused": false,
+          "webAreaSeen": true,
+          "webShaped": true
+        }
+      }
+    },
+    "inCellMs": 56.3269999998156,
+    "wallMs": 218.62429200019687,
+    "inputRoute": "paste",
+    "actAt": [
+      1792795837721,
+      1792795837778
+    ],
+    "electronMode": {
+      "enabled": true,
+      "at": 1792795835257
+    },
+    "outcome": {
+      "exact": true,
+      "nfcEqual": true,
+      "length": 9,
+      "expectedLength": 9
+    },
+    "invalid": "the driven scene's context did not read Korean afterwards (the source read com.apple.keylayout.ABC, the layout com.apple.keylayout.ABC): the condition is not shown to have held",
+    "interference": {
+      "ok": true,
+      "frontmost": true,
+      "topWindow": true,
+      "focus": true,
+      "activations": 0,
+      "route4": false
+    }
+  }
+]

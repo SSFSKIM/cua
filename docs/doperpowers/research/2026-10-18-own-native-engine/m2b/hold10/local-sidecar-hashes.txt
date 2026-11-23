@@ -1,0 +1,4 @@
+bbae8cc7b5759738733eef24b7350a72ece73f7087e6d91781eabfbbc74b2281  /Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/matrix-cua-activation-guards-all.jsonl
+849fcda2fb7acc03257c91f166118980fd60ad4acf08e3c8d8e86147acb29c54  /Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/matrix-cua-finder-steps-all.jsonl
+dda6d32c5da9ca86f13080aca18ace34aed1c7d6ee2254dbe0dfb2683e3f7a62  /Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/native-mac-cua-activation-guards-all.jsonl
+2742574d28ec9fa179caf70488f23d9ab0f8b7e2b87b672fed5a01a17fdfa866  /Users/new/.claude/jobs/1ea561bc/tmp/117/hold10-20261023-184-188/native-mac-cua-finder-steps-all.jsonl

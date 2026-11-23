@@ -1,0 +1,185 @@
+[after-route-ab-hold10] 2026-10-23T21:27:26Z
+ 6:27  up 2 days,  4:39, 2 users, load averages: 2.81 2.68 3.10
+vncEstablished=0
+shim=24162 children=
+shim=24291 children=
+Runner.Worker=
+TextEdit=
+SkyComputerUseService=
+ChatGPT=
+SecurityAgent=
+cua-engine=
+cua Engine=
+tartGuestCommands=Source Name                                                                                                              Disk Size Accessed State  
+local  maws-vm-golden-20261023b                                                                                          60GB 43GB 1시간 전    stopped
+local  maws-vm-golden-20261023d                                                                                          60GB 42GB 9분 전     stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base:latest                                                                  50GB 41GB 2일 전     stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base@sha256:5302a9ea6cd68c059d00fa253fe75c8ebdf4e0dc8c45d4e136ecc6e7a4c02b70 50GB 41GB 29분 전    stopped
+authStatus=
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+com.apple.keylayout.ABC
+{
+    TextInputGlobalPropertyPerContextInput = 0;
+}
+ShowSidebar=1
+ShowStatusBar=unset
+ShowPathbar=unset
+engineConfigMtime=1792384396
+deviceCommit=2f71911eadc693a3ba089631639913a4b16b9348
+absent live-frontmost.json
+absent live-finder.json
+absent live-watch.json
+{"refusals":[],"finderPid":462,"finderHidden":false,"finderWindows":[]}
+[after-electron-focus-hold10] 2026-10-23T21:32:18Z
+ 6:32  up 2 days,  4:43, 2 users, load averages: 4.89 3.60 3.34
+vncEstablished=0
+shim=24162 children=
+shim=24291 children=
+Runner.Worker=
+TextEdit=
+SkyComputerUseService=
+ChatGPT=
+SecurityAgent=
+cua-engine=
+cua Engine=
+tartGuestCommands=Source Name                                                                                                              Disk Size Accessed State  
+local  maws-vm-golden-20261023b                                                                                          60GB 43GB 1시간 전    stopped
+local  maws-vm-golden-20261023d                                                                                          60GB 42GB 14분 전    stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base:latest                                                                  50GB 41GB 2일 전     stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base@sha256:5302a9ea6cd68c059d00fa253fe75c8ebdf4e0dc8c45d4e136ecc6e7a4c02b70 50GB 41GB 34분 전    stopped
+authStatus=
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+com.apple.keylayout.ABC
+{
+    TextInputGlobalPropertyPerContextInput = 0;
+}
+ShowSidebar=1
+ShowStatusBar=unset
+ShowPathbar=unset
+engineConfigMtime=1792384396
+deviceCommit=2f71911eadc693a3ba089631639913a4b16b9348
+absent live-frontmost.json
+absent live-finder.json
+absent live-watch.json
+{"refusals":[],"finderPid":462,"finderHidden":false,"finderWindows":[]}
+[after-native-mac-vendor] 2026-10-23T21:37:12Z
+ 6:37  up 2 days,  4:48, 2 users, load averages: 2.52 3.10 3.21
+vncEstablished=0
+shim=24162 children=
+shim=24291 children=
+Runner.Worker=
+TextEdit=
+SkyComputerUseService=
+ChatGPT=
+SecurityAgent=
+cua-engine=
+cua Engine=
+tartGuestCommands=Source Name                                                                                                              Disk Size Accessed State  
+local  maws-vm-golden-20261023b                                                                                          60GB 43GB 1시간 전    stopped
+local  maws-vm-golden-20261023d                                                                                          60GB 42GB 19분 전    stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base:latest                                                                  50GB 41GB 2일 전     stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base@sha256:5302a9ea6cd68c059d00fa253fe75c8ebdf4e0dc8c45d4e136ecc6e7a4c02b70 50GB 41GB 39분 전    stopped
+authStatus=
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+com.apple.keylayout.ABC
+{
+    TextInputGlobalPropertyPerContextInput = 0;
+}
+ShowSidebar=1
+ShowStatusBar=unset
+ShowPathbar=unset
+engineConfigMtime=1792384396
+deviceCommit=2f71911eadc693a3ba089631639913a4b16b9348
+absent live-frontmost.json
+absent live-finder.json
+absent live-watch.json
+{"refusals":[],"finderPid":462,"finderHidden":false,"finderWindows":[]}
+[after-matrix-vendor-before-cua] 2026-10-23T22:16:53Z
+ 7:16  up 2 days,  5:28, 2 users, load averages: 2.61 2.99 3.23
+vncEstablished=0
+shim=24162 children=
+shim=24291 children=
+Runner.Worker=
+TextEdit=
+SkyComputerUseService=
+ChatGPT=
+SecurityAgent=
+cua-engine=
+cua Engine=
+tartGuestCommands=Source Name                                                                                                              Disk Size Accessed State  
+local  maws-vm-golden-20261023b                                                                                          60GB 43GB 2시간 전    stopped
+local  maws-vm-golden-20261023d                                                                                          60GB 42GB 59분 전    stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base:latest                                                                  50GB 41GB 2일 전     stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base@sha256:5302a9ea6cd68c059d00fa253fe75c8ebdf4e0dc8c45d4e136ecc6e7a4c02b70 50GB 41GB 1시간 전    stopped
+authStatus=
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+com.apple.keylayout.ABC
+{
+    TextInputGlobalPropertyPerContextInput = 0;
+}
+ShowSidebar=1
+ShowStatusBar=unset
+ShowPathbar=unset
+engineConfigMtime=1792384396
+deviceCommit=2f71911eadc693a3ba089631639913a4b16b9348
+absent live-frontmost.json
+absent live-finder.json
+absent live-watch.json
+{"refusals":[],"finderPid":462,"finderHidden":false,"finderWindows":[]}
+[after-matrix-cua-final-hold10] 2026-10-23T22:52:40Z
+ 7:52  up 2 days,  6:04, 2 users, load averages: 2.61 3.32 3.45
+vncEstablished=0
+shim=24162 children=
+shim=24291 children=
+Runner.Worker=
+TextEdit=
+SkyComputerUseService=
+ChatGPT=
+SecurityAgent=
+cua-engine=
+cua Engine=
+tartGuestCommands=Source Name                                                                                                              Disk Size Accessed State  
+local  maws-vm-golden-20261023b                                                                                          60GB 43GB 2시간 전    stopped
+local  maws-vm-golden-20261023d                                                                                          60GB 42GB 1시간 전    stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base:latest                                                                  50GB 41GB 2일 전     stopped
+OCI    ghcr.io/cirruslabs/macos-golden-gate-base@sha256:5302a9ea6cd68c059d00fa253fe75c8ebdf4e0dc8c45d4e136ecc6e7a4c02b70 50GB 41GB 1시간 전    stopped
+authStatus=
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+com.apple.keylayout.ABC
+{
+    TextInputGlobalPropertyPerContextInput = 0;
+}
+ShowSidebar=1
+ShowStatusBar=unset
+ShowPathbar=unset
+engineConfigMtime=1792384396
+deviceCommit=2f71911eadc693a3ba089631639913a4b16b9348
+absent live-frontmost.json
+absent live-finder.json
+absent live-watch.json
+{"refusals":[],"finderPid":462,"finderHidden":false,"finderWindows":[]}

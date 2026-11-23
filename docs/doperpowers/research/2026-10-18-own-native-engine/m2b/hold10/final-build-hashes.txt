@@ -1,0 +1,6 @@
+finalCommit=2f71911eadc693a3ba089631639913a4b16b9348
+{"ok":true,"engine":{"bundlePath":"/Users/new/Library/Application Support/cua/engine/cua Engine.app","build":"d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f","engineVersion":"0.1.0","approvedAt":"2026-10-23T20:33:19.666Z","signature":{"kind":"identity","identityMatches":true}},"checkout":{"build":"d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f","engineVersion":"0.1.0"},"problems":[]}
+systemSettings=bbae8cc7b5759738733eef24b7350a72ece73f7087e6d91781eabfbbc74b2281  /Users/new/Library/Caches/cua-harness/native-matrix/activation-guards.jsonl
+849fcda2fb7acc03257c91f166118980fd60ad4acf08e3c8d8e86147acb29c54  /Users/new/Library/Caches/cua-harness/native-matrix/finder-steps.jsonl
+dda6d32c5da9ca86f13080aca18ace34aed1c7d6ee2254dbe0dfb2683e3f7a62  /Users/new/Library/Caches/cua-harness/repl-parity-native-mac/activation-guards.jsonl
+2742574d28ec9fa179caf70488f23d9ab0f8b7e2b87b672fed5a01a17fdfa866  /Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder-steps.jsonl

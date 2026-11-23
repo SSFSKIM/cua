@@ -1,0 +1,542 @@
+# Native matrix summary
+
+Verdict: **FAIL**
+
+Full matrix runs: 1 vendor, 1 cua (3 per side are the rule).
+
+## Blocking
+
+- method: electron/background/click.button@finder is worse on cua
+- method: electron/background/drag.select@finder is worse on cua
+- method: electron/background/selectText.text@finder is worse on cua
+- method: electron/background/setValue.text@finder is worse on cua
+- not interfering: finder/concurrent@textedit failed on cua
+- not interfering: chrome/concurrent@textedit failed on cua
+- not interfering: electron/background/launch@finder failed on cua
+- unicode: chrome/composing@textedit/paste.acceptance4 failed on cua
+- unicode: chrome/composing@textedit/paste.combining failed on cua
+- unicode: chrome/composing@textedit/paste.emoji failed on cua
+- unicode: chrome/composing@textedit/paste.hangul failed on cua
+- unicode: chrome/composing@textedit/paste.jamo failed on cua
+- unicode: chrome/composing@textedit/paste.kanji failed on cua
+- unicode: chrome/composing@textedit/paste.latin failed on cua
+- unicode: chrome/composing@textedit/paste.lines failed on cua
+- unicode: chrome/composing@textedit/paste.mixed failed on cua
+- unicode: chrome/composing@textedit/typeText.acceptance4 failed on cua
+- unicode: chrome/composing@textedit/typeText.combining failed on cua
+- unicode: chrome/composing@textedit/typeText.emoji failed on cua
+- unicode: chrome/composing@textedit/typeText.hangul failed on cua
+- unicode: chrome/composing@textedit/typeText.jamo failed on cua
+- unicode: chrome/composing@textedit/typeText.kanji failed on cua
+- unicode: chrome/composing@textedit/typeText.latin failed on cua
+- unicode: chrome/composing@textedit/typeText.lines failed on cua
+- unicode: chrome/composing@textedit/typeText.mixed failed on cua
+- unicode: chrome/korean/pressKey.rk failed on cua
+- unicode: chrome/korean/typeText.lines failed on cua
+- unicode: chrome/midSwitch/typeText.long failed on cua
+- unicode: electron/korean/pressKey.rk failed on cua
+- unicode: textedit/korean/pressKey.rk failed on cua
+
+## Missing proof (no verdict)
+
+- runs: 1 complete, attested full matrix run(s) on vendor, 3 are the rule
+- runs: 1 complete, attested full matrix run(s) on cua, 3 are the rule
+- method: chrome/background/click.apply@textedit has no valid cua sample
+- method: chrome/background/click.checkbox@textedit has no valid cua sample
+- method: chrome/background/drag.select@textedit has no valid cua sample
+- method: chrome/background/getAXState.tree@textedit has no valid cua sample
+- method: chrome/background/listApps.running@textedit has no valid cua sample
+- method: chrome/background/paste.replace@textedit has no valid cua sample
+- method: chrome/background/pressKey.tab@textedit has no valid cua sample
+- method: chrome/background/selectText.name@textedit has no valid cua sample
+- method: chrome/background/selectText.notText@textedit has no valid cua sample
+- method: chrome/background/setValue.name@textedit has no valid cua sample
+- method: chrome/background/setValue.notSettable@textedit has no valid cua sample
+- method: chrome/background/typeText.replace@textedit has no valid cua sample
+- method: chrome/frontmost/drag.select has no valid cua sample
+- method: electron/background/paste.replace@finder has no valid cua sample
+- method: electron/background/pressKey.tab@finder has no valid cua sample
+- method: electron/background/typeText.replace@finder has no valid cua sample
+- method: electron/frontmost/paste.replace has no valid cua sample
+- method: finder/background/click.row@electron has no valid cua sample
+- method: finder/background/click.row@textedit has no valid cua sample
+- method: finder/background/getAXState.tree@electron has no valid cua sample
+- method: finder/background/getAXState.tree@textedit has no valid cua sample
+- method: finder/background/listApps.running@electron has no valid cua sample
+- method: finder/background/listApps.running@textedit has no valid cua sample
+- method: finder/background/performSecondaryAction.down@electron has no valid cua sample
+- method: finder/background/performSecondaryAction.down@textedit has no valid cua sample
+- method: finder/background/pressKey.down@electron has no valid cua sample
+- method: finder/background/pressKey.down@textedit has no valid cua sample
+- method: finder/background/scroll.down@electron has no valid cua sample
+- method: finder/background/scroll.down@textedit has no valid cua sample
+- method: finder/background/selectText.notText@electron has no valid cua sample
+- method: finder/background/selectText.notText@textedit has no valid cua sample
+- method: finder/background/typeText.typeSelect@electron has no valid cua sample
+- method: finder/background/typeText.typeSelect@textedit has no valid cua sample
+- concurrent use: textedit/concurrent.sheet@electron has no valid cua sample
+- intervention: textedit/intervention.fires has no valid cua sample
+- intervention: textedit/intervention.preAction has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.acceptance4 has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.combining has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.emoji has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.hangul has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.jamo has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.kanji has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.latin has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.lines has no valid cua sample
+- unicode: chrome/perContext@textedit/paste.mixed has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.acceptance4 has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.combining has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.emoji has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.hangul has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.jamo has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.kanji has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.latin has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.lines has no valid cua sample
+- unicode: chrome/perContext@textedit/typeText.mixed has no valid cua sample
+- unicode: electron/perContext@textedit/paste.acceptance4 has no valid cua sample
+- unicode: electron/perContext@textedit/paste.combining has no valid cua sample
+- unicode: electron/perContext@textedit/paste.emoji has no valid cua sample
+- unicode: electron/perContext@textedit/paste.hangul has no valid cua sample
+- unicode: electron/perContext@textedit/paste.jamo has no valid cua sample
+- unicode: electron/perContext@textedit/paste.kanji has no valid cua sample
+- unicode: electron/perContext@textedit/paste.latin has no valid cua sample
+- unicode: electron/perContext@textedit/paste.lines has no valid cua sample
+- unicode: electron/perContext@textedit/paste.mixed has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.acceptance4 has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.combining has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.emoji has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.hangul has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.jamo has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.kanji has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.latin has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.lines has no valid cua sample
+- unicode: electron/perContext@textedit/typeText.mixed has no valid cua sample
+- unicode: textedit/perContext@electron/paste.acceptance4 has no valid cua sample
+- unicode: textedit/perContext@electron/paste.combining has no valid cua sample
+- unicode: textedit/perContext@electron/paste.emoji has no valid cua sample
+- unicode: textedit/perContext@electron/paste.hangul has no valid cua sample
+- unicode: textedit/perContext@electron/paste.jamo has no valid cua sample
+- unicode: textedit/perContext@electron/paste.kanji has no valid cua sample
+- unicode: textedit/perContext@electron/paste.latin has no valid cua sample
+- unicode: textedit/perContext@electron/paste.lines has no valid cua sample
+- unicode: textedit/perContext@electron/paste.mixed has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.acceptance4 has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.combining has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.emoji has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.hangul has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.jamo has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.kanji has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.latin has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.lines has no valid cua sample
+- unicode: textedit/perContext@electron/typeText.mixed has no valid cua sample
+- speed: electron/method.paste.replace has no measure on one engine
+
+## Owner options (not run; not part of the verdict)
+
+- TextEdit launch under the engine: provable in a scratch macOS user if wanted (launch textedit/background/launch@finder): on the shared Mac its first observation's screenshot would capture the owner's restored TextEdit windows or, with none to restore, TextEdit's iCloud Open panel; isolating it would change the owner's TextEdit state
+
+## For the owner
+
+- speed: chrome/method.listApps.running missed the 10% beat (cua 21.2 ms against 23 ms, p95 21.2 against 23)
+- speed: electron/getAXState missed the 10% beat (cua 59.3 ms against 54.3 ms, p95 80.8 against 76.7)
+- speed: electron/getScreenshot missed the 10% beat (cua 61.4 ms against 46.3 ms, p95 73.1 against 55.1)
+- speed: finder/method.pressKey.down missed the 10% beat (cua 6.6 ms against 6.8 ms, p95 6.6 against 6.8)
+- speed: finder/method.selectText.notText missed the 10% beat (cua 4.8 ms against 4.3 ms, p95 4.8 against 4.3)
+- speed: textedit/getAXState missed the 10% beat (cua 66.3 ms against 59.3 ms, p95 83.8 against 77.5)
+- speed: textedit/getScreenshot missed the 10% beat (cua 66.2 ms against 49.8 ms, p95 74.2 against 58.4)
+- speed: textedit/method.panel.getAXState.panel missed the 10% beat (cua 148.4 ms against 142.6 ms, p95 148.4 against 142.6)
+- speed: textedit/method.pressKey.selectAll missed the 10% beat (cua 8.1 ms against 7.9 ms, p95 8.1 against 7.9)
+- finding elements: parity on the resolved sum (the owner decides)
+
+## The three points
+
+- **Speed**: 48 of 58 measured ops beat the vendor by at least 10% with p95 not worse; 9 missed (the owner's fork), 1 unmeasured.
+- **Finding elements**: parity; resolved targets vendor 29, cua 29 of 40.
+- **Not interfering**: cua 96.9% (94/97), vendor 96.9% (95/98); cua route-4 actions outside accepted families: 0; declared for the owner: 0.
+- **Concurrent use and intervention**: 2 of 5 rows pass on cua (concurrent use and its sheet variant, intervention fires, the pre-action refusal).
+- **Korean and Unicode**: 148 of 225 rows pass on cua.
+
+## Methods
+
+| method | textedit | finder | chrome | electron | openPanel | windowless |
+|---|---|---|---|---|---|---|
+| get_app_state | F better / B better | F better / B no verdict | F better / B no verdict | F better / B better | F better / B better | B better |
+| list_apps | F better / B better | F better / B no verdict | F better / B no verdict | F better / B better | n/a | n/a |
+| click | F better / B better | F better / B no verdict | F better / B no verdict | F better / B worse | F better / B better | n/a |
+| drag | F better / B better | n/a | F no verdict / B no verdict | F better / B worse | n/a | n/a |
+| paste | F better / B better | n/a | F better / B no verdict | F no verdict / B no verdict | n/a | n/a |
+| perform_secondary_action | F better / B better | F better / B no verdict | n/a | n/a | n/a | n/a |
+| press_key | F better / B better | F better / B no verdict | F better / B no verdict | F better / B no verdict | n/a | n/a |
+| scroll | F better / B better | F better / B no verdict | n/a | n/a | n/a | n/a |
+| select_text | F better / B better | F better / B no verdict | F better / B no verdict | F better / B worse | n/a | n/a |
+| set_value | F better / B better | n/a | F better / B no verdict | F better / B worse | n/a | n/a |
+| type_text | F better / B better | F better / B no verdict | F better / B no verdict | F better / B no verdict | n/a | n/a |
+
+F: frontmost regime (the vendor's outcome is the reference, sample for sample); B: background regime (the fixture's ground truth). n/a: no meaningful target on that scene, on both engines:
+
+- finder set_value: a value written into a file's name field renames a run file, and the scene's other cases and targets read those names
+- finder drag: a drag in Finder's list moves run files or starts a rubber band whose outcome follows the pointer's path
+- finder paste: Finder pastes files, not text, into a folder
+- chrome scroll: the scene page fits its window: nothing to scroll
+- chrome perform_secondary_action: no control on the scene page advertises a secondary action (the window's Raise would reorder it over the user's)
+- electron scroll: the fixture's list of six fits its box: nothing to scroll
+- electron perform_secondary_action: no control in the fixture advertises a secondary action
+- openPanel list_apps: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel drag: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel paste: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel perform_secondary_action: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel press_key: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel scroll: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel select_text: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel set_value: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- openPanel type_text: the Open panel is observed and its Cancel clicked; it lists the owner's files, so nothing is typed, selected or scrolled in it
+- windowless list_apps: an app with no window refuses its observation, so no element exists for any other method
+- windowless click: an app with no window refuses its observation, so no element exists for any other method
+- windowless drag: an app with no window refuses its observation, so no element exists for any other method
+- windowless paste: an app with no window refuses its observation, so no element exists for any other method
+- windowless perform_secondary_action: an app with no window refuses its observation, so no element exists for any other method
+- windowless press_key: an app with no window refuses its observation, so no element exists for any other method
+- windowless scroll: an app with no window refuses its observation, so no element exists for any other method
+- windowless select_text: an app with no window refuses its observation, so no element exists for any other method
+- windowless set_value: an app with no window refuses its observation, so no element exists for any other method
+- windowless type_text: an app with no window refuses its observation, so no element exists for any other method
+
+| row | verdict | vendor ok | cua ok | vendor route | cua route |
+|---|---|---|---|---|---|
+| chrome/background/click.apply@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/click.checkbox@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/drag.select@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/getAXState.tree@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/listApps.running@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/paste.replace@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/pressKey.tab@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/selectText.name@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/selectText.notText@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/setValue.name@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/setValue.notSettable@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/background/typeText.replace@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/frontmost/click.apply | equal | 1/1 | 1/1 | - | 1 |
+| chrome/frontmost/click.checkbox | equal | 1/1 | 1/1 | - | 1 |
+| chrome/frontmost/drag.select | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| chrome/frontmost/getAXState.tree | equal | 1/1 | 1/1 | - | - |
+| chrome/frontmost/listApps.running | equal | 1/1 | 1/1 | - | - |
+| chrome/frontmost/paste.replace | equal | 1/1 | 1/1 | - | paste |
+| chrome/frontmost/pressKey.tab | equal | 1/1 | 1/1 | - | 2' |
+| chrome/frontmost/selectText.name | equal | 1/1 | 1/1 | - | 1 |
+| chrome/frontmost/selectText.notText | equal | 0/1 | 0/1 | - | 1 |
+| chrome/frontmost/setValue.name | equal | 1/1 | 1/1 | - | 1 |
+| chrome/frontmost/setValue.notSettable | equal | 1/1 | 1/1 | - | 1 |
+| chrome/frontmost/typeText.replace | equal | 1/1 | 1/1 | - | 2' |
+| electron/background/click.button@finder | **worse** | 0/1 | 0/1 | - | 3 |
+| electron/background/drag.select@finder | **worse** | 0/1 | 0/1 | - | 3 |
+| electron/background/getAXState.tree@finder | equal | 1/1 | 1/1 | - | - |
+| electron/background/listApps.running@finder | equal | 1/1 | 1/1 | - | - |
+| electron/background/paste.replace@finder | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| electron/background/pressKey.tab@finder | **no verdict** | 0/1 | 0/0 (+1 invalid) | - |  |
+| electron/background/selectText.text@finder | **worse** | 0/1 | 0/1 | - | 3 |
+| electron/background/setValue.notSettable@finder | equal | 1/1 | 1/1 | - | 1 |
+| electron/background/setValue.text@finder | **worse** | 0/1 | 0/1 | - | 3 |
+| electron/background/typeText.replace@finder | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| electron/frontmost/click.button | equal | 1/1 | 1/1 | - | 1 |
+| electron/frontmost/drag.select | equal | 1/1 | 1/1 | - | 3 |
+| electron/frontmost/getAXState.tree | equal | 1/1 | 1/1 | - | - |
+| electron/frontmost/listApps.running | equal | 1/1 | 1/1 | - | - |
+| electron/frontmost/paste.replace | **no verdict** | 1/1 | 0/0 (+1 invalid) | - |  |
+| electron/frontmost/pressKey.tab | equal | 1/1 | 1/1 | - | 2' |
+| electron/frontmost/selectText.text | equal | 1/1 | 1/1 | - | 1 |
+| electron/frontmost/setValue.notSettable | equal | 1/1 | 1/1 | - | 1 |
+| electron/frontmost/setValue.text | equal | 1/1 | 1/1 | - | 1 |
+| electron/frontmost/typeText.replace | equal | 1/1 | 1/1 | - | 2' |
+| finder/background/click.row@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/click.row@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/getAXState.tree@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/getAXState.tree@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/listApps.running@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/listApps.running@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/performSecondaryAction.down@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/performSecondaryAction.down@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/pressKey.down@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/pressKey.down@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/scroll.down@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/scroll.down@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/selectText.notText@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/selectText.notText@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/typeText.typeSelect@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/background/typeText.typeSelect@textedit | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |  |  |
+| finder/frontmost/click.row | equal | 1/1 | 1/1 | - | 3 |
+| finder/frontmost/getAXState.tree | equal | 1/1 | 1/1 | - | - |
+| finder/frontmost/listApps.running | equal | 1/1 | 1/1 | - | - |
+| finder/frontmost/performSecondaryAction.down | equal | 1/1 | 1/1 | - | 1 |
+| finder/frontmost/pressKey.down | equal | 1/1 | 1/1 | - | 2' |
+| finder/frontmost/scroll.down | equal | 1/1 | 1/1 | - | 2' |
+| finder/frontmost/selectText.notText | equal | 1/1 | 1/1 | - | 1 |
+| finder/frontmost/typeText.typeSelect | equal | 1/1 | 1/1 | - | 2' |
+| openPanel/background/click.cancel@finder | equal | 1/1 | 1/1 | - | 3 |
+| openPanel/background/getAXState.panel@finder | equal | 1/1 | 1/1 | - | - |
+| openPanel/frontmost/click.cancel | equal | 1/1 | 1/1 | - | 1 |
+| openPanel/frontmost/getAXState.panel | equal | 1/1 | 1/1 | - | - |
+| textedit/background/click.control@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/click.control@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/click.element@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/click.element@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/click.invalidIndex@chrome | equal | 1/1 | 1/1 | - | - |
+| textedit/background/click.invalidIndex@finder | equal | 1/1 | 1/1 | - | - |
+| textedit/background/drag.select@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/drag.select@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/getAXState.tree@chrome | equal | 1/1 | 1/1 | - | - |
+| textedit/background/getAXState.tree@finder | equal | 1/1 | 1/1 | - | - |
+| textedit/background/listApps.running@chrome | equal | 1/1 | 1/1 | - | - |
+| textedit/background/listApps.running@finder | equal | 1/1 | 1/1 | - | - |
+| textedit/background/paste.replace@chrome | equal | 1/1 | 1/1 | - | paste |
+| textedit/background/paste.replace@finder | equal | 1/1 | 1/1 | - | paste |
+| textedit/background/performSecondaryAction.down@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/performSecondaryAction.down@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/pressKey.selectAll@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/pressKey.selectAll@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/scroll.down@chrome | equal | 1/1 | 1/1 | - | 2' |
+| textedit/background/scroll.down@finder | equal | 1/1 | 1/1 | - | 2' |
+| textedit/background/selectText.line@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/selectText.line@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/selectText.notText@chrome | equal | 1/1 | 1/1 | - | 1 |
+| textedit/background/selectText.notText@finder | equal | 1/1 | 1/1 | - | 1 |
+| textedit/background/setValue.document@chrome | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/setValue.document@finder | equal | 1/1 | 1/1 | - | 3 |
+| textedit/background/setValue.notSettable@chrome | equal | 1/1 | 1/1 | - | 1 |
+| textedit/background/setValue.notSettable@finder | equal | 1/1 | 1/1 | - | 1 |
+| textedit/background/typeText.replace@chrome | equal | 1/1 | 1/1 | - | 2' |
+| textedit/background/typeText.replace@finder | equal | 1/1 | 1/1 | - | 2' |
+| textedit/frontmost/click.control | equal | 1/1 | 1/1 | - | 1 |
+| textedit/frontmost/click.element | equal | 1/1 | 1/1 | - | 3 |
+| textedit/frontmost/click.invalidIndex | equal | 1/1 | 1/1 | - | - |
+| textedit/frontmost/drag.select | equal | 1/1 | 1/1 | - | 3 |
+| textedit/frontmost/getAXState.tree | equal | 1/1 | 1/1 | - | - |
+| textedit/frontmost/listApps.running | equal | 1/1 | 1/1 | - | - |
+| textedit/frontmost/paste.replace | equal | 1/1 | 1/1 | - | paste |
+| textedit/frontmost/performSecondaryAction.down | equal | 1/1 | 1/1 | - | 1 |
+| textedit/frontmost/pressKey.selectAll | equal | 1/1 | 1/1 | - | 2' |
+| textedit/frontmost/scroll.down | equal | 1/1 | 1/1 | - | 2' |
+| textedit/frontmost/selectText.line | equal | 1/1 | 1/1 | - | 1 |
+| textedit/frontmost/selectText.notText | equal | 1/1 | 1/1 | - | 1 |
+| textedit/frontmost/setValue.document | equal | 1/1 | 1/1 | - | 1 |
+| textedit/frontmost/setValue.notSettable | equal | 1/1 | 1/1 | - | 1 |
+| textedit/frontmost/typeText.replace | equal | 1/1 | 1/1 | - | 2' |
+| windowless/background/getAXState.noWindow@finder | equal | 1/1 | 1/1 | - | - |
+
+## Speed (in-cell ms)
+
+### textedit
+
+| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |
+|---|---|---|---|---|---|---|
+| getAXState | 59.3 | 77.5 | 66.3 | 83.8 | +11.9% | **no** |
+| getScreenshot | 49.8 | 58.4 | 66.2 | 74.2 | +33.1% | **no** |
+| listApps | 26.2 | 40.3 | 4.4 | 13.7 | -83% | yes |
+| method.click.control | 741.9 | 741.9 | 40.6 | 40.6 | -94.5% | yes |
+| method.click.element | 719.0 | 719.0 | 11.3 | 11.3 | -98.4% | yes |
+| method.click.invalidIndex | 6.1 | 6.1 | 1.5 | 1.5 | -75.3% | yes |
+| method.drag.select | 42.9 | 42.9 | 4.4 | 4.4 | -89.9% | yes |
+| method.getAXState.tree | 85.6 | 85.6 | 69.1 | 69.1 | -19.2% | yes |
+| method.listApps.running | 37.0 | 37.0 | 15.0 | 15.0 | -59.6% | yes |
+| method.panel.click.cancel | 804.3 | 804.3 | 137.6 | 137.6 | -82.9% | yes |
+| method.panel.getAXState.panel | 142.6 | 142.6 | 148.4 | 148.4 | +4.1% | **no** |
+| method.paste.replace | 57.5 | 57.5 | 50.5 | 50.5 | -12.1% | yes |
+| method.performSecondaryAction.down | 505.7 | 505.7 | 7.1 | 7.1 | -98.6% | yes |
+| method.pressKey.selectAll | 7.9 | 7.9 | 8.1 | 8.1 | +2% | **no** |
+| method.scroll.down | 888.6 | 888.6 | 6.3 | 6.3 | -99.3% | yes |
+| method.selectText.line | 76.4 | 76.4 | 13.3 | 13.3 | -82.6% | yes |
+| method.selectText.notText | 7.0 | 7.0 | 5.9 | 5.9 | -15.9% | yes |
+| method.setValue.document | 728.8 | 728.8 | 23.5 | 23.5 | -96.8% | yes |
+| method.setValue.notSettable | 419.9 | 419.9 | 5.9 | 5.9 | -98.6% | yes |
+| method.typeText.replace | 233.4 | 233.4 | 97.9 | 97.9 | -58% | yes |
+
+### finder
+
+| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |
+|---|---|---|---|---|---|---|
+| getAXState | 437.8 | 461.2 | 144.4 | 165.3 | -67% | yes |
+| getScreenshot | 435.0 | 462.4 | 150.0 | 166.2 | -65.5% | yes |
+| listApps | 18.5 | 42.2 | 3.3 | 21.3 | -82.2% | yes |
+| method.click.row | 238.5 | 238.5 | 10.3 | 10.3 | -95.7% | yes |
+| method.getAXState.tree | 397.0 | 397.0 | 140.2 | 140.2 | -64.7% | yes |
+| method.listApps.running | 28.0 | 28.0 | 17.3 | 17.3 | -38.2% | yes |
+| method.performSecondaryAction.down | 930.7 | 930.7 | 24.9 | 24.9 | -97.3% | yes |
+| method.pressKey.down | 6.8 | 6.8 | 6.6 | 6.6 | -2.1% | **no** |
+| method.scroll.down | 2928.5 | 2928.5 | 552.4 | 552.4 | -81.1% | yes |
+| method.selectText.notText | 4.3 | 4.3 | 4.8 | 4.8 | +12.5% | **no** |
+| method.typeText.typeSelect | 78.8 | 78.8 | 39.6 | 39.6 | -49.8% | yes |
+
+### chrome
+
+| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |
+|---|---|---|---|---|---|---|
+| getAXState | 96.9 | 113.7 | 64.3 | 75.6 | -33.7% | yes |
+| getScreenshot | 95.1 | 107.7 | 64.1 | 76.3 | -32.5% | yes |
+| listApps | 24.3 | 34.8 | 3.1 | 12.2 | -87.1% | yes |
+| method.click.apply | 266.8 | 266.8 | 16.2 | 16.2 | -93.9% | yes |
+| method.click.checkbox | 514.0 | 514.0 | 15.3 | 15.3 | -97% | yes |
+| method.getAXState.tree | 145.4 | 145.4 | 70.5 | 70.5 | -51.5% | yes |
+| method.listApps.running | 23.0 | 23.0 | 21.2 | 21.2 | -7.9% | **no** |
+| method.paste.replace | 107.7 | 107.7 | 69.1 | 69.1 | -35.8% | yes |
+| method.pressKey.tab | 6.7 | 6.7 | 5.6 | 5.6 | -16.2% | yes |
+| method.selectText.name | 221.9 | 221.9 | 4.8 | 4.8 | -97.8% | yes |
+| method.selectText.notText | 8.1 | 8.1 | 5.6 | 5.6 | -30.5% | yes |
+| method.setValue.name | 226.3 | 226.3 | 24.1 | 24.1 | -89.3% | yes |
+| method.setValue.notSettable | 707.2 | 707.2 | 7.9 | 7.9 | -98.9% | yes |
+| method.typeText.replace | 247.1 | 247.1 | 99.9 | 99.9 | -59.6% | yes |
+
+### electron
+
+| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |
+|---|---|---|---|---|---|---|
+| getAXState | 54.3 | 76.7 | 59.3 | 80.8 | +9.2% | **no** |
+| getScreenshot | 46.3 | 55.1 | 61.4 | 73.1 | +32.6% | **no** |
+| listApps | 31.0 | 39.7 | 4.5 | 19.2 | -85.4% | yes |
+| method.click.button | 469.3 | 469.3 | 13.2 | 13.2 | -97.2% | yes |
+| method.drag.select | 56.4 | 56.4 | 3.9 | 3.9 | -93.1% | yes |
+| method.getAXState.tree | 101.4 | 101.4 | 75.5 | 75.5 | -25.5% | yes |
+| method.listApps.running | 38.6 | 38.6 | 17.6 | 17.6 | -54.4% | yes |
+| method.paste.replace | 120.3 | 120.3 | - | - | - | unmeasured |
+| method.pressKey.tab | 13.2 | 13.2 | 7.1 | 7.1 | -45.9% | yes |
+| method.selectText.text | 224.3 | 224.3 | 6.5 | 6.5 | -97.1% | yes |
+| method.setValue.notSettable | 673.7 | 673.7 | 7.4 | 7.4 | -98.9% | yes |
+| method.setValue.text | 235.8 | 235.8 | 20.4 | 20.4 | -91.4% | yes |
+| method.typeText.replace | 246.8 | 246.8 | 103.5 | 103.5 | -58.1% | yes |
+
+## Finding elements
+
+| scene | vendor resolved | cua resolved | vendor titled share | cua titled share | vendor ID count | cua ID count |
+|---|---|---|---|---|---|---|
+| textedit | 5/10 | 5/10 | 0.4746 | 0.4746 | 1 | 1 |
+| finder | 4/10 | 4/10 | 0.3446 | 0.3463 | 2 | 2 |
+| chrome | 10/10 | 10/10 | 0.7705 | 0.7705 | 0 | 0 |
+| electron | 10/10 | 10/10 | 0.76 | 0.76 | 0 | 0 |
+
+## Launch path
+
+| row | verdict | vendor ok | cua ok |
+|---|---|---|---|
+| electron/background/launch@finder | equal | 1/1 | 1/1 |
+
+## Concurrent use and intervention
+
+Each row against its own outcome (the user's keystroke kept, userIntervened, the refusal); the vendor's recorded beside it.
+
+| row | verdict | vendor ok | cua ok |
+|---|---|---|---|
+| chrome/concurrent@textedit | equal | 1/1 | 1/1 |
+| finder/concurrent@textedit | equal | 1/1 | 1/1 |
+| textedit/concurrent.sheet@electron | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |
+| textedit/intervention.fires | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |
+| textedit/intervention.preAction | **no verdict** | 0/0 (+1 invalid) | 0/0 (+1 invalid) |
+
+## Korean and Unicode
+
+Each field's cell: cua ok/valid, then the vendor's; a cua row that failed is marked. Read back by SHA-256 against the string sent.
+
+### latin
+
+| row | textedit | chrome | electron |
+|---|---|---|---|
+| paste.acceptance4 | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.combining | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.emoji | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.hangul | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.jamo | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.kanji | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.latin | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.lines | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.mixed | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| pressKey.rk | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| typeText.acceptance4 | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.combining | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.emoji | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.hangul | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.jamo | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.kanji | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.latin | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| typeText.lines | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.mixed | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+
+### midSwitch
+
+| row | textedit | chrome | electron |
+|---|---|---|---|
+| typeText.long | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+
+### korean
+
+| row | textedit | chrome | electron |
+|---|---|---|---|
+| paste.acceptance4 | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.combining | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.emoji | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.hangul | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.jamo | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.kanji | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.latin | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.lines | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| paste.mixed | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| pressKey.rk | **0/1** · 0/1 | **0/1** · 0/1 | **0/1** · 0/1 |
+| typeText.acceptance4 | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.combining | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.emoji | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.hangul | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.jamo | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| typeText.kanji | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+| typeText.latin | 1/1 · 1/1 | 1/1 · 1/1 | 1/1 · 1/1 |
+| typeText.lines | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.mixed | 1/1 · 0/1 | 1/1 · 0/1 | 1/1 · 0/1 |
+
+### composing (user window: chrome@textedit, electron@textedit, textedit@electron)
+
+| row | textedit | chrome | electron |
+|---|---|---|---|
+| paste.acceptance4 | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.combining | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.emoji | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.hangul | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.jamo | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.kanji | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.latin | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.lines | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| paste.mixed | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| typeText.acceptance4 | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.combining | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.emoji | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.hangul | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.jamo | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| typeText.kanji | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.latin | 1/1 · 1/1 | **0/1** · 1/1 | 1/1 · 1/1 |
+| typeText.lines | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+| typeText.mixed | 1/1 · 0/1 | **0/1** · 0/1 | 1/1 · 0/1 |
+
+### perContext (user window: chrome@textedit, electron@textedit, textedit@electron)
+
+| row | textedit | chrome | electron |
+|---|---|---|---|
+| paste.acceptance4 | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.combining | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.emoji | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.hangul | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.jamo | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.kanji | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.latin | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.lines | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| paste.mixed | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.acceptance4 | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.combining | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.emoji | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.hangul | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.jamo | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.kanji | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.latin | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.lines | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+| typeText.mixed | 0/0 · 0/0 | 0/0 · 0/0 | 0/0 · 0/0 |
+
+## Not interfering
+
+- cua: 96.9% (94/97); failed: finder/concurrent@textedit (top window changed); chrome/concurrent@textedit (top window changed); electron/background/launch@finder (top window changed)
+- vendor: 96.9% (95/98); failed: finder/concurrent@textedit (top window changed); chrome/concurrent@textedit (top window changed); electron/background/launch@finder (top window changed)
+

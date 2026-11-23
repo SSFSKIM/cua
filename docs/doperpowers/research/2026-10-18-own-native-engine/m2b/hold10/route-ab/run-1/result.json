@@ -1,0 +1,1000 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "route-ab",
+  "device": "mini",
+  "started": "2026-10-23T21:25:27.413Z",
+  "finished": "2026-10-23T21:27:12.464Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+      "version": "0.1.0"
+    }
+  ],
+  "complete": true,
+  "verdict": "pass",
+  "judgesInterference": true,
+  "problems": [],
+  "rows": [
+    {
+      "section": "route-ab",
+      "id": "electron/background/click.button",
+      "engine": "cua",
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "variant": "forced1",
+      "sample": 1,
+      "countersBefore": {
+        "seq": 8,
+        "at": 1792790767476,
+        "counts": {
+          "appDidBecomeActive": 1,
+          "appDidResignActive": 1,
+          "windowFocus": 1,
+          "windowBlur": 1,
+          "pageFocus": 1,
+          "pageBlur": 1,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "inputRoute": 1,
+      "inCellMs": 15.301250000000437,
+      "wallMs": 276.6154170000009,
+      "actAt": [
+        1792790773307,
+        1792790773323
+      ],
+      "activation": null,
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfter": {
+        "seq": 8,
+        "at": 1792790767476,
+        "counts": {
+          "appDidBecomeActive": 1,
+          "appDidResignActive": 1,
+          "windowFocus": 1,
+          "windowBlur": 1,
+          "pageFocus": 1,
+          "pageBlur": 1,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "effectMs": 543,
+      "pressedOnce": true,
+      "outcome": {
+        "pressedOnce": true,
+        "effectMs": 543,
+        "late": false,
+        "polls": 1,
+        "firstMs": 543,
+        "pressed": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/click.button",
+      "engine": "cua",
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "variant": "natural",
+      "sample": 2,
+      "countersBefore": {
+        "seq": 8,
+        "at": 1792790767476,
+        "counts": {
+          "appDidBecomeActive": 1,
+          "appDidResignActive": 1,
+          "windowFocus": 1,
+          "windowBlur": 1,
+          "pageFocus": 1,
+          "pageBlur": 1,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "inputRoute": 3,
+      "inCellMs": 71.84108300000298,
+      "wallMs": 140.62766700000066,
+      "actAt": [
+        1792790780183,
+        1792790780255
+      ],
+      "activation": {
+        "click": "posted",
+        "posted": true,
+        "guardMs": 38.777
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfter": {
+        "seq": 11,
+        "at": 1792790780231,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 1,
+          "windowFocus": 2,
+          "windowBlur": 1,
+          "pageFocus": 2,
+          "pageBlur": 1,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "effectMs": 443,
+      "pressedOnce": true,
+      "outcome": {
+        "pressedOnce": true,
+        "effectMs": 443,
+        "late": false,
+        "polls": 1,
+        "firstMs": 443,
+        "pressed": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/click.button",
+      "engine": "cua",
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "variant": "forced1",
+      "sample": 3,
+      "released": true,
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true
+      },
+      "countersBefore": {
+        "seq": 14,
+        "at": 1792790783967,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "inputRoute": 1,
+      "inCellMs": 11.160124999998516,
+      "wallMs": 158.12904100000014,
+      "actAt": [
+        1792790788056,
+        1792790788068
+      ],
+      "activation": null,
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfter": {
+        "seq": 14,
+        "at": 1792790783967,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "effectMs": 470,
+      "pressedOnce": true,
+      "outcome": {
+        "pressedOnce": true,
+        "effectMs": 470,
+        "late": false,
+        "polls": 1,
+        "firstMs": 470,
+        "pressed": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/click.button",
+      "engine": "cua",
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "variant": "natural",
+      "sample": 4,
+      "countersBefore": {
+        "seq": 14,
+        "at": 1792790783967,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "inputRoute": 3,
+      "inCellMs": 93.03325000000041,
+      "wallMs": 185.10920899998746,
+      "actAt": [
+        1792790794803,
+        1792790794896
+      ],
+      "activation": {
+        "click": "posted",
+        "posted": true,
+        "guardMs": 66.72
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfter": {
+        "seq": 20,
+        "at": 1792790794902,
+        "counts": {
+          "appDidBecomeActive": 3,
+          "appDidResignActive": 3,
+          "windowFocus": 3,
+          "windowBlur": 3,
+          "pageFocus": 3,
+          "pageBlur": 3,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "effectMs": 447,
+      "pressedOnce": true,
+      "outcome": {
+        "pressedOnce": true,
+        "effectMs": 447,
+        "late": false,
+        "polls": 1,
+        "firstMs": 447,
+        "pressed": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/click.button",
+      "engine": "cua",
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "variant": "forced1",
+      "sample": 5,
+      "released": false,
+      "release": {
+        "released": false,
+        "held": true,
+        "resignAdvanced": false,
+        "balanced": true
+      },
+      "invalid": "the previous natural sample's hold was not shown released (held true, resigned since false, balanced true); nothing was sent"
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/click.button",
+      "engine": "cua",
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "variant": "natural",
+      "sample": 6,
+      "countersBefore": {
+        "seq": 20,
+        "at": 1792790794902,
+        "counts": {
+          "appDidBecomeActive": 3,
+          "appDidResignActive": 3,
+          "windowFocus": 3,
+          "windowBlur": 3,
+          "pageFocus": 3,
+          "pageBlur": 3,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "inputRoute": 3,
+      "inCellMs": 67.55841700000019,
+      "wallMs": 176.783792000002,
+      "actAt": [
+        1792790806372,
+        1792790806440
+      ],
+      "activation": {
+        "click": "posted",
+        "posted": true,
+        "guardMs": 49.898
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfter": {
+        "seq": 26,
+        "at": 1792790806447,
+        "counts": {
+          "appDidBecomeActive": 4,
+          "appDidResignActive": 4,
+          "windowFocus": 4,
+          "windowBlur": 4,
+          "pageFocus": 4,
+          "pageBlur": 4,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      },
+      "effectMs": 411,
+      "pressedOnce": true,
+      "outcome": {
+        "pressedOnce": true,
+        "effectMs": 411,
+        "late": false,
+        "polls": 1,
+        "firstMs": 411,
+        "pressed": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    }
+  ],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "finder-teardown": {
+        "ok": true,
+        "steps": 6
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 34122
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 1,
+    "host": "cua",
+    "engine": "cua",
+    "samples": 10,
+    "sitting": "hold10-20261023-184-188",
+    "planId": "route-ab",
+    "plan": {
+      "frontmost": [],
+      "background": [],
+      "launch": [],
+      "speed": false,
+      "finding": false,
+      "concurrent": [],
+      "sheet": false,
+      "intervention": [],
+      "unicode": null,
+      "routeAb": {
+        "driven": "electron",
+        "user": "finder"
+      }
+    },
+    "elicitations": [
+      {
+        "t": "2026-10-23T21:26:03.776Z",
+        "app": "com.apple.finder",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-23T21:26:05.003Z",
+        "app": "io.github.ssfskim.cua.fixture.electron",
+        "action": "accept"
+      }
+    ],
+    "keySkipped": [],
+    "controller": {
+      "commit": "2f71911eadc693a3ba089631639913a4b16b9348",
+      "dirty": false
+    },
+    "runDir": "/Users/new/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          1.93,
+          2.7,
+          3.18
+        ],
+        "uptimeS": 189398,
+        "cpus": 10
+      },
+      "after": {
+        "loadavg": [
+          2.55,
+          2.63,
+          3.09
+        ],
+        "uptimeS": 189501,
+        "cpus": 10
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.Terminal",
+      "now": "com.apple.Terminal",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": false
+    },
+    "nativeEngine": {
+      "requested": "cua",
+      "approved": {
+        "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.1.0",
+        "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+        "signature": {
+          "kind": "identity",
+          "identityMatches": true
+        }
+      },
+      "checkoutBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+      "attested": [
+        {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "2f71911eadc693a3ba089631639913a4b16b9348",
+    "hardware": {
+      "model": "Mac14,12",
+      "chip": "Apple M2 Pro",
+      "memoryBytes": 17179869184
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "display": {
+      "pixels": "5120 x 2880",
+      "resolution": "2560 x 1440",
+      "scale": 2,
+      "virtual": true
+    },
+    "fixtures": {
+      "electron": {
+        "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-faee60a202d5/cua Electron Fixture.app",
+        "bundleId": "io.github.ssfskim.cua.fixture.electron",
+        "electronVersion": "44.9.0",
+        "sourceHash": "faee60a202d5",
+        "reused": true
+      }
+    },
+    "engineStopAfterSetup": {
+      "wasRunning": true,
+      "pid": 33265
+    },
+    "hostAttestation": {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "cua/serviceMs": 2.382,
+        "codex/nodeReplExecutionDurationMs": 74,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/nativeEngine": {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+        },
+        "cua/taskId": "e9caf020-df01-4159-9ae8-03f0f91a6f28",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "activationGuards": [
+      {
+        "scene": "finder",
+        "beforeRow": 0,
+        "at": [
+          1792790761933,
+          1792790763147
+        ],
+        "ok": true,
+        "windowOrder": {
+          "runWindowFound": true,
+          "windows": [
+            {
+              "ownerPid": 462,
+              "ownerName": "Finder",
+              "layer": 0,
+              "number": 19157,
+              "bounds": {
+                "height": 520,
+                "width": 920,
+                "x": 80,
+                "y": 80
+              }
+            }
+          ]
+        },
+        "framePin": {
+          "pid": 462,
+          "window": 19157,
+          "requested": {
+            "x": 80,
+            "y": 80,
+            "width": 920,
+            "height": 520
+          },
+          "readBack": {
+            "y": 80,
+            "height": 520,
+            "x": 80,
+            "width": 920
+          },
+          "matched": true,
+          "exitStatus": 0,
+          "diagnostic": null,
+          "excludedEntries": [
+            {
+              "subrole": "AXDesktop",
+              "role": "AXScrollArea",
+              "index": 1
+            }
+          ],
+          "trace": {
+            "samples": [
+              {
+                "stage": "initial",
+                "atMs": 35.37424999475479,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 548
+                }
+              },
+              {
+                "stage": "initial",
+                "atMs": 50.19266599416733,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 548
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 53.20304098725319,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 548
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 140.7210409939289,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 523
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 196.5792909860611,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 520
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 197.511332988739,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 520
+                }
+              },
+              {
+                "stage": "final",
+                "atMs": 198.05470797419548,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 520
+                }
+              }
+            ],
+            "setters": [
+              {
+                "attribute": "size",
+                "startMs": 50.19320797920227,
+                "endMs": 52.62383300065994,
+                "axError": 0
+              },
+              {
+                "attribute": "position",
+                "startMs": 197.51154097914696,
+                "endMs": 197.70891597867012,
+                "axError": 0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "scene": "finder",
+        "beforeRow": 0,
+        "at": [
+          1792790767450,
+          1792790767915
+        ],
+        "ok": true,
+        "windowOrder": {
+          "runWindowFound": true,
+          "windows": [
+            {
+              "ownerPid": 462,
+              "ownerName": "Finder",
+              "layer": 0,
+              "number": 19157,
+              "bounds": {
+                "height": 520,
+                "width": 920,
+                "x": 80,
+                "y": 80
+              }
+            }
+          ]
+        },
+        "framePin": {
+          "pid": 462,
+          "window": 19157,
+          "requested": {
+            "x": 80,
+            "y": 80,
+            "width": 920,
+            "height": 520
+          },
+          "readBack": {
+            "y": 80,
+            "height": 520,
+            "x": 80,
+            "width": 920
+          },
+          "matched": true,
+          "exitStatus": 0,
+          "diagnostic": null,
+          "excludedEntries": [
+            {
+              "subrole": "AXDesktop",
+              "role": "AXScrollArea",
+              "index": 1
+            }
+          ],
+          "trace": {
+            "samples": [
+              {
+                "stage": "initial",
+                "atMs": 35.37424999475479,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 548
+                }
+              },
+              {
+                "stage": "initial",
+                "atMs": 50.19266599416733,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 548
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 53.20304098725319,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 548
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 140.7210409939289,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 523
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 196.5792909860611,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 520
+                }
+              },
+              {
+                "stage": "after-size",
+                "atMs": 197.511332988739,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 520
+                }
+              },
+              {
+                "stage": "final",
+                "atMs": 198.05470797419548,
+                "frame": {
+                  "x": 80,
+                  "y": 80,
+                  "width": 920,
+                  "height": 520
+                }
+              }
+            ],
+            "setters": [
+              {
+                "attribute": "size",
+                "startMs": 50.19320797920227,
+                "endMs": 52.62383300065994,
+                "axError": 0
+              },
+              {
+                "attribute": "position",
+                "startMs": 197.51154097914696,
+                "endMs": 197.70891597867012,
+                "axError": 0
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "routeAb": {
+      "variants": [
+        "forced1",
+        "natural",
+        "forced1",
+        "natural",
+        "forced1",
+        "natural"
+      ],
+      "countersAtStart": {
+        "seq": 8,
+        "at": 1792790767476,
+        "counts": {
+          "appDidBecomeActive": 1,
+          "appDidResignActive": 1,
+          "windowFocus": 1,
+          "windowBlur": 1,
+          "pageFocus": 1,
+          "pageBlur": 1,
+          "textFocus": 1,
+          "textBlur": 1
+        }
+      }
+    },
+    "activations": {
+      "accounted": [
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1792790764816
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792790767465
+        }
+      ],
+      "unaccounted": []
+    },
+    "electronMode": {
+      "file": "electron-accessibility.jsonl",
+      "records": 1528
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": [
+        {
+          "path": "~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine",
+          "kind": "cua",
+          "origin": "approved engine",
+          "ageSeconds": 3,
+          "startedDuringRun": true
+        }
+      ]
+    },
+    "finished": "2026-10-23T21:27:12.464Z"
+  }
+}

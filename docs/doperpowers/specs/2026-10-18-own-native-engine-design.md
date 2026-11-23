@@ -7650,6 +7650,278 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   its focus hold replaces the early recheck's record in the meta; `hitMs` is the last hit-test's.
   Date/Author: 2026-11-20, cursor235's implementer for #456.
 
+- Decision (#443, 2026-11-21, `fix/443-decoration-control-gone`, plugin 0.28.29; amends #433's scope note on `decomove`
+  and #296's verdict, StalePoint.swift `controlGoneVerdict`): **an inert node kept on its own handle whose recorded
+  control is confirmed destroyed refuses (`controlGone`).** #433's qualification (kit `probe/433-qual`, cell `decomove`,
+  batch A, run 44715767925) measured main 870dd117 landing on link B 40 of 40 times on CfT and on Electron when an inert
+  decoration of link A (nested groups the size of A) was moved into B once A was replaced; Safari refused `nodeGone`.
+  #433's entry left the case out of scope because two rounds that judged content of a control by where its content now
+  lies (a link's content must still lie inside its recorded link) kept refusing link-text clicks main keeps (text
+  re-rendered in an unchanged link, unread parents or children, overflowing labels, same-title links). This rule asks
+  nothing about where the node lies now, only whether its control still exists, and acts only on confirmation.
+  "Recorded control" is what the record already holds, so the observation is unchanged and costs nothing more:
+  `ScreenshotNode.control`, #431's nearest recorded ancestor, frameless ones included, of an interactive role or with
+  AXPress, below the node's web area, window, sheet or application; nil where a nearer ancestor's actions did not read
+  (`controlUnknown`), and then the rule does not run. "Confirmed gone" is `StalePointReads.gone`, the control's handle
+  answering its AXRole read with kAXErrorInvalidUIElement; a seam without that read never refuses (not `isGone`'s
+  fallback on an unread frame). The rule runs after #296's verdict, before #433's check of a control beneath, and refuses
+  only a point that verdict keeps where all of these hold: the node was found by its own handle (a node re-created in
+  place came with its control, so `remount` and `retext` stay main's), it does not act on its own (its role and actions
+  read inert at the observation, no AXPress recorded: a button that outlived its clickable card is its own target), and
+  the verdict is not #305's `recordedHit` (another recorded control the screenshot showed at the point, in place,
+  vouches for the click). A live control keeps main's verdict whether it still holds the node or not, and a control
+  whose reads fail with any other error keeps it too. The refusal is the guard's own, `screenChangedSinceScreenshot`,
+  meta `stalePoint.reason` `controlGone` with `controlRole` (the gone control's role), its sentence: "The screen
+  changed since the screenshot: the point lies on an <node> that does not act on its own, inside the <control> the
+  screenshot showed there; that control is gone, and the <node> now lies in whatever replaced it. Nothing was sent.
+  Call getScreenshot for a new screenshot and aim again from what it shows." (the activated form as the guard's other
+  refusals). The press verdict and the route's recheck take it through `stalePointVerdict`. The model-facing docs are
+  unchanged: "what that screenshot showed at the point is gone" already covers it.
+  Limits: a link's own text node (AXStaticText) moved into a new link is refused the same way, which is the same wrong
+  click; Chromium recreating a control's accessibility object for the same DOM element (a role change) while a child's
+  object survives would refuse a click main lands correctly, not observed and not measured.
+  Proven offline (`OverlayTargetTests`, four new tests, one rewritten): `decomove` refuses with the decoration or A's text
+  moved into B, the hit on it, on B or nothing, and with A recorded frameless, with the sentence and meta; A's handle
+  alive with every read failing, or a seam without `gone`, keeps; A alive, with the decoration inside it or moved out,
+  keeps; a re-created node, an acting node and a `recordedHit` keep. #433's test that pinned `decomove` to main's verdict
+  now asserts the refusal, and its case with B's role unread refuses too. With the call removed, 17 assertions in three
+  tests fail; mutations of the handle-only, inert-only, `recordedHit` and confirmed-only conditions each fail a test.
+  Not measured live: `decomove` with this build on CfT and Electron, and #433's keep cells (`retext`, `plain`, `like`,
+  `remount`, `textbehind`) and #340's.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the review of dfe6f443..1d3b0963, reviewer-medium, 2026-11-21; amends the entry above): one P2, a
+  false refusal against main, fixed. With two links overlapping at the point, the record can take a deeper decoration
+  of the back link A while the front link B takes the click; once A is removed and the decoration survives, B gets the
+  same click, but the hit on B's text answers `nonInteractiveHit` and on B with the decoration moved into it
+  `hitAboveNode`, so neither reached the `recordedHit` exemption and the rule refused what main lands correctly (and
+  pre-empted the element route's own `recordedHit` check of B). Now, before refusing, the control the live hit lies in
+  vouches (`hitControlVouches`): the hit itself or its nearest ancestor below its document that acts on its own (an
+  interactive role or AXPress, read now), when it is a recorded node by its recorded handle, its shown frame holding the
+  point and its frame read now in place (2 pt). A match re-created by role and label never vouches, since a same-label
+  replacement would pass it; `decomove`'s B is the replacement, not recorded at the point, so it still refuses. Proven
+  offline (`testARecordedControlInFrontOfAGoneControlVouchesForTheClick`): both shapes keep, and the route presses B; B
+  moved 3 pt off its place, or a same-label link new at the point with B gone, refuses. The case fails with the vouch
+  removed; the earlier mutations still fail a test each (`testWhatTheControlGoneRuleLeavesToMain` now takes the acting
+  node with no hit and `recordedHit` on a re-created control, which no hit's control vouches for, so the vouch does not
+  mask those conditions). 1601 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the hosted smoke of 2a3c7e53 against main dfe6f443, run 44997131965, 2026-11-21; narrows the two
+  entries above): **the rule refuses only a node that has moved into a different control.** The smoke found two false
+  refusals against main. (1) `overlaprow`, Electron: links A and F overlap in a row, the record takes A's decoration, A
+  is removed and the decoration stays in the row under the unchanged front link F; the click at F's left padding hit
+  the decoration itself (`sameElement`), so the vouch, which walked from the hit, never saw F. Main landed on F 2/2, the
+  build refused 2/2. (2) `rolechange`, Safari, measured: the page sets role="button" on A's own element, WebKit
+  re-creates A's accessibility object (the old handle confirmed gone) as an AXButton, and the decoration survives in
+  it. Main kept and landed 4/4 (`hitAboveNode`, hit AXButton), the build refused 4/4; CfT and Electron keep A's object
+  and kept. `decomove` refused 4/4 on CfT and Electron, and `overlapinto` (the review's shape) kept everywhere.
+  So, with the recorded control confirmed gone, the guard reads the control the node lies in now (`liveControl`: its
+  nearest ancestor that acts on its own, an interactive role or AXPress read now, below its document, within
+  `stalePointAncestorLevels` parents, an ancestor whose role and actions do not read passed over) and refuses
+  `controlGone` only when that control exists and is another (`controlDiffers`): its label reads otherwise
+  (`stalePointLabelsAgree`, whose absent or unread side agrees), or its frame read now is more than 2 pt off the
+  recorded control's (a recorded control without a frame, or a frame unread now, says nothing). The role is not
+  compared, so `rolechange` keeps. No control now (`overlaprow`, or an ancestor whose role does not read) keeps main's
+  verdict. The vouch stays, since a recorded control in place at the point still takes a click the narrowed rule would
+  refuse (the decoration moved into front link F, whose label is not A's), and now checks both the node's live control
+  and the hit's (`controlVouches`, by recorded handle, shown at the point, in place): with the decoration in F, the hit
+  on F, on the decoration or on nothing keeps; with it in a new link N at A's place, the hit on F's text keeps by the
+  hit's control.
+  Limit, by design: a replacement with A's label at A's place (a same-label link slid into A's row, and the decoration
+  moved into it) reads as A re-created and keeps main's verdict, which clicks it; `decomove` refuses because B reads
+  "Next" where A read "Inbox". A control re-created in place with its label read from another attribute than before
+  (title one side, description the other) still agrees, as `stalePointLabelsAgree` lets an absent side agree.
+  Proven offline (`OverlayTargetTests`, 31 tests): the `decomove` fakes now give B another label, as the cell does, and
+  refuse; `testADecorationLeftInNoControlKeepsMainsVerdict` (`overlaprow`: the hit on the decoration, nothing or F) and
+  `testADecorationInItsControlReCreatedWithAnotherRoleKeepsMainsVerdict` (`rolechange`: an AXButton with A's label and
+  frame keeps, the hit on it or the decoration; 3 pt off or another label refuses) are new; the vouch test adds the
+  no-hit case; B's role unread now keeps (no known control). Against 2a3c7e53's StalePoint.swift both new tests, the
+  vouch test and the unread-role case fail. Mutations each fail a test: the call removed, `isGone`'s fallback, the
+  inert-only and `recordedHit` conditions, the label check, the frame check, the node's vouch and the hit's vouch. One
+  survives: dropping the own-handle condition, since a node re-created with its control (`remount`) now also keeps by
+  the same-control comparison; the condition stays as the cheaper guard of the keep cells. 153 StalePoint tests and
+  1603 swift tests, 0 failures.
+  Not measured live: this build on the smoke's cells and on #433's and #340's keep cells.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the re-review of f394677e, reviewer-medium, 2026-11-21, the last review wave; amends the entry above):
+  two P2 and two P3, all fixed; the counted hosted qualification is the check from here, with no further review round.
+  (1) `liveControl`'s walk passed over an ancestor whose role or actions did not read and compared a farther control
+  (an outer clickable card) with the recorded one, so a link re-created under a card could refuse. An ancestor it
+  cannot classify (role unread with no AXPress read, or role read inert with its actions unread) now ends the walk,
+  inconclusive, and the verdict is main's. (2) A vouching control must be one the record holds as a control (an
+  interactive role, or AXPress read then: `actionable` or `pressRecorded`); an inert wrapper that gained AXPress since
+  never vouches. (3) `controlDiffers` no longer goes through `stalePointLabelsAgree`, whose unread title read as absent
+  and let the comparison fall through to the descriptions: it compares title, then description, and an attribute unread
+  on either side, then or now, ends the comparison with no label difference; the description is compared only where
+  both sides are known to lack a title. A frame confirmed off by more than 2 pt still refuses. (4) A front link's text
+  drawn outside the link's own frame, the hit on it, could not vouch, since `controlVouches` asks for the control's
+  shown frame at the point: the hit now vouches itself (`contentVouches`) when it is a recorded node by handle, shown at
+  the point and in place, whose recorded control is the control it lies in now and is in place.
+  Proven offline, four new `OverlayTargetTests`, each failing against f394677e's StalePoint.swift and with its own fix
+  reverted alone: `testAnUnclassifiedAncestorEndsTheSearchForTheLiveControl` (a re-created link whose role, or whose
+  actions, do not read, under a re-laid-out clickable card), `testAWrapperThatGainedAXPressNeverVouches` (refused),
+  `testAnUnreadTitleEndsTheLabelComparison` (the title unread then or now, the descriptions differing: kept; 3 pt off:
+  refused), `testOverflowingContentOfAControlInPlaceVouches` (kept; the front link 3 pt off: refused). The vouch test
+  adds the hit on the front link's text re-laid out 3 pt inside it, which only the hit's control vouches for, so that
+  vouch still earns its place beside the content's. The mutation pass (13 mutations) is caught but for the own-handle
+  condition, as the entry above says. 157 StalePoint tests and 1607 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#453, ruling 1071, 2026-11-22; the route changes): **a plain left click that #452 refuses on a row of the
+  app's own overlay is carried by AXPress on the row's recorded handle, not by a click posted to the overlay's window.**
+  The first build (`fix/453-overlay-click`, parked at 213fc5d6 by ruling 1067, never merged) stamped a mouse down and up
+  to the overlay's window at the point. That made the engine prove which control was on top at the point and that the
+  recorded tree was complete, and AX states neither reliably: three reviewer-high rounds (7 P1 and 2 P2, 7 P1 and 2 P2,
+  4 P1 and 2 P2) each found wrong-row or false-ok paths in the identity and stability machinery the proof needed (an
+  unrecorded descendant under a recorded row, the capture racing the walk across a relayout, the overlap root looked up
+  by the window's current bounds, which delivered "Allow this time" to "Never allow" once the bubble shrank, a failed
+  child read passing the subtree guard). Pressing the recorded element needs none of it: the target is the element the
+  screenshot's record names, and only its own identity is checked at click time. The spike (main 5580ac20, run
+  45050307595, kit `probe/453-measure` README §"#453 spike") measured the bare AXPress on the recorded row taking it
+  105/105 (omnibox, Web MIDI permission, TextEdit popover, and the datalist 15/15, whose earlier 0/6 pressed an ancestor
+  found by hit-test), the frontmost app changed 0/105, Chrome raised over the cover 0/75, no key window changed outside
+  the frontmost prompt, wrong row 0, AXPress p50 at most 13 ms.
+  The rule (OverlayClick.swift, called from Input.swift's coordinate click before #454): only main's
+  `appWindowOverPoint` for a plain left click (`overlayPressApplies`), so #316's `newWindow`, decided first, and every
+  tree verdict (#443's `controlGone` included, which #452's refusal never reaches) stay main's, and a drag, a right or
+  double click or a spike route keeps the refusal. The recorded handle is `ScreenshotNode.element` of the connection's
+  last screenshot: the observed window's walk already records these overlays' rows (README §Q3: Chromium hangs its
+  popups' and bubbles' trees under the browser window, the popover lies in its window's tree), so the observation is
+  unchanged and costs nothing more. The hit-test #452 already took is read up to the overlay's AXWindow (the nearest
+  AXPopover for the popover signal) only to find where the overlay's subtree starts in the record (the outermost element
+  of that chain the record holds by handle); the row is the deepest recorded node of that subtree, of no container role,
+  whose shown frame held the point, and two or more such nodes not nested refuse. The kind is read from the recorded
+  path from that root to the row and the two windows' layers, which the verdict now carries (`overLayer`,
+  `observedLayer`): one web area titled "Omnibox Popup" at the browser window's layer; an AXList above it; an alert
+  dialog at it, with no web area; #452's popover signal outside Chromium. At click time the row's handle must be alive,
+  read its recorded role and label (title, else description, else a text's value, equal once cut by `bounded`; a part
+  unread then or now refuses), have a frame within 2 pt of the recorded one after the window's shift, and read AXEnabled
+  true or have none. Then AXPress through `gatedPerform`, with no mouse event and no activation hold. The click succeeds
+  when the overlay's window leaves the on-screen list or the row's handle dies within 500 ms, and otherwise answers
+  `clickUnconfirmed`; an AXError other than a messaging timeout is `actionFailed`. Meta: `overlayClick {window, by, kind,
+  route: "action", confirmed}`, or `{window, by, kind, refused}` beside main's refusal, whose name and sentence are
+  unchanged. The model's paragraph says the click goes through the row's action, and (owner ruling 1042) that a
+  permission prompt's Allow grants what the site asks.
+  Not carried over from the parked branch: its post route, the observation's walk-before-capture order and stability
+  re-read (a list re-laid out between the walk and the image leaves the recorded row elsewhere, so its frame or label
+  refuses), the overlap-root and membership checks over the window's bounds, the descent from the hit, the decision
+  budget, the omnibox location-bar check (the kind only scopes the route; a lookalike overlay can at most get its
+  recorded row pressed under the same checks) and the element-ID route (#470). The element routes' recheck after a wait
+  (#456) keeps main's refusal when it answers `appWindowOverPoint`: the first check kept, so the overlay came over the
+  point after the click was judged.
+  Proven offline (`OverlayClickTests`, 19 tests): each kind delivered on its recorded handle, never on the deeper page
+  node beneath or the neighbour; each refusal (a dead handle, a changed label, an unread label, a changed role, a frame
+  moved or resized past 2 pt, disabled, AXEnabled unread, non-nested rows, six unknown kinds, no recorded handle, an
+  answer reading to no overlay); the re-laid-out bubble (the recorded button gone or moved, the neighbour at the point
+  and answered, never pressed); `clickUnconfirmed`; and main's other verdicts and clicks unchanged.
+  Each new test fails without the fix: with the decision leaving every click to main (the route removed), 17 of the 19
+  fail; the main-unchanged test fails once the trigger applies to every verdict and click, and the guard's test once
+  the verdict drops the overlay's layer. Each other condition removed alone fails a test: the dead-handle, role, label,
+  frame and enabled checks, the nesting check, the overlay membership, the recorded root, the popover's engine, the
+  Chromium kinds, the confirmation. 1626 swift
+  tests (1 skipped), 0 failures; the three docs tests pass.
+  Not measured live: this build. The spike measured the press itself on main; the hosted qualification of this build
+  (main against fix, every kind and mode) is the check from here.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, the review of c8858c2a1, reviewer-high, ruling 1072, 2026-11-22; amends the entry above): seven
+  findings, all fixed in one wave. (1) A row dying no longer confirms: only the overlay's window leaving does, so a list
+  that rebuilds its rows under a press that changed nothing answers `clickUnconfirmed`. (2) The screenshot must have
+  shown exactly one window of the app's over the observed one at the point, the one the hit reaches now: with a bubble
+  over the omnibox popup, the bubble closed since, the hit reaches the popup's unchanged row, which the screenshot showed
+  covered (`notOneOverlay`). This is the one observation change: the capture now lists the on-screen windows with their
+  owners, layers and bounds beside the numbers it already read (`ObservedScreenshot.windowsListed`, with the captured
+  window's number), one `CGWindowListCopyWindowInfo` per screenshot, about 0.3 ms (p95 1 ms, #316's measurement), timed
+  as `screenshotWindowsListed`; the record's tree alone cannot tell an overlay's subtree from the page under it. (3) The
+  row's recorded subtree must be whole (`partlyRecorded`): every recorded element of it, framed or frameless, had its
+  children read and all recorded (`ObservedScreenshot.recorded`, #330's map, and `subtreeRecorded`); no new recording.
+  (4) The title, the description and a text's value are compared each on its own (`overlayLabelsAgree`); a part
+  unread then or now, changed, gone or gained refuses, where the first non-empty part alone used to decide. (5) The
+  identity (alive, role, label parts, frame, enabled; `overlayIdentityRefusal`) is read again after the owner's and
+  intervention's preparation, just before the AXPress, as #454's item path does; a change there presses nothing and
+  #452's refusal stands. (6) The row must be of a role the kind's rows take (`OverlayKind.rowRoles`: a suggestion's
+  text, button, link or cell; an option's text, cell, row or menu item; a prompt's button, checkbox, radio button or
+  link; a popover's control), so a point in an AXList's padding or between a dialog's buttons refuses (`notARow`). (7)
+  The service forwards `cua/overlayClick` (`OPTIONAL_INPUT_META`, reset per call). A press that answers a messaging
+  timeout answers `clickUnconfirmed` even when the window then leaves (the coordinator's ruling on the wave): the press
+  may have landed, but the window leaving cannot be tied to it. The capture-walk race stays a declared
+  limit with its own ticket, with no stability re-read.
+  Proven offline: six `OverlayClickTests` (24 in all; one replaces the row-dying test), one per Swift finding, each failing with its fix reverted
+  alone (the row-dying confirmation, the one-overlay check, the whole-subtree check, the first-part label comparison,
+  the recheck before the press, the row-role check), and a service test failing against the previous service.mjs.
+  The earlier mutations (identity checks, nesting, membership, recorded root, kinds, trigger, confirmation, the route
+  removed) each still fail a test. 1631 swift tests (1 skipped), 0 failures; the service test file 44/44 and the
+  three docs tests pass.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, the review of c8858c2a..e7e78424, reviewer-medium, 2026-11-22; amends the two entries above): one P1,
+  one P2 and one P3, all fixed. (P1) The identity's last reads came after the deadline and intervention checks, so a
+  request that expired, or a person who acted, during them still got the row pressed: the owner's checks and
+  registration stay before the reads, and the deadline and the in-flight intervention check run again after them, just
+  before the press (`overlayClick`'s `beforePress`), answering timeoutReached or userIntervened with nothing sent, as
+  main's other paths do. (P3) The agent cursor's click is announced only after those checks pass, never for a row the
+  last check refuses. (P2) A cached capture that failed was retried with the window list read before the failed
+  attempt: the list is now sampled immediately before each attempt and kept from the one that captured
+  (`captureSamplingList`). Proven offline: `testAnExpiryOrAnInterventionDuringTheLastReadsSendsNoPress` fails with the
+  checks after the reads removed or moved before them, `testTheCursorsClickComesOnlyAfterTheLastChecks` with the cursor
+  announced before the last check, `testTheWindowListIsTheOneSampledBeforeTheAttemptThatCaptured` with one list
+  sampled before the first attempt. 27 `OverlayClickTests`; 1634 swift tests (1 skipped), 0 failures.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, ruling 1082, the row-selection wave, 2026-11-22; amends the entries above): the counted qualification
+  (probe/453-measure README d542abaf, 652e673b) failed safe, 0 wrong rows and 0 false oks, but delivered only the
+  permission prompt (20/20): the omnibox refused `notARow` 18/18 (the deepest node at the point was the row text's
+  unlabelled AXGroup 410×40), the datalist answered `clickUnconfirmed` 18/18 (the press went to the option's inner
+  AXStaticText, which Chromium ignores), and the popover refused `partlyRecorded` 18/18. (1) Row choice: when the
+  recorded chain from the overlay's root down to the deepest node at the point passes an AXList or AXGrid (the
+  outermost on the chain), the row is that container's child on the chain (the omnibox's AXStaticText 426×40, the
+  datalist's outer "apricot", the popover's swatch), still of a row role for its kind and through every identity check
+  on its own handle; two of the container's children at the point refuse (`notNested`, `rowsOverlap`). With no list or
+  grid (the permission bubble) the deepest node stays the row, every recorded node at the point on one chain. (2)
+  `partlyRecorded`, scoped: the row's own children, and those of each recorded descendant of it whose frame holds the
+  point, must have been read and all recorded; other descendants do not block. The leaf line: AXChildren absent
+  (kAXErrorAttributeUnsupported, kAXErrorNoValue) is a leaf, whole; a read that failed otherwise (a timeout, any other
+  AXError) is unread and refuses. The observation already told the two apart (`ElementData.unreadable`, from the batched
+  read's slot), but the record dropped the difference: it now keeps one flag per element (`ElementData.childrenLeaf`,
+  `ScreenshotNodeRead.childrenLeaf`) and one state per framed node (`ScreenshotNode.children`: whole, childrenUnread,
+  childrenNotRecorded), computed in the record's existing pass; no AX read is added. #330's and #431's coverage inputs
+  are unchanged. The #1072 coverage over the row's whole subtree, frameless elements included, is replaced by this rule.
+  (3) The meta names the chosen row (`row: {role, frame}`) and, on a refusal, the node it stands on and why
+  (`refusedBy: {role, reason}`: the row's identity reason, `childrenUnread` or `childrenNotRecorded` for a node, the list
+  for `rowsOverlap`); the service forwards it whole as `cua/overlayClick`.
+  Proven offline over fakes built from the three recorded chains (`OverlayClickTests`, 31): the omnibox row text pressed,
+  never its inner group; the datalist's outer text pressed; the swatch with leaf children pressed; a row whose remove
+  button went unread refused; each side of the leaf line, from the AX error through `ElementData` and the record;
+  two list or grid children at the point refused; the permission bubble unchanged. Mutations each fail a test: the row
+  choice removed, the row-level overlap check, the leaf line removed or widened to every failed read, the scope widened
+  to every descendant or narrowed to the row alone or to its descendants alone, the meta's row and refusedBy, and the
+  earlier wave's checks (one overlay, the recheck, the row role, the nesting check, labels). 1638 swift tests (1
+  skipped), 0 failures; the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, ruling 1083, the final wave, no review after it; amends the entry above): a focused review found 4 P1
+  and 3 P2, each only adding refusals; all fixed. (1) The row is promoted to the list's or grid's child only over nodes
+  inside it at the point that are inert (role and actions read, no interactive role, no AXPress: #433's inert layer) or
+  repeat it (same role, same recorded label parts, frame within 2 pt: the datalist's inner text); a distinct control
+  there, the omnibox's remove button, refuses (`actionableDescendant`). (2) The container's one child at the point must
+  be the row on the chain; none refuses (`rowNotAtPoint`). (3) Coverage is the row's whole recorded subtree again,
+  framed and frameless: any element of it whose own children are unread or not all recorded refuses. (4) The
+  container's own children must all be recorded (`partlyRecorded`, `containerNotRecorded`). (5) The row must be the
+  container's direct child in the record (`ScreenshotNode.parentFramed`); a frameless element between them refuses
+  (`notDirectChild`). (6) A node's own children are looked for along the record's parent edges, so a child it lists but
+  the record holds under another parent is not recorded for it; #330's and #431's coverage inputs are unchanged. (7) A
+  leaf is only an AXChildren slot that explicitly answered kAXErrorAttributeUnsupported or kAXErrorNoValue
+  (`absentSlot`, `AttributeRead.absent`, `ElementData.childrenLeaf`); a null slot or a missing entry is unread.
+  Inertness reads AXPress and the interactive roles, not every action name: Chromium lists AXShowMenu and
+  AXScrollToVisible on plain groups, which a press does not reach.
+  Proven offline (`OverlayClickTests`, 37): a test per item, each failing with its fix reverted alone; the datalist's
+  outer text, the omnibox's row text and the popover's swatch still deliver with their trees whole and leaf children;
+  the remove button recorded with its children unread away from the point now refuses. 1644 swift tests (1 skipped),
+  0 failures; the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

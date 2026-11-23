@@ -8067,6 +8067,50 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (#481, 2026-11-23, `fix/481-corrected-hit-route`, plugin 0.29.2; amends #442's entries, StalePoint.swift
+  `otherControlOnTopVerdict`, `routeTakesCorrectedHit`, Input.swift): **a point the guard keeps after #442's re-hit
+  answered another element is carried from that corrected hit.** #442 used the corrected hit only for the verdict. The
+  kept verdict carried the action's first hit, Chromium's approximate overlay group, so CfT's element route built from it
+  and found no control. Example: `overcontrol`, refused `backgroundClickRefused` over an unchanged link.
+  The rule:
+  - **When:** the guard kept and `hitCorrection` is `changed`. Then the kept verdict's `hit` and `hitRole` are the
+    corrected hit's, and `routeHitCorrected` is set. A `same` answer is the first hit already; `none`, engines without
+    the re-hit, and every refusal (built from the kept verdict before the re-hit) keep main's.
+  - **Consumers of the hit:**
+    - The element route takes the corrected hit through the guard's existing recovery (`stalePointRouteHit`), so it
+      is classified again (`pointerTarget`) and resolved by `webAreaControl`.
+    - #454's menu-item decision and #458's pop-up decision read it in place of the action's `answered`. A corrected hit
+      in another window would have met #452's check and been refused, so it lies in the observed window.
+    - #453's `overlayPressApplies` is unchanged: it never takes a verdict the re-hit decided.
+    - The drag's start is unchanged: it posts and builds no route from the hit.
+  - **Meta:** `stalePoint.routeHit: "corrected"` marks a route carried from the corrected hit, and `hitRole` then names
+    that hit. The service forwards `stalePoint` whole.
+  **What is pressed is not widened.** The route's press passes `stalePointPressVerdict`, which allows:
+  - the node as found, or a control above it;
+  - a recorded control the screenshot showed at the point, in place (#305);
+  - anything inside a node whose children the record does not all hold, or under its strips of unrecorded children
+    (`unrecordedDescendant`, ruling 0a14b51f's declared limit).
+
+  That last allowance vouches for nothing. With it, the corrected hit could reach a control the record never held and
+  main's first hit did not name, and the build's check found exactly that case. So the corrected hit is taken only
+  where the node's record is whole and has no such strip (`routeTakesCorrectedHit`); elsewhere the route keeps main's
+  first hit (`deepfront`'s depth-cut front button stays main's).
+
+  Where the record is whole, an unrecorded control the corrected hit names (#482's shape) is not pressed: the press
+  verdict refuses it as `pressedOther`, where main's route from the overlay group found no control.
+  Proven offline (`OtherControlOnTopTests`, 3 new tests):
+  - `overcontrol`'s shape: the route presses A, `recordedHit`, with `routeHit` and `hitRole`. Main's route from the
+    veil finds no control.
+  - `same`, `none`, Safari and a refusal keep main's hit.
+  - An incomplete record keeps main's hit, though the corrected hit would have passed only by the limit; an unrecorded
+    front control is refused at the press.
+
+  With the change removed, the first and third tests fail. The second pins main and fails if the corrected hit is taken
+  on `same` or on a refusal. Taking it on `same`, past the record gate, on a refusal, or dropping the meta field each
+  fails a test. 1662 swift tests, 0 failures. Not measured live: this build (the bar in #481: #442's keep rows land as
+  main or better, and `overcontrol` on CfT lands).
+  Date/Author: 2026-11-23, cursor235's builder for #481.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

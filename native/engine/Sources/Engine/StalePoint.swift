@@ -570,6 +570,9 @@ struct StalePointVerdict<Element> {
   /// #442: the delayed hit-test's own time, when its answer supplied the refusal (#452's window check on it), which the
   /// meta's `hitMs` then reports.
   var correctedHitMs: Double?
+  /// #481: the kept verdict's `hit` (and `hitRole`) is #442's corrected hit, which the route is carried from
+  /// (`routeTakesCorrectedHit`); the meta's `routeHit: "corrected"`. False: the action's own hit, as on main.
+  var routeHitCorrected = false
   var refused: Bool { reason.refuses }
 }
 
@@ -1195,6 +1198,12 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
       return over
     }
     hit = again.element
+    // #481: a point kept from here is carried from the corrected hit, not the approximate first one: the element route,
+    // #454's and #458's decisions (`routeHitCorrected`), and the meta's `hitRole`. Every refusal below is built from
+    // `kept`, so it keeps the action's own hit.
+    if correction == .changed, let corrected = again.element, routeTakesCorrectedHit(kept) {
+      (verdict.hit, verdict.hitRole, verdict.routeHitCorrected) = (corrected, reads.role(corrected), true)
+    }
   }
   guard let hit, let control = firstActing(from: hit, reads).element else { return verdict }
   let meant = CGPoint(x: point.x - kept.windowShift.dx, y: point.y - kept.windowShift.dy)
@@ -1215,6 +1224,16 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
   var refused = refusal(of: kept, reason: .otherControlOnTop, hitCorrection: verdict.hitCorrection)
   (refused.onTop, refused.onTopRole) = (control, reads.role(control))
   return refused
+}
+
+/// #481: whether the route may be carried from #442's corrected hit. What the element route presses must pass
+/// `stalePointPressVerdict`: the node as found or a control above it, a recorded control the screenshot showed at the
+/// point (#305), or anything inside a node whose children the record does not all hold (`unrecordedDescendant`, ruling
+/// 0a14b51f's declared limit, and #301's strips). That last vouches for nothing, so where the node's record is incomplete
+/// (or holds a strip of unrecorded children) the corrected hit could reach a control there that neither the record nor
+/// main's first hit would: the route keeps main's first hit (`deepfront`'s depth-cut front button stays main's).
+func routeTakesCorrectedHit<Element>(_ kept: StalePointVerdict<Element>) -> Bool {
+  kept.node?.subtreeRecorded == true && kept.gaps.isEmpty
 }
 
 /// #442: a refusal of a kept verdict, carrying what it judged (#433's check included) and the hit's correction.
@@ -1797,6 +1816,9 @@ struct StalePointRecord: Equatable {
   /// #442: whether the guard took the hit again after `stalePointCorrectionMs` (Chromium, on its two keep paths), and
   /// whether that answer named the first one's element.
   let hitCorrection: StalePointHitCorrection?
+  /// #481: "corrected" when the route was carried from #442's corrected hit (`hitRole` then names it); absent, the
+  /// action's own first hit.
+  let routeHit: String?
 
   init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
@@ -1815,6 +1837,7 @@ struct StalePointRecord: Equatable {
     controlRole = verdict.reason == .controlGone ? verdict.node?.controlRole
       : verdict.reason == .otherControlOnTop ? verdict.onTopRole : nil
     hitCorrection = verdict.hitCorrection
+    routeHit = verdict.routeHitCorrected ? "corrected" : nil
     self.ms = ms
     self.rechecked = rechecked
   }
@@ -1836,6 +1859,7 @@ struct StalePointRecord: Equatable {
     if let underlyingIdentity { wire["underlyingIdentity"] = underlyingIdentity.rawValue }
     if let controlRole { wire["controlRole"] = controlRole }
     if let hitCorrection { wire["hitCorrection"] = hitCorrection.rawValue }
+    if let routeHit { wire["routeHit"] = routeHit }
     if rechecked { wire["rechecked"] = true }
     if afterActivation { wire["afterActivation"] = true }
     return wire
@@ -1860,6 +1884,7 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
                                    newElementReads: verdict.newElementReads)  // #330: and rule dL's reads on it
     (judged.underlying, judged.underlyingIdentity) = (verdict.underlying, verdict.underlyingIdentity)  // #433: the check ran
     judged.hitCorrection = verdict.hitCorrection  // #442: and the hit was taken again
+    judged.routeHitCorrected = verdict.routeHitCorrected  // #481: and the route came from the corrected hit
     return judged
   }
   // Inside a node the record holds incompletely, or under one of its strips whose children it lacks (#301).

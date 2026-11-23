@@ -117,7 +117,8 @@ export function xDisplayFacts(text) {
 // (src/repl-host/identity.mjs hostIdentity, as src/mcp/lazy-runtime.mjs handshakeRecords keys it), the sandbox policy
 // the serve resolves in this environment (src/runtime/sandbox.mjs sandboxModeFrom, the measured surface), the machine and what
 // is running that the run must know about (a cua-116-spike process, serves of the clone, the scratch app). macOS: model,
-// chip, memory, macOS, main display, TextEdit, and for the computer surface `engine`, the approved engine as the serve
+// chip, memory, macOS, main display, TextEdit, `runner` (a GitHub-hosted runner's record of its own run, null elsewhere:
+// ../hosted-sittings/runner.mjs readRunnerRecord), and for the computer surface `engine`, the approved engine as the serve
 // will resolve it and the checkout's build (./engine.mjs approvedEngineFacts, read in the serve's environment; its error
 // when it cannot be read). Linux: CPU and memory, distribution and kernel, the X display (DISPLAY `display`, the cookie
 // in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit, and for a computer run's
@@ -179,6 +180,7 @@ if (process.platform === 'linux') {
     os: {name: sh('/usr/bin/sw_vers', ['-productName']), version: sh('/usr/bin/sw_vers', ['-productVersion']), build: sh('/usr/bin/sw_vers', ['-buildVersion'])},
     display: main ? {pixels: main._spdisplays_pixels ?? null, resolution: points ? points.join(' x ') : null, scale: pixels && points ? pixels[0] / points[0] : null, virtual: /virtual|가상/i.test(main._name ?? '')} : null,
     textEditRunning: sh('/usr/bin/pgrep', ['-x', 'TextEdit']) !== '',
+    runner: await (async () => { try { const {readRunnerRecord} = await import('./scripts/hosted-sittings/runner.mjs'); return readRunnerRecord(); } catch (e) { return {error: String(e?.message ?? e)}; } })(),
     ${surface === 'computer' ? `engine: await (async () => { try { const {approvedEngineFacts} = await import('./scripts/native-baseline/engine.mjs'); return approvedEngineFacts({approvedEngine: ${JSON.stringify(approvedEngine ?? null)}}); } catch (e) { return {error: String(e?.message ?? e)}; } })(),` : ''}
   };
 }

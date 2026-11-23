@@ -202,6 +202,17 @@ test('checkPair: one sitting, one checkout, one approved engine, the vendor-engi
   assert.throws(() => checkPair(run('v4', 'vendor', {sitting: ''}), run('c9', 'cua', {sitting: ''}), {declarations}), /names no hold/);
 });
 
+test('checkPair on a hosted runner: both lanes are one job\'s run, each attested by its device (T10b′ part 2)', () => {
+  const root = scratch();
+  const run = (name, engine, meta) => loadNativeMacRun(writeRun(join(root, name), {engine, meta}));
+  const runner = id => ({hosted: true, runner: {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'},
+    install: {home: '/h', release: 'r'}, engine: {bundle: '/b/cua Engine.app', build: 'b', engineVersion: '0.2.0'}}});
+  assert.doesNotThrow(() => checkPair(run('v', 'vendor', runner('7')), run('c', 'cua', runner('7')), {declarations}));
+  assert.throws(() => checkPair(run('v2', 'vendor', runner('7')), run('c2', 'cua', runner('8')), {declarations}), /two hosted runs \(macos26 20261117\.0516\.1, run 7 attempt 1; .*run 8 attempt 1\): one sitting is one job's run/);
+  assert.throws(() => checkPair(run('v3', 'vendor', runner('7')), run('c3', 'cua', {hosted: true}), {declarations}), /records no hosted runner/);
+  assert.throws(() => checkPair(run('v4', 'vendor', runner('7')), run('c4', 'cua'), {declarations}), /records no hosted runner/);
+});
+
 test('checkPair: a list-bearing scene read in two window frames is no pair; within 1 pt it is, and other scenes\' frames do not decide', () => {
   // Hold 2b's Finder list showed rows 0-19 on the cua lane against 0-18 on the vendor's, with neither frame recorded:
   // a list's visible rows follow its window's height, so two frames make an invalid pair, not a difference.

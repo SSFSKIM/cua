@@ -32,6 +32,7 @@ import {fileURLToPath} from 'node:url';
 import {compare, parse} from '../../test/native-goldens/compare.mjs';
 import {allowsAddedLines} from '../../test/native-goldens/goldens.mjs';
 import {LIST_BEARING_SCENES, SCENE_IDS} from './scenes-mac.mjs';
+import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
 
 export const EXPECTED_FILE = fileURLToPath(new URL('./expected/native-mac.json', import.meta.url));
 export const GOLDENS = Object.freeze(['full', 'before', 'diff', 'settle']);
@@ -114,6 +115,13 @@ export function checkPair(vendor, cua, {declarations = []} = {}) {
   if (typeof a.sitting !== 'string' || !a.sitting || typeof b.sitting !== 'string' || !b.sitting) throw new Error('a run names no hold (meta.sitting): one sitting is one hold, which both runs name');
   if (a.sitting !== b.sitting) throw new Error(`the runs are of two holds (${a.sitting}, ${b.sitting}): one sitting is one hold`);
   if (a.device !== b.device) throw new Error(`the runs are on two devices (${a.device}, ${b.device})`);
+  // On a GitHub-hosted runner the alias names every runner alike: one sitting is one job's run, which each run's device
+  // attested (meta.runner, ../hosted-sittings/runner.mjs).
+  if (a.hosted === true || b.hosted === true || a.runner || b.runner) {
+    const keys = [a, b].map(m => (m.runner && !runnerProblems(m.runner).length ? runnerKey(m.runner) : null));
+    if (keys.includes(null)) throw new Error(`the ${keys[0] === null ? a.engine : b.engine} run records no hosted runner (meta.runner): a hosted pair must show it is one job's run`);
+    if (keys[0] !== keys[1]) throw new Error(`the runs are of two hosted runs (${keys[0]}; ${keys[1]}): one sitting is one job's run`);
+  }
   if (a.commit !== b.commit) throw new Error(`the runs' harness checkouts are at two commits (${a.commit}, ${b.commit}): one sitting is one commit`);
   if (a.approved?.build !== b.approved?.build || !a.approved?.build) throw new Error('the runs served two approved engines (or none): one sitting is one approved engine');
   if (a.runtimeRelease !== b.runtimeRelease) throw new Error(`the runs served two vendor runtimes (${a.runtimeRelease}, ${b.runtimeRelease})`);

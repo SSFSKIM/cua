@@ -54,6 +54,7 @@ import {quote} from '../browser-parity/topology.mjs';
 import {AX_FULL, LIST_APPS, SCRATCH_GUARD, SCREENSHOT} from '../native-baseline/cells.mjs';
 import {assertEngineOptions, checkApprovedEngine, engineProblem} from '../native-baseline/engine.mjs';
 import {HOSTS} from '../native-baseline/remote.mjs';
+import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs';
 import {checkVendorPreflight} from './goldens.mjs';
@@ -173,6 +174,7 @@ async function runOnce(options, io) {
       sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null},
     elicitations: [], keySkipped: [],
     // Where the run ran (./front-key.mjs): on a GitHub-hosted runner every judged sample needs its front/key readings.
+    // The controller's environment until the preflight, then with the device's own record (meta.runner, hostedRunOf).
     // The serve the lane starts runs with a cleared environment (../native-baseline/remote.mjs), so cua's launcher
     // takes its default desktop mode, the shared one.
     hosted: (io.env ?? process.env).RUNNER_ENVIRONMENT === 'github-hosted', desktopMode: 'shared'};
@@ -249,6 +251,9 @@ async function runOnce(options, io) {
     meta.nativeEngine = {requested: engine, approved, checkoutBuild, attested: [], unattested: 0};
     meta.runtime = {release: pre.release};
     Object.assign(meta, {commit: pre.commit, hardware: pre.hardware ?? null, os: pre.os ?? null, display: pre.display ?? null});
+    // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs): meta.hosted
+    // from both sides, meta.runner the run's attestation, its install the approved runtime and engine this run serves.
+    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine}));
 
     const scenes = scenesOf(plan);
     meta.fixtures = {

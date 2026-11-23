@@ -49,6 +49,7 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseline/engine.mjs';
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
+import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
 import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval} from '../native-matrix/goldens.mjs';
 import {isSessionFile} from '../native-matrix/goldens-cells.mjs';
@@ -157,6 +158,9 @@ export async function runNativeMac(options, io) {
     const {approved, checkoutBuild} = checkApprovedEngine(pre.engine, approvedEngine);
     Object.assign(meta, {runtimeRelease: pre.release, checkoutBuild, approved: {build: approved.build, engineVersion: approved.engineVersion, signature: approved.signature ?? null},
       hardware: pre.hardware ?? null, os: pre.os ?? null, display: pre.display ?? null});
+    // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs), its install
+    // the approved runtime and engine the lane serves: meta.hosted and meta.runner, which the diff holds equal.
+    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine}));
     const scenesPreflight = ops.scenes(['preflight', '--run', ctx.run]);
     if (scenesPreflight.refusals?.length) throw new Error(`the scenes refuse: ${scenesPreflight.refusals.map(r => r.message).join('; ')}`);
 

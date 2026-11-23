@@ -106,11 +106,11 @@ function fakeLane(device, {engine, host = engine, texts = laneTexts(engine), att
   return {connect: (spec, given) => { handlers = given; return client; }, cells, elicitations, get closed() { return closed; }};
 }
 
-const runLane = async ({engine, host = engine, device = fakeDevice(), lane, controller = {commit: 'd'.repeat(40), dirty: false}, interrupt, ...options} = {}) => {
+const runLane = async ({engine, host = engine, device = fakeDevice(), lane, controller = {commit: 'd'.repeat(40), dirty: false}, interrupt, env = {}, ...options} = {}) => {
   const out = join(scratch(), engine);
   lane ??= fakeLane(device, {engine, host});
   const code = await runNativeMac({device: 'mini', host, engine, approvedRuntime: APPROVED_RUNTIME, approvedEngine: APPROVED_ENGINE, commit: COMMIT, sitting: 'hold-2b', out, ...options},
-    {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}, ...(interrupt ? {interrupt} : {})});
+    {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}, ...(interrupt ? {interrupt} : {}), env});
   const meta = fs.existsSync(join(out, 'meta.json')) ? JSON.parse(fs.readFileSync(join(out, 'meta.json'), 'utf8')) : null;
   return {code, out, meta, device, lane};
 };
@@ -150,6 +150,20 @@ test('a lane through the facade on the four scenes: texts kept only after cua\'s
   assert.deepEqual(cua.device.calls.find(c => c[0] === 'serve'), ['serve', 'cua', 'cua']);
   const report = diffNativeMac(loadNativeMacRun(vendor.out), loadNativeMacRun(cua.out), {declarations: validateDeclarations(JSON.parse(fs.readFileSync(EXPECTED_FILE, 'utf8')))});
   assert.equal(report.summary, '0 unexpected differences', JSON.stringify(report.differences));
+});
+
+test('a hosted lane records the runner its device attests; another job\'s record leaves the lane incomplete (T10b′ part 2)', async () => {
+  const record = id => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'},
+    install: {home: APPROVED_RUNTIME, release: RELEASE}, engine: {bundle: APPROVED_ENGINE, build: BUILD, engineVersion: '0.2.0'}});
+  const env = {RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '1'};
+  const hosted = await runLane({engine: 'vendor', device: fakeDevice({preflight: {runner: record('7')}}), env});
+  assert.equal(hosted.meta.complete, true, hosted.meta.error ?? hosted.meta.problems.join('; '));
+  assert.equal(hosted.meta.hosted, true);
+  assert.deepEqual(hosted.meta.runner, record('7'));
+  assert.equal((await runLane({engine: 'vendor', env: {}})).meta.hosted, false);
+  const stale = await runLane({engine: 'vendor', device: fakeDevice({preflight: {runner: record('6')}}), env});
+  assert.equal(stale.meta.complete, false);
+  assert.match(stale.meta.error ?? stale.meta.problems.join('; '), /names run 6 attempt 1, not this job's run 7 attempt 1/);
 });
 
 test('every lane writes its settle rows as the matrix\'s settle cell (result.json), the one shape summary reads; a refused lane a refused one', async () => {

@@ -17,6 +17,7 @@ import {basename, join} from 'node:path';
 import {validateHostAttestations} from '../bench-summary.mjs';
 import {METHOD_CASES} from './linux-cells.mjs';
 import {engineProblem, attestedBuild} from './engine.mjs';
+import {runnerText} from '../hosted-sittings/runner.mjs';
 
 // The order operations are reported in; anything else follows alphabetically.
 export const OPERATION_ORDER = [
@@ -61,7 +62,11 @@ export const isDefaultPlan = plan => Object.entries(DEFAULT_PLAN).every(([key, n
 export const surfaceOf = meta => meta.surface ?? 'computer';
 
 const GiB = 1024 ** 3;
-const ATTESTED = ['device', 'commit', 'host', 'engine', 'approvedEngine', 'release', 'hardware', 'os', 'display', 'service', 'sandbox', 'plan'];
+const ATTESTED = ['device', 'commit', 'host', 'engine', 'approvedEngine', 'release', 'hardware', 'runner', 'os', 'display', 'service', 'sandbox', 'plan'];
+// The hosted runner a run attests (T10b′, ../hosted-sittings/runner.mjs): on a GitHub-hosted runner, where "the same
+// machine" is one job's VM and the approved runtime and engine are the run's own install, its image, run and attempt,
+// install and engine build; a hosted run with no record is named so; null off a hosted runner.
+const runnerAttested = meta => (meta.runner ? runnerText(meta.runner) : meta.hosted === true ? 'GitHub-hosted, no runner record' : null);
 // The answering host a run attests: the requested host and what its connections' initialize named, or null for a run
 // recorded before host attestation.
 function hostAttested(meta) {
@@ -105,6 +110,7 @@ export function attestation(meta) {
     approvedEngine: approvedAttested(meta.nativeEngine?.approved),
     release: meta.runtime?.release ?? null,
     hardware: [hw.model, hw.chip, hw.memoryBytes ? `${Math.round(hw.memoryBytes / GiB)} GiB` : null].filter(Boolean).join(', ') || null,
+    runner: runnerAttested(meta),
     os: os.version ? `${os.name ?? 'macOS'} ${os.version}${os.build ? ` (${os.build})` : ''}` : null,
     display: display.resolution ? `${display.resolution} points at scale ${display.scale ?? '?'}${display.pixels ? ` (${display.pixels} pixels)` : ''}` : null,
     service: service.surface === 'browser' ? 'browser surface, no service call'
@@ -178,6 +184,7 @@ export function summarize(runs) {
     if (host) problems.push(host);
     const engine = engineProblem(run.meta, run.name);
     if (engine) problems.push(engine);
+    if (run.meta.hosted === true && !run.meta.runner) problems.push(`${run.name} ran on a GitHub-hosted runner but records no runner (meta.runner): its machine and install are unattested`);
     // Evidence recorded with host attestation must also record its sandbox policy and cover its whole plan.
     if (run.meta.host !== undefined) {
       if (!run.meta.sandbox?.mode) problems.push(`${run.name} records no sandbox policy`);
@@ -215,7 +222,7 @@ export function renderMarkdown(summary) {
     '| Attested | Value |', '|---|---|',
     `| Device | ${a.device ?? '–'} |`, `| Host commit | ${a.commit ?? '–'} |`, `| REPL host | ${a.host ?? 'not attested (recorded before host attestation)'} |`,
     `| Engine | ${a.engine ?? '–'} |`, `| Approved engine | ${a.approvedEngine ?? '–'} |`, `| Runtime release | ${a.release ?? '–'} |`,
-    `| Hardware | ${a.hardware ?? '–'} |`, `| OS | ${a.os ?? '–'} |`, `| Display | ${a.display ?? '–'} |`, `| Service | ${a.service ?? '–'} |`, `| Sandbox | ${a.sandbox ?? '–'} |`, `| Sample plan | ${a.plan ?? '–'} |`, '',
+    `| Hardware | ${a.hardware ?? '–'} |`, ...(a.runner ? [`| Hosted runner | ${a.runner} |`] : []), `| OS | ${a.os ?? '–'} |`, `| Display | ${a.display ?? '–'} |`, `| Service | ${a.service ?? '–'} |`, `| Sandbox | ${a.sandbox ?? '–'} |`, `| Sample plan | ${a.plan ?? '–'} |`, '',
     'Milliseconds. Latency columns cover successful samples only (invalidated samples, whose target was not the scratch document, are counted apart); wall is the harness\'s time around the MCP call (it includes the ssh pipe), in-cell is `performance.now()` inside the cell on the device.', '',
     '| Operation | Samples | OK | Invalid | Errors | Wall median | Wall p95 | Wall max | In-cell median | In-cell p95 | In-cell max |',
     '|---|---|---|---|---|---|---|---|---|---|---|',
@@ -231,6 +238,6 @@ export function renderMarkdown(summary) {
   const errors = summary.operations.flatMap(o => o.errors.map(e => `- ${o.op}, ${e.run} sample ${e.sample}: ${e.error}`));
   lines.push('', '## Errors', '', ...(errors.length ? errors : ['None.']));
   lines.push('', '## Problems', '', ...(summary.problems.length ? summary.problems.map(p => `- ${p}`)
-    : ['No problems: every run is complete and attests the same commit, REPL host, engine, approved engine, release, hardware, OS, display, service, sandbox and sample plan.']));
+    : ['No problems: every run is complete and attests the same commit, REPL host, engine, approved engine, release, hardware, hosted runner, OS, display, service, sandbox and sample plan.']));
   return lines.join('\n') + '\n';
 }

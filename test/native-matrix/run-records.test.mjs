@@ -34,6 +34,29 @@ test('a hosted run: every judged row carries its front/key readings and the acti
   assert.equal((await runWith()).result.meta.hosted, false);
 });
 
+// T10b′ part 2: the device's own record of the job's run is the run's hosted attestation (meta.runner), the run's install
+// its approved runtime and engine; a record of another run, or a controller off the runner, leaves the run incomplete.
+const RECORD = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'},
+  install: {home: '/H', release: '26.0-dry'}, engine: {bundle: '/A/cua Engine.app', build: 'b', engineVersion: '0.2.0'}};
+const attesting = record => ({preflight: (base, a) => ({...base(a), runner: record})});
+test('a hosted run records the runner the device attests; another run\'s record or a controller off the runner stops it', async () => {
+  const env = {...HOSTED, GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '1'};
+  const {result} = await runWith({env, ops: attesting(RECORD)});
+  assert.equal(result.complete, true, result.problems.join('; '));
+  assert.equal(result.meta.hosted, true);
+  assert.deepEqual(result.meta.runner, RECORD);
+  // Without the device's record the hosted run is unattested (the judge's missing proof), still hosted.
+  assert.deepEqual([(await runWith({env})).result.meta.runner, (await runWith({env})).result.meta.hosted], [null, true]);
+  const stale = (await runWith({env, ops: attesting({...RECORD, run: {id: '6', attempt: '1'}})})).result;
+  assert.equal(stale.complete, false);
+  assert.ok(stale.problems.some(p => /names run 6 attempt 1, not this job's run 7 attempt 1/.test(p)), stale.problems.join('; '));
+  const off = (await runWith({ops: attesting(RECORD)})).result;
+  assert.equal(off.complete, false);
+  assert.ok(off.problems.some(p => /this controller is not on one/.test(p)), off.problems.join('; '));
+  const install = (await runWith({env, ops: attesting({...RECORD, install: {home: '/other', release: 'r'}})})).result;
+  assert.ok(install.problems.some(p => /--approved-runtime \/H is not the run's install \(\/other\)/.test(p)), install.problems.join('; '));
+});
+
 test('an activate step that did not take key (the alert kept it): the act is skipped, its readings say why, no verdict and no fail', async () => {
   const calls = [];
   const {result} = await runWith({env: HOSTED, calls, ops: steer((a, answer) => {

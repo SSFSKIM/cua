@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {cpSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import fs from 'node:fs';  // the mutable module object: its functions are wrapped below
 import {syncBuiltinESMExports} from 'node:module';
-import {join} from 'node:path';
-import {parsePin, loadPins, selectPin, locateRuntime, resolveRuntime, runtimeFor, vendorLinuxRuntime, linuxRelease, loadLinuxRuntime, ownInstaller} from '../src/runtime/manifest.mjs';
+import {dirname, join} from 'node:path';
+import {parsePin, loadPins, selectPin, locateRuntime, resolveRuntime, runtimeFor, vendorLinuxRuntime, linuxRelease, loadLinuxRuntime, ownInstaller, installHint, RELEASES_DIR} from '../src/runtime/manifest.mjs';
+import {MODULES_PIN_DIR} from '../src/runtime/module-tree.mjs';
 import {defaultHome, realHome} from '../src/runtime/layout.mjs';
 import {checkIpc} from '../src/runtime/checks.mjs';
 import {realPinJson, linuxPinJson, scratch, forgeActiveRuntime, REPO} from './fixtures/runtime-fixture.mjs';
@@ -297,6 +298,17 @@ test('linux: the pointer selects nothing: absent, unreadable, a vendor release, 
   }
 });
 
+// What Linux resolution may read: nothing under the home's runtimes/, none of the vendor's archive pins (RELEASES_DIR
+// and its *.json; a bad vendor pin must not block the own runtime), and the module lock once, for the binding and the
+// closure both. The managed Node's pins, in RELEASES_DIR/node/, are the record's own and are read: the control that the
+// recorder sees the pin reads at all.
+function assertOwnReadsOnly(home, touched) {
+  assert.deepEqual(touched.filter(path => path.startsWith(join(home, 'runtimes'))), []);
+  assert.deepEqual(touched.filter(path => path === RELEASES_DIR || (dirname(path) === RELEASES_DIR && path.endsWith('.json'))), [], 'no archive pin is read');
+  assert.ok(touched.some(path => path.startsWith(join(RELEASES_DIR, 'node'))), 'the recorder saw the Node pins read');
+  assert.equal(touched.filter(path => path === join(MODULES_PIN_DIR, 'package-lock.json')).length, 1, 'the module lock is read once');
+}
+
 test('linux: the home an older cua\'s install leaves (vendor pointer, vendor tree intact, no module tree) is refused, and nothing under runtimes/ is read', t => {
   const home = linuxHome(t);
   forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
@@ -305,7 +317,7 @@ test('linux: the home an older cua\'s install leaves (vendor pointer, vendor tre
     const {error, touched} = pathsTouched(() => resolve({home, host: LINUX_X64}));
     assert.equal(error?.code, 'runtime_not_installed', error?.message);
     assert.equal(error.hint, ownInstaller({release}).hint);
-    assert.deepEqual(touched.filter(path => path.startsWith(join(home, 'runtimes'))), []);
+    assertOwnReadsOnly(home, touched);
     assert.ok(touched.some(path => path.startsWith(join(home, 'modules'))), 'the recorder saw the resolution look for the tree');
   }
 });
@@ -317,7 +329,7 @@ test('linux: an upgraded home whose vendor tree is gone, own parts installed, re
   const {result, error, touched} = pathsTouched(() => resolveRuntime({home, host: LINUX_X64}));
   assert.equal(error, undefined);
   assert.equal(result.release, tree.release);
-  assert.deepEqual(touched.filter(path => path.startsWith(join(home, 'runtimes'))), []);
+  assertOwnReadsOnly(home, touched);
   assert.ok(touched.some(path => path.startsWith(tree.root)), 'the recorder saw the tree checked');
   rmSync(join(home, 'runtimes'), {recursive: true});
   assert.equal(resolveRuntime({home, host: LINUX_X64}).release, tree.release);
@@ -358,7 +370,8 @@ test('linux: a tree with a package.json missing is layout_invalid at resolution,
   assert.throws(() => resolveRuntime({home, host: LINUX_X64}), err => {
     assert.equal(err.code, 'layout_invalid');
     assert.match(err.message, /node_modules\/sharp\/package\.json is missing/);
-    assert.equal(err.hint, `stop any \`cua serve\` using it, remove ${tree.root}, then ${ownInstaller().hint}`);
+    assert.equal(err.hint, `stop any \`cua serve\` using it, remove ${tree.root}, then ${ownInstaller({release: tree.release}).hint}`);
+    assert.ok(err.hint.endsWith(`which may not be ${tree.release}`), 'F9: the derived release is named');
     return true;
   });
 });
@@ -380,20 +393,48 @@ test('vendorLinuxRuntime: the pinned vendor tree for the host, found without the
   assert.equal(vendorLinuxRuntime({home, host: LINUX_X64}).root, root);
 });
 
-test('vendorLinuxRuntime: absent, unrecorded or incomplete is classified, the remedy this cua\'s own installer with the vendor archive', t => {
+// T3 renders its own refusal for the vendor selection and T4 skips an absent tree but fails a damaged one, so the
+// lookup tells the two apart by code and carries the release, the home and the tree's root as structured context.
+test('vendorLinuxRuntime: an absent tree is release_not_installed; one present but damaged is release_damaged; each carries its release, home and root', t => {
   const own = quote(`node ${CUA_ENTRY} install`);
   const hint = new RegExp(`^run \`${own}\` \\(or \`${own} --archive <ChatGPT deb>\` with the pinned archive\\)$`);
-  const home = linuxHome(t);
-  assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), err => expectCode('release_not_installed')(err) && hint.test(err.hint));
-  const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
-  writeFileSync(join(root, 'install.json'), '{}');
-  assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), expectCode('installed_record_invalid'));
-  const other = linuxHome(t);
-  const forged = forgeActiveRuntime(other, {}, {host: LINUX_X64});
   const pin = selectPin(loadPins(), LINUX_X64);
-  rmSync(join(forged.root, pin.layout.skyLinuxBin));
-  assert.throws(() => vendorLinuxRuntime({home: other, host: LINUX_X64}), err => expectCode('layout_invalid')(err) && /skyLinuxBin/.test(err.message));
-  assert.throws(() => vendorLinuxRuntime({home: other, host: DARWIN}), expectCode('unsupported_platform'));
+  const contextOf = home => ({release: pin.release, home, root: join(home, 'runtimes', pin.release)});
+
+  const empty = linuxHome(t);
+  assert.throws(() => vendorLinuxRuntime({home: empty, host: LINUX_X64}), err => {
+    assert.equal(err.code, 'release_not_installed');
+    assert.match(err.hint, hint);
+    assert.deepEqual(err.context, contextOf(empty));
+    return true;
+  });
+
+  const damaged = {
+    'a file at the tree\'s path': home => { mkdirSync(join(home, 'runtimes')); writeFileSync(join(home, 'runtimes', pin.release), ''); },
+    'a link to a real tree': home => {
+      const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
+      fs.renameSync(root, `${root}.real`);
+      fs.symlinkSync(`${root}.real`, root);
+    },
+    'runtimes/ a file, so the tree cannot be stat-ed': home => writeFileSync(join(home, 'runtimes'), ''),
+    'an install record that is not the pin\'s': home => { const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false}); writeFileSync(join(root, 'install.json'), '{}'); },
+    'a layout file missing': home => { const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false}); rmSync(join(root, pin.layout.skyLinuxBin)); },
+  };
+  for (const [name, plant] of Object.entries(damaged)) {
+    const home = linuxHome(t);
+    plant(home);
+    assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), err => {
+      assert.equal(err.code, 'release_damaged', `${name}: ${err.code} ${err.message}`);
+      assert.deepEqual(err.context, contextOf(home), name);
+      assert.equal(err.hint, `stop any \`cua serve\` using it, remove ${contextOf(home).root}, then ${installHint('linux')}`, name);
+      return true;
+    }, name);
+  }
+  const home = linuxHome(t);
+  const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
+  rmSync(join(root, pin.layout.skyLinuxBin));
+  assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), err => /skyLinuxBin/.test(err.message));
+  assert.throws(() => vendorLinuxRuntime({home, host: DARWIN}), expectCode('unsupported_platform'));
 });
 
 // ---- darwin: unchanged ----

@@ -53,7 +53,9 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const summary = problems => problems.slice(0, 5).join('; ') + (problems.length > 5 ? `; and ${problems.length - 5} more` : '');
 
-export const moduleRecoveryHint = root => `stop any \`cua serve\` using it, remove ${root}, then ${ownInstaller().hint}`;
+// The remedy for a damaged tree: remove it, then run this cua's own installer, which names the release it installs
+// where the caller knows it (F9).
+export const moduleRecoveryHint = (root, release) => `stop any \`cua serve\` using it, remove ${root}, then ${ownInstaller({release}).hint}`;
 
 // The host a closure is computed for: npm's os and cpu names, and on Linux the C library, which decides between the
 // glibc and musl builds of a native package.
@@ -297,8 +299,8 @@ function notRealOnTheWay(root, rel, known) {
 }
 
 // The connection's check: every package's package.json and every native file, by a stat against the recorded size,
-// each reached through real directories only.
-export function checkModuleTree(root, record) {
+// each reached through real directories only. `release`, the runtime the tree belongs to, is named in the remedy.
+export function checkModuleTree(root, record, {release} = {}) {
   const problems = [];
   const known = new Set();
   const reachable = rel => {
@@ -322,7 +324,7 @@ export function checkModuleTree(root, record) {
       else if (stat.size !== native.size) problems.push(`${native.path} is ${stat.size} bytes, recorded as ${native.size}`);
     }
   }
-  if (problems.length) fail('layout_invalid', `the module tree ${root} is damaged: ${summary(problems)}`, {hint: moduleRecoveryHint(root)});
+  if (problems.length) fail('layout_invalid', `the module tree ${root} is damaged: ${summary(problems)}`, {hint: moduleRecoveryHint(root, release)});
   return {packages: record.packages.length, natives: record.natives.length};
 }
 

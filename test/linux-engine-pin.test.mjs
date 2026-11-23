@@ -173,17 +173,20 @@ test('a refused release leaves the record as it was; a record missing or malform
 
 // The merge this branch will take: main pins engine 0.4.4 while the record here says 0.4.3. The pins alone moved, the
 // record no longer loads; the script run for that release rewrites it, and the record loads again against every pin.
+// The old engine version is the fixture's own, so the test holds whatever the checked-in record says by then.
 test('a checkout whose engine pin moved past its record: the record refuses to load until the script, run for that release, rewrites it', t => {
   const root = checkout(t, '0.4.4');
-  for (const rel of ['runtime/linux-runtime.json', 'runtime/modules', 'runtime/releases/node', 'runtime/sandbox/linux-sandbox.json', 'runtime/engine/linux-engine.json'])
+  for (const rel of ['runtime/linux-runtime.json', 'runtime/modules', 'runtime/releases/node', 'runtime/sandbox/linux-sandbox.json'])
     cpSync(join(REPO, rel), join(root, rel), {recursive: true});
   const files = {file: join(root, RECORD_PATH), modulesDir: join(root, 'runtime/modules'), nodePinsDir: join(root, 'runtime/releases/node'),
     helperPinFile: join(root, 'runtime/sandbox/linux-sandbox.json'), enginePinFile: join(root, PIN_PATH)};
-  const was = JSON.parse(readFileSync(files.file, 'utf8')).engine.version;
-  assert.notEqual(was, '0.4.4');
+  const was = '0.4.3';
+  const record = JSON.parse(readFileSync(files.file, 'utf8'));
+  writeFileSync(files.file, `${JSON.stringify({...record, engine: {version: was}}, null, 2)}\n`);
   const {run} = fake({tag: 'linux-engine-v0.4.4', version: '0.4.4'});
   const merged = {version: '0.4.4', release: 'linux-engine-v0.4.4', assets: Object.fromEntries(['x64', 'arm64'].map(arch =>
     [arch, {url: `https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.4/${assetName('0.4.4', arch)}`, sha256: sha256(Buffer.from(`${arch} engine`))}]))};
+  mkdirSync(join(root, 'runtime/engine'), {recursive: true});
   writeFileSync(files.enginePinFile, `${JSON.stringify(merged, null, 2)}\n`);
   for (const host of [{platform: 'linux', arch: 'x64'}, {platform: 'linux', arch: 'arm64'}])
     assert.throws(() => loadLinuxRuntime({host, ...files}), error => error.code === 'invalid_pin' && error.message.includes(was) && error.message.includes('0.4.4'));

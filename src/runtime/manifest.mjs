@@ -247,8 +247,9 @@ export function parseLinuxRuntime(json, {file} = {}) {
 }
 
 // The checked-in record, bound to the four pins for `host`'s architecture: each part must equal its pin, or the load is
-// invalid_pin naming both files and both values. The files are injectable for tests.
-export function loadLinuxRuntime({host = hostTarget(), file = LINUX_RUNTIME_FILE, modulesDir = MODULES_PIN_DIR, nodePinsDir = NODE_PINS_DIR, helperPinFile = HELPER_PIN_FILE, enginePinFile = ENGINE_PIN_FILE} = {}) {
+// invalid_pin naming both files and both values. The files are injectable for tests; `lock`, the module lock already
+// parsed from `modulesDir`, lets resolution bind and read the tree against one reading of it.
+export function loadLinuxRuntime({host = hostTarget(), file = LINUX_RUNTIME_FILE, modulesDir = MODULES_PIN_DIR, nodePinsDir = NODE_PINS_DIR, helperPinFile = HELPER_PIN_FILE, enginePinFile = ENGINE_PIN_FILE, lock} = {}) {
   if (host.platform !== 'linux') fail('unsupported_platform', `cua's Linux runtime is for a Linux host; this host is ${host.platform}-${host.arch}`);
   let json;
   try { json = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { invalidRecord(file, `is not readable JSON (${error.code ?? error.message})`); }
@@ -258,7 +259,7 @@ export function loadLinuxRuntime({host = hostTarget(), file = LINUX_RUNTIME_FILE
   const enginePin = loadEnginePin(enginePinFile);
   if (!enginePin) invalidRecord(file, `engine.version ${record.engine.version} has no engine pin: ${enginePinFile} is missing`);
   const pins = [
-    ['modules.lock', record.modules.lock, join(modulesDir, 'package-lock.json'), loadModuleLock(modulesDir).hash, 'SHA-256'],
+    ['modules.lock', record.modules.lock, join(modulesDir, 'package-lock.json'), (lock ?? loadModuleLock(modulesDir)).hash, 'SHA-256'],
     ['node.version', record.node.version, join(nodePinsDir, `${nodePin.version}-${nodePin.platform}-${nodePin.arch}.json`), nodePin.version, 'version'],
     ['sandbox.upstreamTag', record.sandbox.upstreamTag, helperPinFile, loadHelperPin(helperPinFile).upstreamTag, 'upstreamTag'],
     ['engine.version', record.engine.version, enginePinFile, enginePin.version, 'version'],
@@ -288,28 +289,40 @@ function moduleHostOf(host) {
 // cua's own Linux runtime as resolution answers it: the record, its derived release, and the module tree this lock
 // names, when cua installed it for this host. The pointer is not read, and nothing under runtimes/ is touched.
 function locateOwnLinuxRuntime({home, release: named, host}) {
-  const parts = loadLinuxRuntime({host});
+  const lock = loadModuleLock();
+  const parts = loadLinuxRuntime({host, lock});
   const release = linuxRelease(parts, host.arch);
   if (named != null && named !== release)
     fail('unknown_release', `release ${named} is not this cua's Linux runtime, ${release}`, {hint: 'on Linux this cua resolves only its own runtime; CUA_NATIVE_ENGINE=vendor selects the vendor\'s engine'});
-  const lock = loadModuleLock();
   const tree = readModuleTree(home, lock, moduleHostOf(host));
   if (!tree) fail('runtime_not_installed', `cua's Linux runtime ${release} is not installed in ${home}: its module tree ${join(homeLayout(home).modules, lock.hash)} is missing`, {hint: ownInstaller({release}).hint});
   return {release, home, root: tree.root, paths: {moduleDir: tree.moduleDir}, manifest: {platform: 'linux', arch: host.arch, release, parts}, record: tree.record};
 }
 
 // The vendor's Linux tree, for the vendor selection only (CUA_NATIVE_ENGINE=vendor, until M6b): the host's pinned
-// release under runtimes/, its install record and its layout, found by the pin and never through the pointer.
+// release under runtimes/, its install record and its layout, found by the pin and never through the pointer. Every
+// refusal carries `context: {release, home, root}` for the caller's own sentence, and tells the two states apart:
+// nothing at the tree's path is `release_not_installed`; anything else that is not a whole tree (a file or a link
+// there, a path that cannot be stat-ed, an install record that is not the pin's, a layout file missing) is
+// `release_damaged`, which is never repaired in place.
 export function vendorLinuxRuntime({home, pins = loadPins(), host = hostTarget()}) {
   if (host.platform !== 'linux') fail('unsupported_platform', `the vendor's Linux tree is for a Linux host; this host is ${host.platform}-${host.arch}`);
   const real = realHome(home);
   const pin = selectPin(pins, host);
   const root = join(homeLayout(real).runtimes, pin.release);
-  if (!isRealDirectory(root)) fail('release_not_installed', `the vendor's release ${pin.release} is not installed in ${real}`, {hint: installHint('linux')});
-  const runtime = runtimeFor({home: real, pin, record: readInstalledRecord(root, pin)});
+  const context = {release: pin.release, home: real, root};
+  const damaged = (why, cause) => fail('release_damaged', `the vendor's release ${pin.release} in ${real} is damaged: ${why}`, {hint: recoveryHint(root, 'linux'), cause, context});
+  let stat;
+  try { stat = lstatSync(root); } catch (error) {
+    if (error.code === 'ENOENT') fail('release_not_installed', `the vendor's release ${pin.release} is not installed in ${real}`, {hint: installHint('linux'), context});
+    damaged(`${root} cannot be read (${error.code ?? error.message})`, error);
+  }
+  if (!stat.isDirectory()) damaged(`${root} is ${stat.isSymbolicLink() ? 'a link' : 'not a directory'}`);
+  let record;
+  try { record = readInstalledRecord(root, pin); } catch (error) { damaged(error.message, error); }
   const layout = checkLayout(root, pin);
-  if (!layout.ok) fail('layout_invalid', `installed release ${pin.release} is missing ${layout.missing.join(', ')}`, {hint: recoveryHint(root, 'linux')});
-  return runtime;
+  if (!layout.ok) damaged(`it is missing ${layout.missing.join(', ')}`);
+  return runtimeFor({home: real, pin, record});
 }
 
 // ---- resolution ----
@@ -317,9 +330,11 @@ export function vendorLinuxRuntime({home, pins = loadPins(), host = hostTarget()
 // The installed release a home points at (or the named one), with its pin and install record, without checking its
 // files; doctor reports file damage as its own check. A release pinned for another platform is refused here, before
 // anything can launch it. On Linux: cua's own runtime, whatever the pointer says.
-export function locateRuntime({home, release, pins = loadPins(), host = hostTarget()}) {
+// The archive pins are read only where they select (not on Linux, whose runtime they no longer describe).
+export function locateRuntime({home, release, pins, host = hostTarget()}) {
   const real = realHome(home);
   if (host.platform === 'linux') return locateOwnLinuxRuntime({home: real, release, host});
+  pins ??= loadPins();
   const selected = release ?? readPointer(real);
   if (!selected) fail('runtime_not_installed', `no runtime is installed in ${real}`, {hint: installHint(host.platform)});
   const pin = findPin(pins, selected);
@@ -333,10 +348,10 @@ export function locateRuntime({home, release, pins = loadPins(), host = hostTarg
 // vendor signatures are verified at install, by `runtime use` and by doctor, not on every launch. On Linux the
 // structure is the module tree's: every package.json and native file there at its recorded size (checkModuleTree); its
 // full check of every file's hash is the installer's and doctor's.
-export function resolveRuntime({home, release, pins = loadPins(), host = hostTarget()}) {
+export function resolveRuntime({home, release, pins, host = hostTarget()}) {
   const runtime = locateRuntime({home, release, pins, host});
   if (host.platform === 'linux') {
-    checkModuleTree(runtime.root, runtime.record);
+    checkModuleTree(runtime.root, runtime.record, {release: runtime.release});
     return runtime;
   }
   const layout = checkLayout(runtime.root, runtime.manifest);

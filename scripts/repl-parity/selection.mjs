@@ -57,11 +57,14 @@ function linuxEngineTable({engine='unset',engineFrom='env',installed=false,defau
 }
 // #117's table, its refusals in their order: an unknown engine, the host setting, the approved engine, Node. An explicit
 // engine (or CUA_REPL_HOST=cua) refuses where a default cua engine keeps the vendor host and engine with a warning.
+// `installed` 'outdated' is an approved engine older than the service's minimum (#117 M5, R4): refused as
+// engine_outdated where the setting is explicit, the vendor host and engine with a warning for the default.
 function engineTable({override,engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_DEFAULT_ENGINE},availableNode){
  if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
  const set=engine!=='unset'&&engine!=='empty',selected=set?engine:defaultEngine,explicit=set||override==='cua';
  if(selected==='vendor')return override==='cua'?{error:'repl_host_refused'}:{host:'vendor',reason:override==='vendor'?'explicit':'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'};
  if(!installed)return explicit?{error:'engine_not_installed'}:{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'};
+ if(installed==='outdated')return explicit?{error:'engine_outdated'}:{host:'vendor',reason:'engine_outdated',engine:'vendor',status:'warn'};
  if(override==='vendor')return {host:'vendor',reason:'explicit',engine:'cua',status:'pass'};
  if(!availableNode)return explicit?{error:'repl_host_node'}:{host:'vendor',reason:'own_host_node_unavailable',engine:'vendor',status:'warn'};
  return {host:'cua',reason:override==='cua'?'explicit':'cua_engine',engine:'cua',status:'pass'};

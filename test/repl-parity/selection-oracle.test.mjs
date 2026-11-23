@@ -14,6 +14,7 @@ test('scratch registration fixtures write each route\'s record, in both orders, 
 import assert from 'node:assert/strict';
 import {expectedSelection,selectionCases,assertSelection,ORACLE_DEFAULT_ENGINE,ORACLE_LINUX_DEFAULT_ENGINE} from '../../scripts/repl-parity/selection.mjs';
 import {defaultNativeEngine} from '../../src/runtime/launch.mjs';
+import {MIN_ENGINE_VERSION} from '../../src/services/engine/client.mjs';
 // The oracle states each platform's default itself (it never imports launch.mjs); here it is held to production's, so a
 // flip of one without the other fails (#171 M5: the default is per platform).
 test('the oracle\'s default engine on each platform is production\'s',()=>{
@@ -133,7 +134,7 @@ test('every selectable row passes on doctor\'s actual row, whatever the registra
 
 // #117: the engine × host table, mirrored independently, and graded against doctor's actual row with each row's engine
 // inputs injected exactly as the live lane places them (CUA_NATIVE_ENGINE, engine.json, an approved engine).
-const engineInputs=row=>({config:()=>(row.engineFrom==='settings'?{engine:row.engine}:{}),installed:()=>(row.installed?{bundlePath:'/scratch.home/Library/Application Support/cua/engine/cua Engine.app',engineVersion:'0.0.0-selection',build:'f'.repeat(64)}:null)});
+const engineInputs=row=>({config:()=>(row.engineFrom==='settings'?{engine:row.engine}:{}),installed:()=>(row.installed?{bundlePath:'/scratch.home/Library/Application Support/cua/engine/cua Engine.app',engineVersion:`${MIN_ENGINE_VERSION}+selection`,build:'f'.repeat(64)}:null)});
 const engineEnv=row=>(row.engine&&row.engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:row.engine==='empty'?'':row.engine}:{});
 test('the oracle\'s engine table: today\'s path, the target, comparison A, the refusals in order and the default cua\'s until-M6 rows',()=>{
  const row=fields=>expectedSelection({platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true,engine:'unset',installed:false,...fields});
@@ -157,6 +158,13 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
  assert.deepEqual(row({defaultEngine:'cua',override:'vendor'}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});
  assert.deepEqual(row({defaultEngine:'cua',installed:true,node24:false,managedNode:false}),{host:'vendor',reason:'own_host_node_unavailable',engine:'vendor',status:'warn'});
  assert.deepEqual(row({defaultEngine:'cua',override:'cua'}),{error:'engine_not_installed'});
+ // #117 M5 (R4): an approved engine older than the service's minimum keeps the default on the vendor's engine with a
+ // warning and refuses an explicit setting (or CUA_REPL_HOST=cua), before Node, as no approved engine does.
+ for(const override of ['unset','vendor'])for(const node24 of [true,false])assert.deepEqual(row({defaultEngine:'cua',installed:'outdated',override,node24,managedNode:node24}),{host:'vendor',reason:'engine_outdated',engine:'vendor',status:'warn'},`${override} ${node24}`);
+ for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])assert.deepEqual(row({engine:'cua',installed:'outdated',override,node24,managedNode:node24}),{error:'engine_outdated'},`${override} ${node24}`);
+ assert.deepEqual(row({engine:'cua',engineFrom:'settings',installed:'outdated'}),{error:'engine_outdated'});
+ assert.deepEqual(row({defaultEngine:'cua',installed:'outdated',override:'cua'}),{error:'engine_outdated'});
+ assert.deepEqual(row({engine:'vendor',installed:'outdated'}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'},'the vendor engine never reads it');
  // Browser-only rows ignore the setting.
  assert.deepEqual(expectedSelection({platform:'darwin',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'cua'}),{host:'cua',reason:'browser_only',status:'pass'});
  assert.deepEqual(expectedSelection({platform:'linux',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'invalid'}),{host:'cua',reason:'linux',status:'pass'});

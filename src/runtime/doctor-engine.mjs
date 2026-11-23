@@ -24,8 +24,13 @@
 // unreadable or unlaunchable, another engine at the socket, Accessibility or Screen Recording not granted); `warn`
 // where sessions run with less than the design means (the default's fallback to the vendor engine, Input Monitoring
 // missing so intervention detection is off, the signature not the configured identity's, route 3 advising an override,
-// an engine doctor launched and could not stop); `skip` where cua's engine is not preferred; else `pass`. The probe's
-// ability is reported, not judged.
+// an engine doctor launched and could not stop, the approved build not this plugin's engine source); `skip` where cua's
+// engine is not preferred; else `pass`. The probe's ability is reported, not judged.
+// The service's minimum (#117 M5, R4; src/services/engine/client.mjs MIN_ENGINE_VERSION): an approved engine older
+// than it is not driven (launch.mjs nativeEngineFor), and the row says so with the remedy, `cua engine approve` for a
+// newer build pending beside it, else `cua install --engine` then `cua engine approve` (ruling 1118). An approved engine
+// in use is compared with this plugin's engine source (engine-bundle.mjs engineBuild), and a newer pending build is
+// shown beside it, "a new build is pending; cua engine approve to use it"; it is no fallback.
 //
 // On Linux (#171; docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, "Doctor") the row reports cua's own
 // engine, cua-engine in the cua home: the engine sessions here run (the installed one, or what CUA_LINUX_ENGINE_BIN
@@ -44,10 +49,11 @@
 import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
-import {BUNDLE_ID} from './engine-bundle.mjs';
-import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, shortBuild} from './engine.mjs';
+import {BUNDLE_ID, engineBuild} from './engine-bundle.mjs';
+import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, newerPendingBuild, shortBuild} from './engine.mjs';
 import {readEngineSettings} from './engine-sign.mjs';
-import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
+import {desktopModeFor, nativeEngineSetting, outdatedRemedy} from './launch.mjs';
+import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION} from '../services/engine/client.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
 import {MIN_ENGINE_VERSION} from '../services/engine/linux/client.mjs';
@@ -62,6 +68,8 @@ const worst = statuses => statuses.reduce((a, b) => (SEVERITY.indexOf(b) > SEVER
 // `location`, when given, is the approved location already read (doctor's shared read), reused so its codesign runs once.
 export const defaultInspectEngine = ({env, mayLaunch, location}) => inspectEngine({dir: engineDirectory(env.HOME || homedir()), env, mayLaunch, location: location?.()});
 export const defaultEngineRecords = ({env}) => engineRecords({dir: engineDirectory(env.HOME || homedir())});
+// This plugin's engine build (the hash `cua engine build` would give its native/engine source), or null when unreadable.
+export const defaultSourceBuild = () => { try { return engineBuild(); } catch { return null; } };
 
 // The Linux engine placed in the cua home, against this cua's pin (src/runtime/linux-engine.mjs inspectLinuxEngine); a
 // pin this checkout cannot parse is reported as none, with why (`pinProblem`).
@@ -95,10 +103,11 @@ export async function defaultReadLinuxCapabilities({path, desktop, env, timeoutM
 
 // -> {row, report}; `report` is undefined off macOS and Linux. `session` is repl.host's selection for a session here
 // (replHostFor's answer, or {code, message} when refused; undefined when repl.host refused every connection before
-// selecting). `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location}), shared with
-// repl.host; `inspect` and `records` read the approved location on macOS, `inspectLinux` the engine placed in the cua
-// home `home` on Linux, for a machine of `arch`, and `readCapabilities` the Linux engine's capability report
-// (defaultReadLinuxCapabilities' contract) (seams for tests, which never launch anything).
+// selecting). `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location, pendingBuild}),
+// shared with repl.host, and `sourceBuild`, this plugin's engine build (defaultSourceBuild by default); `inspect` and
+// `records` read the approved location on macOS, `inspectLinux` the engine placed in the cua home `home` on Linux, for a
+// machine of `arch`, and `readCapabilities` the Linux engine's capability report (defaultReadLinuxCapabilities'
+// contract) (seams for tests, which never launch anything).
 export async function engineCheck({env, platform, arch = process.arch, home, session, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords, inspectLinux = defaultInspectLinuxEngine,
   readCapabilities = defaultReadLinuxCapabilities}) {
   if (platform !== 'darwin' && platform !== 'linux') return {row: result('engine', 'skip', `cua's native engine is for macOS and Linux; this host is ${platform}`)};
@@ -127,7 +136,8 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
   if (preferred.engine === 'vendor') return vendorRow(selection, records({env}));
   const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
   const settings = settingsOf(config);
-  return selection.selected === 'cua' ? installedRow(selection, facts, settings, deviceMode({env, config})) : notInUseRow(selection, facts, settings);
+  return selection.selected === 'cua' ? installedRow(selection, facts, settings, deviceMode({env, config}), (engine.sourceBuild ?? defaultSourceBuild)())
+    : notInUseRow(selection, facts, settings);
 }
 
 // The device mode sessions here run cua's engine in (launch.mjs desktopModeFor; Linux since #171, macOS since #282) ->
@@ -306,12 +316,15 @@ function notInUseRow(selection, facts, settings) {
   const source = SOURCE_WORDS[selection.preferred.reason]('cua');
   const code = selection.refused?.code ?? selection.reason;
   const notInstalled = code === 'engine_not_installed';
+  const outdated = code === 'engine_outdated';
   const consequence = selection.refused ? `so every macOS computer session is refused (${code})` : `so macOS computer sessions keep the vendor host and engine (${code})`;
-  const cause = notInstalled ? 'no approved engine is installed' : code === 'own_host_node_unavailable' || code === 'repl_host_node'
-    ? `cua's own host finds no Node 24 or later (see repl.host)` : `repl.host refuses it (see repl.host)`;
+  const cause = notInstalled ? 'no approved engine is installed'
+    : outdated ? `the approved engine is version ${facts.engineVersion}, older than ${MIN_MACOS_ENGINE_VERSION}, the oldest this cua drives`
+    : code === 'own_host_node_unavailable' || code === 'repl_host_node' ? `cua's own host finds no Node 24 or later (see repl.host)` : `repl.host refuses it (see repl.host)`;
   const parts = [facts.approved === true
     ? `the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)}) is installed, and doctor does not launch it while no session would use it`
     : installState(facts)];
+  if (outdated) parts.push(outdatedRemedy(newerPendingBuild(facts.pending, facts.approvedBuild)));
   if (settings.problem) parts.push(settings.problem);
   return {row: result('engine', selection.refused || settings.problem ? 'fail' : 'warn', `cua's engine is preferred (${source}), but ${cause}, ${consequence}: ${parts.join('; ')}`),
     report: factsReport(selection, facts, settings)};
@@ -328,11 +341,12 @@ function installState(facts) {
   return `the bundle at ${at} (build ${shortBuild(facts.build)}) is not approved: run cua engine approve with the owner at the console`;
 }
 
-function installedRow(selection, facts, settings, device) {
+function installedRow(selection, facts, settings, device, sourceBuild) {
   const report = {...factsReport(selection, facts, settings), desktop: device.desktop};
   const verdicts = [];
   const say = (status, text) => { verdicts.push(status); return text; };
   const parts = [`the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)})`];
+  parts.push(...buildWords(facts, sourceBuild, say));
   parts.push(signatureWords(facts.signature, say));
   if (facts.bundleId !== BUNDLE_ID) parts.push(say('fail', `but it is not cua's engine (bundle id ${facts.bundleId ?? 'unreadable'}), so doctor does not launch it`));
   else parts.push(processWords(facts, report, say));
@@ -344,6 +358,19 @@ function installedRow(selection, facts, settings, device) {
   parts.push(...cursorWords(report, settings, facts.status));
   parts.push(device.verdict ? say(device.verdict, device.words) : device.words);
   return {row: result('engine', worst(verdicts),`cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
+}
+
+// The approved build against what else there is (#117 M5, R4 and ruling 1118): a newer build pending beside it, which
+// sessions do not use until it is approved, and this plugin's engine source (`sourceBuild`, null when unread, which is
+// not judged), which the approved build should be once this plugin's engine is approved.
+function buildWords(facts, sourceBuild, say) {
+  const words = [];
+  const pending = newerPendingBuild(facts.pending, facts.approvedBuild);
+  if (pending) words.push(`a new build is pending; cua engine approve to use it (pending build ${shortBuild(pending)}, built ${facts.pending.builtAt ?? 'at an unknown time'})`);
+  if (sourceBuild && facts.build !== sourceBuild)
+    words.push(say('warn', `the approved build is not this plugin's engine source (build ${shortBuild(sourceBuild)})${pending === sourceBuild ? ', which is the one pending'
+      : ': cua install --engine builds it pending approval, then cua engine approve with the owner at the console puts it in use'}`));
+  return words;
 }
 
 // The agent cursor's device switch, as `cua engine status` says it too; a file the running engine has not read is noted.

@@ -21,6 +21,8 @@ import {listLiveBackends} from '../src/profiles/inventory.mjs';
 import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {hostIdentity, REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {toolOverrides} from '../src/repl-host/instructions.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/client.mjs';
+import {newerPendingBuild} from '../src/runtime/engine.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000001';
 const AMBIENT = {
@@ -916,6 +918,10 @@ test('a projects/ whose tiers cannot be established (0111, 0000, 0444) refuses a
 // The approved engine as installedEngine answers it, and the inputs of every cell: the engine setting (and where it
 // comes from), the default (vendor until M5 flips it), CUA_REPL_HOST, Node 24 and whether an approved engine exists.
 const APP = {bundlePath: '/Users/someone/Library/Application Support/cua/engine/cua Engine.app', engineVersion: '0.2.0', build: 'f'.repeat(64), approvedAt: '2026-10-20T00:00:00.000Z'};
+// An approved engine older than the minimum the service drives (#117 M5, R4): the build every Mac approved before
+// engineVersion moved with the engine's changes.
+const OLD_APP = {...APP, engineVersion: '0.1.0', build: 'e'.repeat(64)};
+const PENDING_BUILD = 'd'.repeat(64);
 const SETTINGS = {
   'unset': {env: {}, config: {}, explicit: false},
   'CUA_NATIVE_ENGINE=vendor': {env: {CUA_NATIVE_ENGINE: 'vendor'}, config: {engine: 'cua'}, explicit: true, engine: 'vendor'},
@@ -926,7 +932,9 @@ const SETTINGS = {
   'engine.json own': {env: {}, config: {engine: 'own'}, invalid: true},
 };
 // The table as the spec writes it, row by row (an independent statement of it, not a call into launch.mjs): the outcome
-// of one cell -> {code} | {host, reason, engine, status}.
+// of one cell -> {code} | {host, reason, engine, status}. `installed` 'outdated' is an approved engine older than the
+// service's minimum (R4, Linux's rule): refused where the setting is explicit, the vendor's with a warning for the
+// default, as no approved engine is; it is checked with the approved engine, so before Node.
 function tableCell({setting, defaultEngine, host, node, installed}) {
   if (setting.invalid) return {code: 'invalid_setting'};
   const engine = setting.engine ?? defaultEngine;
@@ -937,22 +945,26 @@ function tableCell({setting, defaultEngine, host, node, installed}) {
   }
   if (explicit) {
     if (!installed) return {code: 'engine_not_installed'};
+    if (installed === 'outdated') return {code: 'engine_outdated'};
     if (host === 'vendor') return {host: 'vendor', reason: 'explicit', engine: 'cua', status: 'pass'};   // comparison A's lane
     if (!node) return {code: 'repl_host_node'};
     return {host: 'cua', reason: host === 'cua' ? 'explicit' : 'cua_engine', engine: 'cua', status: 'pass'};
   }
   // The default cua (M5 on), CUA_REPL_HOST unset or vendor, until M6.
   if (!installed) return {host: 'vendor', reason: 'engine_not_installed', engine: 'vendor', status: 'warn'};
+  if (installed === 'outdated') return {host: 'vendor', reason: 'engine_outdated', engine: 'vendor', status: 'warn'};
   if (host === 'vendor') return {host: 'vendor', reason: 'explicit', engine: 'cua', status: 'pass'};
   if (!node) return {host: 'vendor', reason: 'own_host_node_unavailable', engine: 'vendor', status: 'warn'};
   return {host: 'cua', reason: 'cua_engine', engine: 'cua', status: 'pass'};
 }
-// replHostFor on macOS computer with the cell's inputs injected; counts what it asked for.
-function selectCell({setting, defaultEngine, host, node, installed}, surfaces = COMPUTER) {
-  const asked = {config: 0, installed: 0, node: 0};
+// replHostFor on macOS computer with the cell's inputs injected; counts what it asked for. `pending` is the build
+// pending.json names beside the approved one (null for none).
+function selectCell({setting, defaultEngine, host, node, installed, pending = null}, surfaces = COMPUTER) {
+  const asked = {config: 0, installed: 0, node: 0, pending: 0};
   const ambient = {...setting.env, ...(host === undefined ? {} : {CUA_REPL_HOST: host})};
   const result = outcome(() => replHostFor({platform: 'darwin', surfaces, ambient, resolveOwnNode: () => { asked.node++; return (node ? withNode : withoutNode)(); },
-    engine: {defaultEngine, config: () => { asked.config++; return setting.config; }, installed: () => { asked.installed++; return installed ? APP : null; }}}));
+    engine: {defaultEngine, config: () => { asked.config++; return setting.config; }, installed: () => { asked.installed++; return installed === 'outdated' ? OLD_APP : installed ? APP : null; },
+      pendingBuild: () => { asked.pending++; return pending; }}}));
   return {result, asked};
 }
 const shapeOf = result => (result.code ? {code: result.code} : {host: result.host, reason: result.reason, engine: result.engine.engine, status: result.engine.status});
@@ -960,23 +972,25 @@ const shapeOf = result => (result.code ? {code: result.code} : {host: result.hos
 test('the engine selection covers every cell of the table: setting, default, CUA_REPL_HOST, Node 24 and an approved engine', () => {
   let cells = 0;
   for (const [settingLabel, setting] of Object.entries(SETTINGS)) for (const defaultEngine of ['vendor', 'cua']) for (const host of [undefined, 'vendor', 'cua'])
-    for (const node of [true, false]) for (const installed of [true, false]) for (const surfaces of [COMPUTER, BOTH]) {
+    for (const node of [true, false]) for (const installed of [true, false, 'outdated']) for (const surfaces of [COMPUTER, BOTH]) {
       const cell = {setting, defaultEngine, host, node, installed};
-      const label = `${settingLabel}, default ${defaultEngine}, CUA_REPL_HOST=${host ?? 'unset'}, ${node ? 'Node 24' : 'no Node 24'}, ${installed ? 'installed' : 'not installed'}, ${surfaces}`;
+      const label = `${settingLabel}, default ${defaultEngine}, CUA_REPL_HOST=${host ?? 'unset'}, ${node ? 'Node 24' : 'no Node 24'}, ${installed === 'outdated' ? 'installed, below the minimum' : installed ? 'installed' : 'not installed'}, ${surfaces}`;
       const {result, asked} = selectCell(cell, surfaces);
       assert.deepEqual(shapeOf(result), tableCell(cell), label);
       // What a cell may ask for: engine.json only when CUA_NATIVE_ENGINE is unset or empty, the approved engine only when
       // the setting is cua (its codesign read is the costly one), Node only on the own host's path; each at most once.
-      assert.ok(asked.config <= 1 && asked.installed <= 1 && asked.node <= 1, `${label}: ${JSON.stringify(asked)}`);
+      assert.ok(asked.config <= 1 && asked.installed <= 1 && asked.node <= 1 && asked.pending <= 1, `${label}: ${JSON.stringify(asked)}`);
       assert.equal(asked.config, setting.env.CUA_NATIVE_ENGINE ? 0 : 1, `${label}: engine.json read`);
       const engine = setting.invalid ? null : setting.engine ?? defaultEngine;
       assert.equal(asked.installed, engine === 'cua' ? 1 : 0, `${label}: the approved engine is read only for cua's engine`);
-      if (asked.node) assert.ok(engine === 'cua' && installed && host !== 'vendor', `${label}: Node only on the own host's path`);
+      if (asked.node) assert.ok(engine === 'cua' && installed === true && host !== 'vendor', `${label}: Node only on the own host's path`);
+      // pending.json is read only to word the remedy for an engine below the minimum.
+      assert.equal(asked.pending, engine === 'cua' && installed === 'outdated' ? 1 : 0, `${label}: pending read`);
       if (result.engine?.engine === 'cua') assert.deepEqual(result.engine.app, {bundlePath: APP.bundlePath, engineVersion: APP.engineVersion, build: APP.build}, label);
       if (result.host === 'cua') assert.equal(result.node, NODE24, label);
       cells++;
     }
-  assert.equal(cells, 7 * 2 * 3 * 2 * 2 * 2);
+  assert.equal(cells, 7 * 2 * 3 * 2 * 3 * 2);
 });
 
 test('the rows written out: today\'s path, the target, comparison A\'s lane and the until-M6 fallbacks of a default cua', () => {
@@ -1039,6 +1053,71 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
   const unreadable = outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {}, resolveOwnNode: withNode,
     engine: {config: () => { throw new CuaError('engine_settings_invalid', '/Users/someone/.config/cua/engine.json is not a JSON object'); }, installed: () => APP}}));
   assert.deepEqual(unreadable, {code: 'invalid_setting', message: '/Users/someone/.config/cua/engine.json is not a JSON object'});
+});
+
+// #117 M5, R4 (Linux's rule, #171 F5) and ruling 1118: the service names the oldest engine it drives
+// (MIN_ENGINE_VERSION). A default selection whose approved engine is older keeps the vendor's with a warning; an explicit
+// one is refused; the remedy is `cua engine approve` when a newer build is pending, else `cua install --engine` then
+// `cua engine approve`. An approved engine at or above the minimum is driven whatever is pending beside it.
+test('the minimum engine: below it the default keeps the vendor\'s with a warning and an explicit selection is refused, naming the remedy', () => {
+  assert.equal(MIN_ENGINE_VERSION, '0.2.0');
+  const pick = (settingLabel, {defaultEngine = 'vendor', host, node = true, installed = 'outdated', pending = null} = {}) => selectCell({setting: SETTINGS[settingLabel], defaultEngine, host, node, installed, pending});
+  // The default: the vendor host and engine, with the warning's reason, whatever pending.json holds.
+  for (const pending of [null, PENDING_BUILD]) for (const host of [undefined, 'vendor']) for (const node of [true, false]) {
+    const {result} = pick('unset', {defaultEngine: 'cua', host, node, pending});
+    assert.deepEqual(shapeOf(result), {host: 'vendor', reason: 'engine_outdated', engine: 'vendor', status: 'warn'}, `${pending} ${host} ${node}`);
+    assert.deepEqual(result.engine.outdated, {bundlePath: OLD_APP.bundlePath, engineVersion: '0.1.0', build: OLD_APP.build}, 'the approved engine it kept off');
+    assert.equal(result.engine.pendingBuild, pending, 'what the remedy turns on');
+  }
+  // Explicit (the env, engine.json, or CUA_REPL_HOST=cua over the default): refused before Node, naming the version, the
+  // minimum, where the setting came from and the remedy.
+  for (const [label, options, source] of [['CUA_NATIVE_ENGINE=cua', {}, /^CUA_NATIVE_ENGINE=cua selects/], ['engine.json cua', {}, /^"engine": "cua" in ~\/\.config\/cua\/engine\.json selects/],
+    ['unset', {defaultEngine: 'cua', host: 'cua'}, /^the default engine \(cua\) selects/], ['CUA_NATIVE_ENGINE=cua', {host: 'vendor', node: false}, /^CUA_NATIVE_ENGINE=cua selects/]]) {
+    const built = pick(label, options).result;
+    assert.equal(built.code, 'engine_outdated', `${label} ${JSON.stringify(options)}`);
+    assert.match(built.message, source);
+    assert.ok(built.message.includes(`and the approved engine on this Mac (${OLD_APP.bundlePath}) is version 0.1.0, older than 0.2.0, the oldest this cua drives: `), built.message);
+    assert.ok(built.message.includes('build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console; or set CUA_NATIVE_ENGINE=vendor for the vendor engine'), built.message);
+    const pending = pick(label, {...options, pending: PENDING_BUILD}).result;
+    assert.equal(pending.code, 'engine_outdated');
+    assert.ok(pending.message.includes('a newer build (dddddddddddd) is pending beside it: approve it with `cua engine approve` with the owner at the console; or set CUA_NATIVE_ENGINE=vendor'), pending.message);
+    assert.doesNotMatch(pending.message, /cua install/, 'nothing to build: the pending build is the remedy');
+  }
+  // At or above the minimum, cua's engine, and a newer pending build changes nothing (ruling 1118: no fallback); a
+  // version this cua cannot read is below it.
+  for (const engineVersion of ['0.2.0', '0.2.1', '0.10.0', '1.0.0', '0.2.0+fixture']) {
+    const at = outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {}, resolveOwnNode: withNode,
+      engine: {defaultEngine: 'cua', config: () => ({}), installed: () => ({...APP, engineVersion}), pendingBuild: () => assert.fail('pending.json is not read for an engine the service drives')}}));
+    assert.deepEqual(shapeOf(at), {host: 'cua', reason: 'cua_engine', engine: 'cua', status: 'pass'}, engineVersion);
+    assert.equal(at.engine.app.engineVersion, engineVersion);
+  }
+  for (const engineVersion of ['0.1.9', '0.1.0', '0.0.0-fixture', '0.2', 'v0.2.0', '']) {
+    const below = outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {}, resolveOwnNode: withNode,
+      engine: {defaultEngine: 'cua', config: () => ({}), installed: () => ({...APP, engineVersion}), pendingBuild: () => null}}));
+    assert.equal(below.reason, 'engine_outdated', JSON.stringify(engineVersion));
+  }
+  // The production read of pending.json: a build it names other than approved.json's is pending; the approved one, or
+  // none, is not.
+  assert.equal(newerPendingBuild({build: PENDING_BUILD, builtAt: 'later'}, OLD_APP.build), PENDING_BUILD);
+  assert.equal(newerPendingBuild({build: OLD_APP.build, builtAt: 'then'}, OLD_APP.build), null);
+  assert.equal(newerPendingBuild(null, OLD_APP.build), null);
+  assert.equal(newerPendingBuild({}, OLD_APP.build), null);
+});
+
+test('the minimum engine through the production reads: approved.json, the bundle\'s version and pending.json under the caller\'s HOME', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const user = realpathSync(s.dir);
+  const dir = join(user, 'Library', 'Application Support', 'cua', 'engine');
+  mkdirSync(dir, {recursive: true});
+  const refusal = () => outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {HOME: user, CUA_NATIVE_ENGINE: 'cua'}, resolveOwnNode: withNode,
+    engine: {installed: () => OLD_APP}}));
+  assert.match(refusal().message, /`cua install --engine`/, 'no pending.json');
+  writeFileSync(join(dir, 'approved.json'), JSON.stringify({build: OLD_APP.build, identity: 'x', approvedAt: 'then'}));
+  writeFileSync(join(dir, 'pending.json'), JSON.stringify({build: OLD_APP.build, identity: 'x', builtAt: 'then'}));
+  assert.match(refusal().message, /`cua install --engine`/, 'pending.json names the approved build');
+  writeFileSync(join(dir, 'pending.json'), JSON.stringify({build: PENDING_BUILD, identity: 'x', builtAt: 'later'}));
+  assert.match(refusal().message, /a newer build \(dddddddddddd\) is pending beside it: approve it with `cua engine approve`/);
 });
 
 // On Linux the computer surface reads it too since #171 (test/runtime-linux-engine-selection.test.mjs).
@@ -1172,8 +1251,8 @@ test('doctor\'s repl.host row follows the engine selection: host and reason, the
   t.after(s.cleanup);
   const stubs = {host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
     inspectChrome: async () => [], verifySignatures: async () => []};
-  const row = async (env, {installed = true, defaultEngine = 'vendor', resolveOwnNode = withNode} = {}) => (await inspectRuntime({home: s.dir, env: {CUA_SHIM_SURFACES: 'computer,browser', ...env}, resolveOwnNode,
-    engine: {defaultEngine, config: () => ({}), installed: () => (installed ? APP : null)}, ...stubs})).checks.find(c => c.name === 'repl.host');
+  const row = async (env, {installed = true, defaultEngine = 'vendor', resolveOwnNode = withNode, pending = null} = {}) => (await inspectRuntime({home: s.dir, env: {CUA_SHIM_SURFACES: 'computer,browser', ...env}, resolveOwnNode,
+    engine: {defaultEngine, config: () => ({}), installed: () => (installed === 'outdated' ? OLD_APP : installed ? APP : null), pendingBuild: () => pending}, ...stubs})).checks.find(c => c.name === 'repl.host');
   const today = await row({});
   assert.equal(today.status, 'pass');
   assert.match(today.detail, /^vendor host \(macos_native_peer_requires_vendor\): .*; native engine vendor \(default\): /);
@@ -1194,6 +1273,15 @@ test('doctor\'s repl.host row follows the engine selection: host and reason, the
   const notInstalled = await row({}, {defaultEngine: 'cua', installed: false});
   assert.equal(notInstalled.status, 'warn');
   assert.match(notInstalled.detail, /^vendor host \(engine_not_installed\): .*cua install --engine.*; native engine vendor \(engine_not_installed\)/);
+  // R4: an approved engine below the minimum, the remedy by ruling 1118's cases.
+  const outdated = await row({}, {defaultEngine: 'cua', installed: 'outdated'});
+  assert.equal(outdated.status, 'warn');
+  assert.match(outdated.detail, /^vendor host \(engine_outdated\): the default engine is cua's, but the approved engine on this Mac is version 0\.1\.0, older than 0\.2\.0, the oldest this cua drives, so this session keeps the vendor host and engine until a newer one is approved: build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console; native engine vendor \(engine_outdated\)/);
+  const outdatedPending = await row({}, {defaultEngine: 'cua', installed: 'outdated', pending: PENDING_BUILD});
+  assert.match(outdatedPending.detail, /until a newer one is approved: a newer build \(dddddddddddd\) is pending beside it: approve it with `cua engine approve` with the owner at the console; native engine/);
+  const outdatedExplicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: 'outdated'});
+  assert.equal(outdatedExplicit.status, 'fail');
+  assert.ok(outdatedExplicit.detail.startsWith('refused (engine_outdated): CUA_NATIVE_ENGINE=cua selects cua\'s own engine, and the approved engine on this Mac'), outdatedExplicit.detail);
   const noNode = await row({}, {defaultEngine: 'cua', resolveOwnNode: withoutNode});
   assert.equal(noNode.status, 'warn');
   assert.match(noNode.detail, /^vendor host \(own_host_node_unavailable\): .*; native engine vendor \(own_host_node_unavailable\)/);

@@ -12,8 +12,11 @@ import {createHash} from 'node:crypto';
 import {chmodSync, existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {engineDirectory, enginePaths, installedEngine} from '../../src/runtime/engine.mjs';
+import {MIN_ENGINE_VERSION} from '../../src/services/engine/client.mjs';
 
-export const FIXTURE_ENGINE = Object.freeze({version: '0.0.0-fixture', build: createHash('sha256').update('cua fixture approved engine').digest('hex')});
+// Its version is the service's minimum, marked as the fixture's (`+fixture`, which the minimum's comparison sets aside),
+// so the selection takes it as an engine it drives (#117 M5, R4).
+export const FIXTURE_ENGINE = Object.freeze({version: `${MIN_ENGINE_VERSION}+fixture`, build: createHash('sha256').update('cua fixture approved engine').digest('hex')});
 
 const LAUNCH_MARKER = 'fixture-engine-launched';
 

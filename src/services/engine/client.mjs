@@ -67,6 +67,35 @@ const UNIFIED_LOG = 'log show --last 10m --info --predicate \'subsystem == "io.g
 
 export const socketPathFor = appPath => join(dirname(appPath), 'engine.sock');
 
+// MIN_ENGINE_VERSION, the oldest cua's engine this service drives (#117 M5, R4: Linux's rule, #171 F5). engineVersion
+// stood at 0.1.0 through some fifty-five engine changes, so a 0.1.0 bundle may be any of them; 0.2.0 is the first
+// version under the rule that every change to the engine's program moves it (scripts/engine-version-check.mjs, the
+// `engine-version` gate). The selection (src/runtime/launch.mjs nativeEngineFor) enforces it before anything launches,
+// from the approved bundle's version, which the client's ping then holds the running engine to: a default session keeps
+// the vendor's engine, with a warning, while the approved engine is older, and an explicit one is refused. Raise it when
+// the service starts relying on what a newer engine does.
+export const MIN_ENGINE_VERSION = '0.2.0';
+
+// An engine version's [major, minor, patch]; a `+metadata` suffix (the harnesses' fixture engine carries one) is set
+// aside. Null for a version this cua cannot read.
+export function versionParts(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?$/.exec(String(version));
+  return match ? match.slice(1, 4).map(Number) : null;
+}
+
+// Whether `a` orders before `b`, both versionParts.
+export const precedes = (a, b) => {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+};
+
+// Whether engine `version` is older than `minimum`; a version this cua cannot read counts as older, since nothing says
+// what it can do.
+export function belowMinimum(version, minimum = MIN_ENGINE_VERSION) {
+  const parts = versionParts(version);
+  return parts === null || precedes(parts, versionParts(minimum));
+}
+
 // The string value of `key` in the text of an XML Info.plist, its entities unescaped, or null.
 export function plistString(text, key) {
   const match = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(text);

@@ -48,6 +48,18 @@ gates:
     paths:
       - "native/engine/**"
       - ".github/ci-kit.yml"
+  # #117 M5 (R4): a change to the macOS engine's program (native/engine/ less its Tests/) raises engineVersion in
+  # Version.swift above the base's, so an approved engine's version tells the service's minimum
+  # (src/services/engine/client.mjs MIN_ENGINE_VERSION) whether it can drive it. scripts/engine-version-check.mjs
+  # compares CI_KIT_BASE..CI_KIT_HEAD; its decision's tests run in `test`.
+  - name: engine-version
+    lane: hosted
+    timeout: 10
+    run: node scripts/engine-version-check.mjs
+    paths:
+      - "native/engine/**"
+      - "scripts/engine-version-check.mjs"
+      - ".github/ci-kit.yml"
   # #171: cua's own Linux engine (native/linux-engine/, Rust) formatted, built in release for the musl target as the
   # release workflow (.github/workflows/linux-engine.yml) builds it, and its tests run: the unit tests, and under Xvfb
   # with a session bus and AT-SPI the live ones (a GTK 3 window's tree read, a background key read back through the

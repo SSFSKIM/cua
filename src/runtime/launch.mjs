@@ -195,9 +195,9 @@ import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {helperFor} from '../sandbox/linux.mjs';
 import {removeCompatSettings, SESSION_ID, writeCompatSettings} from '../sandbox/compat-settings.mjs';
-import {engineDirectory, enginePaths, installedEngine} from './engine.mjs';
+import {engineDirectory, enginePaths, engineRecords, installedEngine, newerPendingBuild} from './engine.mjs';
 import {engineSettingsPath, readEngineSettings} from './engine-sign.mjs';
-import {plistString} from '../services/engine/client.mjs';
+import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION, belowMinimum, plistString} from '../services/engine/client.mjs';
 import {cursorContext, cursorEnv} from './cursor-identity.mjs';
 
 export {NODE_FLOOR};
@@ -435,11 +435,12 @@ export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode =
 // service loaded in the vendor trusted worker (comparison A's lane). With no Node 24 an explicit cua engine is refused
 // (repl_host_node, naming CUA_REPL_HOST=vendor), never moved to the vendor engine; a default one keeps the vendor host
 // and engine with a warning until M6 (`own_host_node_unavailable`), as does a default with no approved engine
-// (`engine_not_installed`, nativeEngineFor's).
+// (`engine_not_installed`, nativeEngineFor's) or one older than the service drives (`engine_outdated`, R4).
+const ENGINE_FALLBACKS = ['engine_not_installed', 'engine_outdated'];
 function macosComputerHost({requested, ambient, resolveOwnNode, engine}) {
   const selected = nativeEngineFor({env: ambient, requestedHost: requested, ...engine});
   if (selected.engine === 'vendor') {
-    const reason = selected.reason === 'engine_not_installed' ? 'engine_not_installed' : requested === 'vendor' ? 'explicit' : 'macos_native_peer_requires_vendor';
+    const reason = ENGINE_FALLBACKS.includes(selected.reason) ? selected.reason : requested === 'vendor' ? 'explicit' : 'macos_native_peer_requires_vendor';
     return {host: 'vendor', reason, engine: selected};
   }
   if (requested === 'vendor') return {host: 'vendor', reason: 'explicit', engine: selected};
@@ -487,9 +488,19 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // warning, reason `engine_outdated` (older) or `engine_unrecorded` (no record of the file says what it is), so an update
 // never selects an engine its first request would refuse. An explicit setting takes the installed engine whatever its
 // version, and the service refuses an older one at the first request, naming `cua install --engine`.
-export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion}) {
+//
+// On macOS the same rule binds the approved engine (#117 M5, R4), at selection: it must be at least MIN_ENGINE_VERSION,
+// the oldest cua's macOS service drives (src/services/engine/client.mjs), by the bundle's engineVersion, and a version
+// this cua cannot read counts as older. An older one refuses an explicit setting, or CUA_REPL_HOST=cua
+// (engine_outdated), and keeps the default on the vendor engine (reason `engine_outdated`, status `warn`, carrying
+// `outdated`, the approved engine's {bundlePath, engineVersion, build}, and `pendingBuild`). The remedy turns on
+// `pendingBuild`, asked only then (engine.mjs newerPendingBuild over the approved location's records by default): a
+// newer build pending beside the approved one needs only `cua engine approve`, else `cua install --engine` builds one
+// first (ruling 1118; outdatedRemedy). An approved engine at or above the minimum is driven whatever is pending.
+export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, pendingBuild}) {
   if (platform === 'linux') return linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion});
   installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
+  pendingBuild ??= () => { const records = engineRecords({dir: engineDirectory(env.HOME || homedir())}); return newerPendingBuild(records.pending, records.approved?.build); };
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
     if (requestedHost === 'cua')
@@ -504,8 +515,21 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
     }
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
   }
+  if (belowMinimum(app.engineVersion)) {
+    const pending = pendingBuild();
+    if (setting.reason !== 'default' || requestedHost === 'cua')
+      fail('engine_outdated', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and the approved engine on this Mac (${app.bundlePath}) is version ${app.engineVersion}, older than ${MIN_MACOS_ENGINE_VERSION}, the oldest this cua drives: ${outdatedRemedy(pending)}; or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
+    return {engine: 'vendor', reason: 'engine_outdated', status: 'warn', outdated: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}, pendingBuild: pending};
+  }
   return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
 }
+
+// What to run for an approved macOS engine older than the minimum (ruling 1118): approve the newer build pending beside
+// it, else build one with `cua install --engine` (which stops at a pending build) and then approve it. Approval is the
+// owner's step at the console; nothing here or in install starts it.
+export const outdatedRemedy = pendingBuild => (pendingBuild
+  ? `a newer build (${String(pendingBuild).slice(0, 12)}) is pending beside it: approve it with \`cua engine approve\` with the owner at the console`
+  : 'build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console');
 
 function linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion}) {
   const setting = engineSetting(env, config, defaultEngine);

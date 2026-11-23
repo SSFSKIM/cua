@@ -9,33 +9,49 @@
 // the idle stop (CUA_RUNTIME_IDLE_MS is --idle-ms), so the runtime under the connection is replaced. Connection two, a
 // new cua serve, binds each app once. The client answers like verify.mjs --bind: it accepts only the policy's approval
 // for --approve and declines the one for --decline (scripts/probe/lib.mjs isAppApproval), with session persistence
-// pinned, and declines and counts anything else. Each bind records what the client was asked while it ran, its refusal
-// class (scripts/probe/approval-cycles.mjs refusalOf, from the policy's #216 sentence), whether it failed otherwise (a
-// bounded first line), whether its result opened with the restart notice, and its task id; never the app's text.
-// The judge is judgeApprovalCycles. Every js result must attest cua's engine on cua's host; a mismatch stops the run.
-// Nothing here reads replayd's state or writes a TCC row: the approval is asked before the engine observes, so a capture
-// alert in front, or a capture that fails, changes no approval verdict (such a bind counts as "failed otherwise").
+// pinned, and declines and counts anything else.
+//
+// The approved app's fixture: the script waits for its window (FrontWindowProbe, never an observation) before the
+// first bind and checks before every bind that the same process still has that window on screen (bindRefusal): a bind
+// without it would make the engine reopen the app (TextEdit answers with its Open panel), so a lost fixture stops the
+// run as NO VERDICT. Around every bind, by rulings 1136 and 1141 (replayd's capture alert stays up on a runner): the
+// approved app is activated and must take front and key first, and front and key are sampled after; a system prompt in
+// front or key at either sample, or an activation that did not take, makes the bind NO VERDICT, never a pass.
+//
+// Each bind records what the client was asked while it ran, its refusal class (scripts/probe/approval-cycles.mjs
+// refusalOf, from the policy's #216 sentence), its `cua/approval` result meta (who answered, the connection's opaque id,
+// the runtime generation), a non-approval failure's first line, whether its result opened with the restart notice, its
+// task id and the samples' verdicts; never the app's text. Each end_task (status ended) and js_reset is checked. Every
+// js result must attest cua's engine on cua's host; a mismatch stops the run. The judge is judgeApprovalCycles. Nothing
+// here reads replayd's state or writes a TCC row.
 //
 //   CUA_SHIM_SURFACES=computer,browser node scripts/approval-cycles.mjs --engine cua \
 //     --approve com.apple.TextEdit --decline com.apple.calculator [--cycles 20] [--idle-ms 8000]
-// Exit 0 when the judge passes, 1 when it fails or the run stops, 2 on a usage error or off a hosted runner.
-import {spawnSync} from 'node:child_process';
+// Exit 0 on a pass, 1 on a fail or NO VERDICT, 2 on a usage error or off a hosted runner.
+import {execFile, spawnSync} from 'node:child_process';
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {parseArgs} from 'node:util';
+import {parseArgs, promisify} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 import {REPL_HOST_META_KEY} from '../src/repl-host/identity.mjs';
-import {attestationProblem, boundedError, isAppApproval, isLifecycleRejection, lsappinfoPid} from './probe/lib.mjs';
+import {attestationProblem, bindRefusal, boundedError, isAppApproval, isLifecycleRejection, lsappinfoPid} from './probe/lib.mjs';
 import {LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 import {openSession, resultText} from './accept/mcp-session.mjs';
-import {approvalCyclesPlan, judgeApprovalCycles, refusalOf} from './probe/approval-cycles.mjs';
+import {FRONT_WINDOW_SCRIPT, localFrontmost} from './accept/key-guard.mjs';
+import {readWindows} from './accept/window-close.mjs';
+import {ALERT_APPS, alertInFront, approvalCyclesPlan, judgeApprovalCycles, refusalOf} from './probe/approval-cycles.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 const RESTART_NOTICE = 'cua: the runtime was stopped after ';
+const IDLE_AT = 10;
 const usage = message => { console.error(`approval-cycles: ${message}`); process.exit(2); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const run = promisify(execFile);
 
 let options;
 try {
@@ -50,7 +66,7 @@ for (const flag of ['approve', 'decline']) if (!BUNDLE_ID.test(options[flag] ?? 
 if (options.approve === options.decline) usage('--approve and --decline name two apps');
 const cycles = Number(options.cycles);
 const idleMs = Number(options['idle-ms']);
-if (!Number.isInteger(cycles) || cycles < 10) usage('--cycles is a whole number of at least 10 (cycle 5 resets, cycle 10 waits out the idle stop)');
+if (!Number.isInteger(cycles) || cycles < IDLE_AT) usage(`--cycles is a whole number of at least ${IDLE_AT} (cycle 5 resets, cycle ${IDLE_AT} waits out the idle stop)`);
 if (!Number.isInteger(idleMs) || idleMs < 2000) usage('--idle-ms is a whole number of milliseconds, at least 2000');
 
 const home = defaultHome();
@@ -62,18 +78,60 @@ try { pinned = pinLane({flag: options.engine, env: process.env, home, surfaces})
 if (pinned.pin?.engine !== 'cua') usage('the witness drives cua\'s engine: --engine cua');
 const serveEnv = {...pinned.serveEnv, CUA_SHIM_PERSIST: 'session', CUA_RUNTIME_IDLE_MS: String(idleMs)};
 const runtime = resolveRuntime({home});
-const {selection, expected} = selectLane({pin: pinned.pin, serveEnv, home, runtime, surfaces});
+let lane;
+try { lane = selectLane({pin: pinned.pin, serveEnv, home, runtime, surfaces}); } catch (error) { usage(`the launcher refuses this selection: [${error.code ?? 'error'}] ${error.message}`); }
+const {selection, expected} = lane;
 if (selection.host !== 'cua') usage(`the launcher selects the ${selection.host} host (${selection.reason}); the witness is cua's engine on cua's own host`);
-const pid = lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', options.approve], {encoding: 'utf8'}).stdout ?? '');
-if (pid === null) usage(`${options.approve} is not running: open a scratch document in it first, so the engine never launches it`);
 
 const bundles = {approve: options.approve, decline: options.decline};
 const report = {witness: '#216', release: runtime.release, engine: expected, cycles, idleMs, apps: bundles, connections: []};
 
+// FrontWindowProbe, compiled once (interpreted when swiftc fails): `front` and `windows <pid>`, one JSON line each.
+const probeDir = mkdtempSync(join(tmpdir(), 'cua-216-'));
+const compiled = spawnSync('/usr/bin/swiftc', ['-O', '-o', join(probeDir, 'front-window'), FRONT_WINDOW_SCRIPT], {encoding: 'utf8'}).status === 0;
+const probe = async args => JSON.parse((compiled ? await run(join(probeDir, 'front-window'), args, {timeout: 60_000})
+  : await run('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, ...args], {timeout: 120_000})).stdout);
+const pidOf = bundle => lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', bundle], {encoding: 'utf8'}).stdout ?? '');
+const windowsOf = pid => readWindows([pid], {probe: p => probe(['windows', String(p)])});
+
+// The screen now: the frontmost app, the owner of the top on-screen window, and the alert processes running.
+async function sample() {
+  let keyOwnerPid = null;
+  try { keyOwnerPid = (await probe(['front'])).topWindow?.ownerPid ?? null; } catch { /* unread: null */ }
+  return {front: localFrontmost(), keyOwnerPid, alertPids: ALERT_APPS.map(pidOf).filter(pid => pid !== null)};
+}
+
+// The fixture: the approved app's process and its windows, read once it has a window on screen.
+async function awaitFixture() {
+  for (let i = 0; i < 60; i++) {
+    const pid = pidOf(bundles.approve);
+    const windows = pid === null ? null : await windowsOf(pid);
+    if (!bindRefusal({app: bundles.approve, pid, windows})) return {pid, windows};
+    await sleep(1000);
+  }
+  const pid = pidOf(bundles.approve);
+  throw Object.assign(new Error(bindRefusal({app: bundles.approve, pid, windows: pid === null ? null : await windowsOf(pid)})), {noVerdict: true});
+}
+
+// Before a bind: the fixture is still there, then the approved app is activated and must take front and key.
+async function prepareBind(fixture) {
+  const pid = pidOf(bundles.approve);
+  const refusal = bindRefusal({app: bundles.approve, pid, windows: pid === null ? null : await windowsOf(pid), first: fixture});
+  if (refusal) throw Object.assign(new Error(`the fixture was lost: ${refusal}`), {noVerdict: true});
+  spawnSync('/usr/bin/open', ['-b', bundles.approve]);
+  let now;
+  for (let i = 0; i < 6; i++) {
+    now = await sample();
+    if (now.front === bundles.approve && now.keyOwnerPid === fixture.pid) return {activated: true, alert: alertInFront(now)};
+    await sleep(500);
+  }
+  return {activated: false, alert: alertInFront(now)};
+}
+
 // One connection running `plan`; resolves its record. A timed-out call, a protocol error or a wrong attestation throws.
-async function runConnection(name, plan) {
+async function runConnection(name, plan, fixture) {
   let bind = null;   // the bind in flight
-  const record = {name, pid: null, binds: [], other: 0, resets: 0};
+  const record = {name, pid: null, binds: [], steps: [], other: 0};
   const session = openSession({args: [CLI, 'serve'], env: serveEnv, clientName: 'cua-approval-216', onServerRequest: msg => {
     if (bind && isAppApproval(msg, bundles[bind.app])) {
       bind.asked++;
@@ -93,11 +151,17 @@ async function runConnection(name, plan) {
   try {
     await session.initialize();
     for (const step of plan) {
-      if (step.step === 'end_task') await tool(session.call('end_task'), 'end_task');
-      else if (step.step === 'js_reset') { await tool(session.call('js_reset', {}, 60_000), 'js_reset'); record.resets++; }
-      else if (step.step === 'idle') await sleep(idleMs + 4000);
+      if (step.step === 'end_task') {
+        const result = await tool(session.call('end_task'), 'end_task');
+        const status = result.structuredContent?.status ?? null;
+        record.steps.push({step: 'end_task', cycle: step.cycle, ok: !result.isError && status === 'ended', ...(result.isError || status !== 'ended' ? {detail: `status ${status}${result.isError ? ', isError' : ''}`} : {})});
+      } else if (step.step === 'js_reset') {
+        const result = await tool(session.call('js_reset', {}, 60_000), 'js_reset');
+        record.steps.push({step: 'js_reset', cycle: step.cycle, ok: !result.isError, ...(result.isError ? {detail: boundedError(resultText({result}))} : {})});
+      } else if (step.step === 'idle') await sleep(idleMs + 4000);
       else {
-        bind = {app: step.app, asked: 0, refusal: null, failed: false, restarted: false, taskId: null};
+        const prepared = await prepareBind(fixture);
+        bind = {app: step.app, cycle: step.cycle, asked: 0, refusal: null, failed: false, restarted: false, taskId: null, approval: null, ...prepared};
         try {
           const code = `await cua.getApp(${JSON.stringify(bundles[step.app])}); nodeRepl.write("bound")`;
           const result = await tool(session.js(code, 120_000), `the bind of ${bundles[step.app]}`);
@@ -109,10 +173,12 @@ async function runConnection(name, plan) {
           const text = resultText({result});
           bind.restarted = text.startsWith(RESTART_NOTICE);
           bind.taskId = result._meta?.['cua/taskId'] ?? null;
+          bind.approval = result._meta?.['cua/approval'] ?? null;
           if (result.isError) {
             bind.refusal = refusalOf(text);
             if (bind.refusal === null) Object.assign(bind, {failed: true, failure: boundedError(text.startsWith(RESTART_NOTICE) ? text.split('\n').slice(1).join('\n') : text)});
           }
+          if (alertInFront(await sample())) bind.alert = true;
         } finally { record.binds.push(bind); bind = null; }
       }
     }
@@ -125,12 +191,20 @@ async function runConnection(name, plan) {
 
 let stopped = null;
 try {
-  await runConnection('first', approvalCyclesPlan(cycles));
-  await runConnection('second', [{step: 'bind', app: 'approve'}, {step: 'bind', app: 'decline'}]);
+  const fixture = await awaitFixture();
+  report.fixture = {pid: fixture.pid, windows: fixture.windows.length, probe: compiled ? 'compiled' : 'interpreted'};
+  await runConnection('first', approvalCyclesPlan(cycles, {idleAt: IDLE_AT}), fixture);
+  await runConnection('second', [{step: 'bind', app: 'approve', cycle: 0}, {step: 'bind', app: 'decline', cycle: 0}], fixture);
 } catch (error) {
-  stopped = error.message;
+  stopped = {message: error.message, noVerdict: error.noVerdict === true};
+} finally {
+  rmSync(probeDir, {recursive: true, force: true});
 }
-const verdict = judgeApprovalCycles({cycles, connections: report.connections});
-report.verdict = stopped ? {ok: false, problems: [`the run stopped: ${stopped}`, ...verdict.problems], detail: verdict.detail} : verdict;
+const judged = judgeApprovalCycles({cycles, idleAt: IDLE_AT, connections: report.connections});
+if (stopped) {
+  // A lost fixture proves nothing either way; any other stop is a failed run. Problems already found still fail it.
+  const verdict = judged.problems.length || !stopped.noVerdict ? 'fail' : 'no verdict';
+  report.verdict = {...judged, verdict, ok: false, stopped: stopped.message};
+} else report.verdict = judged;
 console.log(JSON.stringify(report, null, 1));
 process.exitCode = report.verdict.ok ? 0 : 1;

@@ -1,0 +1,22 @@
+# The H8 counted rows re-judged at 9e80f9b6 (task 139), per step; each step's own file beside its README
+
+x64 zero/V5.pinned-release: 52 device verdicts, 0 rows reached, moved none
+x64 out/K1.pinned-release: 2 device verdicts, 0 rows reached, moved none
+x64 out/K2.pinned-release: 2 device verdicts, 0 rows reached, moved none
+x64 out/L4d.pinned-release: partsVerdict stored pass, now pass, moved no, lanes null, trials null
+x64 out/K3.pinned-release: holdRegressionVerdict stored pass, now pass, moved no, lanes null, trials null
+x64 out/C1.pinned-release: chromeDropVerdict stored pass, now pass, moved no, lanes null, trials null
+x64 out/H1.pinned-release: electronDropVerdict stored pass, now pass, moved no, lanes null, trials null
+x64 out/L4b.pinned-release: chromeDropVerdict stored pass, now pass, moved no, lanes null, trials null
+x64 out/L4c.pinned-release: chromeDropVerdict stored pass, now pass, moved no, lanes null, trials null
+arm64 out/V5.pinned-release: 52 device verdicts, 0 rows reached, moved none
+arm64 out/V5.pinned-release.stopped-1: 0 device verdicts, 0 rows reached, moved none
+arm64 out/V5.pinned-release.stopped-2: 0 device verdicts, 0 rows reached, moved none
+arm64 out/K1.pinned-release: 2 device verdicts, 0 rows reached, moved none
+arm64 out/K2.pinned-release: 2 device verdicts, 0 rows reached, moved none
+arm64 out/L4d.pinned-release: partsVerdict stored pass, now pass, moved no, lanes null, trials null
+arm64 out/K3.pinned-release: holdRegressionVerdict stored pass, now pass, moved no, lanes null, trials null
+arm64 out/C1.pinned-release: chromeDropVerdict stored pass, now pass, moved no, lanes null, trials null
+arm64 out/H1.pinned-release: electronDropVerdict stored pass, now pass, moved no, lanes null, trials null
+arm64 out/L4b.pinned-release: chromeDropVerdict stored fail, now fail, moved no, lanes null, trials null
+arm64 out/L4c.pinned-release: chromeDropVerdict stored pass, now pass, moved no, lanes null, trials null

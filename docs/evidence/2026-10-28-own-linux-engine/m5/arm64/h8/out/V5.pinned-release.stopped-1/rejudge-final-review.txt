@@ -1,0 +1,5 @@
+# arm64 out/V5.pinned-release.stopped-1: the device verdicts re-judged at 9e80f9b6 (task 139; the final review's P1, ruling 1091)
+
+drop cells' samples: 0; reached by the new reading (effect not seen, a drop seen): 0
+
+run pinned-V5: 0 device verdicts; moved none; failing now none; the end record's other failures none

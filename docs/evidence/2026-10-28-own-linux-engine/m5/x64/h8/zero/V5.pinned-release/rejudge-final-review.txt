@@ -1,0 +1,57 @@
+# x64 zero/V5.pinned-release: the device verdicts re-judged at 9e80f9b6 (task 139; the final review's P1, ruling 1091)
+
+drop cells' samples: 63; reached by the new reading (effect not seen, a drop seen): 0
+
+run pinned-V5: 52 device verdicts; moved none; failing now none; the end record's other failures none
+  device-firefox firefox_click_pointer_out_shared cua: stored pass, now pass
+  device-firefox firefox_click_pointer_under_shared cua: stored pass, now pass
+  device-firefox firefox_right_click_pointer_out_shared cua: stored pass, now pass
+  device-firefox firefox_click_pointer_out_dedicated cua: stored pass, now pass
+  device-firefox firefox_click_visible_shared cua: stored pass, now pass
+  device-firefox firefox_click_overlap_pointer_in_shared cua: stored pass, now pass
+  device-firefox firefox_element_click_covered cua: stored pass, now pass
+  device-firefox firefox_move_pointer_out_shared cua: stored pass, now pass
+  device-firefox firefox_move_overlap_pointer_in_shared cua: stored pass, now pass
+  device-firefox firefox_move_covered_dedicated cua: stored pass, now pass
+  device-firefox firefox_drag_pointer_out_shared cua: stored pass, now pass
+  device-firefox firefox_drag_overlap_pointer_in_shared cua: stored pass, now pass
+  device-firefox firefox_drag_covered_dedicated cua: stored pass, now pass
+  device-firefox firefox_scroll_pointer_out_shared cua: stored pass, now pass
+  device-firefox firefox_scroll_overlap_pointer_in_shared cua: stored pass, now pass
+  device-firefox firefox_scroll_covered_dedicated cua: stored pass, now pass
+  device-chrome chrome_drag_visible_path_shared cua: stored pass, now pass
+  device-chrome chrome_drag_covered_path_shared cua: stored pass, now pass
+  device-chrome chrome_drag_covered_dedicated cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_in_front_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_late_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_covered_dedicated cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_short_in_front_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_short_covered_dedicated cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_obscured_in_front_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_obscured_in_front_late_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_late_take_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_short_pointer_outside_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_short_pointer_outside_dedicated cua: stored pass, now pass
+  device-chrome-dnd chrome_select_nudged_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_inzone_out_in_front_shared cua: stored pass, now pass
+  device-chrome-dnd chrome_dnd_long_left_in_front_shared cua: stored pass, now pass
+  identity identity_apart cua: stored pass, now pass
+  identity identity_stacked cua: stored pass, now pass
+  identity identity_stacked_self_active cua: stored pass, now pass
+  identity identity_stacked_other_active cua: stored pass, now pass
+  identity identity_apart_shot cua: stored pass, now pass
+  identity identity_click_element cua: stored pass, now pass
+  identity identity_secondary_action cua: stored pass, now pass
+  identity identity_type_text cua: stored pass, now pass
+  identity identity_clipboard_read cua: stored pass, now pass
+  identity identity_key_up cua: stored pass, now pass
+  identity-gtk3 identity_apart cua: stored pass, now pass
+  identity-gtk3 identity_stacked cua: stored pass, now pass
+  identity-gtk3 identity_stacked_self_active cua: stored pass, now pass
+  identity-gtk3 identity_stacked_other_active cua: stored pass, now pass
+  identity-gtk4 identity_apart cua: stored pass, now pass
+  identity-gtk4 identity_stacked cua: stored pass, now pass
+  identity-gtk4 identity_stacked_self_active cua: stored pass, now pass
+  identity-gtk4 identity_stacked_other_active cua: stored pass, now pass
+  identity-kate identity_kate cua: stored pass, now pass

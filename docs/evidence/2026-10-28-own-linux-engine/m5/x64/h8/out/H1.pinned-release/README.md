@@ -12,3 +12,4 @@
 - finished 2026-11-22T03:45:05.000Z; exit 0; private display's watchdog: clean
 - end check: clear (no cua171-run-* directory or session bus of one)
 - end: clean (nothing left on the run's own side)
+- re-judged offline at 9e80f9b6 by the final review's fixes (task 139, ruling 1091), nothing rerun: no verdict moved; `rejudge-final-review.txt`

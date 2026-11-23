@@ -1,0 +1,11 @@
+# x64 out/L4d.pinned-release: the drop-signals verdict re-judged at 9e80f9b6 (task 139; the final review's P2s)
+
+run pinned-L4d: chrome t14-stale, gate pinned, lanes null, trials null, judge partsVerdict
+  stored: pass
+  now: pass
+  part 1 (chrome t14-long) manifest: cua long-left x100
+  part 2 (chrome t14-floor) manifest: cua plain-long x300, cua left x30, cua inzone-out x30
+  part 3 (electron t17-long) manifest: cua long-left x30
+  part 1 (chrome t14-long): chromeDropVerdict pass, drags 100, false oks 0, stale-position drops 0, ambiguous 0
+  part 2 (chrome t14-floor): chromeDropVerdict pass, drags 360, false oks 0, stale-position drops 0, ambiguous 0
+  part 3 (electron t17-long): electronDropVerdict pass, drags 30, false oks 0, stale-position drops 0, ambiguous 0

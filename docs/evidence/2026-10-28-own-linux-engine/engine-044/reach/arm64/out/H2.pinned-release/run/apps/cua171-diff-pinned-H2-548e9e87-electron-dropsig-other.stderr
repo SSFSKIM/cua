@@ -1,0 +1,7 @@
+[1356078:1123/022034.235714:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.filetransfer to kAtomsToCache
+[1356078:1123/022034.235776:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.files to kAtomsToCache
+[1356112:1123/022831.457660:ERROR:components/viz/service/display/display.cc:271] Frame latency is negative: -0.01 ms
+[1356078:1123/023621.142030:ERROR:content/browser/network_service_instance_impl.cc:650] Network service crashed or was terminated, restarting service.
+[1356078:1123/023621.146961:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[1356078:1123/023621.148353:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[1356078:1123/023621.148875:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002

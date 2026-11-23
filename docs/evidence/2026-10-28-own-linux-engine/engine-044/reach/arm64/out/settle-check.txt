@@ -1,0 +1,12 @@
+== H1
+/Users/new/.local/share/cua-171/m5/out-arm64-h9/H1.pinned-release: TAKEN (entered 560, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 57 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 1338736: no counter; sent no drag or drag_handle (not a measured zero)
+== H2
+/Users/new/.local/share/cua-171/m5/out-arm64-h9/H2.pinned-release: TAKEN (entered 560, second_rest 14, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 57 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 1354542: no counter; sent no drag or drag_handle (not a measured zero)
+== L4a
+/Users/new/.local/share/cua-171/m5/out-arm64-h9/L4a.pinned-release: TAKEN (entered 560, second_rest 10, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 57 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 1371968: no counter; sent no drag or drag_handle (not a measured zero)
+== L4d
+/Users/new/.local/share/cua-171/m5/out-arm64-h9/L4d.pinned-release: TAKEN (entered 30, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 50 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 1386243: no counter; sent no drag or drag_handle (not a measured zero)

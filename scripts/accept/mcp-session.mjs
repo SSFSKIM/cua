@@ -4,7 +4,9 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// terminate's waits race the child's exit, which holds the event loop while it runs: unreferenced, a wait outlived by
+// the exit (or by dispose) never keeps the caller alive.
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms).unref());
 
 // `detached`: the server in its own process group, out of reach of a terminal's signal to the caller's group.
 export function openSession({args, env, onServerRequest = () => ({action: 'decline'}), clientName = 'cua-accept', detached = false}) {
@@ -74,6 +76,17 @@ export function openSession({args, env, onServerRequest = () => ({action: 'decli
     async close() {
       if (!terminating) await request('tools/call', {name: 'end_task', arguments: {}}, 15_000);
       return this.terminate();
+    },
+    // The teardown's last word, for a caller whose own deadline passed: SIGKILL now, every pending request answered
+    // {disposed: true} (its timer cleared), the pipes destroyed and the child unreferenced, so nothing of the session
+    // holds the caller's event loop. Resolves the child's exit; a terminate still waiting settles with it.
+    dispose() {
+      terminating ??= exited.then(result => ({...result, forced: true, disposed: true}));
+      for (const waiter of [...waiters.values()]) waiter({disposed: true});
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      for (const stream of [child.stdin, child.stdout, child.stderr]) stream.destroy();
+      child.unref();
+      return exited;
     },
   };
 }

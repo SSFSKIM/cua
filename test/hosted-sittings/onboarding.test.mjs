@@ -5,7 +5,8 @@
 // client.mjs's owed relaunch, doctor-engine.mjs's row), so nothing touches a TCC database, an engine or a GUI.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {cuaCli, runOnboarding, STAGES} from '../../scripts/hosted-sittings/onboarding.mjs';
+import {cuaCli, disposeSession, runOnboarding, STAGES} from '../../scripts/hosted-sittings/onboarding.mjs';
+import {openSession} from '../../scripts/accept/mcp-session.mjs';
 import {EXPECTED, judgeOnboarding} from '../../scripts/hosted-sittings/onboarding-judge.mjs';
 import {CLIENTS, SERVICES} from '../../scripts/hosted-sittings/tcc.mjs';
 import {TIMEOUT_SENTENCE} from '../../src/repl-host/supervisor.mjs';
@@ -30,10 +31,10 @@ function fakeProduct(fault = {}) {
   if (fault.stoppedAtStart) engine = null;   // the setup stops the engine after its approve
   const launch = () => { engine = {pid: nextPid++, grants: grantsNow()}; };   // a row is read at launch only (H0)
   const decision = {entry: 'O0', commit: 'c'.repeat(40)};
-  let jsCount = 0, alertShown = false;
+  let jsCount = 0, alertShown = false, pendingExtra = false, clientAfter = false, unreadDone = false;
   // The screen around each cell: TextEdit (pid 500) front and key, unless a fault puts an alert or another app there.
   const screen = {
-    activate: () => {},
+    activate: () => { log.push(['activate']); },
     sample: () => {
       if (fault.noActivation) return {front: 'com.apple.finder', keyOwnerPid: 300, appPid: 500, alertPids: []};
       if (fault.alertAfterJs === jsCount && !alertShown) { alertShown = true; return {front: ALERT, keyOwnerPid: 900, appPid: 500, alertPids: [900]}; }
@@ -46,7 +47,8 @@ function fakeProduct(fault = {}) {
     assert.deepEqual(grants.map(g => [g.client, g.bundle]), [[CLIENTS.engine, BUNDLE]]);
     log.push(['grant', grants[0].services.join('+')]);
     for (const s of grants[0].services) rows.add(s);
-    if (fault.baselineMoved && grants[0].services.includes('screenRecording')) launch();   // another restart before the retry
+    if (fault.baselineMoved && grants[0].services.includes('screenRecording')) launch();
+    if (grants[0].services.includes('screenRecording')) pendingExtra = true;   // another restart before the retry
     return {decision, rows: [{client: CLIENTS.engine, granted: grants[0].services}], missing: fault.grantMissing ? [`${CLIENTS.engine} accessibility`] : []};
   };
   const revoke = ({client, services}, deps) => {
@@ -66,7 +68,9 @@ function fakeProduct(fault = {}) {
       engine = null;
       return json({ok: true, ...(was ? {wasRunning: true, pid: was.pid} : {wasRunning: false})});
     }
-    const extra = fault.extraConnection && log.at(-2)?.join(' ') === 'grant screenRecording' ? 1 : 0;
+    const extra = (fault.extraConnection && pendingExtra) || clientAfter ? 1 : 0;
+    if (command === 'engine status') { pendingExtra = false; clientAfter = false; }
+    if (command === 'engine status' && fault.firstStatusUnreadInC && jsCount === 5 && !unreadDone) { unreadDone = true; return {status: 1, stdout: '', stderr: 'no answer'}; }
     if (command === 'engine status') return json({bundlePath: BUNDLE, running: Boolean(engine), status: engine ? {pid: engine.pid, connections: open + extra, build: ATTEST.build, ...engine.grants} : null});
     if (command === 'doctor') {
       const g = engine?.grants ?? {};
@@ -98,7 +102,9 @@ function fakeProduct(fault = {}) {
         if (fault.productTimeoutAtJs === jsCount) return {result: {isError: true, content: [{type: 'text', text: TIMEOUT_SENTENCE}]}};
         if (!approved) { assert.equal(onServerRequest(CONFIRMATION).action, 'decline'); approved = onServerRequest(APPROVAL).action === 'accept'; }
         if (!engine) launch();
-        if (owed === engine.pid && !fault.noRelaunch) { launch(); owed = null; }   // client.mjs relaunchForPermissions
+        // A client arriving before the retry makes the engine refuse the relaunch's shutdown (busy): no relaunch.
+        if (fault.clientInWindow && jsCount === 5) clientAfter = true;
+        if (owed === engine.pid && !fault.noRelaunch && !clientAfter) { launch(); owed = null; }   // client.mjs relaunchForPermissions
         const g = engine.grants;
         if (fault.screenRecordingFirst && !g.screenRecording) { owed = engine.pid; return refusal('screenRecording'); }
         if (!g.accessibility && !fault.answersWithoutGrant) return refusal('accessibility');
@@ -110,7 +116,8 @@ function fakeProduct(fault = {}) {
     };
   };
   const prepare = async () => ({serveEnv: {CUA_NATIVE_ENGINE: 'cua', CUA_HOME: '/Users/runner/Library/Application Support/cua'}, expected: ATTEST, bundlePath: BUNDLE, selection: {host: 'cua', reason: 'cua_engine'}});
-  return {log, saves, deps: {...HOSTED, prepare, grant, revoke, cli, connect, screen, save: record => saves.push(structuredClone(record)), sleep: async () => {}, now: () => 1_700_000_000_000, log: () => {},
+  const enginePids = () => { log.push(['pids']); return fault.replacedInWindow ? [999] : engine ? [engine.pid] : []; };
+  return {log, saves, deps: {...HOSTED, prepare, grant, revoke, cli, connect, screen, enginePids, save: record => saves.push(structuredClone(record)), sleep: async () => {}, now: () => 1_700_000_000_000, log: () => {},
     ...(fault.closeHangs ? {closeMs: 20} : {})}};
 }
 const run = async fault => { const product = fakeProduct(fault); return {product, record: await runOnboarding(product.deps)}; };
@@ -121,11 +128,11 @@ test('the stages: none, Accessibility, Screen Recording added, then Input Monito
     ['screenRecording', 'accessibility+screenRecording', 'product'], ['full', 'accessibility+screenRecording+inputMonitoring+postEvent', 'engine stop']]);
   assert.deepEqual(Object.keys(EXPECTED), STAGES.map(s => s.id), 'every stage has its expected behaviour');
   const {product, record} = await run();
-  const calls = ['js accessibility', 'cli engine status', 'js screenRecording', 'cli engine status', 'cli doctor'];
+  const calls = ['activate', 'js accessibility', 'cli engine status', 'activate', 'js screenRecording', 'cli engine status', 'cli doctor'];
   assert.deepEqual(product.log.map(e => e.join(' ')), [
     'revoke accessibility+screenRecording+inputMonitoring+postEvent', 'cli engine stop', 'connect', ...calls,
     'close', 'grant accessibility', 'cli engine stop', 'connect', ...calls,
-    'grant screenRecording', 'cli engine status', ...calls,
+    'grant screenRecording', 'activate', 'cli engine status', 'pids', ...calls.slice(1),
     'close', 'grant inputMonitoring+postEvent', 'cli engine stop', 'connect', ...calls, 'close']);
   assert.equal(record.complete, true);
   assert.equal(record.problem, null);
@@ -372,4 +379,67 @@ test('stage (c)\'s baseline is read just before the retry: a pid other than the 
   const busy = judgeOnboarding((await run({extraConnection: true})).record);
   assert.equal(busy[0], 'NO VERDICT', busy[1]);
   assert.match(busy[1], /screenRecording: not set: 2 connections at the engine before the retry/);
+});
+
+// ---- review round 2 ----
+
+test('ruling 1141 holds on the retry too: an alert around it, or no attestation, with the pid unchanged is NO VERDICT, never "did not relaunch"', async () => {
+  const alerted = judgeOnboarding((await run({noRelaunch: true, alertAfterJs: 5})).record);
+  assert.equal(alerted[0], 'NO VERDICT', alerted[1]);
+  assert.match(alerted[1], /screenRecording: accessibility call: alert: com\.apple\.UserNotificationCenter front or key after the cell/);
+  const {record} = await run({noRelaunch: true});
+  record.stages[2].calls[0].nativeEngine = null;
+  const unattested = judgeOnboarding(record);
+  assert.equal(unattested[0], 'NO VERDICT', unattested[1]);
+  assert.doesNotMatch(unattested[1], /did not relaunch/);
+});
+
+test('ruling 1149 across the whole record: another engine\'s answer in a stage that is otherwise unreadable still outranks a FAIL elsewhere', async () => {
+  const {record} = await run({noGuidance: true});
+  record.stages[1].rows.granted = null;
+  record.stages[1].calls[0].nativeEngine = {engine: 'vendor', version: '1', build: 'r'};
+  const [status, reason] = judgeOnboarding(record);
+  assert.equal(status, 'NO VERDICT', reason);
+  assert.match(reason, /^accessibility: accessibility call: the cua side attested the vendor engine.*\(state 1\)/);
+  delete record.stages[1].calls[0].resultPresent;
+  assert.equal(judgeOnboarding(record)[0], 'NO VERDICT', 'a malformed stage is scanned too');
+});
+
+test('stage (c): TextEdit activated before the baseline, then only the socket\'s allowance, then the retry, bracketed by the engine\'s pids', async () => {
+  const {product, record} = await run();
+  const sr = record.stages[2];
+  assert.deepEqual(sr.relaunch.atDispatch, {pids: [103]}, 'the baseline\'s engine and no other, just before the retry');
+  const log = product.log.map(e => e.join(' '));
+  const at = log.indexOf('grant screenRecording');
+  assert.deepEqual(log.slice(at, at + 5), ['grant screenRecording', 'activate', 'cli engine status', 'pids', 'js accessibility']);
+  const replaced = judgeOnboarding((await run({replacedInWindow: true})).record);
+  assert.equal(replaced[0], 'NO VERDICT', replaced[1]);
+  assert.match(replaced[1], /screenRecording: not set: the engine at the retry \(pids 999\) is not the baseline's \(pid 103\)/);
+  const client = judgeOnboarding((await run({clientInWindow: true})).record);
+  assert.equal(client[0], 'NO VERDICT', client[1]);
+  assert.match(client[1], /screenRecording: 2 connections at the engine after the retry: another client may have kept the relaunch from happening/);
+  const unread = (await run({firstStatusUnreadInC: true})).record;
+  assert.equal(unread.stages[2].relaunched, null, 'the second cell\'s pid never stands in for the first\'s');
+  assert.equal(judgeOnboarding(unread)[0], 'NO VERDICT');
+});
+
+// A real MCP-shaped child that answers initialize, never answers end_task, and ignores SIGTERM and its input's end.
+const STUBBORN = `
+process.on('SIGTERM', () => {});
+process.stdin.on('end', () => {});
+require('readline').createInterface({input: process.stdin}).on('line', line => {
+  const msg = JSON.parse(line);
+  if (msg.method === 'initialize') process.stdout.write(JSON.stringify({jsonrpc: '2.0', id: msg.id, result: {}}) + '\\n');
+});
+setInterval(() => {}, 1000);
+`;
+test('teardown owns its deadline through the escalation: a child that ignores SIGTERM is killed and its handles disposed within the bound', async () => {
+  const session = openSession({args: ['-e', STUBBORN], env: process.env});
+  await session.initialize();
+  const started = Date.now();
+  const closed = await disposeSession(session, {closeMs: 300, killWaitMs: 5_000});
+  assert.ok(Date.now() - started < 5_000, `bounded (${Date.now() - started} ms)`);
+  assert.equal(closed.stuck, true);
+  assert.equal(closed.exited, true);
+  assert.throws(() => process.kill(session.pid, 0), {code: 'ESRCH'}, 'the child is gone');
 });

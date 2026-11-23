@@ -962,7 +962,7 @@ rows for named services, and no other client's. `grantRows` can now name the ser
 |---|---|---|
 | `none` | all four removed | `cua engine stop` (the setup already stopped the engine after its approve, so this usually finds none running); a fresh session launches the engine |
 | `accessibility` | Accessibility added | the same |
-| `screenRecording` | Screen Recording added | the product's own: the stage before refused Screen Recording on this connection, which owes one relaunch at its next observation (`client.mjs`). The same session is kept. The engine's pid and connections are read again just before the retry, as accept-native item 14 does |
+| `screenRecording` | Screen Recording added | the product's own: the stage before refused Screen Recording on this connection, which owes one relaunch at its next observation (`client.mjs`). The same session is kept. The retry is bracketed: see below |
 | `full` | Input Monitoring and post events added last | as `none`. The run ends with H0's row set, the setup's |
 
 At each stage, the driver makes two `js` calls on the scratch document:
@@ -976,14 +976,31 @@ if it did not, the call is not sent. It reads front and key again after the call
 reading of the screen: the frontmost app, the top window's owner and the system prompts' pids (`screenState`). After
 each call it reads `cua engine status`. After both calls it reads `cua doctor`.
 
+`getScreenshot` here is a window capture: the engine captures the app's window (`Screenshot.swift`'s
+`capture(window:…)`, over ScreenCaptureKit's shareable windows). So it can succeed behind replayd's alert, which is why
+the front-and-key rule applies to both cells. Ruling 1154's guard, which refuses keyboard cells while the alert holds
+key, does not apply: these cells are a bind and a capture, and send no keys.
+
+The Screen Recording stage's retry is bracketed, so that nothing can arrive unseen between the baseline and the retry:
+
+1. After the stage before, one second for its status and doctor connections to close.
+2. TextEdit activated, and checked front and key, before anything is read.
+3. The baseline: `cua engine status`'s pid and connection count, as accept-native item 14 reads them.
+4. One second, only for that status read's own socket to close.
+5. The engine bundle's running processes, listed by `pgrep` (which opens no socket), just before the retry is sent.
+6. The retry itself, then front and key, then `cua engine status` again.
+
+Whether the product relaunched is told by the retry's own status only. If that status is unread, the relaunch is unread;
+the second call's pid never stands in for it.
+
 ### What it records
 
 The record goes to `onboarding.json`. For each stage it holds:
 
 - the rows removed or granted, as read back;
 - the relaunch: the stop's answer and its attempts (an `engine_busy` is retried five times, a second apart), or, for the
-  product's relaunch, the pid that last refused Screen Recording and the pid and connection count read just before the
-  retry;
+  product's relaunch, the pid that last refused Screen Recording, the baseline's pid and connection count, and the
+  engine's processes listed as the retry was sent;
 - whether the engine's pid changed;
 - for each call:
   - the answer's allowlisted facts, through accept-native item 14's `replyFacts`;
@@ -1015,8 +1032,18 @@ A call the product holds is recorded as a wait, never a refusal, in either form:
 If a stage's rows, relaunch or session cannot be set, the run stops there, and the record says why. A run that stops
 leaves the rows as its last stage set them. Nothing after it in sitting D needs them.
 
-The record is saved after every stage and again before cleanup. Each session's close is bounded at 30 s, and a close
-that never ends is recorded as `stuck`. The CLI then exits with the record already written.
+The record is saved after every stage and again before cleanup. Every session's teardown, between stages and at the
+end, owns its deadline through the escalation (`disposeSession`):
+
+- The close (`end_task`, then end of input, SIGTERM and SIGKILL) is raced against 30 s. A close that does not end in
+  time is recorded as `stuck`.
+- Whichever finishes first, the session is then disposed (`dispose()` in `scripts/accept/mcp-session.mjs`): SIGKILL if
+  the server still runs, every pending request settled, its pipes destroyed and the child unreferenced. Its exit is
+  awaited for at most 5 s, and recorded as `exited`.
+
+So no child, timer or pipe of a session outlives the run, and the CLI ends on its own with the record written; it no
+longer calls `process.exit`. Every subprocess the driver starts has its own timeout: `open` 15 s, `swiftc` 300 s, the
+front-window probe 120 s, `lsappinfo` and `pgrep` 5 s, and each `cua` command 120 s.
 
 ### What the check expects
 
@@ -1026,7 +1053,7 @@ The check is `onboarding`, in `checks.mjs`, through `onboarding-judge.mjs`. Each
 |---|---|---|---|---|
 | `none` | refused, `cua/permission` `accessibility` | refused at the bind, `accessibility` | AX false, SR false | `fail` |
 | `accessibility` | refused, `screenRecording`, with "a relaunch of the engine is pending" | refused at the bind, `screenRecording` | AX true, SR false | `fail` |
-| `screenRecording` | answered, on an engine the product relaunched: the engine before the retry is the one that refused, with only the test's connection, and the one after it is another | answered, screenshot bytes > 0 | AX true, SR true | `pass` or `warn` |
+| `screenRecording` | answered, on an engine the product relaunched: the engine before the retry is the one that refused, with only the test's connection, no other engine process as the retry is sent, and the one after it is another | answered, screenshot bytes > 0 | AX true, SR true | `pass` or `warn` |
 | `full` | answered | answered | AX, SR, Input Monitoring and `canPostHid` true | `pass` or `warn`, intervention on |
 
 The citations:
@@ -1046,13 +1073,15 @@ The citations:
 | Verdict | When |
 |---|---|
 | **PASS** | All four stages are recorded, and each shows positive evidence: rows read back, the relaunch shown, every cell sent and answered with TextEdit front and key and no alert around it, the expected answers, and every result attesting the run's cua build. |
-| **FAIL** | Any of: a refusal names the wrong grant; a refusal lacks the steps or the bundle's path; a call answers without its grant; a call is refused with its grants present; the product does not relaunch for the Screen Recording grant; doctor's row or permissions are wrong. |
-| **NO VERDICT** | Any of: no record, or a malformed or ambiguous one (the judge never throws on a record); fewer than four stages, or a run that did not finish; rows not read back; a relaunch not shown; a cell not sent, or with TextEdit not front and key, or an alert front or key around it (ruling 1141); a result answered on another engine (the vendor's on the cua side, state 1, or any build but the run's); a result with no attestation; rows not written or not honoured (a capability that does not match the stage's rows); a relaunch that could not be made; before the product's relaunch, an engine other than the one that refused, or another connection; a call with no answer; unread status or doctor; no Screen Recording refusal seen before the recovery stage. |
+| **FAIL** | Any of: a refusal names the wrong grant; a refusal lacks the steps or the bundle's path; a call answers without its grant; a call is refused with its grants present; the product does not relaunch for the Screen Recording grant, on a proven retry (sent, answered, attested, TextEdit front and key around it) with only the test's connection after it; doctor's row or permissions are wrong. |
+| **NO VERDICT** | Any of: no record, or a malformed or ambiguous one (the judge never throws on a record); fewer than four stages, or a run that did not finish; rows not read back; a relaunch not shown; a cell not sent, or with TextEdit not front and key, or an alert front or key around it (ruling 1141); a result answered on another engine (the vendor's on the cua side, state 1, or any build but the run's); a result with no attestation; rows not written or not honoured (a capability that does not match the stage's rows); a relaunch that could not be made; before the product's relaunch, an engine other than the one that refused, another connection, or another engine process as the retry is sent; no relaunch after a retry that is not proven, or with another connection after it; the retry's status unread; a call with no answer; unread status or doctor; no Screen Recording refusal seen before the recovery stage. |
 
 The order follows ruling 1149, as the `record` check does:
 
 1. A result answered on another engine, anywhere in the record, is NO VERDICT before anything else. The step carries
-   `engine: 'cua'`, and the attestations are classed by `classifyAttestation` (`scripts/probe/lib.mjs`).
+   `engine: 'cua'`, and the attestations are classed by `classifyAttestation` (`scripts/probe/lib.mjs`). Every call
+   that carries an attestation is scanned before any stage's own evidence is examined, so a stage that is malformed,
+   not set or missing its rows' read-back still has its answers classed.
 2. Then any FAIL.
 3. Then any other missing proof, including a result with no attestation.
 
@@ -1070,7 +1099,10 @@ anything is touched). The sitting's verdict is the check's, not the driver's exi
   be set, the front and key readings, an otherwise successful capture with the alert frontmost, a cleanup that never
   ends, and the refusal off a runner. It also covers the judge: PASS, five FAIL cases, the NO VERDICT cases, malformed
   and empty records, an unattested cell beside a failing sibling, and a moved or busy baseline before the product's
-  relaunch.
+  relaunch. Review round 2 added: an alert around the retry, or an unattested retry, with the pid unchanged (NO VERDICT,
+  not "did not relaunch"); another engine's answer in a stage missing its read-back, beside a FAIL; the retry's bracket
+  (activation before the baseline, a replacement engine or another client arriving before the retry, the retry's status
+  unread); and a real child process that ignores SIGTERM, killed and disposed within the bound.
 - `tcc.test.mjs`: every guard refusal applies to `revokeRows` too, with zero store calls. Removal touches only the named
   rows of cua's engine, in the system database. It refuses the vendor's helper, any other app and any unknown service.
   A grant can name its services.

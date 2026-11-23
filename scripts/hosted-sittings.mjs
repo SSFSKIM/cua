@@ -169,8 +169,6 @@ async function main(argv) {
       const record = await runOnboarding({save: partial => writeJson(out, partial)});
       writeJson(out, record);
       await new Promise(done => process.stdout.write(json({complete: record.complete, problem: record.problem, cleanup: record.cleanup, stages: record.stages.map(stage => stage.id)}), done));
-      // A session whose close was abandoned may keep its child, and so this process, alive: exit with the record written.
-      if (record.cleanup?.stuck) process.exit(record.complete ? 0 : 1);
       return record.complete ? 0 : 1;
     }
     default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down | onboarding (see this file\'s header)');

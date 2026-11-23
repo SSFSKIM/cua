@@ -11,9 +11,11 @@
 //   accessibility    Accessibility granted; `cua engine stop`, a fresh session
 //   screenRecording  Screen Recording added; the product's own relaunch: the stage before refused Screen Recording on
 //                    this connection, which owes one relaunch at the next observation (src/services/engine/client.mjs).
-//                    The engine's pid and connections are read again just before the retry (as accept-native item 14
-//                    reads them, scripts/accept/onboarding.mjs 'pre-relaunch'), so the judge compares the replacement
-//                    with the engine that refused
+//                    TextEdit is activated first; then the engine's pid and connections are read as the baseline (as
+//                    accept-native item 14 reads them, scripts/accept/onboarding.mjs 'pre-relaunch'), then, after only
+//                    the status socket's allowance, the engine's processes are listed (no socket) just before the retry
+//                    is sent, and the engine's pid and connections read right after it: the judge compares the
+//                    replacement with the engine that refused, and an engine or a client arriving in between is seen
 //   full             Input Monitoring and post events added last, so the run ends with H0's row set, the setup's;
 //                    `cua engine stop`, a fresh session
 // At each: a bind of TextEdit (an observation, which checks Accessibility first) and a bind then a capture (the capture
@@ -34,8 +36,9 @@
 // in either form: the own host's deadline reply (TIMEOUT_SENTENCE: the execution timed out and the kernel was reset, so
 // the session is still sound) or no answer at the transport, after which the session is uncertain and nothing more is
 // sent on it; the run goes on to the next stage. A stage whose rows, relaunch or session cannot be set stops the run,
-// recorded. The record is saved (`save`) after every stage and before cleanup, and every close is bounded, so a cleanup
-// that never ends loses nothing. Refuses off a GitHub-hosted macOS runner before anything else.
+// recorded. The record is saved (`save`) after every stage and before cleanup, and every close is bounded and ends in the
+// session's disposal (disposeSession), so a cleanup that never ends loses nothing and leaves no child behind; every
+// subprocess it starts has its own timeout. Refuses off a GitHub-hosted macOS runner before anything else.
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -60,11 +63,15 @@ export const CALL_MS = 60_000;
 // `cua engine stop` refused while a closed session's connection is still counted: retried this often, a second apart.
 const STOP_ATTEMPTS = 5;
 const STOP_RETRY_MS = 1_000;
-// Before the product's own relaunch: the status and doctor connections closed at the engine, which refuses the
-// relaunch's shutdown while another client is connected (client.mjs: the observation then fails with no relaunch).
+// Before the product's own relaunch: the stage before's status and doctor connections closed at the engine, which
+// refuses the relaunch's shutdown while another client is connected (client.mjs: the observation then fails with no
+// relaunch). SOCKET_CLOSE_MS: the one allowance after the baseline's own status read, for its socket to close.
 const SETTLE_MS = 1_000;
-// A session's close (end_task, then the server's exit) bounded: one that never ends is recorded and left.
+const SOCKET_CLOSE_MS = 1_000;
+// A session's close (end_task, then the server's exit) bounded; past it, or after it, the session is disposed (SIGKILL,
+// its pipes destroyed), and the kill's own wait for the exit bounded too: a teardown that never ends is recorded and left.
 const CLOSE_MS = 30_000;
+const KILL_WAIT_MS = 5_000;
 // The activate step's own check: re-read this often, half a second apart, until TextEdit is front and key.
 const ACTIVATE_READS = 6;
 const ACTIVATE_RETRY_MS = 500;
@@ -142,13 +149,13 @@ function localScreen() {
   const front = () => {
     if (probe === null) {
       const binary = join(mkdtempSync(join(tmpdir(), 'cua-onboarding-')), 'front-window');
-      probe = spawnSync('/usr/bin/swiftc', ['-O', '-o', binary, FRONT_WINDOW_SCRIPT], {encoding: 'utf8'}).status === 0 ? [binary, []] : ['/usr/bin/swift', [FRONT_WINDOW_SCRIPT]];
+      probe = spawnSync('/usr/bin/swiftc', ['-O', '-o', binary, FRONT_WINDOW_SCRIPT], {encoding: 'utf8', timeout: 300_000}).status === 0 ? [binary, []] : ['/usr/bin/swift', [FRONT_WINDOW_SCRIPT]];
     }
     try { return JSON.parse(spawnSync(probe[0], [...probe[1], 'front'], {encoding: 'utf8', timeout: 120_000}).stdout); } catch { return null; }
   };
-  const pidOf = bundle => lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', bundle], {encoding: 'utf8'}).stdout ?? '');
+  const pidOf = bundle => lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', bundle], {encoding: 'utf8', timeout: 5_000}).stdout ?? '');
   return {
-    activate: () => { spawnSync('/usr/bin/open', ['-b', TEXTEDIT_BUNDLE]); },
+    activate: () => { spawnSync('/usr/bin/open', ['-b', TEXTEDIT_BUNDLE], {timeout: 15_000}); },
     sample: () => ({front: localFrontmost(), keyOwnerPid: integer(front()?.topWindow?.ownerPid), appPid: pidOf(TEXTEDIT_BUNDLE), alertPids: ALERT_APPS.map(pidOf).filter(pid => pid !== null)}),
   };
 }
@@ -167,16 +174,43 @@ function prepareLane(env) {
   return {serveEnv: {...serveEnv, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'}, expected, bundlePath: selection.engine.app.bundlePath, selection: {host: selection.host, reason: selection.reason}};
 }
 
+// The running processes of the approved engine's bundle, listed without a socket to it (pgrep). -> [pid], or null unread.
+function enginePidsOf(bundlePath) {
+  const listed = spawnSync('/usr/bin/pgrep', ['-f', `${bundlePath}/Contents/MacOS/`], {encoding: 'utf8', timeout: 5_000});
+  if (listed.error || (listed.status !== 0 && listed.status !== 1)) return null;
+  return listed.stdout.split('\n').filter(line => line.trim()).map(Number).filter(Number.isSafeInteger);
+}
+
+// A session's teardown, owning its deadline through the escalation: the close (end_task, then EOF and SIGTERM) raced
+// against `closeMs`, then, whichever won, the session disposed (scripts/accept/mcp-session.mjs dispose: SIGKILL if it
+// still runs, every pending request settled, its pipes destroyed, the child unreferenced) and its exit awaited for
+// `killWaitMs` at most. -> the close's result, `stuck` with its detail when it did not end in time, `disposed`, and
+// whether the child was seen to exit.
+export async function disposeSession(session, {closeMs = CLOSE_MS, killWaitMs = KILL_WAIT_MS} = {}) {
+  const within = async (work, ms, late) => {
+    let timer;
+    const bound = new Promise(resolve => { timer = setTimeout(() => resolve(late), ms); });
+    try { return await Promise.race([Promise.resolve().then(work), bound]); } finally { clearTimeout(timer); }
+  };
+  let closed;
+  try { closed = await within(() => session.close(), closeMs, {stuck: true, detail: `no close within ${closeMs} ms`}); } catch (error) { closed = {error: error.message}; }
+  if (typeof session.dispose !== 'function') return closed;
+  let exit = null;
+  try { exit = await within(() => session.dispose(), killWaitMs, null); } catch { /* recorded as not seen to exit */ }
+  return {...closed, disposed: true, exited: isObject(exit)};
+}
+const isObject = value => value !== null && typeof value === 'object';
+
 const ABANDONED = 'the session was abandoned after a call with no answer';
 
 // deps: {env, platform, prepare() -> {serveEnv, expected, bundlePath, selection}, grant (./tcc.mjs grantRows), revoke
 // (revokeRows), cli(args) (cuaCli's, over the lane's serveEnv by default), connect(onServerRequest) -> {initialize, js(code,
-// ms), close}, screen {activate(), sample()} (localScreen's), save(record) (after every stage, before cleanup and after it),
-// closeMs, sleep(ms), now, log}. -> the record: {kind, hosted, startedAt, finishedAt, complete, problem, app, expected,
-// bundlePath, selection, decision, elicitations: {accepted, declined}, cleanup, stages: [{id, rows, relaunch, relaunched,
-// calls, status, doctor, problem, closed}]}.
+// ms), close, dispose?}, screen {activate(), sample()} (localScreen's), enginePids(bundlePath) (enginePidsOf), save(record)
+// (after every stage, before cleanup and after it), closeMs, sleep(ms), now, log}. -> the record: {kind, hosted, startedAt,
+// finishedAt, complete, problem, app, expected, bundlePath, selection, decision, elicitations: {accepted, declined},
+// cleanup, stages: [{id, rows, relaunch, relaunched, calls, status, doctor, problem, closed}]}.
 export async function runOnboarding({env = process.env, platform = process.platform, prepare = async () => prepareLane(env), grant = grantRows, revoke = revokeRows,
-  cli = null, connect = null, screen = null, save = () => {}, closeMs = CLOSE_MS, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now,
+  cli = null, connect = null, screen = null, enginePids = enginePidsOf, save = () => {}, closeMs = CLOSE_MS, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now,
   log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the staged onboarding');
   const record = {kind: 'hosted-onboarding', hosted: true, startedAt: new Date(now()).toISOString(), finishedAt: null, complete: false, problem: null,
@@ -193,9 +227,7 @@ export async function runOnboarding({env = process.env, platform = process.platf
     const closing = session;
     session = null;
     uncertain = false;
-    let timer;
-    const bound = new Promise(resolve => { timer = setTimeout(() => resolve({stuck: true, detail: `no close within ${closeMs} ms`}), closeMs); });
-    try { return await Promise.race([Promise.resolve().then(() => closing.close()), bound]); } catch (error) { return {error: error.message}; } finally { clearTimeout(timer); }
+    return disposeSession(closing, {closeMs});
   };
   const sc = screen ?? localScreen();
   // The activate step and its own check (ruling 1141): TextEdit brought forward, then read until it is front and key.
@@ -275,23 +307,29 @@ export async function runOnboarding({env = process.env, platform = process.platf
         keep();
         continue;
       } else {
-        // The engine that refused Screen Recording last on this connection, and the engine just before the retry, read
-        // after the status and doctor connections had time to close, and given time again after this read (the engine
-        // refuses the relaunch's shutdown while another client is connected).
+        // The engine that refused Screen Recording last on this connection; the stage before's status and doctor
+        // connections given time to close. The baseline is read at the retry itself (the first cell, below).
         const refusing = prior?.calls?.filter(c => c.sent).at(-1);
         entry.relaunch.refusedBy = refusing?.isError === true && refusing.metadata?.permission === 'screenRecording' ? refusing.statusAfter?.pid ?? null : null;
-        await sleep(SETTLE_MS);
-        const before = readStatus();
-        entry.relaunch.before = {pid: before.pid ?? null, connections: before.connections ?? null};
+        entry.relaunch.before = null;
+        entry.relaunch.atDispatch = null;
         await sleep(SETTLE_MS);
       }
-      for (const call of CALLS) {
+      for (const [index, call] of CALLS.entries()) {
         let facts;
         if (uncertain) facts = {...unsent(call.id, ABANDONED), frontKey: null};
         else {
           const {sample, activate} = await activateApp();
           if (!activate.front || !activate.key) facts = {...unsent(call.id, 'activation'), frontKey: {activate, before: reading(sample), after: null}};
           else {
+            if (stage.relaunch === 'product' && index === 0) {
+              // The retry bracketed: TextEdit already front and key, the baseline read, only its socket's allowance, the
+              // engine's processes listed (no socket) as the cell is sent, its pid and connections read right after.
+              const before = readStatus();
+              entry.relaunch.before = {pid: before.pid ?? null, connections: before.connections ?? null};
+              await sleep(SOCKET_CLOSE_MS);
+              entry.relaunch.atDispatch = {pids: enginePids(lane.bundlePath)};
+            }
             const reply = await session.js(call.code, CALL_MS);
             facts = {...callFacts(call.id, reply, lane.bundlePath), frontKey: {activate, before: reading(sample), after: reading(sc.sample())}};
             if (facts.waitedBy === 'transport') uncertain = true;
@@ -302,9 +340,11 @@ export async function runOnboarding({env = process.env, platform = process.platf
         log(`hosted-sittings: onboarding ${stage.id} ${call.id}: ${!facts.sent ? `not sent (${facts.skipped})` : facts.waited ? `no answer (a wait: ${facts.waitedBy})` : facts.isError ? `refused (${facts.metadata.permission ?? facts.errorName ?? 'error'})` : 'answered'}`);
       }
       entry.status = entry.calls.at(-1).statusAfter;
-      const first = entry.calls.map(c => c.statusAfter.pid).find(pid => Number.isSafeInteger(pid)) ?? null;
-      const was = stage.relaunch === 'product' ? entry.relaunch.before.pid : entry.relaunch.stop.pid;
-      entry.relaunched = first === null ? null : first !== was;
+      // The product's relaunch is told by the retry's own status, never the second cell's (unread is unread); a
+      // `cua engine stop` relaunch by the stage's first pid read.
+      const first = stage.relaunch === 'product' ? integer(entry.calls[0].statusAfter.pid) : entry.calls.map(c => c.statusAfter.pid).find(pid => Number.isSafeInteger(pid)) ?? null;
+      const was = stage.relaunch === 'product' ? entry.relaunch.before?.pid ?? null : entry.relaunch.stop.pid;
+      entry.relaunched = first === null || (stage.relaunch === 'product' && was === null) ? null : first !== was;
       entry.doctor = readDoctor();
       prior = entry;
       keep();

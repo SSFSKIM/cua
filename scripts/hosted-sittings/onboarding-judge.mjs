@@ -14,8 +14,10 @@
 //   observation (src/services/engine/client.mjs relaunchForPermissions: shutdown, launch, observe once on the fresh
 //   engine): the recovery once granted. It is judged as accept-native item 14 judges it (scripts/accept/onboarding.mjs,
 //   'service relaunch recovery'): the engine just before the retry is the one that refused, with only the test's
-//   connection, and the engine after it is another. Accessibility's refusal arms none; on a runner its row is honoured
-//   only at a launch (H0), so the driver relaunches by `cua engine stop` there.
+//   connection, no other engine process as the retry is sent, and the engine after it is another. The FAIL that it did
+//   not relaunch needs a proven retry (sent, answered, attested, TextEdit front and key around it) with only the test's
+//   connection after it; anything less is the cell's NO VERDICT. Accessibility's refusal arms none; on a runner its row
+//   is honoured only at a launch (H0), so the driver relaunches by `cua engine stop` there.
 // - doctor's engine row: fail while Accessibility or Screen Recording is not granted, Input Monitoring's absence a warn
 //   naming "intervention detection off", its permissions the running engine's status (src/runtime/doctor-engine.mjs
 //   GRANT_EFFECT, grantWords).
@@ -87,17 +89,32 @@ function cellUnproved(call, attestation) {
   return null;
 }
 
-// One stage. `prior`: the stage before and whether it was set. -> {elsewhere: [why], fail: [why], missing: [why], summary}.
+// Every answer's attestation in the record, read before any stage's own evidence is (ruling 1149): wherever a call is
+// identifiable and carries one, in a stage set or not, malformed or not. -> [why] for every answer on another engine.
+function answeredElsewhere(stages, attest) {
+  const found = [];
+  stages.forEach((stage, i) => {
+    if (!isObject(stage) || !Array.isArray(stage.calls)) return;
+    const where = typeof stage.id === 'string' ? stage.id : `stage ${i + 1}`;
+    for (const call of stage.calls) {
+      if (!isObject(call) || !isObject(call.nativeEngine)) continue;
+      const attestation = attest(call.nativeEngine);
+      if (!['ok', 'missing'].includes(attestation.status)) found.push(`${where}: ${typeof call.id === 'string' ? call.id : 'a'} call: ${attestation.problem}`);
+    }
+  });
+  return found;
+}
+
+// One stage. `prior`: the stage before and whether it was set. -> {fail: [why], missing: [why], summary}. Answers on
+// another engine are answeredElsewhere's, before this.
 function judgeStage(stage, {attest, prior}) {
   const want = EXPECTED[stage.id];
-  const out = {elsewhere: [], fail: [], missing: [], summary: null};
+  const out = {fail: [], missing: [], summary: null};
   const shape = malformed(stage, want);
   if (shape) return {...out, missing: [`malformed: ${shape}`]};
   if (stage.problem) return {...out, missing: [`not set: ${stage.problem}`]};
   if (!readBack(stage, want)) return {...out, missing: ['not set: the rows\' read-back is not recorded']};
-  // Every answer classed first (ruling 1149): another engine's anywhere is NO VERDICT for the whole record.
   const attestations = stage.calls.map(c => (c.sent && !c.waited && c.resultPresent ? attest(c.nativeEngine) : {status: 'ok'}));
-  stage.calls.forEach((c, i) => { if (!['ok', 'missing'].includes(attestations[i].status)) out.elsewhere.push(`${c.id} call: ${attestations[i].problem}`); });
   // Each cell's proof, judged apart: a cell without it is NO VERDICT for itself, its sibling still judged.
   const proven = stage.calls.map((c, i) => {
     if (!['ok', 'missing'].includes(attestations[i].status)) return false;
@@ -116,9 +133,17 @@ function judgeStage(stage, {attest, prior}) {
     const before = stage.relaunch.before ?? {};
     if (before.pid !== refusedBy) return notSet(`the engine before the retry (pid ${before.pid ?? 'unread'}) is not the one that refused Screen Recording (pid ${refusedBy})`);
     if (before.connections !== 1) return notSet(`${before.connections ?? 'unread'} connections at the engine before the retry, where only the test's may be`);
-    const first = stage.calls[0];
-    if (stage.relaunched === false && first.sent && !first.waited) return {...out, missing: [], fail: [`the product did not relaunch the engine for the Screen Recording grant (pid ${before.pid} throughout)`]};
-    if (stage.relaunched !== true) out.missing.push('the relaunch was not read');
+    const at = stage.relaunch.atDispatch?.pids;
+    if (!Array.isArray(at) || at.length !== 1 || at[0] !== before.pid) return notSet(`the engine at the retry (pids ${Array.isArray(at) && at.length ? at.join(', ') : 'unread'}) is not the baseline's (pid ${before.pid})`);
+    if (stage.relaunched === false) {
+      // Not relaunched is the product's FAIL only on a proven retry that no other client could have kept from it (the
+      // engine refuses the relaunch's shutdown while another client is connected); else the cell's own NO VERDICT.
+      const after = stage.calls[0].statusAfter?.connections;
+      if (proven[0] && after !== 1) { out.missing.push(`${after ?? 'unread'} connections at the engine after the retry: another client may have kept the relaunch from happening`); return out; }
+      if (!proven[0]) return notSet('the relaunch is not shown: the retry is not proven');
+      return {...out, missing: [], fail: [`the product did not relaunch the engine for the Screen Recording grant (pid ${before.pid} throughout)`]};
+    }
+    if (stage.relaunched !== true) return notSet('the relaunch was not read');
   }
   if (!status.read || !status.running) { out.missing.push(`capabilities unread (${status.problem ?? 'no engine running'})`); return out; }
   const unset = Object.entries(want.grants).filter(([key, value]) => status[key] !== value);
@@ -153,22 +178,24 @@ export function judgeOnboarding(record, {path = 'onboarding.json', exit = null, 
   if (!record) return ['NO VERDICT', `no onboarding record at ${path} (exit ${exit})`];
   if (!isObject(record) || record.kind !== 'hosted-onboarding' || !Array.isArray(record.stages)) return ['NO VERDICT', `${path} is not an onboarding record`];
   if (record.hosted !== true) return ['NO VERDICT', 'not a hosted run'];
-  const bad = record.stages.findIndex(s => !isObject(s));
-  if (bad >= 0) return ['NO VERDICT', `malformed: stage ${bad + 1} is not a stage`];
-  const ids = record.stages.map(s => s.id);
-  if (ids.some((id, i) => id !== ORDER[i])) return ['NO VERDICT', `ambiguous: its stages are ${ids.join(', ')}, not ${ORDER.join(', ')} in that order`];
   const left = ORDER.length - record.stages.length;
   const notRun = left > 0 || !record.complete ? `incomplete: ${left} stage(s) not run${record.problem ? ` (${record.problem})` : ''}` : null;
   const expected = record.expected;
   if (!isObject(expected)) return ['NO VERDICT', notRun ?? 'the record names no expected engine attestation'];
   if (expected.engine !== engine || !expected.build) return ['NO VERDICT', `the record's engine is ${expected.engine}, not the ${engine} side the step measures`];
   const attest = attested => classifyAttestation(attested, expected);
-  const elsewhere = [], fails = [], missing = [], summaries = [];
+  let elsewhere;
+  try { elsewhere = answeredElsewhere(record.stages, attest); } catch (error) { return ['NO VERDICT', `malformed record: ${error.message}`]; }
+  if (elsewhere.length) return ['NO VERDICT', elsewhere.join('; ')];
+  const bad = record.stages.findIndex(s => !isObject(s));
+  if (bad >= 0) return ['NO VERDICT', `malformed: stage ${bad + 1} is not a stage`];
+  const ids = record.stages.map(s => s.id);
+  if (ids.some((id, i) => id !== ORDER[i])) return ['NO VERDICT', `ambiguous: its stages are ${ids.join(', ')}, not ${ORDER.join(', ')} in that order`];
+  const fails = [], missing = [], summaries = [];
   try {
     let prior = null;
     for (const stage of record.stages) {
       const judged = judgeStage(stage, {attest, prior});
-      elsewhere.push(...judged.elsewhere.map(why => `${stage.id}: ${why}`));
       fails.push(...judged.fail.map(why => `${stage.id}: ${why}`));
       missing.push(...judged.missing.map(why => `${stage.id}: ${why}`));
       if (judged.summary) summaries.push(`${stage.id}: ${judged.summary}`);
@@ -176,7 +203,6 @@ export function judgeOnboarding(record, {path = 'onboarding.json', exit = null, 
     }
   } catch (error) { return ['NO VERDICT', `malformed record: ${error.message}`]; }
   if (notRun) missing.push(notRun);
-  if (elsewhere.length) return ['NO VERDICT', elsewhere.join('; ')];
   if (fails.length) return ['FAIL', fails.join('; ')];
   if (missing.length || summaries.length !== ORDER.length) return ['NO VERDICT', missing.join('; ') || 'a stage holds no evidence'];
   return ['PASS', `${summaries.join('; ')}; every result attested cua ${short(expected.build)}`];

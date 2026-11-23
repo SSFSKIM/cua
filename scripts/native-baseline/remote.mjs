@@ -7,6 +7,9 @@
 import {remoteCommand, quote} from '../browser-parity/topology.mjs';
 import {SESSION_KEYS, sessionEnvironment} from '../repl-parity/devices.mjs';
 import {ENGINES} from './engine.mjs';
+import {join} from 'node:path';
+import {homeLayout, readPointer} from '../../src/runtime/layout.mjs';
+import {resolveRuntime, vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
 
 export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 // The MCP protocol version the harness asks for; the handshake record is kept per surface set and this version.
@@ -113,6 +116,22 @@ export function xDisplayFacts(text) {
   return {pixels: `${size[1]} x ${size[2]}`, resolution: `${size[1]} x ${size[2]}`, scale: 1, depth: Number(/depth of root window:\s+(\d+)/.exec(text)?.[1] ?? NaN) || null};
 }
 
+// The runtime a serve in the cua home `home` uses, as the preflight reports it -> {release, runtimeRoot, runtimeError?}.
+// On Linux (#171 M6a) `release` is what cua's own runtime resolves to there (manifest.mjs resolveRuntime; the pointer
+// records and selects nothing), null with `runtimeError` when it does not resolve, and `runtimeRoot` the root of the
+// vendor tree (manifest.mjs vendorLinuxRuntime), which the vendor engine's sky_linux runs from and the Linux helpers'
+// classification calls the pinned runtime, null when it is absent. Elsewhere the pointer's release and its tree.
+export function servedRuntime({home, host = {platform: process.platform, arch: process.arch}}) {
+  if (host.platform !== 'linux') {
+    const release = readPointer(home);
+    return {release, runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null};
+  }
+  let release = null, runtimeError, runtimeRoot = null;
+  try { release = resolveRuntime({home, host}).release; } catch (error) { runtimeError = error.message; }
+  try { runtimeRoot = vendorLinuxRuntime({home, host}).root; } catch { /* no vendor tree: no sky_linux is the pinned runtime's */ }
+  return {release, runtimeRoot, ...(runtimeError === undefined ? {} : {runtimeError})};
+}
+
 // One JSON line: the platform, the clone's commit and cleanliness, the Node that runs the serve (and, given `node`, the
 // own host's Node and the version it reports, null when it does not run), the home and runtime
 // release a serve there uses, the handshake record's path for the measured surface and the selected host
@@ -137,19 +156,20 @@ export function preflightScript({host, engine, approvedEngine, engineBin, displa
 import {existsSync, readFileSync} from 'node:fs';
 import {arch, cpus, homedir, hostname, release as kernel, totalmem} from 'node:os';
 import {join} from 'node:path';
-import {defaultHome, homeLayout, readPointer} from './src/runtime/layout.mjs';
+import {defaultHome, homeLayout} from './src/runtime/layout.mjs';
+import {servedRuntime} from './scripts/native-baseline/remote.mjs';
 import {hostIdentity} from './src/repl-host/identity.mjs';
 import {sandboxModeFrom} from './src/runtime/sandbox.mjs';
 import {ownNodeFacts} from './scripts/repl-parity/provenance.mjs';
 const sh = (c, a, env) => { try { return execFileSync(c, a, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, ...(env ? {env} : {})}).trim(); } catch { return ''; } };
 const read = path => { try { return readFileSync(path, 'utf8'); } catch { return ''; } };
 const ownNodePath = ${JSON.stringify(ownNode ?? null)};
-const home = defaultHome(), release = readPointer(home), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
+const home = defaultHome(), {release, runtimeRoot, runtimeError} = servedRuntime({home}), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
 const common = {
   platform: process.platform, node: process.version, arch: arch(), hostname: hostname(), cpu: {model: cpus()[0]?.model || arch(), count: cpus().length}, uptime: sh('uptime', []),
-  commit: sh('git', ['rev-parse', 'HEAD']), dirty: sh('git', ['status', '--porcelain']) !== '', checkout: process.cwd(), home, release,
+  commit: sh('git', ['rev-parse', 'HEAD']), dirty: sh('git', ['status', '--porcelain']) !== '', checkout: process.cwd(), home, release, ...(runtimeError ? {runtimeError} : {}),
   handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', id.host + '@' + id.version, '${surface}@${PROTOCOL_VERSION}.json'),
-  runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null,
+  runtimeRoot,
   spikeRunning: sh('pgrep', ['-f', 'cua-116-[s]pike']) !== '',
   serves: sh('pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
   ownNode: ownNodePath === null ? ownNodeFacts(process.env, {home}) : {path: ownNodePath, version: sh(ownNodePath, ['--version']) || null},

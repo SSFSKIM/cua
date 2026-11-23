@@ -2,6 +2,7 @@
 // numbers: the stable identity is the backend family/type and extension profile instance, never arrival order.
 // Unknown ids, duplicate identities and missing backend identity are invalid evidence, not volatile fields.
 import assert from 'node:assert/strict';
+import {replaceReferenceSlot} from './docs-oracle.mjs';
 export function browserIdentityProjection(row){
  if(row.case!=='cells/documentation/browser-docs-before-state'||!row.cell)return null;
  const inventories=row.content?.filter(c=>c.type==='text'&&c.text.startsWith('[{'))??[];
@@ -22,7 +23,8 @@ export function applyBrowserIdentity(row,projection){
  return {...row,content:row.content.map(c=>{
   if(c.type!=='text')return c;
   if(c.text.startsWith('[{'))return {...c,text:projection.inventory};
-  if(/(?:^|\n)# Selected Browser\n/.test(c.text))return {...c,text:c.text.replace(/(\n- ID: )[^\n]+\n/,(_,prefix)=>prefix+projection.selected+'\n')};
+  // The header's ID and its one bound slot, the #494 `api-reference/<ID>` (docs-oracle.mjs), whatever the ID reads now.
+  if(/(?:^|\n)# Selected Browser\n/.test(c.text)){const current=/\n- ID: ([^\n]+)\n/.exec(c.text)?.[1];const text=c.text.replace(/(\n- ID: )[^\n]+\n/,(_,prefix)=>prefix+projection.selected+'\n');return {...c,text:current===undefined?text:replaceReferenceSlot(text,current,projection.selected)};}
   return c;
  })};
 }

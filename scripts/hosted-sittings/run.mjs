@@ -92,12 +92,19 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
 }
 
 const seconds = ms => (ms === null ? '-' : `${Math.round(ms / 1000)} s`);
-// The report as the job summary's Markdown.
+const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// The report as the job summary's Markdown. A pilot that passed while a judge gave only its expected NO VERDICT, or with
+// steps still pending (F before its code is built), proved none of its acceptance: it says so in place of "Proves" and
+// PASS. Its exit stays the sitting's (0).
 export function renderSitting(report) {
-  const out = [`## Sitting ${report.sitting.toUpperCase()} (${report.form}): ${report.title}`, '', `Proves: ${report.proves}.`, '',
+  const expected = report.steps.filter(s => s.expected).length, pending = report.steps.filter(s => s.status === 'PENDING').length;
+  const unproved = report.form === 'pilot' && report.verdict === 'PASS' && (expected > 0 || pending > 0);
+  const why = [expected && `${counted(expected, 'judge')} gave the expected NO VERDICT`, pending && `${counted(pending, 'step')} pending`].filter(Boolean).join(', ');
+  const out = [`## Sitting ${report.sitting.toUpperCase()} (${report.form}): ${report.title}`, '',
+    unproved ? `Would prove: ${report.proves}. This pilot proves none of it: ${why}.` : `Proves: ${report.proves}.`, '',
     '| step | kind | status | exit | time | note |', '|---|---|---|---|---|---|'];
   for (const s of report.steps) out.push(`| ${[s.id, s.kind, s.status, s.exit ?? '-', seconds(s.ms)].join(' | ')} |${s.reason ? ` ${String(s.reason).replaceAll('|', '\\|')} ` : ' '}|`);
   const count = status => report.steps.filter(s => s.status === status).length;
-  out.push('', `**${report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
+  out.push('', `**${unproved ? 'PILOT COMPLETED WITHOUT ACCEPTANCE PROOF' : report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
   return out.join('\n') + '\n';
 }

@@ -88,6 +88,23 @@ test('the report renders as the job summary: one line a step, its status, exit a
   assert.match(text, /^\*\*FAIL\*\* \(exit 1\)/m);
 });
 
+test('a pilot that proved nothing is labelled so, not "Proves" and PASS: judges with only the expected NO VERDICT, or steps all pending; the exit stays 0', async () => {
+  const judge = step('compare-A', 'verdict', {check: 'verdict', pilotNoVerdict: true});
+  const nv = await run(plan([step('a'), judge], 'pilot'), {'compare-A': 1}, {logs: {'compare-A': 'VERDICT: NO VERDICT\n'}});
+  assert.deepEqual([nv.report.verdict, nv.report.exit], ['PASS', 0]);
+  const text = renderSitting(nv.report);
+  assert.doesNotMatch(text, /^Proves:/m);
+  assert.match(text, /^Would prove: nothing\. This pilot proves none of it: 1 judge gave the expected NO VERDICT\.$/m);
+  assert.match(text, /^\*\*PILOT COMPLETED WITHOUT ACCEPTANCE PROOF\*\* \(exit 0\)/m);
+  const f = await run(plan([step('maws', 'pending', {argv: undefined, pending: 'not built'})], 'pilot'));
+  assert.deepEqual([f.report.verdict, f.report.exit], ['PASS', 0]);
+  assert.match(renderSitting(f.report), /^Would prove: nothing\. This pilot proves none of it: 1 step pending\.$/m);
+  assert.match(renderSitting(f.report), /^\*\*PILOT COMPLETED WITHOUT ACCEPTANCE PROOF\*\* \(exit 0\)/m);
+  const b = await run(plan([step('diff', 'verdict')], 'pilot'));
+  assert.match(renderSitting(b.report), /^Proves: nothing\.$/m, 'B\'s pilot is its full form, and its PASS proves what it says');
+  assert.match(renderSitting(b.report), /^\*\*PASS\*\* \(exit 0\)/m);
+});
+
 // A real subprocess (I6 of fix wave 2): the step resolves only once its log is flushed, so the verdict it printed last is
 // read; a log that cannot be written is the step's runtime error, never a silent loss.
 test('a step\'s log is whole when the step resolves, its last line read straight after; a log that cannot be written is an error', async () => {

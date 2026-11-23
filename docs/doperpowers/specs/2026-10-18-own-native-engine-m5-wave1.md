@@ -149,8 +149,18 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `protocol.mjs` is dropped; the JS reader serves only the secret wrapper, in fixed phrases, and the service forwards
   `cua/interruption` per call). Effect names are camelCase, with `scroll` and `activation` added and main's newer focus
   paths (#324, #390) covered; an ended held activation is counted once all of execute's cleanups have run. Dropped from
-  #218: route 4 skipping its restore after an intervention (the spec restores the user's app whatever happens) and
-  `cua/interruption` surviving a later observation in the same call (every `cua/*` key is per call). A set_value on a
+  #218: route 4 skipping its restore after an intervention (S L152: route 4 restores the previously frontmost app and
+  its key window, without exception). After review (b0e488cb2..16143e579): `cua/interruption` is a per-execution
+  snapshot (#212's criterion "preserve per-action metadata even when observation follows in the same cell"; the
+  answer advises `getAXState` next), carrying the account with the receipt, route, interval and activation data, kept
+  across same-cell observations and later actions and out of the next execution; every other `cua/*` key stays per
+  call. The effects account counts activation posts actually made (`ActivationPosts`, per thread, read as deltas,
+  attempts counted), the refusal clause is "The requested input was refused before its first step" (the Chromium
+  accessibility prologue can run before the guard), and teardown "may have sent the app a deactivation". The
+  save-sheet cell is valid only when receipt ≤ probe post ≤ response and the structured phase agrees with the
+  sentence; a missing sheet or a file in the run-owned folder fails without retry; the row is recorded before cleanup;
+  the destination is a run-owned `mkdtemp` folder set through the Go To field and verified before the act (its field
+  id is unread on a runner: the pilot's first run reads it and tightens the Return guard). A set_value on a
   save sheet's name field is unit-proven never to commit the sheet. The hosted cell `intervention-save-sheet` is
   standalone (not in the full matrix), judged by cua's answer ("stopped part-way" makes a sample valid; it retries
   aiming from the measured receipt; "not committed" is the sheet still open after a 2 s settle). Risk: the window

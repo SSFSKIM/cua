@@ -1,6 +1,7 @@
 // The pilot's readings (#117 M5, T10b′; docs/evidence/2026-11-23-own-native-engine/harness.md "What part 2 must
 // provide"): the first hosted run reads, from the matrix's own records, what part 1 could not know before a runner:
-//   openPanel        the bundle ids front and key on the Open panel's rows, against the panel service the plan names
+//   openPanel        the window order's bundle id for the Open panel's window, against the panel service the plan names;
+//                    no row keeps the order, so it is unread, with the front/key ids on the panel's rows beside it
 //                    (../native-matrix/steps.mjs PANEL_SERVICE; the window-order oracle's target)
 //   savePanel        the Save panel's structure as #212's observation-only cell recorded it (`outcome.observed`), from
 //                    which its Go To controls (../native-matrix/probe-plan.mjs SAVE_PANEL_CONTROLS) are read by hand
@@ -25,9 +26,11 @@ const readingsOf = row => [row.frontKey?.before?.front, row.frontKey?.before?.ke
 // questions no record answered.
 export function pilotReads(results, {focusTiming = null} = {}) {
   const rows = rowsOf(results);
+  // The question is the window order's: which bundle id owns the panel's window (the oracle's target). No row keeps the
+  // order itself (the oracle keeps only whether a target was above the user window), so it stays unread here; the
+  // front/key ids on the panel's rows are given beside it as what they are, never as the window order's answer.
   const panelIds = distinct(rows.filter(({row}) => row.target === 'openPanel').flatMap(({row}) => readingsOf(row)));
-  // The panel's own service is the one id here that is neither TextEdit (the panel's app) nor an alert's.
-  const openPanel = panelIds.length ? {expected: PANEL_SERVICE, read: panelIds.sort((a, b) => Number(b.includes('Panel')) - Number(a.includes('Panel'))), matches: panelIds.includes(PANEL_SERVICE)} : null;
+  const openPanel = {expected: PANEL_SERVICE, windowOrder: null, frontKey: panelIds.sort((a, b) => Number(b.includes('Panel')) - Number(a.includes('Panel')))};
   const focused = scene => {
     const read = distinct(rows.filter(({row}) => row.target === scene && row.regime === 'frontmost').map(({row}) => row.frontKey?.before?.key));
     return read.length ? {expected: SCENES[scene].bundleId, read, matches: read.every(id => id === SCENES[scene].bundleId)} : null;
@@ -66,7 +69,7 @@ export function pilotReads(results, {focusTiming = null} = {}) {
     korean: Object.keys(korean).length ? korean : null,
     vendorErrorNames: Object.keys(vendorErrorNames).length ? vendorErrorNames : null,
   };
-  const unread = [['openPanel', reads.openPanel], ['savePanel', reads.savePanel], ['focusedApps.chrome', reads.focusedApps.chrome], ['focusedApps.electron', reads.focusedApps.electron],
+  const unread = [['openPanel', reads.openPanel.windowOrder], ['savePanel', reads.savePanel], ['focusedApps.chrome', reads.focusedApps.chrome], ['focusedApps.electron', reads.focusedApps.electron],
     ['typeSelect', reads.typeSelect], ['focusProbe', reads.focusProbe], ['korean', reads.korean], ['vendorErrorNames', reads.vendorErrorNames]].filter(([, v]) => v === null).map(([k]) => k);
   return {...reads, unread};
 }
@@ -76,7 +79,7 @@ const same = matches => (matches ? 'matches' : '**differs**');
 export function renderPilotReads(reads) {
   const out = ['## What the pilot read', ''];
   const panel = reads.openPanel;
-  out.push(`- **Open panel**: ${panel ? `front/key ids read on its rows: ${panel.read.join(', ')}; the plan's service ${panel.expected} ${panel.matches ? 'was read' : '**was not read**'}` : 'not read'}.`);
+  out.push(`- **Open panel**: ${panel.windowOrder ? `the window order names ${panel.windowOrder}` : 'not read: the window order\'s service id is on no row (the oracle keeps only booleans)'}; the front/key ids on its rows (not the window order): ${panel.frontKey.join(', ') || 'none'} (the plan names ${panel.expected}).`);
   const sheet = reads.savePanel;
   out.push(`- **Save panel** (#212, SAVE_PANEL_CONTROLS): ${sheet ? `${sheet.observed.length} observation(s) recorded; the first: ${sheet.observed[0].lines?.filter(l => l.id).map(l => `${l.id} (${l.head})`).join('; ') || 'no element carries an ID'}` : 'not read'}.`);
   for (const [scene, name] of [['chrome', 'Chrome for Testing'], ['electron', 'Electron fixture']]) {

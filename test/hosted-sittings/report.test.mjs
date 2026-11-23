@@ -67,7 +67,9 @@ const RESULTS = [
 
 test('the pilot reads what part 1 left unread on a runner, each from the rows that show it, and names what nothing showed', () => {
   const reads = pilotReads(RESULTS, {focusTiming: {samples: 5, medianMs: 640, maxMs: 910}});
-  assert.deepEqual(reads.openPanel, {expected: PANEL, read: [`${PANEL}.v2`, 'com.apple.TextEdit'], matches: false});
+  // The panel service's id belongs to the window order, which no row keeps (its oracle keeps only booleans): unread, the
+  // front/key ids on the panel's rows given beside it as what they are.
+  assert.deepEqual(reads.openPanel, {expected: PANEL, windowOrder: null, frontKey: [`${PANEL}.v2`, 'com.apple.TextEdit']});
   assert.deepEqual(reads.focusedApps.chrome, {expected: SCENES.chrome.bundleId, read: [SCENES.chrome.bundleId], matches: true});
   assert.deepEqual(reads.focusedApps.electron, {expected: SCENES.electron.bundleId, read: ['com.github.Electron'], matches: false});
   assert.deepEqual(reads.typeSelect, {vendor: [{sample: 1, run: 1, posted: true, finderSelected: false, documentUnchanged: true, gate: null}],
@@ -77,11 +79,12 @@ test('the pilot reads what part 1 left unread on a runner, each from the rows th
   assert.equal(reads.savePanel.observed[0].lines[0].id, 'saveAsNameTextField');
   assert.deepEqual(reads.focusProbe, {samples: 5, medianMs: 640, maxMs: 910});
   assert.deepEqual(reads.vendorErrorNames, {Error: 1});
-  assert.deepEqual(reads.unread, []);
+  assert.deepEqual(reads.unread, ['openPanel']);
   const text = renderPilotReads(reads);
   for (const heading of ['Open panel', 'Save panel', 'Focused app', 'Finder type-select', 'Focus probe', '2-Set', 'cua/errorName'])
     assert.ok(text.includes(heading), heading);
   assert.match(text, /Electron fixture: read com\.github\.Electron, the scene names .*: \*\*differs\*\*/);
+  assert.match(text, /\*\*Open panel\*\*: not read: the window order's service id is on no row .*; the front\/key ids on its rows \(not the window order\): com\.apple\.appkit/);
 });
 
 test('the focus probe is timed launch by launch, an unanswered launch timed and counted apart', () => {

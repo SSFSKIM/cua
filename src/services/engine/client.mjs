@@ -333,8 +333,10 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
   }
 
   // The owed relaunch (see the header): shutdown on `target`, the checked connection, the engine's close awaited, then a
-  // launch, none of it for a task that ended meanwhile.
+  // launch, none of it for a task that ended meanwhile: end_task leaves the pipe open until endTask is answered, so the
+  // generation is checked before each frame or launch.
   async function relaunchForPermissions(target, born) {
+    releasedSince(born);
     try { await target.call('shutdown', {}, shutdownWaitMs); } catch (error) {
       if (error instanceof SkyComputerUseError && error.errorName === 'busy') throw permissionsPending.error;
       throw error;
@@ -355,16 +357,19 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       await connect();
       releasedSince(born);
       let live = connection;
+      // After every await below, the generation is checked before anything is written: end_task may have come between
+      // the awaited step's own check and this request's resuming.
       if (screenshot) {
         live = await screenshotConnection(born);
+        releasedSince(born);
         if (permissionsPending) {
           await relaunchForPermissions(live, born);
           live = await screenshotConnection(born);
+          releasedSince(born);
           // What answered after the launch is the process that failed: no replacement is confirmed, so nothing is
           // observed on it, and the relaunch stays owed.
           if (permissionsPending) throw permissionsPending.error;
         }
-        releasedSince(born);  // an end_task while the pid was read, or during the relaunch: the frame is never written
       }
       const body = typeof params === 'function' ? params() : params;
       const started = performance.now();

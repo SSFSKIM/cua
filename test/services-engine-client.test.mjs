@@ -752,6 +752,42 @@ test('end_task right after the pid\'s status answer arrives cancels the screensh
   assert.equal((await client.execute('get_app_state', screenshotArgs)).result, 'captured');
 });
 
+// With a relaunch owed, end_task one microtask after the status answer: after the pid read has checked the generation
+// and returned, before the request goes on to the relaunch (the review of fda61df9). The idle engine would take a
+// `shutdown` and exit for a request that was cancelled.
+test('end_task after the pid read returns, with a relaunch owed, writes no shutdown: Released, and the engine keeps running', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let armed = false;
+  let releaseAfterStatus = false;
+  let releasing;
+  const engine = await permissionEngine(t, socket, {pid: 4242, handlers: {
+    status: () => { releaseAfterStatus = armed; armed = false; return {pid: 4242}; },
+    endTask: () => ({released: 0}),
+  }});
+  const {client, nodeRepl, launches} = clientFor(socket);
+  const open = nodeRepl.nativePipe.createConnection;
+  nodeRepl.nativePipe.createConnection = async path => {
+    const pipe = await open(path);
+    return {...pipe, on(event, listener) {
+      if (event !== 'data') return pipe.on(event, listener);
+      return pipe.on(event, chunk => {
+        listener(chunk);
+        if (releaseAfterStatus) { releaseAfterStatus = false; queueMicrotask(() => { releasing = client.release(); }); }
+      });
+    }};
+  };
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();  // the next screenshot reads the pid on a new connection to the same engine: the relaunch stays owed
+  armed = true;
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), error => error instanceof SkyComputerUseTransportError
+    && error.message === 'cua engine: the task ended (end_task) before this request reached the engine');
+  await releasing;
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'status', 'execute', 'ping', 'status', 'endTask']);
+  assert.equal(engine.stopped, false);
+  assert.equal(launches.length, 0);
+});
+
 test('a launch that brings back the engine that failed (the same pid) is no replacement: the original error, nothing observed, the relaunch still owed', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const engines = [await permissionEngine(t, socket, {pid: 4242})];

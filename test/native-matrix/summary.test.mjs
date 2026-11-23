@@ -172,8 +172,13 @@ test('ruling 1168: a pointerdown cell where cua\'s press reached no pointer hand
     const mixed = judged({vendor: {resolved: 9, tweak: set(id, missed)}, cua: {tweak: (rows, run) => set(id, run === 1 ? {...missed, invalid: 'not ready'} : missed)(rows)}});
     assert.ok(mixed.missing.includes(`method: ${id} has no valid cua sample`), mixed.missing.join('\n'));
   }
-  const both = judged({vendor: {axMs: 50, resolved: 9, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}, cua: {axMs: 40, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}});
-  assert.equal(both.methods.find(m => m.id === 'chrome/frontmost/click.pointerdown').verdict, 'equal');
+  // Both +1 is equal whatever route carried cua's press: the cell proves reach, not path (Chromium's AXPress dispatches a
+  // trusted pointerdown), and the route cua's _meta named stands in the row, unjudged.
+  const both = judged({vendor: {axMs: 50, resolved: 9, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}, cua: {axMs: 40, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once, inputRoute: 1} : r))}});
+  const reached = both.methods.find(m => m.id === 'chrome/frontmost/click.pointerdown');
+  assert.equal(reached.verdict, 'equal');
+  assert.deepEqual(reached.routes.cua, [1]);
+  assert.match(renderSummary(both), /^\| chrome\/frontmost\/click\.pointerdown \| [^|]+ \| [^|]+ \| [^|]+ \| [^|]+ \| 1 \|$/m);
   assert.equal(both.verdict, 'PASS');
 });
 

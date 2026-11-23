@@ -281,6 +281,14 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1168's cell after the #538 probe (the design session): the cell proves reach, not path. Blink's
+  `DispatchSimulatedClick(kFromAccessibility)`, which Chromium's AXPress reaches, dispatches a trusted pointerdown
+  (pointerId 1, `"mouse"`, button 0) on the node itself, so the pointerdown-only button counts cua's AXPress as it
+  counts the vendor's posted click, on Chrome and on Electron alike. The cell measures what a user sees, whether such a
+  button responds: both +1 closes #534 per 1168, citing the cell. The row carries cua's `cua/inputRoute` from `_meta`
+  and the summary shows it, unjudged. No page fingerprint is added (no new fixture build hash, CSP hash or PROVENANCE
+  change). A stricter #534 that judges the path is a separate question with the design session, not built. Source
+  and detail in `docs/evidence/2026-11-23-own-native-engine/gates/534.md`.
 - 2026-11-23, TextEdit's launch window (the design session, after pilot A placed, run 45272465181): NO VERDICT
   `venue`, not a FAIL. The scratch document stood at 242,107 387x505 on both sides, but the untitled document AppKit
   opens at launch, which no cell acts on, stood at 241,87 586x488 on the runner's first TextEdit launch (vv-1, WidthInChars

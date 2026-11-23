@@ -372,7 +372,10 @@ const statusText = (container, pattern) => `elementLines(ax).filter(l => parentI
 // Web UI kits open menus and popovers on `pointerdown` (Radix-style triggers). cua presses a web button through AXPress
 // where the vendor posts a click (#534; F-helper-logic.md §18, the #258 reading that corrects §5.1's gate: inside a web
 // view the vendor posts a real click at the frame's visible midpoint whenever the hit-test there answers "the element
-// itself or a descendant"), so a press that dispatches no pointer event misses those handlers. The cell: a button whose
+// itself or a descendant"), so a press that dispatched no pointer event would miss those handlers. (Chromium's AXPress
+// does dispatch one: DispatchSimulatedClick, kFromAccessibility, a trusted pointerdown with pointerId 1, "mouse",
+// button 0; docs/evidence/2026-11-23-own-native-engine/gates/534.md. The cell proves reach, not path, and the row
+// carries cua's route from _meta, unjudged.) The cell: a button whose
 // only handler is `pointerdown`, counting into a status line, clicked by element on both engines and judged on the
 // count rising by exactly one, against the vendor's sample of the same run ('reference'): cua's count unchanged (or
 // risen by two) where the vendor's rose by one is worse; a vendor count not risen by exactly one makes the pair NO

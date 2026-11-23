@@ -281,6 +281,17 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, TextEdit's launch window (the design session, after pilot A placed, run 45272465181): NO VERDICT
+  `venue`, not a FAIL. The scratch document stood at 242,107 387x505 on both sides, but the untitled document AppKit
+  opens at launch, which no cell acts on, stood at 241,87 586x488 on the runner's first TextEdit launch (vv-1, WidthInChars
+  ignored) and at 213,78 387x505 on the next (vc-1). The key-window requirement was observed: 62 cells read, none
+  refused, none unread. Ruled (a): the venue also writes `NSRequiresOpenUntitledWindowAtLaunch NO` to com.apple.TextEdit,
+  hosted only, read back like the others (a bool reads back `0`), the same on both sides. It is the parity scenes'
+  launch argument (`scripts/repl-parity/scenes-mac.mjs`), so the documents a run makes are TextEdit's only windows, and
+  the strict frame rule stays and judges the windows the cells use. The A re-run proves it. If it disturbs the bind or
+  NEW_DOCUMENT, fallback (b) applies without a further ruling: the launch window leaves the symmetry check, is still
+  read back for alert overlap, and the record says so. Unproven: `open -a TextEdit` (setup.activate) is a reopen event,
+  which AppKit may answer with an untitled document whatever the launch key says.
 - 2026-11-23, the goldens' Electron recording (the design session): not re-recorded. Fixture build 1357256d7cf8 differs
   from the recording's 23c8b77691d0 only in a read-only accessibility record and two switches; with neither, its tree,
   window and page are the recording's, but the harness's `up` always passes `--cua-fixture-focus`, so a live Electron

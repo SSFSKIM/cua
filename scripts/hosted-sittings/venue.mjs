@@ -9,7 +9,10 @@
 //   textedit    TextEdit sizes its own windows from its preferences: WidthInChars, written to com.apple.TextEdit on the
 //               throwaway runner before any judged launch (writeTextEditDefaults); nothing in its preferences places a
 //               window (its binary names no frame autosave and its DocumentWindow nib carries none), so its origin stays
-//               AppKit's cascade, and each run reads the frame back
+//               AppKit's cascade, and each run reads the frame back. NSRequiresOpenUntitledWindowAtLaunch NO beside it
+//               (the parity scenes' launch argument, ../repl-parity/scenes-mac.mjs) skips the untitled document AppKit
+//               opens at launch, whose frame differed between a runner's first TextEdit launch and the next (pilot A,
+//               run 45272465181), so the documents the runs make are TextEdit's only windows
 //   openPanel   the Open panel's frame autosave (AppKit's `NSWindow Frame NSNavPanelAutosaveName` in the host app's
 //               domain, which this Mac's TextEdit and Preview domains both hold) and its size
 //               (NSNavPanelExpandedSizeForOpenMode), written beside WidthInChars; whether the out-of-process panel
@@ -75,10 +78,13 @@ export const PANEL_SIZE_KEY = 'NSNavPanelExpandedSizeForOpenMode';
 // the strip is clear top to bottom, so only x must hold, and both widths are the display's.
 export const savedFrameString = (frame, display) =>
   `${frame.x} ${display.height - frame.y - frame.height} ${frame.width} ${frame.height} ${display.x} ${display.y} ${display.width} ${display.height - MENU_BAR} `;
-// The writes to TextEdit's own domain: its width in characters, the Open panel's saved frame and its size. -> [{key,
-// type, value}].
+// The writes to TextEdit's own domain: its width in characters, no untitled document at launch, the Open panel's saved
+// frame and its size. -> [{key, type, value, readsAs?}].
+export const UNTITLED_AT_LAUNCH_KEY = 'NSRequiresOpenUntitledWindowAtLaunch';
 export const textEditWrites = (panel, display) => [
   {key: 'WidthInChars', type: 'int', value: String(TEXTEDIT_WIDTH_IN_CHARS)},
+  // A bool reads back as 0 or 1.
+  {key: UNTITLED_AT_LAUNCH_KEY, type: 'bool', value: 'NO', readsAs: '0'},
   {key: PANEL_FRAME_KEY, type: 'string', value: savedFrameString(panel, display)},
   {key: PANEL_SIZE_KEY, type: 'string', value: `{${panel.width}, ${panel.height}}`},
 ];
@@ -88,11 +94,11 @@ export const textEditWrites = (panel, display) => [
 // a false record).
 export function writeTextEditDefaults(writes, {env = process.env, platform = process.platform, exec = (command, args) => spawnSync(command, args, {encoding: 'utf8'})} = {}) {
   assertGithubHosted(env, platform, 'TextEdit\'s preferences');
-  const done = writes.map(({key, type, value}) => {
+  const done = writes.map(({key, type, value, readsAs = value.trim()}) => {
     const wrote = exec('/usr/bin/defaults', ['write', TEXTEDIT_DOMAIN, key, `-${type}`, value]);
     const read = exec('/usr/bin/defaults', ['read', TEXTEDIT_DOMAIN, key]);
     const readBack = read?.status === 0 ? String(read.stdout ?? '').trim() : null;
-    return {key, value, written: wrote?.status === 0, readBack, matched: wrote?.status === 0 && readBack === value.trim()};
+    return {key, value, written: wrote?.status === 0, readBack, matched: wrote?.status === 0 && readBack === readsAs};
   });
   return {domain: TEXTEDIT_DOMAIN, writes: done, ok: done.every(w => w.matched)};
 }
@@ -137,8 +143,8 @@ export function venueRecord({alerts, displays, placed, textEdit}) {
     if (['x', 'y', 'width', 'height'].every(k => hosted[k] === mini[k])) continue;
     differences.push({scene, mini, hosted, reason: why(scene), grounding: GROUNDING[scene], cells: cellsOf(scene)});
   }
-  differences.push({scene: 'textedit', mini: {WidthInChars: TEXTEDIT_DEFAULT_WIDTH_IN_CHARS}, hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS},
-    reason: `${fresh === null ? 'the alert windows were unread after the mode switch' : `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}`}; at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run`,
+  differences.push({scene: 'textedit', mini: {WidthInChars: TEXTEDIT_DEFAULT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)'}, hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO'},
+    reason: `${fresh === null ? 'the alert windows were unread after the mode switch' : `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}`}; at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session)`,
     grounding: GROUNDING.textedit, cells: cellsOf('textedit')});
   differences.push({scene: 'openPanel', mini: 'AppKit\'s: centred on the screen', hosted: placed.frames.openPanel, reason: why('openPanel'), grounding: GROUNDING.openPanel, cells: PANEL_CELLS});
   return {alerts: fresh, display, frames: placed.frames, textEdit: textEdit ?? null, differences};

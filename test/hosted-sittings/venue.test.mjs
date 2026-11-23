@@ -7,7 +7,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
   HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, readBackRows, renderReadBack, renderVenue, savedFrameString, sceneFrames,
-  textEditWrites, venueRecord, writeTextEditDefaults,
+  textEditWrites, UNTITLED_AT_LAUNCH_KEY, venueRecord, writeTextEditDefaults,
 } from '../../scripts/hosted-sittings/venue.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
@@ -58,15 +58,22 @@ test('TextEdit\'s preferences: its own domain only, its width in characters, the
   const writes = textEditWrites(rect(80, 80, 720, 440), DISPLAY);
   assert.deepEqual(writes, [
     {key: 'WidthInChars', type: 'int', value: String(TEXTEDIT_WIDTH_IN_CHARS)},
+    {key: UNTITLED_AT_LAUNCH_KEY, type: 'bool', value: 'NO', readsAs: '0'},
     {key: PANEL_FRAME_KEY, type: 'string', value: '80 560 720 440 0 0 1920 1055 '},
     {key: PANEL_SIZE_KEY, type: 'string', value: '{720, 440}'},
   ]);
   assert.equal(PANEL_FRAME_KEY, 'NSWindow Frame NSNavPanelAutosaveName');
   assert.equal(PANEL_SIZE_KEY, 'NSNavPanelExpandedSizeForOpenMode');
-  // The scenes' launch arguments name none of these keys: an argument would override the domain for that launch, and
-  // -ApplePersistenceIgnoreState touches window restoration only, never a preference.
-  const named = SCENES.textedit.launchArgs.filter(a => a.startsWith('-')).map(a => a.slice(1));
-  for (const {key} of writes) assert.ok(!named.includes(key), key);
+  // An argument the scenes launch with overrides the domain for that launch, so one naming a key written here must carry
+  // the value written (the parity scenes' -NSRequiresOpenUntitledWindowAtLaunch NO); -ApplePersistenceIgnoreState
+  // touches window restoration only, never a preference.
+  const args = SCENES.textedit.launchArgs;
+  for (const {key, value} of writes) {
+    const at = args.indexOf(`-${key}`);
+    if (at >= 0) assert.equal(args[at + 1], value, key);
+    else assert.notEqual(key, UNTITLED_AT_LAUNCH_KEY);
+  }
+  assert.ok(args.includes(`-${UNTITLED_AT_LAUNCH_KEY}`));
 });
 
 test('the writes refuse off a GitHub-hosted runner before touching anything, and each is read back', () => {
@@ -82,7 +89,7 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
     calls.push([command, ...args]);
     const [verb, domain, key, , value] = args;
     assert.equal(domain, TEXTEDIT_DOMAIN, 'TextEdit\'s own domain only');
-    if (verb === 'write') { store.set(key, value); return {status: 0, stdout: '', stderr: ''}; }
+    if (verb === 'write') { store.set(key, args[3] === '-bool' ? (/^(YES|true|1)$/i.test(value) ? '1' : '0') : value); return {status: 0, stdout: '', stderr: ''}; }
     return store.has(key) ? {status: 0, stdout: `${store.get(key).trimEnd()}\n`, stderr: ''} : {status: 1, stdout: '', stderr: 'does not exist'};
   };
   const done = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', exec: live});
@@ -116,8 +123,9 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
   const finder = venue.differences.find(d => d.scene === 'finder');
   assert.ok(finder.cells.includes('finder/frontmost/click.row') && finder.cells.includes('finder/frontmost/scroll.down'));
   const textedit = venue.differences.find(d => d.scene === 'textedit');
-  assert.deepEqual([textedit.mini, textedit.hosted], [{WidthInChars: 75}, {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS}]);
+  assert.deepEqual([textedit.mini, textedit.hosted], [{WidthInChars: 75, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)'}, {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO'}]);
   assert.match(textedit.reason, /242,107 603x505/);
+  assert.match(textedit.reason, /241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next/);
   assert.ok(textedit.cells.includes('textedit/frontmost/drag.select'));
   const panel = venue.differences.find(d => d.scene === 'openPanel');
   assert.deepEqual(panel.hosted, rect(80, 80, 720, 440));

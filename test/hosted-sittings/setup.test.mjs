@@ -32,7 +32,7 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     calls.push({kind: 'exec', line, env: options.env});
     if (fail && line.includes(fail)) return {status: 1, stdout: '', stderr: 'no'};
     // TextEdit's preferences (../../scripts/hosted-sittings/venue.mjs): written, then read back as defaults prints them.
-    if (command === '/usr/bin/defaults' && args[0] === 'write') { defaults.set(`${args[1]} ${args[2]}`, args[4]); return {status: 0, stdout: '', stderr: ''}; }
+    if (command === '/usr/bin/defaults' && args[0] === 'write') { defaults.set(`${args[1]} ${args[2]}`, args[3] === '-bool' ? (/^(YES|true|1)$/i.test(args[4]) ? '1' : '0') : args[4]); return {status: 0, stdout: '', stderr: ''}; }
     if (command === '/usr/bin/defaults' && args[0] === 'read') { const v = defaults.get(`${args[1]} ${args[2]}`); return v === undefined ? {status: 1, stdout: '', stderr: 'does not exist'} : {status: 0, stdout: `${v.trimEnd()}\n`, stderr: ''}; }
     // The key-window reader's grant over the loopback ssh (guard-device.mjs trust), as its last line prints it.
     if (command === 'ssh' && line.includes('guard-device.mjs trust')) return trustFailed ? {status: 1, stdout: `${JSON.stringify({error: trustFailed})}\n`, stderr: ''} : trust === null ? {status: 255, stdout: '', stderr: 'Connection refused'} : {status: 0, stdout: `${JSON.stringify(trust)}\n`, stderr: ''};
@@ -158,9 +158,10 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
   assert.deepEqual(report.venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'openPanel']);
   // The Open panel's saved frame, in AppKit's coordinates on the 1920x1080 display.
   const writes = calls.filter(c => c.kind === 'exec' && c.line.startsWith('/usr/bin/defaults write')).map(c => c.line);
-  assert.deepEqual(writes, ['/usr/bin/defaults write com.apple.TextEdit WidthInChars -int 60', '/usr/bin/defaults write com.apple.TextEdit NSWindow Frame NSNavPanelAutosaveName -string 22 560 720 440 0 0 1920 1055 ',
+  assert.deepEqual(writes, ['/usr/bin/defaults write com.apple.TextEdit WidthInChars -int 60', '/usr/bin/defaults write com.apple.TextEdit NSRequiresOpenUntitledWindowAtLaunch -bool NO',
+    '/usr/bin/defaults write com.apple.TextEdit NSWindow Frame NSNavPanelAutosaveName -string 22 560 720 440 0 0 1920 1055 ',
     '/usr/bin/defaults write com.apple.TextEdit NSNavPanelExpandedSizeForOpenMode -string {720, 440}']);
-  assert.match(report.steps.find(s => s.step === 'textedit defaults').detail, /^com\.apple\.TextEdit: WidthInChars 60, NSWindow Frame NSNavPanelAutosaveName 22 560 720 440 0 0 1920 1055, NSNavPanelExpandedSizeForOpenMode \{720, 440\}; each read back$/);
+  assert.match(report.steps.find(s => s.step === 'textedit defaults').detail, /^com\.apple\.TextEdit: WidthInChars 60, NSRequiresOpenUntitledWindowAtLaunch NO, NSWindow Frame NSNavPanelAutosaveName 22 560 720 440 0 0 1920 1055, NSNavPanelExpandedSizeForOpenMode \{720, 440\}; each read back$/);
   assert.deepEqual(calls.at(-1).record.venue, report.venue);
 
   // The screen unread: the hosted sizes at the mini's origins, unplaced; the setup goes on and the guard refuses what overlaps.

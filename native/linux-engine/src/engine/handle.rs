@@ -239,9 +239,10 @@ pub fn tail_refused(
 /// on another screen, whose place a motion on the engine's root would carry the held pointer back from); `revisit`
 /// whether the family rests at a held move's end (`held_rest`), whose end then visits the pointer's place once more.
 /// With `tail`, the step each visit takes first (`release_sync::xtest_step`), the end's rest standing in for the tail's
-/// first [`crate::release_sync::TAIL_REST`]: [`crate::release_sync::TAIL_VISITS`] visits, each the step and back to the
-/// pointer's place, each followed by [`crate::release_sync::TAIL_REST`], in place of the revisit; a family that does
-/// not rest takes the first rest first. Without it, f9d1f86b's end: the revisit alone. On another screen, neither.
+/// first [`crate::release_sync::TAIL_REST`]: [`crate::release_sync::TAIL_VISITS`] visits, each the pointer read again
+/// (a person's motion since the place was read ends the tail there, the first visit's too, ruling 1034), then the step
+/// and back to the pointer's place, then [`crate::release_sync::TAIL_REST`], in place of the revisit; a family that
+/// does not rest takes the first rest first. Without it, f9d1f86b's end: the revisit alone. On another screen, neither.
 pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit: bool) -> Vec<EndStep> {
     let Some(at) = pointer else {
         return Vec::new();
@@ -254,11 +255,9 @@ pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit:
             if !revisit {
                 steps.push(EndStep::Rest(crate::release_sync::TAIL_REST));
             }
-            for visit in 0..crate::release_sync::TAIL_VISITS {
-                if visit > 0 {
-                    steps.push(EndStep::Check(at));
-                }
+            for _ in 0..crate::release_sync::TAIL_VISITS {
                 steps.extend([
+                    EndStep::Check(at),
                     EndStep::Motion(step),
                     EndStep::Motion(at),
                     EndStep::Rest(crate::release_sync::TAIL_REST),
@@ -337,9 +336,9 @@ pub struct EndedTail {
 /// A handle's last take read, and the tail it decides (rulings 998 and 1030; the re-review of 9fb61c32, 1). The hold
 /// watch is read once, just before the release, as f9d1f86b read it: that read is the one take sample, which the tail
 /// and the release's judgement share, and a take it does not see is the after-release watch's to cancel or report, as
-/// at any release with no take seen. With a take under way at a Chrome source's agent end, the tail follows: the step
-/// along the last segment and back to the pointer's place, [`crate::release_sync::TAIL_REST`], the pointer read again,
-/// and the same once more unless it moved ([`run_end`]). Every other end makes no call past the read.
+/// at any release with no take seen. With a take under way at a Chrome source's agent end, the tail follows: the pointer
+/// read again, then unless it moved the step along the last segment and back to the pointer's place and
+/// [`crate::release_sync::TAIL_REST`], and the same once more ([`run_end`]). Every other end makes no call past the read.
 pub fn read_take_then_tail(io: &mut impl EndIo, t: TailInputs) -> EndedTail {
     let held = io.read_take();
     let taken = matches!(&held, Some(Ok(h)) if h.taken);
@@ -1371,13 +1370,15 @@ mod tests {
     }
 
     /// Ruling 998: the tail's sequence at a Chrome handle's end, the end's rest standing in for its first 8 ms: the
-    /// step and back, 8 ms, the step and back, 8 ms, then the release.
+    /// step and back, 8 ms, the step and back, 8 ms, then the release; the pointer read before each visit.
     #[test]
     fn a_chrome_handle_s_end_visits_twice_8_ms_apart_and_rests_8_ms_before_the_release() {
         let rest = Duration::from_millis(8);
         assert_eq!(
             end_steps(Some((301, 260)), Some((300, 260)), true),
             vec![
+                // and before the first, after the take read (ruling 1034)
+                EndStep::Check((300, 260)),
                 EndStep::Motion((301, 260)),
                 EndStep::Motion((300, 260)),
                 EndStep::Rest(rest),
@@ -1388,10 +1389,10 @@ mod tests {
                 EndStep::Rest(rest),
             ]
         );
-        // a family with no rest at a held move's end takes the tail's first rest first
+        // a family with no rest at a held move's end takes the tail's first rest first, then the read
         assert_eq!(
-            end_steps(Some((301, 260)), Some((300, 260)), false)[0],
-            EndStep::Rest(rest)
+            end_steps(Some((301, 260)), Some((300, 260)), false)[..2],
+            [EndStep::Rest(rest), EndStep::Check((300, 260))]
         );
         // on another screen nothing is sent, as before
         assert_eq!(end_steps(Some((301, 260)), None, true), vec![]);
@@ -1477,7 +1478,7 @@ mod tests {
             assert!(ended.refused.is_some(), "{case}");
             assert_eq!(ended.run.unwrap(), EndRun::default(), "{case}");
         }
-        // a Chrome take at the read: the tail after it, the pointer read again before the second visit
+        // a Chrome take at the read: the tail after it, the pointer read again before each visit
         let mut io = Recorder {
             calls: Vec::new(),
             taken: Some(true),
@@ -1489,6 +1490,7 @@ mod tests {
             io.calls,
             vec![
                 Call::ReadTake,
+                Call::Place,
                 Call::Motion((301, 260)),
                 Call::Motion((300, 260)),
                 Call::Rest(rest),
@@ -1525,7 +1527,8 @@ mod tests {
 
     /// The re-review of 9fb61c32 (2): a tail the pointer check stopped answers unconfirmed whenever the release's
     /// position check would otherwise pass (the person brought the pointer back where the last request put it), never a
-    /// plain ok on Chrome's activation; an uninterrupted tail is judged as any.
+    /// plain ok on Chrome's activation; an uninterrupted tail is judged as any. Ruling 1034: a pointer moved between the
+    /// end's read and the take read stops the tail before its first visit, nothing sent, and interrupts it the same.
     #[test]
     fn an_interrupted_tail_answers_unconfirmed() {
         let mut io = Recorder {
@@ -1534,11 +1537,16 @@ mod tests {
             at: Some((340, 262)),
         };
         let ended = read_take_then_tail(&mut io, inputs(crate::release_sync::Form::Tail, true, true, true));
+        assert_eq!(
+            io.calls,
+            vec![Call::ReadTake, Call::Place],
+            "no motion undoes the person's"
+        );
         let run = ended.run.unwrap();
         assert_eq!(
             run,
             EndRun {
-                motions: 2,
+                motions: 0,
                 stopped: true
             }
         );
@@ -1570,6 +1578,8 @@ mod tests {
             (None, 2, true),
         ] {
             let sent = std::cell::RefCell::new(Vec::new());
+            // the read before the first visit finds it in place (ruling 1034); the one after the rest, `now_at`
+            let mut reads = 0;
             let run = run_end(
                 plan(),
                 |p| {
@@ -1577,7 +1587,10 @@ mod tests {
                     Ok(())
                 },
                 |d| sent.borrow_mut().push(EndStep::Rest(d)),
-                || now_at,
+                || {
+                    reads += 1;
+                    if reads == 1 { Some((300, 260)) } else { now_at }
+                },
             )
             .unwrap();
             assert_eq!(run, EndRun { motions, stopped }, "{now_at:?}");
@@ -1629,13 +1642,18 @@ mod tests {
     #[test]
     fn a_handle_s_step_follows_its_last_segment_and_a_one_point_handle_steps_in_x() {
         let screen = (640, 480);
-        let first = |previous, at| end_plan(None, previous, Some(at), screen, true)[0];
+        // the first visit's step, after the pointer read before it
+        let first = |previous, at| end_plan(None, previous, Some(at), screen, true)[1];
         assert_eq!(first(Some((200, 260)), (300, 260)), EndStep::Motion((301, 260)));
         assert_eq!(first(Some((300, 300)), (300, 260)), EndStep::Motion((300, 259)));
         // a person moved the pointer since the last request: the visits go to where it is, along the segment to there
         assert_eq!(
-            end_plan(None, Some((200, 260)), Some((310, 260)), screen, true)[..2],
-            [EndStep::Motion((311, 260)), EndStep::Motion((310, 260))]
+            end_plan(None, Some((200, 260)), Some((310, 260)), screen, true)[..3],
+            [
+                EndStep::Check((310, 260)),
+                EndStep::Motion((311, 260)),
+                EndStep::Motion((310, 260))
+            ]
         );
         assert_eq!(first(None, (300, 260)), EndStep::Motion((301, 260)));
         assert_eq!(first(None, (639, 260)), EndStep::Motion((638, 260)));

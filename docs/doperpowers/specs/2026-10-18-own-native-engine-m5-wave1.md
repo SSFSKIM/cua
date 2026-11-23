@@ -55,8 +55,15 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 - [x] Main merged in 2026-11-23: M4 and #516 (4c922d067, `engineVersion` 0.3.0), #518 (0584604ca); merge-review fixes
   311d308c2 (the pending slot authoritative) and 28fd8d1f3; reviewed clean. The flip follows by merges 8e1cac60a,
   0b98a5a6f, with T11b's docs pass fad980e0d.
-- [ ] Ruling 1148 on the flip (8f27f3ce8, 2cc24ed9f, 29e514437; review round 1 found five Important, fix in flight).
-- [ ] Ruling 1149 on `m5/1149` (the lanes assert the cua side's engine attestation; in flight).
+- [x] Ruling 1148 on the flip — reviewed 2026-11-23 (8f27f3ce8..29e514437, fixes 933bb4eaf..ae0c3dcb5,
+  785ddac81..a56de43cc, 740bc18a1; approved in round 3). The flip is pushed at 740bc18a1 `[skip ci]`. Sitting F's
+  live witness is still to come.
+- [x] Ruling 1149 — reviewed 2026-11-23 (ad5e3485f..c0fa3438e merged e25cae656; the independent pass over
+  00dcbc17c..e25cae656 found seven Important; fixes 0e0177ad2..e47177631 on `m5/1149b`, merged e144990f1).
+- [x] The O0 fence scanner (18869e364, c720408ea) and pilot A's fixes: the engine stopped in setup and prepare, and
+  runtime users matched by executable (e63ab95c5..92b13bb66); `incompleteCause` alert mapped to NO VERDICT and
+  symmetric warm-ups (8dd641d2d, b6154d108, 336d1314e; ruling 1153). Pilot A ran clean on run 45224977505 at
+  e144990f1.
 - [ ] T3b
 - [ ] T8e
 - [x] T11a — reviewed 2026-11-23 (61743b1da, fixes dbde89ba4, 46d5bb93b) on `feat/117-m5`.
@@ -268,6 +275,23 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, rulings 1153 and 1154 (the design session, after pilot A's second run; detail in
+  `docs/evidence/2026-11-23-own-native-engine/hosted.md`, "Pilot A, run 45220897246"): a capture alert never closes on
+  the hosted runner. It is covered by the next activation, so H0 (ii)'s 604 s and that run's "about 15 s" are the same
+  alert, not two readings of its lifetime. Setup therefore warms each copy up with its first capture, symmetrically,
+  on hosted runners only, outside every judged cell. It then waits at most 60 s, watch-only, for the alert to leave the
+  front, and records each warm-up's alert and the time until it cleared. A run stopped with the alert in front
+  (`incompleteCause` alert) is NO VERDICT, never FAIL, and is never retried. The coordinate guard, built with T8e,
+  goes on every pointer event's location: drag down and up, double-click, and scroll. If the point is inside a
+  UserNotificationCenter window's bounds, read fresh at that sample and the same on both sides, it refuses to send and
+  records NO VERDICT alert. It also refuses when the alert holds the front, or the key for a keyboard cell. A screen
+  or region capture that intersects the alert is NO VERDICT alert; window captures are exempt. Setup moves any scene
+  window that overlaps an alert clear of it for both sides. NO VERDICT alert is counted per side and per cell. More
+  than a few go to the design session before any verdict.
+- 2026-11-23, pilot A's first run (the design session's steer): prepare refused "approved home in use", because
+  approve leaves the approved engine running. Setup and prepare now stop it with `cua engine stop`, with no exception
+  carved out for the engine. A home's users are matched by executable path under the home, not by argv, so the
+  loopback ssh client and its shell no longer count (e63ab95c5..92b13bb66).
 - 2026-11-23, ruling 1149 (the design session): "no lane reaches the fallback" is asserted in the runs, not only
   arranged: every parity, acceptance and hosted-sitting run checks the cua side's `_meta['cua/nativeEngine']`, and a
   cua side attesting the vendor's engine makes the row or run NO VERDICT naming that cause, never a pass. Accepted

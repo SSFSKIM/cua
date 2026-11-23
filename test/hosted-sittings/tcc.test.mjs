@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CLIENTS, DECISION_LOG_ENTRY, DECISION_MARKER, decisionEntryProblem, grantRows, O0_COMMIT, pinnedDecisionLog, SERVICES, SYSTEM_DB} from '../../scripts/hosted-sittings/tcc.mjs';
+import {CLIENTS, DECISION_LOG_ENTRY, DECISION_MARKER, decisionEntryProblem, grantRows, O0_COMMIT, pinnedDecisionLog, revokeRows, SERVICES, SYSTEM_DB} from '../../scripts/hosted-sittings/tcc.mjs';
 
 // The spec as it holds the entry (wrapped as the spec wraps it, in its own Decision Log section), and the ways it may not.
 const O0 = '- Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the\n  owner\'s Macs (O0; ruling 1111)): a kit that writes a TCC row refuses, before any write, unless …\n  Date/Author: 2026-11-23, the owner.\n';
@@ -68,6 +68,12 @@ for (const [name, [where, message]] of Object.entries(refusals)) {
     assert.throws(() => grantRows(GRANTS, {...where, store}), message);
     assert.deepEqual(calls, []);
   });
+  // T3b's removal goes through the same guard: the same refusals, the same zero store calls.
+  test(`revokeRows refuses before any store access: ${name}`, () => {
+    const {store, calls} = spyStore();
+    assert.throws(() => revokeRows({client: CLIENTS.engine, services: Object.keys(SERVICES)}, {...where, store}), message);
+    assert.deepEqual(calls, []);
+  });
 }
 
 test('the O0 entry must be an entry of the Decision Log section, as the spec wraps it', () => {
@@ -119,4 +125,50 @@ test('only the two engines\' bundle ids are written', () => {
   const {store, calls} = spyStore();
   assert.throws(() => grantRows([{client: 'com.example.other', bundle: '/Applications/Other.app'}], {...HOSTED, store}), /only cua's engine and the vendor's helper/);
   assert.deepEqual(calls, []);
+});
+
+test('a grant may name its services (T3b\'s stages): only those rows are written and read back', () => {
+  const {store, calls} = spyStore({rows: [`${SERVICES.accessibility}|${CLIENTS.engine}|2`]});
+  const report = grantRows([{...GRANTS[0], services: ['accessibility']}], {...HOSTED, store, log: () => {}});
+  const statements = calls.filter(c => c[0] === 'sql').map(c => c[2]);
+  assert.equal(statements.filter(s => s.startsWith('insert')).length, 1);
+  assert.match(statements[0], /'kTCCServiceAccessibility', 'io\.github\.ssfskim\.cua\.engine'/);
+  assert.ok(statements.every(s => !/ScreenCapture|ListenEvent|PostEvent/.test(s)), 'no other service is written or read');
+  assert.deepEqual(report.rows, [{client: CLIENTS.engine, granted: ['accessibility']}]);
+  assert.deepEqual(report.missing, []);
+  for (const services of [[], ['microphone'], 'accessibility']) {
+    const spy = spyStore();
+    assert.throws(() => grantRows([{...GRANTS[0], services}], {...HOSTED, store: spy.store}), /names services of/);
+    assert.deepEqual(spy.calls, [], `${JSON.stringify(services)}: refused before any store access`);
+  }
+});
+
+test('revokeRows removes cua\'s engine\'s rows for the named services only, in the system database, then reads them back', () => {
+  const {store, calls} = spyStore({rows: []});
+  const logged = [];
+  const report = revokeRows({client: CLIENTS.engine, services: ['screenRecording', 'postEvent']}, {...HOSTED, store, log: line => logged.push(line)});
+  assert.deepEqual(calls[0], ['exists', SYSTEM_DB]);
+  assert.ok(calls.filter(c => c[0] === 'sql').every(c => c[1] === SYSTEM_DB), 'the user database is never touched');
+  assert.ok(!calls.some(c => c[0] === 'csreq'), 'a removal needs no requirement');
+  const deletes = calls.filter(c => c[0] === 'sql' && c[2].startsWith('delete'));
+  assert.deepEqual(deletes.map(c => c[2]), ["delete from access where client = 'io.github.ssfskim.cua.engine' and service in ('kTCCServiceScreenCapture', 'kTCCServicePostEvent');"]);
+  assert.ok(calls.every(c => !String(c[2] ?? '').includes(CLIENTS.vendor)), 'the vendor\'s rows are never named');
+  assert.ok(calls.every(c => !/Accessibility|ListenEvent/.test(String(c[2] ?? ''))), 'no service it was not asked to remove');
+  assert.deepEqual(report, {decision: {entry: DECISION_LOG_ENTRY, commit: SHA}, client: CLIENTS.engine, removed: ['screenRecording', 'postEvent'], remaining: []});
+  assert.match(logged.join('\n'), /Decision Log at .*TCC rows may be written by kits on GitHub-hosted runners only/, 'the removal cites the pinned commit too');
+});
+
+test('a row the database still reads back after a removal is reported remaining', () => {
+  const {store} = spyStore({rows: [`${SERVICES.accessibility}|${CLIENTS.engine}|2`]});
+  const report = revokeRows({client: CLIENTS.engine, services: ['accessibility', 'screenRecording']}, {...HOSTED, store, log: () => {}});
+  assert.deepEqual([report.removed, report.remaining], [['screenRecording'], ['accessibility']]);
+});
+
+test('revokeRows removes only cua\'s engine\'s rows, and only services it knows: anything else is refused before any store access', () => {
+  for (const [what, args] of [['the vendor\'s helper', {client: CLIENTS.vendor, services: ['accessibility']}], ['another app', {client: 'com.example.other', services: ['accessibility']}],
+    ['no client', {services: ['accessibility']}], ['no services', {client: CLIENTS.engine, services: []}], ['an unknown service', {client: CLIENTS.engine, services: ['microphone']}]]) {
+    const {store, calls} = spyStore();
+    assert.throws(() => revokeRows(args, {...HOSTED, store}), /removes only cua's engine's rows/, what);
+    assert.deepEqual(calls, [], what);
+  }
 });

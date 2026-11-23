@@ -214,3 +214,10 @@ test('sitting E: the expected red is the judge\'s, on a fresh report in which ev
   assert.deepEqual(check('selection', flip, 0, report('PASS', {...flipHomes(), none: {...FLIP.none, reason: 'default'}})),
     ['FAIL', 'not the flip: the none home selects the vendor engine (default) on the vendor host (engine_not_installed), not the vendor engine (engine_not_installed) on the vendor host (engine_not_installed)']);
 });
+
+test('T3b\'s staged onboarding is read by its record and judged stage by stage; no record is NO VERDICT, never a pass', () => {
+  const step = {record: '/o/onboarding.json'};
+  assert.deepEqual(check('onboarding', step, 1), ['NO VERDICT', 'no onboarding record at /o/onboarding.json (exit 1)']);
+  assert.deepEqual(check('onboarding', step, 0, {[step.record]: {kind: 'hosted-onboarding', hosted: true, complete: false, problem: 'the driver stopped: no lane', stages: []}}),
+    ['NO VERDICT', 'incomplete: 4 stage(s) not run (the driver stopped: no lane)']);
+});

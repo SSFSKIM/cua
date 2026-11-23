@@ -99,9 +99,12 @@ function sittingD(ctx) {
     {id: 'verify-vendor', label: 'verify --engine vendor --bind TextEdit (Acceptance 9, attested)', kind: 'run', needs: ['textedit-up'], argv: verify('vendor')},
     {id: 'approval-cycles', label: `#216's approval cycles (${APPROVAL_CYCLES}) on cua's engine and host`, kind: 'run', needs: ['textedit-up'], env: {CUA_SHIM_SURFACES: 'computer,browser'},
       check: 'verdict', argv: ['node', 'scripts/approval-cycles.mjs', '--engine', 'cua', '--approve', 'com.apple.TextEdit', '--decline', 'com.apple.calculator', '--cycles', String(APPROVAL_CYCLES)]},
+    // T3b, the last step that measures: it removes cua's engine's rows and adds them back stage by stage (./onboarding.mjs),
+    // binding the same scratch document; one pass of the stages in either form.
+    {id: 'onboarding', label: 'T3b\'s staged onboarding: cua\'s engine\'s rows none, Accessibility, Screen Recording added, then Input Monitoring and post events, a relaunch at every stage',
+      kind: 'run', needs: ['textedit-up'], check: 'onboarding', engine: 'cua', record: `${ctx.out}/onboarding.json`, report: `${ctx.out}/onboarding.json`,
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'onboarding', '--out', `${ctx.out}/onboarding.json`]},
     {id: 'textedit-down', label: 'the scratch TextEdit quit', kind: 'cleanup', needs: ['textedit-up'], argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'down']},
-    {id: 'onboarding', label: 'T3b\'s staged onboarding, a relaunch at every stage', kind: 'pending',
-      pending: 'T3b: the hosted staged-onboarding driver (stages set by TCC rows, a relaunch at every stage) is not built yet; it runs here, as sitting D\'s last step, once it is'},
   ];
 }
 

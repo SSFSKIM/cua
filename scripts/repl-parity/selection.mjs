@@ -9,9 +9,10 @@ import {root,remoteCommand,quote,linuxSession,ownNodeEnv,execute} from './topolo
 import {checkHost} from './remote.mjs';
 import {assertManagedNode} from './node-provenance.mjs';
 const INVALID_REPL_HOST='CUA_REPL_HOST must be cua or vendor',INVALID_ENGINE='CUA_NATIVE_ENGINE must be vendor or cua';
-// The engine a macOS computer session drives when nothing selects one: the vendor's until #117's M5 flips it (this
-// oracle's own statement of it, flipped with production's).
-export const ORACLE_DEFAULT_ENGINE='vendor';
+// The engine a computer session drives when nothing selects one, per platform (this oracle's own statement of each,
+// flipped with production's): on macOS the vendor's until #117's M5 flips it; on Linux cua's since #171's M5, on the
+// owner's word.
+export const ORACLE_DEFAULT_ENGINE='vendor',ORACLE_LINUX_DEFAULT_ENGINE='cua';
 // The independent M5 table of production's REPL host selection (src/runtime/launch.mjs replHostFor): CUA_REPL_HOST, then
 // the computer surface on macOS, then the own host's Node. The home's Chrome registration and MAWS client mode take no
 // part since #79 removed the ChatGPT extension route and the vendor browser service's selection: either host runs cua's
@@ -44,11 +45,14 @@ export function expectedSelection(row){
 }
 // #171: a Linux computer session's engine, resolved before Node, never changes the host there; doctor's repl.host names
 // none and the result attests none (the engine row reports it). An unknown engine is refused, and cua's with none
-// installed: explicitly set, refused; the default's (M5 on), the vendor engine with a warning.
-function linuxEngineTable({engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_DEFAULT_ENGINE}){
+// installed: explicitly set, refused; the default's, the vendor engine with a warning. `installed` 'outdated' is an
+// engine older than this cua needs, or one whose record does not match it (#171 M5, F5): the default keeps the vendor
+// engine with a warning, while an explicit setting selects it (its first request is refused, not the selection).
+function linuxEngineTable({engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_LINUX_DEFAULT_ENGINE}){
  if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
  const set=engine!=='unset'&&engine!=='empty',selected=set?engine:defaultEngine;
  if(selected==='cua'&&!installed)return set?{error:'engine_not_installed'}:{status:'warn'};
+ if(selected==='cua'&&installed==='outdated'&&!set)return {status:'warn'};
  return {status:'pass'};
 }
 // #117's table, its refusals in their order: an unknown engine, the host setting, the approved engine, Node. An explicit

@@ -20,10 +20,22 @@
 #   accept    scripts/accept/linux-native.mjs, CUA_NATIVE_ENGINE=cua, in a home of the run's (installed: checked), under
 #             the 50 ms sampler, whose record is judged (engine-watch.mjs)                       (--session)
 #   device    scripts/accept/linux-device-mode.mjs, the same way                                  (--session)
-# Environment: ENGINE (installed or candidate), ENGINE_BIN (candidate only), OUT (the evidence directory), LOGS (the log
-# directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home the pinned rule refuses),
-# PINNED_RULE (enforce: any home the pinned rule refuses stops its part, whatever LABEL says), DEVICE
-# (the declared Linux device the lanes run on). CUA_LINUX_ENGINE_BIN is refused in the environment either way.
+#   fallback  (installed, the default selection only) the fallback homes' probe, scripts/accept/linux-fallback.mjs, in
+#             five homes of the run's, each `cua install`ed and then shaped by fallback-home.mjs: none (no engine),
+#             previous (linux-engine-v0.4.2, the pin before this one), released (linux-engine-v0.4.0, the released
+#             plugin's), older (linux-engine-v0.3.0) and unrecorded (the current install.json beside 0.3.0's
+#             executable); each must keep the default on the vendor's engine, with doctor's warning, and answer one
+#             observation through it (the M5 pre-flight §3, F5 and F5a)                             (--session)
+# The fixtures' selection, SELECTION (the M5 pre-flight §3, "How the default is shown live"):
+#   explicit  (when unset) the accept and device parts name cua's engine, CUA_NATIVE_ENGINE=cua, as M4 ran them
+#   default   they name none: no CUA_NATIVE_ENGINE (one in the environment is refused) and no "engine" in the run home's
+#             engine.json (a fresh home has none); each fixture runs with --selection default, refuses to start unless
+#             both hold, and requires cua doctor to say the default selected cua's engine. The installed engine only,
+#             and for accept, device and fallback; on the unflipped default it must fail, naming vendor and default
+# Environment: ENGINE (installed or candidate), ENGINE_BIN (candidate only), SELECTION (explicit or default), OUT (the
+# evidence directory), LOGS (the log directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home
+# the pinned rule refuses), PINNED_RULE (enforce: any home the pinned rule refuses stops its part, whatever LABEL says),
+# DEVICE (the declared Linux device the lanes run on). CUA_LINUX_ENGINE_BIN is refused in the environment either way.
 # usage: suites.sh <part>      Run each part under the host lock (locked.sh), one at a time; gate.mjs runs R1-R4 so.
 set -u
 WT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -39,11 +51,25 @@ case "$ENGINE" in
   candidate) [ -n "${ENGINE_BIN:-}" ] || { echo "ENGINE=candidate needs ENGINE_BIN" >&2; exit 2; }; lane_engine=(--engine-bin "$ENGINE_BIN"); fixture_engine=(CUA_LINUX_ENGINE_BIN="$ENGINE_BIN") ;;
   *) echo "ENGINE is installed or candidate, not $ENGINE" >&2; exit 2 ;;
 esac
+SELECTION=${SELECTION:-explicit}
+fixture_selection=()
+case "$SELECTION" in
+  explicit) fixture_select=(CUA_NATIVE_ENGINE=cua) ;;
+  default)
+    [ "$ENGINE" = installed ] || { echo "SELECTION=default runs on the installed engine only (ENGINE=installed)" >&2; exit 2; }
+    if [ -n "${CUA_NATIVE_ENGINE+set}" ]; then echo "CUA_NATIVE_ENGINE is set (${CUA_NATIVE_ENGINE}): SELECTION=default runs with none; unset it" >&2; exit 2; fi
+    fixture_select=(-u CUA_NATIVE_ENGINE); fixture_selection=(--selection default) ;;
+  *) echo "SELECTION is explicit or default, not $SELECTION" >&2; exit 2 ;;
+esac
 cd "$WT" || exit 2
 part=$1
 case "$part" in
-  parity|baseline|accept|device|inner-parity|inner-baseline|inner-accept|inner-device) ;;
+  parity|baseline|accept|device|fallback|inner-parity|inner-baseline|inner-accept|inner-device|inner-fallback) ;;
   *) echo "unknown part $part" >&2; exit 2 ;;
+esac
+case "${part#inner-}" in
+  fallback) [ "$SELECTION" = default ] || { echo "the fallback part runs with SELECTION=default" >&2; exit 2; } ;;
+  parity|baseline) [ "$SELECTION" = explicit ] || { echo "the $part part names its lanes' engines; SELECTION=default is for accept, device and fallback" >&2; exit 2; } ;;
 esac
 node -e "import('$WT/scripts/repl-parity/devices.mjs').then(({declaredDevice}) => { if (declaredDevice(process.argv[1]).platform !== 'linux') throw new Error('not a Linux device'); })" "$DEVICE" \
   || { echo "DEVICE=$DEVICE is not a Linux device scripts/repl-parity/devices.mjs declares" >&2; exit 2; }
@@ -85,8 +111,8 @@ run_home() {
 }
 
 case "$part" in
-  parity|baseline|accept|device)
-    log "== $part head $SHA label $LABEL device $DEVICE engine $ENGINE${ENGINE_BIN:+ $ENGINE_BIN} dirty=$([ -n "$DIRTY" ] && echo yes || echo no)"
+  parity|baseline|accept|device|fallback)
+    log "== $part head $SHA label $LABEL device $DEVICE engine $ENGINE${ENGINE_BIN:+ $ENGINE_BIN} selection $SELECTION dirty=$([ -n "$DIRTY" ] && echo yes || echo no)"
     node "$FACADE/private-desktop.mjs" --harness "$WT" --out "$L/desktop" --session -- "$0" "inner-$part"
     status=$?
     cp "$L/desktop/session.json" "$OUT/$P/session.json"
@@ -155,11 +181,26 @@ case "$part" in
     if ! pinned_check "$CUA_HOME" "$OUT/$P/pinned.txt"; then rm -rf "$R"; exit 1; fi
     if [ "$ENGINE" = installed ]; then engine=$CUA_HOME/engine/linux/cua-engine; else engine=$ENGINE_BIN; fi
     if [ "$P" = accept ]; then fixture=scripts/accept/linux-native.mjs; report=accept-linux-native-cua.json; else fixture=scripts/accept/linux-device-mode.mjs; report=device-mode.json; fi
-    env ${fixture_engine[@]+"${fixture_engine[@]}"} CUA_NATIVE_ENGINE=cua node "$FACADE/watch.mjs" "$OUT/$P/$report" "$OUT/$P/watch.json" -- node "$fixture" 2> "$L/fixture.err"
-    a=$?; log "$fixture exit $a"
+    env "${fixture_select[@]}" ${fixture_engine[@]+"${fixture_engine[@]}"} node "$FACADE/watch.mjs" "$OUT/$P/$report" "$OUT/$P/watch.json" -- node "$fixture" ${fixture_selection[@]+"${fixture_selection[@]}"} 2> "$L/fixture.err"
+    a=$?; log "$fixture (selection $SELECTION) exit $a"
     node "$WT/scripts/linux-engine-gate/engine-watch.mjs" "$OUT/$P/watch.json" "$engine" > "$OUT/$P/engine-watch.txt" 2>&1
     w=$?; log "$(cat "$OUT/$P/engine-watch.txt")"
     rm -rf "$R"
     [ "$a" -ne 0 ] && exit "$a"
     exit $w ;;
+  inner-fallback)
+    # each home of the run's, shaped, then probed with nothing selecting an engine; every one must pass
+    failed=0
+    for kind in none previous released older unrecorded; do
+      run_home || exit 1
+      node scripts/linux-engine-gate/fallback-home.mjs "$kind" > "$OUT/fallback/$kind-home.json" 2> "$L/$kind-home.err"
+      h=$?; log "fallback home $kind: shaped exit $h $(head -c 300 "$OUT/fallback/$kind-home.json")"
+      if [ "$h" -eq 0 ]; then
+        env -u CUA_NATIVE_ENGINE node scripts/accept/linux-fallback.mjs --home "$kind" > "$OUT/fallback/$kind.json" 2> "$L/$kind-probe.err"
+        p=$?; log "fallback home $kind: probe exit $p"
+      else p=$h; fi
+      rm -rf "$R"
+      [ "$p" -eq 0 ] || failed=1
+    done
+    exit $failed ;;
 esac

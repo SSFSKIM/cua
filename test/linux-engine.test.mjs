@@ -10,7 +10,7 @@ import {createHash} from 'node:crypto';
 import {chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {buildLinuxEngine, ENGINE_PIN_FILE, engineAsset, inspectLinuxEngine, installedLinuxEngine, linuxEnginePath, loadEnginePin, parseEnginePin, parseEngineVersion, readEngineRecord} from '../src/runtime/linux-engine.mjs';
+import {buildLinuxEngine, ENGINE_PIN_FILE, engineAsset, inspectLinuxEngine, installedLinuxEngine, linuxEnginePath, loadEnginePin, parseEnginePin, parseEngineVersion, readEngineRecord, verifiedLinuxEngineVersion} from '../src/runtime/linux-engine.mjs';
 import {installLinuxEngine} from '../src/runtime/install.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -218,4 +218,29 @@ test('an inspection says what the placed engine is: the pinned one, an older pin
   chmodSync(linuxEnginePath(real()), 0o644);
   assert.equal(inspectLinuxEngine({home, arch: 'x64', pin: PIN}).executable, process.getuid?.() === 0);
   assert.equal(installedLinuxEngine({home}) === null, process.getuid?.() !== 0, 'a file sessions could not execute is not an installed engine');
+});
+
+// #171 M5, F5a: the version a default selection reads, without running the engine. install.json names it only while its
+// SHA-256 is the file's, so an interrupted downgrade (placeLinuxEngine renames the file before it writes the record)
+// cannot pass an older engine off as the newer one; the pinned bytes are the pin's version whatever the record says.
+test('the verified version: the pin\'s for its bytes, else install.json\'s while its SHA-256 is the file\'s, else none', async t => {
+  const {home} = setup(t);
+  mkdirSync(home, {recursive: true});
+  const record = () => join(realpathSync(home), 'engine', 'linux', 'install.json');
+  const NEWER_PIN = pinFor('0.2.0', NEWER);
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: PIN}), null, 'no engine');
+  await installLinuxEngine({home, pin: PIN, host: LINUX, fetch: serving(ENGINE)});
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: PIN}), '0.1.0', 'the pinned bytes');
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: NEWER_PIN}), '0.1.0', 'an older release, named by its record');
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: null}), '0.1.0', 'no pin in this cua: the record');
+  // A newer record beside the older executable: the record is another file's, so no version is trusted.
+  writeFileSync(record(), JSON.stringify({...JSON.parse(readFileSync(record(), 'utf8')), version: '0.2.0', release: 'linux-engine-v0.2.0', sha256: sha(NEWER)}));
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: NEWER_PIN}), null);
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: PIN}), '0.1.0', 'the pinned bytes are the pin\'s whatever the record says');
+  for (const unreadable of ['{', JSON.stringify({schema: 1, build: 'pinned', version: 'new', sha256: sha(ENGINE)})]) {
+    writeFileSync(record(), unreadable);
+    assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: NEWER_PIN}), null, unreadable);
+  }
+  rmSync(record());
+  assert.equal(verifiedLinuxEngineVersion({home, arch: 'x64', pin: NEWER_PIN}), null, 'no record');
 });

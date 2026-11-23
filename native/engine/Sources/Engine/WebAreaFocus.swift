@@ -638,10 +638,18 @@ enum TextEntryClickRoute: Equatable {
 /// WebKit process (`engine` .other), its parents up to an AXWebArea (`webAreaAncestry`), which a native field lacks.
 func textEntryClickRoute<Element>(_ element: Element, role: String, engine: PageEngine, roleOf: (Element) -> String?,
                                   parent: (Element) -> Element?) -> TextEntryClickRoute {
+  textEntryClickRoute(role: role, engine: engine) {
+    if case .success = webAreaAncestry(above: element, role: roleOf, parent: parent) { return true }
+    return false
+  }
+}
+
+/// `textEntryClickRoute` with the web-area read given (`insideWebArea`, read only for a text-entry role in a WebKit
+/// process), so an element click shares it with its ladder's gate (`elementClickRoutes`).
+func textEntryClickRoute(role: String, engine: PageEngine, insideWebArea: () -> Bool) -> TextEntryClickRoute {
   guard webAreaEditableRoles.contains(role) else { return .press }
   guard engine == .other else { return .pressConfirmingFocus(selecting: false) }
-  if case .success = webAreaAncestry(above: element, role: roleOf, parent: parent) { return .pressConfirmingFocus(selecting: true) }
-  return .pressConfirmingFocus(selecting: false)
+  return .pressConfirmingFocus(selecting: insideWebArea())
 }
 
 /// What a text field's focus read-back found (`elementClick.focus`).

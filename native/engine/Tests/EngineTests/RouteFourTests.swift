@@ -31,9 +31,9 @@ final class RouteFourChoiceTests: XCTestCase {
     XCTAssertEqual(coordinateClickRoute(forced: nil, foreground: true), .foreground)
     XCTAssertEqual(coordinateClickRoute(forced: nil), .activation)
     let synthesized = synthesizedClickRoute(forced: nil, foreground: true)
-    XCTAssertEqual(try elementClickPlan(forced: nil, button: .right, count: 1, role: "AXButton", actions: ["AXPress"], synthesized: synthesized) { false },
+    XCTAssertEqual(try elementClickPlan(forced: nil, button: .right, count: 1, role: "AXButton", actions: ["AXPress"], synthesized: synthesized) { .element },
                    .synthesized(.foreground))
-    XCTAssertEqual(try elementClickPlan(forced: nil, button: .left, count: 1, role: "AXButton", actions: ["AXPress"], synthesized: synthesized) { false },
+    XCTAssertEqual(try elementClickPlan(forced: nil, button: .left, count: 1, role: "AXButton", actions: ["AXPress"], synthesized: synthesized) { .element },
                    .action("AXPress"), "an advertised action needs no front: route 1 stays")
   }
 }

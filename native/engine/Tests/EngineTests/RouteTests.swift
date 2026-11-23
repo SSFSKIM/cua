@@ -17,7 +17,7 @@ final class ElementClickPlanTests: XCTestCase {
                     actions: [String], descendant: Bool = false, gateCalls: UnsafeMutablePointer<Int>? = nil) throws -> ElementClickPlan {
     try elementClickPlan(forced: forced, button: button, count: count, role: role, actions: actions) {
       gateCalls?.pointee += 1
-      return descendant
+      return descendant ? .descendant : .element
     }
   }
 
@@ -107,7 +107,7 @@ final class ElementClickPlanTests: XCTestCase {
 final class ElementClickRecordTests: XCTestCase {
   private func record(forced: InputRoute? = nil, button: MouseButton = .left, count: Int = 1, actions: [String],
                       hit: HitRelation? = nil) throws -> ElementClickRecord {
-    let plan = try elementClickPlan(forced: forced, button: button, count: count, role: "AXTextArea", actions: actions) { hit == .descendant }
+    let plan = try elementClickPlan(forced: forced, button: button, count: count, role: "AXTextArea", actions: actions) { hit ?? .noAnswer }
     return elementClickRecord(plan, forced: forced, button: button, count: count, actions: actions, hit: hit)
   }
 

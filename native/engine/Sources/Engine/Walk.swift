@@ -939,7 +939,7 @@ final class TreeWalk {
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
                                                 actions: item.read.actions, childCount: data.children.count, children: data.children,
-                                                actionsRead: item.read.actionsRead, roleRead: !data.unreadable.contains(kAXRoleAttribute),
+                                                actionsRead: item.read.actionsRead, roleRead: data.roleRead,
                                                 childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
                                                 labelsUnread: labels.unread, labelsNull: labels.null))
@@ -1136,7 +1136,7 @@ final class TreeWalk {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
                                                 actions: read.actions, childCount: read.data.children.count, children: read.data.children,
-                                                actionsRead: read.actionsRead, roleRead: !read.data.unreadable.contains(kAXRoleAttribute),
+                                                actionsRead: read.actionsRead, roleRead: read.data.roleRead,
                                                 childrenRead: read.data.childrenRead, childrenLeaf: read.data.childrenLeaf,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
                                                 labelsUnread: labels.unread, labelsNull: labels.null))

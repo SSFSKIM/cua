@@ -79,15 +79,21 @@ test('prepare on macOS serves the approved runtime and engine: it places the har
   const execute = command => { commands.push(command.args.at(-1)); return 'Cloning…\n' + 'a'.repeat(40) + '\n'; };
   // The sitting's Finder snapshot (ruling 1181) is taken here, before the first lane, and removed by cleanup-prepared.
   const baselines = [];
-  const finderBaseline = (device, action) => { baselines.push([device, action]); return action === 'take' ? {takenAt: 'T0', windows: [{number: 5}]} : {cleared: true}; };
+  // The journal is saved before the snapshot is taken, so cleanup-prepared can always clear it.
+  const finderBaseline = (device, action, preparedAt) => {
+    baselines.push([device, action, ...(preparedAt ? [preparedAt] : [])]);
+    if (action === 'take') assert.equal(JSON.parse(fs.readFileSync(journal, 'utf8')).preparedAt, preparedAt, 'the journal is on disk first');
+    return action === 'take' ? {preparedAt, bootedAt: 'B0', takenAt: 'T0', windows: [{number: 5, bounds: {x: 1, y: 2, width: 300, height: 200}, onScreen: true}]} : {cleared: true};
+  };
   const prepared = manageApprovedPreparation('prepare', {journal, out, device: 'mini', commit: 'aaaaaaa', 'approved-runtime': A[1], 'approved-engine': A[3]}, {execute, engineCheck: () => ENGINE_CHECK, finderBaseline});
-  assert.deepEqual(baselines, [['mini', 'take']]);
+  assert.deepEqual(baselines, [['mini', 'take', prepared.preparedAt]]);
   assert.equal(commands.length, 1);
   assert.match(commands[0], /git checkout --detach 'aaaaaaa'/);
   assert.match(commands[0], /git rev-parse HEAD$/);
   assert.doesNotMatch(commands[0], /cua\.mjs install|prepare-device\.mjs/);
   assert.deepEqual(prepared, {route: 'approved', device: 'mini', platform: 'darwin', commit: 'a'.repeat(40), approvedRuntime: A[1], approvedEngine: A[3],
-    engine: {build: 'b'.repeat(64), engineVersion: '0.1.0', signature: {kind: 'identity', identityMatches: true}}, finderBaseline: {takenAt: 'T0', windows: 1}, preparedAt: prepared.preparedAt});
+    engine: {build: 'b'.repeat(64), engineVersion: '0.1.0', signature: {kind: 'identity', identityMatches: true}}, preparedAt: prepared.preparedAt,
+    finderBaseline: {takenAt: 'T0', bootedAt: 'B0', windows: [{number: 5, bounds: {x: 1, y: 2, width: 300, height: 200}, onScreen: true}]}});
   assert.deepEqual(JSON.parse(fs.readFileSync(journal, 'utf8')), prepared);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(out, 'prepare.json'), 'utf8')), prepared);
   // A run must name the prepared sitting's approved runtime and engine, on its device.
@@ -100,7 +106,7 @@ test('prepare on macOS serves the approved runtime and engine: it places the har
   assert.throws(() => manageApprovedPreparation('prepare', {journal, device: 'mini', commit: 'aaaaaaa', 'approved-runtime': A[1], 'approved-engine': A[3]}, {execute, engineCheck: () => ENGINE_CHECK, finderBaseline}), /cleanup-prepared/);
   fs.writeFileSync(journal, JSON.stringify(prepared));
   assert.deepEqual(manageApprovedPreparation('cleanup-prepared', {journal, device: 'mini'}, {finderBaseline}), {removed: true, owned: false, finderBaselineCleared: true});
-  assert.deepEqual(baselines, [['mini', 'take'], ['mini', 'clear']]);
+  assert.deepEqual(baselines, [['mini', 'take', prepared.preparedAt], ['mini', 'clear']]);
   assert.equal(fs.existsSync(journal), false);
 });
 

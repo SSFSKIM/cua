@@ -307,7 +307,13 @@ session's to add on `docs/117-progress`).
   and reopened (a new number), by exactly the frame of a snapshot window that is gone, each matched once; no title is
   read (CG titles need the Screen Recording grant, and a folder's name is the owner's). On a hosted runner the
   snapshot holds no window on screen, so B behaves as before. A driver with no sitting-level prepare (the goldens
-  recorder, the matrix) has no snapshot and refuses every Finder window on screen, as before.
+  recorder, the matrix) has no snapshot and refuses every Finder window on screen, as before. Amended after the
+  review of 055008501..7e5f1a1a3: the snapshot is bound to the sitting's `preparedAt` and the boot it was taken in, and
+  read only when a native-mac lane names its sitting to `preflight` and `up` (`--finder-baseline`), so a stale file
+  excuses nothing; a frame is lent only by a snapshot window Finder no longer has at all (a minimized, hidden or
+  other-Space window keeps its number); and `down finder` judges by number alone against the windows Finder had at the
+  scene's `up` (`finderBefore`). prepare saves its journal before taking the snapshot, and records it whole (numbers
+  and frames).
 - 2026-11-23, TextEdit's preferences reach the file it reads (the design session, after pilot A's re-run, run
   45277221729): vv-1's launch window stood again at 241,87 586x488, the frame every vv run reads, with
   NSRequiresOpenUntitledWindowAtLaunch NO in force, and its ⌘N document took 603x505 at 242,107, the default 75

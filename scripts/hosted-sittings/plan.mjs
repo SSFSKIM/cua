@@ -72,7 +72,9 @@ function sittingB(ctx) {
   const parity = (...args) => ['node', 'scripts/repl-parity.mjs', ...args];
   // Each lane is read by its meta.json, its attestations included (its exit is 0 only when that record is complete).
   // The cua lane runs only once the vendor lane passed: a lane that could not bring a scene down (a window it left,
-  // pilot B's Finder) fails, and the next lane is never started into what it left.
+  // pilot B's Finder) fails, and the next lane is never started into what it left. The gate is PASS: a complete lane
+  // that is NO VERDICT, one the alert guard stopped, or an engine failure thrown also skips the cua lane. That costs
+  // evidence, never the verdict (the diff needs both lanes anyway), the trade sitting A makes.
   const lane = engine => ({id: engine, label: `native-mac, ${engine} host and engine`, kind: 'run', needs: engine === 'cua' ? ['prepare', 'vendor'] : ['prepare'], check: 'record', record: `${ctx.out}/${engine}/meta.json`, engine,
     ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/meta.json`} : {}),
     argv: parity('run', '--device', DEVICE, ...approvedArgs(ctx), '--suite', 'native-mac', '--host', engine, '--engine', engine, '--out', `${ctx.out}/${engine}`)});
@@ -93,6 +95,9 @@ function sittingC(ctx) {
     argv: ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', ctx.approvedEngine, '--out', `${ctx.out}/focus-timing.json`]});
   // Each matrix run needs the one before it to have passed, as A's runs and B's cua lane do: a run that could not bring a
   // scene down (a Finder window it left, pilot B) fails, and the next run, of either engine, is never started into it.
+  // The gate is PASS: a complete run that is NO VERDICT, one the alert guard stopped, or an engine failure thrown also
+  // skips the rest. That costs evidence, never the verdict, the trade sitting A makes. The save-sheet cells stay
+  // unchained: their own preflight refuses a screen a run left.
   const runSteps = [];
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
     const before = runSteps.at(-1);

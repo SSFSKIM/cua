@@ -1948,19 +1948,30 @@ racing the restore's single write and read; the same code read back a few second
 - Sitting B's cua lane needs the vendor lane to pass.
 
 **Ruling 1181's correction: the sitting's Finder snapshot.** The owner keeps Finder windows open on the MacBook, and
-the harness may neither close nor move them. So repl-parity's approved `prepare` takes one snapshot of Finder's
-document windows before the first lane (`scenes-mac.mjs finder-baseline take`, in
-`~/Library/Caches/cua-harness/finder-baseline.json`; the journal records when and how many), and `cleanup-prepared`
-removes it. Every lane's preflight and every `down finder` count only windows new since then
-(`scripts/repl-parity/finder-baseline.mjs`). So the second lane's preflight catches a window the first lane left.
+the harness may neither close nor move them. So repl-parity's approved `prepare` saves its journal, then takes one
+snapshot of Finder's document windows (`scenes-mac.mjs finder-baseline take --prepared-at <preparedAt>`, in
+`~/Library/Caches/cua-harness/finder-baseline.json`), bound to the sitting's `preparedAt` and to the boot it was taken
+in. The journal and prepare.json record it whole: each window's number, frame and whether it was on screen, never a
+title. `cleanup-prepared` removes it (`scripts/repl-parity/finder-baseline.mjs`).
 
-- **Matching.** A window is the snapshot's by its number. One the owner closed and reopened comes back with a new
-  number, and is the snapshot's when its frame is exactly that of a snapshot window that is gone, each matched once.
-  Finder brings a folder's window back at its saved frame. No title is read: a CG title needs the Screen Recording
-  grant, and a folder's name is the owner's.
+- **Read only for the sitting.** A native-mac lane names its sitting (`--finder-baseline <preparedAt>`, its hold id)
+  to the scenes' `preflight` and `up`, and the snapshot is read only while its `preparedAt` and boot both match (the
+  lane's `meta.finderBaseline` says when it was taken, or why it was ignored). A stale file, another sitting's, one
+  from before a reboot (window numbers recur), or a driver naming no sitting (the goldens recorder, the matrix) reads
+  none, and every Finder window on screen refuses, as before. The second lane's preflight still catches a window the
+  first lane left.
+- **The preflight's matching.** A window is the snapshot's by its number. One the owner closed and reopened comes back
+  with a new number, and is the snapshot's when its frame is exactly that of a snapshot window Finder no longer has at
+  all, each matched once. A window that is minimized, hidden or on another Space keeps its number and lends no frame
+  (the review's case: Finder's default new-window frame matching a never-resized owner window). Finder brings a
+  folder's window back at its saved frame. No title is read: a CG title needs the Screen Recording grant, and a
+  folder's name is the owner's.
+- **`down finder`** judges by number alone: a window on screen that Finder did not have at the scene's `up`
+  (`finderBefore` in the scene's record), and that is not the run's, is one the run left. No frame excuses it.
 - **Hosted.** The snapshot holds no window on screen, so B behaves as before.
-- **Without a sitting.** The goldens recorder and the matrix take no snapshot, and refuse every Finder window on
-  screen, as before.
+- **Unverified:** what the chrome toggles (sidebar, status bar, path bar, sent in the run's window) do to the owner's
+  other open Finder windows. It stays unverified until the owner's sitting runs once on the MacBook with a Finder
+  window open, that window's chrome read before and after.
 - **The venue's TextEdit preferences** stay unrestored: `writeTextEditDefaults` is the only way to write them, and it
   refuses off a GitHub-hosted runner for every key (`venue.test.mjs`).
 

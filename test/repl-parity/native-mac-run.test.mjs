@@ -138,6 +138,11 @@ test('a lane through the facade on the four scenes: texts kept only after cua\'s
   assert.deepEqual(vendor.meta.engineAttestation, {attested: [ATTEST.vendor], unattested: 0});
   assert.equal(vendor.meta.approved.build, BUILD);
   assert.equal(vendor.meta.sitting, 'hold-2b', 'the hold the diff pairs the lanes by');
+  // The sitting's Finder snapshot is read for this lane's sitting only (ruling 1181): the scenes' preflight and every up
+  // name it; down judges by the windows of each scene's up.
+  const named = vendor.device.calls.filter(c => c[0] === 'scenes' && ['preflight', 'up'].includes(c[1]));
+  assert.equal(named.length, 1 + SCENE_IDS.length);
+  for (const call of named) assert.deepEqual(call.slice(-2), ['--finder-baseline', 'hold-2b'], call.join(' '));
   // The serve's lane pins the engine; only the scenes' approvals were accepted.
   assert.deepEqual(vendor.device.calls.find(c => c[0] === 'serve'), ['serve', 'vendor', 'vendor']);
   assert.deepEqual(vendor.lane.elicitations.map(e => e.action), ['accept', 'accept', 'accept', 'accept']);

@@ -43,7 +43,8 @@ import Foundation
 // stamped with the observed window (Mouse.swift `stampWindow`), so the app delivers them to that window whatever lies over
 // it; a point the app's own hit-test answers in another of its windows (Chrome's omnibox popup, its `<datalist>` popup, a
 // permission bubble), or in a popover over the observed one (`PointHitPlace`, `appWindowOverPoint`), refuses before the
-// tree is read. Everything here reads through closures, so the rule is unit-tested over a fake tree.
+// tree is read; #453 carries a plain left click so refused on a row of one of four overlays by the recorded row's
+// AXPress instead (OverlayClick.swift). Everything here reads through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -120,6 +121,22 @@ struct ScreenshotNode<Element> {
   /// Whether its action names, read, included AXPress, whatever its role read (#433's review of 17942ad7, item 2:
   /// `actionable` is nil for a role unread, as #431 needs); a node that recorded AXPress is never an inert layer.
   var pressRecorded = false
+  /// #453 (ruling 1082): whether the walk read its AXChildren (or found the attribute absent: a leaf) and recorded every
+  /// child it listed (`ScreenshotChildren`), by handle where the listed children are known, else by their count.
+  var children: ScreenshotChildren = .whole
+  /// #453 (ruling 1083): whether its recorded parent is itself framed, so `ancestor` names its direct parent (no
+  /// frameless element recorded between them).
+  var parentFramed = false
+}
+
+/// What the record holds of a node's own children (#453, ruling 1082).
+enum ScreenshotChildren: String, Equatable {
+  /// Read (or absent: a leaf), and every one recorded.
+  case whole
+  /// The AXChildren read failed with an error other than the attribute's absence: unknown.
+  case unread = "childrenUnread"
+  /// Read, but some child it listed is not in the record (a width cut, the depth cap, the budget or deadline).
+  case notAllRecorded = "childrenNotRecorded"
 }
 
 /// What an element offers its recorded descendants as their control (`screenshotNodes`, #431).
@@ -155,6 +172,8 @@ struct ScreenshotNodeRead<Element> {
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).
   var childrenRead = true
+  /// #453 (ruling 1082): its AXChildren absent, not failed (`ElementData.childrenLeaf`): a leaf, its children all known.
+  var childrenLeaf = false
   /// Its AXSubrole, and an AXStaticText's value (`screenshotLabelValue`), for #298's rule `relabelled`.
   var subrole: String? = nil
   var value: String? = nil
@@ -225,6 +244,13 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
   let members = key.map { key in Set(reads.map { key($0.element) }) }
+  /// #453 (ruling 1083): each read's recorded children by handle, along the record's own parent edges: a child listed by
+  /// one element and recorded under another is not recorded for the first.
+  let childrenByParent: [Int: Set<AnyHashable>]? = key.map { key in
+    var byParent: [Int: Set<AnyHashable>] = [:]
+    for read in reads { if let parent = read.parent { byParent[parent, default: []].insert(key(read.element)) } }
+    return byParent
+  }
   // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
   var incomplete: Set<Int> = []
   /// The reads whose recorded subtree is not whole (#431's `regionCovered`): one of them, or one below, read no
@@ -233,6 +259,8 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
   /// once), else by their count.
   var broken: Set<Int> = []
   var gapsBelow: [Int: [Element]] = [:]
+  /// Each read's own children as the record holds them (#453).
+  var ownChildren: [Int: ScreenshotChildren] = [:]
   func thin(_ frame: CGRect) -> Bool { frame.width <= 1 || frame.height <= 1 }
   for read in reads.reversed() {
     let listedRecorded: Bool
@@ -241,6 +269,14 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
     } else {
       listedRecorded = (recordedChildren[read.number] ?? 0) >= read.childCount
     }
+    let ownRecorded: Bool
+    if let childrenByParent, let key, let children = read.children {
+      let recordedHere = childrenByParent[read.number] ?? []
+      ownRecorded = children.allSatisfy { recordedHere.contains(key($0)) }
+    } else {
+      ownRecorded = (recordedChildren[read.number] ?? 0) >= read.childCount
+    }
+    ownChildren[read.number] = read.childrenLeaf ? .whole : !read.childrenRead ? .unread : ownRecorded ? .whole : .notAllRecorded
     if !read.childrenRead || !listedRecorded { broken.insert(read.number) }
     if broken.contains(read.number), let parent = read.parent { broken.insert(parent) }
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
@@ -265,6 +301,8 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
   var regionRoots: [Int: Int] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
+  /// The reads recorded with a frame (#453's `parentFramed`).
+  var framedReads: Set<Int> = []
   var frameless: [ScreenshotNode<Element>] = []
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
@@ -326,15 +364,22 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
                      regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove,
                      pressRecorded: read.actions.contains("AXPress"))
     }
+    let parentFramed = read.parent.map { framedReads.contains($0) } ?? false
     guard let frame = own else {
       framed[read.number] = ancestor
       var unframed = node(frame: .null, shown: nil)
       (unframed.thinGap, unframed.gapsBelow) = (false, [])
+      unframed.children = ownChildren[read.number] ?? .unread
+      unframed.parentFramed = parentFramed
       frameless.append(unframed)
       continue
     }
     framed[read.number] = nodes.count
-    nodes.append(node(frame: frame, shown: cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }))
+    var recorded = node(frame: frame, shown: cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 })
+    recorded.children = ownChildren[read.number] ?? .unread
+    recorded.parentFramed = parentFramed
+    framedReads.insert(read.number)
+    nodes.append(recorded)
   }
   return (nodes, frameless)
 }
@@ -505,6 +550,10 @@ struct StalePointVerdict<Element> {
   /// hit's window could not be numbered) and the signal that found it.
   var overWindow: CGWindowID?
   var overBy: AppWindowSignal?
+  /// #453: for `appWindowOverPoint`, that window's layer and the observed window's, as the list held them (nil unlisted),
+  /// which tell the overlay's kind apart (OverlayClick.swift `overlayKind`).
+  var overLayer: Int?
+  var observedLayer: Int?
   /// #298: the node's label read now, for `relabelled`'s sentence (#433: the control beneath's, when it refused).
   var labelNow: String?
   /// #433: the recorded control beneath a node that does not act on its own (`underlyingTarget`), judged when the verdict
@@ -1676,20 +1725,30 @@ func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: Point
 
 /// #452's refusal from where a hit-test answered (`place`): in another window of the app's that covers the point in the
 /// list (`axHit`), or in a popover of the observed window with a window of the app's over the observed one at the point
-/// (`popover`); nil otherwise. `guardedPointVerdict` runs it on the action's hit-test, and #442's check on its re-hit
-/// after the wait, with a list read then (`windows`, read only when a rule needs it).
+/// (`popover`); nil otherwise. It carries the over window's layer and the observed one's (#453's `OverlayClick` reads
+/// them). `guardedPointVerdict` runs it on the action's hit-test, and #442's check on its re-hit after the wait, with a
+/// list read then (`windows`, read only when a rule needs it, once per verdict).
 func appWindowVerdict<Element>(at point: CGPoint, hit: Element?, place: PointHitPlace, target: CGWindowID?, pid: pid_t,
                                windows: () -> [ListedWindow]) -> StalePointVerdict<Element>? {
+  var read: [ListedWindow]?
+  func list() -> [ListedWindow] {
+    if let read { return read }
+    let list = windows()
+    read = list
+    return list
+  }
+  func over(_ number: CGWindowID, _ by: AppWindowSignal) -> StalePointVerdict<Element> {
+    let list = list()
+    return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: by,
+                             overLayer: list.first { $0.number == number }?.layer,
+                             observedLayer: target.flatMap { target in list.first { $0.number == target }?.layer })
+  }
   switch place {
   case .otherWindow(let number):
     // Only a window the screenshot can have shown over the point (`hitWindowCovers`); otherwise main's verdict.
-    if let number, hitWindowCovers(number, point: point, target: target, list: windows()) {
-      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
-    }
+    if let number, hitWindowCovers(number, point: point, target: target, list: list()) { return over(number, .axHit) }
   case .observedWindow(inPopover: true):
-    if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: windows()) {
-      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over.number, overBy: .popover)
-    }
+    if let target, let window = appWindowOverPoint(point, target: target, pid: pid, list: list()) { return over(window.number, .popover) }
   case .observedWindow(inPopover: false), .unread: break
   }
   return nil

@@ -5088,6 +5088,13 @@ final class OtherControlOnTopTests: XCTestCase {
     // The last review's P3: the delayed hit-test's own time is the one reported, and the action's hit stays the verdict's.
     XCTAssertEqual(verdict.correctedHitMs, 7.5)
     XCTAssertTrue(verdict.hit === page.veil)
+    // #453's layers, as on the action's own refusal; but #453's row press never takes a refusal the delayed hit decided.
+    XCTAssertEqual(verdict.overLayer, 0)
+    XCTAssertEqual(verdict.observedLayer, 0)
+    XCTAssertFalse(overlayPressApplies(verdict, button: .left, count: 1, forced: false))
+    var first = verdict
+    first.hitCorrection = nil
+    XCTAssertTrue(overlayPressApplies(first, button: .left, count: 1, forced: false), "the same refusal on the action's own hit")
     // The popup gone again before the re-hit: the observed window answers, and the verdict is the tree's.
     let calm = judged(Page(), at: atLink, corrected: { $0.aText }, windowCheck: { again in
       appWindowVerdict(at: CGPoint(x: 150, y: 115), hit: again.element, place: again.place, target: 28, pid: pid, windows: { [browser] })

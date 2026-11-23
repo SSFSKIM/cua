@@ -3033,8 +3033,42 @@ final class NullLabelSlotTests: XCTestCase {
                    "null then, absent now: unread, kept as a failed read is")
   }
 
+  /// The review of 435420cc..17930e20 (P2): the two sides' labels taken from different parts check each part's
+  /// counterpart. Recorded title absent and description "Edit", a title "Delete" now over a description null now: that
+  /// description is unread, so the label is unknown and the point kept; and the mirror, a title "Edit" then over a
+  /// description null then, the title absent now and the description "Delete". Every part read, the title gained still
+  /// refuses; every part null on both sides is no label, and keeps. The same for #433's candidate (`underlyingRefusal`).
+  func testRelabelledChecksTheCounterpartOfEachPartUsed() {
+    let gained: (Node) -> Void = { $0.title = "Delete" }
+    let swapped: (Node) -> Void = { button in (button.title, button.description) = (nil, "Delete") }
+    XCTAssertEqual(judged(then: [], now: [.description], title: nil, description: "Edit", change: gained), .sameElement,
+                   "the live counterpart of the recorded description is null")
+    XCTAssertEqual(judged(then: [.description], now: [], title: "Edit", description: nil, change: swapped), .sameElement,
+                   "the recorded counterpart of the live description is null")
+    XCTAssertEqual(judged(then: [], now: [], title: nil, description: "Edit", change: gained), .relabelled, "every part read")
+    XCTAssertEqual(judged(then: [.title, .description], now: [.title, .description], title: nil, description: nil), .sameElement,
+                   "every part null on both sides: no label")
+    func candidate(then: Set<StalePointLabelPart>, now: Set<StalePointLabelPart>, title: String?, description: String?,
+                   change: (Node) -> Void) -> StalePointReason? {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let button = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), title: title, description: description)
+      window.add(button)
+      button.null = then
+      let nodes = recorded(window)
+      button.null = now
+      change(button)
+      guard let target = nodes.first(where: { $0.element === button }) else { return .unrecorded }
+      return underlyingRefusal(target, at: point, windowShift: .zero, hit: button, nodes: nodes, frameless: [], recorded: { _ in nil },
+                               reads).refusal
+    }
+    XCTAssertNil(candidate(then: [], now: [.description], title: nil, description: "Edit", change: gained), "#433: live counterpart null")
+    XCTAssertNil(candidate(then: [.description], now: [], title: "Edit", description: nil, change: swapped), "#433: recorded counterpart null")
+    XCTAssertEqual(candidate(then: [], now: [], title: nil, description: "Edit", change: gained), .relabelled, "#433: every part read")
+  }
+
   /// #443's `controlDiffers`: a title null on both sides is passed over and the description compared; null on one side
-  /// only ends the label comparison, so only the frame is checked.
+  /// only ends the label comparison, so only the frame is checked; every part null on both sides compares no label, and
+  /// only the frame is checked.
   func testControlDiffersComparesLikeWithLike() {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
     let control = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), description: "Archive")
@@ -3052,6 +3086,12 @@ final class NullLabelSlotTests: XCTestCase {
     XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "null then, absent now: unread, the frame in place")
     now.frame = CGRect(x: 20, y: 140, width: 200, height: 30)
     XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "the frame is still checked")
+    control.null = [.title, .description]
+    guard let blank = recorded(window).first(where: { $0.element === control }) else { return XCTFail("recorded") }
+    now.null = [.title, .description]
+    XCTAssertTrue(controlDiffers(now, from: blank, windowShift: .zero, reads), "all null: the moved frame")
+    now.frame = control.frame
+    XCTAssertFalse(controlDiffers(now, from: blank, windowShift: .zero, reads), "all null: no label compared, the frame in place")
   }
 }
 
@@ -3535,6 +3575,10 @@ final class RecreatedIdentityTests: XCTestCase {
       }
     }
     XCTAssertEqual(judgedNull(false).reason, .nodeGone, "one-sided null: a twin")
+    // Every part null on both sides compares nothing, which never rules a twin out (the review of 435420cc..17930e20).
+    let blank = Thread()
+    (blank.a.null, blank.b.null) = ([.title, .description], [.title, .description])
+    XCTAssertEqual(judged(blank, at: atLink) { $0.rerenderA().link }.reason, .nodeGone, "all null on both: a twin")
     let both = judgedNull(true)
     XCTAssertFalse(both.refused, "both null: compared by the description, no twin (\(both.reason))")
     XCTAssertEqual(both.identity, .recreated)

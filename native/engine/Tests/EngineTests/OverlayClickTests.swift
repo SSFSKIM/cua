@@ -595,16 +595,22 @@ final class OverlayClickTests: XCTestCase {
     let nullNow = scene(nullThen: false)
     nullNow.row.null = [.title]
     XCTAssertEqual(refusal(decide(nullNow, answered: .some(nullNow.row.parent))), .labelChanged, "absent then, null now")
+    // The review of 435420cc..17930e20 (P1): a row null in every part on both sides compares nothing, and is not pressed.
+    var blank = permission()
+    blank.row.null = [.title, .description]
+    let at = blank.nodes.firstIndex { $0.element === blank.row }!
+    blank.nodes[at] = recorded(blank.row, depth: blank.nodes[at].depth, ancestor: blank.nodes[at].ancestor)
+    XCTAssertEqual(refusal(decide(blank, answered: .some(blank.row.parent))), .labelChanged, "all null: nothing compared")
   }
 
   /// #500 (rulings 1083, 1131): the datalist's inner text repeats the option only like with like: its title null where
   /// the option's is absent is a label part unread, so the acting inner text is no repeat (`actionableDescendant`); both
   /// null still repeat it.
   func testANullTitleRepeatsTheRowOnlyLikeWithLike() {
-    func scene(innerNull: Bool, rowNull: Bool) -> Scene {
+    func scene(innerNull: Bool, rowNull: Bool, parts: Set<StalePointLabelPart> = [.title]) -> Scene {
       var scene = datalist()
       for (node, null) in [(scene.row, rowNull), (scene.inner!, innerNull)] {
-        node.null = null ? [.title] : []
+        node.null = null ? parts : []
         let at = scene.nodes.firstIndex { $0.element === node }!
         scene.nodes[at] = recorded(node, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
       }
@@ -613,6 +619,10 @@ final class OverlayClickTests: XCTestCase {
     XCTAssertEqual(refusal(decide(scene(innerNull: true, rowNull: false))), .actionableDescendant, "the inner text's title null alone")
     XCTAssertEqual(refusal(decide(scene(innerNull: false, rowNull: true))), .actionableDescendant, "the option's title null alone")
     guard case .deliver = decide(scene(innerNull: true, rowNull: true)) else { return XCTFail("both null: the inner text repeats the option") }
+    // The review of 435420cc..17930e20 (P1): an acting inner text null in every part beside a row null in every part
+    // compares nothing, so it is no repeat.
+    XCTAssertEqual(refusal(decide(scene(innerNull: true, rowNull: true, parts: [.title, .description, .value]))), .actionableDescendant,
+                   "all null on both: nothing compared")
   }
 
   /// Ruling 1072, item 5: the identity is read again just before the press, after the owner's and intervention's

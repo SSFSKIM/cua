@@ -8101,6 +8101,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   classification. Both stay outside `unreadable`, as ruled.
   Date/Author: 2026-11-23, cursor235's builder for #500.
 
+- Decision (#500, the review of 435420cc..17930e20, 2026-11-23; amends the entry above): two more cases now take the
+  unread rule.
+  1. (P1) A comparison that passed over every part compared nothing. Before this fix, #453 pressed a row whose title
+     and description were both null, and `overlayDuplicate` took an acting inner text that was null in every part for a
+     repeat of a row that was null in every part. Both now count the parts they actually compared. Having compared none,
+     they answer unread: the row is refused `labelChanged`, and the inner text is no repeat, so it refuses
+     `actionableDescendant`. A title null on both sides with the description compared still presses. The other three
+     comparisons already answered unread here: the twin search agrees (a twin), `controlDiffers` checks the frame only,
+     and `relabelledLabel` finds no label and keeps.
+  2. (P2) `relabelledLabel` can take the two sides' labels from different parts. Each part used is now checked against
+     its counterpart, and a counterpart null on that side alone makes the label unknown, so the point is kept. Example:
+     recorded title absent and description "Edit"; now title "Delete" and description null. The mirror case keeps too.
+     This holds for #298 and for #433's candidate test. A failed counterpart is unchanged from main, so a gained title
+     still refuses.
+  The new assertions fail on 17930e20 (6, in `NullLabelSlotTests` and `OverlayClickTests`). The all-null twin and
+  `controlDiffers` assertions pass on both. 1666 swift tests (1 skipped), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #500.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

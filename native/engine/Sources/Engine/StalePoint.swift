@@ -769,7 +769,8 @@ let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
 /// rule keeps the point (the review of 7f6eb3dc..b2f00ad5, P2 2: a button "Save" described "Save changes", its title
 /// read failing on one side, would otherwise compare its description with its title). #500 (ruling 1131): an attribute
 /// null on both sides is passed over, like with like, so an element whose title is always null is judged by its
-/// description; null on one side only is unknown, as a failed read is.
+/// description; null on one side only is unknown, as a failed read is, the counterpart of each part a label is taken
+/// from included (the review of 435420cc..17930e20, P2); with every part passed over there is no label, and it keeps.
 func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
   guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
   let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
@@ -782,6 +783,7 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
     return read
   }
   var was: String?
+  var wasPart = StalePointLabelPart.title
   for part in parts {
     let recorded = node.label(part)
     if recorded == .null {
@@ -790,12 +792,13 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
     }
     guard case .text(let text) = recorded else { return nil }
     if let text = nonEmpty(text) {
-      was = text
+      (was, wasPart) = (text, part)
       break
     }
   }
   guard let was else { return nil }
   var now: String?
+  var nowPart: StalePointLabelPart?
   for part in parts {
     let read = readNow(part)
     if read == .null {
@@ -804,11 +807,16 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
     }
     guard case .text(let text) = read else { return nil }
     if let text = nonEmpty(text.map(bounded)) {
-      now = text
+      (now, nowPart) = (text, part)
       break
     }
   }
-  guard let now, stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
+  guard let now, let nowPart else { return nil }
+  // The review of 435420cc..17930e20 (P2): the two sides' labels may come from different parts (a title only one side
+  // has); each part used is checked against its counterpart on the other side, and a counterpart null there alone is
+  // unread (ruling 1131), so the label is unknown and the point kept.
+  if wasPart != nowPart, readNow(wasPart) == .null || node.label(nowPart) == .null { return nil }
+  guard stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
   // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
   if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
   return now

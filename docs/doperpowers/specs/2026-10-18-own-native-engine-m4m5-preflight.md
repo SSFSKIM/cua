@@ -308,7 +308,9 @@ If a MacBook lane runs at all, T5 is required: the MacBook's Finder keeps its ge
 | #258, #259 (P1) | Two recorded differences from the vendor that a model meets: an element click keeps a text field's selection, and a coordinate click landed a line low in the Electron fixture | A disposition each, written down (below). #259's last reading landed on target (2026-11-05); #283, #313 and #324 changed #258's ground. Either difference, if it still shows, is cua acting differently from the vendor, which R3 does not let anyone declare: it is fixed |
 | #212 with PR #218, #216 (P1) | A safety report (a save sheet completing across an intervention) and an approval-loss report from MAWS, both on cua's engine and host. The flip makes that path every session's | A disposition each, written down (below): landed, reproduced and fixed on today's main, or ruled not reproducible by the design session on stated evidence |
 | #485 | A refused background click can leave the target's window above the person's (ruling 1069 counts that as a failure) | It gates only if the matrix's non-interference cells meet it; the oracle reads the window order |
-| #493 (in flight) | It changes the MAWS first-use path and adds cases to both MAWS scripts | It lands before T12 |
+| #493 (landed, PR #498, main 435420cc) | It changes the MAWS first-use path and adds cases to both MAWS scripts | It lands before T12 |
+| #500 (P1, ruling 1131) | The screenshot decoder records a CFNull label slot as absent, not unknown (against ruling 1083). On main it gives a wrong press in #453's overlay row identity and a wrong keep in #431's twin search | Its own lane: the null set in the observation, a like-with-like label comparison, a value-free null-slot counter, and one hosted measuring run before its PR |
+| #501 (P1, ruling 1131) | A CFNull AXSubrole classifies as none, so a text field is not presumed secure and a secret can be typed into it as into an ordinary field (#405 fails open); a CFNull AXRole records as known | Its own lane after #500: a null subrole is unread, an unread subrole on a text field presumes secure, and a null role records as unknown |
 | #182, #183 with PR #199 | The Finder pin and the recovery record | T5 |
 
 **Who closes each gate.** A green matrix or a green MAWS session does not close a specific report, so each gate has
@@ -328,7 +330,9 @@ an executor, a witness and a closing condition. Each disposition is one file und
 | #485 | T10 | The non-interference oracle reading window order in every background cell | No background cell leaves the target above the person's window; if one does, the ticket is fixed before the freeze |
 | #192 | T14 | Sitting A's and C's speed rows | O5 |
 | #184's triple | T13 | Sitting C | Three valid pairs judged |
-| #493 | its own lane | Its pull request | Landed before T12 |
+| #493 | its own lane | Its pull request | Landed before T12 (done: PR #498, main 435420cc) |
+| #500 | its own lane | Observation-side unit tests per consumer, which fail on main where main is wrong; the null-slot counter and #453's qual cells in one hosted run on CfT, Electron and Safari | Landed on main; the hosted run reports the null-slot rate, and #453's rows do not regress, or the design session rules on a regression |
+| #501 | its own lane, after #500 | Unit tests injecting CFNull at decode for the subrole and the role, which fail on main | Landed on main |
 | #182, #183 | T5 | PR #199 with the frame probe | Landed with M4 |
 
 **Do not gate.**

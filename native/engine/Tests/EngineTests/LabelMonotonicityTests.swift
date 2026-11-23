@@ -1,5 +1,6 @@
 import ApplicationServices
 import CoreGraphics
+import CryptoKit
 import Foundation
 import XCTest
 @testable import Engine
@@ -61,7 +62,7 @@ private func headNode(_ element: Elem, _ slots: Slots) -> ScreenshotNode<Elem> {
                             value: withheld.isEmpty ? screenshotLabelValue(role: element.role, labels.value) : nil, editableAncestor: nil,
                             labelsUnread: labels.unread.union(withheld), frame: element.frame, shown: element.frame, depth: 1,
                             subtreeRecorded: true)
-  (node.labelsNull, node.labelsNonText) = (labels.null, labels.nonText)
+  (node.labelsNull, node.labelsNonText, node.valueOpen) = (labels.null, labels.nonText, withheld.isEmpty && labels.valueOpen)
   return node
 }
 
@@ -225,6 +226,44 @@ private func mainOverlayDuplicate<Element>(_ node: ScreenshotNode<Element>, of r
   return compared
 }
 
+/// #520's differential: 82ac93f3's `underlyingRefusal`, verbatim but for its name, main's `relabelledLabel` (above) and the
+/// file-private `isInside` inlined.
+private func mainUnderlyingRefusal<Element>(_ target: ScreenshotNode<Element>, at point: CGPoint, windowShift: CGVector, hit: Element?,
+                                            nodes: [ScreenshotNode<Element>], frameless: [ScreenshotNode<Element>],
+                                            recorded: (Element) -> Bool?, _ reads: StalePointReads<Element>)
+  -> (refusal: StalePointReason?, identity: StalePointIdentity?, labelNow: String?) {
+  func isInside(_ element: Element, _ container: Element) -> Bool {
+    var current = element
+    for _ in 0..<stalePointAncestorLevels {
+      guard let next = reads.parent(current) else { return false }
+      if reads.same(next, container) { return true }
+      current = next
+    }
+    return false
+  }
+  if let frame = reads.frame(target.element) {
+    guard holdsPoint(frame, point) else { return (.frameMoved, .handle, nil) }
+    if let now = mainRelabelledLabel(target, reads) { return (.relabelled, .handle, now) }
+    return (nil, .handle, nil)
+  }
+  if let hit, reads.same(hit, target.element) || isInside(hit, target.element) { return (nil, .handle, nil) }
+  guard target.actionable != nil else { return (.nodeGone, nil, nil) }
+  var index = target.ancestor
+  var levels = 0
+  while let at = index, levels < stalePointAncestorLevels, reads.isGone(nodes[at].element) {
+    (index, levels) = (nodes[at].ancestor, levels + 1)
+  }
+  guard let anchor = index.map({ nodes[$0].element }),
+        let found = recreatedHandle(of: target, near: anchor, windowShift: windowShift, nodes: nodes, frameless: frameless,
+                                    recorded: recorded, reads) else { return (.nodeGone, nil, nil) }
+  if found.refused { return (.nodeGone, nil, nil) }
+  return (holdsPoint(found.frame, point) ? nil : .frameMoved, .recreated, nil)
+}
+
+/// #520: `testWholeVerdictsAreMains`'s enumeration as 82ac93f3 answers it.
+private let mainWholeVerdictDigest = "3b936e38e4ee7f177763c7b327da0037d5c66a38a00d0ef7ac55c800f7af9655"
+private let mainWholeVerdictRefusals = ["own relabelled": 656, "beneath relabelled": 656]
+
 // MARK: The comparisons
 
 final class LabelMonotonicityTests: XCTestCase {
@@ -261,7 +300,7 @@ final class LabelMonotonicityTests: XCTestCase {
         let element = Elem(role, live)
         let (head, main) = (headNode(element, recorded), mainNode(element, recorded))
         let what = "\(role) \(recorded) → \(live)"
-        XCTAssertEqual(relabelledLabel(head, headReads), mainRelabelledLabel(main, mainReads), what)
+        XCTAssertEqual(relabelledLabel(head, headReads)?.text, mainRelabelledLabel(main, mainReads), what)
         XCTAssertEqual(controlDiffers(element, from: head, windowShift: .zero, headReads),
                        mainControlDiffers(element, from: main, windowShift: .zero, mainReads), what)
         let lenient = { (node: ScreenshotNode<Elem>, reads: StalePointReads<Elem>) in
@@ -346,5 +385,64 @@ final class LabelMonotonicityTests: XCTestCase {
         if decide(head, head: true) { XCTAssertTrue(decide(main, head: false), "\(slot) → \(now)") }
       }
     }
+  }
+
+  // #520 (ruling 1163): only sentence wording changes. Every verdict, kind and target, is main's (82ac93f3).
+
+  /// `underlyingRefusal` (#433's control beneath, and #442's named candidate) against 82ac93f3's: the same refusal, the
+  /// same identity and the same label read now, on every combination of the control's slots.
+  func testTheControlBeneathIsJudgedAsMainJudgedIt() {
+    let point = CGPoint(x: 30, y: 110)
+    for role in ["AXButton", "AXStaticText"] {
+      for (recorded, live) in combinations(role) {
+        let element = Elem(role, live)
+        let (head, main) = (headNode(element, recorded), mainNode(element, recorded))
+        let h = underlyingRefusal(head, at: point, windowShift: .zero, hit: nil, nodes: [head], frameless: [], recorded: { _ in nil }, headReads)
+        let m = mainUnderlyingRefusal(main, at: point, windowShift: .zero, hit: nil, nodes: [main], frameless: [], recorded: { _ in nil },
+                                      mainReads)
+        let what = "\(role) \(recorded) → \(live)"
+        XCTAssertEqual(h.refusal, m.refusal, what)
+        XCTAssertEqual(h.identity, m.identity, what)
+        XCTAssertEqual(h.labelNow?.text, m.labelNow, what)
+      }
+    }
+  }
+
+  /// Whole verdicts through `stalePointVerdict` in two scenes, over every combination of slots (the value withheld at the
+  /// observation is #405's closed classification): #298's own node at the point, its hit itself; and #433's control
+  /// beneath an inert layer, the hit on the layer. Each verdict, its sentence stripped, is written as its meta
+  /// (`StalePointRecord.wire`), whether it was refused, its target (current, control beneath) and the label read now; the
+  /// lines' digest is frozen from the same enumeration run on 82ac93f3 (the line's label read via main's `String`).
+  func testWholeVerdictsAreMains() {
+    let point = CGPoint(x: 30, y: 110)
+    var lines: [String] = []
+    var refusals: [String: Int] = [:]
+    func line(_ scene: String, _ what: String, _ verdict: StalePointVerdict<Elem>, current: Elem?, control: Elem?) -> String {
+      let wire = StalePointRecord(verdict, ms: 0).wire.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
+      if verdict.refused { refusals["\(scene) \(verdict.reason)", default: 0] += 1 }
+      return [scene, what, wire, "refused=\(verdict.refused)", "current=\(verdict.current.map { $0 === current } ?? false)",
+              "underlying=\(verdict.underlying.map { $0.element === control } ?? false)", "underlyingRefused=\(verdict.underlyingRefused)",
+              "labelNow=\(verdict.labelNow?.text ?? "-")"].joined(separator: "|")
+    }
+    for role in ["AXButton", "AXStaticText"] {
+      for (recorded, live) in combinations(role) {
+        func slots(_ slots: Slots) -> String { slots.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") }
+        let what = "\(role) \(slots(recorded)) → \(slots(live))"
+        let element = Elem(role, live)
+        let own = stalePointVerdict(at: point, nodes: [headNode(element, recorded)], hit: element, reads: headReads)
+        lines.append(line("own", what, own, current: element, control: nil))
+        let overlay = Elem("AXGroup", [:])
+        var control = headNode(element, recorded)
+        control.actionable = true
+        var layer = headNode(overlay, [:])
+        layer.actionable = false
+        let beneath = stalePointVerdict(at: point, nodes: [control, layer], hit: overlay, reads: headReads)
+        lines.append(line("beneath", what, beneath, current: overlay, control: element))
+      }
+    }
+    let digest = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
+    XCTAssertEqual(lines.count, 74_802)
+    XCTAssertEqual(refusals, mainWholeVerdictRefusals, "the refusals by scene and reason")
+    XCTAssertEqual(digest, mainWholeVerdictDigest, "every verdict, kind and target, is 82ac93f3's")
   }
 }

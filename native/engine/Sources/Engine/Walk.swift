@@ -921,7 +921,7 @@ final class TreeWalk {
   /// A recorded node's unknown label parts (`screenshotLabelsUnknown`), its null ones counted in the observation's timings
   /// as `nullLabelSlots` (#500, ruling 1131: value-free, so a measuring run sees how often an app answers kCFNull).
   private func recordLabels(_ data: ElementData)
-    -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>, nonText: Set<StalePointLabelPart>) {
+    -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>, nonText: Set<StalePointLabelPart>, valueOpen: Bool) {
     let labels = screenshotLabelsUnknown(role: data.role, data)
     source.costs.count("nullLabelSlots", labels.null.count)
     return labels
@@ -943,7 +943,8 @@ final class TreeWalk {
                                                 actionsRead: item.read.actionsRead, roleRead: data.roleRead,
                                                 childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
-                                                labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText))
+                                                labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText,
+                                                valueOpen: labels.valueOpen))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
   }
@@ -1140,7 +1141,8 @@ final class TreeWalk {
                                                 actionsRead: read.actionsRead, roleRead: read.data.roleRead,
                                                 childrenRead: read.data.childrenRead, childrenLeaf: read.data.childrenLeaf,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
-                                                labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText))
+                                                labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText,
+                                                valueOpen: labels.valueOpen))
     }
     attach(number, parent: parent, inMenu: inMenu)
     return number

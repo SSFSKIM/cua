@@ -19,7 +19,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
+import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
@@ -304,7 +304,7 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   const started = device(ctx, ['probe', 'input-source', '--source', KOREAN_2SET, '--lead', String(PROBE_LEAD_MS)]);
   let act = null, finished = null, before = null, held = null;
   try {
-    before = read(ctx, null, {frontKey: true});
+    before = read(ctx, null, {frontKey: true, keyWindow: keyWindowScene(ctx, field)});
     act = span(await sendKeys(ctx, scheduledActCell(field, {at: started.scheduled - preMs, act: `await __app.typeText(${j(r.string.text)});`, tag: 'unicode.midSwitch'}),
       ['typeText'], {scene: field, front: before, kind: 'row', key}));
   } catch (error) {

@@ -12,7 +12,11 @@
 //                side on the vendor's above all (state 1), is NO VERDICT naming it, complete or not; a complete record
 //                that shows no engine is NO VERDICT too. The reader compares the engine's name only: the version and
 //                build are each producer's own check (scripts/native-baseline/engine.mjs engineProblem,
-//                scripts/repl-parity/native-mac.mjs laneAttestationProblem), which leaves its record incomplete
+//                scripts/repl-parity/native-mac.mjs laneAttestationProblem), which leaves its record incomplete. Ruling
+//                1169: both sides of a pair stand on one frame; a step that names its pair's record (`pair`: the other
+//                side's run of the same number) is NO VERDICT, naming the scene and both frames, when the two records
+//                launched at or read back different frames (./venue.mjs frameAsymmetry); a pair not recorded changes
+//                nothing
 //   verdict      a judge (A's comparisons, C's compare, D's #216 witness): the last `VERDICT:` line it printed, PASS,
 //                FAIL, NO VERDICT (proof is missing) or OWNER (the owner's calls remain); none printed is a runtime error
 //   report       a report-writing step (C's summary): its `report` file written; its exit is the verdict the judge step
@@ -42,8 +46,11 @@ import {isFixtureCheck} from '../accept/textedit.mjs';
 import {sampleCause} from '../native-matrix/front-key.mjs';
 import {classifyAttestedRecord} from '../probe/lib.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
+import {frameAsymmetry} from './venue.mjs';
 
-const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert']);
+// A sample's causes that leave its proof missing, not failed: the key-window requirement's refusal (keyWindow, ruling
+// 1169's addition) among them.
+const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert', 'keyWindow']);
 // accept-native's items its live TextEdit fixture proves (scripts/accept-native.mjs: 5, 6 and 8), the ones the alert
 // guard's refusal there leaves unproven.
 const FIXTURE_ITEMS = Object.freeze([5, 6, 8]);
@@ -126,6 +133,8 @@ export const CHECKS = Object.freeze({
       return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`];
     }
     if (side) return ['NO VERDICT', side.reason];
+    const apart = step.pair ? frameAsymmetry(record, readJson(step.pair)) : null;
+    if (apart) return ['NO VERDICT', `venue: ${step.record} and its pair ${step.pair} did not stand on one frame (${apart})`];
     return ['PASS', exit === 0 ? null : `recorded complete; exit ${exit} is the run's own outcome, which its judge reads`];
   },
   verdict(step, {exit, logText}) {

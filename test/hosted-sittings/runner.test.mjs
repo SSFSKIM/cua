@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {assertGithubHosted, hostedRunOf as hostedRunOfAny, readRunnerRecord, runnerKey, runnerProblems, runnerRecord, runnerRecordPath, runnerText, vmIdentity} from '../../scripts/hosted-sittings/runner.mjs';
+import {assertGithubHosted, hostedRunOf as hostedRunOfAny, readRunnerRecord, runnerKey, runnerProblems, runnerRecord, runnerRecordPath, runnerText, venueFramesOf, vmIdentity} from '../../scripts/hosted-sittings/runner.mjs';
 
 const ENV = {RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'macos26', ImageVersion: '20261117.0516.1', GITHUB_RUN_ID: '45144483807', GITHUB_RUN_ATTEMPT: '2'};
 const INSTALL = {home: '/Users/runner/Library/Application Support/cua', release: '26.928.40906-darwin-arm64'};
@@ -86,4 +86,19 @@ test('meta.hosted is never guessed: every disagreement between the device and th
   assert.throws(() => hostedRunOf({...record(), image: null}, ENV), /not one: image\.name/);
   assert.throws(() => hostedRunOf(record(), ENV, {approvedRuntime: '/Users/runner/other'}), /--approved-runtime \/Users\/runner\/other is not the run's install/);
   assert.throws(() => hostedRunOf(record(), ENV, {approvedEngine: '/tmp/cua Engine.app'}), /--approved-engine .* is not the run's engine/);
+});
+
+// Ruling 1169: the venue setup chose rides in the record, so the device's scenes launch at its frames and every lane
+// keeps it as meta.venue, apart from the run's attestation.
+test('the venue: kept in the record, handed out as its own block, its frames read by the device; none off a runner', () => {
+  const venue = {frames: {chrome: {x: 22, y: 60, width: 800, height: 760}, finder: {x: 22, y: 80, width: 800, height: 520}}, differences: []};
+  const withVenue = runnerRecord(ENV, {install: INSTALL, engine: ENGINE, vm: VM, venue, now: () => Date.UTC(2026, 10, 23)});
+  assert.deepEqual(withVenue.venue, venue);
+  assert.deepEqual(runnerProblems(withVenue), []);
+  assert.deepEqual(hostedRunOf(withVenue, ENV), {hosted: true, runner: record(), venue});
+  assert.deepEqual(hostedRunOf(record(), ENV), {hosted: true, runner: record()}, 'a record with no venue gives none');
+  assert.deepEqual(venueFramesOf(withVenue), venue.frames);
+  // A frame that is not one is dropped (that scene keeps its own); no record, or one with no venue, is no venue.
+  assert.deepEqual(venueFramesOf({venue: {frames: {chrome: {x: 1, y: 2, width: 0, height: 600}, electron: {x: 'a'}, finder: venue.frames.finder}}}), {finder: venue.frames.finder});
+  for (const none of [null, {error: 'not JSON'}, record()]) assert.equal(venueFramesOf(none), null);
 });

@@ -76,7 +76,7 @@ function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321,
       calls.push(['guard', ...args]);
       if (args[0] === 'place') { const f = args.at(-1).split(',').map(Number); return {requested: null, readBack: {x: f[0], y: f[1], width: f[2], height: f[3]}, matched: true, exitStatus: 0, pid: 1}; }
       const target = args[2].split(':');
-      return guard({scene: target[0], pid: Number(target[1]), number: Number(target[2]), key: args.includes('--key')}, calls.filter(c => c[0] === 'guard' && c[1] === 'read').length);
+      return guard({scene: target[0], pid: Number(target[1]), number: Number(target[2]), key: args.includes('--key'), keyWindow: args.includes('--key-window')}, calls.filter(c => c[0] === 'guard' && c[1] === 'read').length);
     },
   };
   return {ops, calls, files, taken, discarded};
@@ -606,6 +606,34 @@ test('sitting B: a refusal ends only its scene, so another scene\'s real failure
   const alone = await runLane({engine: 'cua', device: fakeDevice({guard})});
   assert.deepEqual([alone.meta.problems, alone.meta.guardRefused], [[], ['chrome/action']]);
   assert.equal(recordCheck(alone.meta, 'cua')[0], 'NO VERDICT');
+});
+
+// The key-window requirement (the design session's addition to ruling 1169; pilot B, run 45254955711): before the
+// action's click the scene's app holds the scene window as its own key window (guard-device read --key-window).
+test('sitting B: an action whose app holds no key window of its own is refused on both lanes, NO VERDICT keyWindow; unread is counted', async () => {
+  const own = focusedWindow => (target, n) => ({...clearGuard(target, n), ...(target.keyWindow ? {ownKey: {scene: target.scene, number: target.number, trusted: true, ok: true, frontmost: true,
+    focusedWindow: target.scene === 'electron' ? focusedWindow : 'run', mainWindow: 'run'}} : {})});
+  const lanes = [];
+  for (const engine of ['vendor', 'cua']) {
+    const lane = await runLane({engine, device: fakeDevice({guard: own('none')})});
+    lanes.push(lane);
+    assert.ok(!lane.lane.cells.includes('action electron'), 'the click was never sent');
+    assert.ok(lane.lane.cells.includes('action chrome'), 'the scenes whose app holds its window ran');
+    const refused = results(lane.out).find(row => row.scene === 'electron' && row.cell === 'action');
+    assert.equal(refused.alertGuard.cause, 'keyWindow');
+    assert.match(refused.alertGuard.detail, /the electron app holds no key window/);
+    assert.deepEqual(lane.meta.alertGuardCounts, {'electron/action': {alert: 0, unread: 0, keyWindow: 1}});
+    assert.deepEqual(lane.meta.guardRefused, ['electron/action']);
+    assert.equal(recordCheck(lane.meta, engine)[0], 'NO VERDICT');
+    assert.equal(lane.meta.keyWindowUnread, undefined);
+  }
+  assert.deepEqual(lanes[0].meta.alertGuards, lanes[1].meta.alertGuards, 'the same refusal on both lanes');
+  const kept = await runLane({engine: 'cua', device: fakeDevice({guard: own('run')})});
+  assert.equal(kept.code, 0, kept.meta.error ?? kept.meta.problems.join('; '));
+  // Not read: every action sent, each counted.
+  const unread = await runLane({engine: 'cua'});
+  assert.equal(unread.code, 0);
+  assert.deepEqual(Object.keys(unread.meta.keyWindowUnread).sort(), ['chrome/action', 'electron/action', 'finder/action', 'textedit/action']);
 });
 
 test('#528: a failed action\'s row carries its diagnostics too, taken once the lane answered', async () => {

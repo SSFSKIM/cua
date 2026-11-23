@@ -3,7 +3,7 @@
 // replayd's alerts. The matrix's own tests (test/native-matrix/alert-guard.test.mjs) cover the rules it shares.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, overlaps, PANEL_SERVICE, placeWindows, recordKeyUnread, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
+import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, keyWindowCause, overlaps, PANEL_SERVICE, placeWindows, recordKeyUnread, recordKeyWindowReading, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import * as matrixGuard from '../../scripts/native-matrix/alert-guard.mjs';
 
 const UNC = 'com.apple.UserNotificationCenter';
@@ -116,4 +116,36 @@ test('a key cell sent with its key reading not taken is counted per cell beside 
   recordKeyUnread(record, 'quit');
   assert.deepEqual(record.keyUnread, {'task.act': 2, quit: 1});
   assert.equal(record.alertGuardStop, undefined, 'no refusal: the cell was sent');
+});
+
+// The key-window requirement (the design session's addition to ruling 1169; pilot B, run 45254955711: the Electron
+// fixture frontmost with no key window): before a click or key cell the scene's app holds the scene window as its own
+// key window, read outside either engine (ax-state.swift window: the app's AXFocusedWindow and AXMainWindow against the
+// scene window), which an app that is not frontmost answers too.
+test('the key-window rule: the scene window is its app\'s focused window; an app in the background may answer none with it main', () => {
+  const own = (focusedWindow, mainWindow = 'run', frontmost = true) => ({trusted: true, ok: true, scene: 'electron', number: 5, frontmost, focusedWindow, mainWindow});
+  assert.equal(keyWindowCause(own('run')), null);
+  assert.deepEqual(keyWindowCause(own('none')), {category: 'keyWindow', detail: 'the electron app holds no key window (its focused window none, its main window the scene window 5) while frontmost'});
+  assert.match(keyWindowCause(own('other', 'other')).detail, /the electron app's key window is another of its windows, not the scene window 5/);
+  // In the background an app keeps its main window and may report no focused window: the main window is then its own.
+  assert.equal(keyWindowCause(own('none', 'run', false)), null);
+  assert.equal(keyWindowCause(own('other', 'run', false)).category, 'keyWindow');
+  assert.equal(keyWindowCause(own('none', 'none', false)).category, 'keyWindow');
+  // Not read (an untrusted reader, a failed read, the scene window not on screen): nothing refused; the sitting counts it.
+  for (const unread of [null, {trusted: false}, {...own('none'), ok: false}]) assert.equal(keyWindowCause(unread), null);
+  const record = {};
+  recordKeyWindowReading(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
+  recordKeyWindowReading(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
+  recordKeyWindowReading(record, 'chrome/action', null);
+  assert.deepEqual(record.keyWindowUnread, {'chrome/action': 3});
+  // A reading taken is counted too: the sitting judges the requirement on its own readings.
+  recordKeyWindowReading(record, 'chrome/action', own('run'));
+  recordKeyWindowReading(record, 'chrome/action', own('run', 'run', false));
+  assert.deepEqual([record.keyWindowRead, record.keyWindowUnread], [{'chrome/action': 2}, {'chrome/action': 3}]);
+  // Each kept with why, so a sitting tells an untrusted reader (the requirement vacuous) from a window not there.
+  assert.deepEqual(record.keyWindowUnreadReasons, {'chrome/action': {'the reader is not trusted for Accessibility': 2, 'the guard reading was not taken': 1}});
+  // A refusal of this kind is counted beside the alert's, in the same record.
+  recordRefusal(record, 'electron/action', keyWindowCause(own('none')));
+  assert.deepEqual(record.alertGuardCounts, {'electron/action': {alert: 0, unread: 0, keyWindow: 1}});
+  assert.equal(record.alertGuardStop.cause, 'keyWindow');
 });

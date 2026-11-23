@@ -247,7 +247,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, approvedR
     ...(nativeEngine ? {nativeEngine, engineStop: {start: prepared.engineStop}} : {}),
     ...(pinnedEngine ? {pinnedEngine} : {})};
   Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display,
-    hosted: hostedRun.hosted, runner: hostedRun.runner});
+    hosted: hostedRun.hosted, runner: hostedRun.runner, ...(hostedRun.venue ? {venue: hostedRun.venue} : {})});
   adapter.start(meta, pre);
   log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}${nativeEngine?.approved ? `, engine ${engine} (approved build ${nativeEngine.approved.build.slice(0, 12)})` : nativeEngine ? `, engine ${engine} (${nativeEngine.expected})` : ''}, ${surface} surface`);
   const ops = io.device ? io.device(adapter, {pre, display}) : adapter.device(remote, {pre, display});

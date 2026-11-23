@@ -3,7 +3,7 @@
 // and the pilot's readings of what part 1 left unread on a runner. Results are built in memory; nothing runs.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {cellCounts, guardTally, renderCounts, renderGuardTally} from '../../scripts/hosted-sittings/counts.mjs';
+import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowObserved} from '../../scripts/hosted-sittings/counts.mjs';
 import {pilotReads, renderPilotReads} from '../../scripts/hosted-sittings/pilot-reads.mjs';
 import {timeFocusProbe} from '../../scripts/hosted-sittings/focus-timing.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
@@ -31,14 +31,14 @@ test('per cell: the runs every sample of which has a verdict, and each run\'s ve
   const counts = cellCounts([{path: 'c/vendor/run-1/result.json', result: {cell: 'matrix', meta: {planId: 'full'}, rows: []}}, saveSheet], {judgeFull: () => JUDGMENT});
   assert.deepEqual(counts, [
     {cell: 'method textedit/frontmost/click.control', source: 'matrix', pairs: 0, qualifies: false,
-      vendor: {complete: 1, runs: 1, byRun: {1: {verdicts: 10, samples: 10}}, alert: 0, keyUnread: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 7, samples: 10}}, alert: 0, keyUnread: 0}},
+      vendor: {complete: 1, runs: 1, byRun: {1: {verdicts: 10, samples: 10}}, alert: 0, keyUnread: 0, keyWindow: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 7, samples: 10}}, alert: 0, keyUnread: 0, keyWindow: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}}},
     {cell: 'intervention textedit/intervention.saveSheet', source: 'intervention-save-sheet', pairs: null, qualifies: null,
-      vendor: {complete: 0, runs: 0, byRun: {}, alert: 0, keyUnread: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 1, samples: 2}}, alert: 0, keyUnread: 0}},
+      vendor: {complete: 0, runs: 0, byRun: {}, alert: 0, keyUnread: 0, keyWindow: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 1, samples: 2}}, alert: 0, keyUnread: 0, keyWindow: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}}},
   ], 'a cell with no sample on either side is left out');
   const text = renderCounts(counts);
-  assert.match(text, /^\| cell \| source \| vendor: complete runs \| vendor: verdicts by run \| vendor: NO VERDICT alert \| vendor: key cells guarded unread \| cua: complete runs \| cua: verdicts by run \| cua: NO VERDICT alert \| cua: key cells guarded unread \| complete pairs \|$/m);
-  assert.match(text, /^\| method textedit\/frontmost\/click\.control \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 \| 0 of 1 \| 1: 7\/10 \| 0 \| 0 \| 0 \|$/m);
-  assert.match(text, /^\| intervention textedit\/intervention\.saveSheet \| intervention-save-sheet \| 0 of 0 \| - \| 0 \| 0 \| 0 of 1 \| 1: 1\/2 \| 0 \| 0 \| - \|$/m);
+  assert.match(text, /^\| cell \| source \| vendor: complete runs \| vendor: verdicts by run \| vendor: NO VERDICT alert \| vendor: NO VERDICT keyWindow \| vendor: key cells guarded unread \| vendor: cells key window unread \| cua: complete runs \| cua: verdicts by run \| cua: NO VERDICT alert \| cua: NO VERDICT keyWindow \| cua: key cells guarded unread \| cua: cells key window unread \| complete pairs \|$/m);
+  assert.match(text, /^\| method textedit\/frontmost\/click\.control \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 \| 0 \| 0 \| 0 of 1 \| 1: 7\/10 \| 0 \| 0 \| 0 \| 0 \| 0 \|$/m);
+  assert.match(text, /^\| intervention textedit\/intervention\.saveSheet \| intervention-save-sheet \| 0 of 0 \| - \| 0 \| 0 \| 0 \| 0 \| 0 of 1 \| 1: 1\/2 \| 0 \| 0 \| 0 \| 0 \| - \|$/m);
   assert.match(renderCounts([]), /No matrix cell result/);
 });
 
@@ -50,7 +50,7 @@ test('ruling 1154: per cell and per side, the samples NO VERDICT alert, the aler
       alertGuard: {cause: 'alert', detail: 'com.apple.UserNotificationCenter holds the key'}}]}};
   const counts = cellCounts([{path: 'c/vendor/run-1/result.json', result: {cell: 'matrix', meta: {planId: 'full'}, rows: []}}, guarded], {judgeFull: () => judged});
   assert.deepEqual(counts.map(c => [c.cell, c.vendor.alert, c.cua.alert]), [['method electron/frontmost/click.point', 1, 2], ['intervention textedit/intervention.saveSheet', 1, 0]]);
-  assert.match(renderCounts(counts), /^\| method electron\/frontmost\/click\.point \| matrix \| 0 of 1 \| 1: 9\/10 \| 1 \| 0 \| 0 of 1 \| 1: 7\/10 \| 2 \| 0 \| 0 \|$/m);
+  assert.match(renderCounts(counts), /^\| method electron\/frontmost\/click\.point \| matrix \| 0 of 1 \| 1: 9\/10 \| 1 \| 0 \| 0 \| 0 \| 0 of 1 \| 1: 7\/10 \| 2 \| 0 \| 0 \| 0 \| 0 \|$/m);
 });
 
 // The key-cell premise: a key cell whose key reading was not taken is sent unguarded against the alert holding the key.
@@ -66,7 +66,7 @@ test('per cell and per side, the key cells guarded with their key reading not ta
     ['harness close-panel:escape', 'matrix', 1, 1],
   ]);
   const text = renderCounts(counts);
-  assert.match(text, /^\| method textedit\/frontmost\/typeText\.replace \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 3 \| 1 of 1 \| 1: 10\/10 \| 0 \| 3 \| 0 \|$/m);
+  assert.match(text, /^\| method textedit\/frontmost\/typeText\.replace \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 \| 3 \| 0 \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 \| 3 \| 0 \| 0 \|$/m);
   assert.match(text, /key cells guarded unread/);
 });
 
@@ -82,15 +82,91 @@ test('the guard tally per step and cell: refusals by cause beside the key cells 
     {step: 'cc-1', record: null},
   ]);
   assert.deepEqual(tally, [
-    {step: 'vv-1', cell: 'task.act', alert: 1, unread: 0, keyUnread: 2},
-    {step: 'vv-1', cell: 'quit', alert: 0, unread: 0, keyUnread: 1},
-    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyUnread: 1},
-    {step: 'accept-native', cell: 'connection A: type and observe the marker', alert: 0, unread: 1, keyUnread: 0},
+    {step: 'vv-1', cell: 'task.act', alert: 1, unread: 0, keyWindow: 0, keyUnread: 2, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'vv-1', cell: 'quit', alert: 0, unread: 0, keyWindow: 0, keyUnread: 1, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 1, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'accept-native', cell: 'connection A: type and observe the marker', alert: 0, unread: 1, keyWindow: 0, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
   ]);
   const text = renderGuardTally(tally);
-  assert.match(text, /^\| step \| cell \| NO VERDICT alert \| NO VERDICT unread \| key cells guarded unread \|$/m);
-  assert.match(text, /^\| vv-1 \| task\.act \| 1 \| 0 \| 2 \|$/m);
-  assert.match(renderGuardTally([]), /No refusal and no key cell guarded unread/);
+  assert.match(text, /^\| step \| cell \| NO VERDICT alert \| NO VERDICT unread \| NO VERDICT keyWindow \| key cells guarded unread \| cells key window read \| cells key window unread \|$/m);
+  assert.match(text, /^\| vv-1 \| task\.act \| 1 \| 0 \| 0 \| 2 \| 0 \| 0 \|$/m);
+  assert.match(renderGuardTally([]), /No refusal, no key cell guarded unread and no key-window reading/);
+});
+
+// The key-window requirement (ruling 1169's addition): a click or key cell whose scene app held another key window is
+// refused, NO VERDICT keyWindow; one whose key-window reading was not taken is sent and counted (keyWindowUnread), per
+// cell and side as the alert guard's are.
+test('per cell and side, and per step: the cells NO VERDICT keyWindow and those sent with their key window unread', () => {
+  const judged = {cells: [{section: 'method', id: 'electron/frontmost/click.point', verdict: 'no-verdict', qualifies: false,
+    account: (() => { const a = account({vendor: {1: {verdicts: 8, samples: 10}}, cua: {1: {verdicts: 10, samples: 10}}}); a.vendor.noVerdict = {keyWindow: 2}; return a; })()}]};
+  const full = side => ({path: `c/${side}/run-1/result.json`, result: {cell: 'matrix', lanes: [{host: side, engine: side}],
+    meta: {planId: 'full', ...(side === 'cua' ? {keyWindowUnread: {'row:0': 2, 'close-panel': 1}, keyWindowUnreadReasons: {'row:0': {'the reader is not trusted for Accessibility': 2}, 'close-panel': {'the scene window is not on screen': 1}}} : {})}, rows: [{section: 'method', id: 'electron/frontmost/click.point', engine: side}]}});
+  const keyWindowed = {path: 'c/save-sheet/cua/run-1/result.json', result: {cell: 'intervention-save-sheet', meta: {run: 1, hosted: true}, rows: [
+    {section: 'intervention', id: 'textedit/intervention.saveSheet', engine: 'cua', sample: 1, ok: false, invalid: 'the alert guard refused the cell: nothing of it was sent',
+      alertGuard: {cause: 'keyWindow', detail: 'the textedit app\'s key window is another of its windows, not the scene window 4'}}]}};
+  const counts = cellCounts([full('vendor'), full('cua'), keyWindowed], {judgeFull: () => judged});
+  assert.deepEqual(counts.map(c => [c.cell, c.vendor.keyWindow, c.cua.keyWindow, c.vendor.keyWindowUnread, c.cua.keyWindowUnread]), [
+    ['method electron/frontmost/click.point', 2, 0, 0, 2],
+    ['intervention textedit/intervention.saveSheet', 0, 1, 0, 0],
+    ['harness close-panel', 0, 0, 0, 1],
+  ]);
+  assert.match(renderCounts(counts), /^\| method electron\/frontmost\/click\.point \| matrix \| 0 of 1 \| 1: 8\/10 \| 0 \| 2 \| 0 \| 0 \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 \| 0 \| 2 \(the reader is not trusted for Accessibility 2\) \| 0 \|$/m);
+  assert.deepEqual(counts.find(c => c.cell === 'harness close-panel').cua.keyWindowUnreadReasons, {'the scene window is not on screen': 1});
+  const tally = guardTally([
+    {step: 'vc-1', record: {alertGuardCounts: {'task.act': {alert: 0, unread: 0, keyWindow: 1}}, keyWindowUnread: {quit: 1}, keyWindowUnreadReasons: {quit: {'the reader is not trusted for Accessibility': 1}}}},
+    {step: 'matrix-cua-1', record: {meta: {keyWindowUnread: {'row:3': 2}}}},
+  ]);
+  assert.deepEqual(tally, [
+    {step: 'vc-1', cell: 'task.act', alert: 0, unread: 0, keyWindow: 1, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'vc-1', cell: 'quit', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 1, keyWindowUnreadReasons: {'the reader is not trusted for Accessibility': 1}},
+    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 2, keyWindowUnreadReasons: {}},
+  ]);
+  assert.match(renderGuardTally(tally), /^\| vc-1 \| quit \| 0 \| 0 \| 0 \| 0 \| 0 \| 1 \(the reader is not trusted for Accessibility 1\) \|$/m);
+});
+
+// Recorded check (3) of ruling 1169: whether the key-window requirement was observed, at a glance, judged on the sitting's
+// own readings (taken, refused, unread by reason); setup's reading of the grant over the loopback ssh is context only.
+test('the key-window requirement at a glance: judged on the sitting\'s own readings, setup\'s grant reading context only', () => {
+  const NOT = 'the reader is not trusted for Accessibility';
+  const row = (step, cell, {read = 0, refused = 0, reasons = {}} = {}) => ({step, cell, alert: 0, unread: 0, keyWindow: refused, keyUnread: 0,
+    keyWindowRead: read, keyWindowUnread: Object.values(reasons).reduce((a, b) => a + b, 0), keyWindowUnreadReasons: reasons});
+  const observed = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, [row('vc-1', 'task.act', {read: 3, refused: 1})]);
+  assert.match(observed, /^## The key-window requirement/);
+  assert.match(observed, /^In this sitting's records: 3 click or key cells sent with the key window read; 1 refused NO VERDICT keyWindow; 0 sent with the key window unread\.$/m);
+  assert.match(observed, /^Setup's reading of the reader's grant over the loopback ssh: trusted\. Context only/m);
+  assert.match(observed, /^Observed\.$/m);
+  const part = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, [row('vc-1', 'task.act', {read: 1}), row('matrix-cua-1', 'row:3', {reasons: {'the scene window is not on screen': 2}})]);
+  assert.match(part, /2 sent with the key window unread \(the scene window is not on screen 2\)/);
+  assert.match(part, /^Observed, except for the 2 cells sent unread\.$/m);
+  // Every reading unread checked nothing, whatever setup read of the grant.
+  for (const trust of [{trusted: false, reason: NOT, via: 'loopback ssh'}, {trusted: true, via: 'loopback ssh'}, null]) {
+    assert.match(renderKeyWindowObserved(trust, [row('matrix-cua-1', 'row:3', {reasons: {[NOT]: 5}})]), /^Vacuous: every key-window reading went unread, so no cell was checked\.$/m);
+  }
+  assert.match(renderKeyWindowObserved({trusted: false, reason: NOT, via: 'loopback ssh'}, []), /not trusted \(the reader is not trusted for Accessibility\)/);
+  assert.match(renderKeyWindowObserved(null, []), /Setup recorded no reading of the reader's grant/);
+  // A refusal is a reading taken: the requirement held somewhere, whatever else went unread.
+  assert.match(renderKeyWindowObserved(null, [row('vc-1', 'task.act', {refused: 1, reasons: {[NOT]: 1}})]), /^Observed, except for the 1 cell sent unread\.$/m);
+});
+
+// A sitting with no key-window reading (E, F, or a run that stopped before its first click or key cell) observed nothing,
+// not the requirement; even a cell of the guard tally refused for an alert is no key-window reading.
+test('the key-window requirement with no reading in the sitting: not observed, never "Observed"', () => {
+  for (const tally of [[], guardTally([{step: 'cc-1', record: {alertGuardCounts: {'task.act': {alert: 1, unread: 0}}}}, {step: 'ee-1', record: null}])]) {
+    const text = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, tally);
+    assert.match(text, /^No key-window reading was taken: the requirement was not observed in this sitting\.$/m);
+    assert.doesNotMatch(text, /^Observed/m);
+  }
+});
+
+// D reads in the job's own process chain (accept-native's guard, not over the loopback ssh): its acceptance record's own
+// readings judge it, so an ssh grant reading of not trusted does not make D's checked cells vacuous.
+test('sitting D is judged on its own reads: acceptance.json\'s key-window readings, beside an untrusted ssh grant reading', () => {
+  const STEP = 'connection A: type and observe the marker';
+  const tally = guardTally([{step: 'accept-native', record: {keyWindowRead: {[STEP]: 4}, keyWindowUnread: {[STEP]: 1}, keyWindowUnreadReasons: {[STEP]: {'the scene window is not on screen': 1}}}}]);
+  assert.deepEqual(tally.map(t => [t.cell, t.keyWindowRead, t.keyWindowUnread]), [[STEP, 4, 1]]);
+  const text = renderKeyWindowObserved({trusted: false, reason: 'the reader is not trusted for Accessibility', via: 'loopback ssh'}, tally);
+  assert.match(text, /4 click or key cells sent with the key window read/);
+  assert.match(text, /^Observed, except for the 1 cell sent unread\.$/m);
 });
 
 test('without any full run the judge is not asked', () => {

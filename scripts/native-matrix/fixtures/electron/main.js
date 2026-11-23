@@ -9,6 +9,7 @@
 //   --cua-fixture-bounds=x,y,w,h    the window's frame in points; else the default below
 //   --cua-fixture-page=pointerdown  the page loaded with ?page=pointerdown, under which the renderer adds the
 //                                   pointerdown-only button (ruling 1168; the native matrix's run alone passes it)
+//   --cua-fixture-focus             once shown, the window made the app's key window (the harness's `up` passes it)
 //   --cua-fixture-probe538=<dir>    #538's hosted probe's control channel (./probe538.js; scripts/probe-538/ alone
 //                                   passes it)
 //
@@ -62,14 +63,19 @@ function recordAccessibility(file) {
 
 app.whenReady().then(() => {
   recordAccessibility(path.join(userData, 'cua-fixture-accessibility.jsonl'));
-  // Shown without activation, so bringing the scene up never takes the focus (the harness activates it when a cell needs it).
+  // Shown inactive (the harness activates it when a cell needs it). With --cua-fixture-focus, the harness's `up` on
+  // both sides alike, it is then made the app's key window (focus: AppKit's makeKeyAndOrderFront, with the activation
+  // it asks the system for), so the app holds its one window as its key window whenever it is activated: the key-window
+  // requirement before a click or key cell (ruling 1169's addition; pilot B read the fixture frontmost with no key
+  // window). A launch without it (the matrix's launch row, mid-run) takes nothing.
   const window = new BrowserWindow({
     ...bounds(), title: 'cua Electron fixture', show: false,
     webPreferences: {contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, preload: path.join(__dirname, 'preload.js')},
   });
   window.on('focus', () => counters.bump('windowFocus'));
   window.on('blur', () => counters.bump('windowBlur'));
-  window.once('ready-to-show', () => window.showInactive());
+  const focus = process.argv.includes('--cua-fixture-focus');
+  window.once('ready-to-show', () => { window.showInactive(); if (focus) window.focus(); });
   const pointerdown = argument('cua-fixture-page') === 'pointerdown';
   window.loadFile(path.join(__dirname, 'index.html'), pointerdown ? {query: {page: 'pointerdown'}} : {});
   const probe538 = argument('cua-fixture-probe538');

@@ -81,7 +81,8 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
     return row;
   });
   return cellResult({cell: 'matrix', device, started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows, run),
-    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared', runner: HOSTED_RUNNER} : {}), ...meta}});
+    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared', runner: HOSTED_RUNNER} : {}),
+      ...(typeof meta === 'function' ? meta(run) : meta)}});
 }
 // The record a hosted run's device attests (T10b′ part 2): one job's run for every hosted fixture.
 const HOSTED_RUNNER = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
@@ -527,6 +528,53 @@ test('a vendor row present and invalid: the cua sample of its run has no valid p
   // A proven worse sample stays worse, qualified or not.
   const worse = judged({vendor: {resolved: 9, axMs: 50, tweak: invalidIn(2)}, cua: {axMs: 40, tweak: (rows, run) => (run === 1 ? set(CLICK, {ok: false})(rows) : rows)}});
   assert.ok(worse.blocking.includes(`method: ${CLICK} is worse on cua`));
+});
+
+// Ruling 1169: a pair is measured on one frame. A run pair whose sides stood on different frames (../hosted-sittings/
+// venue.mjs frameAsymmetry) is no pair: its samples are NO VERDICT `venue`, so a worse cua sample there is no verdict,
+// never a FAIL.
+test('a run pair whose sides stood on different frames is left out: its worse cua sample is no verdict, not a FAIL', () => {
+  const frame = x => ({x, y: 60, width: 800, height: 760});
+  const venue = (x, onlyRun = null) => run => ({venue: {frames: {chrome: frame(onlyRun === null || run === onlyRun ? x : 22)}}});
+  const worseIn1 = (rows, run) => (run === 1 ? set(CLICK, {ok: false})(rows) : rows);
+  const split = judged({vendor: {resolved: 9, axMs: 50, meta: venue(22)}, cua: {axMs: 40, meta: venue(30, 1), tweak: worseIn1}});
+  assert.notEqual(split.verdict, 'FAIL', split.blocking.join('; '));
+  assert.ok(!split.blocking.includes(`method: ${CLICK} is worse on cua`));
+  assert.equal(split.methods.find(m => m.id === CLICK).verdict, 'no-verdict');
+  assert.deepEqual(split.cells.find(c => c.id === CLICK).account.cua.noVerdict, {venue: 1});
+  assert.deepEqual(split.cells.find(c => c.id === CLICK).account.vendor.noVerdict, {venue: 1});
+  assert.ok(split.missing.some(p => /^run 1's vendor and cua runs did not stand on one frame \(venue:chrome: 30,60 800x760 on this side, 22,60 800x760 on its pair\)/.test(p)), split.missing.join('\n'));
+  // On one frame, the same worse sample fails.
+  assert.equal(judged({vendor: {resolved: 9, axMs: 50, meta: venue(22)}, cua: {axMs: 40, meta: venue(22), tweak: worseIn1}}).verdict, 'FAIL');
+});
+
+// The rules that judge a cua sample with no pair, on its own, would still fail C from a split run: a proven change of
+// the user's value, an `own` row (background, launch), an acceptance row, the oracle's interference reading, and pressKey's
+// vendor composing otherwise. Every row of a split run is NO VERDICT `venue` before any of them.
+test('a split-frame run can never fail the matrix: the user\'s value, own and acceptance rows, interference, pressKey', () => {
+  const frame = x => ({x, y: 60, width: 800, height: 760});
+  const venueOf = x => run => ({venue: {frames: {chrome: frame(run === 1 ? x : 22)}}});
+  const inRun1 = patch => (rows, run) => (run === 1 ? patch(rows) : rows);
+  const changed = {ok: false, outcome: {exact: false, length: 0, expectedLength: 5, hash: 'h0', userKept: false, unchanged: true, threw: 'the text did not read back after typing', errorName: 'typeUnconfirmed'}};
+  const interfered = {interference: {ok: false, frontmost: false, topWindow: true, activations: 1, route4: false}};
+  const PRESS_KEY = 'textedit/korean/pressKey.rk', vendorComposed = {ok: false, outcome: {exact: false}};
+  const cases = [
+    ['the user\'s value', {cua: inRun1(set(COMPOSING, changed))}, `unicode: ${COMPOSING} failed on cua`],
+    ['an own row', {cua: inRun1(set(BACK, {ok: false}))}, `method: ${BACK} is worse on cua`],
+    ['a launch row', {cua: inRun1(set(LAUNCH, {ok: false, outcome: {scene: false, panel: true}}))}, `launch: ${LAUNCH} did not launch on cua`],
+    ['an acceptance row', {cua: inRun1(set(A4, falseOk('h1')))}, `unicode: ${A4} failed on cua`],
+    ['interference', {cua: inRun1(set(BACK, interfered))}, `not interfering: ${BACK} failed on cua`],
+    ['pressKey', {vendor: inRun1(set(PRESS_KEY, vendorComposed))}, `unicode: ${PRESS_KEY} composes otherwise on the vendor: the engines differ (ruling 1119)`],
+  ];
+  for (const [what, tweak, blocking] of cases) {
+    const run = (split) => judged({vendor: {resolved: 9, axMs: 50, meta: venueOf(22), tweak: tweak.vendor}, cua: {axMs: 40, meta: venueOf(split ? 30 : 22), tweak: tweak.cua}});
+    const one = run(false);
+    assert.ok(one.blocking.includes(blocking), `${what} on one frame: ${one.blocking.join('; ')}`);
+    const split = run(true);
+    assert.notEqual(split.verdict, 'FAIL', `${what}: ${split.blocking.join('; ')}`);
+    assert.deepEqual(split.blocking, [], what);
+    assert.ok(split.missing.some(p => /^run 1's vendor and cua runs did not stand on one frame/.test(p)), what);
+  }
 });
 
 test('speed and finding rest on the vendor too: a run whose vendor samples have no verdict leaves cua\'s unpaired', () => {

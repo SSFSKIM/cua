@@ -965,3 +965,36 @@ Beside the bar:
 | QAw | safari | 20261117.0516.1 | 27.2 | 460/460 | none | noWrongTarget |
 | QAw | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 460/460 | none | otherOnTop, noWrongTarget |
 
+### Counted on the merged head: main `33c8dd094fe35c44a314567f5b9276b41f33b0f0` against fix `8feea9988ed394eb509cbb146af73ef6b1cf49e1` (rulings 1085, 1086)
+
+The fix branch with main (#453, `33c8dd09`) merged in. It ran against the new main, with the same cells, repetitions and hits as the c04efb4e set; every row was valid except one main setup row (`MC1` Electron, `witness`). `cmp442.mjs` compares each unit's tally of verdicts and reasons against the c04efb4e run that held it, per head.
+
+| Batch | Run | Kit | Hits | Against (c04efb4e) |
+|---|---|---|---|---|
+| M1 (as QA1) | [45094703164](https://github.com/SSFSKIM/cua/actions/runs/45094703164) | `4fe905a8` | cold | fix 38 units, 1 differs (`popupwait`, Electron); main 1 differs (the same) |
+| Mw (as QAw) | [45097985214](https://github.com/SSFSKIM/cua/actions/runs/45097985214) | `76851a3f` | warm | fix 69 units, 0 differ; main 0 |
+| M2 (as QA2) | [45103752835](https://github.com/SSFSKIM/cua/actions/runs/45103752835) | `76851a3f` | cold | fix 51, 0; main 0 |
+| MB (as QB) | [45108998758](https://github.com/SSFSKIM/cua/actions/runs/45108998758) | `76851a3f` | cold | fix 69, 0; main 0 |
+| MBw (as QBw) | [45114265526](https://github.com/SSFSKIM/cua/actions/runs/45114265526) | `76851a3f` | warm | fix 48, 0; main 0 |
+| MC1 (as QC1) | [45118345837](https://github.com/SSFSKIM/cua/actions/runs/45118345837) | `76851a3f` | cold | fix 45, 0; main 1 row fewer (`like/link` Electron, its setup row) |
+| MC2 (as QC2) | [45122285177](https://github.com/SSFSKIM/cua/actions/runs/45122285177) | `76851a3f` | cold | fix 60, 0; main 0 |
+
+- **slideover refuses on every row, all three lanes, cold and warm, as on c04efb4e:** cold CfT 20/20 and Electron 20/20 `otherControlOnTop`, Safari 20/20 `interactiveHit`; warm CfT and Electron 20/20 each (`otherControlOnTop` 10 and `interactiveHit` 10), Safari 20/20 `interactiveHit`.
+- **Every keep cell and reviewer shape answers as main, row for row, reason included,** and every unit's fix tally equals c04efb4e's in all seven runs, but `popupwait`'s. The paired gates fail only where they did on c04efb4e, on main's baseline (`overlayKept`) and on the cells both heads lose alike (`noWrongTarget`: `siblingstack`, `deepfront`, `contentsfront`, `veilinto/link`). `veilinto/link` is still kept on Chromium (`recordedHit` cold, `hitAboveNode` warm) on both heads.
+- **siblingstack as main** on every lane, cold and warm.
+- **hitCorrection, cold:** CfT changed 287, same 50, none 1; Electron changed 283, same 50, none 5. `same` falls only in `scrim`, `scrimhidden` and `overlaprow/text`; `none` only in `popupwait`. Warm: same on every row (CfT 160, Electron 150). The kit's warm sequences corrected at a median of 29 ms (CfT) and 31 ms (Electron). The latest were 57 ms on CfT and 93 ms on Electron (one row, `slideover/text`, main). So 1 of 780 Electron rows corrected after 80 ms, and none on CfT; over both sets that is 3 of 3,120 rows.
+- **stalePoint.ms, p50 / p95, all seven runs:** CfT main 5.0 / 19.0, fix 14.1 / 271.4; Electron main 3.0 / 9.2, fix 6.3 / 164.6; Safari main 3.3 / 10.6, fix 3.7 / 10.1.
+- **decomove on 8feea998:** CfT 20/20 and Electron 20/20 `controlGone`, as main 33c8dd09. Safari refuses `nodeGone` on both heads.
+- **popupwait** (report-only), the fix's `appWindowOverPoint`: CfT 1 row (delay 20 ms, `hitMs` 63.9, the delayed hit's), Electron 5 rows (delays 20, 40 and 60 ms, `hitMs` 1.8–4.3). Its `stalePoint.hitMs` is `correctedHitMs` when the delayed hit supplies the window refusal. Timing-dependent, so it differs from c04efb4e's rows (CfT 1, Electron 1).
+
+#### #453's delivering cells on 8feea998 (probe/453-measure, kit `qual453`)
+
+Against #453's counted run [45075999203](https://github.com/SSFSKIM/cua/actions/runs/45075999203) (fix a8307c6c): omnibox 6/6, permission allow 5/5 and block 5/5, popover 6/6, with shared frontmost, key window and raise all 0.
+
+| Run | Rows | omnibox | permission allow | permission block | popover | shared: frontmost / key / raised | wrong row, false ok, beneath |
+|---|---|---|---|---|---|---|---|
+| [45108028372](https://github.com/SSFSKIM/cua/actions/runs/45108028372) (as dispatched: `reps 99`, each cell's own count) | 22 | 6/6 | 5/5 | 5/5 | 6/6 | 0/22, 0/22, 0/22 | 0, 0, 0 |
+| [45128593886](https://github.com/SSFSKIM/cua/actions/runs/45128593886) (`--cellreps 10`, for at least 10 per cell) | 40 | 10/10 | 10/10 | 10/10 | 10/10 | 0/40, 0/40, 0/40 | 0, 0, 0 |
+
+Each row was delivered (route 1), confirmed by `overlayClick` and taken, as on 45075999203: the omnibox and the popover as their row AXStaticText and AXButton, and the permission prompt as its AXButton (allow granted, block NotAllowedError). Kit `0d52741c`, Chrome 157.0.8103.79, macOS 26.7.2.
+

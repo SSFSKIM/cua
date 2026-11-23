@@ -517,6 +517,9 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
       fail('repl_host_refused', `CUA_REPL_HOST=cua is not supported with the computer surface on macOS and ${setting.reason === 'default' ? 'the default vendor engine' : `the vendor engine (${engineSource(setting.reason, 'vendor')})`}: the vendor's computer-use helper accepts only the vendor host's node_repl as a peer. Set CUA_NATIVE_ENGINE=cua to run the computer surface on cua's own host with cua's engine, use CUA_SHIM_SURFACES=browser for a browser-only session there, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor engine`);
     return {engine: 'vendor', reason: setting.reason, status: 'pass'};
   }
+  // The vendor engine runs only on the vendor host, so with CUA_REPL_HOST=cua a refusal's way back names the host as well.
+  const rollback = requestedHost === 'cua' ? 'or set CUA_NATIVE_ENGINE=vendor for the vendor engine and unset CUA_REPL_HOST (or set CUA_REPL_HOST=vendor), the vendor engine\'s only host'
+    : 'or set CUA_NATIVE_ENGINE=vendor for the vendor engine';
   const app = installed();
   if (!app) {
     if (setting.reason !== 'default' || requestedHost === 'cua') {
@@ -524,15 +527,12 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
       // The fallback's own reason and remedy (engine-notice.mjs, ruling 1148): approve alone for a compatible build
       // already pending, a failed build's cause.
       const {why, remedy} = missingEngine({pending: pending(), buildFailure: buildFailure(), minimum: minimumVersion});
-      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and this Mac has ${why} (${bundle}): ${remedy}; or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
+      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and this Mac has ${why} (${bundle}): ${remedy}; ${rollback}`);
     }
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
   }
   if (belowMinimum(app.engineVersion, minimumVersion)) {
     const found = pending();
-    // The vendor engine runs only on the vendor host, so with CUA_REPL_HOST=cua the way back names the host as well.
-    const rollback = requestedHost === 'cua' ? 'or set CUA_NATIVE_ENGINE=vendor for the vendor engine and unset CUA_REPL_HOST (or set CUA_REPL_HOST=vendor), the vendor engine\'s only host'
-      : 'or set CUA_NATIVE_ENGINE=vendor for the vendor engine';
     if (setting.reason !== 'default' || requestedHost === 'cua')
       fail('engine_outdated', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and the approved engine on this Mac (${app.bundlePath}) is version ${app.engineVersion}, older than ${minimumVersion}, the oldest this cua drives: ${outdatedRemedy(found, minimumVersion)}; ${rollback}`);
     return {engine: 'vendor', reason: 'engine_outdated', status: 'warn', outdated: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}, minimum: minimumVersion, pending: found};

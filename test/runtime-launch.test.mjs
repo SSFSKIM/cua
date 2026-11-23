@@ -1063,6 +1063,11 @@ test('an explicit cua engine with none approved is refused with the fallback\'s 
   assert.match(stale.message, /pending is version 0\.1\.0, older than .*: to use cua's engine, build it with `cua install --engine`/);
   const failed = refused({pending: () => null, buildFailure: () => ({code: 'engine_identity_missing', cause: 'no signing identity is configured', failedAt: null})});
   assert.match(failed.message, /no approved cua engine \(build failed: no signing identity is configured\) .*: fix that, then run `cua install --engine`/);
+  // With CUA_REPL_HOST=cua the way back names the host too: CUA_NATIVE_ENGINE=vendor alone with it refuses
+  // (repl_host_refused), as the outdated refusal says.
+  const hosted = outcome(() => nativeEngineFor({env: {HOME: '/Users/u'}, requestedHost: 'cua', config: () => ({}), installed: () => null, pending: () => null, buildFailure: () => null}));
+  assert.equal(hosted.code, 'engine_not_installed');
+  assert.ok(hosted.message.endsWith('; or set CUA_NATIVE_ENGINE=vendor for the vendor engine and unset CUA_REPL_HOST (or set CUA_REPL_HOST=vendor), the vendor engine\'s only host'), hosted.message);
 });
 
 test('the three engine_not_installed refusals and the refusal precedence: unknown value, host setting, approved engine, Node', () => {

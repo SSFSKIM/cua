@@ -794,3 +794,110 @@ The focused suites at `4130efedc` pass 2135/2135, plain and with `RUNNER_ENVIRON
 GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1`.
 
 I made no full `npm test`, hosted run, GUI action, TCC write or push.
+
+## Pilot A, run 45218179501
+
+Sitting A's hosted pilot ran at `8bf3ff37b`. The artifact is kept outside the repository, in `~/.local/share/cua-m5-pilot/a-1/`.
+
+### Setup: every step passed
+
+| Step | Result |
+|---|---|
+| loopback | passed |
+| harness checkout | passed |
+| prepare | passed |
+| install | passed |
+| engine | unpacked, signature verified |
+| vendor rows | written |
+| TCC rows | all four services written |
+| approve | two passes: pass 1 `engine_capture_confirmation`, pass 2 approved. Build `c83131f0…`, engineVersion 0.3.0 |
+
+### What failed
+
+Every native-baseline run (vv-1, vc-1, cc-1) failed at prepare within a second:
+
+```
+the approved home is in use by 3 process(es) (pids 2142, 2162, 2180); refusing to share it
+```
+
+pid 2142 was the same in every run; the other two changed from run to run (2208/2226, 2253/2271).
+
+### Cause
+
+`homeUsers` counted every process whose command line names the approved home (`pgrep -f`). On a runner, two kinds of
+process do that without using the runtime:
+
+- **cua's approved engine** (pid 2142). Setup's approve left it running, at
+  `~/Library/Application Support/cua/engine/cua Engine.app`. On a runner the approved home is the default CUA_HOME,
+  `~/Library/Application Support/cua`, so the engine sits under it.
+- **The controller's ssh client and the shell around it** (the two pids that changed each run). On the hosted
+  topology the controller and the device are one VM. These carry the home in their argv. They are outside prepare's
+  ppid chain, because sshd sits between them and prepare. On a two-machine topology they would be on the other
+  machine.
+
+### The fix
+
+- **The engine is stopped first, under the admission, before the in-use check.**
+  - `prepareRun` now runs in two phases: `admitReused` takes the admission; `cua engine stop` runs (`stopEngine`, the
+    `shutdown` request); then `settle()` runs the in-use check, the scratch directory and the stash.
+  - Every run starts from a known engine state, and the check needs no exception for the engine.
+  - An engine that will not stop gives the admission back and refuses the run, as before.
+  - `engineStop` (`{wasRunning, pid?}`) is the run's, as before.
+  - Setup gains an `engine stop` step after approve, so every sitting starts with the engine down; this covers C, D and
+    T3b too. The result goes into `setup.json` as `engineStop: {wasRunning, pid?, stopped}`.
+  - Cleanup already stopped the engine before its own users check.
+- **Only real users of the runtime are counted.**
+  - `homeUsers` counts a candidate only if it runs the approved helper's exact executable, or an executable under the
+    home: the managed Node, a REPL host, or cua's engine if it is left running.
+  - A process that only names the path in its argv is not a user. That is the decoy, the controller's ssh client and
+    its shell.
+  - The match is on executables (`lsof` txt), never on argv.
+  - Cleanup uses the same function, so the hosted cleanup no longer sees the ssh client as a stranger.
+
+### Tests
+
+- New, with real processes: an ssh-style client and a shell that name the home are not users; another run's helper
+  and a serve whose executable is under the home still are. Their RED (in the next table) is against the
+  argv-counting `homeUsers`.
+- New: an approved-runtime run stops the engine before its in-use check. With the engine as the only user, the run is
+  admitted, and the order is stop, then users.
+- Changed: the ownership test's decoy, which only names the helper's path, is no longer listed. The stop-under-the-
+  admission test now checks that the admission is held and nothing is stashed yet. `owner.json` is written after the
+  check.
+- Setup: `engine stop` comes after approve and before the record, and `engineStop` is reported.
+
+RED:
+
+| Command | Result |
+|---|---|
+| `node --test test/native-baseline/approved-runtime.test.mjs` | pass 13 fail 4: `not ok 10` (the stop came after the stash), `not ok 15` (the decoy listed), `not ok 16`, `not ok 17` |
+| `node --test test/hosted-sittings/setup.test.mjs` | pass 3 fail 1 |
+
+GREEN:
+
+| Suite | Result |
+|---|---|
+| `test/native-baseline/*` | 203/203 |
+| `test/hosted-sittings/*` | 68/68 |
+
+### The other sittings, checked statically
+
+| Where | Guard | Finding |
+|---|---|---|
+| B: `native-mac`, through `repl-parity/prepare-device.mjs` | `prepareRun`/`cleanupRun` | Met the same guard, with the engine running and the ssh client visible. Fixed by both changes. |
+| C: `native-matrix`, `live-device.mjs` | its begin already runs `stopEngine` before preparation | Only the ssh client in argv was a problem, fixed by the narrowing. Its cleanup stops the engine again before the users check. |
+| `native-baseline/remote.mjs` | the preflight's `serves` count, `pgrep -f` on `<checkout>/bin/cua.mjs serve` | No change. It runs before a serve is started, and its bracket keeps it from matching its own ssh command. A controller's ssh client carrying a serve command exists only while that serve runs, so counting it is not a false positive. |
+| The scene and app checks | `pgrep -x TextEdit`, `pgrep -x ChatGPT` in accept-native, `hosted-sittings.mjs textedit`, `mini-rules.mjs` | Process names, not paths: no change. |
+| D: `accept-native` | runs in a scratch CUA_HOME with no admission guard | Setup's engine stop gives it a known engine state. |
+| D: `verify --bind`, `approval-cycles` | no admission or in-use guard | Setup's engine stop gives them a known engine state. |
+| T3b | not built yet | Its stages run after setup's engine stop. A relaunch at every stage should go through `cua engine stop` the same way. |
+
+### Decisions
+
+1. **Stop the engine; do not exclude it.** The design session's steer: the engine is stopped under the admission and
+   before the check, so the check stays one rule. The engine is no longer needed to persist across a run, because the
+   cua lanes launch it on demand.
+2. **Executables, not argv.** A user runs part of the runtime. That is the same rule `cleanupReused` already applied to
+   helpers, now applied to every candidate.
+
+The focused suites (hosted-sittings, native-matrix, accept*, native-baseline, repl-parity, browser-parity, sandbox-probe) pass 2259/2259. I made no hosted run, GUI action, TCC write or push.

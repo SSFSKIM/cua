@@ -46,7 +46,7 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   until the pilot reads the Save panel's controls, and its identification logic is reviewed when they are filled in.
 - [x] T8d — reviewed 2026-11-23 (a6ef751ea..643a4dd33, fixes 430fe9bf4..8cbe919b0, four rounds); #216 stays open
   until the twenty-cycle witness runs in T10's pilot or O10.
-- [ ] T10a (the judge)
+- [x] T10a (the judge) — reviewed clean 2026-11-23 (527c85376, fixes 28122c80b, 8f4a72eb8, d7d7ff628).
 - [ ] T10b′ (the harness on a runner, built; its pilot after M4 merges)
 - [ ] T3b
 - [ ] T8e
@@ -200,6 +200,20 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   flip) on a branch `feat/117-m5-flip` stacked on it, which follows `feat/117-m5` by merges (never a rebase) as later
   tasks land. The design session approved it and cleared pushing `feat/117-m5-flip` (merges only, no force, no
   rebase, no PR, no CI: its pushes carry `[skip ci]` until the design session opens the flip's pull request).
+- 2026-11-23, T10a's review rounds (28122c80b, 8f4a72eb8, d7d7ff628): pairs are eligible only within one hold,
+  commit, approved build, device and OS (hold, commit and build strings; the OS a `{name, version, build}` record
+  compared field by field, validated in the result reader too); a cell qualifies only on three complete run pairs
+  (both sides holding the same planned samples, every one with a verdict), partial runs shown as labelled
+  diagnostics; speed and finding come from the same eligible observations on both sides; per-method timings are in
+  the manifest. A departure needs `cua.errorName` of the declared kind (`answers.mjs`) and a sentence with at least
+  ten literal characters in a row. Ruling 1144 applies to fixed-string rows only (pressKey included; the mid-switch
+  row judged on its own prefix); frontmost rows are equal only with the same answer and every recorded effect field
+  equal, and a frontmost refusal where the vendor answered ok needs an R3 entry. A proven cua user-value change fails
+  first; a refusal is better than a false ok only on an actual vendor text mismatch. Shared limits are grouped per
+  observation by cause and priority. `ACCEPTANCE_ROWS` names Acceptance 4's two TextEdit rows. Deferred to T10b′: the
+  judge trusts `ok: true` before `userKept` (`cell-verdict.mjs` ~L114), which today's producer cannot contradict; the
+  harness must not write contradictory rows. Until T10b′ records the engine's own error name and the
+  unchanged/effect readings, no departure and no conservative-better case can be shown.
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

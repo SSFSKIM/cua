@@ -32,9 +32,10 @@
 //               action's interval)
 //   unmeasured  a speed or finding sample not measured: its `ok` false, or a speed sample without a numeric duration
 // and one the judge decides, since it needs both engines' samples:
-//   unpaired    a cua sample whose verdict rests on the vendor's answer (a frontmost method row, a speed or finding
-//               row, the pressKey row, a declared departure) with no vendor sample with a verdict from the same run
-//               (ruling 1116: no valid pair, no verdict).
+//   unpaired    a cua sample whose verdict rests on the vendor's answer (a frontmost method row, a fixed-string
+//               Unicode row's failure, the pressKey row, a declared departure) with no vendor sample with a verdict
+//               from the same eligible run (ruling 1116: no valid pair, no verdict); a speed or finding sample outside
+//               the complete run pairs (./cell-verdict.mjs).
 
 export const NO_VERDICT_CAUSES = Object.freeze({
   unread: 'front/key readings missing (hosted) or unread',
@@ -42,7 +43,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   alert: 'an app other than the cell\'s front or key (an alert)',
   invalid: 'the harness\'s own invalid reason',
   unmeasured: 'a speed or finding sample not measured (no numeric duration)',
-  unpaired: 'no vendor sample with a verdict from the same run (ruling 1116)',
+  unpaired: 'no vendor sample with a verdict from the same eligible run (ruling 1116); for speed and finding, outside the complete run pairs',
 });
 
 const isBundle = value => typeof value === 'string' && value.length > 0;

@@ -27,6 +27,11 @@ test('the rows in run order: Latin, the mid-switch, Korean, a composition in the
   assert.equal(per('perContext'), 3 * 9 * 2);
   assert.equal(new Set(rows.map(r => r.id)).size, rows.length, 'ids are unique');
   assert.ok(rows.some(r => r.id === 'textedit/latin/typeText.acceptance4') && rows.some(r => r.id === 'textedit/korean/typeText.acceptance4'), 'Acceptance 4\'s two rows');
+  // The acceptance rows are named, not told by the string: Acceptance 4 is TextEdit's typeText under each source.
+  assert.deepEqual(rows.filter(r => unicodePlan.isAcceptanceRow(r.id)).map(r => r.id), ['textedit/latin/typeText.acceptance4', 'textedit/korean/typeText.acceptance4']);
+  for (const id of ['chrome/korean/typeText.acceptance4', 'textedit/korean/paste.acceptance4', 'textedit/composing@electron/typeText.acceptance4']) assert.ok(!unicodePlan.isAcceptanceRow(id), id);
+  // Ruling 1144 is the fixed-string rows': the mid-switch row is judged by its measured prefix.
+  assert.deepEqual(rows.filter(r => unicodePlan.isMidSwitchRow(r.id)).map(r => r.id), rows.filter(r => r.condition === 'midSwitch').map(r => r.id));
   assert.ok(rows.some(r => r.id === 'chrome/composing@textedit/paste.hangul'));
   assert.ok(rows.some(r => r.id === 'electron/korean/pressKey.rk'));
   assert.ok(rows.some(r => r.id === 'textedit/midSwitch/typeText.long'));

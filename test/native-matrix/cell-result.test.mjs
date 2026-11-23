@@ -123,3 +123,12 @@ test('a standalone cell judges its rows\' oracle too: interference not held fail
   assert.equal(base({rows}).judgesInterference, undefined);
   assert.match(validateCellResult({...result, judgesInterference: 'yes'}).join(' '), /judgesInterference/);
 });
+
+test('a result\'s OS record (meta.os), when it carries one, names the OS, its version and its build', () => {
+  const os = os => validateCellResult(base({rows: [row()], meta: {os}}));
+  assert.deepEqual(os({name: 'macOS', version: '27.0', build: '26A428'}), []);
+  assert.deepEqual(os(null), [], 'a run that read no OS records null');
+  for (const bad of [{version: '27.0'}, {name: 'macOS', version: '27.0', build: ''}, '27.0', {name: 'macOS', version: 27, build: '26A428'}]) {
+    assert.deepEqual(os(bad), ['meta.os is not {name, version, build}, each a non-empty string'], JSON.stringify(bad));
+  }
+});

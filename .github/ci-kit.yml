@@ -230,12 +230,14 @@ gates:
     timeout: 50
     run: PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
   # #117 M5, T11a: the M4/M5 pre-flight's sitting E, the macOS default-selection mode
-  # (scripts/accept/macos-default-selection.mjs): which engine a default macOS computer session selects, read from `cua
-  # doctor --json` on four scratch homes: a fixture approved engine at the service's minimum (cua's, by default) and the
-  # three fallbacks to the vendor's host and engine (no approved engine, no Node 24, an engine below the minimum). It
-  # fails on every commit before the flip, where macOS's default is the vendor's, and passes on the flip; the sitting
-  # runs it on both. The no-Node home runs cua on the runner's cached Node 22. Nothing is launched or captured and no TCC
-  # row is written. Dispatch only, its verdict evidence: `ci-gate <sha> --gates default-selection`.
+  # (scripts/accept/macos-default-selection.mjs), its fixture lane: a selection check, not the hosted+ witness. Which
+  # engine and host a default macOS computer session selects, read from `cua doctor --json` on four scratch homes: a
+  # fixture approved engine at the service's minimum (cua's engine on cua's own host, by default; the synthetic bundle's
+  # inspection is recorded, not judged) and the three fallbacks to the vendor's host and engine (no approved engine, no
+  # Node 24, an engine below the minimum). It fails on every commit before the flip, where macOS's default is the
+  # vendor's, and passes on the flip; the sitting runs it on both. The no-Node home runs cua on the runner's cached
+  # Node 22. Nothing is launched or captured and no TCC row is written. Dispatch only, its verdict evidence:
+  # `ci-gate <sha> --gates default-selection`.
   - name: default-selection
     on: [dispatch]
     lane: hosted-macos
@@ -246,3 +248,15 @@ gates:
       [ -n "$older" ] || { echo "default-selection: no Node 22 in the runner's tool cache" >&2; exit 1; }
       node scripts/accept/macos-default-selection.mjs --older-node "$older" --out default-selection-out/report.json
     artifacts: ["default-selection-out/**"]
+  # #117 M5, T11a: sitting E's approved lane, the hosted+ witness of the cua row
+  # (scripts/accept/macos-default-selection-hosted.sh): the run's own engine built and approved in a disposable home
+  # under the runner's temp directory, then the mode with --approved-home, doctor's inspection of that bundle judged
+  # too (doctor launches and stops it). Prepared, not run: it refuses until CUA_HOSTED_APPROVE names the hosted
+  # approval, which needs M4's hosted bundle build and T10b′'s approve (TCC rows, the relaunch, two passes). Dispatch
+  # only: `ci-gate <sha> --gates default-selection-approved`.
+  - name: default-selection-approved
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 30
+    run: sh scripts/accept/macos-default-selection-hosted.sh
+    artifacts: ["default-selection-approved-out/**"]

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {FALLBACK_HOMES, HOMES, PRE_MINIMUM_VERSION, fallbackSelectionProblem, judgeFor, sittingVerdict} from '../scripts/accept/macos-selection.mjs';
+import {FALLBACK_HOMES, HOMES, PRE_MINIMUM_VERSION, approvedHomeProblem, defaultHomeProblem, fallbackSelectionProblem, hostOf, judgeFor, sittingVerdict} from '../scripts/accept/macos-selection.mjs';
 import {FIXTURE_ENGINE} from '../scripts/probe/fixture-engine.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
@@ -45,20 +45,56 @@ test('a fallback home passes only when the default keeps the vendor\'s engine an
   assert.equal(fallbackSelectionProblem(warned('engine_outdated'), 'older'), 'no fallback home older: none, node or outdated');
 });
 
-test('the default home passes only when doctor says the default selected cua\'s engine; a home with no report fails the sitting', () => {
-  assert.equal(judgeFor('default')(doctor('cua', 'default', {status: 'pass'})), null);
+// The default home's report: cua's engine selected by default and run on cua's own host.
+const OWN_HOST = {status: 'pass', detail: 'cua host (cua_engine) on Node /runner/node24/bin/node: CUA_REPL_HOST is unset, and cua\'s engine runs on cua\'s own host …'};
+const selected = (engineRow = {}, host = OWN_HOST) => doctor('cua', 'default', {status: 'pass', detail: 'the approved cua Engine.app …', ...engineRow, host});
+
+test('the default home passes only when doctor says the default selected cua\'s engine on cua\'s own host; a home with no report fails the sitting', () => {
+  assert.equal(judgeFor('default')(selected()), null);
+  assert.deepEqual(hostOf(selected()), {host: 'cua', reason: 'cua_engine', status: 'pass'});
   assert.equal(judgeFor('default')(doctor('vendor', 'default', {status: 'skip'})), 'the session selects vendor (default), not cua\'s engine by default');
-  assert.equal(judgeFor('default')(doctor('cua', 'explicit', {status: 'pass'})), 'the session selects cua (explicit), not cua\'s engine by default');
-  const passing = {default: doctor('cua', 'default', {status: 'pass'}), ...Object.fromEntries(Object.entries(FALLBACK_HOMES).map(([kind, reason]) => [kind, warned(reason)]))};
+  assert.equal(judgeFor('default')(doctor('cua', 'explicit', {status: 'pass', host: OWN_HOST})), 'the session selects cua (explicit), not cua\'s engine by default');
+  // cua's engine reported beside the vendor's host (the engine object alone is not the session): fails
+  const vendorHost = {status: 'pass', detail: 'vendor host (explicit): CUA_REPL_HOST=vendor; native engine cua (default): …'};
+  assert.equal(judgeFor('default')(selected({}, vendorHost)), 'doctor\'s repl.host row is pass, vendor host (explicit), not cua\'s host for cua\'s engine (cua_engine) with pass');
+  assert.equal(judgeFor('default')(selected({}, {status: 'warn', detail: 'cua host (cua_engine) on Node /n: …. The profile listing (browser only): vendor host (own_host_node_unavailable)'})),
+    'doctor\'s repl.host row is warn, cua host (cua_engine), not cua\'s host for cua\'s engine (cua_engine) with pass');
+  assert.equal(judgeFor('default')(selected({}, {status: 'fail', detail: 'refused (repl_host_node): …'})), 'doctor\'s repl.host row is fail, no host, not cua\'s host for cua\'s engine (cua_engine) with pass');
+  const {checks, ...noHost} = selected();
+  assert.equal(judgeFor('default')({...noHost, checks: checks.filter(c => c.name !== 'repl.host')}), 'cua doctor --json reports no repl.host row');
+  const passing = {default: selected(), ...Object.fromEntries(Object.entries(FALLBACK_HOMES).map(([kind, reason]) => [kind, warned(reason)]))};
   assert.deepEqual(sittingVerdict(passing), {pass: true, homes: {default: null, none: null, node: null, outdated: null}});
   const {node, ...short} = passing;
   assert.deepEqual(sittingVerdict(short), {pass: false, homes: {default: null, none: null, node: 'not run', outdated: null}});
 });
 
+test('the fixture lane records the synthetic bundle\'s inspection; the approved lane requires it to pass and names its failure apart from the selection', () => {
+  const failedInspection = selected({status: 'fail', detail: 'the approved cua Engine.app at /x … but it is not cua\'s engine (bundle id io.github.ssfskim.cua.fixture-engine), so doctor does not launch it'});
+  assert.equal(defaultHomeProblem(failedInspection), null, 'the fixture lane is a selection check');
+  assert.equal(defaultHomeProblem(failedInspection, {lane: 'approved'}),
+    'the default selected cua\'s engine on cua\'s host, but doctor\'s inspection of the approved bundle is fail: the approved cua Engine.app at /x … but it is not cua\'s engine (bundle id io.github.ssfskim.cua.fixture-engine), so doctor does not launch it');
+  assert.equal(defaultHomeProblem(selected(), {lane: 'approved'}), null);
+  assert.equal(defaultHomeProblem(doctor('vendor', 'default', {status: 'skip'}), {lane: 'approved'}), 'the session selects vendor (default), not cua\'s engine by default', 'a wrong selection is named as one');
+  assert.equal(sittingVerdict({default: failedInspection}, {lane: 'approved'}).homes.default.startsWith('the default selected cua\'s engine on cua\'s host, but doctor\'s inspection'), true);
+  assert.equal(defaultHomeProblem(selected(), {lane: 'hosted'}), 'no lane hosted: fixture or approved');
+});
+
+test('--approved-home is refused unless on a GitHub-hosted runner, in a disposable home under its temp directory, holding this checkout\'s approved build', () => {
+  const ok = {home: '/runner/_temp/cua-approved-home.abc', env: {RUNNER_ENVIRONMENT: 'github-hosted'}, runnerTemp: '/runner/_temp', accountHome: '/Users/runner', approvedBuild: 'b'.repeat(64), sourceBuild: 'b'.repeat(64)};
+  assert.equal(approvedHomeProblem(ok), null);
+  assert.match(approvedHomeProblem({...ok, env: {}}), /GitHub-hosted runner/);
+  assert.match(approvedHomeProblem({...ok, env: {RUNNER_ENVIRONMENT: 'self-hosted'}}), /GitHub-hosted runner/);
+  assert.match(approvedHomeProblem({...ok, runnerTemp: undefined}), /RUNNER_TEMP/);
+  for (const home of ['/Users/runner', '/runner/_temp', '/runner/_temp-other/h', '/Users/someone'])
+    assert.match(approvedHomeProblem({...ok, home, accountHome: home === '/Users/someone' ? home : ok.accountHome}), /disposable home under the runner's temp directory/, home);
+  assert.match(approvedHomeProblem({...ok, approvedBuild: null}), /holds no approved engine/);
+  assert.match(approvedHomeProblem({...ok, approvedBuild: 'c'.repeat(64)}), /not this checkout's/);
+});
+
 // Doctor on each home as the runner shapes it, in process: production's selection (its default and the service's
 // minimum, neither injected), the approved engine the home holds (the fixture's version, PRE_MINIMUM_VERSION's, or
 // none), and whether cua's own host finds a Node 24. Every other read doctor makes is stubbed or scratch.
-const NODE24 = {path: '/runner/node24/bin/node', version: 'v24.11.0', source: 'the node running cua'};
+const NODE24 = '/runner/node24/bin/node';
 const WITHOUT_NODE = () => { throw Object.assign(new CuaError('repl_host_node', 'cua\'s own REPL host needs Node 24 or later, and none was found'), {tried: ['the node running cua /runner/node22/bin/node (v22.14.0)']}); };
 const BUNDLE = '/runner/home/Library/Application Support/cua/engine/cua Engine.app';
 async function doctorOn(kind, t) {

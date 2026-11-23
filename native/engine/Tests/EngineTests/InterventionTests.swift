@@ -92,16 +92,24 @@ final class InterventionRuleTests: XCTestCase {
     XCTAssertEqual(interventionVerdict(last: last, cleared: 3, now: 16_000), .proceed, "cleared at or after the event")
   }
 
+  /// The vendor's sentence opens each answer; #212's clause follows it: nothing done before the action, else a stop
+  /// part-way and what may have taken effect (InterruptionEffectsTests).
   func testTheVendorsSentencesAndCode() {
     let still = stillInteracting("/Applications/TextEdit.app")
     XCTAssertEqual(still.code, -10016)
     XCTAssertEqual(still.errorName, "userIntervened")
-    XCTAssertEqual(still.message, "The user is still interacting with '/Applications/TextEdit.app'. Wait 5 seconds and retry.")
+    XCTAssertEqual(still.message, "The user is still interacting with '/Applications/TextEdit.app'. Wait 5 seconds and retry."
+                   + " Nothing was done: the action was refused before its first step.")
+    let refused = userChanged("/Applications/TextEdit.app", phase: .beforeAction)
+    XCTAssertEqual(refused.code, -10016)
+    XCTAssertEqual(refused.message, "The user changed '/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions."
+                   + " Nothing was done: the action was refused before its first step.")
     let changed = userChanged("/Applications/TextEdit.app")
     XCTAssertEqual(changed.code, -10016)
     XCTAssertEqual(changed.errorName, "userIntervened")
     XCTAssertEqual(changed.message,
-                   "The user changed '/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.")
+                   "The user changed '/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions."
+                   + " The action was stopped part-way. Any step it had begun may have taken effect. Nothing was undone.")
   }
 }
 
@@ -180,7 +188,7 @@ final class InterventionGuardTests: XCTestCase {
 
   func testThePreActionCheckRefusesUntilARequeryAfterAnIntervention() {
     XCTAssertThrowsError(try InterventionGuard.check(app: app, cleared: 0, now: 9_000, latest: { AttributedEvent(sequence: 1, at: 1_000) })) { error in
-      XCTAssertEqual((error as? EngineError)?.message, userChanged(app).message)
+      XCTAssertEqual((error as? EngineError)?.message, userChanged(app, phase: .beforeAction).message, "a refusal before the action")
     }
     XCTAssertNoThrow(try InterventionGuard.check(app: app, cleared: 1, now: 9_000, latest: { AttributedEvent(sequence: 1, at: 1_000) }))
   }

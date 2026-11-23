@@ -203,7 +203,23 @@ final class Engine: @unchecked Sendable {
     return ["accessibility": accessibility, "screenRecording": screenRecording, "captured": captured]
   }
 
-  private func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64) throws -> Any {
+  /// The method `execute` runs once its request's prologue is through (`dispatchMethod`; replaced in the unit tests).
+  typealias MethodDispatch = (_ method: String, _ args: [String: Any], _ context: ExecutionContext, _ target: ResolvedApp?) throws -> Any
+
+  /// `execute`, its request's whole lifecycle. #212: a userIntervened answer of a request that ended a held activation
+  /// (a menu span or a focus hold), as it began or while it unwound, names that end among what may have taken effect,
+  /// read once every one of the request's own cleanups has run.
+  func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64, dispatch: MethodDispatch? = nil) throws -> Any {
+    let released = connection.menuSpan.released + connection.focusHold.released
+    do {
+      return try executeRequest(params, connection, receivedAt, dispatch: dispatch ?? dispatchMethod)
+    } catch let error as EngineError where connection.menuSpan.released + connection.focusHold.released != released {
+      throw error.interrupted(adding: [.activationRelease])
+    }
+  }
+
+  private func executeRequest(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64,
+                              dispatch: MethodDispatch) throws -> Any {
     // Before anything else, the connection's after-action watch ends (#200, Activation.swift): no repair of an earlier
     // action is made once this request, which may act or observe, has begun; its own guard takes over. So does every
     // closed connection's watch still running (#237): another client's request is never answered by it either.
@@ -291,6 +307,10 @@ final class Engine: @unchecked Sendable {
     }
     let spanBefore = connection.menuSpan.serial
     defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
+    return try dispatch(method, args, context, target)
+  }
+
+  private func dispatchMethod(_ method: String, _ args: [String: Any], _ context: ExecutionContext, _ target: ResolvedApp?) throws -> Any {
     switch method {
     case "list_apps": return apps.list()
     case "resolve_app":

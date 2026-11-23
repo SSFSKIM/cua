@@ -95,7 +95,7 @@ extension Engine {
         let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
         // A minimized own window is refused before the scroll into view and the point (Minimized.swift).
         let (element, pointing, point) = try elementScrollPlacement(resolved.element, app: app.displayName, ax: .live) {
-          let element = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
+          let element = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding, effects: meta.effects)
           let pointing = ElementPointing(element.element, owner: element.owner)
           guard let point = pointing.point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
           return (element, pointing, point)

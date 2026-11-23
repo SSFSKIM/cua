@@ -82,14 +82,18 @@ private let focusFieldRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, "
 ///
 /// #324: `caretFirst` is asked first, with the field's role, whether it focuses the field itself (a WebKit page's field,
 /// `focusByCaretFirst`); when it answers true nothing else here runs, no AXFocused write and no click.
+///
+/// #212: the AXFocused write is noted in `effects` as it is made (the click is, by `focusingClick`).
 @discardableResult
 func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: AXOps, beforeMutating: () throws -> Void = {},
-                        caretFirst: (_ role: String) throws -> Bool = { _ in false }, click: () throws -> Void) throws -> Bool {
+                        effects: InputEffects? = nil, caretFirst: (_ role: String) throws -> Bool = { _ in false },
+                        click: () throws -> Void) throws -> Bool {
   guard let role = fieldNeedingFocus(element, ax: ax) else { return false }
   if try caretFirst(role) { return false }
   let straightToClick = bundleIdentifier == "com.apple.Safari" && ax.read(element, "AXDOMClassList") != nil
   if !straightToClick {
     try beforeMutating()
+    effects?.note(.focus)
     _ = ax.write(element, kAXFocusedAttribute, kCFBooleanTrue)
     if bool(ax.read(element, kAXFocusedAttribute)) == true { return false }
   }
@@ -193,10 +197,11 @@ func caretFirstFocus(_ element: AXUIElement, role: String, engine: PageEngine, a
 /// prepareToInteract's positioning (F §16.8; the re-fetch after a reported scroll, 0x1000701f8): the element scrolled
 /// into view and, when an operation scrolled, its target resolved again by `refetch`, since the scroll may have replaced
 /// the element (a recycled row) rather than moved it, and the process serving the result is checked again. A target that
-/// showed already, or that nothing could scroll, is kept as it was resolved.
-func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () throws -> Void = {},
+/// showed already, or that nothing could scroll, is kept as it was resolved. A scroll attempted is noted in `effects`
+/// (#212).
+func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () throws -> Void = {}, effects: InputEffects? = nil,
                       refetch: () throws -> ElementTarget) throws -> ElementTarget {
-  switch try positionElement(target.element, ax: ax, beforeMutating: beforeMutating) {
+  switch try positionElement(target.element, ax: ax, beforeMutating: beforeMutating, effects: effects) {
   case .visible, .unscrollable: return target
   case .scrolled, .stillHidden: return try refetch()
   }
@@ -207,11 +212,16 @@ func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () thr
 /// included, and the method's interval spans the click's; its guard time, `pointUnconfirmed`, `routeAdvice` and its
 /// delivery guard's record (`delivery`, #324: without it the click's raise reads as one outside any hold, #315's misread)
 /// ride in the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
+/// #212: the click's events are noted as the focus's click, not the method's input, and its activation stays noted
+/// though a click that succeeded leaves its activation records out of the method's meta.
 func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout InputMeta) throws -> Void) throws {
   var clickMeta = meta
-  defer { if clickMeta.startedAt != nil { acted() } }
+  defer {
+    if clickMeta.startedAt != nil { acted() }
+    for effect in clickMeta.reachedEffects where effect == .activation || effect == .activationClick { clickMeta.effects.note(effect) }
+  }
   do {
-    try click(&clickMeta)
+    try meta.effects.posting(as: .focusClick) { try click(&clickMeta) }
   } catch {
     meta = clickMeta
     throw error
@@ -262,8 +272,8 @@ extension Engine {
   /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll). The
   /// in-flight intervention check runs before each scroll operation.
   func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
-                        guarding: InterventionGuard, readsValue: Bool = true) throws -> ElementTarget {
-    try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight) {
+                        guarding: InterventionGuard, effects: InputEffects, readsValue: Bool = true) throws -> ElementTarget {
+    try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight, effects: effects) {
       try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always, readsValue: readsValue)
     }
   }
@@ -397,11 +407,12 @@ extension Engine {
     let engine = webAccessibility.pageEngine(app.appPath)
     var stepped = false
     defer { if stepped { connection.markActed(app) } }
-    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight, caretFirst: { role in
+    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight,
+                           effects: meta.effects, caretFirst: { role in
       try caretFirstFocus(target.element, role: role, engine: engine, app: app.displayName, ax: .live, subrole: subroleRead,
                           beforeMutating: guarding.checkInFlight, stepping: { step in
         stepped = true
-        meta.posting { step(); return true }
+        meta.posting(as: .focus) { step(); return true }
       }, noted: { meta.fieldFocus = $0 })
     }) {
       try focusFallbackClick(target.element, ax: .live) {

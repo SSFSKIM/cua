@@ -18,6 +18,11 @@ import Foundation
 // live ("still interacting"), or while the re-query flag is set ("user changed"), before anything is posted; and an
 // action in flight stops at the first attributed event, between two of its events, failing "user changed".
 //
+// #212: both keep the vendor's sentence, and the answer adds which of the two it was and what may have taken effect
+// (`Interruption`, `InputEffect`): a refusal before the action did none of its steps; a stop part-way names the steps it
+// had taken (a scroll, an activation, a focus write or click, the value write, the action's own input), none undone. A
+// held activation ended by the request, as it began or unwound, is named too, since it sends the app a deactivation.
+//
 // The tap needs Input Monitoring (the owner's decision of 2026-10-20, U5: without the grant a tap is created but receives
 // nothing). The engine never requests the grant: it reads the non-prompting preflight, and without it detection is off,
 // which every input result reports (`intervention: "off"`). The callback reads exactly the event's type, source pid,
@@ -98,12 +103,107 @@ func interventionVerdict(last: AttributedEvent?, cleared: Int, now: Int64) -> In
 
 /// The vendor's two userIntervened sentences (F §9.5, −10016), `app` the request's own app string. The 5 is the vendor's
 /// literal (0x10014e16c), not the time left.
+/// Each carries its `Interruption`, which the input meta completes (`withMeta`).
 func stillInteracting(_ app: String) -> EngineError {
-  EngineError(.userIntervened, "The user is still interacting with '\(app)'. Wait 5 seconds and retry.")
+  Interruption(phase: .beforeAction, sentence: "The user is still interacting with '\(app)'. Wait 5 seconds and retry.").error
 }
 
-func userChanged(_ app: String) -> EngineError {
-  EngineError(.userIntervened, "The user changed '\(app)'. Re-query the latest state with `get_app_state` before sending more actions.")
+func userChanged(_ app: String, phase: InterruptionPhase = .inFlight) -> EngineError {
+  Interruption(phase: phase, sentence: "The user changed '\(app)'. Re-query the latest state with `get_app_state` before sending more actions.").error
+}
+
+/// Where the intervention stopped a request (#212): before its action, by the pre-action check, or between its steps.
+enum InterruptionPhase: String {
+  case beforeAction, inFlight
+}
+
+/// A step of a request that may have taken effect in an app before an intervention stopped it (#212), value-free. Not
+/// every mutation a request can make is named (an observation's web enablement is not), so a stop part-way that names
+/// none still says something may have taken effect. In the order a request reaches them, which the wire keeps.
+enum InputEffect: String, CaseIterable {
+  /// The element scrolled into view (`positionElement`).
+  case scroll
+  /// The app activated in the background by route 3's fake activation (a held or a per-action one).
+  case activation
+  /// That activation's click at the window's activation point.
+  case activationClick
+  /// The field's focus written: AXFocused, or a WebKit field's caret or press (#324).
+  case focus
+  /// focusFieldIfNeeded's fallback click on the field.
+  case focusClick
+  /// set_value's AXValue write.
+  case value
+  /// The action's own input: its events, or its accessibility action or write.
+  case input
+  /// A held activation (a menu span or a focus hold) ended by the request, which sends the app a deactivation.
+  case activationRelease
+
+  /// Its phrase in the answer, after "What may have taken effect: ".
+  var phrase: String {
+    switch self {
+    case .scroll: return "a scroll to bring the element into view"
+    case .activation: return "the app's activation in the background"
+    case .activationClick: return "an activation click on its window"
+    case .focus: return "moving focus to the field"
+    case .focusClick: return "a click to focus the field"
+    case .value: return "the value written to the field"
+    case .input: return "the action's own input, in part or whole"
+    case .activationRelease: return "the end of a held activation, which sends the app a deactivation"
+    }
+  }
+}
+
+/// A userIntervened answer's account of the request (#212): the vendor's sentence, the phase, and the effects the input
+/// meta reached. The message is the sentence then one fixed clause: nothing was done (a refusal before the action, with
+/// no effect), else the phase and what may have taken effect, none undone. Value-free: the app string is the request's.
+struct Interruption {
+  let phase: InterruptionPhase
+  let sentence: String
+  var effects: [InputEffect] = []
+
+  var message: String {
+    if phase == .beforeAction && effects.isEmpty { return "\(sentence) Nothing was done: the action was refused before its first step." }
+    let opening = phase == .beforeAction ? "The action was refused before its first step." : "The action was stopped part-way."
+    let reached = effects.isEmpty ? "Any step it had begun may have taken effect." :
+      "What may have taken effect: \(effects.map(\.phrase).joined(separator: "; "))."
+    return "\(sentence) \(opening) \(reached) Nothing was undone."
+  }
+
+  var wire: [String: Any] { ["phase": phase.rawValue, "effects": effects.map(\.rawValue)] }
+
+  /// The same account with `more` effects too, in `InputEffect`'s order, none repeated.
+  func adding(_ more: [InputEffect]) -> Interruption {
+    var next = self
+    next.effects = InputEffect.allCases.filter { effects.contains($0) || more.contains($0) }
+    return next
+  }
+
+  /// The error that answers it, the account kept for the meta (`EngineError.interruption`, `withMeta`).
+  var error: EngineError {
+    var error = EngineError(.userIntervened, message)
+    error.interruption = self
+    return error
+  }
+
+  /// `error` (this account's own) answered again with `effects` added, its other members kept and the account in its
+  /// meta.
+  func restating(_ error: EngineError, adding effects: [InputEffect]) -> EngineError {
+    let account = adding(effects)
+    var restated = EngineError(.userIntervened, account.message, extra: error.extra)
+    restated.interruption = account
+    var meta = restated.extra["meta"] as? [String: Any] ?? [:]
+    meta["interruption"] = account.wire
+    restated.extra["meta"] = meta
+    return restated
+  }
+}
+
+extension EngineError {
+  /// A userIntervened answer with `effects` added to its account (a request's ended activation, Methods.swift); any
+  /// other error as it is.
+  func interrupted(adding effects: [InputEffect]) -> EngineError {
+    interruption?.restating(self, adding: effects) ?? self
+  }
 }
 
 /// The attributed events of driven processes, shared by the tap's thread and every connection's thread.
@@ -224,19 +324,19 @@ struct InterventionGuard {
     return guarding
   }
 
-  /// The pre-action check: throws the vendor's sentence when the verdict refuses; nothing has been posted.
+  /// The pre-action check: throws the vendor's sentence when the verdict refuses, before any step of the action.
   func checkBeforePosting() throws {
     switch verdict {
     case .stillInteracting: throw stillInteracting(app)
-    case .userChanged: throw userChanged(app)
+    case .userChanged: throw userChanged(app, phase: .beforeAction)
     case .proceed: return
     }
   }
 
-  /// Between two events of a sequence: an event attributed to the app since the check stops the action.
+  /// Between two events of a sequence: an event attributed to the app since the check stops the action, part-way.
   func checkInFlight() throws {
     guard detection, (latest()?.sequence ?? 0) != start else { return }
-    throw userChanged(app)
+    throw userChanged(app, phase: .inFlight)
   }
 
   /// The milliseconds from the app's last attributed event to `receivedAt`; nil when none was attributed while the app

@@ -90,7 +90,7 @@ func setElementValue(_ value: String, on element: AXUIElement, role: String, val
   beforeWrite(&meta)
   try checkInFlight()
   var written = AXError.failure
-  meta.posting { written = ax.write(element, kAXValueAttribute, converted); return true }
+  meta.posting(as: .value) { written = ax.write(element, kAXValueAttribute, converted); return true }
   acted()
   guard written == .success else { throw withoutFocus?.refusal ?? EngineError(name: "actionFailed", "The element did not accept the value.") }
   let readback = withoutFocus.map { $0.readBack(converted) }
@@ -169,7 +169,7 @@ extension Engine {
       let resolved = try targetElement(token, app: app, appPid: appPid, context: context, readsValue: false)
       meta.inputRoute = .action
       let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding,
-                                        readsValue: false)
+                                        effects: meta.effects, readsValue: false)
       // Once the element is known settable: route 3's held activation when the app does not believe it has focus
       // (FocusHold.swift), before the focus, so a focusing click finds the app believing itself active.
       let route = actionRoute(for: target, app: app, connection: context.connection)
@@ -200,7 +200,8 @@ extension Engine {
                           }, ax: .live, meta: &meta,
                           focus: { meta in
                             try prepareValueFocus(plan, focusWrite: {
-                              try focusFieldIfNeeded(element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {}
+                              try focusFieldIfNeeded(element, bundleIdentifier: app.bundleIdentifier, ax: .live,
+                                                     beforeMutating: guarding.checkInFlight, effects: meta.effects) {}
                             }, hold: {
                               try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
                             }, focusField: {

@@ -75,6 +75,11 @@ final class ActivationSpan: @unchecked Sendable {
   /// How many spans have been held: unchanged across a request that started none.
   var serial: Int { locked { holds } }
 
+  /// How many held spans have been ended (each sends its process a deactivation unless another holder keeps the
+  /// activation): unchanged across a request that ended none (#212, Methods.swift `execute`).
+  var released: Int { locked { releases } }
+  private var releases = 0
+
   /// Holds a new span for `app`, releasing any earlier one first. The request that recorded it arms the idle bound as it
   /// ends.
   func hold(app: String, release: @escaping () -> Bool) {
@@ -137,6 +142,7 @@ final class ActivationSpan: @unchecked Sendable {
     lapseDue = false
     guard let ending = held else { return }
     held = nil
+    releases += 1
     if !ending.release() {
       releaseFailed("\(label) activation release failed for \(ending.app): the deactivation event could not be made")
     }

@@ -67,9 +67,36 @@ func clickFlags(_ route: InputRoute, targetActive: Bool) -> CGEventFlags {
   route == .commandPost && !targetActive ? .maskCommand : []
 }
 
+/// The steps of one request that may have taken effect (#212, `InputEffect`), noted as the request takes them. A
+/// reference, so every copy of the request's meta (a focusing click's own, `focusingClick`) notes into the one record.
+final class InputEffects {
+  private var counts: [InputEffect: Int] = [:]
+
+  func note(_ effect: InputEffect) { counts[effect, default: 0] += 1 }
+
+  /// The effects noted, in `InputEffect`'s order.
+  var reached: [InputEffect] { InputEffect.allCases.filter { counts[$0, default: 0] > 0 } }
+
+  /// Runs `body`, the input it posts noted as `effect` instead (a focusing click's events are the focus's, not the
+  /// action's own input).
+  func posting<T>(as effect: InputEffect, _ body: () throws -> T) rethrows -> T {
+    let before = counts[.input, default: 0]
+    defer {
+      let posted = counts[.input, default: 0] - before
+      if posted > 0 {
+        counts[.input] = before
+        counts[effect, default: 0] += posted
+      }
+    }
+    return try body()
+  }
+}
+
 /// The input meta of one request, whatever it answered. The route and the two times fill in as the action proceeds, so
 /// an error thrown midway carries the state reached then.
 struct InputMeta {
+  /// What the request did that may have taken effect, for an intervention's answer (#212); not on the wire otherwise.
+  let effects = InputEffects()
   var inputRoute: InputRoute? = nil  // null before a route is chosen
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
@@ -162,11 +189,13 @@ struct InputMeta {
   /// back to back) and answers whether it was posted. `startedAt` is stamped as the first post that succeeds begins and
   /// `endedAt` after the last one that succeeded, so a request that posts nothing (refused, stopped before its first
   /// event, empty, or whose first event could not be created) keeps both null, which is how the service and the wrapper
-  /// know nothing was entered.
+  /// know nothing was entered. A post is noted as `effect`, the action's own input unless a preparation step says
+  /// otherwise (#212).
   @discardableResult
-  mutating func posting(_ post: () -> Bool) -> Bool {
+  mutating func posting(as effect: InputEffect = .input, _ post: () -> Bool) -> Bool {
     let begun = unixMilliseconds()
     guard post() else { return false }
+    effects.note(effect)
     if startedAt == nil { startedAt = begun }
     endedAt = unixMilliseconds()
     return true
@@ -215,11 +244,24 @@ struct InputMeta {
   }
 }
 
-/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName).
+/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName). A userIntervened answer
+/// names what the meta reached as what may have taken effect (#212), in its message and as the meta's `interruption`.
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
   error.extra["meta"] = meta.wire
-  return error
+  return error.interrupted(adding: meta.reachedEffects)
+}
+
+extension InputMeta {
+  /// The effects for an intervention's answer (#212): those noted, and route 3's activation from what its records say
+  /// (an activation that ran, or a new one acquired; its click, posted).
+  var reachedEffects: [InputEffect] {
+    var reached = effects.reached
+    let activated = activationClick != nil || [.fresh, .rearmed, .replacedSpent].contains(activationJoin)
+    if activated { reached.append(.activation) }
+    if activationClick == .posted { reached.append(.activationClick) }
+    return reached
+  }
 }
 
 /// A synthesized click's delivery: under route 3 the fake activation first (nothing when the app already believes it has
@@ -486,7 +528,7 @@ extension Engine {
           try holdMenuRecord(resolved.element, storedFrame: resolved.entry.frame, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
           return ["meta": meta.wire]
         }
-        let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
+        let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding, effects: meta.effects)
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
                                         synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {

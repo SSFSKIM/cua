@@ -39,6 +39,9 @@ struct EngineError: Error, @unchecked Sendable {
   let errorName: String
   let message: String
   var extra: [String: Any] = [:]
+  /// A userIntervened answer's account (#212, Intervention.swift), which `withMeta` completes from the input meta; never
+  /// on the wire itself, only as the meta's `interruption`.
+  var interruption: Interruption? = nil
 
   init(_ vendor: VendorCode, _ message: String, extra: [String: Any] = [:]) {
     self.code = vendor.rawValue

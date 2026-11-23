@@ -31,11 +31,12 @@ func midpointShows(_ frame: CGRect?, in visible: CGRect?) -> Bool {
 
 /// The vendor's positionElement through `ax`: nothing when the element's midpoint shows; otherwise one scroll-into-view
 /// operation per scrolling level, then the poll. `beforeMutating` runs before each action or write (the in-flight
-/// intervention check: a user event stops the preparation before it scrolls anything the user is looking at).
+/// intervention check: a user event stops the preparation before it scrolls anything the user is looking at); each
+/// operation it lets go is noted in `effects` (#212).
 @discardableResult
-func positionElement(_ element: AXUIElement, ax: AXOps, beforeMutating: () throws -> Void = {}) throws -> PositionOutcome {
+func positionElement(_ element: AXUIElement, ax: AXOps, beforeMutating: () throws -> Void = {}, effects: InputEffects? = nil) throws -> PositionOutcome {
   if midpointShows(ax.frame(element), in: ax.visible(element)) { return .visible }
-  guard try scrollIntoView(element, ax: ax, beforeMutating: beforeMutating) else { return .unscrollable }
+  guard try scrollIntoView(element, ax: ax, beforeMutating: { try beforeMutating(); effects?.note(.scroll) }) else { return .unscrollable }
   let started = ax.now()
   while true {
     if midpointShows(ax.frame(element), in: ax.visible(element)) { return .scrolled }

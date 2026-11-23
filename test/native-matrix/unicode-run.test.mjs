@@ -9,7 +9,8 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {emptyFieldCell} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
-import {Stop} from '../../scripts/native-matrix/steps.mjs';
+import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
+import {HELD_INVALID, Stop} from '../../scripts/native-matrix/steps.mjs';
 import {KOREAN_2SET, MID_SWITCH, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {HANGUL_LAYOUT, judgeMidSwitch} from '../../scripts/native-matrix/unicode-run.mjs';
 import {matrixSteps, runWith} from './run-doubles.mjs';
@@ -309,4 +310,38 @@ test('a lane-integrity failure in the per-context setup is never recovered: afte
   assert.ok(result.problems.some(p => /a result attested the vendor engine, not the requested cua: the lane stopped/.test(p)), JSON.stringify(result.problems));
   assert.ok(!result.rows.some(r => r.condition === 'perContext'), 'no row is made up from a stopped lane');
   assert.ok(!result.meta.unicode.readings.some(r => r.setupError), 'not taken for the condition\'s own failure');
+});
+
+// The minor of fix wave 3: replayd's capture alert in front at the mid-switch's key guard on a hosted run. The typing is
+// never sent, the input-source probe is still finished, Latin is selected again, and the row is NO VERDICT `alert`.
+test('the mid-switch row on a hosted run: the typing the capture alert held is never sent; the probe finished, Latin restored, the row skipped', async () => {
+  const UNC = 'com.apple.UserNotificationCenter';
+  const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['midSwitch']}};
+  let armed = false, pending = false;
+  const calls = [];
+  const {result, steps} = await runWith({plan, cellName: 'korean', calls, cell: midSwitch, env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: {matrix: (base, a) => {
+    if (a[0] === 'probe' && a[1] === 'input-source') armed = true;
+    // The guard's read, the first after the probe was scheduled: UserNotificationCenter in front, then gone.
+    if (a[0] === 'read' && armed) {
+      armed = false; pending = true;
+      const x = base(a);
+      return {...x, reading: {...x.reading, frontmost: {pid: 77, bundleId: UNC, owned: false}}, frontKey: {front: UNC, key: UNC}};
+    }
+    if (a[0] === 'alerts' && a[1] === 'check' && pending) {
+      pending = false;
+      return {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: null}]}}, at: base(a).at};
+    }
+    return base(a);
+  }}});
+  assert.equal(result.complete, true, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  assert.ok(!calls.some(c => tagOf(c.code) === 'unicode.midSwitch'), 'the typing was never sent');
+  const probes = matrixSteps(steps, 'probe').map(a => a[1]);
+  assert.deepEqual(probes.slice(probes.indexOf('input-source')), ['input-source', 'finish'], 'the scheduled switch was finished');
+  const after = sources(steps).slice(sources(steps).lastIndexOf('select 2SetKorean') + 1);
+  assert.ok(after.includes('select ABC'), `Latin selected again after the switch: ${after.join(', ')}`);
+  const row = result.rows.find(r => r.condition === 'midSwitch');
+  assert.deepEqual([row.ok, row.invalid, row.frontKey.before.front], [false, HELD_INVALID, UNC]);
+  assert.equal(sampleCause({...row, hosted: true}).category, 'alert');
+  assert.equal(row.error, undefined, 'Latin read back');
 });

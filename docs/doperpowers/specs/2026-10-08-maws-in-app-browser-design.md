@@ -1052,21 +1052,28 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   2026-11-22 failed at their first browser call: `createBrowserTab(id, url, {visible: true})` threw `Capability is not
   available: visibility`, `createBrowserTab("iab" | "maws", …)` answered `Browser is not available`, and the Selected
   Browser block named the backend "cua". Four changes:
-  (1) profiles_list's keys are browser ids. The launch hands the browser service `CUA_BROWSER_KEYS`, {key: instance}
-  for the MAWS backends (`maws`, `maws-2`, … once each said hello; `maws` before its hello is the marker `maws:`) and
-  every profile bound on the cua route (`src/chrome/discovery.mjs` launchBrowserKeys). The service tries a key only
-  when no id, backend type or family answers (`src/browser-service/browsers.mjs`), so every earlier selection is
-  unchanged. A key selects the listed extension browser carrying its instance; when two listed browsers carry it (two
-  hosts serving one profile or panel) the first listed, since both are the same browser. `maws` falls back as the
-  unqualified default does (its instance unknown or not listed: the first listed MAWS instance), so `getBrowser()` and
+  (1) profiles_list's keys are browser ids. The proxy puts the keys on every call it relays, read when the call is
+  made (request metadata `cua/browserKeys`, never the client's; `src/mcp/server.mjs`, `src/chrome/discovery.mjs`
+  currentBrowserKeys): {key: instance} for the MAWS backends (`maws`, `maws-2`, … once each said hello; `maws` before
+  its hello is the marker `maws:`) and every profile bound on the cua route. So a key rebound, or a MAWS backend that
+  connects, while the runtime lives selects what profiles_list names at that moment, never a stale binding; per-call
+  metadata rather than a launch variable because the trusted worker's sandbox cannot read the registry. With MAWS
+  backends configured a reserved MAWS key is never a Chrome profile's, even one registered before the reservation or
+  for a backend not yet connected. The service (`src/browser-service/browsers.mjs`) tries a key only when no id,
+  backend type or family answers, and a backend type or family (`iab`, `chrome`, `extension`, …) is never a key even
+  when nothing answers to it: a profile registered under such a name is a miss that names its extensionInstanceId.
+  So a selection lands in a Chrome profile only when it names that profile, by id or by its current key. A key
+  selects the listed extension browser carrying its instance; when two listed browsers carry it (two hosts serving one
+  profile or panel) the first listed, since both are the same browser. `maws` falls back as the unqualified default
+  does (its instance unknown or not listed: the first listed MAWS instance), so `getBrowser()` and
   `getBrowser({id: "maws"})` always agree, and never reach Chrome. A miss keeps the vendor's sentence and appends the
-  listed ids and the keys that select a browser now. Keys are read at launch: a profile bound later is a key from the
-  next launch.
+  listed ids and the keys that select a browser now, never a colliding one.
   (2) `visible` on a browser without the `visibility` capability is ignored, and the result says so after the tab's
   state (`src/cua-api/browser-api.mjs`); with the capability it is set as before. MAWS gets no visibility capability:
   raising its Browser panel would move the person's windows.
-  (3) The Selected Browser block names a MAWS backend "MAWS in-app browser (<its key>)"; the listing and selection
-  results keep the backend's own name.
+  (3) The Selected Browser block names a MAWS backend "MAWS in-app browser (<its key>)", the key whose instance it is
+  (no key when none carries it, never a guessed one); the listing and selection results keep the backend's own name.
+  The own host's core reference (`docs/cua-api/core.md`) states the `visible` exception; the vendor's stays as it is.
   (4) js's MAWS rule (`src/mcp/surface.mjs`) says the in-app browser's tabs show in the session's Browser panel, that
   "maws" or another key works where an id goes, that there is no "iab" browser, and to leave `visible` out.
   What stays the vendor's: a macOS session with the computer surface on the default (vendor) engine runs the vendor's

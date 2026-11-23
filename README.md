@@ -1748,9 +1748,10 @@ the user names one. cua's trusted browser wrapper enforces that default: a selec
 else the first listed MAWS backend (a `cua serve` that started while MAWS was down picks MAWS up once it returns), so
 while MAWS is away it fails with the vendor's own "Browser is not available" instead of landing in a Chrome profile;
 `cua.getBrowser({extensionInstanceId})` with a Chrome profile's id still drives that profile. A `profiles_list` key
-works wherever a browser id goes (`cua.createBrowserTab("maws", url)`, `cua.getBrowser({id: "personal"})`; a profile
-bound after the runtime launched is a key from its next launch), and a miss names the ids and keys that would have
-worked. The first-use documentation names the backend "MAWS in-app browser (maws)". It has no visibility capability:
+works wherever a browser id goes (`cua.createBrowserTab("maws", url)`, `cua.getBrowser({id: "personal"})`), as the
+registry and the MAWS backends stand at that call; a browser type or family (`iab`, `chrome`, `extension`) is never a
+key, and with MAWS backends configured neither is `maws` or `maws-<n>` for a Chrome profile. A miss names the ids and
+keys that would have worked. The first-use documentation names the backend "MAWS in-app browser (maws)". It has no visibility capability:
 `createBrowserTab`'s `visible` option is ignored there on cua's own REPL host, with a line in the result saying so,
 and refused by the vendor's host (a macOS session with the computer surface on the vendor engine), so js's rules tell
 the agent to leave it out. MAWS's tabs show the

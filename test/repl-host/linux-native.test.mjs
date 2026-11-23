@@ -16,7 +16,7 @@ import {createInterface} from 'node:readline';
 import {PassThrough} from 'node:stream';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {BROWSER_SERVICE, SKY_SERVICE, buildLaunch, createLaunchDirs} from '../../src/runtime/launch.mjs';
+import {BROWSER_SERVICE, SKY_SERVICE, buildLaunch, createLaunchDirs, replHostFor} from '../../src/runtime/launch.mjs';
 import {sandboxModeFrom, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {spawnUpstream} from '../../src/mcp/upstream.mjs';
 import {createServer} from '../../src/mcp/server.mjs';
@@ -49,12 +49,14 @@ const GEDIT = 'org.gnome.gedit';
 // memory (#117 M3). Its idle timer is the test's: `stop()` fires it, so the runtime goes through the connection's own
 // idle stop, and resolves that stop's teardown. The client offers form elicitation, accepts the approval of the
 // fixture's app and declines anything else, recording each request it is asked in `asked`.
-// `engine`, when given, is the ambient's engine selection (CUA_NATIVE_ENGINE, CUA_LINUX_ENGINE_BIN).
-async function linuxSession(t, {surfaces, secrets = {}, engine = {}}) {
+// `engine`, when given, is the ambient's engine selection (CUA_NATIVE_ENGINE, CUA_LINUX_ENGINE_BIN); by default the
+// vendor's, whose tree is the fixture's (since #171 M6a the selection resolves it, and nothing falls back to it).
+async function linuxSession(t, {surfaces, secrets = {}, engine = {CUA_NATIVE_ENGINE: 'vendor'}}) {
   const fixture = linuxNativeRuntime(t, {node, secrets});
   const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP, ...engine};
   const services = {...(surfaces.includes('computer') ? {sky: LINUX_SKY} : {}), ...(surfaces.includes('browser') ? {browser: BROWSER_SERVICE} : {})};
-  const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, resolveOwnNode: () => node});
+  const replHost = replHostFor({platform: 'linux', arch: fixture.runtime.manifest.arch, surfaces, ambient, home: fixture.home, resolveOwnNode: () => node, engine: {vendor: () => fixture.runtime}});
+  const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, replHost});
   // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.
   if (services.sky && LINUX_SKY !== SKY_SERVICE) launch.env.CUA_REPL_TRUSTED_CODE_PATHS += `:${dirname(SKY_SERVICE)}`;
   // The helper double stands where `cua install` places the pinned helper; the launch names it as the pinned one.

@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LANES, NAMED_PLACE, PLANS, namedPath, pathUnder, planSpecs } from '../../scripts/linux-engine-diff/drop-signals.mjs';
+import { LANES, NAMED_PLACE, PLANS, frameAround, namedPath, pathUnder, planSpecs, rootClientRect } from '../../scripts/linux-engine-diff/drop-signals.mjs';
 import { NAMED_LANE, judgedDropSignalsPlan, namedSourceTable, namedSourceUnproven } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { dropRow } from './drop-rows.mjs';
 
@@ -20,8 +20,25 @@ const named = ({ i = 0, rest, ...o } = {}) => ({
   drag_pacing: { family: 'GTK 4', rest_ms: 0, step_us: 0 },
   drop_cursor: { accepted: true, settle: settle(rest) },
   // the engine's count of the settles the drag's request entered (drop-signals.mjs `settleCount`)
-  settle_count: { before: 0, after: 1, entered: 1 },
+  settle_count: { before: 0, after: 1, entered: 1, before_from: 'fresh', after_from: 1 },
+  // where the press went (drop-signals.mjs `namedAim`): inside the plain source, the pointer parked over the scene there
+  named: { id: 7, x: 961, y: 262, aim: { root: { x: 530, y: 128 }, park: { ok: true, at: { x: 530, y: 128 }, chain: [5] }, source: { x: 500, y: 110, w: 60, h: 36 }, inside: true } },
 });
+
+/** `xwininfo -id` for the named window under the harness's Openbox, its client's real origin (961, 262). */
+const XWININFO = `
+xwininfo: Window id: 0x1e00004 "cua171-diff-named"
+
+  Absolute upper-left X:  961
+  Absolute upper-left Y:  262
+  Relative upper-left X:  1
+  Relative upper-left Y:  22
+  Width: 240
+  Height: 180
+  Depth: 24
+`;
+/** `xdotool getwindowgeometry --shell` for the same window: Openbox's decoration offset counted twice (962, 284). */
+const XDOTOOL = { X: 962, Y: 284, WIDTH: 240, HEIGHT: 180 };
 
 test('the plan is a development plan of the named lane alone: no gate judge holds it', () => {
   assert.deepEqual(PLANS['t487-named'], [[NAMED_LANE, 'plain', 100]]);
@@ -34,6 +51,21 @@ test("the path goes to the engine in the named window's coordinates, the same sc
   const scene = { window: { x: 2, y: 30 } };
   const path = [{ x: 530, y: 128 }, { x: 570, y: 128 }];
   assert.deepEqual(namedPath(scene, { x: 962, y: 268 }, path), [{ x: -430, y: -110 }, { x: -390, y: -110 }]);
+});
+
+test("wave 3, P1 1: the named path is given from the client's real root origin (xwininfo's), so the press lands where it is meant", () => {
+  const real = rootClientRect(XWININFO);
+  assert.deepEqual(real, { x: 961, y: 262, width: 240, height: 180 });
+  assert.equal(rootClientRect('xwininfo: error: no such window'), null);
+  // the engine adds the named window's real origin to the path it is given (x11.rs `desktop_position`)
+  const scene = { window: { x: 0, y: 0 } };
+  const meant = [{ x: 530, y: 128 }, { x: 570, y: 128 }];
+  const lands = (origin) => namedPath(scene, origin, meant).map((p) => ({ x: real.x + p.x, y: real.y + p.y }));
+  assert.deepEqual(lands(real), meant);
+  // from xdotool's origin the press went to (529, 106), above the plain source, which starts at y 110
+  assert.deepEqual(lands({ x: XDOTOOL.X, y: XDOTOOL.Y })[0], { x: 529, y: 106 });
+  // the frame around the real client, by the window manager's extents (left, right, top, bottom)
+  assert.deepEqual(frameAround(real, [1, 1, 22, 5]), { x: 960, y: 240, w: 242, h: 207 });
 });
 
 test("the named window's frame may cover no point of the path, its segments' too", () => {
@@ -73,6 +105,13 @@ test('a drop that proves the case is exercised; each missing proof is named', ()
     ['settle', { handle: { drop_cursor: { settle: false } } }],
     // a watch that failed to start is no press on Electron; a release read's own error is a watch that ran
     ['press', { drop_cursor: { accepted: null, error: 'connection refused', settle: settle() } }],
+    // wave 3: the press shown on the source (ruling 1143 (c)), and a count whole and its own
+    ['aim', { named: undefined }],
+    ['aim', { named: { aim: { inside: false, park: { ok: true } } } }],
+    ['aim', { named: { aim: { inside: true, park: { ok: false, why: 'over another window' } } } }],
+    ['aim', { named: { aim: { inside: null, park: { ok: true } } } }],
+    ['settle', { settle_count: { before: 0, after: 1, entered: 0 } }],
+    ['settle', { settle_count: { before: 4, after: 4, entered: 1 } }],
   ];
   const readError = { ...named(), drop_cursor: { steps: [], accepted: null, error: 'the read timed out', settle: settle() } };
   assert.equal(namedSourceUnproven(readError).includes('press'), false);
@@ -108,13 +147,13 @@ test("each drop counted by T17's definitions, exercised and not apart: never a p
     drags: 6,
     exercised: { drags: 4, landed: 2, false_ok: 1, stale: 0, honest_unconfirmed: 1, ambiguous: 0, error: 0 },
     unexercised: { drags: 2, landed: 1, false_ok: 1, stale: 0, honest_unconfirmed: 0, ambiguous: 0, error: 0 },
-    unproven: { electron: 0, pacing: 0, route: 1, press: 0, start: 0, settle: 1 },
+    unproven: { electron: 0, pacing: 0, route: 1, aim: 0, press: 0, start: 0, settle: 1 },
     settle_rest_ms: { absent: 5 },
   });
   const text = md.join('\n');
   assert.match(text, /\| exercised \| 4 \| 2 \| 1 \| 0 \| 1 \| 0 \| 0 \|/);
   assert.match(text, /\| not exercised \| 2 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \|/);
-  assert.match(text, /electron 0, pacing 0, route 1, .*settle 1/);
+  assert.match(text, /electron 0, pacing 0, route 1, aim 0, .*settle 1/);
 });
 
 test("a stale drop is T17's: the zone counted a drop the path did not end in", () => {

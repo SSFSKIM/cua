@@ -31,7 +31,7 @@ import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { probeAt } from './role-probe.mjs';
-import { ROOT, frontPoint, parkPointer, parkVerdict, readPointer } from './park.mjs';
+import { ParkRefused, ROOT, frontPoint, parkPointer, parkVerdict, readPointer } from './park.mjs';
 import { verifiedScene } from './app-identity.mjs';
 import { openScene } from './run.mjs';
 import { FIT_MARGIN, SCREEN, configure, frameExtentsOf } from './scenes.mjs';
@@ -301,30 +301,92 @@ export function pathUnder(rect, path) {
   return points.filter(inside);
 }
 
-/** A window's frame on the screen (`{x, y, w, h}`): its client and the window manager's `_NET_FRAME_EXTENTS`. */
+/**
+ * A window's client rectangle on the root as the X server has it (`{x, y, width, height}`), from `xwininfo -id`'s text:
+ * its absolute upper-left corner and its size; null where any is missing. `xdotool getwindowgeometry` is not this: under
+ * the harness's Openbox it counts the decoration's offset twice (the review of 4e0ba0a9, P1 1: (962, 284) for a client
+ * whose root origin is (961, 262)), and the engine translates a named window's path from the server's origin.
+ */
+export function rootClientRect(xwininfo) {
+  const read = (k) => Number(String(xwininfo).match(new RegExp(`${k}:\\s+(-?\\d+)`))?.[1]);
+  const [x, y, width, height] = ['Absolute upper-left X', 'Absolute upper-left Y', 'Width', 'Height'].map(read);
+  return [x, y, width, height].every(Number.isInteger) ? { x, y, width, height } : null;
+}
+
+/** A window's client rectangle on the root (`rootClientRect`), read now. */
+function rootClientOf(id) {
+  const rect = rootClientRect(xExecFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8', timeout: 5000 }));
+  if (!rect) throw new Error(`xwininfo gave no geometry for window ${id}`);
+  return rect;
+}
+
+/** A window's frame on the screen (`{x, y, w, h}`): its client on the root (`rootClientRect`) and the window manager's `_NET_FRAME_EXTENTS`. */
+export function frameAround(client, [left, right, top, bottom]) {
+  return { x: client.x - left, y: client.y - top, w: client.width + left + right, h: client.height + top + bottom };
+}
+
+/** A window's frame on the screen, read now (`frameAround`). */
 function frameOn(id) {
-  const c = clientOrigin(id);
-  const [left, right, top, bottom] = frameExtentsOf(xExecFileSync('xprop', ['-id', String(id), '_NET_FRAME_EXTENTS'], { encoding: 'utf8', timeout: 5000 }));
-  return { x: c.x - left, y: c.y - top, w: c.width + left + right, h: c.height + top + bottom };
+  return frameAround(rootClientOf(id), frameExtentsOf(xExecFileSync('xprop', ['-id', String(id), '_NET_FRAME_EXTENTS'], { encoding: 'utf8', timeout: 5000 })));
 }
 
 /**
- * The engine's settle counter as it stands before a drop (`--stats` `drop_settles`, its last line's, engine.mjs
- * `dropSettles`): an engine that has printed no line yet has entered none since it started; one whose lines carry no
- * counter (a vendor build, an engine without `--stats`) has none to give.
+ * The engine's settle counter from one request's own stats line (`--stats` `drop_settles`, the line matched to the
+ * request by its id: engine.mjs `request`'s `stats`), with that request's id: `{from, counter}`, `counter` null where
+ * the line, or its counter, is missing. Never the engine's last counter of any line (`Engine.dropSettles`): a lost line
+ * would leave that counter stale (the review of 4e0ba0a9, P1 2).
  */
-export const settlesBefore = (engine) => engine.dropSettles ?? (engine.lines === 0 ? { entered: 0 } : null);
+export const counterOf = (reply) => ({ from: Number.isInteger(reply?.id) ? reply.id : null, counter: Number.isInteger(reply?.stats?.drop_settles?.entered) ? reply.stats.drop_settles : null });
+
+/** A fresh engine's counter, before its first request: it has entered no settle since it started. */
+export const FRESH = { from: 'fresh', counter: { entered: 0 } };
 
 /**
- * How many settles a drop's requests entered (task 142's fix wave 2): the engine's own counter after them (`after`, the
- * last `drop_settles` it printed, the drop's last request's) less before (`settlesBefore`), with both kept; null where
- * either is missing or the counter went back (another engine's line). The judge holds a settle to it, never to the
- * settle's own record (drop-signals-judge.mjs `settlesEntered`).
+ * How many settles a drop's requests entered: the engine's own counter after them (`after`, `counterOf` the drop's
+ * request, a drag's or a handle end's) less before them (`before`, `counterOf` the engine's previous request, or
+ * `FRESH`), with both and their requests kept (`before_from`, `after_from`). Null where either side has no current
+ * counter or the counter went back, which fails the row (drop-signals-judge.mjs `settlesEntered`).
  */
 export function settleCount(before, after) {
-  const [b, a] = [before?.entered, after?.entered];
+  const [b, a] = [before?.counter?.entered, after?.counter?.entered];
   if (!Number.isInteger(b) || !Number.isInteger(a) || a < b) return null;
-  return { before: b, after: a, entered: a - b };
+  if (!(before.from === 'fresh' || Number.isInteger(before.from)) || !Number.isInteger(after.from)) return null;
+  return { before: b, after: a, entered: a - b, before_from: before.from, after_from: after.from };
+}
+
+/** Each engine's last request in a sitting's drops (`counterOf` its reply): the next drop's `before`. */
+const lastReplies = new WeakMap();
+
+/** The counter before a drop on `engine`: its last reply's (`lastReplies`), or `FRESH` for an engine asked nothing yet. */
+const counterBefore = (engine) => lastReplies.get(engine) ?? (engine.nextId === 1 ? FRESH : { from: null, counter: null });
+
+/** The plain source's accessible name (pages/drop-signals.html `#plain`). */
+const PLAIN_SOURCE = 'Plain source';
+
+/**
+ * Where a named-lane drag's press goes (task 142's fix wave 3, ruling 1143 (c)): `root`, the root point the engine
+ * presses at (the named window's root origin, `ctx.named`, plus the path's first point in its coordinates); `park`, the
+ * real pointer parked there on the scene's window and read back (`parkPointer`: the window chain under it, and whether
+ * the scene's window is in it); `source`, the plain source's rectangle on the root from the page's tree; `inside`,
+ * whether the press lies in it. The park is the pointer where the drag's own first motion puts it.
+ */
+async function namedAim(ctx, path) {
+  const { desktop, scene, named, oracle } = ctx;
+  const first = namedPath(scene, named, path)[0];
+  const root = { x: named.x + first.x, y: named.y + first.y };
+  let park;
+  try {
+    const reading = parkPointer(root, scene.id);
+    park = { ok: true, at: { x: reading.x, y: reading.y }, chain: reading.chain };
+  } catch (e) {
+    if (!(e instanceof ParkRefused)) throw e;
+    const reading = readPointer();
+    park = { ok: false, why: e.message, at: reading ? { x: reading.x, y: reading.y } : null, chain: reading?.chain ?? null };
+  }
+  const node = preorder((await desktop.state(scene)).ax_tree).find((n) => n.name === PLAIN_SOURCE);
+  const e = node ? oracle.extents(node.id) : null;
+  const source = e && e.w > 0 ? { x: e.x, y: e.y, w: e.w, h: e.h } : null;
+  return { root, park, source, inside: source ? pathUnder(source, [root]).length === 1 : null };
 }
 
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
@@ -350,7 +412,8 @@ export async function handleDrag(engine, scene, path) {
   }
   const end = await engine.request('drag_handle', { action: 'end' });
   const value = failed ?? end;
-  return { ...value, ms: performance.now() - t0, end: failed ? end.response : undefined };
+  // the end's own reply (its id and stats line), whatever came before it: where the handle's settle is counted
+  return { ...value, ms: performance.now() - t0, end: failed ? end.response : undefined, endReply: { id: end.id, stats: end.stats } };
 }
 
 /** The plans: `[lane, cell, drags]`. The never-take survey reads every drag's start point, whatever its lane. */
@@ -845,13 +908,17 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const namedLane = Boolean(LANES[lane].named);
   const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };
   const offWindow = OFF_WINDOW.includes(base);
-  const countedBefore = settlesBefore(engine);
+  const countedBefore = counterBefore(engine);
+  // #487's named lane: where the press goes on the root (the named window's real origin plus the path's first point in
+  // its coordinates, as the engine translates it), the window under it, read by parking the real pointer there (on the
+  // scene's own window, as the drag would put it), and the plain source's rectangle on the root, read from its tree
+  const aim = namedLane ? await namedAim(ctx, path) : undefined;
   const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : namedLane ? engine.request('drag', { window: { id: ctx.named.id }, path: namedPath(scene, ctx.named, path) }) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
-  // the settles the drop's requests entered, by the engine's own counter: taken before the read and the preflight after
-  // it, which print their own lines
-  const settle_count = settleCount(countedBefore, engine.dropSettles);
+  // the settles the drop's requests entered, by the engine's own counter on the lines matched to its requests: the drag's
+  // own reply, or the handle end's
+  const settle_count = settleCount(countedBefore, counterOf(handled ? value.endReply : value));
   // an off-window cell's end read where the drag left the real pointer, once the drag image is gone: the window it is
   // for under it (the bare root, the xterm, the other browser window, the sink), or the row says what was there instead
   // and the tables leave the drag out. Read, not parked: a park on the bare root is a pointer warp on a window the run did
@@ -872,6 +939,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const read = await engine.request('list_windows', {});
   const notice = read.response.notice ?? null;
   const preflight = await engine.request('preflight', {});
+  // the engine's last request in this drop: the next drop's counter before
+  lastReplies.set(engine, counterOf(preflight));
   const next = { ok: preflight.response.ok === true, error: preflight.response.ok ? null : String(preflight.response.error), late_dnd: preflight.stats?.late_dnd ?? null };
   let after = await readStatus(desktop, scene);
   const stats = value.stats ?? {};
@@ -911,7 +980,7 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     // the drag's pacing, its family's (`--stats` `drag_pacing`): the named lane's proof that the named window paced it
     drag_pacing: stats.drag_pacing ?? null,
     // the named lane's window, which the drag named: its id, and its client's origin the path was given from
-    named: namedLane ? { id: ctx.named.id, x: ctx.named.x, y: ctx.named.y } : undefined,
+    named: namedLane ? { id: ctx.named.id, x: ctx.named.x, y: ctx.named.y, aim } : undefined,
     hold: stats.hold,
     after_take: stats.after_take,
     wall,
@@ -1005,7 +1074,7 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
     // its activation (the foreground route's) may cover no point of a path it is named for, or the drop would go to it
     let namedAt = null;
     if (named) {
-      namedAt = { id: named.id, ...clientOrigin(named.id), frame: frameOn(named.id) };
+      namedAt = { id: named.id, ...rootClientOf(named.id), frame: frameOn(named.id) };
       for (const s of specs.filter((x) => LANES[x.lane]?.named)) {
         const under = pathUnder(namedAt.frame, windowPath(at, s.cell, 0, scene.window).map((p) => screenOf(scene, p)));
         if (under.length) throw new Error(`the named window's frame ${JSON.stringify(namedAt.frame)} covers ${under.length} points of the ${s.cell} path, (${under[0].x}, ${under[0].y}) first`);

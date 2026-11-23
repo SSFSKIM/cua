@@ -78,7 +78,7 @@ import {basename, join, isAbsolute} from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, PAGE_VARIANTS, startScenePage} from '../native-matrix/fixtures/scene-page.mjs';
-import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, FOCUS_SWITCH, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
   activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, enginePids, frontmostProcess, frontWindow, windowOrder, openApp, readFinderPreferences, runningApps,
@@ -92,6 +92,7 @@ import {windowTitleOf} from './scenes-mac-text.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
+import {readRunnerRecord, venueFramesOf} from '../hosted-sittings/runner.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const TEXTEDIT_BUNDLE_ID = 'com.apple.TextEdit';
@@ -378,7 +379,7 @@ export function writeState(run, state) {
 }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const defaultIo = () => ({
+export const defaultIo = () => ({
   runningApps, appWindows, appWindowState, openApp, activateApp, showFolder, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(), windowOrder: ({skipPids}) => windowOrder({skipPids}), enginePids: () => enginePids(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
@@ -507,7 +508,7 @@ function freshChromeProfile(run) {
 // `extra`: Chromium switches the fixture is launched with besides its own (#244's variant: a feature turned on), each a
 // `--` switch, since Electron would take any other argument for a path to open.
 export const electronArgs = ({userDataDir, placement = SCENES.electron.placement, extra = []}) => [
-  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`, ...extra];
+  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`, FOCUS_SWITCH, ...extra];
 
 // Brings one scene up. -> the scene's record: {scene, app, bundleId, pid, at?, window, setup, ...}, where `setup` lists
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its

@@ -36,7 +36,7 @@ import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
 import {readResults} from './native-matrix/summary.mjs';
 import {hostedApprove} from './hosted-sittings/approve.mjs';
-import {cellCounts, guardTally, renderCounts, renderGuardTally} from './hosted-sittings/counts.mjs';
+import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowObserved} from './hosted-sittings/counts.mjs';
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
@@ -47,7 +47,7 @@ import {runOnboarding} from './hosted-sittings/onboarding.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
 import {readScreenAtEnd} from './hosted-sittings/display-mode.mjs';
 import {textEditGuard} from './hosted-sittings/textedit-guard.mjs';
-import {renderVenue} from './hosted-sittings/venue.mjs';
+import {readBackRows, renderReadBack, renderVenue} from './hosted-sittings/venue.mjs';
 
 const REPO = resolve(dirname(new URL(import.meta.url).pathname), '..');
 class Usage extends Error {}
@@ -99,7 +99,13 @@ async function runCommand(sitting, values) {
   // their key reading not taken, from every record the plan names.
   const readRecord = path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } };
   const records = plan.steps.flatMap(step => [step.record, ...(step.records ?? [])].filter(Boolean).map(path => ({step: step.id, record: readRecord(path)})));
-  parts.push('## The alert guard', '', renderGuardTally(guardTally(records)));
+  const tally = guardTally(records);
+  parts.push('## The alert guard', '', renderGuardTally(tally));
+  // The venue setup wrote into the runner's record (ruling 1169): its key-window reader's grant, read over the loopback
+  // ssh, says with the tally whether the key-window requirement was observed or vacuous (recorded check 3); TextEdit's
+  // and the Open panel's read-backs say where they actually stood (recorded checks 1 and 2).
+  const venue = readRunnerRecord(homedir())?.venue ?? null;
+  parts.push(renderKeyWindowObserved(venue?.keyWindowTrust ?? null, tally), renderReadBack(readBackRows(records, venue)));
   // The cleanup's record (rulings 1160, 1164): the alert windows (number, layer, bounds) and the display's mode as they
   // stand once every step ran, so the alerts' survival and the mode's hold through the sitting are shown.
   const screenAtEnd = readScreenAtEnd();
@@ -107,7 +113,6 @@ async function runCommand(sitting, values) {
     + `the display ${screenAtEnd.mode ? `${screenAtEnd.mode.width}x${screenAtEnd.mode.height} (mode ${screenAtEnd.mode.modeId})` : 'unread'}${screenAtEnd.modeHeld === false ? ', NOT the mode setup set' : ''}.`, '');
   // The venue (ruling 1169): every scene frame on this runner that differs from the mini's, why, and the cells resting on it,
   // as setup wrote it into the runner's record (the same block each lane's meta keeps).
-  const venue = readRunnerRecord(homedir())?.venue ?? null;
   parts.push(renderVenue(venue));
   writeJson(join(out, 'sitting.json'), {...report, screenAtEnd, venue});
   writeFileSync(join(out, 'sitting.md'), parts.join('\n'));

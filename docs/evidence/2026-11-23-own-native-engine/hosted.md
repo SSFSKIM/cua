@@ -1574,14 +1574,18 @@ assumed:
 
 So the origin is AppKit's template and cascade, and only the size is TextEdit's to set. Setup's new `textedit
 defaults` step writes `WidthInChars 60` into `com.apple.TextEdit` on the runner only (`assertGithubHosted`; never the
-owner's defaults) and reads it back. A value not read back fails setup. The width comes from the mini's window: 627 pt
-at the default 75 characters, of which 242 + 20 are not text. At 60 characters that is 242 + 20 + ceil(627 x 60 / 75)
-= 764 pt, under 800. The height is left alone. `-ApplePersistenceIgnoreState YES` turns off window restoration only. It
-does not stop TextEdit reading `WidthInChars` for a new document. Neither launch argument names these keys.
+owner's defaults) and reads it back, by `/usr/bin/defaults`. A value not read back fails setup. The value comes from
+the widest window pilot A read: 627 pt wide at the default 75 characters, at x 242, a new document 20 pt further
+right. Scaling the whole window by 60/75 gives at most ceil(627 x 60 / 75) = 502 pt, so its right edge stands at most
+at 242 + 20 + 502 = 764 pt. 764 is the right edge, not the width, and it is left of the alerts at x 830. That is an
+estimate (part of the window does not scale with the characters), not a proof. The height is left alone.
+`-ApplePersistenceIgnoreState YES` turns off window restoration only. It does not stop TextEdit reading `WidthInChars`
+for a new document. Neither launch argument names these keys.
 
-Uncertain until a hosted run reads it back: that TextEdit's template origin plus 764 pt clears x 822 on the runner's
-display. The record check's frame symmetry (below) shows any difference between the sides, and the alert guard refuses
-any cell whose window an alert overlaps.
+The proof is each run's read-back. `sitting.md` now prints it per step under "TextEdit and the Open panel, read back"
+(recorded checks 1 and 2): the window's actual frame, what the venue planned, and whether an alert the venue read
+overlaps it. The record check's frame symmetry (below) shows any difference between the sides, and the alert guard
+refuses any cell whose window an alert overlaps.
 
 ### The Open panel
 
@@ -1594,7 +1598,8 @@ The Open panel is the one window the brief left to preferences or a NO VERDICT. 
   frame. They also hold `NSNavPanelExpandedSizeForOpenMode` as the string `{880, 448}`.
 
 On the runner, setup writes both keys for the panel's venue frame, 80,80 720x440: `80 560 720 440 0 0 1920 1055 ` and
-`{720, 440}`. Each opening is read back: C keeps it in `meta.placement.panel`, A in `meta.placement`.
+`{720, 440}`. Each opening is read back: C keeps it in `meta.placement.panel`, A in `meta.placement`, and `sitting.md`
+prints each against the planned frame, with whether an alert overlaps it.
 
 Not verified live: whether the out-of-process panel (its service, not TextEdit) honours a frame written before it
 opens. If it does not, the panel stands where the system puts it. The alert guard then refuses any panel cell under an
@@ -1612,7 +1617,11 @@ frame scaled by guess:
   window points into the screenshot's pixels, follows the frame. `groundCase(target, case, frames)` grounds the case on
   the venue's frame. The matrix's `caseRow` passes `meta.venue.frames`, and a test runs a hosted matrix with the drag
   grounded at 800x760. Without re-grounding, the mini's layout would fail its own shape check on the hosted
-  screenshot (0.95 against 0.76), so the drag would never be prepared.
+  screenshot (0.95 against 0.76), so the drag would never be prepared. No test here proves that the points lie within
+  the field's height. In the golden tree below (an infobar under the toolbar) the field spans y 224 to 355 in the
+  window, and the upper point's y 192 lies above it. So their height depends on where the content area starts, which
+  the infobar moves. The prepare's harness click at each end checks it at run time: a point outside the field leaves
+  the case not ready, never dragged.
 - **Electron.** The size is unchanged, so `ELECTRON_FIELD_LAYOUT` is unchanged. A test asserts this.
 - **Finder.** The height is unchanged at 520, so the visible rows and every row-based cell are the same.
 - **TextEdit's drag** is in window fractions. It holds at any width.
@@ -1630,7 +1639,8 @@ Chrome keeps the mini's height on the runner: 800x760, not the 800x600 first cho
 fit its window. In the same golden tree the Section heading ends 663 pt down the window (607 pt without the
 infobar), so `NOT_APPLICABLE.chrome.scroll`'s reason ("the scene page fits its window") would have been false on the
 runner. At 760 pt the whole page fits, as it does on the mini. 22,60 800x760 still clears the alerts, which start at
-x 830. The same test checks that the page's end, Apply's line and the drag's window points all lie inside the frame.
+x 830. The same test checks that the page's end and Apply's line lie inside the frame, and that the drag's points lie
+inside the window and within the field's width.
 One cost: a taller window has fewer clear places. Beside an alert wider than pilot A's (setup's test uses one at
 750,220 420x180), no 800x760 frame on 1920x1080 clears it. Chrome then stays at its base, `placement` says "no clear
 frame: kept", and the alert guard refuses what the alert overlaps.
@@ -1651,6 +1661,11 @@ vendor's; C: matrix run i on each side). It compares the frames each record actu
 venue's, each scene's read-back after a move, the Open panel's openings, A's windows). A pair whose sides differ is NO
 VERDICT, `venue: <record> and its pair <pair> did not stand on one frame (<the differences>)`.
 
+In sitting C the judge applies the same rule. `compare` judges every pair, and FAIL outranks NO VERDICT, so the
+record check alone would not stop a worse cua sample on a split pair from failing the sitting. The matrix judge
+(`summary.mjs` `pairProblems`) now names such a run pair, `run <n>'s vendor and cua runs did not stand on one frame
+(...)`, and leaves it out of the pairable runs. Its samples are unpaired, so they are NO VERDICT, never a FAIL.
+
 ### The key-window requirement
 
 Pilot B's diagnostic run (45254955711) read the Electron fixture frontmost with no key window. TextEdit, Finder and
@@ -1659,12 +1674,26 @@ window. That is not the same as being frontmost: a background cell still runs in
 
 - **The reading.** `scripts/hosted-sittings/key-window.mjs` runs `scripts/cursor-sitting/ax-state.swift window <pid>
   <x,y,w,h>` on the device, outside either engine. It reads the app's own `AXFocusedWindow` and `AXMainWindow` against
-  the scene window (`run`, `other` or `none`), and `AXFrontmost`. The attributes are the app's own
+  the window the cell acts in (`run`, `other` or `none`), and `AXFrontmost`. The attributes are the app's own
   (`AXUIElementCreateApplication`), so a background app answers too. The engine's focus probe reads only the
   system-wide focused application, which says nothing about a background app's key window. Extending the probe would
-  have been an engine change, so the harness reads it instead. The reader needs the Accessibility grant of the process
-  that runs it. On the hosted image `/bin/bash` holds it and its children inherit it (#282's evidence). Whether that
-  survives the loopback `sshd` chain is unverified.
+  have been an engine change, so the harness reads it instead.
+- **The window a cell acts in.** For a scene whose process the run launched (TextEdit, Chrome, the fixture), it is the
+  process's frontmost window. After ⌘N that is the untitled document, which the sheet variant's and #212's keys and
+  cleanups act in. For Finder, whose process also shows the owner's windows, it is the run's recorded window. A sheet
+  is a window of its own in the window list but part of its parent in Accessibility. When Accessibility lists no
+  window at the frontmost one's bounds, and a window of the process behind it holds those bounds, that window is read
+  and the sheet is kept in the reading (`sheet`). A, C and D all read this way (`ownKeyWindow`). Review round 1 found
+  that C had read the recorded window, which would have refused every key cell after ⌘N.
+- **The grant.** The reader needs the Accessibility grant of the process that runs it. On the hosted image
+  `/bin/bash` holds it and its children inherit it (#282's evidence). Whether that survives the loopback `sshd` chain
+  the runs use is unverified, so setup now asks. Its `key-window trust` step runs `guard-device.mjs trust` over the
+  loopback ssh, in the harness checkout, and keeps the answer in `venue.keyWindowTrust` (`{trusted, reason?, via}`).
+  A reader not trusted, or not reached, is recorded with why, and setup goes on.
+- **Each reading keeps why** it was not taken (`reason`): the reader not trusted, the reader failed, Accessibility
+  listing no window at the bounds, a read that failed, the window not on screen, or the window list unread. It also
+  keeps `trusted` (null when the reader itself failed), `found` and `failed`. `recordKeyWindowUnread` counts the
+  reasons per cell (`keyWindowUnreadReasons`).
 - **The rule** (`alert-guard.mjs` `keyWindowCause`). The cell passes when the scene window is the app's focused
   window. A background app may hold no focused window and keep the scene window as its main window, the one it makes
   key when activated, so that passes too. Anything else refuses the cell unsent, NO VERDICT `keyWindow`, naming
@@ -1680,22 +1709,32 @@ window. That is not the same as being frontmost: a background cell still runs in
     because the panel is then TextEdit's focused window, as its own cells need.
   - D: `accept/textedit.mjs` `fixtureRefusal`.
 - **The counts.** `counts.md` gains, per cell and side, NO VERDICT `keyWindow` and the cells sent with their key window
-  unread. `sitting.md`'s guard tally gains the same per step and cell. The `observation` check counts `keyWindow` among
-  the causes that leave proof missing.
-- **The fixture.** After `showInactive`, the Electron fixture calls `window.focus()`, identically on both sides.
-  Electron's `focus()` makes the window key (`makeKeyAndOrderFront`) and asks for activation. In the matrix, scenes come
-  up before the activation watcher starts, so no row is charged for it. Whether the fixture takes the front at
-  bring-up on the mini is unverified.
+  unread, with the reasons. `sitting.md`'s guard tally gains the same per step and cell. A new `sitting.md` section,
+  "The key-window requirement", puts setup's grant reading beside the sitting's refusals and unread readings. It says
+  whether the requirement was observed, observed except for the cells sent unread, or vacuous (no grant, so no cell
+  was checked). The `observation` check counts `keyWindow` among the causes that leave proof missing, and the matrix
+  summary's legend defines it.
+- **Off a hosted runner** the rule runs where the alert guard runs. A, B and C read and apply it on the mini too, where
+  the owner's terminal holds the grant. D's fixture guard exists only on a hosted runner, so D's check does too.
+- **Inside a timed probe** the key cell's reading is taken in the user-window read the probe already makes
+  (`userFront`'s `keysTo`, `drivenFront`'s `keys`). It is never a device read of its own between that read and the act,
+  which would spend the probe's lead.
+- **The fixture.** The Electron fixture calls `window.focus()` after `showInactive` only under `--cua-fixture-focus`,
+  which the harness's `up` passes on both sides alike (`electronArgs`). Electron's `focus()` makes the window key
+  (`makeKeyAndOrderFront`) and asks for activation. In the matrix, scenes come up before the activation watcher
+  starts, so no row is charged for it. A launch without the switch takes nothing. That covers the matrix's
+  `electron/background/launch@finder` row, which relaunches the fixture mid-run with no arguments, the activation
+  watcher on and Finder in front. Whether the fixture takes the front at bring-up on the mini is unverified.
 - **#528.** The native-mac action row keeps `focusAfterClick` on both sides, and the reading before the click now adds
   `ownKey`.
 
 ### Tests
 
-Focused suites on `m5/placement` after merging feat/117-m5 (eff6ce351):
+Focused suites on `m5/placement` after review round 1's fixes:
 
-- `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`: 985/985.
+- `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`: 997/997.
 - `test/repl-parity`, `test/cursor-sitting`, `test/accept-textedit-{cells,readback}`,
-  `test/accept-{native-cli,scripts-load,key-guard}`: 1077/1077.
+  `test/accept-{native-cli,scripts-load,key-guard}`: 1078/1078.
 - `test/accept-{window-close,onboarding,engine-lane,fixture-app}`: 126/126.
 
 New tests:
@@ -1722,4 +1761,26 @@ New tests:
 - **The key-window guard in A, B and D.** Refused when TextEdit holds no key window of its own, counted when unread.
 - **The counts.** `keyWindow` and `keyWindowUnread` per cell and side in `counts.md`, and per step in the guard
   tally.
+
+Added in review round 1:
+
+- **The scenes' default io** reads the venue from the runner record under `$HOME`, with nothing injected. Its import
+  was missing, so every real `up` threw a ReferenceError; the tests had always injected the venue.
+- **`key-window.test.mjs`.** The frontmost window after ⌘N, a sheet read as its document, and a reason for each kind of
+  unread reading. `matrix-device read --key-window` reads the frontmost window for a launched process and the recorded
+  one for Finder.
+- **The sheet variant and #212's save sheet** run end to end against a modelled screen (the scene document, the
+  untitled document and the sheet) through the real `sceneKeyWindow`. None of their keys or cleanups is refused.
+  Reading the recorded window instead fails this test.
+- **A timed probe's key cell** reads its key window in the user-window read, never in a read of its own.
+- **The judge** leaves out a run pair on two frames: its worse cua sample is no verdict, not a FAIL. On one frame the
+  same sample fails.
+- **Setup's `key-window trust`** step over the loopback ssh, for a trusted, an untrusted and an unreached reader, and
+  `guard-device.mjs trust`.
+- **The reasons** behind unread readings, per cell and side in `counts.md` and per step in the guard tally. The
+  key-window section of `sitting.md` reports the requirement as observed, observed except for the cells sent unread,
+  or vacuous.
+- **The read-back of TextEdit and the Open panel** per step: planned against actual, with whether an alert overlaps.
+- **The fixture** focuses its window only under `--cua-fixture-focus`, tested by running `main.js` itself under a
+  stubbed `electron`.
 - **The fixture.** Shown inactive, then focused once, with the bounds and page switches each read on its own.

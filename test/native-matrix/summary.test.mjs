@@ -81,7 +81,8 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
     return row;
   });
   return cellResult({cell: 'matrix', device, started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows, run),
-    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared', runner: HOSTED_RUNNER} : {}), ...meta}});
+    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared', runner: HOSTED_RUNNER} : {}),
+      ...(typeof meta === 'function' ? meta(run) : meta)}});
 }
 // The record a hosted run's device attests (T10b′ part 2): one job's run for every hosted fixture.
 const HOSTED_RUNNER = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
@@ -527,6 +528,22 @@ test('a vendor row present and invalid: the cua sample of its run has no valid p
   // A proven worse sample stays worse, qualified or not.
   const worse = judged({vendor: {resolved: 9, axMs: 50, tweak: invalidIn(2)}, cua: {axMs: 40, tweak: (rows, run) => (run === 1 ? set(CLICK, {ok: false})(rows) : rows)}});
   assert.ok(worse.blocking.includes(`method: ${CLICK} is worse on cua`));
+});
+
+// Ruling 1169: a pair is measured on one frame. A run pair whose sides stood on different frames (../hosted-sittings/
+// venue.mjs frameAsymmetry) is no pair: its samples are unpaired, so a worse cua sample there is no verdict, never a FAIL.
+test('a run pair whose sides stood on different frames is left out: its worse cua sample is no verdict, not a FAIL', () => {
+  const frame = x => ({x, y: 60, width: 800, height: 760});
+  const venue = (x, onlyRun = null) => run => ({venue: {frames: {chrome: frame(onlyRun === null || run === onlyRun ? x : 22)}}});
+  const worseIn1 = (rows, run) => (run === 1 ? set(CLICK, {ok: false})(rows) : rows);
+  const split = judged({vendor: {resolved: 9, axMs: 50, meta: venue(22)}, cua: {axMs: 40, meta: venue(30, 1), tweak: worseIn1}});
+  assert.notEqual(split.verdict, 'FAIL', split.blocking.join('; '));
+  assert.ok(!split.blocking.includes(`method: ${CLICK} is worse on cua`));
+  assert.equal(split.methods.find(m => m.id === CLICK).verdict, 'no-verdict');
+  assert.ok((split.cells.find(c => c.id === CLICK).account.cua.noVerdict.unpaired ?? 0) > 0);
+  assert.ok(split.missing.some(p => /^run 1's vendor and cua runs did not stand on one frame \(venue:chrome: 30,60 800x760 on this side, 22,60 800x760 on its pair\)/.test(p)), split.missing.join('\n'));
+  // On one frame, the same worse sample fails.
+  assert.equal(judged({vendor: {resolved: 9, axMs: 50, meta: venue(22)}, cua: {axMs: 40, meta: venue(22), tweak: worseIn1}}).verdict, 'FAIL');
 });
 
 test('speed and finding rest on the vendor too: a run whose vendor samples have no verdict leaves cua\'s unpaired', () => {

@@ -41,6 +41,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   unread: 'front/key readings missing (hosted) or unread, or the alert guard could not read the alert windows\' bounds',
   activation: 'the activate step did not take front and key',
   alert: 'an app other than the cell\'s front or key (an alert), or the alert guard refused the cell unsent (an alert over the run\'s window, or holding the front or key)',
+  keyWindow: 'a click or key cell refused unsent because its scene\'s app did not hold the window the cell acts in as its own key window (ruling 1169\'s addition)',
   invalid: 'the harness\'s own invalid reason',
   unmeasured: 'a speed or finding sample not measured (no numeric duration)',
   unpaired: 'no vendor sample with a verdict from the same eligible run (ruling 1116); for speed and finding, outside the complete run pairs',

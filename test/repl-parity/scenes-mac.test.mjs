@@ -12,7 +12,7 @@ import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, TEXTEDIT_HOLD_MS, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse, defaultIo,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, enginePids, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
@@ -842,6 +842,31 @@ test('up on a hosted runner launches each scene at the venue\'s frame and record
     assert.deepEqual((await upScene('finder', {run, io})).setup.at(-1), {finderFrame: {x: 80, y: 80, width: 920, height: 520}});
   });
 });
+// The default io reads the venue from the device's own runner record (../hosted-sittings/runner.mjs), under $HOME, with
+// nothing injected: a real `up` on a runner and on the mini (no record) alike.
+test('the default io reads the venue from the runner record under $HOME; with none, each scene keeps its own frame', async () => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'scenes-home-')), saved = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    assert.equal('venueFrames' in fakeDevice(), false, 'the double leaves the venue to the default io');
+    await withRun(async run => {
+      const io = Object.assign(defaultIo(), fakeDevice());
+      assert.equal(io.venueFrames(), null, 'no runner record: no venue');
+      assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: SCENES.electron.placement, from: 'scene'});
+    });
+    const electron = {x: 102, y: 100, width: 720, height: 560};
+    fs.mkdirSync(join(home, '.local/share/cua-hosted'), {recursive: true});
+    fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify({venue: {frames: {electron}}}));
+    await withRun(async run => {
+      const io = Object.assign(defaultIo(), fakeDevice());
+      assert.deepEqual(io.venueFrames(), {electron});
+      assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: electron, from: 'venue'});
+    });
+  } finally {
+    process.env.HOME = saved;
+    fs.rmSync(home, {recursive: true, force: true});
+  }
+});
 // Ruling 1168's pointerdown variants (the matrix's MATRIX_SCENE_ARGS) come up at the venue's frames as the shared
 // scenes do: the variant is a page or a switch beside the frame, never instead of it.
 test('the matrix\'s pointerdown variants come up at the venue\'s frames: Chrome\'s page and the fixture\'s switch beside its bounds', async () => {
@@ -852,7 +877,7 @@ test('the matrix\'s pointerdown variants come up at the venue\'s frames: Chrome\
     assert.ok(io.calls[0][1].args.includes('--window-size=800,760') && io.calls[0][1].args.includes('--window-position=22,60'));
     assert.deepEqual(chrome.launchFrame, {frame: venue.chrome, from: 'venue'});
     const electron = await upScene('electron', {run, io, electronExtra: [POINTERDOWN_SWITCH]});
-    assert.deepEqual(io.calls.at(-1)[1].args, ['--cua-fixture-user-data=' + join(run, 'electron-user-data'), '--cua-fixture-bounds=102,100,720,560', POINTERDOWN_SWITCH]);
+    assert.deepEqual(io.calls.at(-1)[1].args, ['--cua-fixture-user-data=' + join(run, 'electron-user-data'), '--cua-fixture-bounds=102,100,720,560', '--cua-fixture-focus', POINTERDOWN_SWITCH]);
     assert.deepEqual([electron.launchFrame, electron.extraArgs], [{frame: venue.electron, from: 'venue'}, [POINTERDOWN_SWITCH]]);
   });
 });

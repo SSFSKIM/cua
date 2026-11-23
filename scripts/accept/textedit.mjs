@@ -193,7 +193,7 @@ function fixtureRefusal(guard, {step, captures, observations}) {
   try { r = guard.read({key: true, keyWindow: true}) ?? null; } catch { r = null; }
   const cause = keyCause({key: r?.key ?? null}) ?? (captures ? captureCause(r?.bounds ?? null, {kind: 'window', scenes: ['textedit']}) : null) ?? keyWindowCause(r?.ownKey);
   if (!cause && !r?.key) recordKeyUnread(observations, step);
-  if (!cause && r?.ownKey?.ok !== true) recordKeyWindowUnread(observations, step);
+  if (!cause && r?.ownKey?.ok !== true) recordKeyWindowUnread(observations, step, r?.ownKey ?? null);
   return cause;
 }
 
@@ -226,7 +226,7 @@ export function frontStep(front, frontBefore) {
 export const fixtureGuardRecord = observations => ({
   ...(observations?.alertGuardStop ? {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts ?? null} : {}),
   ...(observations?.keyUnread ? {keyUnread: observations.keyUnread} : {}),
-  ...(observations?.keyWindowUnread ? {keyWindowUnread: observations.keyWindowUnread} : {}),
+  ...(observations?.keyWindowUnread ? {keyWindowUnread: observations.keyWindowUnread, keyWindowUnreadReasons: observations.keyWindowUnreadReasons} : {}),
 });
 
 // `guard` (a GitHub-hosted runner's only, scripts/hosted-sittings/textedit-guard.mjs; rulings 1154, 1160, 1164): the

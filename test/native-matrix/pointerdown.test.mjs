@@ -13,7 +13,7 @@ import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {judgeMethod} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {departureProblems, usableDepartures} from '../../scripts/native-matrix/departures.mjs';
-import {POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
+import {FOCUS_SWITCH, POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {CSP, PAGE_HTML, PAGE_VARIANTS, POINTERDOWN, POINTERDOWN_INLINE, POINTERDOWN_SCRIPT, pointerdownPage, SCRIPT, startScenePage}
   from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
@@ -132,29 +132,45 @@ test('the Electron fixture: the second button exists only under ?page=pointerdow
   assert.deepEqual(listenerTypes(flagged.byId.get('button')), ['click']);
 });
 
+// main.js run under a stubbed `electron` (and stubbed file system, so nothing is written): what its window loads, and
+// what it does once ready to show (`shown`: showInactive and focus, in order).
+function runMain(argv) {
+  const source = fs.readFileSync(join(FIXTURE, 'main.js'), 'utf8');
+  const loaded = [], shown = [], once = {};
+  let ready = null;
+  const electron = {
+    app: {whenReady: () => ({then: f => { ready = f; }}), on() {}, setPath() {}, isAccessibilitySupportEnabled: () => false, quit() {}},
+    BrowserWindow: class { on() {} once(event, f) { once[event] = f; } showInactive() { shown.push('showInactive'); } focus() { shown.push('focus'); } loadFile(...a) { loaded.push(a); } },
+    ipcMain: {on() {}},
+  };
+  const modules = {electron, 'node:fs': {mkdtempSync: () => '/scratch', mkdirSync() {}, appendFileSync() {}, writeFileSync() {}, renameSync() {}},
+    'node:os': {tmpdir: () => '/tmp'}, 'node:path': {join, isAbsolute: p => p.startsWith('/')}, './counters.js': {PAGE_EVENTS: {}, createCounters: () => ({bump() {}})}};
+  const require = name => { assert.ok(Object.hasOwn(modules, name), `main.js requires ${name}`); return modules[name]; };
+  new Function('require', 'process', '__dirname', 'setInterval', source)(require, {argv: ['electron', '.', ...argv], pid: 1}, '/app', () => ({unref() {}}));
+  ready();
+  once['ready-to-show']?.();
+  return {loaded, shown};
+}
+
 test('the Electron fixture loads the flagged page only when launched with the matrix\'s switch', () => {
   assert.equal(POINTERDOWN_SWITCH, '--cua-fixture-page=pointerdown');
-  // main.js run under a stubbed `electron` (and stubbed file system, so nothing is written): what its window loads.
-  const source = fs.readFileSync(join(FIXTURE, 'main.js'), 'utf8');
-  const loads = argv => {
-    const loaded = [];
-    let ready = null;
-    const electron = {
-      app: {whenReady: () => ({then: f => { ready = f; }}), on() {}, setPath() {}, isAccessibilitySupportEnabled: () => false, quit() {}},
-      BrowserWindow: class { on() {} once() {} showInactive() {} loadFile(...a) { loaded.push(a); } },
-      ipcMain: {on() {}},
-    };
-    const modules = {electron, 'node:fs': {mkdtempSync: () => '/scratch', mkdirSync() {}, appendFileSync() {}, writeFileSync() {}, renameSync() {}},
-      'node:os': {tmpdir: () => '/tmp'}, 'node:path': {join, isAbsolute: p => p.startsWith('/')}, './counters.js': {PAGE_EVENTS: {}, createCounters: () => ({bump() {}})}};
-    const require = name => { assert.ok(Object.hasOwn(modules, name), `main.js requires ${name}`); return modules[name]; };
-    new Function('require', 'process', '__dirname', 'setInterval', source)(require, {argv: ['electron', '.', ...argv], pid: 1}, '/app', () => ({unref() {}}));
-    ready();
-    return loaded;
-  };
+  const loads = argv => runMain(argv).loaded;
   assert.deepEqual(loads([]), [['/app/index.html', {}]], 'no flag: the plain page');
   assert.deepEqual(loads(['--cua-fixture-user-data=/u', '--cua-fixture-bounds=1,2,300,400']), [['/app/index.html', {}]]);
   assert.deepEqual(loads([POINTERDOWN_SWITCH]), [['/app/index.html', {query: {page: 'pointerdown'}}]]);
   assert.deepEqual(loads(['--cua-fixture-page=other']), [['/app/index.html', {}]], 'another page name is the plain page');
+});
+
+// The key-window requirement (ruling 1169's addition): the fixture makes its window key only when the harness's `up`
+// asks (FOCUS_SWITCH, both sides alike). A launch with no arguments (the matrix's launch row relaunching it mid-run, with
+// the activation watcher on and Finder in front) shows it inactive and takes nothing.
+test('the Electron fixture focuses its window only when launched with the focus switch, beside any other', () => {
+  assert.equal(FOCUS_SWITCH, '--cua-fixture-focus');
+  assert.deepEqual(runMain([]).shown, ['showInactive']);
+  assert.deepEqual(runMain(['--cua-fixture-bounds=1,2,300,400', POINTERDOWN_SWITCH]).shown, ['showInactive']);
+  assert.deepEqual(runMain([FOCUS_SWITCH]).shown, ['showInactive', 'focus']);
+  const both = runMain(['--cua-fixture-user-data=/u', '--cua-fixture-bounds=1,2,300,400', FOCUS_SWITCH, POINTERDOWN_SWITCH]);
+  assert.deepEqual([both.shown, both.loaded], [['showInactive', 'focus'], [['/app/index.html', {query: {page: 'pointerdown'}}]]]);
 });
 
 // ---- the gating: no consumer but the matrix gets the variant ------------------------------------------------------------

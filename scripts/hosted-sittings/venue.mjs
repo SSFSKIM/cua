@@ -89,8 +89,8 @@ export const textEditWrites = (panel, display) => [
 export function writeTextEditDefaults(writes, {env = process.env, platform = process.platform, exec = (command, args) => spawnSync(command, args, {encoding: 'utf8'})} = {}) {
   assertGithubHosted(env, platform, 'TextEdit\'s preferences');
   const done = writes.map(({key, type, value}) => {
-    const wrote = exec('defaults', ['write', TEXTEDIT_DOMAIN, key, `-${type}`, value]);
-    const read = exec('defaults', ['read', TEXTEDIT_DOMAIN, key]);
+    const wrote = exec('/usr/bin/defaults', ['write', TEXTEDIT_DOMAIN, key, `-${type}`, value]);
+    const read = exec('/usr/bin/defaults', ['read', TEXTEDIT_DOMAIN, key]);
     const readBack = read?.status === 0 ? String(read.stdout ?? '').trim() : null;
     return {key, value, written: wrote?.status === 0, readBack, matched: wrote?.status === 0 && readBack === value.trim()};
   });
@@ -161,7 +161,8 @@ export function renderVenue(venue) {
 // The frames one side stood on, keyed alike on both sides of a pair: the venue it launched at (`venue:<scene>`) and every
 // window it read back, as each producer records its placement: the matrix's meta.placement ({scenes: {id: entry}, panel:
 // [entry]}), native-mac's meta.scenes[id].placement ({windows}) and the baseline's meta.placement ([{at, windows}]). An
-// entry's frame is where the window stood after placement: its read-back when it was moved, else where it was read.
+// entry's frame is where the window stood after placement: its read-back when it was moved, else where it was read. The
+// scratch document's record (`textedit up`, {placement: {windows}}) is read as one step.
 // -> {key: frame}.
 const standing = entry => (entry?.moved ? entry.readBack ?? null : entry?.from ?? null);
 const numbered = (prefix, windows, out) => {
@@ -180,9 +181,35 @@ export function sceneFrames(record) {
   else if (placement?.scenes) {
     for (const [scene, entry] of Object.entries(placement.scenes)) { const frame = standing(entry); if (frame) out[scene] = frame; }
     (placement.panel ?? []).forEach((entry, i) => { const frame = standing(entry); if (frame) out[`openPanel#${i + 1}`] = frame; });
-  }
+  } else if (Array.isArray(placement?.windows)) numbered('', placement.windows, out);
   for (const [id, scene] of Object.entries(meta.scenes ?? {})) numbered(`${id}/`, scene?.placement?.windows, out);
   return out;
+}
+// Recorded checks (1) and (2) of ruling 1169: where each step's TextEdit windows and Open panels stood (sceneFrames),
+// against what the venue planned (TextEdit: its width in characters and its right edge left of the alerts, its origin
+// being AppKit's; the panel: its saved frame) and whether an alert the venue read overlapped them. `records`: [{step,
+// record}]. -> [{step, window, planned, actual, overlap}].
+export function readBackRows(records, venue) {
+  const alerts = (venue?.alerts ?? []).map(a => a.bounds ?? a);
+  const width = venue?.differences?.find(d => d.scene === 'textedit')?.hosted?.WidthInChars ?? TEXTEDIT_WIDTH_IN_CHARS;
+  const edge = alerts.length ? `left of x ${Math.min(...alerts.map(a => a.x))}` : 'no alert to keep left of';
+  const out = [];
+  for (const {step, record} of records) {
+    for (const [window, actual] of Object.entries(sceneFrames(record))) {
+      const kind = /(?:^|\/)(textedit|openPanel)(?:#\d+)?$/.exec(window)?.[1];
+      if (!kind) continue;
+      out.push({step, window, planned: kind === 'openPanel' ? venue?.frames?.openPanel ?? null : `WidthInChars ${width}, ${edge}`, actual, overlap: alerts.some(a => overlaps(a, actual))});
+    }
+  }
+  return out;
+}
+export function renderReadBack(rows) {
+  const head = ['## TextEdit and the Open panel, read back (ruling 1169)', ''];
+  if (!rows.length) return [...head, 'No TextEdit window or Open panel was read back in this sitting\'s records.', ''].join('\n');
+  const text = v => (v === null ? 'unplanned' : typeof v === 'string' ? v : rectText(v));
+  return [...head, 'Where each step\'s TextEdit windows and Open panels stood, against what the venue planned, and whether an alert the venue read overlapped them (the alert guard then refused the cells there).', '',
+    '| step | window | planned | actual | overlaps an alert |', '|---|---|---|---|---|',
+    ...rows.map(r => `| ${r.step} | ${r.window} | ${text(r.planned)} | ${rectText(r.actual)} | ${r.overlap ? 'yes' : 'no'} |`), ''].join('\n');
 }
 const sameFrame = (a, b) => ['x', 'y', 'width', 'height'].every(k => a?.[k] === b?.[k]);
 // Why a pair's sides were not measured on one frame: each key both read whose frames differ. -> the reason, or null.

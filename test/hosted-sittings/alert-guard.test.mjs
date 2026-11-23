@@ -134,9 +134,12 @@ test('the key-window rule: the scene window is its app\'s focused window; an app
   // Not read (an untrusted reader, a failed read, the scene window not on screen): nothing refused; the sitting counts it.
   for (const unread of [null, {trusted: false}, {...own('none'), ok: false}]) assert.equal(keyWindowCause(unread), null);
   const record = {};
-  recordKeyWindowUnread(record, 'chrome/action');
-  recordKeyWindowUnread(record, 'chrome/action');
-  assert.deepEqual(record.keyWindowUnread, {'chrome/action': 2});
+  recordKeyWindowUnread(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
+  recordKeyWindowUnread(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
+  recordKeyWindowUnread(record, 'chrome/action', null);
+  assert.deepEqual(record.keyWindowUnread, {'chrome/action': 3});
+  // Each kept with why, so a sitting tells an untrusted reader (the requirement vacuous) from a window not there.
+  assert.deepEqual(record.keyWindowUnreadReasons, {'chrome/action': {'the reader is not trusted for Accessibility': 2, 'the guard reading was not taken': 1}});
   // A refusal of this kind is counted beside the alert's, in the same record.
   recordRefusal(record, 'electron/action', keyWindowCause(own('none')));
   assert.deepEqual(record.alertGuardCounts, {'electron/action': {alert: 0, unread: 0, keyWindow: 1}});

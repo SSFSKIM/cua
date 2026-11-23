@@ -9,6 +9,10 @@
 //       the key application's bundle id and whether its focused window is one of the targets' (the approved engine's
 //       `--probe focus`; null when unread); with --key-window the first target's app's own key window against its scene
 //       window (./key-window.mjs ownKeyWindow, the key-window requirement). -> {bounds, front, key, keyWindow?, ownKey?, at}
+//   trust
+//       whether the key-window reader (../cursor-sitting/ax-state.swift) holds the Accessibility grant in this process's
+//       chain: ax-state asked about this process itself, which answers its grant before reading anything. Setup asks
+//       it over the loopback ssh the runs reach the device through. -> {trusted, reason?}
 //   place --pid <n> | --panel  --window <number> --frame <x,y,w,h>
 //       the window moved to the frame by the approved engine's `--probe window-frame` and read back; the window must be
 //       one of pid's (or, with --panel, the Open panel's, its service's pid read from the window list), never another
@@ -91,17 +95,25 @@ export function defaultGuardIo({cache = GUARD_CACHE} = {}) {
   };
 }
 
+// The key-window reader's grant (see the header). -> {trusted: true} | {trusted: false | null, reason}.
+export function readTrust(io) {
+  let answer;
+  try { answer = io.axState(process.pid, '0,0,1,1'); } catch (error) { return {trusted: null, reason: `the reader failed (${String(error?.message ?? error).split('\n')[0].slice(0, 200)})`}; }
+  return answer?.trusted === true ? {trusted: true} : {trusted: false, reason: 'the reader is not trusted for Accessibility'};
+}
+
 export async function main(argv, {io = null} = {}) {
   const [command, ...rest] = argv;
   const {values} = parseArgs({args: rest, options: {target: {type: 'string', multiple: true}, key: {type: 'boolean', default: false}, 'key-window': {type: 'boolean', default: false}, pid: {type: 'string'},
     panel: {type: 'boolean', default: false}, window: {type: 'string'}, frame: {type: 'string'}}});
   const use = io ?? defaultGuardIo();
+  if (command === 'trust') return readTrust(use);
   if (command === 'read') return readGuard({targets: (values.target ?? []).map(parseTarget), key: values.key, keyWindow: values['key-window']}, use);
   if (command === 'place') {
     if (!values.window || (!values.panel && !/^\d+$/.test(values.pid ?? ''))) throw new Error('place needs --pid <n> or --panel, --window <number> and --frame <x,y,w,h>');
     return placeWindow({pid: values.pid ?? null, panel: values.panel, window: values.window, frame: values.frame}, use);
   }
-  throw new Error('usage: guard-device.mjs read --target <scene>:<pid>[:<window>[:only]] ... [--key] [--key-window] | place --pid <n>|--panel --window <number> --frame <x,y,w,h>');
+  throw new Error('usage: guard-device.mjs read --target <scene>:<pid>[:<window>[:only]] ... [--key] [--key-window] | trust | place --pid <n>|--panel --window <number> --frame <x,y,w,h>');
 }
 
 if (process.argv[1] && SCRIPT === fs.realpathSync(process.argv[1])) {

@@ -168,10 +168,10 @@ test('the fixture source declares a text field, a list and a button, records Chr
   assert.match(code, /app\.on\('accessibility-support-changed'/);
   const reads = /app\.isAccessibilitySupportEnabled\(\)|'accessibility-support-changed'|recordAccessibility|ACCESSIBILITY_POLL_MS|cua-fixture-accessibility\.jsonl/g;
   assert.doesNotMatch(code.replace(reads, ''), /setAccessibilitySupportEnabled|force-renderer-accessibility|accessibility/i);
-  // Shown inactive, then made its app's key window (the key-window requirement of ruling 1169's addition: pilot B read
-  // the fixture frontmost with no key window), identically on both sides; never shown any other way.
+  // Shown inactive, then made its app's key window only under the harness's focus switch (the key-window requirement of
+  // ruling 1169's addition; test/native-matrix/pointerdown.test.mjs runs it), identically on both sides; never shown any other way.
   assert.match(code, /show: false/);
-  assert.match(code, /once\('ready-to-show', \(\) => \{ window\.showInactive\(\); window\.focus\(\); \}\)/);
+  assert.match(code, /once\('ready-to-show', \(\) => \{ window\.showInactive\(\); if \(focus\) window\.focus\(\); \}\)/);
   assert.doesNotMatch(code, /show: true|\.show\(\)/);
   assert.equal(code.match(/\.focus\(\)/g)?.length, 1);
   // Beside the launch frame and the pointerdown page (ruling 1168): each read from its own switch.

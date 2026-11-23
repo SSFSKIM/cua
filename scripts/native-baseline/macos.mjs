@@ -100,7 +100,7 @@ function keyWindowGuard(ctx, op, sample, r) {
   if (KEY_WINDOW_EXEMPT.has(op)) return;
   const cause = keyWindowCause(r?.ownKey);
   if (cause) refuse(ctx, op, sample, cause);
-  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, op);
+  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, op, r?.ownKey ?? null);
 }
 // A refused sample: its row with the cause, the per-cell record, the run's stop (recordRefusal). Nothing of the cell
 // was sent. `held`: a held series' samples already taken (measure's hold), written first, each invalid since the

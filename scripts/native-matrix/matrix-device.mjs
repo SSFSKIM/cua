@@ -209,15 +209,17 @@ function guardReading(io) {
   return alertBoundsOf(screen?.windows, io.state().scenes, screen?.displays ?? undefined);
 }
 
-// The key-window reading (../hosted-sittings/key-window.mjs) of a scene the run put up, at its recorded window; not
-// taken (ok false, with why) when the scene is not up or the window list was not read.
-function sceneKeyWindow(scene, io) {
+// The key-window reading (../hosted-sittings/key-window.mjs) of a scene the run put up, at the window a cell acts in:
+// its process's frontmost window when the run launched the process (a document ⌘N opened, a sheet on it counting as
+// its window), the recorded one for Finder, whose process also shows the owner's windows. Not taken (ok false, with
+// why) when the scene is not up or the window list was not read.
+export function sceneKeyWindow(scene, io) {
   const record = io.state().scenes?.[scene];
   if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) return {scene, number: null, trusted: null, ok: false, reason: 'the scene is not up in this run'};
   let windows = null;
   try { windows = io.windows(); } catch { windows = null; }
   if (!Array.isArray(windows)) return {scene, number: null, trusted: null, ok: false, reason: 'the window list was unread'};
-  return ownKeyWindow(windows, {scene, pid: record.pid, number: record.window.number}, io.axState);
+  return ownKeyWindow(windows, {scene, pid: record.pid, number: SCENES[scene]?.process === 'run' ? null : record.window.number}, io.axState);
 }
 
 // The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, or for `openPanel` the panel's window

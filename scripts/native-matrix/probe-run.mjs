@@ -202,7 +202,7 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   alertCheck(ctx, `before ${id}`);
   let before = null;
   const probe = await withKeystroke(ctx, {window: userWindow, scene: user}, async scheduled => {
-    before = await userFront(ctx, user, userWindow);
+    before = await userFront(ctx, user, userWindow, {keysTo: driven});
     if (!before.inFront || !activated(ctx, userApp)) return null;
     // Finder type-selects in its list, which cua's read-back answers typeUnconfirmed (./plan.mjs typeIntoList, #354).
     const typing = driven === 'finder' ? typeIntoList(CONCURRENT_TYPING[driven]) : `await __app.typeText(${j(CONCURRENT_TYPING[driven])});`;
@@ -256,7 +256,7 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
   if (field.invalid) return span.end(precondition(field));
   const {userWindow} = field;
   const keys = async (code, names) => {
-    const front = await userFront(ctx, user, userWindow);
+    const front = await userFront(ctx, user, userWindow, {keysTo: driven});
     return front.inFront ? span.add(await sendKeys(ctx, code, names, {scene: driven, front, userWindow, kind: 'row', key})) : null;
   };
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
@@ -275,7 +275,7 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
   const preMs = lead ?? SHEET_PRE_MS;
   let before = null, opening = null;
   const probe = await withKeystroke(ctx, {window: userWindow, scene: user}, async scheduled => {
-    before = await userFront(ctx, user, userWindow);
+    before = await userFront(ctx, user, userWindow, {keysTo: driven});
     if (!before.inFront || !activated(ctx, userApp)) { before = before.inFront ? before : null; return null; }
     opening = span.add(await sendKeys(ctx, sheetOpenCell({at: scheduled - preMs}), ['super+w'], {scene: driven, front: before, userWindow, kind: 'row', key}));
     // A click, not a key: sent without the key guard, whose reading would sit between the two actions.

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
-  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, renderVenue, savedFrameString, sceneFrames,
+  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, readBackRows, renderReadBack, renderVenue, savedFrameString, sceneFrames,
   textEditWrites, venueRecord, writeTextEditDefaults,
 } from '../../scripts/hosted-sittings/venue.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
@@ -67,10 +67,6 @@ test('TextEdit\'s preferences: its own domain only, its width in characters, the
   // -ApplePersistenceIgnoreState touches window restoration only, never a preference.
   const named = SCENES.textedit.launchArgs.filter(a => a.startsWith('-')).map(a => a.slice(1));
   for (const {key} of writes) assert.ok(!named.includes(key), key);
-  // The width keeps TextEdit's right edge under about 800 at the origins pilot A read (241 and 242, a new document 20
-  // points further down): 60 of the default 75 characters scale the widest window read (627 points) to at most 0.8 of
-  // it plus the fixed part.
-  assert.ok(242 + 20 + Math.ceil(627 * TEXTEDIT_WIDTH_IN_CHARS / 75) <= 800);
 });
 
 test('the writes refuse off a GitHub-hosted runner before touching anything, and each is read back', () => {
@@ -92,7 +88,7 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
   const done = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', exec: live});
   assert.equal(done.ok, true);
   assert.deepEqual(done.writes.map(w => [w.key, w.matched]), writes.map(w => [w.key, true]));
-  assert.deepEqual(calls.slice(0, 2), [['defaults', 'write', TEXTEDIT_DOMAIN, 'WidthInChars', '-int', '60'], ['defaults', 'read', TEXTEDIT_DOMAIN, 'WidthInChars']]);
+  assert.deepEqual(calls.slice(0, 2), [['/usr/bin/defaults', 'write', TEXTEDIT_DOMAIN, 'WidthInChars', '-int', '60'], ['/usr/bin/defaults', 'read', TEXTEDIT_DOMAIN, 'WidthInChars']]);
   // A read-back that is not the value written is not in force: the step fails rather than declare it.
   const stuck = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: '75\n'} : {status: 0, stdout: ''})});
   assert.equal(stuck.ok, false);
@@ -163,15 +159,41 @@ test('symmetry: a pair whose sides stood on different frames names the scene and
   assert.equal(frameAsymmetry(matrix(rect(22, 60, 800, 760)), null), null);
 });
 
+// Recorded checks (1) and (2): where TextEdit's windows and the Open panel actually stood in each run, against what the
+// venue planned (TextEdit: its width in characters, its right edge left of the alerts; the panel: its saved frame), and
+// whether an alert overlapped them, so sitting.md shows it without opening a meta.json.
+test('the read-back of TextEdit and the Open panel per step: planned against actual, and whether an alert overlapped', () => {
+  const venue = venueRecord({alerts: ALERTS, displays: [DISPLAY], placed: hostedFrames(ALERTS, [DISPLAY]), textEdit: null});
+  const scratch = {placement: {alerts: [], windows: [{scene: 'textedit', number: 3, from: rect(256, 87, 503, 488), moved: false}]}, venue};
+  const rows = readBackRows([
+    {step: 'vc-1', record: baseline(rect(241, 87, 520, 488), rect(700, 107, 764, 505))},
+    {step: 'matrix-cua-1', record: matrix(rect(22, 60, 800, 760))},
+    {step: 'textedit up', record: scratch},
+    {step: 'cc-1', record: null},
+  ], venue);
+  assert.deepEqual(rows, [
+    {step: 'vc-1', window: 'setup.newDocument/textedit#1', planned: 'WidthInChars 60, left of x 830', actual: rect(241, 87, 520, 488), overlap: false},
+    {step: 'vc-1', window: 'setup.newDocument/textedit#2', planned: 'WidthInChars 60, left of x 830', actual: rect(700, 107, 764, 505), overlap: true},
+    {step: 'matrix-cua-1', window: 'openPanel#1', planned: rect(80, 80, 720, 440), actual: rect(80, 80, 720, 440), overlap: false},
+    {step: 'textedit up', window: 'textedit#1', planned: 'WidthInChars 60, left of x 830', actual: rect(256, 87, 503, 488), overlap: false},
+  ]);
+  const md = renderReadBack(rows);
+  assert.match(md, /^\| vc-1 \| setup\.newDocument\/textedit#2 \| WidthInChars 60, left of x 830 \| 700,107 764x505 \| yes \|$/m);
+  assert.match(md, /^\| matrix-cua-1 \| openPanel#1 \| 80,80 720x440 \| 80,80 720x440 \| no \|$/m);
+  assert.match(renderReadBack([]), /No TextEdit window or Open panel was read back/);
+});
+
 // Ruling 1168's pointerdown pair ("Pointer target" and "Pointer downs", fixtures/scene-page.mjs POINTERDOWN_INLINE) sits
 // inline after Apply. The page has no stylesheet, so the user agent lays it out from the content area's top left, the
 // same in any window wide enough for its lines; the mini's golden tree (Chrome at 1000x760 with an infobar under its
 // toolbar, so its content area starts lowest) gives Apply's frame. The pair's width is bounded from above (each
 // character at most 9 pt, the button's padding and border 16 pt, two separating spaces 5 pt each), so its line neither
 // wraps nor leaves the hosted 800x760 window, scrollbar taken off. The window keeps the mini's height, so the whole page
-// (down to its Section heading) still fits, which NOT_APPLICABLE's chrome.scroll states; and the drag's window points
-// lie inside the window and across the notes field's width (the prepare's harness clicks prove each lands in the field).
-test('the pointerdown pair, the whole page and the drag lie inside the hosted Chrome frame, by the mini\'s measured layout', () => {
+// (down to its Section heading) still fits, which NOT_APPLICABLE's chrome.scroll states. The drag's window points lie
+// inside the window and within the notes field's width; whether they lie within its height is not shown here: in this
+// tree (an infobar) the field spans y 224-355 and y 192 lies above it, so their height rests on the content area's top,
+// which the infobar moves. Only the prepare's harness clicks, at run time, prove each end lands in the field.
+test('the pointerdown pair and the whole page lie inside the hosted Chrome frame, by the mini\'s measured layout; the drag\'s points inside the window', () => {
   const nodes = JSON.parse(readFileSync(new URL('../native-goldens/chrome/skyshot.json', import.meta.url), 'utf8')).nodes;
   const win = nodes.find(n => n.role === 'AXWindow').frame;
   const inWindow = node => ({x: node.frame.x - win.x, y: node.frame.y - win.y, width: node.frame.width, height: node.frame.height});
@@ -187,7 +209,10 @@ test('the pointerdown pair, the whole page and the drag lie inside the hosted Ch
   assert.equal(NOT_APPLICABLE.chrome.scroll, 'the scene page fits its window: nothing to scroll');
   const notes = inWindow(nodes.find(n => n.role === 'AXTextArea' && n.title === 'Scene notes'));
   for (const [x, y] of [CHROME_DRAG_POINTS.from, CHROME_DRAG_POINTS.to]) {
-    assert.ok(x > notes.x && x < notes.x + notes.width, `x ${x} across the field`);
+    assert.ok(x > notes.x && x < notes.x + notes.width, `x ${x} within the field's width`);
     assert.ok(y > 0 && y < hosted.height, `y ${y} inside the window`);
   }
+  // In this tree the upper point is above the field: the field's height is not what this test proves.
+  assert.deepEqual([notes.y, notes.y + notes.height], [224, 355]);
+  assert.ok(CHROME_DRAG_POINTS.from[1] < notes.y);
 });

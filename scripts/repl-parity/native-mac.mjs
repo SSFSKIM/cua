@@ -426,7 +426,7 @@ function actionGuard(ctx, id, record, activated) {
   const cell = `${id}/action`;
   const cause = guardCause(reading?.bounds ?? null, {front: reading?.front ?? null, key: reading?.key ?? null}, {scenes: [id]}) ?? keyWindowCause(reading?.ownKey);
   if (!cause) {
-    if (reading?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, cell);
+    if (reading?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, cell, reading?.ownKey ?? null);
     return before;
   }
   ctx.emit({scene: id, cell: 'action', ok: false, ...recordRefusal(ctx.meta, cell, cause), diagnostics: actionDiagnostics(before, null)});

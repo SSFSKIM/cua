@@ -85,6 +85,7 @@ import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
+import {frameAsymmetry} from '../hosted-sittings/venue.mjs';
 import {classifyAttestation, classifyAttestedRecord} from '../probe/lib.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
@@ -181,6 +182,11 @@ function pairProblems(n, list) {
   // run's device attested (meta.runner, ../hosted-sittings/runner.mjs).
   if (list.some(({result}) => result.meta?.hosted === true))
     shared('hosted runner', 'meta.runner', list.map(({result}) => hostedRunnerKey(result.meta)), {measured: 'in one job\'s run'});
+  // Ruling 1169: both sides of a pair stand on one frame (the venue each launched on, every window each read back); a
+  // pair that did not is no pair, its samples unpaired and so no verdict, whatever either side's rows say.
+  const side = engine => list.find(({result}) => result.lanes[0]?.engine === engine)?.result;
+  const apart = frameAsymmetry(side('cua'), side('vendor'));
+  if (apart) out.push(`run ${n}'s vendor and cua runs did not stand on one frame (${apart}): a pair is measured on one frame (ruling 1169)`);
   return out;
 }
 // The run a hosted result's runner names, or null when it records none that is whole.

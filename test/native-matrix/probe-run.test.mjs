@@ -9,6 +9,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_PANEL_CONTROLS, SAVE_SHEET_AIM_MS, SAVE_SHEET_PRE_MS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
+import {sceneKeyWindow} from '../../scripts/native-matrix/matrix-device.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
@@ -559,4 +560,66 @@ test('a held fixture whose reset is held stops the run with every planned sample
   assert.ok(unrun.length > 0 && unrun.every(r => sampleCause(r).category === 'alert' && /not run: the run stopped when a held fixture could not be reset/.test(r.alertGuard.detail)),
     JSON.stringify(unrun));
   assert.deepEqual(validateCellResult(result), []);
+});
+
+// The key-window requirement (ruling 1169's addition) across a second TextEdit window: after super+n every key the
+// variant sends acts in the untitled document, and a sheet on it is part of it. The device's reading is the real one
+// (matrix-device.mjs sceneKeyWindow) against a modelled screen: the scene document (recorded, window 4), the untitled
+// document in front of it once super+n landed, its sheet in front of that while one is up. Accessibility lists the two
+// documents, never the sheet, and names the frontmost document TextEdit's focused and main window.
+function twoWindows(calls) {
+  const tags = () => calls.map(c => tagOf(c.code)).filter(Boolean);
+  const rect = (x, y, width, height) => ({x, y, width, height});
+  const DOC = {ownerPid: 600, layer: 0, number: 4, bounds: rect(242, 107, 603, 505)}, UNTITLED = {ownerPid: 600, layer: 0, number: 9, bounds: rect(262, 127, 603, 505)};
+  const SHEET = {ownerPid: 600, layer: 0, number: 11, bounds: rect(323, 149, 480, 300)};
+  const world = () => {
+    let untitled = false, sheet = false;
+    for (const t of tags()) {
+      if (t === 'sheet.new') untitled = true;
+      if (t === 'sheet.open' || t === 'savesheet.open') sheet = true;
+      if (t === 'savesheet.cancel') sheet = false;
+      if (t === 'sheet.follow' || t === 'sheet.cleanup') { sheet = false; untitled = false; }
+    }
+    return [...(sheet ? [SHEET] : []), ...(untitled ? [UNTITLED] : []), DOC];
+  };
+  const asked = [];
+  const io = {state: () => ({scenes: {textedit: {pid: 600, window: {number: 4}}}}), windows: world, axState: (pid, bounds) => {
+    const listed = world().filter(w => w !== SHEET), at = listed.find(w => [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(',') === bounds);
+    asked.push({bounds, found: Boolean(at)});
+    const front = listed[0] === at ? 'run' : 'other';
+    return {trusted: true, ok: Boolean(at), found: Boolean(at), failed: [], frontmost: false, focusedWindow: at ? front : 'other', mainWindow: at ? front : 'other'};
+  }};
+  return {asked, ops: {matrix: (base, a) => {
+    const out = base(a);
+    return a[0] === 'read' && a.includes('--key-window') && a[a.indexOf('--key-window') + 1] === 'textedit' ? {...out, ownKey: sceneKeyWindow('textedit', io)} : out;
+  }}};
+}
+
+test('the key-window rule reads the window a cell acts in: the sheet variant\'s and #212\'s keys and cleanups after super+n are sent, none refused', async () => {
+  for (const [planId, cell, tag] of [['concurrent-use-sheet', sheetCells(), 'sheet.open'], ['intervention-save-sheet', saveCells(), 'savesheet.act']]) {
+    const calls = [];
+    const {asked, ops} = twoWindows(calls);
+    const {result} = await runWith({plan: planOf(planId), cellName: planId, calls, cell, ops});
+    assert.equal(result.complete, true, `${planId}: ${result.problems.join('; ')}`);
+    assert.equal((result.meta.alertGuards ?? []).filter(g => g.cause === 'keyWindow').length, 0, `${planId}: ${JSON.stringify(result.meta.alertGuards)}`);
+    assert.equal(result.meta.keyWindowUnread, undefined, planId);
+    assert.ok(calls.some(c => tagOf(c.code) === tag), `${planId}: ${tag} sent`);
+    // The untitled document was the one read once super+n landed, and a sheet in front was read as its document.
+    assert.ok(asked.some(a => a.bounds === '262,127,603,505'), planId);
+    if (planId === 'intervention-save-sheet') assert.ok(asked.some(a => a.bounds === '323,149,480,300' && !a.found), 'the sheet: not an Accessibility window, its document read instead');
+  }
+});
+
+// Inside a timed probe the key cell's key-window reading is the user-window read's own (./steps.mjs userFront), never a
+// device read of its own between that read and the act, which would spend the probe's lead.
+test('a timed probe\'s key cell reads its key window with the user window, never in a read of its own', async () => {
+  for (const [plan, cellName, cell] of [[planOf('concurrent-use', {scene: 'chrome'}), 'concurrent-use', c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)],
+    [planOf('concurrent-use-sheet'), 'concurrent-use-sheet', sheetCells()]]) {
+    const {steps, result} = await runWith({plan, cellName, cell});
+    assert.equal(result.complete, true, result.problems.join('; '));
+    const keyed = matrixSteps(steps, 'read').filter(a => a.includes('--key-window'));
+    assert.ok(keyed.length > 0, cellName);
+    const own = keyed.filter(a => !(a[a.indexOf('--with') + 1] ?? '').includes('window-order') && !(a[a.indexOf('--with') + 1] ?? '').includes('alert-bounds'));
+    assert.deepEqual(own, [], `${cellName}: a key-window read of its own`);
+  }
 });

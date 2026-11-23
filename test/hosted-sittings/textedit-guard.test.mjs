@@ -61,9 +61,10 @@ test('sitting D: a fixture key cell whose TextEdit holds no key window of its ow
   assert.deepEqual(none.observations.alertGuardCounts, {[STEP.type]: {alert: 0, unread: 0, keyWindow: 1}});
   const own = await keyCellWith(textEditGuard({pids: () => [600], io: axIo('run')}));
   assert.deepEqual([own.out.sent, own.observations.keyWindowUnread], [true, undefined]);
-  const unread = await keyCellWith(guardOn(CLEAR));
+  const unread = await keyCellWith(textEditGuard({pids: () => [600], io: {...io(CLEAR), axState: () => ({trusted: false})}}));
   assert.deepEqual([unread.out.sent, unread.observations.keyWindowUnread], [true, {[STEP.type]: 1}]);
-  assert.deepEqual(fixtureGuardRecord(unread.observations), {keyWindowUnread: {[STEP.type]: 1}});
+  assert.deepEqual(fixtureGuardRecord(unread.observations),
+    {keyWindowUnread: {[STEP.type]: 1}, keyWindowUnreadReasons: {[STEP.type]: {'the reader is not trusted for Accessibility': 1}}});
 });
 
 // The marker cell types and then captures TextEdit's window (markerCell's getScreenshot): it is held to the capture rule

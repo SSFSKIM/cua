@@ -121,11 +121,15 @@ export function keyWindowCause(ownKey) {
   if (focusedWindow === 'other') return {category: 'keyWindow', detail: `the ${scene} app's key window is another of its windows, not ${which}`};
   return {category: 'keyWindow', detail: `the ${scene} app holds no key window (its focused window ${ownWindowText(focusedWindow)}, its main window ${mainWindow === 'run' ? which : ownWindowText(mainWindow)}) while ${frontmost === false ? 'in the background' : 'frontmost'}`};
 }
-// A click or key cell whose key-window reading was not taken, counted per cell in the record its side keeps:
-// `keyWindowUnread: {cell: n}`.
-export function recordKeyWindowUnread(record, cell) {
+// A click or key cell whose key-window reading (`ownKey`, ./key-window.mjs; null when the guard's reading itself was not
+// taken) was not taken, counted per cell in the record its side keeps, with why: `keyWindowUnread: {cell: n}` and
+// `keyWindowUnreadReasons: {cell: {reason: n}}`.
+export function recordKeyWindowUnread(record, cell, ownKey) {
   const counts = record.keyWindowUnread ??= {};
   counts[cell] = (counts[cell] ?? 0) + 1;
+  const reason = ownKey?.reason ?? (ownKey ? 'unread' : 'the guard reading was not taken');
+  const why = (record.keyWindowUnreadReasons ??= {})[cell] ??= {};
+  why[reason] = (why[reason] ?? 0) + 1;
 }
 
 // Why a capture is NO VERDICT, from the fresh reading: `kind` 'window' (the target `scenes`' windows: one under an alert

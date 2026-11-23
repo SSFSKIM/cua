@@ -134,13 +134,13 @@ function refuse(ctx, cause, reading) {
 // read as the cell's other guards. Not while TextEdit's Open panel is up (ctx.panelOpen, ./run.mjs openPanel and
 // closePanel): the panel is then TextEdit's focused window, as it must be for the panel's cells. -> the scene to read
 // for, or null.
-const keyWindowScene = (ctx, scene) => (scene && !ctx.panelOpen && ctx.records?.[scene] ? scene : null);
+export const keyWindowScene = (ctx, scene) => (scene && !ctx.panelOpen && ctx.records?.[scene] ? scene : null);
 // Refused (AlertGuarded, NO VERDICT keyWindow) when the reading shows another key window; counted under `key`
 // (meta.keyWindowUnread) when it was not taken, the cell then sent unchecked.
 function keyWindowGuard(ctx, r, key) {
   const cause = keyWindowCause(r?.ownKey);
   if (cause) refuse(ctx, cause, keyReading(r));
-  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, key);
+  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, key, r?.ownKey ?? null);
 }
 // The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
 // sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over its target's
@@ -202,14 +202,15 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
 // The user window in front, and its app key, again before an act: read (front, key and the window order with it), and
 // once re-activated when it is not. `rekey` false: a key held elsewhere is read and left (the composing rows', whose user
 // window holds a composition an activation could end), so the row's readings say so. -> the reading, `inFront` whether
-// the user window was then the front one.
-export async function userFront(ctx, user, userWindow, {rekey = true} = {}) {
-  const app = SCENES[user].bundleId;
+// the user window was then the front one. `keysTo`: the scene a key cell sent next goes to, whose key window is read in
+// the same read (keyWindowScene), so sendKeys takes no device read of its own inside a timed probe's lead.
+export async function userFront(ctx, user, userWindow, {rekey = true, keysTo = null} = {}) {
+  const app = SCENES[user].bundleId, keyWindow = keyWindowScene(ctx, keysTo);
   const inFront = r => sameWindow(userWindowOf(r?.reading, userWindow.pid), userWindow);
-  let r = read(ctx, null, {frontKey: true, windowOrder: true});
+  let r = read(ctx, null, {frontKey: true, windowOrder: true, keyWindow});
   if (inFront(r) && (!rekey || r?.frontKey?.key === app)) return {...r, inFront: true};
   activate(ctx, user);
-  r = read(ctx, null, {frontKey: true, windowOrder: true});
+  r = read(ctx, null, {frontKey: true, windowOrder: true, keyWindow});
   return {...r, inFront: inFront(r)};
 }
 
@@ -250,13 +251,14 @@ export const errorNameOf = (act, caught = act?.value?.errorName ?? null) => act?
 
 // The driven scene front and key before a frontmost act, activated again when it is not: the regime's own activate step
 // (rulings 1136 and 1141: "alert up, scene activated first"). Never TextEdit under its Open panel, which an activation
-// could bring up over the panel; the panel's own key reads as its service's. -> the reading.
-export function drivenFront(ctx, target) {
-  const scene = SCENE_OF[target] ?? target, app = SCENES[scene].bundleId;
-  const r = read(ctx, null, {frontKey: true});
+// could bring up over the panel; the panel's own key reads as its service's. `keys`: a key cell comes next, whose key
+// window is read in the same read (keyWindowScene). -> the reading.
+export function drivenFront(ctx, target, {keys = false} = {}) {
+  const scene = SCENE_OF[target] ?? target, app = SCENES[scene].bundleId, keyWindow = keys ? keyWindowScene(ctx, scene) : null;
+  const r = read(ctx, null, {frontKey: true, keyWindow});
   if (target === 'openPanel' || (r?.frontKey?.front === app && r?.frontKey?.key === app)) return r;
   activate(ctx, scene);
-  return read(ctx, null, {frontKey: true});
+  return read(ctx, null, {frontKey: true, keyWindow});
 }
 
 
@@ -372,7 +374,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (unprepared) return done({invalid: `not prepared: ${unprepared}`, caret: {before: caretBefore}});
   // The row's window runs through the final before-read, so what it saw (an alert that prompted a re-activation) is
   // the row's even when the act is then skipped; a harness step's own app keeps its precedence (./oracle.mjs).
-  const before = span(regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target));
+  const before = span(regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null, keysTo: c.keys ? scene : null}) : drivenFront(ctx, target, {keys: Boolean(c.keys)}));
   if (!activated(ctx, app)) {
     // The skipped act's timing is skipped with it, the case's readings its own, so no planned sample goes missing.
     const skipped = done({frontKey: {...skippedReadings(ctx, apps, app), before: keyReading(before)}});

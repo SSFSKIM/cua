@@ -34,6 +34,11 @@
 //                       cascade, which each run reads back), and the Open panel's saved frame and size; each read back,
 //                       and one that does not read back as written fails the setup. After the warm-ups' TextEdit ended,
 //                       before any run launches one. Kept in `venue.textEdit`
+//   key-window trust    whether the key-window reader (../cursor-sitting/ax-state.swift, ./key-window.mjs) holds the
+//                       Accessibility grant where the runs reach the device: asked over the loopback ssh, in the harness
+//                       checkout (./guard-device.mjs trust). Kept in `venue.keyWindowTrust`, so every sitting says whether
+//                       its key-window requirement was observed or went unread; a reader not trusted, or not reached, is
+//                       recorded with why and the setup goes on (each reading is then counted unread, never refused)
 //   engine stop         `cua engine stop` on the engine the approve and its warm-up left running, so every sitting
 //                       starts from a known engine state and no stray engine feeds a measured run or reads as a user of the approved home
 //                       (pilot A, run 45218179501); whether it was running and that it stopped are kept (`engineStop`)
@@ -51,6 +56,7 @@ import {locateRuntime} from '../../src/runtime/manifest.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
 import {engineToApprove, hostedApprove} from './approve.mjs';
 import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
+import {quote} from '../browser-parity/topology.mjs';
 import {DEVICE} from './plan.mjs';
 import {warmUp as warmUpCopy} from './warm-up.mjs';
 import {isAlertWindow} from './alert-guard.mjs';
@@ -60,6 +66,14 @@ import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './
 import {CLIENTS, grantRows} from './tcc.mjs';
 
 export const PARITY_CLONE_IN_HOME = 'Developer/GitHub/cua-parity';
+// The device's answer to guard-device.mjs trust, as the ssh that carried it left it. -> {trusted, reason?}.
+function trustOf(result) {
+  if (result.status !== 0) return {trusted: null, reason: `the loopback reading failed (exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''})`};
+  let answer = null;
+  try { answer = JSON.parse(String(result.stdout).trim().split('\n').at(-1)); } catch { answer = null; }
+  if (typeof answer?.trusted !== 'boolean' && answer?.trusted !== null) return {trusted: null, reason: 'the loopback reading printed no answer'};
+  return {trusted: answer.trusted, ...(answer.reason ? {reason: answer.reason} : {})};
+}
 const ORIGIN = 'https://github.com/SSFSKIM/cua';
 
 // A warm-up's step detail (./warm-up.mjs): what it captured, what it raised, and whether the alert left the front.
@@ -187,6 +201,13 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       const missed = written.writes.filter(w => !w.matched);
       failIf(missed.length, missed.map(w => `${w.key} not read back as written (${w.readBack === null ? 'unread' : JSON.stringify(w.readBack)})`).join('; '));
       return `${written.domain}: ${written.writes.map(w => `${w.key} ${w.value.trim()}`).join(', ')}; each read back`;
+    }],
+    ['key-window trust', () => {
+      const asked = exec('ssh', [...loopbackSshArgs(DEVICE, home), DEVICE, `cd ${quote(clone)} && node scripts/hosted-sittings/guard-device.mjs trust`], {env});
+      report.venue.keyWindowTrust = {...trustOf(asked), via: 'loopback ssh'};
+      const {trusted, reason} = report.venue.keyWindowTrust;
+      if (trusted === true) return 'trusted over the loopback ssh: the key-window requirement is observed';
+      return `${trusted === false ? 'not trusted' : 'not read'} over the loopback ssh (${reason}): every key-window reading will be unread, the requirement unobserved`;
     }],
     ['engine stop', async () => {
       const stopped = await stopEngine();

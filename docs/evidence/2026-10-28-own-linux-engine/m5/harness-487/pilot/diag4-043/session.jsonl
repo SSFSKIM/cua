@@ -1,0 +1,4 @@
+{"t":"2026-11-23T07:59:44.155Z","label":"t142-diag4-043","kind":"server","display":":1","pid":1565129}
+{"t":"2026-11-23T07:59:44.553Z","label":"t142-diag4-043","kind":"setup","openbox":1565136,"person":"6291468"}
+{"t":"2026-11-23T08:00:18.317Z","label":"t142-diag4-043","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-23T08:00:19.331Z","label":"t142-diag4-043","kind":"server-stopped","clean":true,"reason":null}

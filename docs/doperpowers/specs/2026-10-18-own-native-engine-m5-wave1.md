@@ -101,6 +101,10 @@ or the owner is prepared and named in its gate's disposition file under
   still typed and the read-back reports the dropped character; how secret text should behave is with the design
   session. The spec's Text paragraph (S L158: a character the layout cannot type goes as a Unicode key event) needs
   the Chromium exception.
+- 2026-11-23, the design session clears #420's kit: built on `probe/420-qual` from `probe/414-qual` b7aebd311,
+  pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,
+  watched at 120 s or more, no ci-gate, no TCC write beyond the kit's guard (ruling 1111). The cua side runs now on
+  feat/117-m5's head; the vendor pair waits on T10's lane after H0. Run ids and results go into 420.md.
 - 2026-11-23, T8a's review (7e948e006..7d71f26e2): ruling 1128's refusal is `concealedInputUnavailable` with a
   value-free meta word `concealedRefusal: inputSource | droppedCharacter`, which the service does not forward into
   the model-visible `cua/*` meta; the wrapper picks its fixed sentence by cause, an absent cause getting the

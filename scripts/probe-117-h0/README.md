@@ -123,3 +123,20 @@ runner, so O8 is not needed. The kit's order is the one T10 needs: rows for `io.
   release; the crash's assertion is not in `cua engine build`'s error, which keeps the last 12 lines. A gate leg on
   `xcode-27` would fail today; a direct `swift build -c release` there gives the assertion to file or work around.
 - **Harness.** `scenes-mac.mjs down all` exits 1 on Finder until the teardown steps are sent through an engine.
+
+## Ruling 1135 (ii): does the capture confirmation close by itself? (run [45156038821](https://github.com/SSFSKIM/cua/actions/runs/45156038821), main b1b15484, macos-latest)
+
+Observe-only toward the alert: no click, no key, no dismissal, no approval recorded. Rows and a relaunch for both
+copies, then for each copy one capture (a bind and one `getScreenshot`), then the alert's window (the window server's
+list, `alert-windows.swift`), the front app and the focused app sampled every 5 s.
+
+| | cua's bundle | the vendor's helper |
+|---|---|---|
+| First capture | raised (2 SCAlert lines), alert window at once | raised (2 SCAlert lines), a second alert window stacked on the first |
+| Closes by itself | **No**: present at all 104 samples over 604 s, front and key app UserNotificationCenter throughout | **No**: present at all 107 samples over 602 s |
+| Second capture by the same copy | not raised again (0 SCAlert lines; the first alert still up) | not raised again (0 lines) |
+
+The keystroke cell (the matrix's stand-in user: `activate textedit`, the probe's `keystroke`, landing read by the focus
+probe's value hash) then **passed with both alerts still on screen**: the activation brought TextEdit to the front and
+took the key focus, the named window was focused before and after, and the text changed. It ran after the windows, not
+after a close, since none came. The alerts stay on screen above the scenes.

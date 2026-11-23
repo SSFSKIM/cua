@@ -34,6 +34,8 @@ const quoted = spec(`- Decision (2026-11-24, revoked): the entry "${DECISION_MAR
 // An example of the bullet, not the bullet: inside a fence (``` or ~~~, at any indent) or as indented code.
 const fenced = spec(`${OTHER}\nAn example of the form:\n\n\`\`\`\n${O0}\`\`\`\n`);
 const tildes = spec(`${OTHER}\n  ~~~markdown\n${O0}  ~~~\n`);
+// The heading and the bullet both inside one fence: an example of a Decision Log, not the spec's.
+const fencedHeading = `# Design\n\n\`\`\`markdown\n## Decision Log\n\n${O0}\`\`\`\n`;
 const indented = spec(`${OTHER}\nThe form:\n\n${O0.split('\n').map(line => (line ? `    ${line}` : line)).join('\n')}`);
 const outside = `## Notes\n\n${O0}\n## Decision Log\n\n${OTHER}`;
 const refusals = {
@@ -45,6 +47,7 @@ const refusals = {
   'the marker outside the Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: outside})}, /refused: .*O0.*no entry of its own/],
   'the marker only in a ``` fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: fenced})}, /refused: .*O0.*no entry of its own/],
   'the marker only in a ~~~ fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: tildes})}, /refused: .*O0.*no entry of its own/],
+  'the heading and the entry only in a fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: fencedHeading})}, /refused: .*no "## Decision Log" section/],
   'the marker only in indented code': [{...HOSTED, decisionLog: () => ({sha: SHA, text: indented})}, /refused: .*O0.*no entry of its own/],
   'no Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: O0})}, /refused: .*no "## Decision Log" section/],
   'the pinned spec file missing': [{...HOSTED, decisionLog: () => null}, /refused: .*no pinned design spec/],

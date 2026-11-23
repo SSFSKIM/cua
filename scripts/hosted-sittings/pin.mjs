@@ -3,7 +3,9 @@
 // later commit) and writes it to a run-owned file. The TCC writer (./tcc.mjs) then reads only that file, named by
 // CUA_HOSTED_DECISION_FILE with its commit in CUA_HOSTED_DECISION_SHA, and never runs git itself. Refuses off a
 // GitHub-hosted runner, before any fetch. A commit other than O0_COMMIT must come from a reviewed source: O0_COMMIT's own
-// history, or docs/117-progress's (REVIEWED_BRANCH, fetched for the check), else it is refused before its spec is read.
+// history, or docs/117-progress's as this run fetched it (REVIEWED_BRANCH's tip, FETCH_HEAD of that fetch; never a
+// tracking ref the checkout may hold from before), else it is refused before its spec is read. A fetch that fails refuses
+// any override O0_COMMIT's own history does not hold.
 import {execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
@@ -29,10 +31,14 @@ export function pinDecision({env = process.env, platform = process.platform, com
     if (!present()) throw new Error(`the O0 source: ${commit} is not in this checkout after the fetch`);
   }
   if (commit !== O0_COMMIT) {
-    const tracking = `refs/remotes/origin/${REVIEWED_BRANCH}`;
-    try { git(['fetch', '-q', 'origin', `+refs/heads/${REVIEWED_BRANCH}:${tracking}`]); } catch { /* unreachable: the ancestry check below refuses */ }
     const within = ref => { try { git(['merge-base', '--is-ancestor', commit, ref]); return true; } catch { return false; } };
-    if (!within(O0_COMMIT) && !within(tracking)) throw new Error(`the O0 source ${commit} is not on a reviewed source: neither ${O0_COMMIT} nor an ancestor of it, nor reachable from ${REVIEWED_BRANCH}`);
+    if (!within(O0_COMMIT)) {
+      let tip;
+      try { git(['fetch', '-q', 'origin', `refs/heads/${REVIEWED_BRANCH}`]); tip = git(['rev-parse', 'FETCH_HEAD']).trim(); } catch (error) {
+        throw new Error(`the O0 source ${commit} is not in ${O0_COMMIT}'s history, and this run could not fetch ${REVIEWED_BRANCH} to check it (${String(error.message ?? error).split('\n')[0]})`);
+      }
+      if (!/^[0-9a-f]{40}$/.test(tip) || !within(tip)) throw new Error(`the O0 source ${commit} is not on a reviewed source: neither ${O0_COMMIT} nor an ancestor of it, nor reachable from ${REVIEWED_BRANCH} (${tip})`);
+    }
   }
   const file = join(env.RUNNER_TEMP, 'hosted-sittings-decision', `design-${commit}.md`);
   write(file, git(['show', `${commit}:${DECISION_SPEC}`]));

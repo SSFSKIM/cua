@@ -47,17 +47,21 @@ export const O0_COMMIT = 'db775127652ebae5e0c7d90b5f5e2785f8e5711e';
 // of the bullet in code (a fenced block, ``` or ~~~ at any indent, or a line indented as code) is none.
 // -> null when it holds one, else the problem.
 export function decisionEntryProblem(text) {
-  const lines = String(text ?? '').split('\n');
-  const start = lines.findIndex(line => /^## Decision Log\s*$/.test(line));
-  if (start < 0) return 'the pinned spec has no "## Decision Log" section';
-  const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
-  const entries = [];
+  // Fences first, over the whole document, so neither a section's heading nor an entry is read inside one. A fence
+  // opens on ``` or ~~~ (three or more) and closes on the same character, at least as long; its lines are code (null).
   let fence = null;
-  for (const line of lines.slice(start + 1, end < 0 ? undefined : end)) {
-    // A fence opens on ``` or ~~~ (three or more) and closes on the same character, at least as long; inside it is code.
+  const lines = String(text ?? '').split('\n').map(line => {
     const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (fence) { if (mark && mark[0] === fence[0] && mark.length >= fence.length && !line.trim().slice(mark.length).trim()) fence = null; continue; }
-    if (mark) { fence = mark; entries.push(null); continue; }
+    if (fence) { if (mark && mark[0] === fence[0] && mark.length >= fence.length && !line.trim().slice(mark.length).trim()) fence = null; return null; }
+    if (mark) { fence = mark; return null; }
+    return line;
+  });
+  const start = lines.findIndex(line => line !== null && /^## Decision Log\s*$/.test(line));
+  if (start < 0) return 'the pinned spec has no "## Decision Log" section';
+  const end = lines.findIndex((line, i) => i > start && line !== null && /^## /.test(line));
+  const entries = [];
+  for (const line of lines.slice(start + 1, end < 0 ? undefined : end)) {
+    if (line === null) { if (entries.at(-1) !== null) entries.push(null); continue; }
     if (line.startsWith('- ')) entries.push(line.slice(2));
     else if (/^\s+\S/.test(line) && typeof entries.at(-1) === 'string') entries[entries.length - 1] += ` ${line}`;
     else if (!line.trim() || !/^\s/.test(line)) entries.push(null);

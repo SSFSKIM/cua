@@ -7,13 +7,15 @@ import {pinDecision} from '../../scripts/hosted-sittings/pin.mjs';
 import {DECISION_SPEC, O0_COMMIT} from '../../scripts/hosted-sittings/tcc.mjs';
 
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: '/t'};
-function spies({present = false, fetched = O0_COMMIT, reviewed = []} = {}) {
+const TIP = 'e'.repeat(40), BRANCH = 'refs/remotes/origin/docs/117-progress';
+// `tip`: what FETCH_HEAD names after the branch's fetch; `branchFails`: that fetch fails (a cached tracking ref may still hold anything).
+function spies({present = false, fetched = O0_COMMIT, reviewed = [], branchFails = false} = {}) {
   const calls = [], written = [];
   const git = args => {
     calls.push(args.join(' '));
     if (args[0] === 'cat-file') { if (!present && !calls.some(c => c.startsWith('fetch'))) throw new Error('missing'); return ''; }
-    if (args[0] === 'fetch') return '';
-    if (args[0] === 'rev-parse') return `${fetched}\n`;
+    if (args[0] === 'fetch') { if (branchFails && args.includes('refs/heads/docs/117-progress')) throw new Error('could not read from remote'); return ''; }
+    if (args[0] === 'rev-parse') return `${calls.at(-2)?.includes('docs/117-progress') ? TIP : fetched}\n`;
     if (args[0] === 'show') return '## Decision Log\n';
     // `merge-base --is-ancestor <commit> <reviewed>`: true for the pairs `reviewed` names.
     if (args[0] === 'merge-base') { if (!reviewed.includes(`${args[2]} ${args[3]}`)) throw new Error('not an ancestor'); return ''; }
@@ -32,11 +34,16 @@ test('by default the entry\'s own commit is fetched, checked and its spec writte
 });
 
 test('a commit already present is not fetched; a later commit may be named, in full only, and only from the reviewed branch', () => {
-  const later = 'a'.repeat(40), BRANCH = 'refs/remotes/origin/docs/117-progress';
-  const {calls, deps} = spies({present: true, reviewed: [`${later} ${BRANCH}`]});
+  const later = 'a'.repeat(40);
+  const {calls, deps} = spies({present: true, reviewed: [`${later} ${TIP}`]});
   assert.equal(pinDecision({...deps, commit: later}).sha, later);
   assert.ok(!calls.some(c => c.startsWith('fetch -q --depth')));
-  assert.deepEqual(calls.filter(c => /^(fetch|merge-base)/.test(c)), [`fetch -q origin +refs/heads/docs/117-progress:${BRANCH}`, `merge-base --is-ancestor ${later} ${O0_COMMIT}`, `merge-base --is-ancestor ${later} ${BRANCH}`]);
+  // The ancestry is tested against the tip this run fetched (FETCH_HEAD), never a ref a checkout may hold from before.
+  assert.deepEqual(calls.filter(c => /^(fetch|merge-base|rev-parse)/.test(c)), [`merge-base --is-ancestor ${later} ${O0_COMMIT}`, 'fetch -q origin refs/heads/docs/117-progress', 'rev-parse FETCH_HEAD', `merge-base --is-ancestor ${later} ${TIP}`]);
+  // A failed fetch: a cached tracking ref that holds the candidate proves nothing, so the override is refused.
+  const cached = spies({present: true, branchFails: true, reviewed: [`${later} ${BRANCH}`, `${later} ${TIP}`]});
+  assert.throws(() => pinDecision({...cached.deps, commit: later}), /could not fetch docs\/117-progress/);
+  assert.ok(!cached.calls.some(c => c.startsWith('show')) && !cached.written.length);
   // A commit on no reviewed source is refused before its spec is read; an ancestor of the default is reviewed.
   const stray = spies({present: true});
   assert.throws(() => pinDecision({...stray.deps, commit: 'c'.repeat(40)}), /not on a reviewed source/);

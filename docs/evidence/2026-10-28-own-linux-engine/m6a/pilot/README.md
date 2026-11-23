@@ -4,9 +4,9 @@
 every mandatory step to pass and all four answers to be yes. The hosted `ubuntu-24.04-arm` runner is a working arm64
 venue for acceptance 12 with this recipe, and so is its x64 control on `ubuntu-24.04`.
 
-- **Run:** [45150450103](https://github.com/SSFSKIM/cua/actions/runs/45150450103), `linux-runtime.yml` dispatched on
-  `m6a-t6-pilot` at 7dfc6af6fc1c53e2da0df15e999ae28b10cb5e72. That commit is main's code (da7585c3), plus the M6a
-  pre-flight and this task's harness after its review fixes.
+- **Run:** [45169685893](https://github.com/SSFSKIM/cua/actions/runs/45169685893), `linux-runtime.yml` dispatched on
+  `m6a-t6-pilot` at a0e4365bafbbb4dd517ac89de0fc2e4866a44ab8. That commit is main's code (da7585c3), plus the M6a
+  pre-flight and this task's harness after both of its review rounds.
 - **Files:** this directory holds each leg's artifact as uploaded, which is exactly the pilot's `ARTIFACT_FILES`:
   - `pilot.json`: the steps, the answers, the verdict, the confinement step and the trace summary;
   - `smoke.json` and `smoke-traced.json`: each step's name and status only.
@@ -36,10 +36,13 @@ counts relative paths resolved against their -y-decoded base and attempted execs
 count is complete. On main's code these are the vendor tree's reads. E1's judge, after M6a, requires 0 there.
 
 **Times per leg:**
-- install: about 22 to 24 s;
+- install: about 21 to 24 s;
 - each smoke: about 169 to 174 s, most of it the fixture's last step and gedit's exit.
 
 **Earlier runs:**
+- [45150450103](https://github.com/SSFSKIM/cua/actions/runs/45150450103) (7dfc6af6) gave the same results before
+  the re-review. The re-review's fixes parse each syscall's pathname operands, compare CUA_HOME by its real path, and
+  stop the sampler in `finally`.
 - [45141056542](https://github.com/SSFSKIM/cua/actions/runs/45141056542) (6d39cb0d) answered yes on both legs under
   the first judges. Task 143's review found those judges too lenient, and they were fixed test-first.
 - [45147992954](https://github.com/SSFSKIM/cua/actions/runs/45147992954) (629b31d9) ran the fixed judges. Both legs

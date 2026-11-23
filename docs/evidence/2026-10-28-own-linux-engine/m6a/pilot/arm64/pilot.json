@@ -6,7 +6,7 @@
  "home": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua",
  "out": "/home/runner/work/_temp/linux-runtime/artifact",
  "scratch": "/home/runner/work/_temp/linux-runtime/scratch",
- "startedAt": "2026-11-23T09:49:55.954Z",
+ "startedAt": "2026-11-23T11:57:31.543Z",
  "steps": [
   {
    "name": "preconditions",
@@ -25,7 +25,7 @@
    "status": "PASS",
    "code": 0,
    "signal": null,
-   "seconds": 23.9
+   "seconds": 21.4
   },
   {
    "name": "sandbox.launcher passes",
@@ -49,7 +49,7 @@
    "status": "PASS",
    "exit": 0,
    "signal": null,
-   "seconds": 173.8,
+   "seconds": 173.5,
    "trace": "/home/runner/work/_temp/linux-runtime/scratch/smoke.strace"
   },
   {
@@ -169,14 +169,14 @@
     "path": "/tmp/.X11-unix/X99"
    },
    "bus": {
-    "path": "/tmp/dbus-0bgqS3D677"
+    "path": "/tmp/dbus-7jq7Be0Dsp"
    },
    "tcp": {
     "host": "127.0.0.1",
-    "port": 33195
+    "port": 41953
    },
    "unix": {
-    "path": "/tmp/cua-linux-native-Yv3IRd/confinement.sock"
+    "path": "/tmp/cua-linux-native-ix5Yry/confinement.sock"
    }
   },
   "controls": {
@@ -202,37 +202,37 @@
    "unix": "EPERM"
   },
   "ancestry": {
-   "kernel": 3881,
+   "kernel": 3958,
    "underServe": true,
    "helper": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
    "ancestors": [
     {
-     "pid": 3880,
+     "pid": 3957,
      "comm": "codex-linux-san",
      "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox"
     },
     {
-     "pid": 3879,
+     "pid": 3956,
      "comm": "bwrap",
      "exe": "/usr/bin/bwrap"
     },
     {
-     "pid": 3875,
+     "pid": 3952,
      "comm": "codex-linux-san",
      "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox"
     },
     {
-     "pid": 3864,
+     "pid": 3940,
      "comm": "MainThread",
      "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
     },
     {
-     "pid": 3857,
+     "pid": 3933,
      "comm": "MainThread",
      "exe": "/opt/hostedtoolcache/node/24.22.3/arm64/bin/node"
     },
     {
-     "pid": 3841,
+     "pid": 3918,
      "comm": "MainThread",
      "exe": "/opt/hostedtoolcache/node/24.22.3/arm64/bin/node"
     }
@@ -240,7 +240,7 @@
   },
   "identity": {
    "pid": 2,
-   "starttime": "14492"
+   "starttime": "116210"
   },
   "samples": 6,
   "verdict": {
@@ -312,32 +312,32 @@
  "trace": {
   "summary": {
    "processes": 155,
-   "serve": 4040,
+   "serve": 4114,
    "workers": [
     {
-     "pid": 4114,
+     "pid": 4173,
      "underServe": true
     }
    ],
    "helpers": [
-    4073,
-    4078,
-    4100,
-    4113
+    4147,
+    4152,
+    4167,
+    4172
    ],
    "bwrap": [
-    4029,
-    4056,
-    4074,
-    4075,
-    4077,
-    4101,
-    4102,
-    4106
+    4103,
+    4130,
+    4148,
+    4149,
+    4151,
+    4168,
+    4169,
+    4171
    ],
    "kernels": [
     {
-     "pid": 4079,
+     "pid": 4153,
      "underHelper": true,
      "underServe": true,
      "callsAfterExec": 227
@@ -408,5 +408,5 @@
   "pass": true,
   "problems": []
  },
- "finishedAt": "2026-11-23T09:56:03.371Z"
+ "finishedAt": "2026-11-23T12:03:36.269Z"
 }

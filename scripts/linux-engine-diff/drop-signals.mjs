@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, PART_CELLS, PART_PLANS, partFamilies, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, NAMED_LANE, PART_CELLS, PART_PLANS, partFamilies, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, namedSourceTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -34,7 +34,7 @@ import { probeAt } from './role-probe.mjs';
 import { ROOT, frontPoint, parkPointer, parkVerdict, readPointer } from './park.mjs';
 import { verifiedScene } from './app-identity.mjs';
 import { openScene } from './run.mjs';
-import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
+import { FIT_MARGIN, SCREEN, configure, frameExtentsOf } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { XPROBE, spawnXprobe, xdotool } from './xtools.mjs';
@@ -273,7 +273,40 @@ export const LANES = {
   // experiment's `dragEngines` builds its vendor lanes), with no flags of cua's and no `--stats`
   pinned: { args: [], vendor: 'vendor' },
   newest: { args: [], vendor: 'newest' },
+  // #487's own case (task 142, ruling 1102; development, no gate step's plan names it): each drag names the run's GTK 4
+  // window (`named`, the family drop-signals opens it as, at `NAMED_PLACE`), whose family has no drag rest and whose
+  // drags take the foreground route in dedicated mode, the path in its coordinates over the Electron page beside it, so
+  // XTEST's press, and the drag loop the settle waits for, are Electron's
+  [NAMED_LANE]: { args: ['--desktop', 'dedicated'], named: 'gtk4-button' },
 };
+
+/**
+ * Where the named lane's GTK 4 window goes (its client: x, y, width, height): right of the Electron scene (at the
+ * screen's left, 900 px wide), above the front xterm's corner, so its activation covers no point of any path in the
+ * scene (`pathUnder` checks the sitting's).
+ */
+export const NAMED_PLACE = [960, 240, 240, 180];
+
+/** A path in the scene window's coordinates (`windowPath`'s) in the named window's (`named`: its client's origin on the screen). */
+export const namedPath = (scene, named, path) => path.map((p) => ({ x: scene.window.x + p.x - named.x, y: scene.window.y + p.y - named.y }));
+
+/** The points of a screen path (its vertices and every whole pixel of the segments between) inside `rect` (`{x, y, w, h}`). */
+export function pathUnder(rect, path) {
+  const inside = (p) => p.x >= rect.x && p.x < rect.x + rect.w && p.y >= rect.y && p.y < rect.y + rect.h;
+  const points = [path[0], ...path.slice(1).flatMap((b, k) => {
+    const a = path[k];
+    const n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y), 1);
+    return Array.from({ length: n }, (_, j) => ({ x: Math.round(a.x + ((b.x - a.x) * (j + 1)) / n), y: Math.round(a.y + ((b.y - a.y) * (j + 1)) / n) }));
+  })];
+  return points.filter(inside);
+}
+
+/** A window's frame on the screen (`{x, y, w, h}`): its client and the window manager's `_NET_FRAME_EXTENTS`. */
+function frameOn(id) {
+  const c = clientOrigin(id);
+  const [left, right, top, bottom] = frameExtentsOf(xExecFileSync('xprop', ['-id', String(id), '_NET_FRAME_EXTENTS'], { encoding: 'utf8', timeout: 5000 }));
+  return { x: c.x - left, y: c.y - top, w: c.width + left + right, h: c.height + top + bottom };
+}
 
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
 export async function desktopDrag(engine, scene, path) {
@@ -399,6 +432,10 @@ export const PLANS = {
     ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:handle', cell, 30]),
   ],
   't17-slow': [['cua:desktop', 'slow', 30], ['cua:handle', 'slow', 30]],
+  // #487's own case (task 142, ruling 1102), Electron, a development plan no gate step runs: the plain short drop as a
+  // drag naming the zero-rest GTK 4 window beside the page, on the dedicated foreground route; 100 drops a sitting,
+  // counted on 0.4.3 (the named window's rest) and on 0.4.4 (the press source's), by `namedSourceTable`
+  't487-named': [[NAMED_LANE, 'plain', 100]],
   // L4d's Electron part (the design session's ruling 962): the long path that crosses the zone and ends outside it, on
   // the shipped lane, 30 drags. Chrome's `long-left` fits Electron's window as it is: the page sits at the window's
   // origin, every point of the path is in the window and clear of the run's other windows (no `other` window or sink
@@ -786,9 +823,10 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base), performance.now(), ctx.presses?.pressed, { sent: serverNow() }) : null;
   const handled = LANES[lane].handle === true;
   const desktopLane = LANES[lane].desktop === true;
+  const namedLane = Boolean(LANES[lane].named);
   const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };
   const offWindow = OFF_WINDOW.includes(base);
-  const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
+  const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : namedLane ? engine.request('drag', { window: { id: ctx.named.id }, path: namedPath(scene, ctx.named, path) }) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   // an off-window cell's end read where the drag left the real pointer, once the drag image is gone: the window it is
@@ -847,6 +885,10 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     reply_notice: value.response.notice ?? null,
     ms: Math.round(value.ms * 10) / 10,
     route: stats.route,
+    // the drag's pacing, its family's (`--stats` `drag_pacing`): the named lane's proof that the named window paced it
+    drag_pacing: stats.drag_pacing,
+    // the named lane's window, which the drag named: its id, and its client's origin the path was given from
+    named: namedLane ? { id: ctx.named.id, x: ctx.named.x, y: ctx.named.y } : undefined,
     hold: stats.hold,
     after_take: stats.after_take,
     wall,
@@ -901,6 +943,7 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
   let scene = null;
   let other = null;
   let sink = null;
+  let named = null;
   try {
     if (args.ballast === 'gate') {
       for (const [name, n] of Object.entries(GATE_BALLAST)) {
@@ -922,10 +965,27 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
       sink = await openSink(desktop);
       await sleep(500);
     }
+    // the named lane's GTK 4 window (#487's case), right of the scene, above the front xterm's corner
+    if (specs.some((s) => LANES[s.lane]?.named)) {
+      const namedFamilies = [...new Set(specs.map((s) => LANES[s.lane]?.named).filter(Boolean))];
+      if (namedFamilies.length !== 1) throw new Error(`one named window a sitting, not ${namedFamilies.join(', ')}`);
+      named = await openFamily(desktop, oracle, namedFamilies[0], 'named', { geometry: NAMED_PLACE.slice(2) });
+      configure(named.id, ...NAMED_PLACE);
+      await sleep(500);
+    }
     desktop.arrangeFront('visible');
     inFront(scene);
     await sleep(1000);
     const at = await locate({ desktop, oracle }, scene, ['dnd']);
+    // its activation (the foreground route's) may cover no point of a path it is named for, or the drop would go to it
+    let namedAt = null;
+    if (named) {
+      namedAt = { id: named.id, ...clientOrigin(named.id), frame: frameOn(named.id) };
+      for (const s of specs.filter((x) => LANES[x.lane]?.named)) {
+        const under = pathUnder(namedAt.frame, windowPath(at, s.cell, 0, scene.window).map((p) => screenOf(scene, p)));
+        if (under.length) throw new Error(`the named window's frame ${JSON.stringify(namedAt.frame)} covers ${under.length} points of the ${s.cell} path, (${under[0].x}, ${under[0].y}) first`);
+      }
+    }
     watch = await startDropWatch(scene.id);
     // the browser's mark of each press, for the freeze cells that wait for it (ruling 954)
     if (specs.some((s) => freezeOf(splitCell(s.cell).base)?.afterPress !== undefined)) presses = await startPressWatch(scene.id);
@@ -935,8 +995,8 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
     // the `moved` cell's hook point: the root cell's end, the bare root beside the window, on the screen
     const moved = specs.some((s) => splitCell(s.cell).base === 'moved') ? screenOf(scene, windowPath(at, 'root', 0, scene.window).at(-1)) : null;
     const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) }, sink: sink && { id: sink.id, ...clientOrigin(sink.id) }, moved });
-    const ctx = { desktop, scene, at, watch, presses, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends };
-    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: planName ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null });
+    const ctx = { desktop, scene, at, watch, presses, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends, named: namedAt };
+    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: planName ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null, named: namedAt ? { family: named.family, ...namedAt } : null });
     const plan = blockPlan(specs.map((s, k) => ({ ...s, spec: k })));
     for (const [b, block] of plan.entries()) {
       const lane = LANES[block.lane];
@@ -977,9 +1037,9 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
   } finally {
     if (watch) await watch.stop();
     if (presses) await presses.stop();
-    await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...(sink ? [sink] : []), ...ballast]);
+    await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...(sink ? [sink] : []), ...(named ? [named] : []), ...ballast]);
   }
   const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${planName ?? 'main'}${part === undefined ? '' : ` (part ${part + 1} of ${args.plan})`}: ${rows.length} drags.`, ''];
-  for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows)]) md.push(...table.md, '');
+  for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows), namedSourceTable(rows)]) if (table.md.length) md.push(...table.md, '');
   return md;
 }

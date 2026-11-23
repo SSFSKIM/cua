@@ -941,6 +941,78 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// #487's own case (task 142, ruling 1102), a development cell no gate step runs: an Electron drop whose drag names the
+// zero-rest GTK 4 window beside it (drop-signals.mjs `LANES`, `t487-named`), on the dedicated foreground route
+
+/** The lane whose drags name the run's GTK 4 window, the path over the Electron page beside it. */
+export const NAMED_LANE = 'cua:named-gtk4';
+
+/** The engine's name for the named window's family, and its drag rest (cua-engine `families.rs`: GTK 4's `DragPacing::NONE`). */
+const NAMED_FAMILY = { family: 'GTK 4', rest_ms: 0 };
+
+/**
+ * What a drop of the named lane fails to prove of #487's case, from its own record, as a list (empty: exercised):
+ * `pacing`, the drag's pacing (`--stats` `drag_pacing`) not the named window's family's, GTK 4 with rest 0; `route`, not
+ * the foreground route; `press`, no drop-cursor watch, which the engine starts only for a press source of a family it
+ * confirms by its drag loop's cursor (Electron's; `pointer.rs` `drop_cursor`), so the press went to no Electron window;
+ * `start`, the page saw its source start no drag; `settle`, no settle ran (`drop_cursor.settle`).
+ */
+export function namedSourceUnproven(r) {
+  const unproven = [];
+  if (r.drag_pacing?.family !== NAMED_FAMILY.family || r.drag_pacing?.rest_ms !== NAMED_FAMILY.rest_ms) unproven.push('pacing');
+  if (r.route !== 'foreground') unproven.push('route');
+  if (!r.drop_cursor || typeof r.drop_cursor !== 'object') unproven.push('press');
+  if (r.outcome?.started !== true) unproven.push('start');
+  if (settleOf(r) === null) unproven.push('settle');
+  return unproven;
+}
+
+/**
+ * #487's case per drop, measured and never gated: the named lane's drops, those that proved the case (`exercised`,
+ * `namedSourceUnproven` empty) apart from those that did not, each counted by T17's definitions (`electronDropVerdict`):
+ * landed (`landingOf`), a false ok (ok, nothing honestly pending, no drop: `droppedOf`), a drop at a stale position, an
+ * honest unconfirmed answer (its notice kept by the next acting request's refusal), with the ambiguous landings and the
+ * errors; why each unexercised drop fell short; and the settles' rests (`rest_ms`, 0.4.4's fix wave's, `absent` before).
+ * Answers `{counts, md}`, both empty of the lane's rows where the sitting has none.
+ */
+export function namedSourceTable(rows, { ends = PATH_ENDS } = {}) {
+  const list = rows.filter((r) => r.kind === 'drop-signal' && r.lane === NAMED_LANE);
+  if (!list.length) return { counts: null, md: [] };
+  const tally = (rs) => ({
+    drags: rs.length,
+    landed: rs.filter((r) => landingOf(r, ends) === 'landed').length,
+    false_ok: rs.filter((r) => r.ok === true && honest(r) === null && !droppedOf(r)).length,
+    stale: rs.filter((r) => landingOf(r, ends) === 'stale').length,
+    honest_unconfirmed: rs.filter((r) => honest(r) === 'unconfirmed').length,
+    ambiguous: rs.filter((r) => landingOf(r, ends) === 'ambiguous').length,
+    error: rs.filter((r) => r.ok !== true).length,
+  });
+  const exercised = list.filter((r) => namedSourceUnproven(r).length === 0);
+  const unexercised = list.filter((r) => !exercised.includes(r));
+  const unproven = Object.fromEntries(['pacing', 'route', 'press', 'start', 'settle'].map((k) => [k, unexercised.filter((r) => namedSourceUnproven(r).includes(k)).length]));
+  const rests = {};
+  for (const r of list) {
+    const s = settleOf(r);
+    if (s === null) continue;
+    const k = Number.isInteger(s.rest_ms) ? s.rest_ms : 'absent';
+    rests[k] = (rests[k] ?? 0) + 1;
+  }
+  const counts = { drags: list.length, exercised: tally(exercised), unexercised: tally(unexercised), unproven, settle_rest_ms: rests };
+  const line = (name, c) => `| ${name} | ${c.drags} | ${c.landed} | ${c.false_ok} | ${c.stale} | ${c.honest_unconfirmed} | ${c.ambiguous} | ${c.error} |`;
+  const md = [
+    `#487's case (\`${NAMED_LANE}\`, measured, not gated): Electron drops whose drag names the zero-rest GTK 4 window beside the page, on the dedicated foreground route. A drop exercised the case when its own record shows the drag paced as GTK 4 with rest 0, the foreground route, the press Electron's (its drop-cursor watch) and its source started by the page, and the settle run; any other is counted apart, never as a pass. The counts are T17's judge's.`,
+    '',
+    '| drops | drags | landed | false ok | stale drops | honest unconfirmed | ambiguous | error |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|',
+    line('exercised', counts.exercised),
+    line('not exercised', counts.unexercised),
+    '',
+    `Not exercised, by the proof missing (a drop may miss several): ${Object.entries(unproven).map(([k, n]) => `${k} ${n}`).join(', ')}. The settles' rest_ms: ${Object.entries(rests).map(([k, n]) => (k === 'absent' ? `absent ${n}` : `${k} ms ${n}`)).join(', ') || 'no settle'}.`,
+  ];
+  return { counts, md };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Chrome's cells in the gate (the harness-fix wave: the whole-branch review's P1, 2026-11-12): T14's contract
 
 /**

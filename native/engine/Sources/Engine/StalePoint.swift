@@ -131,6 +131,10 @@ struct ScreenshotNode<Element> {
   /// #500 (ruling 1131): of `labelsUnread`, the parts whose slot held kCFNull, which a comparison passes over where the
   /// other side's is null too (`label(_:)`, "like with like").
   var labelsNull: Set<StalePointLabelPart> = []
+  /// #519 (rulings 1146, 1151): the label parts whose slot held a value that is no text, kept apart from `labelsUnread`:
+  /// `label(_:)` reads them as main did (none), and only the consumers that choose no target read them through
+  /// `strictLabel(_:)`.
+  var labelsNonText: Set<StalePointLabelPart> = []
 
   /// #500 (ruling 1131): a label part as the observation read it: null (its slot held kCFNull), unreadable (its read
   /// failed), else its text (nil when absent). An AXStaticText's value only; no other role's value is its label.
@@ -138,6 +142,13 @@ struct ScreenshotNode<Element> {
     if labelsNull.contains(part) { return .null }
     if labelsUnread.contains(part) { return .unreadable }
     return .text(part == .title ? title : part == .description ? description : value)
+  }
+
+  /// #519 (rulings 1146, 1151): `label(_:)`, but a part whose slot held a value that is no text is `.nonText`, unknown,
+  /// never absent. Read only by consumers that refuse the target already chosen and choose none: #453's
+  /// `overlayLabelsAgree` and `overlayDuplicate`, and #454's recorded title (`RecordedMenuItem.titleUnread`).
+  func strictLabel(_ part: StalePointLabelPart) -> StalePointLabelRead {
+    labelsNonText.contains(part) ? .nonText : label(part)
   }
 }
 
@@ -194,6 +205,8 @@ struct ScreenshotNodeRead<Element> {
   /// and (#500) those whose slot held kCFNull, also in `labelsNull`.
   var labelsUnread: Set<StalePointLabelPart> = []
   var labelsNull: Set<StalePointLabelPart> = []
+  /// #519: those whose slot held a value that is no text (`ScreenshotNode.labelsNonText`), not in `labelsUnread`.
+  var labelsNonText: Set<StalePointLabelPart> = []
 }
 
 /// The attributes a node's label (#298's `stalePointLabel`) is taken from, in priority order: the title, the
@@ -213,7 +226,10 @@ enum StalePointLabelPart: CaseIterable, Hashable {
 /// absent attribute, or a value that is no text), or unreadable (any other error), which the label must not fall past.
 /// #500 (rulings 1083, 1131): null, a read that answered kCFNull, is unknown too, but a comparison whose other side is
 /// null at the same part passes to the next one, like with like (`stalePointLabelPair`).
-enum StalePointLabelRead: Equatable { case text(String?), unreadable, null }
+/// #519 (rulings 1146, 1151): `nonText`, a value that is no text, comes only from the strict reads
+/// (`ScreenshotNode.strictLabel`, `StalePointReads.readStrictLabel`); never from `label(_:)` or `readLabel`, which read it
+/// as main did.
+enum StalePointLabelRead: Equatable { case text(String?), unreadable, null, nonText }
 
 /// #500 (ruling 1131): one label part compared between two sides: `next` when both are null (like with like: an
 /// element whose title is always null is compared by its description), `unknown` when either failed or only one is
@@ -232,9 +248,11 @@ func stalePointLabelPair(_ a: StalePointLabelRead, _ b: StalePointLabelRead) -> 
 /// data (`ElementData.unreadable`, `ElementData.null`; `screenshotLabelsUnread`). A value the read withheld
 /// (`ElementData.valueUnread`: #405's classification closed the element, or the source reads no values) is unread too,
 /// never known absent (the review of cdb36ad3..7574c058, P2): its text is not kept, only that it is unknown.
-func screenshotLabelsUnknown(role: String, _ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
+func screenshotLabelsUnknown(role: String, _ data: ElementData)
+  -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>, nonText: Set<StalePointLabelPart>) {
   let withheld: Set<String> = data.valueUnread ? [kAXValueAttribute] : []
-  return (screenshotLabelsUnread(role: role, data.unreadable.union(data.null).union(withheld)), screenshotLabelsUnread(role: role, data.null))
+  return (screenshotLabelsUnread(role: role, data.unreadable.union(data.null).union(withheld)), screenshotLabelsUnread(role: role, data.null),
+          screenshotLabelsUnread(role: role, data.nonText.subtracting(withheld)))
 }
 
 /// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the
@@ -254,6 +272,14 @@ func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLab
   case .noValue, .attributeUnsupported: return .text(nil)
   default: return .unreadable
   }
+}
+
+/// #519 (rulings 1146, 1151): `stalePointLabelRead` for the strict reads: a value that is no text is `.nonText`, unknown.
+func stalePointStrictLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
+  guard error == .success, let value, CFGetTypeID(value) != CFNullGetTypeID(), labelText(value) == nil else {
+    return stalePointLabelRead(value, error)
+  }
+  return .nonText
 }
 
 /// The value the record keeps of an element (#298): an AXStaticText's, as the walk read it (a string, or an attributed
@@ -403,7 +429,7 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
                        : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
                        : read.actionsRead ? false : nil,
                      regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove,
-                     pressRecorded: read.actions.contains("AXPress"), labelsNull: read.labelsNull)
+                     pressRecorded: read.actions.contains("AXPress"), labelsNull: read.labelsNull, labelsNonText: read.labelsNonText)
     }
     let parentFramed = read.parent.map { framedReads.contains($0) } ?? false
     guard let frame = own else {
@@ -641,6 +667,15 @@ struct StalePointReads<Element> {
 
   func isGone(_ element: Element) -> Bool { gone?(element) ?? (frame(element) == nil) }
 
+  /// #519 (rulings 1146, 1151, 1152): a label part read now for the consumers that choose no target
+  /// (`ScreenshotNode.strictLabel`'s): main's single raw read, but a value that is no text `.nonText`. A seam without it
+  /// reads `readLabel`.
+  var strictLabel: ((Element, StalePointLabelPart) -> StalePointLabelRead)? = nil
+
+  func readStrictLabel(_ element: Element, _ part: StalePointLabelPart) -> StalePointLabelRead {
+    strictLabel?(element, part) ?? readLabel(element, part)
+  }
+
   func readLabel(_ element: Element, _ part: StalePointLabelPart) -> StalePointLabelRead {
     if let label { return label(element, part) }
     switch part {
@@ -661,7 +696,11 @@ extension StalePointReads where Element == AXUIElement {
                     label: { element, part in
                       let read = copyAttribute(element, part.attribute)
                       return stalePointLabelRead(read.value, read.error)
-                    }, same: { CFEqual($0, $1) }, gone: { copyAttribute($0, kAXRoleAttribute).error == .invalidUIElement })
+                    }, same: { CFEqual($0, $1) }, gone: { copyAttribute($0, kAXRoleAttribute).error == .invalidUIElement },
+                    strictLabel: { element, part in
+                      let read = copyAttribute(element, part.attribute)
+                      return stalePointStrictLabelRead(read.value, read.error)
+                    })
   }
 }
 

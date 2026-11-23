@@ -8459,6 +8459,93 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   1714 swift tests (1 skipped), 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #501.
 
+- Decision (#519, rulings 1146, 1150, 1151 and 1152, 2026-11-23, `fix/519-nontext-label`): a label slot that holds a value
+  that is no text (a CFNumber AXTitle, for example) is recorded apart, and only the checks that refuse a target already
+  chosen read it as unknown. Every consumer that chooses a target reads it as main (0d19fdfa) did, as absent.
+  Found by the reviewer of #481's second attempt (finding 2). `ElementData.init` decoded such a slot as nil and put it in
+  neither `unreadable` nor `null`, so the record held the part as known absent. A numeric title then and an absent one
+  now compared nil with nil and agreed, and #453 pressed the row on its description.
+  - The invariant (ruling 1150): #519 may only turn main's verdict into a refusal. It never changes which element is the
+    target, and it never turns a refusal into a press.
+  - The convergence stop (ruling 1151). Two rounds that widened the fix to the consumers that choose a target (#298's
+    relabel, #443, #431's twin search, #296's and #305's re-created match, #433's candidate loop, #442's named
+    candidate) each introduced a target reversal. The re-review of 3a8276c6..3fd27fe6 found two P1s in #433's loop:
+    - #431's veto in `recreatedHandle` marked main's: a re-created A with a numeric title and the description "Archive"
+      and a surviving B with no title and "Delete" were taken for twins, and #433 moved on to B.
+    - #298's carried label: a value classified closed now where main read null, so #433 moved on.
+    So #519 narrowed to what is below, and those consumers are back to main's code exactly.
+  - Ruling 1152 (the scoped re-review of the narrowed head): the classified live value read
+    (`stalePointClassifiedValueRead`) mapped a batch's kCFNull for an unsupported AXValue to `.null`. AXUIElement.h
+    (line 228) allows a batch to answer that, where main's single read answered `.text(nil)`, so #453 could press where
+    main refused. The classified read and its closed-value refusal moved to #520, and #519 adds no read of its own.
+  Kept:
+  1. The decoder. `ElementData.nonText` names the label attributes (AXTitle, AXDescription, AXValue) whose slot held a
+     value of another type than CFString or CFAttributedString, judged by `CFGetTypeID` alone, so a text area's whole
+     AXValue is never decoded to classify it. `screenshotLabelsUnknown` records it as `labelsNonText` (an AXStaticText's
+     value only), never in `labelsUnread` or `labelsNull`. `unreadable`, #405's classification and the identity do not
+     change.
+  2. The strict reads. `ScreenshotNode.strictLabel` and `StalePointReads.readStrictLabel` read a non-text part as
+     `.nonText`, which is unknown. Live, the strict read is main's single raw `copyAttribute` of each part, AXValue
+     included; `stalePointStrictLabelRead` differs from main's `stalePointLabelRead` only in answering `.nonText` for a
+     value that is no text. `label(_:)` and `readLabel` are main's.
+  3. The consumers that refuse the target already chosen and choose none read strictly:
+     - #453's `overlayLabelsAgree`: a non-text part then or now refuses the row `labelChanged`.
+     - #453's `overlayDuplicate`: an acting inner node with a non-text part on either side is no repeat, so
+       `actionableDescendant`.
+     - #454's `RecordedMenuItem.titleUnread`: an item whose recorded title was failed, null or non-text refuses
+       `relabelled`. Main took the recorded nil for no title and delivered to an item with none.
+  Reverted to main 0d19fdfa, encoding and semantics: #298's `relabelledLabel`, #443's `controlDiffers`, #431's
+  `recreatedLabelsAgree`, `recreatedHandle` and #296's and #305's re-created match, #433's candidate loop, #442's named
+  candidate, and the refusal sentences.
+  - Gone: ruling 1147's refinements, the `added` provenance, `recreatedLabelVerified` and `stalePointLabelCarried`.
+  - The older assertions those rounds flipped (`NullLabelSlotTests`, `UnreadableLabelTests`, `OverlayTargetTests`) are
+    main's again: `StalePointTests.swift` equals main's.
+  - The unverified-label rule for those consumers, including #305's and #296's re-created-match wrong press, which
+    predates #519, moves to follow-up tickets folded into #481's design note:
+    - #521: #305's and #296's re-created match wrong press.
+    - #522: three-valued labels on the candidate-selection consumers, with no target reversal.
+  - #520 comes next: the raw `reads.value` accessor, the first walk's read gate and the classified live value read
+    (with #453's closed-value refusal and its test), routed through #405's classification. #519 leaves every live read
+    as main's single raw read.
+  Named exceptions, where main's own verdict was a wrong press and #519 refuses: #453's row whose title was numeric
+  then and absent now (#519's own finding), and #454's item whose recorded title was failed, null or non-text.
+  How it is proven:
+  - The oracle (`LabelMonotonicityTests`) holds a frozen copy of main's functions at 0d19fdfa. They are verbatim apart
+    from names and inlined file-private helpers, and the relabel copy keeps its `editedInPlace` exemption. The copies
+    run over main's own encoding of the same inputs: a non-text slot recorded as absent, and a non-text value read now
+    as none.
+    - The inputs, every combination of:
+      - A button: title and description each absent, empty, "Open", "Delete", failed, null or non-text, at the
+        screenshot and now (7^4 combinations).
+      - An AXStaticText: title and description each absent, "Open", failed, null or non-text (`Slot.few`, which leaves
+        out empty text and the second text "Delete"), at the screenshot and now; and the value absent, empty, "Open",
+        "Delete", failed, null or non-text, plus withheld at the screenshot only.
+      - The record-to-record checks (the twin search and `overlayDuplicate`) pair recorded labels from the same sets.
+        The menu check pairs each of the button's seven slots, as a recorded title, with a live title that is absent,
+        empty, "Open", "Delete" or failed.
+    - It compares logical slots: each slot reaches both sides through the same seam. It does not test whether a single
+      read and a batched read of an attribute answer alike. AXUIElement.h allows a batch to answer kCFNull where a single
+      read answers kAXErrorNoValue, which is the gap behind ruling 1152.
+    - The reverted consumers' verdicts equal main's exactly: relabel, `controlDiffers`, the lenient match and the twin
+      search.
+    - The kept consumers' verdicts are main's or a refusal: `overlayLabelsAgree`, `overlayDuplicate` and the menu
+      decision.
+  - Through target selection, comparing the head's record with main's encoding of it:
+    - #453 (`OverlayClickTests.testANonTextPartNeverChangesTheChosenRow`): every scene, with a non-text value in each
+      part of the row or of the node beside it, then, now or both. The decision is main's, or a refusal naming the row
+      main chose.
+    - #454 (`MenuItemPointTests.testANonTextTitleOnlyRefusesTheItemTheGuardChose`): the guard's verdict is identical,
+      and #454 delivers to main's item or refuses it.
+  - Function by function against 0d19fdfa: every Swift source function outside the kept set is byte-identical. The
+    kept set is the decoder, the record's non-text set and its plumbing, the strict read for non-text,
+    `overlayLabelsAgree`, `overlayDuplicate` and `titleUnread`. The reverted consumers were hash-checked whole.
+  - Red on main: the kept tests were run with main's behaviour behind the new names (the decoder's `nonText` empty, the
+    strict reads main's, no `titleUnread` guard). Eight tests fail with 16 assertions. They cannot compile on 0d19fdfa
+    itself, because they name the new API.
+  - 1726 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  No hosted live-rate measurement is needed: each kept change only refuses a target already chosen.
+  Date/Author: 2026-11-23, cursor235's builder for #519.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -28,6 +28,8 @@ final class OverlayClickTests: XCTestCase {
     var labelFails = false
     /// #500: label attributes whose read answers kCFNull, in the walk's batched read (when recorded) and in a read now.
     var null: Set<StalePointLabelPart> = []
+    /// #519: label attributes whose slot holds a value that is no text (`nonTextLabelSlot`), then and now.
+    var nonText: Set<StalePointLabelPart> = []
     /// Held strongly (no child links, so no cycle): an overlay the record lacks still reads up to its window.
     var parent: Node?
     /// Whether the walk read AXPress among its actions.
@@ -45,32 +47,43 @@ final class OverlayClickTests: XCTestCase {
 
   /// Runs on every label read (the time those AX reads take, or what happens meanwhile).
   private var duringReads: () -> Void = {}
+  /// #519: whether the reads tell a value that is no text apart (#453's strict read); false reads as main did.
+  private var strictReads = true
 
   private var reads: OverlayReads<Node> {
     let during = duringReads
+    let label: (Node, StalePointLabelPart) -> StalePointLabelRead = { node, part in
+      during()
+      if node.labelFails || node.gone { return .unreadable }
+      if node.null.contains(part) { return stalePointLabelRead(kCFNull, .success) }
+      if node.nonText.contains(part) { return stalePointLabelRead(nonTextLabelSlot, .success) }  // as main: none
+      switch part {
+      case .title: return .text(node.title)
+      case .description: return .text(node.description)
+      case .value: return .text(node.value)
+      }
+    }
     let stale = StalePointReads<Node>(
       role: { $0.gone ? nil : $0.roleNow ?? $0.role }, frame: { $0.gone ? nil : $0.frame }, parent: { $0.parent }, children: { _ in nil },
-      title: { $0.title }, description: { $0.description }, value: { $0.value },
-      label: { node, part in
+      title: { $0.title }, description: { $0.description }, value: { $0.value }, label: label, same: { $0 === $1 }, gone: { $0.gone },
+      // #519: the strict read (#453's) tells a value that is no text apart, as the live seam's does.
+      strictLabel: !strictReads ? nil : { node, part in
+        guard node.nonText.contains(part), !node.labelFails, !node.gone else { return label(node, part) }
         during()
-        if node.labelFails || node.gone { return .unreadable }
-        if node.null.contains(part) { return stalePointLabelRead(kCFNull, .success) }
-        switch part {
-        case .title: return .text(node.title)
-        case .description: return .text(node.description)
-        case .value: return .text(node.value)
-        }
-      }, same: { $0 === $1 }, gone: { $0.gone })
+        return stalePointStrictLabelRead(nonTextLabelSlot, .success)
+      })
     return OverlayReads(stale: stale, enabled: { $0.enabled })
   }
 
   /// A recorded node, as the walk recorded it then (its frame copied, its labels decoded from their slots: #500).
   private func recorded(_ node: Node, depth: Int, ancestor: Int?) -> ScreenshotNode<Node> {
-    let labels = decodedLabels(role: node.role, title: node.title, description: node.description, value: node.value, null: node.null)
+    let labels = decodedLabels(role: node.role, title: node.title, description: node.description, value: node.value, null: node.null,
+                               nonText: node.nonText)
     var record = ScreenshotNode(element: node, role: node.role, title: labels.title, description: labels.description, subrole: node.subrole,
                                 value: screenshotLabelValue(role: node.role, labels.value), editableAncestor: nil, labelsUnread: labels.unread,
                                 frame: node.frame!, shown: node.frame, depth: depth, subtreeRecorded: true)
     record.labelsNull = labels.null
+    record.labelsNonText = labels.nonText
     record.ancestor = ancestor
     record.parentFramed = ancestor != nil
     record.actionable = stalePointInteractiveRoles.contains(node.role) || node.press
@@ -623,6 +636,100 @@ final class OverlayClickTests: XCTestCase {
     // compares nothing, so it is no repeat.
     XCTAssertEqual(refusal(decide(scene(innerNull: true, rowNull: true, parts: [.title, .description, .value]))), .actionableDescendant,
                    "all null on both: nothing compared")
+  }
+
+  /// #519 (ruling 1146): a label slot holding a value that is no text (a CFNumber AXTitle) is unread in the record, never
+  /// absent and never null, and so is one read now. #453's regression: a title numeric then and absent now, the
+  /// description unchanged, refuses (main compared nil with nil and pressed); and the mirror, absent then and numeric now.
+  /// Numeric on both sides is unread on both, never passed over as a null is: the row's text was never read.
+  func testANonTextTitleIsUnreadAndRefuses() {
+    func scene(nonTextThen: Bool, nonTextNow: Bool) -> Scene {
+      var scene = permission()
+      scene.row.title = nil
+      scene.row.description = "Allow this time"
+      scene.row.nonText = nonTextThen ? [.title] : []
+      let at = scene.nodes.firstIndex { $0.element === scene.row }!
+      scene.nodes[at] = recorded(scene.row, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
+      scene.row.nonText = nonTextNow ? [.title] : []
+      return scene
+    }
+    let recordedRow = scene(nonTextThen: true, nonTextNow: false)
+    let node = recordedRow.nodes.first { $0.element === recordedRow.row }!
+    XCTAssertEqual(node.strictLabel(.title), .nonText, "the record keeps the numeric title unknown for #453")
+    XCTAssertEqual(node.label(.title), .text(nil), "and as main did for every consumer that chooses a target (ruling 1151)")
+    XCTAssertFalse(node.labelsUnread.contains(.title))
+    XCTAssertNil(node.title, "its text is never invented")
+    XCTAssertEqual(node.labelsNull, [], "and it is no null")
+    XCTAssertEqual(refusal(decide(recordedRow, answered: .some(recordedRow.row.parent))), .labelChanged, "numeric then, absent now")
+    let mirror = scene(nonTextThen: false, nonTextNow: true)
+    XCTAssertEqual(refusal(decide(mirror, answered: .some(mirror.row.parent))), .labelChanged, "absent then, numeric now")
+    let both = scene(nonTextThen: true, nonTextNow: true)
+    XCTAssertEqual(refusal(decide(both, answered: .some(both.row.parent))), .labelChanged, "numeric on both sides: never like with like")
+    let neither = scene(nonTextThen: false, nonTextNow: false)
+    guard case .deliver = decide(neither, answered: .some(neither.row.parent)) else { return XCTFail("absent on both: the description decides") }
+  }
+
+  /// #519: the datalist's acting inner text repeats the option only with every compared part read: a numeric title on
+  /// either side, or on both, is unread, so the inner text is no repeat (`actionableDescendant`); main took the two nils
+  /// for the same absent title.
+  func testANonTextTitleNeverRepeatsTheRow() {
+    func scene(innerNonText: Bool, rowNonText: Bool) -> Scene {
+      var scene = datalist()
+      for (node, nonText) in [(scene.row, rowNonText), (scene.inner!, innerNonText)] {
+        node.nonText = nonText ? [.title] : []
+        let at = scene.nodes.firstIndex { $0.element === node }!
+        scene.nodes[at] = recorded(node, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
+      }
+      return scene
+    }
+    XCTAssertEqual(refusal(decide(scene(innerNonText: true, rowNonText: false))), .actionableDescendant, "the inner text's title numeric")
+    XCTAssertEqual(refusal(decide(scene(innerNonText: false, rowNonText: true))), .actionableDescendant, "the option's title numeric")
+    XCTAssertEqual(refusal(decide(scene(innerNonText: true, rowNonText: true))), .actionableDescendant, "numeric on both")
+    guard case .deliver = decide(scene(innerNonText: false, rowNonText: false)) else { return XCTFail("every part read: a repeat") }
+  }
+
+  /// #519 (rulings 1150, 1151): #453's strict reads only refuse the row already chosen; they never change which row is
+  /// chosen. Every scene, a value that is no text in each label part of the row or of the node beside it (the inner text,
+  /// else the neighbour row), then, now or both: decided as the head decides it, and as main did (the record's
+  /// `labelsNonText` cleared, the reads not strict, so a non-text value reads as none, as main read it). The head's
+  /// decision is main's, or a refusal naming the row main chose.
+  func testANonTextPartNeverChangesTheChosenRow() {
+    let scenes: [(String, () -> Scene)] = [("omnibox", omnibox), ("datalist", datalist), ("permission", permission), ("popover", popover)]
+    var refusedOnly = 0
+    for (name, build) in scenes {
+      for other in [false, true] { for part in StalePointLabelPart.allCases { for (then, now) in [(true, false), (false, true), (true, true)] {
+        var scene = build()
+        let node = other ? scene.inner ?? scene.neighbour : scene.row
+        node.nonText = then ? [part] : []
+        let at = scene.nodes.firstIndex { $0.element === node }!
+        scene.nodes[at] = recorded(node, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
+        node.nonText = now ? [part] : []
+        let head = decide(scene)
+        var mainScene = scene
+        mainScene.nodes = scene.nodes.map { var node = $0; node.labelsNonText = []; return node }
+        strictReads = false
+        let main = decide(mainScene)
+        strictReads = true
+        let what = "\(name), \(other ? "beside" : "row") \(part), then \(then), now \(now)"
+        func chosen(_ decision: OverlayPoint<Node>) -> OverlayNodeNote? {
+          switch decision {
+          case .deliver(let target): return OverlayNodeNote(target.row)
+          case .refuse(_, _, _, _, let note): return note.row
+          case .notOverlay: return nil
+          }
+        }
+        switch (head, main) {
+        case let (.deliver(a), .deliver(b)): XCTAssertTrue(a.row.element === b.row.element, what)
+        case (.deliver, _): XCTFail("\(what): the head delivers where main did not")
+        case (.notOverlay, .notOverlay): break
+        case (.notOverlay, _): XCTFail("\(what): main's verdict changed")
+        case (.refuse, _):
+          if let row = chosen(head) { XCTAssertEqual(row, chosen(main), "\(what): the refusal names main's row") }
+          if case .deliver = main { refusedOnly += 1 }
+        }
+      } } }
+    }
+    XCTAssertGreaterThan(refusedOnly, 0, "the strict reads refuse some row main pressed")
   }
 
   /// Ruling 1072, item 5: the identity is read again just before the press, after the owner's and intervention's

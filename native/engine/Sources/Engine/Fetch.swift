@@ -61,6 +61,11 @@ struct ElementData {
   /// #500 (ruling 1131): the attributes whose slot held kCFNull (`AttributeRead.null`): each decodes as none, and the
   /// stale-point record keeps the label's apart from a failed read and from an absence (`ScreenshotNode.labelsNull`).
   var null: Set<String> = []
+  /// #519 (ruling 1146): the label attributes (`StalePointLabelPart`) whose slot held a value that is no text (a CFNumber
+  /// AXTitle), judged by its type alone: each decodes as none, and the stale-point record keeps it apart
+  /// (`ScreenshotNode.labelsNonText`, ruling 1151) for the consumers that read it strictly. No text is made of the value.
+  /// Not a failed read, so `unreadable` and #405's classification are untouched.
+  var nonText: Set<String> = []
   /// Whether AXRole read: neither failed nor null (#501, ruling 1131), either of which decodes as AXUnknown and leaves the
   /// node's role unknown (`ScreenshotNodeRead.roleRead`), never a known inert one.
   var roleRead: Bool { !unreadable.contains(kAXRoleAttribute) && !null.contains(kAXRoleAttribute) }
@@ -118,7 +123,15 @@ struct ElementData {
     children = elementList(values["AXChildren"])
     childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
     childrenLeaf = values["AXChildren"] == nil && absent.contains("AXChildren")
+    nonText = Set(StalePointLabelPart.allCases.map(\.attribute).filter { name in values[name].map { !isTextValue($0) } ?? false })
   }
+}
+
+/// Whether a value is of a type `stringValue` reads as text, by its type alone: the contents are never touched (a text
+/// area's AXValue may be a whole document).
+private func isTextValue(_ value: CFTypeRef) -> Bool {
+  let type = CFGetTypeID(value)
+  return type == CFStringGetTypeID() || type == CFAttributedStringGetTypeID()
 }
 
 private func stringValue(_ value: CFTypeRef) -> String? {

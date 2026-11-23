@@ -443,6 +443,78 @@ final class MenuItemPointTests: XCTestCase {
     guard case .deliver = decide(hit: scene.times, record: RecordedMenuItem(element: scene.times, title: "Delete")) else { return XCTFail("same title") }
   }
 
+  /// #519 (ruling 1146): an item whose title the observation could not read as text (a numeric slot, decoded so; a
+  /// failed or null one alike) is recorded unread, so the title the item reads now cannot be checked against it: refused
+  /// `relabelled`, as a title that fails to read now is (main took the recorded nil for no title and delivered to an item
+  /// with none). An item whose title was read as absent still delivers.
+  func testAnItemWhoseRecordedTitleIsUnreadIsRefused() {
+    let scene = textEdit()
+    scene.times.title = nil
+    func verdict(_ labels: DecodedLabels) -> StalePointVerdict<Node> {
+      var node = recordedNode(scene.times, depth: 3)
+      node = ScreenshotNode(element: scene.times, role: kAXMenuItemRole, title: labels.title, description: nil, subrole: nil, value: nil,
+                            editableAncestor: nil, labelsUnread: labels.unread, frame: node.frame, shown: node.shown, depth: 3,
+                            subtreeRecorded: true)
+      (node.labelsNull, node.labelsNonText) = (labels.null, labels.nonText)
+      return StalePointVerdict(reason: .sameElement, node: node, current: scene.times)
+    }
+    for (name, labels) in [("numeric", decodedLabels(role: kAXMenuItemRole, title: nil, description: nil, value: nil, nonText: [.title])),
+                           ("failed", decodedLabels(role: kAXMenuItemRole, title: nil, description: nil, value: nil, failed: [.title])),
+                           ("null", decodedLabels(role: kAXMenuItemRole, title: nil, description: nil, value: nil, null: [.title]))] {
+      guard case .refuse(.relabelled, window: 77) = decide(hit: scene.times, record: recordedMenuItem(verdict(labels))) else {
+        return XCTFail("a \(name) recorded title: relabelled")
+      }
+    }
+    let absent = decodedLabels(role: kAXMenuItemRole, title: nil, description: nil, value: nil)
+    guard case .deliver = decide(hit: scene.times, record: recordedMenuItem(verdict(absent))) else { return XCTFail("absent then and now") }
+  }
+
+  /// #519 (rulings 1150, 1151): an item whose title was no text at the observation, run through the guard's target
+  /// selection and into #454's decision, as the head records it and as main did (the title none, no `labelsNonText`).
+  /// The guard chooses the same node and handle either way (it reads labels as main did); #454 then delivers to main's
+  /// item or refuses it, never another.
+  func testANonTextTitleOnlyRefusesTheItemTheGuardChose() {
+    let scene = textEdit()
+    let frames: [ObjectIdentifier: CGRect] = [ObjectIdentifier(scene.menu): CGRect(x: 535, y: 44, width: 159, height: 660),
+                                              ObjectIdentifier(scene.times): CGRect(x: 535, y: 94, width: 159, height: 20),
+                                              ObjectIdentifier(scene.helvetica): CGRect(x: 535, y: 74, width: 159, height: 20)]
+    func node(_ element: Node, depth: Int, ancestor: Int?, nonText: Bool) -> ScreenshotNode<Node> {
+      let labels = decodedLabels(role: element.role, title: element.title, description: nil, value: nil, nonText: nonText ? [.title] : [])
+      let frame = frames[ObjectIdentifier(element)]!
+      var node = ScreenshotNode(element: element, role: element.role, title: labels.title, description: nil, subrole: nil, value: nil,
+                                editableAncestor: nil, labelsUnread: labels.unread, frame: frame, shown: frame, depth: depth, subtreeRecorded: true)
+      (node.labelsNull, node.labelsNonText, node.ancestor, node.actionable) = (labels.null, labels.nonText, ancestor, element.role == kAXMenuItemRole)
+      return node
+    }
+    let staleReads = StalePointReads<Node>(role: { $0.role }, frame: { frames[ObjectIdentifier($0)] }, parent: { $0.parent },
+                                           children: { $0.children }, title: { $0.title }, description: { _ in nil }, same: { $0 === $1 })
+    var refusedOnly = 0
+    for live in [nil, "Times", "Other"] as [String?] {
+      for timesFails in [false, true] {
+        let head = [node(scene.menu, depth: 2, ancestor: nil, nonText: false), node(scene.helvetica, depth: 3, ancestor: 0, nonText: false),
+                    node(scene.times, depth: 3, ancestor: 0, nonText: true)]
+        let main = head.map { node -> ScreenshotNode<Node> in var node = node; node.labelsNonText = []; return node }
+        scene.times.title = live
+        scene.times.titleFails = timesFails
+        let headVerdict = stalePointVerdict(at: point, nodes: head, hit: scene.times, reads: staleReads)
+        let mainVerdict = stalePointVerdict(at: point, nodes: main, hit: scene.times, reads: staleReads)
+        let what = "now \(live ?? "none"), failing \(timesFails)"
+        XCTAssertEqual(headVerdict.reason, mainVerdict.reason, what)
+        XCTAssertTrue(headVerdict.node?.element === mainVerdict.node?.element && headVerdict.current === mainVerdict.current, what)
+        let headDecision = decide(hit: scene.times, record: recordedMenuItems(headVerdict).identified)
+        let mainDecision = decide(hit: scene.times, record: recordedMenuItems(mainVerdict).identified)
+        if case .deliver(let target) = headDecision {
+          guard case .deliver(let mains) = mainDecision else { return XCTFail("\(what): the head delivers where main did not") }
+          XCTAssertTrue(target.item === mains.item, what)
+        } else if case .deliver = mainDecision {
+          refusedOnly += 1
+        }
+      }
+    }
+    scene.times.titleFails = false
+    XCTAssertGreaterThan(refusedOnly, 0, "the numeric recorded title refuses an item main delivered to")
+  }
+
   /// Item 6: a page's ARIA menu item, inside a web area, is main's even with a window of the app's at the menu layer over
   /// the point (a click-through panel), and no window list is read for it.
   func testAnInPageMenuUnderAMenuLayerWindowIsMains() {

@@ -83,6 +83,13 @@ or the owner is prepared and named in its gate's disposition file under
   still typed and the read-back reports the dropped character; how secret text should behave is with the design
   session. The spec's Text paragraph (S L158: a character the layout cannot type goes as a Unicode key event) needs
   the Chromium exception.
+- 2026-11-23, ruling 1128 (#420, secret text): in a Chromium or Electron app, concealed text holding a character
+  above U+FFFF is refused before the first key, nothing posted; the sentence names the cause and the remedy, never a
+  character, position or length; `CONCEALED_REASON` is corrected so a refusal never blames the input source when that
+  is not the cause; declared under R3 and recorded in 420.md; the secret-text cell becomes "refused before any key, 0
+  keys posted", the non-secret rows keep 20/20 through paste. #186 and #190 accepted. Lands as T8a's fix. The spec's
+  Text paragraph and a Decision Log entry carry T8a's three changes (folded on this branch at the design session's
+  request, as the loop's spec writer).
 - 2026-11-23, version coordination (the design session): M4's re-cut also moves `engineVersion` 0.1.0 → 0.2.0 with
   the minimum at 0.1.0; whichever of M4 and M5 merges second moves to 0.3.0 at its merge (origin/main merged in, then
   the bump; no rebase). M4 builds ruling 1118's layout (c021e44a, in re-review): builds go to

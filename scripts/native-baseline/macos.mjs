@@ -8,6 +8,7 @@
 // engines' processes.
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
+import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
 
@@ -57,6 +58,14 @@ export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}
 const PANEL_SERVICE = /^com\.apple\.appkit\.xpc\.openAndSavePanelService\b/;
 const describeFront = front => (front && typeof front === 'object' ? `${front.bundleId ?? 'an app with no bundle id'} (pid ${front.pid})${PANEL_SERVICE.test(front.bundleId ?? '') ? ': TextEdit\'s Open panel, served out of process, is in front' : ''}` : 'unreadable');
 
+// The run stops where it needs TextEdit in front (setup.activate, a key cell): when replayd's capture alert holds the
+// front instead (UserNotificationCenter; H0 (ii)), the stop is the alert's, which no verdict may read as a failure
+// (rulings 1136, 1141), so the record names it for the hosted check (meta.incompleteCause) rather than leaving it to
+// the message. The first such stop is the run's cause.
+function alertCause(meta, at, front) {
+  if (front?.bundleId === CAPTURE_ALERT_PROCESS) meta.incompleteCause ??= {cause: 'alert', at, front};
+}
+
 // A cell that sends keys to TextEdit runs only while the run's TextEdit process is the device's frontmost application
 // (#162, scripts/accept/key-guard.mjs, by pid since M1b: another TextEdit process is not the target); otherwise it is not
 // sent, the skip is recorded (meta.keySkipped and a key.skipped row), and the run stops with no further input. The
@@ -68,6 +77,7 @@ async function keyCell(ctx, code, keys) {
   const target = {pid: ctx.meta.textEdit?.pid, bundleId: TEXTEDIT_BUNDLE};
   const out = await sendIfFrontmost({target, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
   if (out.sent) return out.result;
+  alertCause(ctx.meta, 'key.skipped', out.skipped.frontmost);
   (ctx.meta.keySkipped ??= []).push(out.skipped);
   ctx.emit({op: 'key.skipped', sample: ctx.meta.keySkipped.length, ok: false, ...out.skipped});
   return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${describeFront(out.skipped.frontmost)}, not the run's TextEdit (pid ${target.pid}) (#162)`);
@@ -94,7 +104,10 @@ async function activate(ctx) {
   const ok = front?.pid === pid;
   emit({op: 'setup.activate', sample: 1, ok, wallMs: round(performance.now() - started), attempts, frontmost: front ?? 'unreadable', seen,
     note: 'open -a TextEdit from the device, then the frontmost application read until it is the run\'s TextEdit; harness setup, not judged'});
-  if (!ok) throw new Error(`setup.activate: TextEdit (pid ${pid}) is not the frontmost application after open -a TextEdit; the frontmost is ${describeFront(front)}`);
+  if (!ok) {
+    alertCause(meta, 'setup.activate', front);
+    throw new Error(`setup.activate: TextEdit (pid ${pid}) is not the frontmost application after open -a TextEdit; the frontmost is ${describeFront(front)}`);
+  }
 }
 
 // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front). A run that

@@ -20,6 +20,20 @@ test('a measurement is read by its record: complete is recorded whatever its exi
   assert.deepEqual(check('record', step, 1), ['FAIL', 'runtime error: no record at /o/vc/run-1/meta.json (exit 1)']);
 });
 
+// Pilot A (run 45220897246): a run its producer stopped because the capture alert was in front (incompleteCause,
+// scripts/native-baseline/macos.mjs) has no verdict to give, never a failure; any other incomplete run is still a
+// runtime error, and the cause is read from the record, never from its message.
+test('record: an incomplete run whose cause is the alert in front is NO VERDICT; other incomplete runs still fail', () => {
+  const step = {record: '/o/vv/run-1/meta.json'};
+  const error = 'setup.activate: TextEdit (pid 4009) is not the frontmost application after open -a TextEdit; the frontmost is com.apple.UserNotificationCenter (pid 2596)';
+  const alert = {complete: false, error, incompleteCause: {cause: 'alert', at: 'setup.activate', front: {pid: 2596, bundleId: 'com.apple.UserNotificationCenter'}}};
+  assert.deepEqual(check('record', step, 1, {[step.record]: alert}),
+    ['NO VERDICT', `alert: /o/vv/run-1/meta.json stopped at setup.activate with com.apple.UserNotificationCenter (pid 2596) in front (${error})`]);
+  assert.equal(check('record', step, 1, {[step.record]: {complete: false, error}})[0], 'FAIL', 'the message alone names no cause');
+  assert.equal(check('record', step, 1, {[step.record]: {...alert, incompleteCause: {cause: 'other'}}})[0], 'FAIL');
+  assert.deepEqual(check('record', step, 0, {[step.record]: {...alert, complete: true}}), ['PASS', null], 'a complete run is read as complete');
+});
+
 // Ruling 1149: a run whose side answered on another engine measured nothing of that side. Above all the cua side that
 // attested the vendor's (state 1): NO VERDICT, its cause named, whatever the record says of itself.
 test('ruling 1149: a run of the cua side that attests the vendor engine is NO VERDICT naming state 1, in each record\'s shape; never a pass', () => {

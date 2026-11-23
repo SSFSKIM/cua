@@ -3,7 +3,8 @@
 //   expect       the exit the step names
 //   record       a measurement (A's baseline runs, B's native-mac runs, C's matrix runs): its record (`record`,
 //                meta.json or result.json) complete passes whatever the exit, which is the run's own outcome and the
-//                judge's to read; a missing or incomplete record is a runtime error. Ruling 1149: the record's engine
+//                judge's to read; a missing or incomplete record is a runtime error, except a run the capture alert
+//                stopped (its producer's incompleteCause 'alert', or a reset the alert held), which is NO VERDICT. Ruling 1149: the record's engine
 //                attestations must be the side's (`engine`, sideAttestation): a side answered on another engine, the cua
 //                side on the vendor's above all (state 1), is NO VERDICT naming it, complete or not; a complete record
 //                that shows no engine is NO VERDICT too
@@ -55,6 +56,11 @@ const panelObserved = observed => [observed?.before, observed?.after].some(s => 
 // resetHeldFixture, `blockedBy: 'alert'`): its proof is missing, not failed. -> the reason, or null for any other stop.
 const resetBlocked = (path, record) => (record.meta?.fixturesHeld ?? []).some(f => f.reset === false && f.blockedBy === 'alert')
   ? `${path} stopped: a fixture's cleanup the capture alert held could not be reset (${firstProblem(record)})` : null;
+// A native-baseline run stopped where it needed its TextEdit in front and found the capture alert there (its producer's
+// incompleteCause, ../native-baseline/macos.mjs; pilot A, run 45220897246): no verdict, never a failure (rulings 1136,
+// 1141). -> the reason, or null for any other stop.
+const alertStopped = (path, record) => (record.incompleteCause?.cause === 'alert'
+  ? `alert: ${path} stopped at ${record.incompleteCause.at} with ${record.incompleteCause.front?.bundleId} (pid ${record.incompleteCause.front?.pid}) in front (${firstProblem(record)})` : null);
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 export const CHECKS = Object.freeze({
@@ -65,7 +71,10 @@ export const CHECKS = Object.freeze({
     if (!record) return noRecord(step.record, exit);
     const side = sideAttestation(step, record);
     if (answeredElsewhere(side)) return ['NO VERDICT', side.reason];
-    if (record.complete !== true) { const held = resetBlocked(step.record, record); return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`]; }
+    if (record.complete !== true) {
+      const held = resetBlocked(step.record, record) ?? alertStopped(step.record, record);
+      return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`];
+    }
     if (side) return ['NO VERDICT', side.reason];
     return ['PASS', exit === 0 ? null : `recorded complete; exit ${exit} is the run's own outcome, which its judge reads`];
   },

@@ -25,7 +25,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-10-30T16:40Z) M2 — Text and clipboard: one verified paste route; its release (`linux-engine-v0.2.0`). Three loop tasks each reviewed clean, the branch reviewed clean by `doperpowers:reviewer-high` after one fix round, the verdict run exiting 0 on the released engine's sources (Outcomes & Retrospective, M2).
 - [x] (2026-11-02T00:10Z) M3 — cua's own Linux service, the device mode, the capability report and the truncation line; its release (`linux-engine-v0.3.0`). Twelve loop tasks, every code change reviewed clean (the task reviews, and the branch review by `doperpowers:reviewer-high` after one fix round), and the verdict run `m3-gate-musl` exiting 0 on the shipped x64 bytes (Outcomes & Retrospective, M3).
 - [x] (2026-11-14T21:00Z) M4 — The measured improvements: identity, minimized windows, truncation, waits, the settle; long browser and thumb drags at the bar, the Chrome drop's costs, `drag_handle`'s press; its release (`linux-engine-v0.4.0`). Loop tasks 28 to 80, every code change reviewed clean: the task reviews; the whole-branch review by `doperpowers:reviewer-high` in five slices, after six fix waves; and the gate's re-judge scripts and audit-leak-fix by `doperpowers:reviewer-medium`, after one fix wave. The release gate passed on its third candidate, the attested artifact of c55c8e08 (`751ec9be…`), and the published x64 asset is the same bytes (Outcomes & Retrospective, M4).
-- [ ] M5 — Acceptance on both architectures on the pinned release; docs; the owner's default switch.
+- [x] (2026-11-23T06:22Z) M5 — Acceptance on both architectures on the pinned release; docs; the owner's default switch. Accepted at H8 = 048140a2 on linux-engine 0.4.3 on both arches (ruling 1090); three engine releases in M5 (0.4.1, 0.4.2, 0.4.3, #459); the owner's yes to the flip (1093), merged as T10 (a15d0618, plugin 0.29.0); the whole-branch review's harness fixes (task 139) moved no stored verdict; #487 and #488 to 0.4.4.
 - [ ] M6a — A vendor-free Linux runtime.
 - [ ] M6b — Retirement of the vendor's Linux package (after the soak).
 
@@ -2843,3 +2843,26 @@ Written per milestone as each lands; the whole-plan retrospective at finish. The
   - Some faults exist only on the shipped bytes, on the person's display, or under the gate's load. Budget `:0` sittings and time at twice the load for every candidate, and plan for a candidate to be cut.
   - For M5, the gate's runner and scripts carry over. A fresh checkout needs `npm ci`, then `node node_modules/electron/install.js`, task 59's Firefox first on PATH, and xprobe built. #266 (arm64 in the gate), #370 (in-cell judging) and #371 (#302 in the settle judge) are M5's. Until then, R2's top-up and `rejudge-302.mjs` stand in.
   - M6b retires the vendor engine that every bar here is measured against, and Acceptance 13 cites M5's sitting for the vendor lanes. So M5's evidence keeps every vendor series it measures.
+- **M5 (2026-11-23): accepted on both architectures on linux-engine 0.4.3; the Linux default flips to cua's own engine in plugin 0.29.0 on the owner's yes.**
+
+  M5 set out to run M4's acceptance on both machines on exactly the pinned assets `cua install` fetches, then put the Linux default to the owner. It accepted at the frozen head H8 = 048140a2 on 0.4.3 (ruling 1090):
+  - **x64:** every step passed on its first run. V5 passed on the owner's `:0` in one sitting with 0 guard flags.
+  - **arm64:** every step passed except L4b's measurement-only accept lane, which nothing ships (#474). V5 passed after two guard stops whose cause was attributed (#432).
+  - **The flip:** T10 was built on main 33c8dd09, reviewed, and shown live on both machines. The owner said yes on 2026-11-23 (ruling 1093), after reading the owner page (m5/README.md, "For the owner"). The flip merged once the whole-branch review's harness fixes had rejudged every stored H8 row and none moved.
+
+  Against the plan: the pre-flight expected to accept the engine M4 shipped. Instead M5 shipped three engines, each for an answer that was not true under load:
+  - **0.4.1:** Electron drops are settled before the release.
+  - **0.4.2:** a Chromium-family drag is held until its page can take it, with the identification, pings and notice.
+  - **0.4.3:** #459's tail. A long Chrome drag's release had confirmed a drop Chrome made on a stale status. L4d, the step that measures it, went from 15/100 (arm64) and 1/100 (x64) on 0.4.2 to 0 on every Chrome cell on both machines.
+
+  The frozen head moved from H to H8 under the supersession rule. Each move reran only what the new engine reached, by an argued reach table and a cross-check.
+
+  **What took longest was #459.** It showed only at twice the load and only on the shipped route. The cause came from reading Chromium's source: its drop status answers a position one renderer round trip old. The fix came from the newest vendor build's own drag ending, measured against the alternatives on the failing cell, after the vendor baseline showed that answering such drops unconfirmed would leave users worse off than the vendor. The candidate measured clean on every drag cell and still failed a neighbouring route: one handle drag in 100 gave a false ok. The handle end had been scoped out on an argued equivalence, and the premise under that argument (that an XTEST motion to the pointer's own place sends no event) was itself wrong on X.Org 21.1.
+
+  **Lessons for later milestones:**
+  - An exclusion argued from equivalence is a hypothesis. Measure every route the fix's argument covers, and reopen an exclusion when a premise under it changes.
+  - Check premises about the X server live, on a real server, not only on Xvfb or from documents.
+  - A fix's measurement belongs on the shipped route, at the load where users meet the fault. A clean development set is not a counted pass, and the counted step (L4d) earns its cost.
+  - When a guard stop recurs, capture beside it rather than reason about it. One attributed stop turned #432 from a class into a cause and a planned fix.
+  - Write the release's facts into the tree before tagging: a placeholder filled after the tag broke the pinned trust rule. And read the clock, not an estimate, for every time put in a ledger or a message.
+  - The whole-branch review still found five faults after every task review: three harness false passes (fixed, with no stored verdict moving) and two engine settle faults left to 0.4.4 as #487 (P2) and #488 (P3). Run the branch review before the owner's decision, not after it.

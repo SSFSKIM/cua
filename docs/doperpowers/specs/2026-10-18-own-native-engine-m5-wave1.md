@@ -13,8 +13,8 @@
 
 ## Plan of Work (this wave)
 
-Order: T9 first, so the engine-version rule binds every engine change T8 makes; then T8a to T8e; then T11's two
-commits. Nothing here runs hosted, touches the GUI or Accessibility, or needs the owner: a witness that needs a runner
+Order: T9 first, so the engine-version rule binds every engine change T8 makes; then T8a to T8d, T10, T3b, T8e;
+then T11's two commits (scope change, below). Nothing here runs hosted, touches the GUI or Accessibility, or needs the owner: a witness that needs a runner
 or the owner is prepared and named in its gate's disposition file under
 `docs/evidence/2026-11-23-own-native-engine/gates/`.
 
@@ -25,9 +25,11 @@ or the owner is prepared and named in its gate's disposition file under
 | 3 | T8b | #184's route A/B removed (`CUA_ENGINE_SPIKE_ROUTE`, `route-ab`); #189 and #185 as ruled |
 | 4 | T8c | #212 with PR #218 re-cut on main; the hosted save-sheet cell prepared |
 | 5 | T8d | #216: diagnosis, fix if found, the hosted twenty-cycle session prepared |
-| 6 | T8e | #258, #259: one cell each prepared beside the vendor; dispositions drafted (T8e also waits on T10) |
-| 7 | T11a | The default-selection mode, failing while the macOS default is the vendor's |
-| 8 | T11b | The flip: `darwin: 'cua'`, its mirrors, tests and docs (PF §7). Stays on the branch, unmerged |
+| 6 | T10 | The harnesses on a runner (PF §8 T10), the judge's declared departures and NO VERDICT rules, acceptance 3's keystroke witness, the window-order oracle (#485), the alert-frontmost rule; H0's row order and two-pass approve |
+| 7 | T3b | The hosted staged-onboarding driver, relaunching at every stage |
+| 8 | T8e | #258, #259: one cell each beside the vendor, on T10's harness |
+| 9 | T11a | The default-selection mode, failing while the macOS default is the vendor's |
+| 10 | T11b | The flip: `darwin: 'cua'`, its mirrors, tests and docs (PF §7). Stays on the branch, unmerged |
 
 ## Progress
 
@@ -39,6 +41,8 @@ or the owner is prepared and named in its gate's disposition file under
 - [ ] T8b
 - [ ] T8c
 - [ ] T8d
+- [ ] T10
+- [ ] T3b
 - [ ] T8e
 - [ ] T11a
 - [ ] T11b
@@ -111,6 +115,10 @@ or the owner is prepared and named in its gate's disposition file under
   second writer); pre-recording before the first capture is preferred.
 - 2026-11-23, new judge rule (the design session): the judge checks that no alert was frontmost during any judged
   cell; a cell with an alert frontmost is NO VERDICT, never a pass. It belongs to T10's oracle, with a test.
+- 2026-11-23, scope change (the design session, ruling 1117 releasing on H0's pass): this wave also takes T10 (with
+  the alert-frontmost NO VERDICT rule and its test in the oracle, H0's row order and the two-pass approve), T3b (the
+  hosted staged-onboarding driver, a relaunch at every stage per H0 step 10) and T8e after T10. Order: T8b to T8d,
+  T10, T3b, T8e, T11 (the flip an unmerged commit). T10b stays parked until O11 triggers.
 - 2026-11-23: M5 is ticket #506 (a child of #117); M4 is #505.
 - 2026-11-23, the design session clears #420's kit: built on `probe/420-qual` from `probe/414-qual` b7aebd311,
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,

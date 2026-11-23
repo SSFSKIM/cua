@@ -52,14 +52,14 @@ import {CHROME_FOR_TESTING_BUNDLE_ID} from './fixtures/chrome-for-testing.mjs';
 import {FIXTURE_BUNDLE_ID} from './fixtures/electron-fixture.mjs';
 import {FINDER_BUNDLE_ID, SCENE_BUNDLE_IDS, TEXTEDIT_BUNDLE_ID, activateScene, main as scenesMain, preflight as scenesPreflight, reactivateApp, readState} from '../repl-parity/scenes-mac.mjs';
 import {appWindows, frontWindow, frontmostProcess, readFinderPreferences, runningApps} from '../repl-parity/scenes-mac-device.mjs';
-import {readSavedPreferences} from '../repl-parity/scenes-mac-finder.mjs';
+import {FINDER_KEYS, readSavedPreferences} from '../repl-parity/scenes-mac-finder.mjs';
 import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProblems} from './goldens-device.mjs';
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
   FIRST_LINE, KOREAN_2SET, alertWatch, bundlePids, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
   menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
-  JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, recoveryPlan,
+  JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, pendingLaunches, recoveryPlan,
 } from './live-checks.mjs';
 import {HSCROLL_SETTLE_MS, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText} from './residue-device.mjs';
 
@@ -571,22 +571,40 @@ export async function restoreInputSource({io, keep = false}) {
 
 // ---- Begin and put back ----------------------------------------------------------------------------------------------
 
-// The front app the owner had, saved on the device (its pid never leaves); one a run that died saved is kept.
+// The front app the owner had, saved on the device (its pid never leaves). Return the new record, or null when nothing
+// was saved. Exclusive creation preserves a dead run's only recovery record, even if it appeared after begin's check.
 export function saveFrontmost(run, front) {
-  const file = join(run, FRONTMOST_FILE);
-  if (fs.existsSync(file) || !front?.bundleId) return;
-  fs.writeFileSync(file, `${JSON.stringify({pid: front.pid, bundleId: front.bundleId, savedAt: new Date().toISOString()})}\n`, {mode: 0o600});
+  if (!front?.bundleId) return null;
+  const saved = {pid: front.pid, bundleId: front.bundleId, savedAt: new Date().toISOString()};
+  try { fs.writeFileSync(join(run, FRONTMOST_FILE), `${JSON.stringify(saved)}\n`, {mode: 0o600, flag: 'wx'}); }
+  catch (error) { if (error.code === 'EEXIST') return null; throw error; }
+  return saved;
 }
+
+const recoveryRefusal = (run, file) => `unresolved recovery record ${file} in the run directory; before begin, run on the device: node scripts/native-matrix/live-device.mjs recover --run '${run.replaceAll("'", "'\\''")}'. If recovery remains incomplete, resolve it by hand; do not discard the record to start a new run`;
 
 export async function begin({run, commit, io}) {
   const preflight = io.preflight(run), checkout = io.gitState(), engine = io.engineCheck();
   const refusals = liveRefusals({preflight, checkout, engine, state: readState(run)}, {controllerCommit: commit});
   const facts = {checkout, engine: engine.engine ?? null};
+  // Presence, not parseability: an unreadable record is still unresolved recovery, never a new run's baseline.
+  for (const file of [FRONTMOST_FILE, FINDER_FILE]) {
+    let absent = false;
+    try { absent = !fs.lstatSync(join(run, file), {throwIfNoEntry: false}); } catch { /* cannot establish absence */ }
+    if (!absent) refusals.push(recoveryRefusal(run, file));
+  }
   if (refusals.length) return {refusals, ...facts};
-  const front = io.frontmost();
-  saveFrontmost(run, front);
+  let front;
+  try { front = io.frontmost(); } catch { /* an unreadable front cannot be restored */ }
+  if (!Number.isInteger(front?.pid) || front.pid <= 0 || typeof front.bundleId !== 'string' || !front.bundleId) {
+    return {refusals: ['the front app could not be read with its process identity; bring a non-scene app to the front and retry begin'], ...facts};
+  }
+  const action = frontAppAction(front);
+  if (!action.reactivate) return {refusals: [`the front app cannot be restored: ${action.reason}; bring a non-scene app to the front and retry begin`], ...facts};
+  const saved = saveFrontmost(run, front);
+  if (!saved) return {refusals: [recoveryRefusal(run, FRONTMOST_FILE)], ...facts};
   saveFinderBaseline(run, io);
-  return {refusals: [], ...facts, frontmost: {bundleId: front?.bundleId ?? null}, engineStop: await io.stop()};
+  return {refusals: [], ...facts, frontmost: {bundleId: saved.bundleId}, engineStop: await io.stop()};
 }
 
 // Finder at begin, for the put-back's observation of it (finderCheck): its on-screen document windows (numbers) and its
@@ -601,11 +619,36 @@ export function saveFinderBaseline(run, io) {
 
 const BUNDLES = Object.freeze({textedit: TEXTEDIT_BUNDLE_ID, chromeForTesting: CHROME_FOR_TESTING_BUNDLE_ID, electronFixture: FIXTURE_BUNDLE_ID});
 
+// A recovery record as the put-back reads it: absent, valid (`usable` holds), or present but unusable (unreadable, not
+// JSON, or not its shape). An unusable one is kept and named, never read as absent, since begin refuses on its presence.
+// -> {value: <record> | null, unusable: boolean}.
+function readRecovery(file, usable) {
+  // Presence as begin tests it (lstat): a dangling symlink is present, and blocks begin, so it is never absent here.
+  let present = true;
+  try { present = Boolean(fs.lstatSync(file, {throwIfNoEntry: false})); } catch { /* cannot establish absence */ }
+  if (!present) return {value: null, unusable: false};
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return {value: null, unusable: true}; }
+  let value;
+  try { value = JSON.parse(text); } catch { return {value: null, unusable: true}; }
+  return usable(value) ? {value, unusable: false} : {value: null, unusable: true};
+}
+const RECORD_SHAPES = {
+  [FRONTMOST_FILE]: {usable: v => Number.isSafeInteger(v?.pid) && v.pid > 0 && typeof v.bundleId === 'string' && v.bundleId !== '', restore: 'bring the owner\'s front app back by hand'},
+  // The fields finderCheck verifies: Finder's window numbers, and each of the three chrome keys (null when unset).
+  [FINDER_FILE]: {usable: v => Array.isArray(v?.windows) && v.windows.every(Number.isSafeInteger) && v.keys !== null && typeof v.keys === 'object'
+    && FINDER_KEYS.every(key => Object.hasOwn(v.keys, key) && (v.keys[key] === null || typeof v.keys[key] === 'boolean')), restore: 'check Finder\'s windows and its sidebar, status bar and path bar by hand'},
+};
+
 // The put-back (./live-checks.mjs putBackPlan): each step tried whatever the one before answered, each bounded. The
-// steps, as functions of the run directory's records (each read when its step starts). -> {plan, stepFns}.
+// steps, as functions of the run directory's records (each read when its step starts). -> {plan, stepFns,
+// unusable: [the line for each record kept unusable]}.
 function putBackSteps(run, io) {
   const state = readState(run), frontFile = join(run, FRONTMOST_FILE), finderFile = join(run, FINDER_FILE), watchFile = join(run, WATCH_FILE);
-  const front = readSaved(frontFile), finderBaseline = readSaved(finderFile);
+  const records = Object.fromEntries(Object.entries(RECORD_SHAPES).map(([name, {usable}]) => [name, readRecovery(join(run, name), usable)]));
+  const front = records[FRONTMOST_FILE].value, finderBaseline = records[FINDER_FILE].value;
+  const unusable = Object.keys(records).filter(name => records[name].unusable)
+    .map(name => `${join(run, name)} is present but unusable and was kept: ${RECORD_SHAPES[name].restore}, then remove it before the next begin`);
   const plan = putBackPlan({scenesUp: Object.keys(state.scenes ?? {}), inputSourceSaved: fs.existsSync(io.savedInputSource), frontSaved: Boolean(front),
     watchSaved: fs.existsSync(watchFile), finderBaseline: Boolean(finderBaseline)});
   const runWindow = state.scenes?.finder?.window?.number ?? null;
@@ -635,13 +678,14 @@ function putBackSteps(run, io) {
     'front-app': async () => {
       const action = frontAppAction(front);
       if (!action.reactivate) return {ok: false, bundleId: front?.bundleId ?? null, reactivated: false, inFront: false, reason: action.reason};
-      const out = await io.reactivate(front);
-      const inFront = io.frontmost()?.pid === front.pid;
-      if (inFront) fs.rmSync(frontFile, {force: true});
-      return {ok: inFront, bundleId: front.bundleId, reactivated: out?.reactivated === true, inFront, ...(out?.reason ? {reason: out.reason} : {})};
+      const out = await io.reactivate(front), now = io.frontmost();
+      const inFront = now?.pid === front.pid && now?.bundleId === front.bundleId;
+      const ok = out?.reactivated === true && inFront;
+      if (ok) fs.rmSync(frontFile, {force: true});
+      return {ok, bundleId: front.bundleId, reactivated: out?.reactivated === true, inFront, ...(out?.reason ? {reason: out.reason} : {})};
     },
   };
-  return {plan, stepFns};
+  return {plan, stepFns, unusable};
 }
 
 // Whether `promise` settles within `ms` (a real timer, cleared once it does).
@@ -675,7 +719,7 @@ async function stopStep(handle, bounds) {
 // recovery does; anything still running ends the put-back there (ok false, a line for the owner): no later step, the
 // front app's above all, runs behind an action that may still land. -> {plan, steps, ok, manual?}.
 export async function putBack({run, io, bounds = RECOVERY_BOUNDS}) {
-  const {plan, stepFns} = putBackSteps(run, io);
+  const {plan, stepFns, unusable} = putBackSteps(run, io);
   const steps = {};
   let manual = null;
   for (const step of plan) {
@@ -683,6 +727,9 @@ export async function putBack({run, io, bounds = RECOVERY_BOUNDS}) {
     const handle = io.startStep ? io.startStep(step) : inProcessStep(stepFns[step]);
     // The probes a step that failed or overran left: the journaled ones stopped, an unresolved launch waited for.
     const probesSettled = async () => {
+      const launchWait = await awaitLaunches(run, io, bounds);
+      if (launchWait) steps[step].launchWait = launchWait;
+      if (launchWait?.open.length) return false;
       const left = await stopProcesses(ownedNow(run, io).stop.filter(e => e.kind === 'probe'), io, bounds);
       const probeWait = await awaitUnresolvedProbes(run, io, bounds);
       if (probeWait) steps[step].probeWait = probeWait;
@@ -700,7 +747,8 @@ export async function putBack({run, io, bounds = RECOVERY_BOUNDS}) {
     if (!stopped) manual = `the put-back's ${step} step could not be stopped and may still act: check the Mac by hand (scenes, input source, front app), then run cleanup again`;
     else if (!await probesSettled()) manual = probeLine;
   }
-  return {plan, steps, ok: plan.every(step => steps[step].ok === true), ...(manual ? {manual} : {})};
+  if (unusable.length) manual = [manual, ...unusable].filter(Boolean).join('; ');
+  return {plan, steps, ok: !unusable.length && plan.every(step => steps[step].ok === true), ...(manual ? {manual} : {})};
 }
 
 // The recovery's reading of what this run owns (live-checks.mjs recoveryPlan), the watcher left to the put-back.
@@ -721,14 +769,46 @@ async function awaitUnresolvedProbes(run, io, bounds) {
   await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
   return {unresolved, waited, remaining: probes().length};
 }
+// The launches whose outcome is not yet in the journal, waited for (bounded by probeWaitMs) before anything stops or
+// trusts the process table. A probe launch journaled pending is over only once the journal holds its outcome row (its pid,
+// or `-`): a launcher that died after its open handed the request to LaunchServices leaves no process that says so, so
+// an empty table is no evidence and such a launch stays open, for a person. This run's goldens-device setup steps, which
+// launch the frame probe and which the recording's transport does not journal, are named by their `--run` and waited
+// for too: never signaled, since nothing journaled their identity. -> {pending, waited, open: [label]}, or null with
+// nothing to wait for.
+async function awaitLaunches(run, io, bounds) {
+  const {uid, self, ancestors = []} = io.identity();
+  const runs = [...new Set([run, (() => { try { return fs.realpathSync(run); } catch { return run; } })()])];
+  const open = () => {
+    const setup = io.processes().some(p => p.uid === uid && p.pid !== self && !ancestors.includes(p.pid)
+      && /^node \S*scripts\/native-matrix\/goldens-device\.mjs steps /.test(p.command)
+      && runs.some(r => p.command.includes(` --run ${r} `) || p.command.endsWith(` --run ${r}`)));
+    return [...pendingLaunches(io.journal()), ...(setup ? [SETUP_STEPS] : [])];
+  };
+  const pending = pendingLaunches(io.journal()).length;
+  const waited = open().length > 0;
+  if (!pending && !waited) return null;
+  await whileHolds(() => open().length > 0, io, bounds.probeWaitMs);
+  return {pending, waited, open: open()};
+}
+const SETUP_STEPS = 'goldens-device.mjs steps';
+const launchLine = (run, open) => [
+  ...(open.includes(SETUP_STEPS) ? ['this run\'s Finder setup steps (goldens-device.mjs steps) are still running and may launch a probe'] : []),
+  ...(open.some(l => l !== SETUP_STEPS) ? [`a probe launch (${open.filter(l => l !== SETUP_STEPS).join(', ')}) has no outcome in the journal and may still start a probe: `
+    + `once no cua-engine --probe of the bundle runs, record that by hand with a line probe<TAB>-<TAB>-<TAB><label> in ${join(run, JOURNAL_FILE)}`] : []),
+].join('; ');
+
 // The barrier before anything restores or switches the input source from a later command: a probe this run journaled
-// that still runs (its pid with the start time the journal holds), or a launch never identified while a probe of the
-// bundle other than the watcher runs. The journal is the run directory's, so the barrier holds across commands, as the
-// recovery's does. -> why nothing may act behind it, or null.
+// that still runs (its pid with the start time the journal holds), a launch with no outcome in the journal (pending or
+// `unidentified`: LaunchServices may still start its probe, so an empty process table is no evidence, as settleProbes
+// holds), or a launch over unidentified while a probe of the bundle other than the watcher runs. The journal is the run
+// directory's, so the barrier holds across commands, as the recovery's does. -> why nothing may act behind it, or null.
 export function probeBarrier(run, io) {
   const plan = ownedNow(run, io), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
   const running = plan.stop.filter(e => e.kind === 'probe' && e.pid !== watchPid);
   if (running.length) return `the probe ${running.map(e => e.label).join(', ')} is still running`;
+  const launches = pendingLaunches(io.journal());
+  if (launches.length) return launchLine(run, launches);
   if (!plan.unresolvedProbes) return null;
   const {bundle, uid} = io.identity();
   const live = io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle) && !/ --probe watch-activations\b/.test(p.command));
@@ -745,6 +825,27 @@ async function stopProcesses(list, io, bounds) {
   return running();
 }
 
+// Probe-only recovery for goldens/native-mac, whose scene/front records are not the matrix's put-back records.
+// Recheck journal identity before each signal and wait: a PID reused during settlement is no longer ours.
+// Nothing is discarded here; a failed barrier can be retried by a later cleanup. Bound: 2 * killMs + 2 * probeWaitMs.
+export async function settleProbes({run, io, bounds = RECOVERY_BOUNDS}) {
+  const launchWait = await awaitLaunches(run, io, bounds);
+  if (launchWait?.open.length) {
+    return {ok: false, survivors: [], launchWait,
+      manual: `${launchLine(run, launchWait.open)}. Keep the run and preparation records, then run cleanup again`};
+  }
+  const owned = () => ownedNow(run, io).stop.filter(p => p.kind === 'probe');
+  const stillOwned = pid => owned().some(p => p.pid === pid);
+  const survivors = await stopProcesses(owned(), {...io,
+    processRuns: stillOwned,
+    signal: (pid, signal) => { if (stillOwned(pid)) io.signal(pid, signal); },
+  }, bounds);
+  const probeWait = await awaitUnresolvedProbes(run, io, bounds);
+  const ok = survivors.length === 0 && !probeWait?.remaining;
+  return {ok, survivors: survivors.map(p => p.label), probeWait, ...(launchWait ? {launchWait} : {}),
+    ...(!ok ? {manual: 'a frame probe may still act; keep the run and preparation records, check the Mac, then run cleanup again'} : {})};
+}
+
 // The recovery (a command cut off, interrupted or timed out on the controller, or `live.mjs cleanup` after a crash). It
 // acts only on what this run provably owns (its journal's pids whose start time still matches), and nothing restores
 // until what it stopped has exited: first this run's CLIs and serve (SIGTERM, then SIGKILL); a scene startup awaited,
@@ -754,6 +855,8 @@ async function stopProcesses(list, io, bounds) {
 // looks like the harness's but is not journaled is listed, never touched.
 // -> {killed, survivors, awaited, probeWait, untouched, putBack, ok, manual?}.
 export async function recover({run, io, bounds = RECOVERY_BOUNDS}) {
+  // Launches first, as settleProbes does: a probe that gets its pid while they are awaited is in the snapshot below.
+  const launchWait = await awaitLaunches(run, io, bounds);
   const first = ownedNow(run, io);
   const survivors = await stopProcesses(first.stop, io, bounds);
   const awaited = [];
@@ -761,10 +864,13 @@ export async function recover({run, io, bounds = RECOVERY_BOUNDS}) {
   const second = ownedNow(run, io), handled = new Set(first.stop.map(p => p.pid));
   const late = second.stop.filter(p => !handled.has(p.pid));
   survivors.push(...await stopProcesses(late, io, bounds));
+  // A CLI stopped above in the middle of a launch leaves it pending: nothing restores behind it.
+  const orphaned = pendingLaunches(io.journal());
   const probeWait = await awaitUnresolvedProbes(run, io, bounds);
-  const result = {killed: [...first.stop, ...late].map(p => p.label), survivors: survivors.map(p => p.label), awaited, probeWait, untouched: second.untouched};
+  const result = {killed: [...first.stop, ...late].map(p => p.label), survivors: survivors.map(p => p.label), awaited, probeWait, ...(launchWait ? {launchWait} : {}), untouched: second.untouched};
   const blocking = [
     ...result.survivors.map(label => `${label} outlived SIGKILL`),
+    ...(launchWait?.open.length || orphaned.length ? [launchLine(run, [...new Set([...(launchWait?.open ?? []), ...orphaned])])] : []),
     ...awaited.filter(a => !a.exited).map(a => `${a.label} is still running after ${bounds.sceneUpWaitMs / 1000} s`),
     ...(probeWait?.remaining ? [`${probeWait.remaining} probe of the engine bundle still running after ${bounds.probeWaitMs / 1000} s`] : []),
   ];
@@ -782,9 +888,10 @@ const processStart = pid => {
   try { return execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: DEVICE_READ_MS}).trim() || null; }
   catch { return null; }
 };
-export function journalProcess(run, {kind, pid, start, label, pending = false}) {
+export function journalProcess(run, {kind, pid, start, label, pending = false, unidentified = false}) {
   const at = pid ? (start ?? processStart(pid)) : null;
-  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pending ? 'pending' : (pid ?? '-')}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
+  const status = pending ? 'pending' : unidentified ? 'unidentified' : (pid ?? '-');
+  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${status}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
 }
 const readJournal = run => { try { return parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 
@@ -845,8 +952,11 @@ export function launchProbe(bundle, args, {exec = execFileSync, run = null, tabl
       sleep(PROBE_POLL_MS);
     }
     const probe = fresh.length === 1 && fresh[0].command.includes(` --probe ${args[0]}`) ? fresh[0] : null;
-    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label});
-    return {command: args[0], label, pid: probe?.pid ?? null, start: probe?.start ?? null, scratch, out, launchedAt};
+    // No process found and no final line yet: the handoff may still start the probe, so the launch stays pending until
+    // its own final line (awaitProbe) or a person resolves it; never `-` from an empty scan.
+    const unidentified = !probe && lastLine(out) === undefined;
+    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label, unidentified});
+    return {command: args[0], label, pid: probe?.pid ?? null, start: probe?.start ?? null, scratch, out, launchedAt, ...(run && unidentified ? {journal: run} : {})};
   } catch (error) { fs.rmSync(scratch, {recursive: true, force: true}); throw error; }
 }
 
@@ -865,6 +975,8 @@ export function awaitProbe(handle, {alive = processRuns, kill = (pid, signal) =>
     }
     const answer = lastLine(out);
     if (answer === undefined) throw new Error(`the ${command} probe printed no answer`);
+    // An unidentified launch's own final line is its outcome.
+    if (handle.journal) journalProcess(handle.journal, {kind: 'probe', pid: null, label: handle.label});
     return answer;
   } finally { fs.rmSync(handle.scratch, {recursive: true, force: true}); }
 }

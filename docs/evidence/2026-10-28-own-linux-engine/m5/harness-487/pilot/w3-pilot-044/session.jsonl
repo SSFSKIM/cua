@@ -1,0 +1,4 @@
+{"t":"2026-11-23T12:22:30.613Z","label":"t142-w3-pilot-044","kind":"server","display":":1","pid":2265348}
+{"t":"2026-11-23T12:22:30.983Z","label":"t142-w3-pilot-044","kind":"setup","openbox":2265355,"person":"8388620"}
+{"t":"2026-11-23T12:23:04.230Z","label":"t142-w3-pilot-044","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-23T12:23:05.244Z","label":"t142-w3-pilot-044","kind":"server-stopped","clean":true,"reason":null}

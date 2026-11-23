@@ -228,8 +228,9 @@ ${env}\t</dict>
 
 function promptWaiting(timeoutMs) {
   fail('engine_sign_prompt_waiting', `codesign did not finish within ${+(timeoutMs / 1000).toFixed(3)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,
-    {hint: 'at the console, answer the prompt with the login password and Always Allow (it stays on screen after this build gave up), then run cua engine build again; it signs with no prompt from then on. '
-      + 'If the next build prompts again, run it as cua engine build --sign-wait 600000 (or set CUA_SIGN_WAIT_MS) and answer the prompt while codesign still waits'});
+    {hint: 'at the console, dismiss the prompt this build left on screen (answering it after the build gave up may leave the key\'s access unchanged), '
+      + 'then run cua engine build --sign-wait 600000 (or set CUA_SIGN_WAIT_MS) and answer its prompt with the login password and Always Allow while that build still waits; '
+      + 'builds sign with no prompt from then on'});
 }
 
 async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node, tmp, timeoutMs, sleep, now}) {

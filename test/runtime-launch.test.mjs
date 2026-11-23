@@ -620,9 +620,11 @@ test('the host identity names the answering host and its version: the own host\'
   assert.equal(REPL_HOST_META_KEY, 'cua/replHost');
   assert.match(REPL_HOST_VERSION, /^\d+\.\d+\.\d+$/);
   // Bumped once per milestone that changes what the own host answers (#116): 0.2.0 at M1, 0.3.0 for M2 and M3, 0.4.0
-  // for M4's Linux native route, 0.5.0 for M5's default switch (with M4's lifeline and strerror changes), so no
-  // recorded handshake or evidence of an earlier host passes for this one.
-  assert.equal(REPL_HOST_VERSION, '0.5.0');
+  // for M4's Linux native route, 0.5.0 for M5's default switch (with M4's lifeline and strerror changes), 0.5.1 for
+  // #493's first-call document and createBrowserTab's visible exception, 0.5.2 for #494's first-use browser document
+  // that fits inline, 0.5.3 for #503's agent cursor document whose detail is looked up by name, so no recorded handshake
+  // or evidence of an earlier host passes for this one.
+  assert.equal(REPL_HOST_VERSION, '0.5.3');
   assert.deepEqual(hostIdentity({host: 'cua', release: '26.928.40906-darwin-arm64'}), {host: 'cua', version: REPL_HOST_VERSION});
   assert.deepEqual(hostIdentity({host: 'vendor', release: '26.928.40906-darwin-arm64'}), {host: 'vendor', version: '26.928.40906-darwin-arm64'});
 });
@@ -1031,8 +1033,8 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
   for (const host of [undefined, 'vendor', 'cua']) for (const node of [true, false]) {
     const refused = refusal('CUA_NATIVE_ENGINE=cua', host, node, false);
     assert.equal(refused.code, 'engine_not_installed', `${host} ${node}`);
-    assert.match(refused.message, /cua install --engine/);
-    assert.match(refused.message, /cua engine build/);
+    // cua install --engine builds and signs the bundle, pending; approving it is cua engine approve's, the owner's step.
+    assert.match(refused.message, /install it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console;/);
     assert.match(refused.message, /CUA_NATIVE_ENGINE=vendor/);
   }
   assert.match(refusal('engine.json cua', undefined, true, false).message, /engine\.json/, 'names where the setting came from');

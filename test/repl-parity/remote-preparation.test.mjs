@@ -3,8 +3,21 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,readdirSync,rmSync,statSync,readlinkSync,realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {prepareEndpoint,removeEndpoint} from '../../scripts/repl-parity/remote-device.mjs';
+import {endpointCli,prepareEndpoint,removeEndpoint} from '../../scripts/repl-parity/remote-device.mjs';
 import {archiveCacheDir} from '../../scripts/repl-parity/archive-cache.mjs';
+
+test('the endpoint CLI pins only the acquisition to the vendor engine under the scratch HOME; other commands keep the session\'s selection',()=>{
+ const ambient={HOME:'/owner',CUA_HOME:'/owner/runtime',CUA_NATIVE_ENGINE:'cua',CUA_SIGNING_IDENTITY:'fixture identity'};
+ const calls=[];
+ const run=(file,args,options)=>{calls.push({file,args,env:options.env});return 'fixture output';};
+ for(const args of [['install','--archive','/fixture/archive'],['remote','show','--json']])
+  assert.equal(endpointCli('/fixture/scratch',args,{ambient,run}),'fixture output');
+ assert.equal(calls[0].env.CUA_NATIVE_ENGINE,'vendor','the install never builds an engine (#117 M4)');
+ assert.equal(calls[0].env.HOME,'/fixture/scratch.home');
+ assert.equal(calls[0].env.CUA_HOME,'/fixture/scratch');
+ assert.equal(calls[1].env.CUA_NATIVE_ENGINE,'cua','other endpoint commands keep their engine');
+ assert.equal(ambient.CUA_NATIVE_ENGINE,'cua','the ambient environment is not changed');
+});
 
 // The preparation's archive cache double: tiny files where the real fetch would put the verified archives.
 function cacheDouble(events=[]){

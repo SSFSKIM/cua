@@ -29,3 +29,16 @@ test('committed M3 document controls still reproduce and malformed identity evid
   assert.throws(()=>documentComparisonRun(corrupt),/identity|browser/i);
  }
 });
+// #494's one slot bound to the header's ID: `api-reference/<ID>` takes the selected identity with it.
+function withText(run,make){
+ const copy=structuredClone(run),row=copy.rows.find(r=>r.case===id&&r.cell),doc=row.content.find(c=>c.text?.includes('# Selected Browser\n'));
+ const own=/\n- ID: ([^\n]+)\n/.exec(doc.text)[1],other=JSON.parse(row.content.find(c=>c.text?.startsWith('[{')).text).map(b=>b.id).find(b=>b!==own);
+ doc.text+=make(own,other);return copy;
+}
+test('the api-reference slot bound to the header\'s ID follows it; a pointer to another ID or the ID elsewhere still differs',()=>{
+ const control=load('vendor-docs-1'),pointer=to=>`\n- \`api-reference/${to}\`: every interface\n`;
+ const bound=withText(control,own=>pointer(own));
+ assert.equal(diff(bound,withText(race(control),own=>pointer(own))).ok,true,'the bound slot is projected with the swapped number');
+ assert.equal(diff(bound,withText(race(control),(own,other)=>pointer(other))).ok,false,'a pointer to the other browser differs');
+ assert.equal(diff(withText(control,own=>`\nBrowser ${own} here.\n`),withText(race(control),own=>`\nBrowser ${own} here.\n`)).ok,false,'the ID outside the slot is not projected');
+});

@@ -15,6 +15,9 @@ test('core transform preserves every surviving source byte and refuses unpinned 
  assert.equal(coreDocument({host:'vendor'}),source+'\n'+fixture('vendor-confirmations.md'));
  assert.equal(coreDocument({host:'cua'}),expected+'\n'+fixture('vendor-confirmations.md'));
 });
+test('the oracle\'s own-host core is the shipped first-call document, byte for byte (#493\'s visible exception included)',()=>{
+ assert.equal(transformCoreDocument(fixture('vendor-core.md')),readFileSync(new URL('../../docs/cua-api/core.md',import.meta.url),'utf8'));
+});
 test('fixtures independently match the readable vendor source when explicitly supplied',()=>{
  const pins=JSON.parse(fixture('source-pins.json'));
  for(const entry of Object.values(pins.files))assert.equal(hash(fixture(entry.fixture)),entry.sha256);
@@ -33,6 +36,17 @@ test('confirmation overrides count UTF-8 bytes, preserve whitespace, and reject 
  assert.throws(()=>coreDocument({host:'unknown'}),/host/i);
 });
 const selected=(name='Fixture browser',id='extension:fixture')=>`# Selected Browser\n- Name: ${name}\n- Type: extension\n- ID: ${id}\n- Service: cua browser service 0.1.0\nKeep extension:fixture in this prose and https://example.invalid/Fixture browser.\n`;
+test('the #494 slot: api-reference/<the header\'s own ID> is normalised; another ID\'s pointer or the ID elsewhere still differs',()=>{
+ const doc=(id,{pointer=id,prose='Keep this prose.'}={})=>`# Selected Browser\n- Name: Fixture\n- Type: extension\n- ID: ${id}\n- Service: cua browser service 0.1.0\n${prose}\n\n# Additional Documentation\n- \`api-reference/${pointer}\`: every interface\n\n\`\`\`ts\n// Every member: nodeRepl.write(await agent.documentation.get("api-reference/${pointer}")).\n\`\`\`\n`;
+ const canonical=normalizeSelectedBrowserDocument(doc('1'));
+ assert.equal(canonical,doc('<browser-id>').replace('- Name: Fixture','- Name: <browser-name>'),'the bound slot takes the header\'s placeholder');
+ assert.equal(normalizeSelectedBrowserDocument(doc('137')),canonical,'whatever the run numbered the browser');
+ assert.equal(normalizeSelectedBrowserDocument(doc('extension:a.b(c)')),normalizeSelectedBrowserDocument(doc('extension:x')),'an ID is matched literally');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{pointer:'2'})),canonical,'a pointer to a different ID still differs');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{pointer:'12'})),canonical,'nor is a longer ID that starts with it the slot');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{prose:'Keep browser 1 here.'})),normalizeSelectedBrowserDocument(doc('2',{prose:'Keep browser 2 here.'})),'the ID elsewhere still differs');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{prose:'See api-reference/1 too.'})),normalizeSelectedBrowserDocument(doc('2',{prose:'See api-reference/2 too.'})),'outside a quoted or backticked name it still differs');
+});
 test('selected-browser projection changes only explicit header identity slots',()=>{
  const actual=selected(),canonical=normalizeSelectedBrowserDocument(actual);
  assert.equal(canonical,selected('<browser-name>','<browser-id>'));
@@ -99,17 +113,27 @@ test('Table 3 amendment permits only the two approved grammar repairs and reject
 });
 
 test('Table 3 addition: cua\'s agent cursor paragraph follows the core on a macOS computer lane only, and is the shipped document',async()=>{
- const {AGENT_CURSOR}=await import('../../scripts/repl-parity/docs-oracle.mjs');
+ const {AGENT_CURSOR,AGENT_CURSOR_FIRST_USE}=await import('../../scripts/repl-parity/docs-oracle.mjs');
  const {agentCursorLane}=await import('../../scripts/repl-parity/document-comparison.mjs');
- assert.equal(AGENT_CURSOR,readFileSync(new URL('../../docs/cua-api/agent-cursor.md',import.meta.url),'utf8'));
+ const shipped=name=>readFileSync(new URL(`../../docs/cua-api/${name}.md`,import.meta.url),'utf8');
+ // #503: with the browser surface the shipped agent-cursor.md, its detail looked up; without it the first paragraph and
+ // each lookup's text, the document as it read before.
+ assert.equal(AGENT_CURSOR_FIRST_USE,shipped('agent-cursor'));
+ const lookups=['background-web-pages','click-checks','action-answers','accessibility-tree','typing'].map(name=>shipped(`macos/${name}`));
+ assert.equal(AGENT_CURSOR,[`${shipped('agent-cursor').split('\n\n')[0]}\n`,...lookups].join('\n'));
  const base=fixture('cua-core.md'),policy=fixture('vendor-confirmations.md');
  assert.equal(coreDocument({host:'cua',agentCursor:true}),`${base}\n${AGENT_CURSOR}\n${policy}`);
+ assert.equal(coreDocument({host:'cua',agentCursor:'lookups'}),`${base}\n${AGENT_CURSOR_FIRST_USE}\n${policy}`);
+ assert.equal(coreDocument({host:'vendor',agentCursor:'lookups'}),coreDocument({host:'vendor'}));
+ assert.equal(transformDocumentContent([{type:'text',text:coreDocument({host:'vendor'})}],{host:'vendor',agentCursor:'lookups'})[0].text,coreDocument({host:'cua',agentCursor:'lookups'}));
+ assert.equal(transformDocumentContent([{type:'text',text:fixture('vendor-core.md')+'\nPOLICY'}],{host:'vendor',agentCursor:'lookups'})[0].text,`${base}\n${AGENT_CURSOR_FIRST_USE}\nPOLICY`,'an override policy too');
  assert.equal(coreDocument({host:'vendor',agentCursor:true}),coreDocument({host:'vendor'}),'the vendor\'s document never carries it');
  const vendorText=coreDocument({host:'vendor'})+'tail';
  assert.equal(transformDocumentContent([{type:'text',text:vendorText}],{host:'vendor',agentCursor:true})[0].text,coreDocument({host:'cua',agentCursor:true})+'tail');
  assert.equal(transformDocumentContent([{type:'text',text:vendorText}],{host:'vendor'})[0].text,coreDocument({host:'cua'})+'tail');
  const run=(platform,surfaces)=>({meta:{platform,surfaces,caseConfigurations:{'cells/x':{surfaces}}}});
- assert.equal(agentCursorLane(run('darwin',['computer','browser']),{case:'cells/x'}),true);
+ assert.equal(agentCursorLane(run('darwin',['computer','browser']),{case:'cells/x'}),'lookups');
+ assert.equal(agentCursorLane(run('darwin',['computer']),{case:'cells/x'}),true);
  assert.equal(agentCursorLane(run('darwin',['browser']),{case:'cells/x'}),false);
  assert.equal(agentCursorLane(run('linux',['computer','browser']),{case:'cells/x'}),false);
 });

@@ -1,0 +1,11 @@
+runs 216, judged 153, t17-fix3 47, moved from base: 0
+H9 judged runs: 8
+  arm64/out/H1.pinned-release/run/results.jsonl.gz t17-fix3 stored true now true base-moved false {"applies":true,"version":"0.4.4","drops":560,"settled":560,"rest_30":560,"wrong":0,"missing":0,"unrecorded":0,"uncounted":0,"unproven_zero":0,"contradicted":0,"disagreeing":0,"mislabelled":0,"cells":14,"unexercised_cells":0}
+  arm64/out/H2.pinned-release/run/results.jsonl.gz t17-fix3 stored true now true base-moved false {"applies":true,"version":"0.4.4","drops":560,"settled":560,"rest_30":560,"wrong":0,"missing":0,"unrecorded":0,"uncounted":0,"unproven_zero":0,"contradicted":0,"disagreeing":0,"mislabelled":0,"cells":14,"unexercised_cells":0}
+  arm64/out/L4a.pinned-release/run/results.jsonl.gz t17-fix3 stored true now true base-moved false {"applies":true,"version":"0.4.4","drops":560,"settled":560,"rest_30":560,"wrong":0,"missing":0,"unrecorded":0,"uncounted":0,"unproven_zero":0,"contradicted":0,"disagreeing":0,"mislabelled":0,"cells":14,"unexercised_cells":0}
+  arm64/out/L4d.pinned-release/run/results.jsonl.gz t14-stale stored false now false base-moved false 
+  x64/out/H1.pinned-release/run/results.jsonl.gz t17-fix3 stored true now true base-moved false {"applies":true,"version":"0.4.4","drops":560,"settled":560,"rest_30":560,"wrong":0,"missing":0,"unrecorded":0,"uncounted":0,"unproven_zero":0,"contradicted":0,"disagreeing":0,"mislabelled":0,"cells":14,"unexercised_cells":0}
+  x64/out/H2.pinned-release/run/results.jsonl.gz t17-fix3 stored true now true base-moved false {"applies":true,"version":"0.4.4","drops":560,"settled":560,"rest_30":560,"wrong":0,"missing":0,"unrecorded":0,"uncounted":0,"unproven_zero":0,"contradicted":0,"disagreeing":0,"mislabelled":0,"cells":14,"unexercised_cells":0}
+  x64/out/L4a.pinned-release/run/results.jsonl.gz t17-fix3 stored true now true base-moved false {"applies":true,"version":"0.4.4","drops":560,"settled":560,"rest_30":560,"wrong":0,"missing":0,"unrecorded":0,"uncounted":0,"unproven_zero":0,"contradicted":0,"disagreeing":0,"mislabelled":0,"cells":14,"unexercised_cells":0}
+  x64/out/L4d.pinned-release/run/results.jsonl.gz t14-stale stored true now true base-moved false 
+stored verdict differs from now: 16 (of them also differing from base: 0)

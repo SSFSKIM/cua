@@ -251,11 +251,15 @@ struct InputMeta {
   }
 }
 
-/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName). A userIntervened answer
-/// names what the meta reached as what may have taken effect (#212), in its message and as the meta's `interruption`.
+/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName), in place of any meta it
+/// had, except the permission boundary's marker (Permissions.swift), which an input method's permissionsPending keeps. A
+/// userIntervened answer names what the meta reached as what may have taken effect (#212), in its message and as the
+/// meta's `interruption`.
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
-  error.extra["meta"] = meta.wire
+  var wire = meta.wire
+  if let permission = (error.extra["meta"] as? [String: Any])?["permission"] { wire["permission"] = permission }
+  error.extra["meta"] = wire
   return error.interrupted(adding: meta.effects.reached)
 }
 

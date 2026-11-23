@@ -40,6 +40,10 @@ export function step(ctx, args) {
   if (args[0] === 'activate') {
     const app = SCENES[args[1]].bundleId, seen = keyReading({frontKey});
     ctx.activated = {app, front: seen.front === app, key: seen.key === app, seen};
+    if (answer?.windowOrder) {
+      (ctx.meta.activationGuards ??= []).push({scene: args[1], beforeRow: ctx.rows.length, at, ok: answer.ok,
+        ...(answer.reason ? {reason: answer.reason} : {}), windowOrder: answer.windowOrder, ...(answer.framePin ? {framePin: answer.framePin} : {})});
+    }
   }
   return answer;
 }

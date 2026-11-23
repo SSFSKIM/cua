@@ -276,6 +276,7 @@ export async function record(options, io) {
         if (ctx.up.has(id)) takeDown(ctx, id);
       }
       write();
+      if (meta.probeSettlement?.ok === false) break;
     }
     // Read again while the run's vendor helper still runs: the config it fetched for this sitting's captures.
     readSizingConfig(ctx, 'after');
@@ -285,16 +286,20 @@ export async function record(options, io) {
     log(`recording stopped: ${error.message}`);
   } finally {
     for (const id of [...ctx.up]) takeDown(ctx, id);
+    const probesSettled = !ctx.prepared || settleRecordingProbes(ctx).ok === true;
     if (client) {
       try { await client.call('end_task'); } catch {}
       try { await client.close(); } catch {}
     }
-    if (stopped) { try { meta.engineStopAtEnd = ops.goldens(['engine-stop']); } catch (error) { meta.engineStopAtEnd = {error: error.message}; meta.complete = false; } }
-    if (ctx.prepared) {
+    if (stopped && probesSettled) { try { meta.engineStopAtEnd = ops.goldens(['engine-stop']); } catch (error) { meta.engineStopAtEnd = {error: error.message}; meta.complete = false; } }
+    if (ctx.prepared && !probesSettled) {
+      meta.preparationCleanup = {deferred: 'probes are not confirmed settled; run cleanup again'};
+      meta.complete = false;
+    } else if (ctx.prepared) {
       try { meta.preparationCleanup = ops.cleanup(ctx.prepared); fs.rmSync(join(dir, 'preparation.json'), {force: true}); }
       catch (error) { meta.preparationCleanup = {removed: false, error: error.message}; meta.complete = false; }
     }
-    if (ctx.frontmost?.bundleId) meta.frontmost.putBack = putBackFrontmost(ops, ctx.frontmost);
+    if (probesSettled && ctx.frontmost?.bundleId) meta.frontmost.putBack = putBackFrontmost(ops, ctx.frontmost);
     if (meta.problems.length || meta.error) meta.complete = false;
     meta.finished = new Date().toISOString();
     write();
@@ -443,6 +448,8 @@ function takeDown(ctx, id, {strict = false} = {}) {
   const {ops, meta, run} = ctx;
   let reason = null;
   try {
+    const settlement = settleRecordingProbes(ctx);
+    if (!settlement.ok) throw new Error(settlement.manual ?? settlement.error ?? 'probes are not confirmed settled');
     steps(ctx, id, 'teardown');
     const down = ops.scenes(['down', id, '--run', run]);
     if (down.down) ctx.up.delete(id);
@@ -511,19 +518,34 @@ export const frontPutBackHeld = answer => answer?.inFront === true || answer?.re
 export const frontPutBackProblem = answer => `the owner's front app was not put back in front (${answer?.error ?? (answer?.reactivated ? 'it was activated but is not in front'
   : answer?.reason ?? 'no answer')})`;
 
+// A failed settlement stops this sitting: do not spend the same bounded wait again in final recovery. An explicit
+// cleanup gets a fresh attempt. Successful checks are never cached: a later setup may have launched another probe.
+export function settleRecordingProbes({ops, run, meta = {}}) {
+  if (meta.probeSettlement?.ok === false) return meta.probeSettlement;
+  try {
+    const out = ops.goldens(['settle-probes', '--run', run]);
+    meta.probeSettlement = {...out, ok: out?.ok === true};
+  } catch (error) { meta.probeSettlement = {ok: false, error: error.message}; }
+  return meta.probeSettlement;
+}
+
 // What a dead recording leaves and `cleanup` undoes, in order.
-const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, the approved home\'s cleanup, then the owner\'s front app put back';
+const CLEANUP_STEPS = 'settle the run\'s probes (goldens-device.mjs settle-probes --run <run>), then Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, the approved home\'s cleanup, then the owner\'s front app put back';
 
 // The cleanup of a recording that died, from its preparation.json ({device, prepared, run, frontmost?,
-// preparationCleaned?}): each step tried whatever the one before answered, except that the engine is stopped only once
+// preparationCleaned?}): settle probes first; failure holds every restoration step and the home. Once settled, each
+// step is tried whatever the one before answered, except that the engine is stopped only once
 // every scene is confirmed down, and the approved home given back only once the engine stopped (busy is a refusal);
 // until then they stay held, the journal with them, so the cleanup can be run again. The home's cleanup restores it
 // even when its own stop fails (prepare.mjs cleanupRun), so a cleanup that gave it back without the engine stopped is
 // not done either: `preparationCleaned` tells the next one to stop the engine only.
 // The owner's front app put back last; one not back in front (frontPutBackHeld) is not restored either, so the journal
 // stays for the next cleanup to try it again.
-// -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?, preparationCleaned, restored}.
+// -> {probeSettlement, finderTeardown?, scenesDown?, engineStop?, preparationCleanup, frontmost?, preparationCleaned, restored}.
 export function cleanupRecording({prepared, run, frontmost = null, preparationCleaned = false}, ops) {
+  const probeSettlement = settleRecordingProbes({ops, run});
+  if (!probeSettlement.ok) return {probeSettlement, preparationCleaned, restored: false,
+    preparationCleanup: {deferred: 'probes are not confirmed settled; run cleanup again'}};
   const tried = fn => { try { return fn(); } catch (error) { return {error: error.message}; } };
   const finderTeardown = tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown']));
   const scenesDown = tried(() => ops.scenes(['down', 'all', '--run', run]));
@@ -534,7 +556,7 @@ export function cleanupRecording({prepared, run, frontmost = null, preparationCl
     : stopped ? tried(() => ops.cleanup(prepared)) : down ? {deferred: 'the engine did not stop; run the cleanup again once it does'} : notDown;
   const cleaned = preparationCleanup?.removed === true;
   const front = frontmost?.bundleId ? putBackFrontmost(ops, frontmost) : null;
-  return {finderTeardown, scenesDown, engineStop, preparationCleanup, ...(front ? {frontmost: front} : {}),
+  return {probeSettlement, finderTeardown, scenesDown, engineStop, preparationCleanup, ...(front ? {frontmost: front} : {}),
     preparationCleaned: cleaned, restored: stopped && cleaned && !preparationCleanup.engineStop?.error && (front === null || frontPutBackHeld(front))};
 }
 

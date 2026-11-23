@@ -1,0 +1,5 @@
+2026-11-23T09:59:53Z df / avail 101G
+2026-11-23T10:00:22Z setup t147-h9 exit 0
+2026-11-23T10:00:22Z electron present: node_modules/electron/dist/electron
+2026-11-23T10:00:49Z install-home exit 0
+2026-11-23T10:00:49Z setup-all done

@@ -84,6 +84,14 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21) M3.4 — `scripts/accept/textedit.mjs` and `scripts/accept-native.mjs` (`--engine`; items 12 and 13 pinned to the vendor engine) (310f4f0b, review fixes d0da881d, bf16bb42; reviewed clean after two fix rounds).
   - [x] (2026-10-22 01:42Z) M3.5, Linux half — the parity suite with approvals on cua-linux at base 027179bc and head 10846dfd, each against #115's vendor control: head's one difference (`backend`) is also base's; nothing declared for M3 (`m3/linux/README.md`).
   - [x] (2026-10-22 11:23Z) M3.5 — Live: one hold on the mini (10:26:47–11:23Z, controller 98f153b8, rerun on fead3a16, build 0c363f8f approved at the hold start; evidence `m3/hold/`). Results: comparisons A, B and C PASS; acceptance 2 (`verify --engine cua --bind`, asked 1 then 0) and 9 PASS; `accept-native` item 8's live checks PASS after the attestation fix (Decision Log "M3 hold"); items 7 and 8's named suites 141/141 on the mini. Item 1's whole `npm test` on the mini FAILs on 11 environmental cases, so the hosted Node 24 gate is the unit-suite authority (evidence README). Acceptance 6 is M2b's (Decision Log "M3, acceptance 6").
+- [x] (2026-11-23) M4 re-cut tasks, all reviewed clean, then the whole-branch review (reviewer-high) and its two fix rounds; M4 lands when its pull request's hosted gates are green (branch `feat/117-m4-recut` from main b1b15484; the M4/M5 pre-flight's T1 to T7; Decision Log "M4 re-cut"):
+  - [x] (2026-11-23) T1 — Install on macOS, pending-only; builds beside the approved engine and `cua engine approve` promotes (ruling 1118) (bdf3f424, 058bb0e0, review fixes c021e44a, 06864a1f, 768dd996; reviewed clean after four rounds).
+  - [x] (2026-11-23) T2 — The permission flow (2865f597, 16a27627, review fixes fda61df9, bcef401d; reviewed clean after three rounds).
+  - [x] (2026-11-23) T3 — `accept-native`: item 14 in its owner form, #197's dependencies, the structured reporter, #196's bounded cleanup, the build-beside reinstall (215dea04, review fixes 47524e65, 7c24dda9; reviewed clean after three rounds).
+  - [x] (2026-11-23) T4 — The hosted gate builds the bundle (94f405ee, ceb45873, review fix 6237d0e2; reviewed clean after two rounds; the hosted run on the pull request is still owed).
+  - [x] (2026-11-23) T5 — The window-frame probe and PR #199 (df48af00, 532d3db9, review fixes 28a0506b, f22b7ace, 908dbc6c; reviewed clean after four rounds; #199 superseded; live proof in M5's pilot).
+  - [x] (2026-11-23) T6 — Docs: README and `docs/onboarding-new-mac.md` (install, signing, approval, permissions) and the engine's model rules in `src/mcp/surface.mjs` (e844445b, review fixes a9a55472, c9d6409e; reviewed clean after two rounds, the last one-paragraph fix checked by the controller against its finding).
+  - [x] (2026-11-23) T7 — Records: M4's entries, report and evidence; hold 10's evidence (dd9e3729, 357cff86, c4971d18, 7cd333f8, de0feaeb; all 47 and 103 files in after the owner-content check and the design session's ruling on the account path; reviewed clean).
 
 ## Scope, inheritance and evidence
 
@@ -634,7 +642,9 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
 
 **EngineSelection** (`src/runtime/launch.mjs`, mirrored in `scripts/repl-parity/selection.mjs`): `nativeEngineFor({env, config, installed}) → {engine: 'vendor' | 'cua', reason, status}` and the engine × host table above, with the refusal codes `repl_host_refused`, `repl_host_node`, `engine_not_installed`, `invalid_setting`. **EngineAttestation**: `_meta['cua/nativeEngine'] = {engine, version, build}` on every `js` result. **InputRoute**: `_meta['cua/inputRoute']` on every input result, 1, `"2'"`, 2, 3, 4 or `"paste"` as the design defines, with `cua/serviceMs` beside it and `cua/routeAdvice` when route 3's guard has failed three actions in a row for the app; the per-app route-4 override is `routes: {<bundle id>: 4}` in `~/.config/cua/engine.json`, read by the engine at launch and reported by `doctor`; `cua/settle` rides on the `get_app_state` result instead, since the settle precedes the next observation.
 
-**EngineInstall** (`src/runtime/engine.mjs`): `buildEngine({identity | 'adhoc', scratchPath}) → {bundlePath, engineVersion, build, signature}`, staged beside the approved location and moved into it after a successful `shutdown` of the engine it replaces, writing `pending.json {build, identity, builtAt}` (M1b, the `cua engine build [--sign adhoc]` command); `approveEngine()` → refuses while `status.connections > 0`, sends `approve` for the prompts, prints the by-hand steps (the pane, the "+" button, the bundle's path) for each grant that reads false and polls `status` until it reads true or the operator confirms it at the console, sends `shutdown`, relaunches through `open -n -g -a`, polls `status`, sends `approve` again for the capture (the owner answers the confirmation), then writes `approved.json {build, identity, approvedAt}` (M1b, the `cua engine approve` command); `engineStatus()` → the engine's `status` answer plus `approved.json`'s state (M1b, `cua engine status`); `stopEngine()`; `installedEngine()` → the approved bundle or null; and install's selection rule (M4).
+**UserProbe extension (M4; coordinator ruling, 2026-10-22).** `cua-engine --probe window-frame --pid <n> --window <cgWindowID> --frame <x,y,w,h>` sets the position and size of the exact matching AX window, reads its CG bounds back, and prints one JSON line with `exitStatus`. It refuses when the named window has no exact match. The target is a harness-owned Finder window; no frame/title/focus fallback, activation or permission prompt is allowed. It writes size once, waits for exact-target CG width/height convergence (<1 point each, origin ignored), then writes position once only after another same-handle identity/size check. Intermediate and final convergence each allow at most eleven samples and ten 50ms waits; these are attempt/wait bounds, not hard wall-clock limits on OS calls. The JSON is `{pid, window, requested, readBack, matched, exitStatus, diagnostic, excludedEntries, trace}` (M4.6/M4.8 amendments, 2026-10-23). `diagnostic` is null except identity or size-convergence refusals; exit 2 carries bounded `{stage, reason, windowCount?, matchCount?, unknownEntry?}`, while exit 6 reports `size-convergence/size-not-converged` when size stalls or regresses before position, with no position write. Stages distinguish `initial-identity`, `ax-window-list`, `ax-number-match`, `identity-recheck-before-size`, `size-convergence` and `identity-recheck-before-position`; counts are omitted when unknown. `unknownEntry`, when present, and each `excludedEntries` member contain only `{index, role, subrole}`: zero-based index in the bounded original AX list and fixed allowlisted labels, with `other`/`unknown` for unrecognized/unreadable strings. Positively non-AXWindow entries are excluded under the AXWindow-only target contract; unreadable roles and unresolved AXWindow identities still refuse. Exclusions remain on success and failure, bounded by the 128-entry scan. Role/subrole metadata requires bounded AX attribute reads, but never titles, arbitrary AX strings, other window IDs or raw dictionaries. Subrole is diagnostic only; no repeated writes or selection fallback are added. `trace` is present on every parsed result, including failure: at most 25 `{stage,atMs,frame}` samples of the exact requested target's CG geometry (or null), and at most two `{attribute,startMs,endMs,axError}` setter records. Sample stages are fixed `initial`, `after-size`, `final`; times are relative monotonic milliseconds. Guard reads are included, never other identities or content. Exit 0 means both writes succeeded with every component within one point; 2 target/identity refused, 3 missing existing AX grant, 4 unsettable/write failure, 5 final readback failure, 6 size did not converge before position, 64 usage. The harness separately checks its target's exact frame. Like the existing probes it runs in the approved app through `open -n -g`, supplying the AX-trusted process the #182 geometry harness needs without granting an SSH shell permission. The native command and the harness caller (PR #199, #182/#183) land together in the M4 re-cut (T5); the exact AX identity is read with `axWindowNumber` (the window-number SPI alone, #458), and Finder's activation in the harness passes over the approved engine's own windows (#235's cursor panel), as every front reading does.
+
+**EngineInstall** (`src/runtime/engine.mjs`): `buildEngine({identity | 'adhoc', scratchPath}) → {bundlePath, engineVersion, build, signature, pending}`, built and signed into the pending slot `<engine directory>/pending/cua Engine.app` beside the approved bundle, which it never touches (ruling 1118, M4 re-cut), writing `pending.json {build, identity, builtAt}` (M1b, the `cua engine build [--sign adhoc]` command; `cua install` calls it under the selection rule); `approveEngine({foreground, signal})` → takes the exclusive approve lock `promoting.json {pid}`, recovers a cut-short promote, promotes the pending build into the approved path (the approved one moved aside, put back if approval fails or is aborted), refuses while `status.connections > 0`, sends `approve` for the prompts, prints the by-hand steps (the pane, the "+" button, the bundle's path) for each grant that reads false and polls `status` until it reads true or the operator confirms it at the console, sends `shutdown`, relaunches through `open -n -g -a`, polls `status`, sends `approve` again for the capture (the owner answers the confirmation), then writes `approved.json {build, identity, approvedAt}` (M1b, the `cua engine approve` command); `engineStatus()` → the engine's `status` answer plus `approved.json`'s state (M1b, `cua engine status`); `stopEngine()`; `installedEngine()` → the approved bundle or null; and install's selection rule (M4).
 
 **NativeMacScenes** (`scripts/spike/engine/scenes.mjs` and `scripts/spike/engine/fixtures/` in M0, `scripts/repl-parity/scenes-mac.mjs` and `scripts/native-matrix/fixtures/` from M1b): the four scenes with their fixed states, pairings, target lists and refusal preconditions, including how Chrome for Testing and the Electron fixture app are placed, started and stopped. **FrontWindowProbe** (`scripts/spike/engine/front-window.swift` in M0, `scripts/accept/front-window.swift` from M1b, used by `scripts/accept/key-guard.mjs`): `frontmost() → {bundleId, pid}` (`lsappinfo front` then `lsappinfo info -only pid,bundleid`) and `topWindow() → {ownerPid, bounds}` from `CGWindowListCopyWindowInfo`, a Swift script run with `swift`, reading no window names. **UserProbe** (M2a): `cua-engine --probe <command>`, run as a separate instance of the approved engine bundle through `open -n -g -W --stdout <file> --stderr <file> --args …` (`-g` so the probe never takes focus, which would fail the checks it serves; `-W` so the harness reads the output file only after the probe exits; the resident `watch-activations` runs without `-W` and prints its own pid first, so the harness can stop it and the oracles can exclude the probe instances), exempt from the live-socket exit rule since it binds nothing; commands: `keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] <text>` (posts from an HID-state event source at the HID event tap only while the front window is the given one, at the scheduled time when `--at` is given, and prints the post time), `input-source <id|current>`, `focus [--window <pid,x,y,w,h>]` (the system-wide focused application and focused window, by pid and bounds, through the Accessibility API, plus `valueHash`, the SHA-256 of the focused element's value, reported only when the focused window is the one named; it sets `AXManualAccessibility` on the named pid before reading and waits up to 1 s for the focused element to carry a value, as the engine waits for the `AXWebArea`, since a Chromium or Electron window exposes no value until an assistive client asks, and the fixture must not enable it itself, which would bypass the engine path the scene proves), `watch-activations` (resident until killed, printing every `NSWorkspace.didActivateApplicationNotification` with its time); `status.canPostHid` reports its ability. Input results carry `meta.startedAt` and `meta.endedAt`, surfaced as `cua/actionInterval`, so the matrix can place a post inside an action. **NativeMatrix** (`scripts/native-matrix.mjs`): `run`, `compare`, `summary`, `cell`.
 
@@ -769,6 +779,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Evidence: `m3/hold/README.md`, item 1.
 - Observation (M3 hold, the TextEdit fixture): **with items 5 and 6 unselected, the fixture still runs but its steps go unreported, and it left its own TextEdit running.** When it cannot confirm that its close left TextEdit windowless, it leaves the TextEdit it launched running. The put-back stopped that TextEdit by pid (5 off-screen windows, no autosave or saved state).
   Evidence: `m3/hold/README.md`.
+
+M4 on `feat/117-m4` (2026-10-22 to 2026-10-24; closed PR #211, head a8c3bc1c): its own observations, kept as written and put in this section's oldest-first order.
+
+- Observation (M4 offline review, 2026-10-22): The acceptance harness's initial Screen Recording fixture used a shortened pane name that the native producer never emits; the real sentence says “Screen & System Audio Recording.” Passing fake-engine tests therefore did not prove the producer/consumer boundary. The fix keys guidance by permission metadata and the established grant descriptors, and the regression uses the production `grantSteps` wording. No mini time was spent on this mismatch.
+- Observation (M4 offline review, 2026-10-22): Making install build a selected engine also changes acquisition-only harness callers. An unchanged vendor runtime did not imply a mutation-free engine reinstall. Those callers now explicitly select vendor for acquisition, and item 2 requires the engine step's `not_selected` outcome. Separately, item 2's historical download anchor became stale when install.mjs changed, so actual hosted download proof now replaces that anchor under the Decision Log's evidence rule.
+- Observation (M4 cleanup reviews, 2026-10-22): `onScreen: false` is not an internal-window classification: minimized documents and other Spaces are false too. Recording those IDs at launch is insufficient as well, because macOS may restore an owner's off-screen document into the new process. Both proposed #196 exemptions were withdrawn before any live run; conservative cleanup remains BLOCKED for every remaining off-screen window, and the coordinator owns per-case put-back (Decision Log).
+- Observation (M4 whole-milestone review, 2026-10-22): A Screen Recording refusal can outlive its engine process when the owner chooses Quit & Reopen or another actor restarts it. The first implementation cleared recovery only for a launch it initiated, so reconnecting to a fresh granted engine with another client could return the stale permission refusal indefinitely on busy shutdown. Fix c44e3074 records the verified status PID before a connection's first screenshot and clears pending recovery only for a different verified PID; same-process reconnects retain it. Protocol regressions and bounded high re-review passed; the hold still supplies live evidence.
+
+- 2026-10-23, M4 hold: A compound live assertion without its operands makes an expensive owner proof non-diagnostic. The item 14 record cannot distinguish failed input completion, intervention metadata or doctor output; offline counterfactuals reproduce the identical saved failure with metadata-only and doctor-only faults. The acceptance suite similarly discards TAP assertion detail. The fix wave retains allowlisted diagnostics rather than inferring causes or widening permissions. The repeat AX-named alert does not prove trust was lost: its requesting PID and actual TCC service were not captured.
+- 2026-10-23, M4 transport: scp from the MacBook transferred only 467665920 of 687457051 bytes in 10m35s, exhausting the eight-minute pre-step target. The owned transfer was stopped before build; coordinator-authorized official HTTPS range-resume on the mini completed and both vendor/Node archives passed their pinned size/SHA checks. Future staging should use verified cached archives or direct pinned downloads before the measured pre-step, not assume LAN throughput.
+- 2026-10-23, M4 live acceptance: nonempty captures and successful action replies did not prove exact text delivery; marker/readback and generated-secret hash checks failed (60 versus 58 characters). The separate secrets probe failed before substitution when its kernel exited code 1. No generated value was emitted; temporary stores were removed. The exact-window Finder probe separately refused identity (exit 2 for window 16596), but its current result does not name the failed identity stage. All require diagnosis rather than permissive fallbacks.
+
+- 2026-10-23, M4 second owner sitting: an absent Input Monitoring Settings row is not evidence that event-listening access is unavailable. PID 97324 read AX true, SR/listen/post false after the AX grant; after SR recovery, PID 99635 read all four true, although the coordinator reports the owner had not re-added IM. Successful input with `cua/intervention: null` is consistent with the existing detection-on metadata contract, not an independent null-metadata defect. Neither a true preflight nor a non-null tap proves delivery of a physical intervention event. A process-lifetime effect is a working explanation, not an established TCC implementation cause: SR grant and relaunch coincided, and no cold AX-only/SR-off control was taken. Apple's SDK describes CG listen/post preflights as current-process capabilities; [Apple DTS on stale post-event preflight](https://developer.apple.com/forums/thread/735204) supports relaunch as a control, not a claimed mapping from Settings rows. The original item 14 remains FAIL.
+
+- 2026-10-24, repeated AX-looking alert attribution: read-only unified-log queries for 09:31–09:47Z and 10:40–10:55Z identify both the old and SR-relaunched engine as the accessing/requesting client for `kTCCServiceAccessibility`, at the same approved executable. Old PIDs 19033/52405 show authValue 1 during the harness's AX-false stage, then 2 after granting; new PIDs 26404/55385 show only authValue 2 for retained AX queries. These records all say preflight=yes and do not identify the displayed alert or enqueue time. Generic `TCCAccessLaunchDisclosurePromptIfNeeded` calls occur at both launches, not proof of an AX dialog. Combined with the source's false-only explicit AX-request branch and Apple's asynchronous-prompt API contract, an earlier outstanding request remains the leading hypothesis, not established causality. No evidence currently supports changing SR relaunch/identity or blaming a nested helper. Public evidence under `docs/evidence/2026-10-22-own-native-engine-m4/2026-10-24-tcc-attribution/` contains only selected timestamps, PIDs, service/result fields and path-match booleans; raw log bodies stay private.
 
 ## Decision Log
 
@@ -8068,6 +8093,320 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (#502, 2026-11-23): `popUpAwaitOpen` reads the control's kind through a local (`let kind = target.kind`), and
+  its local functions capture that, never `target`. Xcode 27.2 (Swift 6.4.2, 27B52) crashed `swift build -c release`
+  in the SIL pass CopyPropagation ("Found a leak due to a consuming post-dominance failure", "Found ownership
+  error?!") on the function's AXUIElement specialization, a leak of the `target` argument. Bisected: it is
+  `activatedNow` (declared in the poll loop and called from its `defer`) capturing `target`. Hoisting the kind into
+  `unconfirmed` and the restore note, with `activatedNow` left on `target`, still crashed; hoisting it there too fixed
+  it. Behaviour is unchanged, since `target` is an immutable struct. A restructure was chosen over `@_optimize(none)`,
+  which would leave the function unoptimized and the pattern free to recur. The code carries a comment so the hoist is not undone. Proven locally on
+  Xcode 27.2: the release and debug builds pass, and `swift test` runs 1659 tests (1 skipped, `CUA_304_TREES` unset)
+  with 0 failures. Hosted CI cannot see this class of failure yet: `engine-swift`'s `macos-latest` carries Xcode 26.x
+  only, and Xcode 27 exists only on the preview image `xcode-27`, which no ci-kit lane selects. Until a lane can reach
+  it, the local release build on Xcode 27.2 is the check (`tech-debt-tracker.md`).
+  Date/Author: 2026-11-23, cursor235's builder for #502.
+
+### M4 on feat/117-m4 (2026-10-22 to 2026-10-24; closed PR #211, head a8c3bc1c)
+
+These are M4's own records, kept as written and put in this log's oldest-first order; the M4 re-cut entries below supersede them where they differ.
+
+- Decision (2026-10-22, M4 pre-flight): M4 starts on main d95261fb, consuming M1b's `buildEngine`, `approveEngine` and sign-wait handling and M3's engine-aware doctor and acceptance runner. The default engine remains vendor; the matrix harness and #182/#183 work stay outside this branch. The approved engine build is 0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d unless M4 actually changes native sources. The coordinator places #197 (accept-native item selections omit their item-1 dependency) inside M4 when the correction is small: include the prerequisite or reject the selection. #198's mini-wide environmental npm-test failures are outside M4: item 1 remains FAIL, each failure is classified, and the hosted Node 24 gate is the unit-suite authority, following M3. Acceptance 8 reports that qualification explicitly, never promotes missing or failing checks to PASS. All owner actions run first in a single timed owner window (revocation then fresh onboarding/re-grants), before unattended acceptance work; the mini is accessed only during the coordinator's booked hold.
+
+- Decision (2026-10-22, M4, coordinator ruling: staged fresh onboarding): `accept-native` item 14 owns fresh onboarding, separate from item 9's clean-machine/cold-start gates. One MCP connection observes no grants, then Accessibility, then Screen Recording with the owner choosing Later (not Quit & Reopen), then Input Monitoring. The owner removes only cua Engine's entries with “–” in all three panes and re-adds them with the printed “+” and bundle-path steps, whose path the harness asserts. An early PID change leaves the relaunch stage unproven; immediately before the service relaunch, status must show the harness is the only client, then the changed PID proves recovery. Intervention-off is checked through result metadata and doctor before Input Monitoring; `approveEngine` runs last. Permission guidance uses `grantSteps` (“enter <bundle path>, then”), with the Screen Recording relaunch-pending sentence retained. The hold has a separately timed unattended build/sign pre-step (expected silent; stop on a keychain prompt), the contiguous owner window, then unattended checks. The shared #184 work proves #182/#183, route A/B and one paired run; the matrix triple belongs to M5.
+
+- Decision (2026-10-22, M4, coordinator ruling: no text-only observation fallback): Every observation keeps its screenshot; Accessibility without Screen Recording fails `permissionsPending` with the Screen Recording sentence. This follows vendor parity (F §4.8 and §15, gate inferred), and onboarding grants all three. The rejected alternative, an AX-only text observation with a screenshot-unavailable note, changes the facade and model-facing behavior for a state onboarding removes. This answers M1a.5 ruling (3); the owner has been told and may overrule.
+
+- Decision (2026-10-22, M4 contracts refresh): `permissionsPending` carries `meta.permission: "accessibility" | "screenRecording"`, exposed as tool `_meta['cua/permission']`, so recovery arms only for Screen Recording and does not relaunch between the no-grants and Accessibility-only onboarding stages. This is diagnostic metadata, not a facade method change. Acceptance 1 now names the existing identity-safe `engine.signature.identityMatches: true`, as M3 implemented; no signing identity is emitted. The install signing options configure but do not themselves select the engine: `--engine-sign adhoc` pairs with `--engine` to force a CI build. The real-bundle proof is in `engine-swift`; sandbox-live retains its fake engine and both its installer and baseline preparation pin vendor so neither ever installs a harness engine.
+
+- Decision (2026-10-22, M4 hold admission and foreground lead, coordinator ruling): The unattended pre-step is build + sign + approve, budgeted at eight minutes, while the same identity's existing grants still hold (M2b hold 2b and M3 phase 1 precedents). Before revocation, `approved.json.build`, bundle `CUAEngineBuild` and controller `engineBuild()` must agree, all three grants read true, and no SecurityAgent remains. Item 14 never serves a pending build or writes an approval bypass; falling back to the older engine would prove the wrong code. A detected capture alert stops the pre-step and adds one owner minute before revocation to complete approval. The normal owner window is twelve continuous minutes: its first two minutes remove grants and try foreground approve, auto-aborting after the first missing-grant result. Only the owner observes and dismisses any prompt with Deny/close, reports its pane at the operator console, and removes any entry it created before item 14's no-grants stage. The outcome, including no prompt, is recorded as owner-observed rather than inferred from the API return.
+
+- Decision (2026-10-22, M4 acceptance item 2, coordinator ruling): A fresh hosted-macOS sandbox-live download/install proof replaces the M2 mini proof as `DOWNLOAD_EVIDENCE`'s anchor. The gate must actually install from the official pinned URL, not `--archive`, with the archive hash and size verified. The evidence records the run id, tested commit, URL host, hash-verification result and archive size in machine-readable form; item 2 judges those facts. The anchor is the last commit touching its existing acquisition-path set on M4's final head, and the proving run is at or after it. A later acquisition-path change intentionally blocks the check again. Rejected alternative: spend the mini hold downloading the same archive. The path set is unchanged.
+
+- Decision (2026-10-22, M4 acceptance command, coordinator ruling): Acceptance 8 also passes `--live-secrets`; otherwise unchanged item 6 correctly remains BLOCKED. Sentinels are generated synthetic values only in a temporary HOME store, with no `--secret-key` and no reads of the mini's real stores. UI delivery targets only the fixture's own launched TextEdit, with no-save quit and no saved state left behind. Public evidence contains labels, booleans and counts, never sentinel values. Item 13 needs scratch `XDG_CONFIG_HOME`; this does not move engine approval/config, whose readers use the account HOME's fixed engine directory and `.config/cua/engine.json`, not XDG_CONFIG_HOME.
+
+- Decision (2026-10-22, M4 release scope, coordinator ruling revised with a new user): M4 bumps the plugin and marketplace versions from 0.17.0 to 0.18.0. The owner wants MAWS dev sessions on the MacBook to opt into cua's engine through the plugin cache; without the bump, that cache retains M3 native sources and old model guidance/recovery while the installed approved engine carries M4. The default remains vendor. Rejected alternative: defer the bump to M5; the earlier no-bump ruling assumed no plugin-cache user and is superseded.
+
+- Decision (2026-10-22, M4 TextEdit fixture cleanup, coordinator ruling after whole-milestone review; #196): For this hold, any remaining off-screen window blocks the fixture's quit, with the reason and window numbers/bounds recorded, never titles. A visible window, foreign PID or unreadable inventory also blocks; PID/start-time protection remains. Both proposed exemptions are withdrawn: visibility alone cannot distinguish a minimized/other-Space document, and presence in the launch-time set cannot distinguish a restored owner document. The executor reports any leftover fixture PID, start time, window count and bounds to the coordinator for a per-case put-back decision; the harness does not signal it on an inferred internal-window classification. A blocked cleanup stays BLOCKED and acceptance 8 carries an explicit disposition, never PASS. The real #196 fix is after this hold: suppress restoration at the fixture launch (`-ApplePersistenceIgnoreState YES`) and use a polite quit that cannot lose data (a save prompt leaves it running and BLOCKED), never SIGTERM; that change needs live proof at M5. Issue updates are the coordinator's.
+
+- Decision (2026-10-22, M4 landing evidence, coordinator ruling): The proof reader stores its anchor in the machine-readable evidence rather than a hard-coded source constant, while the acquisition-path set stays unchanged. Keep the actual CI tested-commit ref available and fetch it into the hold checkout for ancestry verification. Immediately after squash landing, the coordinator runs a new hosted sandbox-live gate on the squash SHA and lands an evidence-only follow-up whose anchor is that SHA; this is part of M4 landing, not M5 residue. The old proof ref remains until the replacement is verified. The runbook's after-landing section gives the commands and requires the real proof reader to return PASS.
+
+- Decision (2026-10-23, M4 hold provenance and cleanup): The coordinator performed Settings UI, TextEdit preparation/cleanup and console answers through the vendor helper/SSH FIFO at the owner's request; only the owner answered system alerts. The foreground AX prompt was answered Allow, then its entry was removed before item 14, rather than the helper's requested Deny/close. The original records are retained with an actors note, not retroactively rewritten as manual-only UI. Item 14's second AX-named prompt was denied; its origin PID/TCC service is unproven. After unattended acceptance, the coordinator authorized TERM of fixture PID 3904 only after exact executable/start-time revalidation (1792737718000), judging the five remaining off-screen windows from that sitting's observations; it was verified gone. This one-run disposition does not weaken #196's general rule or convert the original cleanup BLOCKED into PASS.
+
+- Decision (2026-10-23, M4 post-hold fix wave, coordinator authorization): The mini returned to CI at 07:26Z; all fixes and diagnosis now run offline, with no mini access. Four bounded tasks precede another hold: (A) item 14 retains allowlisted post-relaunch status (AX/SR/listen/post capability), input completion/typed/intervention/route and doctor permissions/engine-row operands, splits its intervention-off verdict, records timed owner-observed recovery prompts and uses actor-neutral UI wording; regression cases distinguish metadata-only, doctor-only and delivered-but-incomplete failures; (B) diagnose and fix or evidence-classify the marker/readback and synthetic 60-versus-58 mismatch and the secrets-probe kernel exit; (C) fix or evidence-classify comparison-A and 192-byte socket-path unit failures, retain failing TAP assertion diagnostics and correct the machine-home inventory without weakening its credential safeguards; (D) add stage-specific non-content diagnostics to the exact-window frame probe's identity refusal (window-list failure, unique number match, recheck) and investigate the Finder 16596 refusal without weakening identity. Native task D changes engineBuild and requires a new build/sign/approve before live proof. The controller alone folds this log; task reviews and final high review precede the next hold request. Reserve about fifteen owner minutes for item 14. No default-engine or native-matrix harness change enters this wave. Post-squash download re-anchoring remains M4 landing work.
+
+- Decision (2026-10-23, M4.5-D, reviewed 46c72123..94e17d78): Preserve exact-window refusal semantics and add only bounded identity-stage diagnostics (UserProbe interface above). The first hold's non-null CG readBack for PID 462/window 16596 proves initial CG target identity succeeded; the remaining sites are AX-window discovery, exact-number matching or a pre-write recheck. No specific OS cause is proven, and unchanged bounds do not exclude an asynchronous size write before a failed position recheck. The all-window identity requirement remains fail-closed. Hosted tests-first run 39918663220 compiled 513 tests and failed the new diagnostic assertions; implementation run 39919189483 passed 513/513, including 17 window-frame tests and the real ad-hoc-signed release bundle. Independent task review found no material findings. Native build is now cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc; new mini approval is still required. Prior art is corroboration, not attribution: [Apple DTS](https://developer.apple.com/forums/thread/706187) identifies the private window-number SPI, and [pinned AltTab AX wrapper](https://github.com/lwouis/alt-tab-macos/blob/2d4f4c8fab1eeb3ec08f32abdf541713b68d89d0/src/macos/api-wrappers/AXUIElement.swift#L96) documents its mapping and Finder AX/CG lifecycle differences.
+
+- Decision (2026-10-23, M4.5-A/B, reviewed): Diagnostic observations must not change causal attribution. Snapshot post-capture status before waiting for the operator, and judge completed input/metadata/doctor operands independently before recording a missing prompt confirmation; a timeout still forbids a new doctor call. Keep only allowlisted facts, with observed alert categories/responses and action/report timestamps, not an inferred prompt origin. The fifteen-minute item 14 window is separate from the completed foreground-launch experiment and may be booked separately from unattended M4 and #184/#188 proof. For acceptance's generated TextEdit fixture, retain strict exact-content/hash comparisons and eliminate inherited plain-text styling by opening a run-owned RTF with a fixed nonsecret Helvetica-regular placeholder. Verify that exact placeholder and the owned/front document before select-all, recheck identity before typing the distinct marker, and never change user preferences. An empty RTF was rejected because offline textutil conversion retained no font run. Rendered decoration is diagnostic only, never a PASS. Native markdownMapped's monospace backticks reproduce 60 versus 58 with unchanged underlying text, but do not prove the original live value. The secrets probe's fake target must extend the selected host's trusted-root variable (CUA_REPL_TRUSTED_CODE_PATHS for own, NODE_REPL_TRUSTED_CODE_PATHS for vendor); actual own-host bootstrap tests reproduce the old import refusal/exit 1 and pass after the fix. Harvest every started session after bounded teardown, including failed initialization, so a zero-stream scan cannot conceal missing evidence. Full live substitution and exact delivery still require a new hold.
+
+- Decision (2026-10-23, M4.5-C, reviewed): Preserve assertion evidence from structured Node test events, not human-readable TAP/YAML. Actual Node24 reproductions showed operand keys can forge records/closing markers, stack labels and multiline error messages can look like coordinates, and ERR_-shaped codes may contain arbitrary content. The acceptance-only reporter emits sanitized JSON failure records and runner-derived summary/skip lines, ignores child stdout/nested reports/arbitrary diagnostics, uses fixed code/operator allowlists and retains stack paths only when they name the independently reported test file. Other testReporterEnv callers retain TAP defaults. A structured diagnostic may explicitly be withheld, incomplete or truncated; no FAIL is promoted. The original comparison-A and 192-byte failures have no retained assertion sites; isolated exact-Node24 reproduction passes both, so the historical cause remains unknown rather than assigned to #198. Correct the 26 home-path inventory findings without growing exemptions: derive the hosted baseline root from both original capture records, use neutral synthetic homes, and document/verify exact length-preserving `/Users/new/` to `/Users/xxx/` substitution in 23 golden files. Originals remain unchanged; equal length preserves renderer line-budget behavior. The download-proof acquisition paths and anchor are unchanged.
+
+- Decision (2026-10-23, M4 final fix, high re-review correct at 5d8148fb): A subprocess exit code alone is not orderly shutdown. All five ordinary secrets-probe closes require code 0, no signal, no forced termination and no stuck process; the deliberate store-unreadable launch refusal still expects code 1. Retain every session's teardown outcome, continue later sessions and store cleanup after an error, and distinguish process exit from bounded stdout/stderr closure. The shared client exposes a bounded drain; incomplete stream evidence fails teardown and the sentinel scan rather than claiming no leak. Real subprocess regressions cover EOF ignored until SIGTERM with exit 0, intentional exit 1, late and unterminated output, and inherited pipes held open. The integrated CI inventory failure on the hosted account was four literal runner-home comment/fixture paths, corrected with neutral synthetic paths rather than exemptions; hosted-gate behavior and recorded baselines are unchanged. Worker checks passed 94/94 and 42/42 under the hosted HOME; bounded high re-review passed 81/81 and found no material finding. Run 39925359342 is retained as 5/6 (unit inventory FAIL), not GREEN. Replacement run 39929507105 targets the reviewed fix and is GREEN 6/6; Node tests are 4193 pass/89 skip/0 fail and Swift 513/513.
+
+- Decision (2026-10-23, M4 second owner sitting and control preparation, coordinator steering): Preserve the second item 14 FAIL and its independent operands; do not change the negative-mode acceptance contract from this confounded observation. Prepare an offline, ten-minute permission-only recorder for a separately booked owner sitting: cold revoked baseline, same-PID AX-only, cold AX-only before SR, cold AX+SR with IM absent, cold AX+SR with IM explicitly off, then restore all three and independently stop. Observe listen/post results without prescribing their answers. No capture/input, permission-request RPC, automated Settings actions, alternate identity or TCC database access. Source remains reviewed 5d8148fb/build cffaf9d8…. Private recorder preparation is complete and high bounded re-review is correct/no material findings: 40/40 Node24 hermetic tests plus shell/JS syntax checks, with independent identity/refusal and interrupted-startup assertions. The first review's lifecycle-transition flaw was fixed: process-present/socket-unready startup and socket-gone/process-exiting shutdown are polled within the existing bounds, never treated as permission to adopt or stop an unidentified/replacement process. The ten-minute window reserves its final thirty seconds for safe cleanup; incomplete cleanup/restoration remains explicit. These are offline results only; the three runtime artifacts have not been staged or executed, and the owner control still needs its separate booking/GO. The 11:05–11:40Z unattended booking was refused at core admission because the owner's ChatGPT helper was running, before engine/GUI/config changes. The helper was untouched and the coordinator released the hold; a new full 35-minute booking/GO is required, using the unchanged phased wrapper.
+
+- Decision (2026-10-23, M4 unattended retry follow-up): The deliberately prompting Accessibility test runs only when `RUNNER_ENVIRONMENT === 'github-hosted'`. Commit 0351f19c declares its exact skip reason with the producer-matched inverse gate; hosted skips and zero-executed coverage still block, and no broad Accessibility exemption is added. Worker 27/27 focused checks and independent bounded review (two skip-policy tests) pass with no material findings. This is an offline inventory correction, not a rerun or rewrite of the held BLOCKED reports. The private owner-console adapter's SSH admission fix also passed bounded high re-review, 49/49 hermetic checks: real/effective/active-console-owner UIDs must match and be non-root, with an available GUI bootstrap domain. The SSH process itself need not be Aqua. Pre-evidence refusals emit only enumerated diagnostics; GUI-domain availability does not prove owner attention or unlocked state. Only the adapter needs re-staging after #184 put-back and coordinator GO. Revised macOS/SSH admission remains unexercised until that owner sitting.
+
+- Decision (2026-10-23, M4.6, coordinator-approved exact-role exclusion): #184 hold 7 refused before any write with `ax-number-match/unknown-identity/windowCount:2`, Finder PID 462/window 19052, CG readBack (820,261,920,940). This identifies the failed proof, not which AX entry caused it. Amend the frame probe's earlier all-enumerated-entry rule: only a positively read role other than AXWindow proves an entry ineligible under the existing AXWindow-only target contract. Exclude such entries; do not infer exclusion from a missing/unreadable role or from an AXWindow whose exact PID/CGWindowID is unavailable. Exactly one eligible exact PID+CGWindowID match remains required, with the same AX handle and role/identity checks before each write. No title, position, subrole, focus, or visibility selection. Refusal diagnostics identify the unknown entry by zero-based enumeration index and allowlisted role/subrole; bounded exclusion metadata is retained even on success so the next hold can establish which non-window was present. The [vibeshed Finder fix](https://github.com/vibeshed/vibeshed/pull/45) reports Finder's desktop as AXScrollArea in AXWindows and a macOS27 live list of two entries/one window; this corroborates the mechanism but does not establish our second entry. Hosted RED/GREEN and task/high reviews precede the new build/approval; the ongoing owner permission control remains pinned to 5d8148fb/cffaf9d8 and is not changed by this offline task.
+
+- Decision (2026-10-23, owner permission control, correction retained): The completed control on cffaf9d8 finished at 19:07:38Z, exit 0, restored/stopped. With all rows removed, cold PID 7129 read all four capabilities false; granting AX without relaunch left the same PID's listen/post false. Cold AX-only PID 8156 read AX/listen/post true while SR remained false and the owner reported the IM row absent. This isolates the relaunch/AX-at-launch effect from SR grant on this host/build and invalidates item 14's assumed intervention-off state after recovery. It does not establish TCC's internal mechanism or prove physical intervention delivery. Crucial owner correction: at OFF the owner switched IM ON. The `im-off-cold` sample PID 11471 is not an explicit-off trial despite its terminal label; absent versus explicit-off remains untested. Preserve the original JSONL and this correction separately under `docs/evidence/2026-10-22-own-native-engine-m4/2026-10-23-permission-control/`. Coordinator-approved acceptance replacement: live intervention-off capability/doctor assertions belong only to the verified same-PID warm AX-only stage; after SR recovery, successful input and its metadata are judged against the fresh process's observed listen capability. Negative input-metadata behavior is covered hermetically; final explicit grants/approve/input remain live. This replaces the original live-negative-input-after-relaunch requirement because the measured cold AX-only state already has listen access. The model-facing bind requires SR, so moving its guarded input into the pre-SR stage would require an unwanted bypass. No such bypass and no extra explicit-off sitting are added. Explicit-off remains untested, and original FAILs stay unchanged. One further owner-present item 14 sitting on build 248035dc is required after offline implementation/review.
+
+- Decision (2026-10-23, M4.8, coordinator-approved ordering safeguard plus diagnostics): Hold 8's exact identity passed, both AX setters returned success, then final readback refused (exit 5): requested (80,80,920,520), initial (820,261,920,968), final (80,30,920,968). The later activation snapshot is teardown entry, before chrome-restoration toggles, not post-teardown. Repeated start heights 912→940→968 occur across different windows and already precede the native writes; exact +28 cause remains unproved. Native writes currently have no intermediate size-convergence check. [Pinned Peekaboo prior art](https://github.com/openclaw/Peekaboo/blob/d514b93eb764e8bb7a599d19b9ba80cf0650542d/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/PinnedWindowGeometrySequence.swift#L114) models accepted asynchronous writes overwriting unsettled geometry. Add a bounded size-convergence barrier before the single position write, failing before position if size never converges, plus retained metadata-only initial/after-size/final CG samples and setter times. This is an ordering safeguard, not a proven Finder root-cause fix. Preserve exact same-handle checks, one size/one position at most, no activation/reselection/repeated writes or speculative Stage Manager/chrome changes. Coordinator routes durable per-toggle/pre-close geometry and failure-progress evidence to #199; those harness files remain outside M4. Do not hardcode a 28-point correction or claim geometry restoration from window-number/preference put-back alone.
+
+- Decision (2026-10-24, coordinator-authorized owner timing revision): The d0c attempt proved the permission errors, warm-process off diagnostic, relaunch recovery and all post-recovery input operands, then exhausted the single shared fifteen-minute budget awaiting the owner's input-alert observation. Replace the hardcoded budget with an explicit configurable owner-window flag, default twenty-five minutes, bounded per-observation waits clipped by the remaining overall budget, and one hard overall cutoff that never restarts per question. Preserve required observations, action/report timestamps, identity/capability and fixture guards, all failure verdicts and no later grant/approval/input stage after expiry. This changes scheduling, not acceptance evidence. Tests-first implementation and independent review precede push/rebooking; the released hold authorizes no further mini work. The first prompt must explicitly say to open ONE blank TextEdit document (File > New); d0b stopped because that exact fixture was unavailable. Original d0b/d0c BLOCKED reports remain unchanged.
+
+- Decision (2026-10-24, OWNER APPROVED, coordinator-observed current-state gate): Replace mandatory owner interval testimony at the two item14 continue gates with a distinct coordinator-observed current-state screenshot check through the coordinator's independent cua-remote channel, never another client of the tested engine. The claim is only no unresolved system alert visible at observedAt. Optional owner interval history remains separate and unknown if absent; it is not inferred from a clear screenshot. Visible, unreadable or ambiguous alerts block until the owner answers and a fresh clear observation permits continuation; coordinator/harness never click alerts. Recheck tested PID/capabilities/fixture after each gate. Raw screenshots stay private; only bounded allowlisted categories/buttons/provenance/timing enter reports. Add `accessibility:open-settings`, preserving unknown requester and not inferring a grant from opening Settings. This deliberately accepts weaker interval evidence to remove owner-response latency as a blocker while preserving safe current-state continuation and all engine assertions. Tests-first implementation, review and PR push precede a new sitting; original BLOCKED attempts are not reclassified. Native first-use prompting policy is unchanged pending separate attribution/design decision.
+
+- Decision (2026-10-24, owner reversal): The owner considered and declined passive ordinary AX/SR checks; existing system requests remain, and the repeated AX alert observed after recovery is accepted as expected system behavior requiring an owner answer (request-origin attribution remains unproven).
+
+### M4 re-cut (2026-11-23, branch `feat/117-m4-recut` from main b1b15484)
+
+M4 is ported by task from `feat/117-m4` (a8c3bc1c, closed PR #211) onto today's main, per the M4/M5 pre-flight
+(`docs/doperpowers/specs/2026-10-18-own-native-engine-m4m5-preflight.md`, revision 3, on `docs/117-progress`), tasks T1
+to T7. Where M4's code met a later decision on main, the later decision won; each such place is named below.
+
+- Decision (T1, install on macOS; amends M4.1): `cua install` builds and signs the macOS engine when it is selected
+  or `--engine` asks, and **stops at a pending build**: it never sends `approve`, launches the engine or captures, so an
+  ordinary or CI install raises no permission or capture prompt, before or after the default flip. Approval stays
+  the explicit `cua engine approve` with the owner at the console (the design's install text and M4.1 already said so;
+  the pre-flight's revision 2 wrongly had install approve, corrected in revision 3 by the design session's ruling). A
+  test proves neither a plain install nor `install --engine` sends `approve`, launches anything, prompts or writes
+  `approved.json`.
+  Rationale: approval makes the prompting requests and a capture, which only the owner can answer.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1).
+- Decision (T1; later decision kept): `--engine` has one meaning on both platforms, "cua's engine is required": on Linux
+  it is #171's flag unchanged; on macOS it builds whatever the setting selects and only with it does a build failure
+  fail the install. #171 refused the flag on macOS; only that refusal is replaced. Other platforms refuse it.
+  `--engine-sign adhoc` and `--sign-wait` (with `CUA_SIGN_WAIT_MS`, read only when the engine step runs) are macOS
+  only, as `cua engine build`'s are. The macOS engine step runs last, after Node (Linux's stays before Node). Without
+  `--engine`, an unreadable setting is a warning (`invalid_setting`) and the install stands (M4 let it throw after the
+  runtime was in place; the design says only `--engine` makes the engine step fail the install). A failed default build
+  is reported on stdout as Linux reports its engine step (M4 wrote a stderr warning). The JSON `engine` field on macOS
+  is `{skipped: 'not_selected'}`, `{status: 'warn', code, message, hint}` or `{status: 'pass', …build, approved}`, with
+  `approved` read without launching anything.
+  Rationale: finding 7 of the pre-flight: `cua install --engine` was Linux's and the macOS selection's sentence named it.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1).
+- Decision (T1): the selection's `engine_not_installed` sentence (`launch.mjs`) and doctor's matching repl-host
+  sentence name both steps: `cua install --engine` builds the engine pending, then `cua engine approve` with the owner
+  at the console. The harness acquisition installs (native-baseline's prepare, the remote endpoint, the selection
+  device, browser parity's capability home) pin `CUA_NATIVE_ENGINE=vendor` on their install step, so an ambient
+  selection or identity never builds an engine under a scratch home. `hosted.sh`, `hosted-gate.sh` (T4) and the
+  acceptance scripts (T3) are left to their tasks.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1).
+- Decision (design ruling 1118; amends T1's first entry and the design's "Install, signing and permissions", where
+  `buildEngine` replaced the approved bundle in place): **a build never takes away a working engine.** `buildEngine`
+  (`cua install` with the engine selected or `--engine`, and `cua engine build` alike) builds and signs into a pending
+  slot beside the approved bundle and leaves the approved bundle, `approved.json` and the running engine untouched; it
+  says "a new build is pending; cua engine approve to use it". `cua engine approve` promotes the pending build: it
+  stops the engine (refusing while another connection is open, as before), moves the approved bundle aside and the
+  pending one into the approved path, relaunches and runs the approve flow; if approval fails after the promote, the
+  previous bundle is restored, so the previous approved engine keeps serving. `doctor` shows both builds. A Mac drops to
+  the vendor's engine only when R4's minimum (T9) rises above its approved build, and the warning names the remedy.
+  Promoting under the same Apple Development identity is expected to keep the three grants with no capture
+  confirmation (U8: a same-path replacement, a staged same-path rebuild and a new-path copy all kept both grants and
+  raised none); approve still watches replayd and asks the operator if a confirmation appears. Nothing in the approval
+  model needed the approved bundle to equal the current source: the service checks the running engine against the
+  bundle on disk (`client.mjs` `check()`), and selection checks the bundle against `approved.json`.
+  Rationale: with in-place rebuilds, every update that changed the engine would de-approve a working Mac and drop it to
+  the vendor's engine until the owner approved; beside-builds leave it one `cua engine approve` away while it keeps
+  serving.
+  Date/Author: 2026-11-23, M4 re-cut controller, on the design session's ruling 1118.
+- Decision (T1's fix wave, building ruling 1118): the pending slot is `<engine directory>/pending/cua Engine.app`, and
+  every build goes there, the first one included (approve then promotes it into the empty approved path). A pending
+  build is the slot's bundle; `pending.json` without one is not a pending build. A successful approve removes the slot
+  and `pending.json`; a slot whose build the approved path already holds is discarded. `buildEngine` returns
+  `pending` and no longer stops anything (`stopped` is gone), so a running or busy engine does not block a build. On a
+  failed or aborted approve the promoted engine is stopped as far as it can be and the previous bundle goes back
+  whatever that stop answers. Doctor's engine row names the pending build without changing its status. The client's
+  remedies: a running engine whose build differs from the approved bundle's is `cua engine stop` (the next request
+  launches the approved bundle); an API-version mismatch is `cua install --engine`, then `cua engine approve`.
+  Consequence for the hosted kits: after a build the bundle is in the slot until approve runs, so T4's gate and H0's
+  step 1 read `bundlePath` from the build's answer or run approve first.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1, fix wave 1).
+- Decision (T1's fix wave 2, the promote made safe without a lock): a build never waits on an approve. Approve writes
+  `promoting.json {pid}` beside the bundle while it promotes; a promote is taken as cut short only when that pid is
+  gone or the marker is absent, and the next approve or build then recovers it by moving files only (the approved
+  build back first). The rollback parks the promoted bundle under the approving process's name, puts the previous
+  bundle back first, and returns the promoted one to the slot only if the slot is still free (a build published
+  meanwhile keeps it). A successful approve removes only an empty slot directory, and `pending.json` only while it
+  still names the promoted build. `cua engine approve` aborts on SIGINT through the same rollback as answering `n`.
+  A build that is already the approved one discards the slot only when the slot holds that same build and identity.
+  When the promoted engine refuses the rollback's stop (busy), the bundles still go back on disk, the answer carries
+  `candidateRunning {pid}` and the owner is told that it still holds the socket and to run `cua engine stop` once idle:
+  restoring the files is not restoring service. The answer's `rollback {previousRestored, pendingAgain,
+  candidateRunning}` replaces `restored`. A recycled pid of a killed approve delays recovery until that pid is gone.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1, fix wave 2).
+- Decision (T1's fix wave 3): `promoting.json` is the approve lock, created exclusively before the slot is read and
+  held until approve returns (with or without a pending build); a second approve is refused
+  (`engine_approve_in_progress`, naming the first's pid: finish it or Ctrl-C it). A marker whose pid is gone is taken
+  over and its promote recovered under the lock; builds never take it. Recovery judges `previous` and the approved
+  path by build and signature, as `approval()` does, so a same-build re-sign under another identity is told apart; an
+  unreadable signature at the approved path is left alone. Accepted risk: two approves restarting within microseconds
+  of each other after a kill -9 could both take over a stale marker.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1, fix wave 3).
+- Decision (T5, the window-frame probe and PR #199): the probe of M4.5-D, M4.6 and M4.8 is ported with its exits,
+  diagnostics and trace (Interfaces, "UserProbe extension"), and PR #199's harness changes (the Finder pin through the
+  probe, one ordered snapshot, recovery records owned by the run) land beside it; #199 is superseded by this branch.
+  Later decisions kept over the old code: the identity is read with main's `axWindowNumber` (#458, the SPI alone)
+  rather than `windowNumber(…, frame: nil)`, which M4's own comment asked to replace; `front-window.swift order`
+  takes `--skip-pid`, and Finder's activation passes over the approved engine's windows (`enginePids()` in the
+  scenes' default io), because #235's cursor panel spans the display at layer 0 for 5 s after a request and #199's
+  unskipped snapshot would refuse it as an obstructing window (a window of any other process still obstructs, tested).
+  Left out: #199's hold-4 runbook and its mini live plan (the venue is closed); the live proof is M5's pilot (T10), and
+  #182 and #183 stay open until the pilot's Finder opens show the pin holding and a clean put-back.
+  Date/Author: 2026-11-23, M4 re-cut controller (T5).
+- Decision (T7, records): M4's own Decision Log and Surprises entries are ported verbatim as the dated block "M4 on
+  feat/117-m4" (oldest-first, as this log runs), with its report and its evidence directory; hold 10's evidence is
+  committed under `docs/doperpowers/research/2026-10-18-own-native-engine/m2b/hold10/`. Every file was read for
+  owner content first. The design session ruled (2026-11-23, with ruling 1124 as precedent) that the bare account path
+  `/Users/new/` is not owner content, since it is already in 4,045 public files on main; the check stands for names,
+  emails, tokens, profile names or ids, non-fixture windows and images, and none were found, so all 47 and 103 files
+  are in. `.gitignore`'s `*.log` rule was overridden (`git add -f`) for hold 10's nine logs only.
+  Date/Author: 2026-11-23, M4 re-cut controller (T7).
+- Decision (T4, the hosted gate): `engine-swift` builds the real release bundle with `cua engine build --sign adhoc
+  --json` under a scratch home and verifies it in the pending slot with `scripts/engine-gate/verify-bundle.mjs`,
+  which reads the slot from the build's answer and prints one line per check (bundle id, `LSUIElement`, an ad hoc
+  signature with hardened runtime and no entitlements, `build` and version matching the source, `pending.json`,
+  nothing approved); it never approves or launches. The gate also runs on changes to `src/runtime/**`, `src/cli.mjs`,
+  `bin/cua.mjs`, `scripts/engine-gate/**` and the package files. `sandbox-live`'s install pins
+  `CUA_NATIVE_ENGINE=vendor`, so it needs and builds no engine and no fingerprint moves; it prints one public
+  `hosted-gate: download proof {...}` line, which the acceptance download-proof evidence is re-recorded from.
+  Date/Author: 2026-11-23, M4 re-cut controller (T4).
+- Decision (T3, `accept-native`; ported from feat/117-m4 at 4297d183, the last commit before M4.10): item 14 is the
+  capability-based fresh-onboarding check in its owner form ("the owner or an operator at the console"); M4.10's
+  coordinator gates over a remote channel are left out with the mini's venue. Item 14 refuses BLOCKED while a build
+  is pending beside the approved engine, before the owner window and again before approve, since approve would
+  promote it. Each cell records `cua/permission`, and `replyFacts` and `doctorFacts` are exported for T3b. #197:
+  missing dependencies refuse (exit 2); a missing opt-in does not, and `optInGaps` names such items on stderr and in
+  the report (`--live-textedit` alone reports item 6 BLOCKED); sitting D's exact selection resolves with its
+  dependencies and without item 9 (tested). The reinstall check follows ruling 1118: with cua's engine pinned it runs
+  install's engine step and fails unless the approved bundle and `approved.json` are untouched and either nothing
+  changed or a pending build sits at the answer's `bundlePath`. M4's `test/accept-inventory.test.mjs` is not ported:
+  it fails on main's tree, where 34 tracked files outside T3's paths carry the account home path. Main's later
+  `mcp-session.mjs` (`detached`) is kept beside M4's `drainStreams`.
+  Date/Author: 2026-11-23, M4 re-cut controller (T3).
+- Decision (T5's fix waves; the harness fails closed): Finder activation and the guarded keys after it read the front
+  window the same way, passing over the approved engine's windows only (`engineFreeFrontmost`), so cua's cursor panel
+  never blocks a teardown key and any other process's window still does. A probe launch is settled only by the
+  journal: its pid and start time, its own final line, or a row a person writes. A launch the five-second scan could
+  not identify and that has not answered is journalled `unidentified` and stays pending, an empty process table is not
+  evidence, and a launch still pending at the bound makes settlement and recovery not-ok with the manual step.
+  `recover` waits for launches before its owned-process snapshot, as `settleProbes` does. Recovery tests a record's
+  presence with `lstat`, as `begin` does, and keeps an unusable record (null, bad JSON, wrong shape, a directory, a
+  dangling link, a Finder baseline without its three preference keys), answering not-ok with the path to fix by hand.
+  The probe's oversized AX list (over 128) reports `limit-exceeded` with its count. Not built: fencing new setup
+  launches at a run's admission, since goldens relaunches probes per scene after each settle; fail-closed settlement
+  covers the false success. The harness keeps strict equality on the pin's read-back (M4's contract: the probe
+  converges within a point, the harness checks the exact frame its lanes pair on).
+  Date/Author: 2026-11-23, M4 re-cut controller (T5, fix waves 1 to 3).
+- Decision (T3's fix waves; acceptance fails closed): item 2 takes the release pin and the engine pin under separate
+  names (`scripts/accept/install-item.mjs`), so `--engine cua` really reinstalls with cua's engine pinned; its judge
+  accepts the build discarding a pending copy only when that copy's real signature matched the approved bundle's (the
+  comparison `buildEngine` makes, through `engine-sign.mjs`; only the boolean is kept). Item 14 approves through
+  `approveEngine({promote: false, expectedBuild})`, which under the approve lock refuses a pending build
+  (`engine_pending_build`) or a bundle of another build (`engine_unexpected_build`) before launching or prompting,
+  and item 14 reports either as BLOCKED; it asks for an explicit console readiness ("ready") before the owner window
+  starts and re-reads the checkout's build, the pending slot, the running engine, its connections and TextEdit after
+  it, before anything stops the engine. TextEdit cleanup signals the recorded pid only after an unfiltered, successful
+  window read of that pid (`front-window.swift windows <pid> --all`, which marks its answer; a failed read or a failed
+  `pgrep` signals nothing). Subprocesses run with a bounded drain (`scripts/accept/bounded-run.mjs`), and output that
+  did not complete fails the item that produced it, so no dependent item can cite it as proof. The structured
+  reporter emits a `# warnings <n>` count, never the text. Two session-test budgets were widened after a failure
+  under load (12 of 12 passes under parallel load after).
+  Date/Author: 2026-11-23, M4 re-cut controller (T3, fix waves 1 and 2).
+- Decision (the re-cut's finishing commits, on the design session's rulings 1126 and R4): the macOS engine's
+  `engineVersion` moves 0.1.0 → 0.2.0 (`Version.swift`, which the bundle, the client and the gate read), once for
+  this pull request, since M4 changes `native/engine/`; no macOS minimum is added and Linux's is untouched; whichever
+  of M4 and M5 merges second moves to the next version at its merge. A failed engine build keeps its first error
+  block (from the first `error:`, `fatal error` or failed assertion, 20 lines) beside the last 12 lines, at most 33
+  lines of 300 characters, so a compiler crash's assertion survives (H0's finding). The branch merged main at
+  a08fa842 (#504's Xcode 27.2 fix, #493) rather than rebasing.
+  Date/Author: 2026-11-23, M4 re-cut controller.
+- Decision (the whole-branch review's fixes; reviewer-high, a08fa842..eaaa47de, cross-task lens): approve claims the
+  pending build into `claimed/` before it waits for the running engine to stop, so a build published during the wait
+  stays pending for its own approval and is never promoted unseen; a claim left by a killed approve is put back by
+  the next approve or build. The approve lock is written whole to a temporary name and hard-linked to
+  `promoting.json`, so no approve reads an empty marker as a dead holder. A successful approve deletes `pending.json`
+  only while its build, identity and `builtAt` are still the claimed publication's. A rollback puts the previous bundle
+  back first; a promoted engine that refused the stop is reported truthfully (one of the restored bundle's build keeps
+  serving new sessions until it stops, since sessions check build, not signature) and recorded in `candidate.json
+  {pid, build}` when it can be, so the next build or approve stops it once idle; otherwise only `cua engine stop` is
+  offered. The input-source restore guard holds behind a probe launch with no outcome in the journal. An engine that
+  rejects this client's API version gets the install-then-approve remedy too. The bundle gate never prints a signer's
+  fingerprint. The README says the automatic Screen Recording recovery arrives with the 0.2.0 engine. Accepted: a
+  busy promoted engine of the same build re-signed under another identity serves new sessions until it stops (no
+  signing-identity check in the client protocol), and a build that rewrites `pending.json` between approve's
+  comparison and its unlink loses that record (the bundle survives; `tech-debt-tracker.md`).
+  Date/Author: 2026-11-23, M4 re-cut controller.
+- Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
+  its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
+  (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the
+  tool result carries it as `cua/permission`. Main had already wrapped the prompting requests in DesktopGate
+  (`gatedAccessibilityPrompt`, `gatedScreenCaptureRequest`), so M4's raw calls were not ported; the owner's decision to
+  retain the system permission requests (M4's last entry) stands. After a screenshot fails `permissionsPending` for
+  Screen Recording, the next screenshot relaunches the engine through the relay when it has no other connection and
+  retries once. Later decisions kept over M4's code: `withMeta` keeps main's replace semantics and carries over only
+  the `permission` marker (M4 merged all earlier meta, which leaves stale keys on a twice-wrapped error); the relaunch
+  respects main's end_task generation (an end_task during the relaunch launches nothing for the ended task, the owed
+  recovery survives it per client, and the new connection gets the session's cursor and device mode through the
+  ordinary path). The service puts input meta only on input methods' errors (M4's guard). `cua engine approve
+  --foreground` makes M4's foreground-launch lead reachable from the command (off by default; only `engine approve`
+  takes it). The client reads `status` once before each connection's first screenshot, one extra round trip per
+  connection. The engine changed (sentences, `meta.permission`), which under R4 moves `engineVersion`; T9 moves it.
+  Date/Author: 2026-11-23, M4 re-cut controller (T2).
+
+- Decision (#500, rulings 1083 and 1131, 2026-11-23, `fix/500-cfnull-label`): a label slot that answers kCFNull is
+  unknown, never absent, and label comparisons are like with like. Found in #481's final review: `AttributeRead.decode`
+  put a null slot in neither `unreadable` nor `absent`, so the record took a null title for an absent one and fell
+  through to the description. Ruling 1083 already says a null AXChildren slot is unread; 1131 extends that to the label.
+  1. The observation. `nullSlot` (AX.swift) puts the name in `AttributeRead.null`, which `ElementData.null` carries
+     (intersected with the attributes kept, as `unreadable` is). `unreadable` itself is untouched, so #405's
+     classification, `valueFailed` and the length reads do not change. `screenshotLabelsUnknown` records the null parts
+     in `labelsUnread` (so a consumer that ignores nulls still fails as it does for a failed read) and in `labelsNull`.
+     Each recorded node counts its null parts in the observation's timings as `nullLabelSlots`. The count is value-free,
+     so the hosted run can measure how often apps answer null.
+  2. The read now. `stalePointLabelRead` answers `.null` for a single read that succeeds with kCFNull.
+  3. Like with like (1131). Each comparison takes the label parts in their usual priority. A part that is null on both
+     sides passes to the next part (`stalePointLabelPair` `.next`). A part null on one side only is unread, and each
+     rule then keeps or refuses as it does for a failed read. So an element whose title is always null is still judged
+     by its description: #298's relabel check and #453's press survive, and Open to Delete in the description refuses.
+     Applied to #298's `relabelledLabel` (its own #433 candidate test included), #431's `recreatedLabelsAgree`, #443's
+     `controlDiffers`, and #453's `overlayLabelsAgree` and `overlayDuplicate`. #442 reads no label. The lenient
+     `stalePointLabelsAgree` (#296's match, #305's label path) ignores unread parts by design and is unchanged.
+  What main did with a one-sided null:
+  - Wrong keeps or presses. #431's twin search ruled out a twin through a null title (A null, B absent, the descriptions
+    differ). #453 pressed a row whose title was null then and absent now, or the reverse. `overlayDuplicate` excused an
+    acting inner text whose title was null beside the row's absent one.
+  - Wrong refusals. `relabelled` compared a description with a title (null then and "Save" now, against "Save
+    changes"). `controlGone` compared descriptions past a title null on one side.
+  Proven offline (`NullLabelSlotTests`, 3; `OverlayClickTests` and `RecreatedIdentityTests`, 3 more). The nulls enter at
+  decode time: the stale-point and overlay fakes now build their record's labels through `AttributeRead.decode` and
+  `ElementData` (`decodedLabels`), and the walk's fake source answers kCFNull slots (`nullAttributes`).
+  - With the two null sources reverted (main's decoding), 17 assertions fail.
+  - With null treated as plain unread (no like with like), the both-null cases fail in all five consumers.
+  1665 swift tests (1 skipped), 0 failures.
+  Not done here: a null AXRole still records "AXUnknown" as read, and a null AXSubrole reads as none in #405's
+  classification. Both stay outside `unreadable`, as ruled.
+  Date/Author: 2026-11-23, cursor235's builder for #500.
+
+- Decision (#500, the review of 435420cc..17930e20, 2026-11-23; amends the entry above): two more cases now take the
+  unread rule.
+  1. (P1) A comparison that passed over every part compared nothing. Before this fix, #453 pressed a row whose title
+     and description were both null, and `overlayDuplicate` took an acting inner text that was null in every part for a
+     repeat of a row that was null in every part. Both now count the parts they actually compared. Having compared none,
+     they answer unread: the row is refused `labelChanged`, and the inner text is no repeat, so it refuses
+     `actionableDescendant`. A title null on both sides with the description compared still presses. The other three
+     comparisons already answered unread here: the twin search agrees (a twin), `controlDiffers` checks the frame only,
+     and `relabelledLabel` finds no label and keeps.
+  2. (P2) `relabelledLabel` can take the two sides' labels from different parts. Each part used is now checked against
+     its counterpart, and a counterpart null on that side alone makes the label unknown, so the point is kept. Example:
+     recorded title absent and description "Edit"; now title "Delete" and description null. The mirror case keeps too.
+     This holds for #298 and for #433's candidate test. A failed counterpart is unchanged from main, so a gained title
+     still refuses.
+  The new assertions fail on 17930e20 (6, in `NullLabelSlotTests` and `OverlayClickTests`). The all-null twin and
+  `controlDiffers` assertions pass on both. 1666 swift tests (1 skipped), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #500.
+
 - Decision (#186, #190, #420, T8a of M5's first wave, rulings 1119 and 1128, 2026-11-23): the Text paragraph is
   amended three ways. #186: a keyed unit counts as entered once its key down is posted, the event the app inserts text
   on, so `inputSourceChanged`'s count is the field's committed prefix; the source check still runs before every event.
@@ -8228,3 +8567,28 @@ What the milestone taught:
 - A guard that reads "running" where it means "has the window I need" fails in exactly the state a closed fixture leaves behind. The windowless TextEdit case reappeared in verify after M3.4 had fixed it in the accept fixture.
 - A runbook's subset selection (`--items 7,8`) silently dropped a dependency (item 1); a selection should carry its dependencies, or refuse.
 - Holds move. The hold moved from 14:15Z to 10:26Z, and the controller was re-merged four times onto M2b's moving head. Keeping a gated controller per M2b head made each move a merge, a gate and a push.
+
+**M4 re-cut (feat/117-m4-recut, from main b1b15484, merged with main at a08fa842; 2026-11-23; nothing run live).** M4
+was ported by task from the closed `feat/117-m4` onto a main that had moved a month: T1 install, T2 the permission
+flow, T3 `accept-native`, T4 the hosted gate's bundle, T5 the window-frame probe with PR #199, T6 docs and the model
+rules, T7 the records and hold 10's evidence, then the engine's 0.2.0 and the whole-branch review. Every task was
+executor-built and reviewed to clean (T1 four rounds, T2 three, T3 three, T4 two, T5 four, T6 two, T7 one); the
+whole-branch review found eight cross-task defects and then three in their fixes, all fixed but two accepted risks.
+Proven here: the focused suites (1,990 tests, 0 failures, at the final head), `swift test` (1,702, 0 failures) and an
+Xcode 27.2 release build after #504. Owed: the hosted `engine-swift` and `sandbox-live` runs on the pull request, the
+download-proof evidence re-anchored after the squash, and acceptance 1 and 8 live, which M5 carries (sitting D, O1).
+
+What changed from M4 as built: install never approves and builds beside the approved engine (ruling 1118), so an
+update never takes away a working engine; `cua engine approve` promotes under an exclusive lock and rolls back; the
+harness and acceptance code fail closed wherever M4 inferred settlement or emptiness from an absent reading.
+
+Lessons:
+- A contract with a concurrent writer (the pending slot, the approve lock, a probe journal) needs its claim taken before
+  the wait, not checked after it: three review rounds each found the next interleaving until the claim moved first.
+- Absence is not evidence. An empty process table, a failed window read and a missing record each authorized an action
+  (a restore, a SIGTERM, a "restored") until the code required a positive reading.
+- Porting by task onto a moved main surfaced the later decisions as review findings (#235's cursor panel, #458's
+  exact window number, main's end_task generation); each port's report naming "main's later decision wins" made them
+  cheap to settle.
+- Parallel executors in one checkout worked when each owned disjoint paths and committed path-limited; one bare
+  `git reset` unstaged everyone's index, so the rule belongs in every brief.

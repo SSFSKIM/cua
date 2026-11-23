@@ -1,0 +1,30 @@
+{
+  "source": "original approval/stop/report files fetched unchanged; independent executor readout below",
+  "controller": "ff19ae8e7d243ea417b76d14a7ff76c4d1b8719a",
+  "start": "2026-10-23T20:32:53Z",
+  "end": "2026-10-23T20:34:05Z",
+  "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "approved": true,
+  "identityMatches": true,
+  "running": false,
+  "connections": 0,
+  "permissions": {
+    "accessibility": true,
+    "screenRecording": true,
+    "inputMonitoring": true
+  },
+  "SecurityAgentAbsent": true,
+  "TextEditAbsent": true,
+  "SkyComputerUseServiceAbsent": true,
+  "engineConfigMtime": 1792384396,
+  "checkoutClean": true,
+  "ownerAttempt": {
+    "start": "2026-10-23T20:16:44.383Z",
+    "end": "2026-10-23T20:31:44.523Z",
+    "status": "BLOCKED",
+    "stage": "manual revocation",
+    "coordinatorReport": "owner never connected; VNC0; no TextEdit/System Settings; no permission action",
+    "sourceController": "517fbfaa32e0b2a1d9db6c4ebbae6e5f2e891737",
+    "sourceBuild": "248035dc1dc4e7eb10a93c67faad9c8c3497b7e4d7884d098433565ae1f3a71d"
+  }
+}

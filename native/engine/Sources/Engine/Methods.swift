@@ -319,19 +319,16 @@ final class Engine: @unchecked Sendable {
     throw EngineError.invalidArguments("app is required")
   }
 
-  /// Fails `permissionsPending` without the Accessibility grant, asking for it once with the system prompt.
+  /// Fails `permissionsPending` without the Accessibility grant, asking for it once with the system prompt
+  /// (Permissions.swift: the by-hand steps and `meta.permission`).
   func requireAccessibility() throws {
-    guard !AXIsProcessTrusted() else { return }
-    _ = gatedAccessibilityPrompt()
-    throw EngineError(.permissionsPending, "cua Engine needs the Accessibility permission: allow \"cua Engine\" in System Settings > Privacy & Security > Accessibility, then retry.")
+    try EnginePermission.accessibility.require(granted: { AXIsProcessTrusted() }, request: { _ = gatedAccessibilityPrompt() })
   }
 
   /// Fails `permissionsPending` without the Screen Recording grant, asking for it with the system prompt; macOS applies
-  /// a new grant only to a relaunched engine.
+  /// a new grant only to a relaunched engine, which the service does on the next screenshot.
   func requireScreenRecording() throws {
-    guard !CGPreflightScreenCaptureAccess() else { return }
-    _ = gatedScreenCaptureRequest()
-    throw EngineError(.permissionsPending, "cua Engine needs the Screen Recording permission: allow \"cua Engine\" in System Settings > Privacy & Security > Screen & System Audio Recording; a relaunch of the engine is pending before screenshots can use it.")
+    try EnginePermission.screenRecording.require(granted: { CGPreflightScreenCaptureAccess() }, request: { _ = gatedScreenCaptureRequest() })
   }
 
 }

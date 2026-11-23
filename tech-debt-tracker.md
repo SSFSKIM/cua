@@ -2,6 +2,7 @@
 
 ## Open
 
+- **maws-selection.mjs's explicit-chrome step expects one `tabs.create` on the Chrome-shaped peer, and reads two** (#493's run, 2026-11-23; at main b1b15484 too). Closing the last tab on a non-cursor peer opens the keep-window tab with a second `tabs.create` (src/chrome/host.mjs; the client-mode contract's item 6 exempts only a cursor peer), so the step FAILs although the selection it proves works. Count the creates before the close, or allow the keep-window one.
 - **On non-gate drop-signals lanes, a drop that lands after a trial's last read counts against the next trial** (task 139, noted). In the counted cells this can only produce a fail, never a pass, so no counted verdict rests on it. Read the counter once more after each trial's release on every lane, as the gate lanes do.
 - **T10's standalone default-mode fixtures do not reject `CUA_LINUX_ENGINE_BIN`** (task 137 review, Minor). The runner rejects it, so the recorded runs are sound. But a fixture run directly with `--selection default` can report `cua (default)` while exercising an override. Reject a nonempty override in that mode, and leave explicit development runs as they are.
 - **T10's report overstates the fallback homes' pinned check** (task 137 review, Minor). The fallback loop installs and shapes each home and records its asset hashes, but doesn't call `pinned_check`, and the runner test asserts that it doesn't. The report should separate the observed hashes from a full pinned check.

@@ -17,7 +17,13 @@
 // hello arrives before its launch (the default is the bare marker maws:): late-start-fails-closed (cua.getBrowser()
 // fails with the vendor's error, never the Chrome-shaped peer); late-start-ready (the peer started: maws ready within
 // 10 s); late-start-default (cua.getBrowser() selects MAWS in the same REPL heap: resolved at selection time, no
-// restart). Exit 0 when every step passed.
+// restart). Then (#493) a third `cua serve`, with the Chrome-shaped peer registered in the home's profile registry as
+// key accept-chrome (only when the home has no registry: the file is written for the run and removed after it; with
+// one, the keyed steps read SKIP): first-use-literal (cua.getBrowser() is MAWS, its documentation names it "MAWS in-app
+// browser (maws)", and createBrowserTab(<its id>, undefined, {visible: true}) opens and closes a tab, the result saying
+// visible was ignored); maws-key (getBrowser({id: "maws"}) and createBrowserTab("maws") on the MAWS instance);
+// chrome-key (the same with accept-chrome, on the Chrome-shaped peer); key-miss (getBrowser({id: "iab"}) fails naming
+// the ids and both keys). Exit 0 when every step passed.
 import {randomUUID} from 'node:crypto';
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
@@ -25,13 +31,17 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {openSession} from './mcp-session.mjs';
 import {parseFeatureResult} from './linux-chrome-features.mjs';
-import {cell} from './maws-features.mjs';
+import {cell, FIRST_USE, FIRST_USE_CHECKS, KEY_MISS, KEY_TAB} from './maws-features.mjs';
+import {resultText} from './mcp-session.mjs';
+import {defaultHome} from '../../src/runtime/layout.mjs';
+import {registryFile} from '../../src/profiles/registry.mjs';
 import {startFakeMawsPeer} from '../../test/helpers/fake-maws-peer.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const js = value => JSON.stringify(value);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const serveFor = backends => openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_BROWSER_BACKENDS: backends}, clientName: 'cua-maws-selection'});
+const CHROME_KEY = 'accept-chrome';
 const entryOf = session => async () => (await session.call('profiles_list', {}, 60_000)).result?.structuredContent?.profiles?.find(p => p.key === 'maws');
 async function readyWithin(mawsEntry, ms) {
   const started = Date.now();
@@ -65,7 +75,7 @@ export async function runSelection() {
   const steps = [];
   const record = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', detail}); return ok; };
   const session = serveFor(`${mawsPath}:${chromePath}`);
-  let late = null;
+  let late = null, keyed = null, registry = null;
   const run = code => session.js(code, 90_000).then(parseFeatureResult);
   const mawsEntry = entryOf(session);
   try {
@@ -97,7 +107,7 @@ export async function runSelection() {
     await late.initialize();
     const runLate = code => late.js(code, 90_000).then(parseFeatureResult);
     const before = await runLate(SELECT_DEFAULT);
-    record('late-start-fails-closed', before.selected === null && /^Browser is not available: maws:$/.test(before.error ?? '') && before.heap !== first.heap, before);
+    record('late-start-fails-closed', before.selected === null && /^Browser is not available: maws:\. Browser ids: /.test(before.error ?? '') && before.heap !== first.heap, before);
     await late.call('end_task', {}, 30_000);
     maws = await startFakeMawsPeer({path: mawsPath});
     const lateBack = await readyWithin(entryOf(late), 10_000);
@@ -105,10 +115,32 @@ export async function runSelection() {
     const after = await runLate(SELECT_DEFAULT);
     record('late-start-default', after.selected === maws.instanceId && after.heap === before.heap, after);
     await late.call('end_task', {}, 30_000);
+
+    // #493: the first-use path and profiles_list keys as browser ids, in a session launched with the key registered.
+    const file = registryFile(defaultHome(process.env));
+    try {
+      writeFileSync(file, `${JSON.stringify({version: 1, profiles: {[CHROME_KEY]: {chromeProfileDirectory: 'cua-acceptance-none', extensionInstanceId: chrome.instanceId, boundAt: new Date().toISOString(), route: 'cua'}}})}\n`, {flag: 'wx', mode: 0o600});
+      registry = file;
+    } catch (error) { if (error.code !== 'EEXIST') throw error; }
+    keyed = serveFor(`${mawsPath}:${chromePath}`);
+    await keyed.initialize();
+    const firstUse = await keyed.js(FIRST_USE(null), 90_000);
+    const used = parseFeatureResult(firstUse);
+    record('first-use-literal', FIRST_USE_CHECKS.firstUse(used, resultText(firstUse), maws.instanceId), used);
+    const mawsKey = parseFeatureResult(await keyed.js(KEY_TAB('maws', null), 90_000));
+    record('maws-key', FIRST_USE_CHECKS.key(mawsKey, maws.instanceId), mawsKey);
+    const skip = name => steps.push({name, status: 'SKIP', detail: `${file} existed, so no key was registered`});
+    if (registry) {
+      const chromeKey = parseFeatureResult(await keyed.js(KEY_TAB(CHROME_KEY, null), 90_000));
+      record('chrome-key', FIRST_USE_CHECKS.key(chromeKey, chrome.instanceId), chromeKey);
+    } else skip('chrome-key');
+    const miss = parseFeatureResult(await keyed.js(KEY_MISS, 90_000));
+    record('key-miss', FIRST_USE_CHECKS.miss(miss, ['maws', ...(registry ? [CHROME_KEY] : [])]), miss);
+    await keyed.call('end_task', {}, 30_000);
   } catch (error) {
     record('harness', false, String(error?.message ?? error));
   } finally {
-    for (const [name, s] of [['serve-exited-cleanly', session], ['late-serve-exited-cleanly', late]]) {
+    for (const [name, s] of [['serve-exited-cleanly', session], ['late-serve-exited-cleanly', late], ['keyed-serve-exited-cleanly', keyed]]) {
       if (!s) continue;
       const exit = await s.terminate();
       record(name, exit.code === 0 && !exit.forced, exit);
@@ -116,8 +148,9 @@ export async function runSelection() {
     await maws.stop();
     await chrome.stop();
     rmSync(dir, {recursive: true, force: true});
+    if (registry) rmSync(registry, {force: true});
   }
-  return {status: steps.every(s => s.status === 'PASS') ? 'PASS' : 'FAIL', steps};
+  return {status: steps.every(s => s.status !== 'FAIL') ? 'PASS' : 'FAIL', steps};
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

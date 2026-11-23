@@ -5,10 +5,21 @@
 // the configured backend through the browser API exactly as an agent inside MAWS would: cua.getBrowser() with no id.
 //
 //   CUA_BROWSER_BACKENDS=<socket> node scripts/accept/maws-features.mjs [--report FILE] [--other <second socket>]
+//     [--chrome-key <profiles_list key>] [--steps <step,step,…>]
+//
+// --steps runs only the named steps (the others read SKIP, "not selected"); the #493 proof is
+// --steps profiles,service,firstUse,mawsKey,chromeKey,keyMiss, which opens only loopback pages, closes every tab it
+// opens and downloads nothing (only the download step writes to ~/Downloads, and it removes its own file).
 //
 // Steps, in order (each PASS, FAIL or SKIP; a step that needs an earlier one's tab is FAIL when that one failed):
 //   profiles   profiles_list lists key maws first, ready, with a maws:… instance
 //   service    the default browser's documentation shows cua's browser service marker (the only service since #79)
+//   firstUse   #493's first-use path, literally: cua.getBrowser() is the maws instance and its documentation names it
+//              "MAWS in-app browser (maws)"; createBrowserTab(<its id>, page, {visible: true}) opens the page, and the
+//              result says visible was ignored; the tab is closed again
+//   mawsKey    createBrowserTab("maws", page) (and getBrowser({id: "maws"})) on the same instance; closed again
+//   chromeKey  with --chrome-key <key>: the same with that profiles_list key, on its Chrome profile (SKIP without)
+//   keyMiss    getBrowser({id: "iab"}) fails naming the browser ids and the keys (maws, and the --chrome-key one)
 //   createTab  cua.getBrowser() selects that instance; createBrowserTab(page) shows the page's document marker
 //   locator    #name filled with "x", #submit clicked: #state reads submitted:x
 //   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset
@@ -39,7 +50,7 @@ import {DOCUMENTATION_CELL, serviceAttestation} from './service-attest.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const RESULT_TAG = 'CUA_FEATURES_RESULT ';
-export const STEPS = ['profiles', 'service', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation'];
+export const STEPS = ['profiles', 'service', 'firstUse', 'mawsKey', 'chromeKey', 'keyMiss', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation'];
 const js = value => JSON.stringify(value);
 
 // One cell: its body runs in an async function; its return value is the step's detail, a throw its error.
@@ -74,6 +85,43 @@ export const CREATE_TAB = page => cell(`
   m.tabId = String(m.tab.id);
   ${poll('m.tab.playwright.locator("#marker").textContent({timeoutMs: 1000})', page.documentMarker, 30000)}
   return {instance: m.instance, profileName: listed?.profileName ?? null, tabId: m.tabId, markerMatches: value === ${js(page.documentMarker)}};`);
+
+// #493's first-use path, as the served instructions and the vendor's own text lead an agent there (each tab it opens is
+// closed again, and listed no more): cua.getBrowser() with no id, its documentation's Name line, then
+// createBrowserTab(<its id>, url, {visible: true}), which a browser without the visibility capability ignores and says
+// so in the result (IGNORED_VISIBLE). `page` null (the fake peers of maws-selection.mjs) opens about:blank.
+export const IGNORED_VISIBLE = 'createBrowserTab ignored visible: true';
+const openAndClose = page => `async (id, options) => {
+    const tab = await cua.createBrowserTab(id, ${page ? js(page.url) : 'undefined'}, options);
+    const tabId = String(tab.id);
+    const marker = ${page ? `await (async () => { ${poll('tab.playwright.locator("#marker").textContent({timeoutMs: 1000})', page.documentMarker, 30000)} return value; })()` : 'null'};
+    await tab.close();
+    const closed = !(await cua.listTabs({browser: id, emit: false})).some(t => String(t.id) === tabId);
+    return {tabId, closed, markerMatches: ${page ? `marker === ${js(page.documentMarker)}` : 'null'}};
+  }`;
+const instanceOf = 'async id => (await cua.listBrowsers({emit: false})).find(b => b.id === id)?.metadata?.extensionInstanceId ?? null';
+export const FIRST_USE = page => cell(`
+  const instanceOf = ${instanceOf};
+  const opened = ${openAndClose(page)};
+  const browser = await cua.getBrowser();
+  const named = (await browser.documentation()).split("\\n").find(line => line.startsWith("- Name: ")) ?? null;
+  return {browserId: browser.browserId, instance: await instanceOf(browser.browserId), named, visible: await opened(browser.browserId, {visible: true})};`);
+// A profiles_list key where a browser id goes: getBrowser({id: key}) and createBrowserTab(key, url).
+export const KEY_TAB = (key, page) => cell(`
+  const instanceOf = ${instanceOf};
+  const opened = ${openAndClose(page)};
+  const browser = await cua.getBrowser({id: ${js(key)}});
+  return {key: ${js(key)}, browserId: browser.browserId, instance: await instanceOf(browser.browserId), tab: await opened(${js(key)})};`);
+// A browser id nothing answers to: the miss names the ids and the keys.
+export const KEY_MISS = cell(`
+  try { await cua.getBrowser({id: "iab"}); return {selected: true}; } catch (error) { return {selected: false, error: String(error?.message ?? error).slice(0, 400)}; }`);
+export const FIRST_USE_CHECKS = {
+  firstUse: (detail, text, instance) => detail.instance === instance && detail.named === '- Name: MAWS in-app browser (maws)' && detail.visible?.closed === true
+    && detail.visible.markerMatches !== false && text.includes(IGNORED_VISIBLE),
+  key: (detail, instance) => detail.instance === instance && detail.tab?.closed === true && detail.tab.markerMatches !== false,
+  miss: (detail, keys) => detail.selected === false && detail.error.startsWith('Browser is not available: iab. Browser ids: ')
+    && keys.every(key => detail.error.includes(`${js(key)}`)),
+};
 
 const created = 'const m = globalThis.__maws; if (!m?.tab) throw new Error("no created tab");';
 
@@ -178,12 +226,13 @@ function startServe(env, page, elicitations) {
 
 const failed = reply => Boolean(reply.timedOut || reply.error || reply.result?.isError);
 
-export async function runHarness({other = null} = {}) {
+export async function runHarness({other = null, chromeKey = null, only = null} = {}) {
   const paths = configuredBackends(process.env);
   if (!paths.length) throw new Error('CUA_BROWSER_BACKENDS names no MAWS socket');
   const steps = {}, details = {}, elicitations = [];
   const record = (name, status, detail) => { steps[name] = status; details[name] = detail ?? null; return status === 'PASS'; };
   const check = async (name, action) => {
+    if (only && !only.includes(name)) return record(name, 'SKIP', 'not selected');
     try { const {ok, detail, skip} = await action(); return record(name, skip ? 'SKIP' : ok ? 'PASS' : 'FAIL', detail); }
     catch (error) { return record(name, 'FAIL', String(error?.message ?? error)); }
   };
@@ -203,6 +252,28 @@ export async function runHarness({other = null} = {}) {
     await check('service', async () => {
       const reply = await session.js(DOCUMENTATION_CELL(), 60_000);
       return failed(reply) ? {ok: false, detail: reply} : serviceAttestation(resultText(reply));
+    });
+    await check('firstUse', async () => {
+      const reply = await session.js(FIRST_USE(page), 120_000);
+      const detail = parseFeatureResult(reply);
+      return {ok: maws !== null && FIRST_USE_CHECKS.firstUse(detail, resultText(reply), maws.extensionInstanceId), detail};
+    });
+    await check('mawsKey', async () => {
+      const detail = await run(KEY_TAB('maws', page), 120_000);
+      return {ok: maws !== null && FIRST_USE_CHECKS.key(detail, maws.extensionInstanceId), detail};
+    });
+    let chromeInstance = null;
+    await check('chromeKey', async () => {
+      if (!chromeKey) return {skip: true, detail: 'no --chrome-key'};
+      const reply = await session.call('profiles_list', {}, 60_000);
+      chromeInstance = reply.result?.structuredContent?.profiles?.find(p => p.key === chromeKey && p.ready)?.extensionInstanceId ?? null;
+      if (!chromeInstance) return {ok: false, detail: {notReady: chromeKey, profiles: reply.result?.structuredContent ?? reply}};
+      const detail = await run(KEY_TAB(chromeKey, page), 120_000);
+      return {ok: FIRST_USE_CHECKS.key(detail, chromeInstance), detail};
+    });
+    await check('keyMiss', async () => {
+      const detail = await run(KEY_MISS);
+      return {ok: FIRST_USE_CHECKS.miss(detail, ['maws', ...(chromeInstance ? [chromeKey] : [])]), detail};
     });
     let createdTab = false;
     const tabOk = await check('createTab', async () => {
@@ -250,12 +321,15 @@ export async function runHarness({other = null} = {}) {
   }
   for (const name of STEPS) steps[name] ??= 'FAIL';
   const summary = Object.fromEntries([...STEPS, ...Object.keys(steps).filter(n => !STEPS.includes(n))].map(n => [n, steps[n]]));
-  return {summary, status: Object.values(summary).includes('FAIL') ? 'FAIL' : 'PASS', backends: paths, other, details, elicitations, pageRequests: page.requests()};
+  return {summary, status: Object.values(summary).includes('FAIL') ? 'FAIL' : 'PASS', backends: paths, other, chromeKey, only, details, elicitations, pageRequests: page.requests()};
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const {values} = parseArgs({options: {report: {type: 'string'}, other: {type: 'string'}}});
-  const report = await runHarness({other: values.other ?? null});
+  const {values} = parseArgs({options: {report: {type: 'string'}, other: {type: 'string'}, 'chrome-key': {type: 'string'}, steps: {type: 'string'}}});
+  const only = values.steps ? values.steps.split(',').map(step => step.trim()).filter(Boolean) : null;
+  const unknown = only?.filter(step => !STEPS.includes(step)) ?? [];
+  if (unknown.length) throw new Error(`unknown --steps: ${unknown.join(', ')} (the steps are ${STEPS.join(', ')})`);
+  const report = await runHarness({other: values.other ?? null, chromeKey: values['chrome-key'] ?? null, only});
   if (values.report) writeFileSync(values.report, `${JSON.stringify(report, null, 1)}\n`);
   console.log(JSON.stringify(report.summary));
   process.exitCode = report.status === 'PASS' ? 0 : 1;

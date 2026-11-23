@@ -311,6 +311,7 @@ If a MacBook lane runs at all, T5 is required: the MacBook's Finder keeps its ge
 | #493 (landed, PR #498, main 435420cc) | It changes the MAWS first-use path and adds cases to both MAWS scripts | It lands before T12 |
 | #500 (P1, ruling 1131) | The screenshot decoder records a CFNull label slot as absent, not unknown (against ruling 1083). On main it gives a wrong press in #453's overlay row identity and a wrong keep in #431's twin search | Its own lane: the null set in the observation, a like-with-like label comparison, a value-free null-slot counter, and one hosted measuring run before its PR |
 | #501 (P1, ruling 1131) | A CFNull AXSubrole classifies as none, so a text field is not presumed secure and a secret can be typed into it as into an ordinary field (#405 fails open); a CFNull AXRole records as known | Its own lane after #500: a null subrole is unread, an unread subrole on a text field presumes secure, and a null role records as unknown |
+| #502 (P1, ruling 1132) | `swift build -c release` of the engine crashes the compiler on Xcode 27.2 (CopyPropagation, `popUpAwaitOpen`), so `cua engine build` and `cua install --engine` fail on the owner's MacBook | O1 cannot start without it. A fix on its own lane: a restructure in preference to `@_optimize(none)` |
 | #182, #183 with PR #199 | The Finder pin and the recovery record | T5 |
 
 **Who closes each gate.** A green matrix or a green MAWS session does not close a specific report, so each gate has
@@ -333,6 +334,7 @@ an executor, a witness and a closing condition. Each disposition is one file und
 | #493 | its own lane | Its pull request | Landed before T12 (done: PR #498, main 435420cc) |
 | #500 | its own lane | Observation-side unit tests per consumer, which fail on main where main is wrong; the null-slot counter and #453's qual cells in one hosted run on CfT, Electron and Safari | Landed on main; the hosted run reports the null-slot rate, and #453's rows do not regress, or the design session rules on a regression |
 | #501 | its own lane, after #500 | Unit tests injecting CFNull at decode for the subrole and the role, which fail on main | Landed on main |
+| #502 | its own lane | A release build of the engine on the MacBook's Xcode 27.2, run by the seat (no TCC, no owner window), and `swift test` green; plus a hosted release build on Xcode 27 if the runner image offers one, otherwise a tech-debt line naming the local check as the stand-in | Landed on main before O1 |
 | #182, #183 | T5 | PR #199 with the frame probe | Landed with M4 |
 
 **Do not gate.**

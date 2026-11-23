@@ -18,7 +18,10 @@
 // A linux pin names the vendor's deb (`archive.format: "deb"`): the system `ar` takes its data.tar.xz member out and
 // `tar` unpacks that, both checked for (with `xz`, which tar runs) before anything is downloaded, so a machine without
 // them is refused with missing_tool and the package to install. A component may be a file.
-// A linux pin lists nothing to signature-check; the archive hash is its trust root.
+// A linux pin lists nothing to signature-check; the archive hash is its trust root. On Linux the vendor's tree is a lane
+// of `cua install` kept for CUA_NATIVE_ENGINE=vendor (#171 M6a, src/runtime/linux-install.mjs), installed with
+// `activate: false`: the pointer names cua's own runtime there, and this install leaves it as it was. A runtimes/ that is
+// not a real directory blocks every release under it, and is refused as what stands in the way.
 //
 // The archive's Chrome plugin (OpenAI's host for the ChatGPT extension) is not installed: #79 removed that route. A
 // release installed before keeps the chrome-plugin directory it was given; nothing reads or launches it.
@@ -47,7 +50,8 @@ import {Readable} from 'node:stream';
 import {join} from 'node:path';
 import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
-import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
+import {findPin, loadPins, locateRuntime, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
+import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
 import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
@@ -64,10 +68,12 @@ function run(command, args, options = {}) {
   });
 }
 
-export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress, tools = name => findTool(name)}) {
+export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress, tools = name => findTool(name), activate: makeActive = true}) {
   assertHostSupports(manifest, host);
   const real = realHome(home, {create: true});
   const layout = homeLayout(real);
+  // A runtimes/ that is a file or a link blocks every release under it: named as what stands in the way.
+  if (existsAs(layout.runtimes) && !isRealDirectory(layout.runtimes)) occupied(layout.runtimes);
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);
@@ -82,7 +88,7 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
       if (!(error instanceof CuaError)) throw error;
       fail('installed_release_invalid', `installed release ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: recoveryHint(target, manifest.platform), cause: error});
     }
-    activate(real, manifest.release);
+    if (makeActive) activate(real, manifest.release);
     return {release: manifest.release, root: target, record: existing, changed: false};
   }
   assertTargetFree(target);
@@ -103,7 +109,7 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
     writeFileSync(join(tree, RECORD_FILE), JSON.stringify(fresh, null, 2) + '\n', {mode: 0o644});
 
     moveIntoPlace(tree, target);
-    activate(real, manifest.release);
+    if (makeActive) activate(real, manifest.release);
     return {release: manifest.release, root: target, record: fresh, changed: true};
   });
 }
@@ -147,7 +153,12 @@ async function extractDeb(archive, {stage, extracted, unpackers}) {
 }
 
 // Select an installed release: it must have a checked-in pin, an install record matching that pin, and still verify.
-export async function useRuntime({home, release, pins = loadPins(), verifySignatures = verifyCodeSignatures, host}) {
+// On Linux (#171 M6a; the pre-flight's §4.3) the one release is this cua's own runtime, whose name the record derives:
+// its module tree is verified again in full and the pointer names it. The pointer selects nothing there (resolution
+// never reads it), so this only records it. A vendor release is refused: CUA_NATIVE_ENGINE=vendor is the way to its
+// engine.
+export async function useRuntime({home, release, pins = loadPins(), verifySignatures = verifyCodeSignatures, host = {platform: process.platform, arch: process.arch}}) {
+  if (host.platform === 'linux') return useOwnLinuxRuntime({home, release, pins, host});
   const pin = findPin(pins, release);
   assertHostSupports(pin, host);
   const real = realHome(home);
@@ -159,6 +170,19 @@ export async function useRuntime({home, release, pins = loadPins(), verifySignat
   return {release: pin.release, root};
 }
 
+function useOwnLinuxRuntime({home, release, pins, host}) {
+  if (pins.some(pin => pin.platform === 'linux' && pin.release === release))
+    fail('release_refused', `${release} is the vendor's release: on Linux cua runs its own runtime, and the vendor's tree serves only the vendor's engine`,
+      {hint: 'set CUA_NATIVE_ENGINE=vendor (or "engine": "vendor" in ~/.config/cua/engine.json) to run computer sessions on the vendor\'s engine'});
+  const runtime = locateRuntime({home, release, host});
+  try { verifyModuleTree(runtime.root, runtime.record); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    fail(error.code, error.message, {hint: moduleRecoveryHint(runtime.root, runtime.release), cause: error});
+  }
+  activate(runtime.home, runtime.release);
+  return {release: runtime.release, root: runtime.root};
+}
+
 // The install record of a release tree this tool installed, or null when nothing is at the target. Ownership needs
 // a real directory (not a symlink) holding a record valid for this pin; anything else present is not ours.
 function existingRelease(target, manifest) {
@@ -168,6 +192,10 @@ function existingRelease(target, manifest) {
 
 function occupied(target) {
   return fail('target_occupied', `${target} exists and was not installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
+}
+
+function existsAs(path) {
+  try { lstatSync(path); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
 export function assertTargetFree(target) {

@@ -312,6 +312,27 @@ test('a failed swift build, or no swift at all, fails visibly and changes nothin
   assert.ok(!existsSync(join(w.dir, 'pending.json')));
 });
 
+// Design ruling 1148: a failed build is recorded beside approved.json (build-failed.json, engine-build-failure.mjs) so a
+// session and doctor can say why nothing awaits approve; a build that succeeds, or an approve, removes the record.
+test('a failed build records its cause beside approved.json, with no identity; the next build that succeeds removes it', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.state.swift = () => ({code: -1, stdout: '', stderr: 'spawn swift ENOENT', error: 'ENOENT'});
+  await assert.rejects(buildEngine(w.deps), {code: 'engine_build_failed'});
+  assert.deepEqual(w.json('build-failed.json'), {code: 'engine_build_failed', cause: 'Xcode is not installed (no swift)', failedAt: new Date(0).toISOString()});
+  w.state.swift = () => ({code: 1, stdout: '', stderr: `${join(w.home, 'src', 'Foo.swift')}:1:1: error: cannot find type 'Bar' in scope\n`});
+  await assert.rejects(buildEngine(w.deps), {code: 'engine_build_failed'});
+  assert.equal(w.json('build-failed.json').cause, 'compile error (swift build exit 1): cannot find type \'Bar\' in scope');
+  noIdentity(w.text('build-failed.json'), 'the record');
+  assert.equal(w.plistBuild(), OLD_BUILD, 'the approved bundle keeps serving');
+  delete w.state.swift;
+  await buildEngine(w.deps);
+  assert.ok(!existsSync(join(w.dir, 'build-failed.json')), 'a successful build supersedes the failure');
+  const missing = world(t, {identity: null});
+  await assert.rejects(buildEngine(missing.deps), {code: 'engine_identity_missing'});
+  assert.equal(missing.json('build-failed.json').cause, 'no signing identity is configured');
+});
+
 test('a failed swift build keeps the first error block as well as the tail, so a compiler crash\'s assertion survives a long stack dump', async t => {
   const w = world(t);
   const stack = Array.from({length: 200}, (_, i) => `${i}  swift-frontend  0x${i.toString(16).padStart(8, '0')} frame ${i}`);
@@ -818,10 +839,12 @@ test('approve promotes the pending build: the engine stopped, the approved bundl
 test('approve with a pending build and no approved bundle promotes it into the empty approved path', async t => {
   const w = world(t);
   w.placePending();
+  writeFileSync(join(w.dir, 'build-failed.json'), JSON.stringify({code: 'engine_build_failed', cause: 'an older failure', failedAt: '2026-11-22T00:00:00.000Z'}));
   const result = await approveEngine(w.deps);
   assert.equal(result.approved, true);
   assert.equal(w.plistBuild(), NEW_BUILD);
   assert.ok(!existsSync(join(w.dir, 'previous')));
+  assert.ok(!existsSync(join(w.dir, 'build-failed.json')), 'an approve supersedes a failed build\'s record (ruling 1148)');
 });
 
 // A grant that stays false with no one at the terminal (thrown), the operator's "n" (returned), and a capture that

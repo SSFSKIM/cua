@@ -27,6 +27,7 @@ import {CuaError, fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
 import {BUNDLE_ID, BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
 import {configuredIdentity, identityMatches, lastLines, readEngineSettings, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
+import {clearBuildFailure, recordBuildFailure} from './engine-build-failure.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
 import {bundleIdentity, plistString} from '../services/engine/client.mjs';
 
@@ -367,9 +368,25 @@ export function buildFailureDetail(text) {
 // 'adhoc', or undefined for the configured identity (an identity string is taken as given); `signOptions` reaches
 // signBundle (its GUI-session job's uid, node, temp directory and bound).
 // -> {bundlePath (where the build is), engineVersion, build, signature: {kind, identityMatches}, changed, pending}:
-// `pending` true when the build waits in the slot for `cua engine approve`.
-export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SOURCE, signOptions = {}, ...deps} = {}) {
+// `pending` true when the build waits in the slot for `cua engine approve`. Its outcome is recorded for the notice of a
+// Mac with no approved engine (design ruling 1148, engine-build-failure.mjs): a failure as build-failed.json beside
+// approved.json, its cause one short line with no identity or home path; a success removes that record.
+export async function buildEngine({identity, scratchPath, sourceRoot, signOptions, ...deps} = {}) {
   const ctx = context(deps);
+  try {
+    const built = await buildPending(ctx, {identity, scratchPath, sourceRoot, signOptions});
+    clearBuildFailure({dir: ctx.paths.dir});
+    return built;
+  } catch (error) {
+    // The identity the build signed with, given or configured, is masked in the record's cause.
+    let signer = identity && identity !== 'adhoc' ? identity : null;
+    try { signer ??= configuredIdentity({env: ctx.env}); } catch { /* unreadable settings: the record masks SHA-1s and certificate names alone */ }
+    recordBuildFailure({dir: ctx.paths.dir, error, identity: signer, home: ctx.env.HOME || homedir(), now: ctx.now});
+    throw error;
+  }
+}
+
+async function buildPending(ctx, {identity, scratchPath, sourceRoot = ENGINE_SOURCE, signOptions = {}}) {
   const {paths, log} = ctx;
   const adhoc = identity === 'adhoc';
   const wanted = adhoc ? null : identity ?? resolveSigningIdentity({env: ctx.env}).identity;
@@ -863,6 +880,7 @@ async function approveAtPath(ctx, {foreground, expectedBuild = null}) {
   interrupted(ctx);
   const approvedAt = new Date(ctx.now()).toISOString();
   writeRecord(paths.approved, {build: onDisk.build, identity, approvedAt});
+  clearBuildFailure({dir: paths.dir});
   log(`approved cua's engine ${shortBuild(onDisk.build)} (approved.json written)`);
   return {approved: true, grants: final, build: onDisk.build, approvedAt, captureConfirmation};
 }

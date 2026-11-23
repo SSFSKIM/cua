@@ -1,0 +1,85 @@
+name: probe-538-s
+# #538's hosted qualification probe of S, the key-focus-only state (scripts/probe-538/probe.mjs; not a sitting of record,
+# no M5 verdict). One job per lane on a GitHub-hosted macos-latest runner: `fix` is this branch (fix/538-key-focus-refuse
+# merged into feat/117-m5); `base` is this branch with native/, src/ and .claude-plugin/ put back to feat/117-m5's
+# ccfad042d, which carries main 6baf3e36's delivery path. Each lane runs M5's hosted setup (its one guarded TCC writer,
+# RUNNER_ENVIRONMENT=github-hosted, ruling 1111; replayd's store never written, no alert answered, ruling 1141), building
+# its own engine, then the probe. Dispatch only: a push of this file just registers it on its branch.
+on:
+  push:
+    branches: ['probe/538-s']
+    paths: ['.github/workflows/probe-538-s.yml']
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: fix, base, or both
+        type: choice
+        options: [both, fix, base]
+        default: both
+      rounds:
+        description: Rounds of S per variant
+        type: string
+        default: '4'
+permissions:
+  contents: read
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; dispatch it.'
+  probe:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(inputs.lanes == 'both' && '["fix","base"]' || format('["{0}"]', inputs.lanes)) }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      LANE: ${{ matrix.lane }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: The lane's product sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          git log -1 --format='probe %H %s'
+          if [ "$LANE" = base ]; then
+            git checkout ccfad042d431f4d7a40c50629de7a24501e03539 -- native src .claude-plugin
+            git status --short -- native src .claude-plugin | head -40
+          fi
+          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion lane=$LANE"
+          npm ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/p538-out"
+      - name: Pin the O0 source for the TCC writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs pin-decision --env-file "$GITHUB_ENV" | tee "$RUNNER_TEMP/p538-out/decision-pin.txt"
+      - name: The runner's setup (loopback device, install, engine built here, TCC rows, relaunch, two-pass approve, record)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs setup --report "$RUNNER_TEMP/p538-out/setup.json"
+      - name: The probe
+        shell: bash
+        env:
+          ROUNDS: ${{ inputs.rounds }}
+        run: |
+          set -uo pipefail
+          node scripts/probe-538/probe.mjs --out "$RUNNER_TEMP/p538-out/probe" --lane "$LANE" --rounds "$ROUNDS"
+      - if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-538-s-${{ matrix.lane }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/p538-out
+          retention-days: 14
+          if-no-files-found: warn

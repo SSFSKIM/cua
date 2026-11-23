@@ -9,6 +9,8 @@
 //   --cua-fixture-bounds=x,y,w,h    the window's frame in points; else the default below
 //   --cua-fixture-page=pointerdown  the page loaded with ?page=pointerdown, under which the renderer adds the
 //                                   pointerdown-only button (ruling 1168; the native matrix's run alone passes it)
+//   --cua-fixture-probe538=<dir>    #538's hosted probe's control channel (./probe538.js; scripts/probe-538/ alone
+//                                   passes it)
 //
 // The side-effect counters (./counters.js) live in the user-data directory as cua-fixture-counters.json: the app's
 // activation events and the window's focus events counted here, the page's and the text field's reported by the
@@ -70,5 +72,7 @@ app.whenReady().then(() => {
   window.once('ready-to-show', () => window.showInactive());
   const pointerdown = argument('cua-fixture-page') === 'pointerdown';
   window.loadFile(path.join(__dirname, 'index.html'), pointerdown ? {query: {page: 'pointerdown'}} : {});
+  const probe538 = argument('cua-fixture-probe538');
+  if (probe538 && path.isAbsolute(probe538)) require('./probe538.js').start(probe538, window);
 });
 app.on('window-all-closed', () => app.quit());

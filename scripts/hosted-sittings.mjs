@@ -8,6 +8,10 @@
 //       The runner's setup in H0's order (scripts/hosted-sittings/setup.mjs): the loopback device, the harness checkout,
 //       the run's install and engine, the system-database TCC rows, the relaunch and the two-pass approve, the record.
 //       Exit 0 ready, 1 a step failed, 2 refused.
+//   node scripts/hosted-sittings.mjs pin-decision [--commit <full SHA>] [--env-file <file>]
+//       The O0 source pinned for the TCC writer (scripts/hosted-sittings/pin.mjs): the design spec at the commit (the
+//       entry's own by default) written to a run-owned file; prints CUA_HOSTED_DECISION_FILE and _SHA, and appends them
+//       to --env-file ($GITHUB_ENV in the workflow). Exit 0, 1 on a failed fetch, 2 refused.
 //   node scripts/hosted-sittings.mjs approve
 //       The hosted approval alone, under HOME (CUA_HOSTED_APPROVE, which sitting E's approved lane waits on). Prints its
 //       report. Exit 0 approved by the second pass, 3 not approved, 2 refused.
@@ -22,7 +26,7 @@
 //   node scripts/hosted-sittings.mjs focus-timing --approved-engine <bundle> --out <file>   the focus probe's cost
 //   node scripts/hosted-sittings.mjs textedit up --file <path> | down                  sitting D's scratch document
 import {spawnSync} from 'node:child_process';
-import {copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -35,6 +39,7 @@ import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs'
 import {assertGithubHosted, readRunnerRecord} from './hosted-sittings/runner.mjs';
 import {execStep, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
+import {pinDecision} from './hosted-sittings/pin.mjs';
 
 const REPO = resolve(dirname(new URL(import.meta.url).pathname), '..');
 class Usage extends Error {}
@@ -106,7 +111,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'approved-engine': {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}}});
+    report: {type: 'string'}, 'approved-engine': {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}}});
   switch (command) {
     case 'setup': {
       const report = await hostedSetup({checkout: REPO, commit: commitOf(), engineArchive: values['engine-archive'] ? resolve(values['engine-archive']) : null, home: homedir(),
@@ -114,6 +119,13 @@ async function main(argv) {
       if (values.report) writeJson(resolve(values.report), report);
       process.stdout.write(json({ok: report.ok, steps: report.steps, approved: report.approved, approve: report.approve?.summary ?? null}));
       return report.ok ? 0 : 1;
+    }
+    case 'pin-decision': {
+      const pin = pinDecision(values.commit ? {commit: values.commit} : {});
+      const lines = Object.entries(pin.env).map(([key, value]) => `${key}=${value}\n`).join('');
+      if (values['env-file']) appendFileSync(values['env-file'], lines);
+      process.stdout.write(lines);
+      return 0;
     }
     case 'approve': {
       // Never exit 1 here: sitting E's approved lane expects its judge's FAIL (exit 1) before the flip, and its script
@@ -145,7 +157,7 @@ async function main(argv) {
       return timing.answered ? 0 : 1;
     }
     case 'textedit': return textedit(positionals[0], values);
-    default: usage('setup | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down (see this file\'s header)');
+    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down (see this file\'s header)');
   }
   return 2;
 }

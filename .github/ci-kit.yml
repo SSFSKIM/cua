@@ -283,7 +283,8 @@ gates:
   # too, by its facts, the ad-hoc signature's warning expected (doctor launches and stops it). CUA_HOSTED_APPROVE is
   # T10b′'s hosted approval (scripts/hosted-sittings.mjs approve: the engine's TCC rows, the relaunch, two passes; exit 3
   # when it could not approve, never the judge's FAIL), which needs M4's hosted bundle build: run after M4 merges. The
-  # same lane runs in sitting E's job of .github/workflows/m5-sittings.yml. Dispatch only:
+  # same lane runs in sitting E's job of .github/workflows/m5-sittings.yml. The TCC writer reads the owner's O0 entry
+  # only from the design spec pinned first (`pin-decision`: the entry's own commit, fetched here). Dispatch only:
   # `ci-gate <sha> --gates default-selection-approved`.
   - name: default-selection-approved
     on: [dispatch]
@@ -291,5 +292,9 @@ gates:
     timeout: 30
     env:
       CUA_HOSTED_APPROVE: node scripts/hosted-sittings.mjs approve
-    run: sh scripts/accept/macos-default-selection-hosted.sh
+    run: |
+      set -eu
+      node scripts/hosted-sittings.mjs pin-decision --env-file "$RUNNER_TEMP/decision.env"
+      set -a; . "$RUNNER_TEMP/decision.env"; set +a
+      sh scripts/accept/macos-default-selection-hosted.sh
     artifacts: ["default-selection-approved-out/**"]

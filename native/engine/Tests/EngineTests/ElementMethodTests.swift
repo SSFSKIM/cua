@@ -426,6 +426,51 @@ final class ValueSettingTests: XCTestCase {
     XCTAssertEqual(meta.inputRoute, .action, "the method's own route")
   }
 
+  /// #538, ruling 1174: set_value's focus fallback click refused in the key-focus-only state (another app frontmost,
+  /// the target holding key focus) and carried by the field's own press (Gecko's, #315) succeeds, and the refusal's
+  /// record rides in the method's meta beside its own route: the chain focusFieldIfNeeded, focusFallbackClick,
+  /// focusingClick and deliverClick over the guard seam.
+  func testAFocusClickRefusedInTheKeyFocusOnlyStateAndCarriedByThePressKeepsItsRecord() throws {
+    let target: pid_t = 990_001, user: pid_t = 990_002
+    let seam = GuardSeam(frontmost: user)
+    seam.keyFocus = target
+    let ax = field(focused: false)
+    ax.values[1]?[kAXValueAttribute] = "" as CFString
+    ax.settable[1]?.insert(kAXValueAttribute)
+    var ops = ax.ops
+    let write = ops.write
+    ops.write = { element, name, value in name == kAXFocusedAttribute ? .success : write(element, name, value) }  // focus never takes
+    let frame = CGRect(x: 80, y: 60, width: 610, height: 860)
+    var pointer = PointerTarget(view: .webArea, app: "Firefox", engine: .gecko)
+    var pressed = 0
+    pointer.elementRoute = { meta in
+      pressed += 1
+      try deliverAction("AXPress", route: .action, perform: { _ in .success }, meta: &meta)
+    }
+    var meta = meta(), marks = 0
+    try setElementValue("hello", on: el(1), role: kAXTextFieldRole, ax: ops, meta: &meta,
+                        focus: { meta in
+                          try focusFieldIfNeeded(el(1), bundleIdentifier: nil, ax: ops) {
+                            try focusFallbackClick(el(1), ax: ops) {
+                              try focusingClick(&meta, acted: { marks += 1 }) { click in
+                                try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: frame, windowID: 41, pid: target),
+                                                 route: .activation, button: .left, count: 1,
+                                                 activation: FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame,
+                                                                            windowID: 41, system: seam.system),
+                                                 pointer: pointer, targetActive: { false }, post: seam.system.post, meta: &click)
+                              }
+                            }
+                          }
+                        },
+                        checkInFlight: {}, acted: { marks += 1 })
+    XCTAssertEqual(ax.writes.last?.value as? String, "hello", "the value written")
+    XCTAssertEqual(pressed, 1, "the press carried the focusing click")
+    XCTAssertEqual(seam.posts.count, 0, "nothing posted")
+    XCTAssertEqual(meta.inputRoute, .action, "the method's own route")
+    XCTAssertEqual(meta.wire["pointerRefusal"] as? NSDictionary,
+                   ["reason": "keyFocusOnly", "frontmostPid": Int(user), "keyFocusPid": Int(target), "keyFocusIsTarget": true] as NSDictionary)
+  }
+
   func testAUserEventBeforeTheFocusWriteMovesNoFocus() {
     var clicks = 0
     let ax = field(focused: false)

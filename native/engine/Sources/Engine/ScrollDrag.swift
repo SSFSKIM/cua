@@ -179,7 +179,7 @@ extension Engine {
       let activation = route == .activation
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
       // Where the drag's own down goes (#282): in shared mode one starting in a Chromium or (#315) Gecko web area is refused, nothing posted.
-      var pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
+      var pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse(in: app)
       // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops), #316's
       // new-window rule and #452's window of the app's over the point included, as a click's.
       let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, windowID: windowID, hit: hit,

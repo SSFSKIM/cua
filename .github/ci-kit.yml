@@ -13,11 +13,13 @@ setup:
 gates:
   # npm test, then the Linux engine harness's suite again through its cleanup check (test/linux-engine-diff/
   # suite-check.mjs: no process or scratch directory of a run left behind; #171 task 47). npm test keeps its plain
-  # form, which scripts/repl-parity/coverage.mjs reads.
+  # form, which scripts/repl-parity/coverage.mjs reads. The engine's Swift unit suite (test/native-engine-units.test.mjs)
+  # skips itself when the run also selected engine-swift (CI_KIT_GATES), which runs the same suite.
   - name: test
     run: npm test && npm run test:linux-engine-diff
     lane: hosted-macos
-    timeout: 20
+    timeout: 30
+    env: {CUA_ENGINE_UNITS_GATE: engine-swift}
   - name: plugin
     lane: hosted-macos
     timeout: 15
@@ -50,7 +52,8 @@ gates:
       swift test --package-path native/engine --scratch-path "$ENGINE_HOME/Library/Application Support/cua/engine/build"
       swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-control" -Xswiftc -DCUA_CONTROL_NO_INERT_CLICK
     # The engine's source, and the Node that builds, signs and checks its bundle: the engine commands, the CLI around
-    # them and the plist writer the assembler imports.
+    # them and the plist writer the assembler imports. The `test` gate leaves the unit suite to this gate whenever a run
+    # selects both: keep this gate's `swift test` unfiltered and its image the same as `test`'s.
     paths:
       - "native/engine/**"
       - "src/runtime/**"

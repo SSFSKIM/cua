@@ -616,6 +616,24 @@ test('#453: an overlay row\'s click rides as cua/overlayClick, carried or with #
   assert.deepEqual(meta['cua/overlayClick'], refused);
 });
 
+test('#538: a pointer refused in the key-focus-only state rides as cua/pointerRefusal, with its sentence and name, reset by the next call', async t => {
+  const record = {reason: 'keyFocusOnly', frontmostPid: 501, keyFocusPid: 777, keyFocusIsTarget: true};
+  const sentence = 'Another app is in front of TextEdit while TextEdit holds keyboard focus, so nothing was sent: a click sent now could bring TextEdit\'s window over the person\'s. Act on TextEdit through its elements\' own actions (performSecondaryAction, setValue) or keys (typeText, pressKey), or ask the person to bring TextEdit to the front.';
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    throw new EngineFailure(-10005, sentence, 'backgroundClickRefused', {meta: {...INPUT_META, startedAt: null, endedAt: null, pointerRefusal: record}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.click([300, 120])), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${sentence}`);
+    assert.equal(error.errorName, 'backgroundClickRefused');
+    return true;
+  });
+  assert.deepEqual(meta['cua/pointerRefusal'], record);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/pointerRefusal'], null, 'reset by the next call');
+});
+
 test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reaches the tool result\'s text, and scrollUnconfirmed and the out-of-screenshot refusal reach the model with their sentence, name and meta', async t => {
   const moved = {container: 'scrollArea', outcome: 'moved', moved: 120, by: 'content', polls: 3, readMs: 4.1, ms: 49.2, walked: 61};
   const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, endBefore: true, barBefore: 1, polls: 0, readMs: 3, ms: 3.2, walked: 40};

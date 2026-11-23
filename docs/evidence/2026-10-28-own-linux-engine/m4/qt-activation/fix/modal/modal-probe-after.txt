@@ -1,0 +1,104 @@
+qt5 [none]: dialog 6291472 'WM_TRANSIENT_FOR(WINDOW): window id # 0x600006\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 6291462; front 2097155
+qt5 [none] control 1: nothing sent, focus 2097155 active none (front 2097155)
+qt5 [none] control 2: nothing sent, focus 2097155 active none (front 2097155)
+qt5 [none] control 3: nothing sent, focus 2097155 active none (front 2097155)
+qt5 [none] press_key 1: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt5 [none] press_key 2: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt5 [none] press_key 3: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt5 [none] press_key 4: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt5 [none] press_key 5: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt5 [none]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+qt6 [none]: dialog 6291472 'WM_TRANSIENT_FOR(WINDOW): window id # 0x600006\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 6291462; front 2097155
+qt6 [none] control 1: nothing sent, focus 2097155 active none (front 2097155)
+qt6 [none] control 2: nothing sent, focus 2097155 active none (front 2097155)
+qt6 [none] control 3: nothing sent, focus 2097155 active none (front 2097155)
+qt6 [none] press_key 1: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt6 [none] press_key 2: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt6 [none] press_key 3: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt6 [none] press_key 4: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt6 [none] press_key 5: before focus/active ('2097155', 'none'), answer ok=False qt-modal.py window 6291462 is blocked by its modal dialog, window 6291472, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('2097155', 'none')
+qt6 [none]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+gtk3 [none]: dialog 6291515 'WM_TRANSIENT_FOR(WINDOW): window id # 0x600003\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 6291459; front 2097155
+gtk3 [none] control 1: nothing sent, focus 2097155 active none (front 2097155)
+gtk3 [none] control 2: nothing sent, focus 2097155 active none (front 2097155)
+gtk3 [none] control 3: nothing sent, focus 2097155 active none (front 2097155)
+gtk3 [none] press_key 1: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk3 [none] press_key 2: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk3 [none] press_key 3: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk3 [none] press_key 4: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk3 [none] press_key 5: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk3 [none]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+gtk4 [none]: dialog 6291464 'WM_TRANSIENT_FOR(WINDOW): window id # 0x600004\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 6291460; front 2097155
+gtk4 [none] control 1: nothing sent, focus 2097155 active none (front 2097155)
+gtk4 [none] control 2: nothing sent, focus 2097155 active none (front 2097155)
+gtk4 [none] control 3: nothing sent, focus 2097155 active none (front 2097155)
+gtk4 [none] click 1: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk4 [none] click 2: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk4 [none] click 3: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk4 [none] click 4: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk4 [none] click 5: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+gtk4 [none]: the X focus or the active window moved off the front window after 0 of 5 background clicks to the blocked main window
+chrome [none]: dialog 8388615 'WM_TRANSIENT_FOR(WINDOW): window id # 0x600002\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 6291458; front 2097155
+chrome [none] control 1: nothing sent, focus 2097155 active none (front 2097155)
+chrome [none] control 2: nothing sent, focus 2097155 active none (front 2097155)
+chrome [none] control 3: nothing sent, focus 2097155 active none (front 2097155)
+chrome [none] press_key 1: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 2: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 3: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 4: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 5: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+qt5 [openbox]: dialog 8388624 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800006\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388614; front 4194307
+qt5 [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qt5 [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qt5 [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qt5 [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt5 [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt5 [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt5 [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt5 [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt5 [openbox]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+qt6 [openbox]: dialog 8388624 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800006\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388614; front 4194307
+qt6 [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qt6 [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qt6 [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qt6 [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt6 [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt6 [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt6 [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt6 [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=False qt-modal.py window 8388614 is blocked by its modal dialog, window 8388624, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop, after focus/active ('4194307', '4194307')
+qt6 [openbox]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+gtk3 [openbox]: dialog 8388681 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800003\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388611; front 4194307
+gtk3 [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+gtk3 [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+gtk3 [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+gtk3 [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk3 [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk3 [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk3 [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk3 [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk3 [openbox]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+gtk4 [openbox]: dialog 8388616 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800004\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388612; front 4194307
+gtk4 [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+gtk4 [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+gtk4 [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+gtk4 [openbox] click 1: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk4 [openbox] click 2: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk4 [openbox] click 3: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk4 [openbox] click 4: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk4 [openbox] click 5: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+gtk4 [openbox]: the X focus or the active window moved off the front window after 0 of 5 background clicks to the blocked main window
+chrome [openbox]: dialog 10485767 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800002\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388610; front 4194307
+chrome [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+chrome [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+chrome [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+chrome [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window

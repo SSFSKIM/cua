@@ -57,7 +57,8 @@ struct ElementClickRecord: Equatable {
   /// pointer's point hits instead of a posted click (a coordinate click's record too); #315, a Gecko web area's alike, its
   /// text field by its action with the focus read back (`focus`, `focusStep` "press").
   /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
-  /// AXFocused, with the caret placed at the point or not (`caret` says why not).
+  /// AXFocused (#341: by the caret's AXSelectedTextRange write, AXFocused its fallback), with the caret placed at the
+  /// point or not (`caret` says why not).
   enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
@@ -76,11 +77,15 @@ struct ElementClickRecord: Equatable {
   var caret: String? = nil
   /// #313, a text-entry element's action (`advertised`; #315, a Gecko web area's field, `webArea`): what its last focus
   /// read-back found (a `FocusReadback` case name), and after which step (`focusStep` "press" | "selection", the caret's
-  /// write on a WebKit page).
+  /// write on a WebKit page). #341, `focusField` and `focusedNotPlaced`: `focusStep` alone, the write the field took
+  /// focus from ("selection", the caret's, or "focused", AXFocused), which is also the plan's action.
   var focus: String? = nil
   var focusStep: String? = nil
   /// #313, the caret's AXSelectedTextRange write when it did not answer success: its AXError.
   var caretWriteError: Int32? = nil
+  /// #341, `focusField` and `focusedNotPlaced` with a caret written: how far, in points, the reference character's box
+  /// moved between the read before the writes and the read after the caret's read-back (`WebAreaFocusRecord.markShift`).
+  var caretMarkShift: Double? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -97,6 +102,7 @@ struct ElementClickRecord: Equatable {
     if let focus { wire["focus"] = focus }
     if let focusStep { wire["focusStep"] = focusStep }
     if let caretWriteError { wire["caretWriteError"] = Int(caretWriteError) }
+    if let caretMarkShift { wire["caretMarkShift"] = (caretMarkShift * 10).rounded() / 10 }
     return wire
   }
 }
@@ -208,13 +214,32 @@ func keyRoute(forced: InputRoute?) -> InputRoute { forced ?? .plainPost }
 /// A press that is a menu key equivalent: a key with ⌘ (a modifier pressed alone is none).
 func isKeyEquivalent(_ press: KeyPress) -> Bool { press.keyCode != nil && press.modifiers.contains(.command) }
 
-/// press_key's route: 3 when the sequence holds a key equivalent and the app does not believe it has focus, since a
-/// background app does not perform one (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
-/// enablement as an inactive app), else 2′; the spike's forced route wins. The activation, held (FocusHold.swift), comes
-/// before the sequence's first press.
-func pressKeyRoute(forced: InputRoute?, presses: [KeyPress], believesFocus: Bool) -> InputRoute {
+/// The arrow keys (#360): Left, Right, Down, Up, whatever their modifiers, so a caret move and its Shift-extended
+/// selection take one rule. Home, End, Page Up and Page Down are not among them (ruling 767): they scroll rather than
+/// move the caret, and a background Firefox's rich editor already matched the foreground for them by 2′ (hosted run
+/// 44047809532, 160 of 160).
+private let arrowKeyCodes: Set<CGKeyCode> = [0x7B, 0x7C, 0x7D, 0x7E]
+
+/// A press of an arrow key (`arrowKeyCodes`), with or without modifiers.
+func isArrowKey(_ press: KeyPress) -> Bool { press.keyCode.map(arrowKeyCodes.contains) ?? false }
+
+/// Whether a press needs route 3's held activation in an app that does not believe it has focus: a key equivalent, which
+/// a background app does not perform (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
+/// enablement as an inactive app); and on a Gecko page (`PageEngine`) an arrow key, since a background Firefox's rich
+/// editor has its caret disabled until it has focus, so Left, Option+Left and Cmd+Left scroll instead of moving it
+/// (#360's hosted spike, run 44024467862: 0 of 120 posted, 120 of 120 after route 3's prelude; rulings 764 and 767).
+/// No editor role is read: the rule is the key's, in every Firefox field.
+func needsHeldActivation(_ press: KeyPress, engine: PageEngine) -> Bool {
+  isKeyEquivalent(press) || engine == .gecko && isArrowKey(press)
+}
+
+/// press_key's route: 3 when the sequence holds a press that `needsHeldActivation` and the app does not believe it has
+/// focus, else 2′; the spike's forced route wins. The activation, held (FocusHold.swift), comes before the sequence's
+/// first press. Its answer is the posting's, as by 2′: nothing reads the caret back (Firefox's AXSelectedTextRange is
+/// stale, #394).
+func pressKeyRoute(forced: InputRoute?, presses: [KeyPress], believesFocus: Bool, engine: PageEngine) -> InputRoute {
   if let forced { return forced }
-  return !believesFocus && presses.contains(where: isKeyEquivalent) ? .activation : .plainPost
+  return !believesFocus && presses.contains(where: { needsHeldActivation($0, engine: engine) }) ? .activation : .plainPost
 }
 
 /// The route of an element's own action or attribute write (route 1's AXPress or AXPick click, set_value, select_text,
@@ -692,8 +717,8 @@ private let boundaryRoles: Set<String> = ["AXWindow", "AXSheet", "AXMenu", "AXPo
 /// `boundaryRoles` for the stale-point record (StalePoint.swift), which cuts the recorded tree's frames by the same rule.
 var clipBoundaryRoles: Set<String> { boundaryRoles }
 /// A group clips when it can scroll by the page (the vendor's `hasScrollAction`, not decompiled; read as the
-/// UIElementAction cases that scroll, E §5).
-private let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
+/// UIElementAction cases that scroll, E §5); #328's scroll confirmation takes such an element as a scroll container.
+let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
 
 /// Whether an element of `role` with `actions` cuts what of its descendants shows (`visibleFrame`'s clipping ancestors).
 func clipsDescendants(role: String, actions: @autoclosure () -> [String]) -> Bool {

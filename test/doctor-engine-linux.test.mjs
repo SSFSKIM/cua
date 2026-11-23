@@ -218,11 +218,11 @@ test('the default capability read starts the engine as a session does, reads its
   assert.deepEqual(engine.requests().map(r => r.command), ['capabilities']);
   await waitGone(engine.spawns()[0].pid);
   // An engine older than the service needs is refused before anything is spawned, with the service's sentence.
-  engine.setVersion('cua-engine 0.2.0 (old)');
-  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.2\.0 is older than 0\.3\.0, which this cua needs; run cua install --engine$/});
+  engine.setVersion('cua-engine 0.3.0 (old)');
+  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.3\.0 is older than 0\.4\.0, which this cua needs; run cua install --engine$/});
   assert.equal(engine.spawns().length, 1);
   // An engine that never answers is stopped at the deadline.
-  engine.setVersion('cua-engine 0.3.0 (fake0000)');
+  engine.setVersion('cua-engine 0.4.0 (fake0000)');
   engine.behave('export function answer() { return new Promise(() => {}); }');
   await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}, timeoutMs: 300}), {message: /^cua-engine did not answer capabilities within 0\.3 s$/});
   await waitGone(engine.spawns()[1].pid);

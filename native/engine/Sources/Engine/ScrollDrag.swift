@@ -10,7 +10,13 @@ import Foundation
 // element's clickable point after a scroll into view, or at the coordinate, with the window in fields 51, 91 and 92 and
 // its window-local point, posted to the process serving the point by route 2′, the plain post (the vendor activates
 // nothing for a scroll either). A horizontal scroll carries two wheels, so its delta in the second is read (the
-// vendor's wheel count 1 may drop it; a declared difference M2b's matrix checks). A scroll never arms the settle.
+// vendor's wheel count 1 may drop it; a declared difference M2b's matrix checks). A scroll never arms the settle. #328:
+// the container under the point is read before the wheel and polled after it (ScrollConfirm.swift), and the answer is
+// success when it moved, success with a note at its end, else `scrollUnconfirmed`.
+//
+// #328: every coordinate (a scroll's, a drag's start and end, a click's) is refused outside the screenshot it came from
+// (`pointOutsideScreenshot`, Screenshot.swift `screenshotPoint`), so a drag cannot end outside the window (#334); a
+// drag's end outside is refused with a sentence of its own that says the drop cannot be done (`dragEndOutsideScreenshot`).
 //
 // drag: the vendor's five events (down, dragged at the start, the midpoint and the end, up), all aimed at the start
 // point's window, posted to the process serving the start point; into a background app by route 3's activation like a
@@ -84,6 +90,7 @@ extension Engine {
       let target: ClickTarget
       let length: CGFloat?
       let window: AXUIElement?
+      let hit: AXUIElement?  // what the wheel lands on, whose container the confirmation reads (#328)
       if let token {
         let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
         // A minimized own window is refused before the scroll into view and the point (Minimized.swift).
@@ -97,6 +104,8 @@ extension Engine {
         let own = frame(of: element.element) ?? pointing.windowFrame
         length = own.map { direction.horizontal ? $0.width : $0.height }
         window = pointing.window
+        _ = pointing.relation
+        hit = pointing.hitElement ?? element.element
       } else {
         let placed: (point: CGPoint, window: AXUIElement, windowFrame: CGRect)
         if hasPoint {
@@ -109,7 +118,8 @@ extension Engine {
           placed = (CGPoint(x: windowFrame.midX, y: windowFrame.midY), window, windowFrame)
         }
         window = placed.window  // a coordinate's was refused already when placed; the centre's is checked below
-        let owner = hitTest(window: placed.window, pid: appPid, at: placed.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
+        hit = hitTest(window: placed.window, pid: appPid, at: placed.point)
+        let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
         actionTargets(owner, app: app, connection: context.connection)
         target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame,
@@ -125,10 +135,18 @@ extension Engine {
         guard let event = scrollEvent(direction, delta: delta, at: target) else {
           throw EngineError(name: "eventCreationFailed", "The scroll event could not be created.")
         }
-        cursor.act(connection: context.connection.id, app: app.key, window: target.windowID, .scroll(target.point))
-        meta.posting { _ = postToProcess([event], pid: target.pid); return true }
+        // #328: the container under the point read before the wheel and polled after it; the answer says what moved.
+        let record = try confirmScroll(hit: hit, direction: direction, delta: delta, ax: .live, window: window, point: target.point, post: {
+          try guarding.checkInFlight()
+          cursor.act(connection: context.connection.id, app: app.key, window: target.windowID, .scroll(target.point))
+          meta.posting { _ = postToProcess([event], pid: target.pid); return true }
+        }, beforeWriting: guarding.checkInFlight)
+        meta.scroll = record
+        meta.note = try scrollAnswer(record, direction: direction, app: app.displayName)
       }
-      return ["meta": meta.wire]  // a scroll never arms the settle (F §8.1)
+      var result: [String: Any] = ["meta": meta.wire]  // a scroll never arms the settle (F §8.1)
+      if let note = meta.note { result["note"] = note }
+      return result
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
@@ -147,7 +165,8 @@ extension Engine {
     do {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       let start = try coordinatePoint(fromX, fromY, app: app, appPid: appPid, context: context)
-      let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context)
+      // The start is placed first, so a start outside keeps #328's sentence; an end outside is #334's (the drop).
+      let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context, dragEnd: true)
       // Both points were refused in a minimized window as they were placed (coordinatePoint), before anything below.
       let hit = hitTest(window: start.window, pid: appPid, at: start.point)
       let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
@@ -160,9 +179,11 @@ extension Engine {
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
       // Where the drag's own down goes (#282): in shared mode one starting in a Chromium or (#315) Gecko web area is refused, nothing posted.
       var pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
-      // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops).
-      let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, hit: hit,
-                                  rehit: { hitTest(window: start.window, pid: appPid, at: start.point) }, app: app, context: context)
+      // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops), #316's
+      // new-window rule included, as a click's.
+      let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, windowID: windowID, hit: hit,
+                                  rehit: { hitTest(window: start.window, pid: appPid, at: start.point) }, app: app, appPid: appPid,
+                                  context: context)
       meta.stalePoint = stale.record
       pointer.staleRefusal = stale.refusal
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
@@ -171,6 +192,7 @@ extension Engine {
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil, pointer: pointer,
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .drag([start.point, end.point])) },
+                             pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) },
                              post: gatedPost, meta: &meta) {
             let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
             return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))

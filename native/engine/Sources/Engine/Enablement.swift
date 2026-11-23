@@ -20,8 +20,9 @@ import os
 // its full-UI context, since that attribute changes how an AppKit app (the owner's Finder) behaves while it stays set
 // (Decision Log, T1's re-review); and the engine **releases** what it set, writing the attribute back to false at
 // whichever comes first (#292): the end of the task of the last connection that observed or acted on the process
-// (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; SIGKILL leaves it
-// on), or `enablementReleaseGraceMs` (30 s) after cua's last observation of or input to the process, whether or not a
+// (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; an engine killed
+// with SIGKILL, or one that crashes, leaves it on until the next engine's start writes it back from the enablement
+// record, #293, EnablementRecord.swift), or `enablementReleaseGraceMs` (5 minutes, ruling 775) after cua's last observation of or input to the process, whether or not a
 // connection is still open (a model that never calls end_task keeps its connection until the 15-minute idle stop); a
 // new observation or input within that grace starts it again, and one after it sets the attribute again, owned, an
 // input included (`inputEnablement`). It owns, and so releases, only an attribute it read false and then set: one
@@ -37,14 +38,22 @@ import os
 // what does not read true would leave the page's tree gone (Decision Log 2026-10-22). The first observation after
 // enabling, and every observation of a Chromium window until a web area has been seen in the process, waits 100 ms and
 // then up to 1 s for an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is
-// not done here.
+// not done here. Nothing tells when the complete mode arrives, and an element action before it answers success with no
+// handler run, so a request that may carry one into a Chromium-family app waits out the rest of 2.5 s after the
+// engine's last accepted write (#366, ChromiumReadiness.swift); hence the write's place at the first observation, and
+// never again while owned.
 
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
 /// How long an owned enablement outlives cua's last observation of or input to its process, short of an end_task or the
-/// engine's stop (#292): long enough that a model's pause between steps does not pay Chrome's 2.2 s debounce again; 0
-/// releases at the close of the last connection that observed the process instead.
-let enablementReleaseGraceMs: Double = 30_000
+/// engine's stop (#292), which still release at once: long enough that a model's pause between steps does not pay the
+/// complete mode's arrival again, since a released Chromium attribute reads false, so the next observation writes it
+/// again and waits out #366's 2.5 s readiness window (ruling 775, from 30 s, which the live qualification showed every
+/// pause over 30 s paying). It outlasts the focus hold's 120 s bound (`focusHoldIdleMs`), so an action after a grace
+/// release no longer meets a focus hold left from before it. The trade is #292's own: a Chromium window moves and
+/// resizes with its animation while the enablement is on, now for up to 5 minutes after cua's last step. 0 releases at
+/// the close of the last connection that observed the process instead.
+let enablementReleaseGraceMs: Double = 300_000
 
 let webAreaLeadMs: UInt32 = 100
 let webAreaWaitMs = 1_000.0
@@ -91,6 +100,11 @@ func enablementAttribute(listed names: [String]) -> String? {
   return nil
 }
 
+/// Whether a read back of false shows that a write of `attribute` true did not take: not for AXManualAccessibility,
+/// whose getter in Electron is computed and keeps reading false after the enablement (#244), so a failed write of it is
+/// always uncertain (#293's review).
+func enablementReadBackConfirms(_ attribute: String) -> Bool { attribute != "AXManualAccessibility" }
+
 /// Whether an observation waits for a web area (the spec's Observation paragraph): after enabling, or on a Chromium
 /// window, until a web area has been seen in the process. cua's departure: the vendor waits on every Chromium
 /// observation (about 145 ms each on the MacBook shakedown); a window whose web area went away is the settle's busy
@@ -108,12 +122,7 @@ func processGeneration(launchDate: Date?, pid: pid_t) -> Date? {
 
 /// The kernel's start time of process `pid` (`kp_proc.p_starttime`); nil when there is no such process.
 func processStartTime(pid: pid_t) -> Date? {
-  var info = kinfo_proc()
-  var size = MemoryLayout<kinfo_proc>.stride
-  var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-  guard sysctl(&name, u_int(name.count), &info, &size, nil, 0) == 0, size > 0, info.kp_proc.p_pid == pid else { return nil }
-  let start = info.kp_proc.p_starttime
-  return Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+  processStartMicros(pid: pid).map { Date(timeIntervalSince1970: Double($0 / 1_000_000) + Double($0 % 1_000_000) / 1_000_000) }
 }
 
 /// How the enablement reaches one process's application element: its attribute names (nil while they cannot be read,
@@ -182,10 +191,17 @@ private final class EnabledProcess: @unchecked Sendable {
   /// Whether the process's generation is known; a write-back is remembered only then, since a key of the pid alone
   /// would match a later process reusing it.
   let generationKnown: Bool
+  /// The process's entry in the enablement record (#293), filed by its pid and start time, while the engine owns its
+  /// attribute; nil when it does not, or none could be written.
+  var recorded: (pid: pid_t, start: Int64)?
+  /// The process's kernel start time as read with its first observation (#293's review): the identity its record entry
+  /// is filed under, nil without a record or when it could not be read.
+  let start: Int64?
 
-  init(access: EnablementAccess, generationKnown: Bool) {
+  init(access: EnablementAccess, generationKnown: Bool, start: Int64? = nil) {
     self.access = access
     self.generationKnown = generationKnown
+    self.start = start
   }
 }
 
@@ -206,6 +222,9 @@ final class WebAccessibility: @unchecked Sendable {
   private var writes: [String: UInt64] = [:]
   /// Per process, its first observation's time, moved to every write attempt's (monotonic ms; `freshSince`).
   private var freshSinceByProcess: [String: Double] = [:]
+  /// Per process, when the engine's last accepted write of its attribute true returned (monotonic ms;
+  /// `lastEnablementWrite`, #366); kept past the entry's retirement, as `writes` is.
+  private var acceptedWriteAt: [String: Double] = [:]
   /// Per process, the token of the grace release armed at its last activity (#292); absent when none is armed. Every
   /// observation and input replaces it, so only the newest armed timer may release.
   private var pendingRelease: [String: Int] = [:]
@@ -217,19 +236,43 @@ final class WebAccessibility: @unchecked Sendable {
   /// of d2568c76..96c6f093: activity landing there must not be reset underneath).
   var beforeGraceRelease: () -> Void = {}
   private let releaseGraceMs: Double
+  /// The monotonic clock (ms) `freshSince` and `lastEnablementWrite` are read on: the engine's, replaced in the unit tests.
+  private let now: () -> Double
   /// Runs `work` after the given milliseconds on another thread (the grace release's timer).
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
   private let releaseFailed: (String) -> Void
+  /// The enablement record (#293, EnablementRecord.swift): every owned attribute filed before its write and removed
+  /// once written back, so the next engine restores what a SIGKILL or a crash left on. Nil keeps no record (the unit
+  /// tests' engines).
+  private let record: EnablementRecord?
 
   init(releaseGraceMs: Double = enablementReleaseGraceMs,
        schedule: @escaping (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
        },
-       releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") }) {
+       releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") },
+       record: EnablementRecord? = nil, now: @escaping () -> Double = monotonicMilliseconds) {
     self.releaseGraceMs = releaseGraceMs
+    self.now = now
     self.schedule = schedule
     self.releaseFailed = releaseFailed
+    self.record = record
+  }
+
+  /// The engine's start (#293), before any connection: restores what dead engines left on (`EnablementRecord.restore`)
+  /// and remembers each restored process as written back, under its own generation and only while its pid still runs the
+  /// entry's process (`currentGeneration`), so its next observation sets the attribute again, owned, whatever it reads
+  /// (Chromium's readback after a write-back, Decision Log 2026-10-22). Nil without a record.
+  @discardableResult
+  func restoreRecorded() -> EnablementRestore? {
+    guard let record else { return nil }
+    let report = record.restore()
+    let keys = report.restored.compactMap { entry in record.currentGeneration(of: entry).map { Self.process(entry.pid, $0) } }
+    lock.lock()
+    writtenBack.formUnion(keys)
+    lock.unlock()
+    return report
   }
 
   /// The connections observing a process now.
@@ -260,6 +303,17 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return freshSinceByProcess[Self.process(pid, launched)]
+  }
+
+  /// When the engine's last accepted write of the process's attribute true returned (monotonic ms), or nil when it has
+  /// made none (#366): the write that restarts Electron's debounce to its complete mode, and Chrome's, which an element
+  /// action waits out (`chromiumActionWaitMs`). Accepted is what `enableReporting` counts as set (success, or Chrome's
+  /// kAXErrorNotImplemented with the attribute reading true after it). An attribute left alone, owned already, read true
+  /// as another client's, or failing its write, moves nothing.
+  func lastEnablementWrite(pid: pid_t, launched: Date?) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return acceptedWriteAt[Self.process(pid, launched)]
   }
 
   func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
@@ -363,11 +417,11 @@ final class WebAccessibility: @unchecked Sendable {
       lock.unlock()
       return (nil, nil, nil)
     }
-    let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil)
+    let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil, start: record?.startTime(pid))
     processes[key] = entry
     observers[key, default: []].insert(connection)
     let token = armLocked(key)
-    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = monotonicMilliseconds() }
+    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = now() }
     lock.unlock()
     scheduleLapse(key, token)
 
@@ -389,21 +443,61 @@ final class WebAccessibility: @unchecked Sendable {
       entry.on = read == true && !reEnabling
       return (nil, prior, nil)
     }
+    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
+    // the engine itself wrote back is its own whatever it reads now. What will be owned is recorded before the write
+    // (#293), so an engine killed right after the write leaves an entry the next start restores.
+    // The entry is filed under the identity captured with the process's first observation (`EnabledProcess.start`):
+    // a pid another process took since is neither recorded nor written.
+    let owning = read == false || reEnabling
+    var recorded: (pid: pid_t, start: Int64)?
+    if owning, let record {
+      switch record.add(pid: pid, start: entry.start, attribute: name) {
+      case .recorded(let start): recorded = (pid, start)
+      case .notWritten: break  // logged; the enablement goes ahead, unrecorded
+      case .otherProcess:
+        entry.on = false
+        return (nil, prior, nil)
+      }
+    }
     let written = entry.access.write(name, true)
+    let writtenAt = now()
     lock.lock()
-    freshSinceByProcess[key] = monotonicMilliseconds()
+    freshSinceByProcess[key] = writtenAt
     lock.unlock()
-    guard written == .success || (written == .notImplemented && entry.access.read(name) == true) else {
+    let after = written == .success ? true : entry.access.read(name)
+    guard written == .success || (written == .notImplemented && after == true) else {
       entry.on = false
+      // Not set. Read back false, nothing took: the entry goes, but only where the getter can confirm it, which
+      // Electron's computed AXManualAccessibility cannot (it reads false after enabling too, #244). An owned write whose
+      // outcome is uncertain (it reads true or cannot be read after a failing answer, or its getter cannot confirm) is
+      // rolled back; a rollback that fails too keeps the ownership and the entry, so a release or the next start
+      // writes it back.
+      guard owning, after != false || !enablementReadBackConfirms(name) else {
+        if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }
+        return (nil, prior, written)
+      }
+      if [.success, .notImplemented].contains(entry.access.write(name, false)) {
+        if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }
+        lock.lock()
+        if entry.generationKnown { writtenBack.insert(key) }
+        lock.unlock()
+      } else {
+        entry.owned = name
+        entry.recorded = recorded
+        lock.lock()
+        writtenBack.remove(key)
+        lock.unlock()
+        releaseFailed("enablement write uncertain and its rollback failed: \(name) on pid \(pid); kept owned for a later release")
+      }
       return (nil, prior, written)
     }
     entry.on = true
     lock.lock()
     writes[key, default: 0] += 1
-    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
-    // the engine itself wrote back is its own whatever it reads now.
-    if read == false || reEnabling {
+    acceptedWriteAt[key] = writtenAt
+    if owning {
       entry.owned = name
+      entry.recorded = recorded
       writtenBack.remove(key)
     }
     lock.unlock()
@@ -476,7 +570,7 @@ final class WebAccessibility: @unchecked Sendable {
 
   /// A grace release's timer fired, `releaseGraceMs` after the activity that armed it: unless newer activity took the
   /// token since, the process is released whether or not a connection still observes it (the design session's rule:
-  /// 30 s after cua's last action on it). The token is checked again under the entry's lock, where the reset is made:
+  /// `enablementReleaseGraceMs` after cua's last action on it). The token is checked again under the entry's lock, where the reset is made:
   /// activity takes a new token under `lock` before it touches the entry, so activity landing before the reset makes
   /// this timer stale (no reset), and activity after it waits on the entry's lock and reads after the reset, setting
   /// the attribute again, owned, since the write-back is remembered.
@@ -552,6 +646,11 @@ final class WebAccessibility: @unchecked Sendable {
         reset = true
       } else {
         releaseFailed("enablement release failed: \(owned) on pid \(key.prefix { $0 != "@" }); kept for a later close or shutdown")
+      }
+      // Written back, or the process ended: its record entry goes (#293). A failed reset keeps it with the ownership.
+      if entry.owned == nil, let recorded = entry.recorded {
+        record?.remove(pid: recorded.pid, start: recorded.start)
+        entry.recorded = nil
       }
     }
     lock.lock()

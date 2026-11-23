@@ -4,37 +4,84 @@
 // XTEST FakeInput. The VM's xtrace prints FakeInput as UNKNOWN opcode 132/2 (R/F §4.1), so FakeInput is matched by
 // XTEST's major opcode as the server reported it to the traced client, with minor 2.
 
-import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import './hermetic.mjs';
+
+import { spawn as spawnProcess } from 'node:child_process';
+import { createReadStream, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+
+import { XPROBE, isPrivateDisplay } from './xtools.mjs';
+import { assertReachable, guard, isCreatedDisplay, registerDisplay } from './xspawn.mjs';
 
 const REQUEST = /^(\d+):<:([0-9a-f]+):\s*\d+:\s*(?:([A-Za-z0-9-]+)-)?Request\((\d+)(?:,(\d+))?\):\s*(\S+)?(.*)$/;
 const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+)'/;
 const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=true\S* major-opcode=(\d+)/;
+/**
+ * The server's lines the foreign-window judge reads (foreign.mjs): the replies that say where a window lies, where the
+ * focus and the pointer are, the errors that refuse a request, the events that end a window, move it to another parent
+ * or ask for a selection, and each connection's resource-id base.
+ */
+const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) \d+=\w+: | Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
 
-/** A trace's requests `{conn, seq, major, minor, name, text}` and the extensions' major opcodes the server reported. */
-export function parseXtrace(text) {
-  const requests = [];
-  const extensions = {};
-  const asked = new Map();
-  for (const line of text.split('\n')) {
-    const q = line.match(QUERY);
-    if (q) asked.set(`${q[1]}|${q[2]}`, q[3]);
-    const r = line.match(QUERY_REPLY);
-    if (r && asked.has(`${r[1]}|${r[2]}`)) extensions[asked.get(`${r[1]}|${r[2]}`)] = Number(r[3]);
-    const m = line.match(REQUEST);
-    if (!m) continue;
-    requests.push({
-      conn: Number(m[1]),
-      seq: Number.parseInt(m[2], 16),
-      major: Number(m[4]),
-      minor: m[5] === undefined ? null : Number(m[5]),
-      name: m[6]?.replace(/:$/, '') ?? null,
-      text: line.slice(0, 400),
-    });
+/** A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). */
+const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0 });
+
+function readLine(state, line, keep) {
+  const at = state.offset;
+  state.offset += Buffer.byteLength(line) + 1;
+  const q = line.match(QUERY);
+  if (q) state.asked.set(`${q[1]}|${q[2]}`, q[3]);
+  const r = line.match(QUERY_REPLY);
+  if (r && state.asked.has(`${r[1]}|${r[2]}`)) state.extensions[state.asked.get(`${r[1]}|${r[2]}`)] = Number(r[3]);
+  const s = line.match(SERVER);
+  if (s) {
+    // an event another client sent (SendEvent) is marked so: it reports what that client wrote, not what the server did
+    const generated = s[5] !== undefined && line.includes(' Event (generated) ');
+    state.elements.push({ k: 'line', conn: Number(s[1]), seq: s[2] === undefined ? null : Number.parseInt(s[2], 16), what: s[3] ?? s[4] ?? s[5] ?? s[6], text: s[7].slice(0, 4000), ...(generated ? { generated } : {}) });
+    return;
   }
-  return { requests, extensions };
+  const m = line.match(REQUEST);
+  if (!m) return;
+  const request = {
+    conn: Number(m[1]),
+    seq: Number.parseInt(m[2], 16),
+    major: Number(m[4]),
+    minor: m[5] === undefined ? null : Number(m[5]),
+    ext: m[3] ?? null,
+    name: m[6]?.replace(/:$/, '') ?? null,
+    text: line.slice(0, 400),
+    at,
+  };
+  if (keep && !keep(request, state.extensions)) return;
+  state.requests.push(request);
+  state.elements.push({ k: 'req', r: request });
+}
+
+const parsed = ({ requests, extensions, elements }) => ({ requests, extensions, elements });
+
+/**
+ * A trace's requests `{conn, seq, major, minor, name, text, at}`, the extensions' major opcodes the server reported,
+ * and `elements`: in the trace's order, each request (`{k: 'req', r}`) and each server line the foreign-window judge
+ * reads (`{k: 'line', conn, seq, what, text}`, `SERVER`). `at` is where the request's line starts in the trace, in
+ * bytes, which the proxy's marks are measured in.
+ */
+export function parseXtrace(text) {
+  const state = parseState();
+  for (const line of text.split('\n')) readLine(state, line);
+  return parsed(state);
+}
+
+/**
+ * The same parse of a trace file, read line by line, so a whole run's trace never has to fit in one string; `keep`
+ * (`(request, extensions) => boolean`) keeps only the requests a judge reads, so it need not fit in memory either.
+ */
+export async function parseXtraceFile(path, { keep = null } = {}) {
+  const state = parseState();
+  const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of lines) readLine(state, line, keep);
+  return parsed(state);
 }
 
 /** What makes a request forbidden on the background route, or null. */
@@ -103,49 +150,460 @@ export function auditNothingSent({ requests, extensions }) {
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
 }
 
-function freeDisplay() {
+/**
+ * The audit of a pass whose requests are marked one by one (the matrix's, task 53: `request:<i>` before each and
+ * `answered:<i>` after its answer), judged by each one's answer (`answers[i]`): a request refused before anything was
+ * sent (`refused`, a shared-mode refusal) sends nothing at all in its span, as `auditNothingSent` judges; any other
+ * span, and every request outside the spans, nothing the background route forbids, as `auditRequests` judges. A trace
+ * with no requests, or a request whose marks are missing or out of order, is not clean. Returns `{clean, traced,
+ * requests, forbidden}`.
+ */
+export function auditAnswered({ requests, extensions }, marks, answers) {
+  const found = [];
+  const at = new Map(marks.map((m) => [m.tag, m.at]));
+  const attributed = new Set();
+  answers.forEach((answer, i) => {
+    const [from, to] = [at.get(`request:${i}`), at.get(`answered:${i}`)];
+    if (from === undefined || to === undefined || to < from) {
+      found.push({ what: `request ${i}: its marks are missing or out of order` });
+      return;
+    }
+    for (const r of requests.filter((x) => x.at >= from && x.at < to)) {
+      attributed.add(r);
+      const what = answer.refused ? (r.major === 25 ? 'SendEvent' : forbidden(r, extensions)) : forbidden(r, extensions);
+      if (what) found.push({ conn: r.conn, seq: r.seq, what: answer.refused ? `${what} with request ${i}'s refusal` : what, text: r.text });
+    }
+  });
+  for (const r of requests) {
+    if (attributed.has(r)) continue;
+    const what = forbidden(r, extensions);
+    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
+}
+
+/** The X event types an input request can carry: XTEST FakeInput's `type` byte, SendEvent's event code. */
+const EVENT_TYPES = { 2: 'KeyPress', 3: 'KeyRelease', 4: 'ButtonPress', 5: 'ButtonRelease', 6: 'MotionNotify', 7: 'EnterNotify', 8: 'LeaveNotify', 9: 'FocusIn', 10: 'FocusOut' };
+const SENT_EVENT = /\b(KeyPress|KeyRelease|ButtonPress|ButtonRelease|MotionNotify|EnterNotify|LeaveNotify|FocusIn|FocusOut)\((\d+)\)(?:\s+(?:keycode|button|detail)=0x([0-9a-f]+))?/;
+
+/**
+ * The input event a request carries, or null: `{via: 'xtest', type, detail}` for XTEST FakeInput (whose body xtrace
+ * leaves unparsed: its first byte is the event type, its second the keycode or button), `{via: 'send', type, detail,
+ * destination}` for a SendEvent of an input or focus event.
+ */
+export function inputEvent(request, extensions) {
+  if (extensions.XTEST !== undefined && request.major === extensions.XTEST && request.minor === 2) {
+    const bytes = request.text.match(/unparsed-data=(0x[0-9a-f]{2}),(0x[0-9a-f]{2})/);
+    if (!bytes) return { via: 'xtest', type: 'unreadable', detail: null };
+    return { via: 'xtest', type: EVENT_TYPES[Number(bytes[1])] ?? `type ${Number(bytes[1])}`, detail: Number(bytes[2]) };
+  }
+  if (request.major !== 25) return null;
+  const sent = request.text.match(SENT_EVENT);
+  if (!sent) return null;
+  const destination = request.text.match(/\bdestination=0x([0-9a-f]+)/);
+  return { via: 'send', type: sent[1], detail: sent[3] === undefined ? null : Number.parseInt(sent[3], 16), destination: destination ? Number.parseInt(destination[1], 16) : null };
+}
+
+const hexId = (w) => `0x${Number(w).toString(16)}`;
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+
+/**
+ * The background route's synthetic-focus sessions in a trace (M4's T7): per destination, a `FocusIn` opens one, its
+ * input events follow, its `FocusOut` closes it. `{sessions: [{destination, inputs, closed}], problems}`; a problem is a
+ * `FocusIn` while another window's session is open (input to another window that did not flush first) or while its own
+ * is, input to a window with no session open, a `FocusOut` with none open, and a session never closed.
+ */
+export function focusSessions({ requests, extensions }) {
+  const sessions = [];
+  const problems = [];
+  const open = new Map();
+  for (const r of requests) {
+    const e = inputEvent(r, extensions);
+    if (e?.via !== 'send' || e.destination === null) continue;
+    const w = e.destination;
+    if (e.type === 'FocusIn') {
+      if (open.has(w)) problems.push(`FocusIn to ${hexId(w)} while its session was open`);
+      const others = [...open.keys()].filter((v) => v !== w);
+      if (others.length) problems.push(`two windows under synthetic focus at once: FocusIn to ${hexId(w)} while ${others.map(hexId).join(', ')} held it`);
+      const session = { destination: w, inputs: 0, closed: false };
+      sessions.push(session);
+      open.set(w, session);
+    } else if (e.type === 'FocusOut') {
+      const session = open.get(w);
+      if (!session) problems.push(`FocusOut to ${hexId(w)} with no session open`);
+      else {
+        session.closed = true;
+        open.delete(w);
+      }
+    } else if (open.has(w)) open.get(w).inputs += 1;
+    else problems.push(`input to ${hexId(w)} outside a session (${e.type})`);
+  }
+  for (const session of open.values()) problems.push(`${hexId(session.destination)}'s session was never closed`);
+  return { sessions, problems };
+}
+
+/**
+ * The audit of each deferred `FocusOut` (M4's T7): the trace's `FocusOut`s, in the order they were sent, matched one by
+ * one to the engine's own `--stats` records of them (`records`: `{window, cause, after_input_ms, scheduled_by,
+ * reported_on}` in the order the engine wrote them, `reported_on` the id of the request whose line carried the record,
+ * null for a line of its own). Each is attributed to the request whose input last started its window's timer
+ * (`scheduled_by`), and is deferred when it went out after that request's answer (`reported_on` another request or
+ * none). Fails on a session problem (`focusSessions`), on counts or windows that differ between the trace and the
+ * records, and, with a `delayMs`, on a `FocusOut` sooner than it after its window's last input. A trace with no requests
+ * is not clean. Returns `{clean, traced, sessions, attributed, problems}`.
+ */
+export function attributeFocusOuts(trace, records, { delayMs }) {
+  const { sessions, problems } = focusSessions(trace);
+  const sent = trace.requests.map((r) => inputEvent(r, trace.extensions)).filter((e) => e?.via === 'send' && e.type === 'FocusOut');
+  if (sent.length !== records.length) problems.push(`${sent.length} FocusOut in the trace and ${records.length} reported by the engine`);
+  const attributed = [];
+  sent.forEach((e, i) => {
+    const rec = records[i];
+    if (!rec) return;
+    if (rec.window !== e.destination) problems.push(`the ${ordinal(i + 1)} FocusOut went to ${hexId(e.destination)}, reported for ${hexId(rec.window)}`);
+    if (delayMs > 0 && rec.after_input_ms < delayMs) problems.push(`the ${ordinal(i + 1)} FocusOut, to ${hexId(e.destination)}, went ${rec.after_input_ms} ms after its window's last input, sooner than ${delayMs} ms`);
+    attributed.push({ window: e.destination, scheduled_by: rec.scheduled_by, cause: rec.cause, after_input_ms: rec.after_input_ms, deferred: rec.reported_on !== rec.scheduled_by });
+  });
+  const traced = trace.requests.length > 0;
+  return { clean: traced && problems.length === 0, traced, sessions, attributed, problems };
+}
+
+/** A pressed key or button and the release that answers it. */
+const RELEASE_OF = { KeyPress: 'KeyRelease', ButtonPress: 'ButtonRelease' };
+const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'} ${detail}`;
+
+/**
+ * The audit of a key or button held, its window then minimized, then released (M4's T4; the design session's proof):
+ * each sample's requests are attributed by the harness's marks in the trace (`hold:<i>` and `held:<i>` around the hold,
+ * `release:<i>` and `released:<i>` around the release and the quiet after it). On the hold's route (`background`: a
+ * SendEvent to the target; `foreground`: XTEST):
+ * - the hold is proven first: it pressed at least one key or button, and released none;
+ * - the release holds exactly one release of each held key or button, and no press, no motion, no crossing, no
+ *   activation and no focus request; the background route's own teardown, a synthetic FocusOut to the target, is
+ *   allowed;
+ * - the foreground hold may activate its target (the route's own activation); nothing else the background route
+ *   forbids, anywhere;
+ * - outside the samples' spans the engine sends no input and nothing the background route forbids.
+ * A trace with no requests, or a sample whose marks are missing or out of order, is not clean. Returns `{clean,
+ * traced, requests, samples: [{i, held}], forbidden}`.
+ */
+export function auditHeldRelease({ requests, extensions }, target, { route, marks }) {
+  const found = [];
+  const flag = (what, r) => found.push({ conn: r?.conn, seq: r?.seq, what, text: r?.text });
+  const at = new Map(marks.map((m) => [m.tag, m.at]));
+  const indices = [...new Set(marks.map((m) => m.tag.split(':')[1]))].sort((a, b) => Number(a) - Number(b));
+  const samples = [];
+  const attributed = new Set();
+  const viaRoute = route === 'foreground' ? (e) => e.via === 'xtest' : (e) => e.via === 'send' && e.destination === target;
+  for (const i of indices) {
+    const edges = ['hold', 'held', 'release', 'released'].map((t) => at.get(`${t}:${i}`));
+    if (edges.some((e) => e === undefined) || edges.some((e, k) => k > 0 && e < edges[k - 1])) {
+      flag(`sample ${i}: its marks are missing or out of order`);
+      continue;
+    }
+    const within = (from, to) => requests.filter((r) => r.at >= from && r.at < to);
+    const hold = within(edges[0], edges[1]);
+    const release = within(edges[2], edges[3]);
+    for (const r of [...hold, ...release]) attributed.add(r);
+    // the hold: its presses on its route, its own activation on the foreground route, nothing else forbidden
+    const pressed = [];
+    for (const r of hold) {
+      const e = inputEvent(r, extensions);
+      const what = forbidden(r, extensions);
+      if (e && viaRoute(e) && RELEASE_OF[e.type]) pressed.push({ type: e.type, detail: e.detail });
+      else if (e && ['KeyRelease', 'ButtonRelease'].includes(e.type)) flag(`sample ${i}: the hold released ${e.type} ${e.detail}`, r);
+      else if (e && e.via === 'send' && e.type === 'FocusIn' && route === 'background' && e.destination === target) continue;
+      else if (e && e.via !== 'xtest') flag(`sample ${i}: the hold sent ${e.type}`, r);
+      if (what && what !== 'XTEST FakeInput' && !(route === 'foreground' && what !== 'WarpPointer' && namedWindow(r) === target)) flag(`sample ${i}: the hold sent ${what}`, r);
+      if (what === 'XTEST FakeInput' && route !== 'foreground') flag(`sample ${i}: the hold sent ${what}`, r);
+      if (e?.via === 'xtest' && route === 'foreground' && !RELEASE_OF[e.type]) flag(`sample ${i}: the hold sent XTEST ${e.type}`, r);
+    }
+    if (!pressed.length) flag(`sample ${i}: the hold pressed nothing on the ${route} route`);
+    // the release: exactly one release of each held key or button, the background teardown allowed, nothing else
+    const owed = pressed.map((p) => `${RELEASE_OF[p.type]} ${p.detail}`);
+    for (const r of release) {
+      const e = inputEvent(r, extensions);
+      const what = forbidden(r, extensions);
+      if (e && viaRoute(e) && ['KeyRelease', 'ButtonRelease'].includes(e.type)) {
+        const k = owed.indexOf(`${e.type} ${e.detail}`);
+        if (k >= 0) owed.splice(k, 1);
+        else flag(`sample ${i}: the release sent ${e.type} ${e.detail}, which was not held or was released already`, r);
+        continue;
+      }
+      if (e && e.via === 'send' && e.type === 'FocusOut' && route === 'background' && e.destination === target) continue;
+      if (e) flag(`sample ${i}: the release sent ${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}${e.detail === null ? '' : ` ${e.detail}`}`, r);
+      else if (what) flag(`sample ${i}: the release sent ${what}`, r);
+    }
+    for (const missing of owed) flag(`sample ${i}: the release never sent ${missing}`);
+    samples.push({ i: Number(i), held: pressed.map(heldName) });
+  }
+  if (!samples.length) flag('no sample was marked in the trace');
+  for (const r of requests) {
+    if (attributed.has(r)) continue;
+    const e = inputEvent(r, extensions);
+    const what = forbidden(r, extensions);
+    if (e || what) flag(`outside the hold and the release: ${e ? `${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}` : what}`, r);
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && found.length === 0, traced, requests: requests.length, samples, forbidden: found };
+}
+
+// The foreign-window judge (the harness never changes a window it did not open) is foreign.mjs's.
+
+/**
+ * A route audit's window, its ancestry put into the audit's own trace (task 53): `xprobe ancestry <window>` connected
+ * through the proxy (`proxy.env`, its display and its own authority file) selects the window's structure and reads its
+ * parents up to the root, so the trace's own QueryTree replies say which frame holds it, and its ReparentNotify and
+ * DestroyNotify say when that changes (foreign.mjs: an XTEST target's frame, and the client range a live harness window
+ * lends). Resolves once those reads are in the trace, with `chain` (the window first, the root's child last; null when
+ * it did not start). `stop()` ends it and answers `{watched: true}` only once it exited cleanly after its end line (its
+ * connection still there when stdin closed), else `{watched: false, error}`: it did not start, ended before the audit
+ * did, or died as it was stopped. The judge trusts a window's end to reach the trace only while this connection lives.
+ * `spawn` is the display-free tests' own.
+ */
+export async function watchAncestry(proxy, window, { spawn = spawnProcess, readyMs = 10000 } = {}) {
+  const child = guard(spawn)(XPROBE, ['ancestry', String(window)], { env: proxy.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr?.on('data', (d) => {
+    stderr += d;
+  });
+  let ended = null;
+  let clean = false;
+  const exited = new Promise((resolve) => {
+    child.once('error', (error) => {
+      ended ??= error.message;
+      resolve();
+    });
+    // its end once its output is all read (`close`, not `exit`), so an end line it wrote before exiting is in `lines`
+    child.once('close', (code, signal) => {
+      ended ??= `exit ${code ?? signal}`;
+      clean = code === 0;
+      resolve();
+    });
+  });
+  // its lines: the ready line, then at its stop the end line, written once its connection was still there to the end
+  const lines = [];
+  let heard = () => {};
+  createInterface({ input: child.stdout }).on('line', (line) => {
+    try {
+      lines.push(JSON.parse(line));
+    } catch {
+      lines.push(null);
+    }
+    heard();
+  });
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), readyMs);
+    heard = () => {
+      clearTimeout(timer);
+      resolve(lines[0]);
+    };
+    exited.then(() => {
+      clearTimeout(timer);
+      resolve(lines[0] ?? null);
+    });
+  });
+  const why = () => `${ended ?? 'no ready line'}${stderr.trim() ? `: ${stderr.trim().split('\n').at(-1)}` : ''}`;
+  if (ready?.ready !== true) {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await exited;
+    const error = `the ancestry watcher did not start (${why()})`;
+    return { chain: null, stop: async () => ({ watched: false, error }) };
+  }
+  return {
+    chain: ready.chain ?? [],
+    async stop() {
+      if (ended !== null) return { watched: false, error: `the ancestry watcher ended before the audit did (${why()})` };
+      child.stdin.end();
+      await exited;
+      // watched to the end only by a clean exit after its end line: one that died as stdin closed (its X connection
+      // lost) may have missed the window's end
+      if (clean && lines.some((l) => l?.watched === true)) return { watched: true };
+      return { watched: false, error: `the ancestry watcher did not watch to the audit's end (${clean ? 'exit 0, no end line' : why()})` };
+    },
+  };
+}
+
+/**
+ * The proxies this process runs, each one's `end` (its xtrace killed, its socket and its directory removed), all run when
+ * the process exits however it exits: by `process.exit` (a signal's stop hook ends the harness so, stop.mjs), by an
+ * error thrown past a proxy's stop, or with a stop never reached (the run's cleanup failing before it: the leak's four
+ * orphans, each beside a run directory that cleanup never removed). A proxy is the process's, never longer.
+ */
+const live = new Set();
+
+function endAtExit(end) {
+  if (live.size === 0) process.on('exit', endAll);
+  live.add(end);
+  return () => {
+    live.delete(end);
+    if (live.size === 0) process.off('exit', endAll);
+  };
+}
+
+function endAll() {
+  for (const end of live) end();
+}
+
+/**
+ * The proxy's socket as its xtrace made it: `made()` records the file at `path` (its device, inode and birth time, since
+ * a file system may give a freed inode straight to the next file), and `remove()` unlinks it only while the file there
+ * is still that one, once: after it, or with nothing recorded, it removes nothing.
+ */
+function ownSocket(path) {
+  let made = null;
+  const identity = () => {
+    try {
+      const { dev, ino, birthtimeNs } = lstatSync(path, { bigint: true });
+      return `${dev}:${ino}:${birthtimeNs}`;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    made() {
+      made = identity();
+    },
+    remove() {
+      if (made !== null && identity() === made) rmSync(path, { force: true });
+      made = null;
+    },
+  };
+}
+
+function freeDisplay(socketDir) {
   for (let n = 40; n < 100; n++) {
-    if (!existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;
+    if (!existsSync(`${socketDir}/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;
   }
   throw new Error('no free X display number for the audit proxy');
 }
 
 /**
  * An xtrace proxy display forwarding to `display`: `{display, env, log, stop()}`. `env` is what a client needs to
- * reach it (DISPLAY and an XAUTHORITY holding the proxy's copy of the credentials); `stop()` ends the proxy and returns
- * the trace's text.
+ * reach it (DISPLAY, and XAUTHORITY naming the proxy's own authority file); `stop()` ends the proxy and returns the
+ * trace's text. The proxy's directory (its log, its authority file) goes at its stop, and when it fails to start.
+ *
+ * The display's authority (task 46's finding 3): it used to copy the person's ~/.Xauthority into its directory, on any
+ * display, and a failed start left the copy behind. Now:
+ * - on a private display (`privateDisplay`; by default read from the display's own mark) xtrace copies no credentials
+ *   (`-n`) and reads no authority file: the harness's own X server has none (`startPrivateServer`), and the person's is
+ *   never read; the proxy's clients get an empty authority file of the proxy's, so none of them reads the person's;
+ * - on a display a person uses, where the harness is the person's client by design, xtrace reads the display's
+ *   credentials from the person's authority file where it is (`env`'s XAUTHORITY, else `~/.Xauthority`), never
+ *   copied, and writes the proxy's credentials into the proxy's own file. xtrace 1.4.0 reads from the file given as
+ *   `-F` (`xauth -f <F> list <display>`) and writes into the one given as `-f` (`xauth -f <f> remove|add <proxy>`), the
+ *   reverse of its --help (traced, task 45), so the person's file is the `-F` and is only read.
+ * The display it forwards to must be one the run may reach (xspawn.mjs: one it created, or any in a declared live run),
+ * checked before anything is made or started, whatever `spawn` is; the proxy in front of a display the run created is
+ * then the run's too, until its stop.
+ * The proxy never outlives this process: its xtrace is ended, and its socket and directory removed, at the process's
+ * exit, whatever way it exits without the stop (`endAtExit`); and xtrace is started with the kernel's parent-death
+ * signal (setpriv's `--pdeathsig`), so a harness killed outright (SIGKILL, or a signal it has no handler for), which runs
+ * nothing of its own, still ends it. Its socket is then a file nothing listens on.
+ * Only the socket its own xtrace made is ever removed (`ownSocket`): an xtrace that ends early leaves its socket, which
+ * the proxy removes as soon as it sees the end, and if that file is gone and another run listens at the same number by
+ * then, neither that nor the stop or the exit removes the other run's socket.
+ * `spawn` and `socketDir` (where the proxy's socket appears) are the display-free tests' own.
  */
-export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {}) {
-  const n = freeDisplay();
+export async function startProxy({ display = process.env.DISPLAY, privateDisplay, env = process.env, spawn = spawnProcess, socketDir = '/tmp/.X11-unix' } = {}) {
+  assertReachable('xtrace', [], { DISPLAY: display });
+  privateDisplay ??= isPrivateDisplay({ env: { ...process.env, DISPLAY: display } });
+  const n = freeDisplay(socketDir);
+  const socket = `${socketDir}/X${n}`;
   const dir = mkdtempSync(join(tmpdir(), 'cua171-audit-'));
   const log = join(dir, 'x11.log');
-  // xtrace copies the display's credentials for the proxy into a copy of the authority file of the pass's own, so
-  // the person's ~/.Xauthority is never written
   const auth = join(dir, 'Xauthority');
-  copyFileSync(process.env.XAUTHORITY ?? join(homedir(), '.Xauthority'), auth);
-  const child = spawn('xtrace', ['-k', '-d', display, '-D', `:${n}`, '-c', '-f', auth, '-F', auth, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+  writeFileSync(auth, '', { mode: 0o600 });
+  const credentials = privateDisplay ? ['-n'] : ['-c', '-f', auth, '-F', env.XAUTHORITY ?? join(env.HOME ?? homedir(), '.Xauthority')];
+  // lists shown to 256 entries: every client's connection setup, XKB keymap and keyboard mapping are tens of KB of
+  // lists, the bulk of a whole run's trace (T4b's audit round), and no audit reads that far into a list
+  let child;
+  try {
+    child = guard(spawn)('setpriv', ['--pdeathsig', 'KILL', '--', 'xtrace', '-k', '-m', '256', '-d', display, '-D', `:${n}`, ...credentials, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+  const own = ownSocket(socket);
+  const forget = endAtExit(() => {
+    if (child.exitCode === null && child.signalCode == null) child.kill('SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+    own.remove();
+  });
   let stderr = '';
-  child.stderr.on('data', (d) => {
+  let failed = null;
+  child.on?.('error', (error) => {
+    failed = error;
+  });
+  child.stderr?.on('data', (d) => {
     stderr += d;
   });
-  const exited = new Promise((resolve) => child.once('exit', resolve));
+  // xtrace leaves its display's socket behind when it ends, ended by the stop or early: removed at once while it is its own
+  const exited = new Promise((resolve) => child.once('exit', resolve)).then((code) => {
+    own.remove();
+    return code;
+  });
   const deadline = Date.now() + 5000;
-  while (!existsSync(`/tmp/.X11-unix/X${n}`)) {
-    if (Date.now() > deadline || child.exitCode !== null) throw new Error(`xtrace did not start: ${stderr.trim()}`);
+  while (!existsSync(socket)) {
+    if (Date.now() > deadline || child.exitCode !== null || failed) {
+      // nothing of a start that failed is left: the proxy, its directory with whatever xtrace wrote (its socket never
+      // appeared, so whatever listens at that number later is not the proxy's)
+      if (child.exitCode === null && !failed) child.kill('SIGKILL');
+      rmSync(dir, { recursive: true, force: true });
+      forget();
+      throw new Error(`xtrace did not start: ${failed ? failed.message : stderr.trim()}`);
+    }
     await new Promise((r) => setTimeout(r, 20));
   }
+  own.made();
+  // in front of a display the run created, the proxy is the run's own display too (a live run's needs no entry), and its
+  // clients read the proxy's own authority file (xspawn.mjs `authorityFor`)
+  const release = isCreatedDisplay(display) ? registerDisplay(`:${n}`, `the run's trace proxy in front of ${display}`, { authority: auth }) : () => {};
+  const marks = [];
   return {
     display: `:${n}`,
     env: { ...process.env, DISPLAY: `:${n}`, XAUTHORITY: auth },
     log,
-    async stop() {
+    marks,
+    /**
+     * A mark at the trace's end, for attributing requests to the harness's steps: once the log has stopped growing for
+     * 100 ms (xtrace writes each line as it forwards it), its length in bytes, recorded as `{tag, at}`. A request still
+     * in flight when the mark is taken lands after it, in the next step's span, where the audits count it against
+     * that step: a late request is never excused.
+     */
+    async mark(tag) {
+      const size = () => (existsSync(log) ? statSync(log).size : 0);
+      const deadline = Date.now() + 3000;
+      let last = size();
+      let quiet = Date.now();
+      while (Date.now() - quiet < 100 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 20));
+        const now = size();
+        if (now !== last) {
+          last = now;
+          quiet = Date.now();
+        }
+      }
+      marks.push({ tag, at: last });
+      return last;
+    },
+    /**
+     * Ends the proxy and answers the trace: its text, or with `parse` (`parseXtraceFile`'s kind), what `parse(log)`
+     * answers, read from the file before it is removed.
+     */
+    async stop({ parse = null } = {}) {
+      release();
       child.kill('SIGTERM');
       await exited;
-      const text = existsSync(log) ? readFileSync(log, 'utf8') : '';
-      rmSync(dir, { recursive: true, force: true });
-      // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
-      rmSync(`/tmp/.X11-unix/X${n}`, { force: true });
-      return text;
+      try {
+        if (parse) return await parse(log);
+        return existsSync(log) ? readFileSync(log, 'utf8') : '';
+      } finally {
+        // its socket went when xtrace ended (`exited`), so the next pass finds the number free
+        rmSync(dir, { recursive: true, force: true });
+        forget();
+      }
     },
   };
 }

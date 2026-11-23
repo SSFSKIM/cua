@@ -51,6 +51,15 @@ export const SCENE_OPS = {
   'device-qt': DEVICE_SCENE_OPS['device-qt'],
   'device-chrome': DEVICE_SCENE_OPS['device-chrome'],
   'device-chrome-dnd': DEVICE_SCENE_OPS['device-chrome-dnd'],
+  // M4's T4: minimized windows (minimized.mjs), cua alone
+  minimized: DEVICE_SCENE_OPS.minimized,
+  'minimized-xterm': DEVICE_SCENE_OPS['minimized-xterm'],
+  'minimized-recorder': DEVICE_SCENE_OPS['minimized-recorder'],
+  // M4's T5: identity (identity.mjs), cua alone
+  identity: DEVICE_SCENE_OPS.identity,
+  'identity-gtk3': DEVICE_SCENE_OPS['identity-gtk3'],
+  'identity-gtk4': DEVICE_SCENE_OPS['identity-gtk4'],
+  'identity-kate': DEVICE_SCENE_OPS['identity-kate'],
 };
 
 const GEDIT = [910, 756];
@@ -123,7 +132,12 @@ export function parseInputStatus(names) {
     scroll: num(line('scroll '), 'scroll'),
     context: num(context, 'context'),
     context_on: context.match(/\bon (\S+)/)?.[1] ?? null,
+    // with the page's `menu=native` only (candidate 3): the Escape keydowns it got
+    escapes: num(context, 'escapes'),
     clicks: num(line('clicks '), 'clicks'),
+    pointer_at: pointer.match(/\bat (-?\d+) (-?\d+)/)?.slice(1).map(Number) ?? null,
+    wheels: num(line('wheels '), 'wheels'),
+    wheel_legacy: num(line('wheels '), 'legacy'),
   };
 }
 

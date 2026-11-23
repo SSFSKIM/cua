@@ -1,0 +1,16 @@
+✔ real Chrome: a page with room moves and the scroll answers ok; one with none answers ok at once (732.95786ms)
+✔ real Chrome: a page that handles the wheel itself gets the honest no-movement answer (3636.06175ms)
+✔ real Chrome: an inner scroller at its edge chains the wheel to the page, which is watched; overflow:hidden is no scroller (828.02685ms)
+✔ real Chrome: a same-origin frame's document is watched; a cross-origin frame cannot be read and answers as before (695.721922ms)
+✔ real Chrome: a probe the busy page does not answer within the budget sends no wheel and answers retry-safe (9671.552201ms)
+✔ real Chrome: a wheel handler that inserts a scrolled sibling before the scroller does not stand in for it (3611.840478ms)
+✔ real Chrome: a scroller inside an open shadow root is the one watched (3698.452878ms)
+✔ real Chrome: horizontal room in an RTL and an LTR scroller, both directions (788.178687ms)
+✔ real Chrome: a scroll-locked page (overflow hidden on html, or on body) has no room and answers ok at once (624.803254ms)
+✔ real Chrome: two scrolls in one tab overlap, and the one that ends first leaves the other its scroller (1023.997166ms)
+✔ real Chrome: a scroller inside a closed shadow root is found and watched; with the wheel taken, the honest answer, never ok (3717.590139ms)
+✔ real Chrome: a same-site cross-origin frame (the same host, another port) is unobservable: the wheel goes and the scroll answers ok, whether the frame scrolls or takes the wheel (729.76058ms)
+ℹ tests 474
+ℹ pass 472
+ℹ fail 0
+ℹ skipped 2

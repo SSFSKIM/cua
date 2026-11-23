@@ -1,0 +1,5 @@
+Warning: failed to launch javaldx - java may not function correctly
+
+** (soffice:3360735): WARNING **: 04:10:20.878: Exception in getText()
+
+** (soffice:3360735): WARNING **: 04:10:22.683: Exception in getText()

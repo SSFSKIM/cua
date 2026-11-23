@@ -1,0 +1,182 @@
+name: probe-433-qualification
+# Disposable #433 kit (scripts/probe-433/README.md), built on #435's. A push of this file only registers the workflow on
+# its branch; hosted macOS runs need explicit main (and fix) SHAs.
+on:
+  push:
+    branches: ['probe/433-qual']
+    paths: ['.github/workflows/probe-433-qual.yml']
+  workflow_dispatch:
+    inputs:
+      main:
+        description: Exact 40-character baseline engine SHA
+        required: true
+        type: string
+      fix:
+        description: Exact 40-character candidate SHA (empty measures main alone)
+        type: string
+        default: ''
+      mode:
+        description: smoke (one trial per unit), measure (ten per unit per head), qualify (twenty per unit per head, interleaved), discover (three per unit, a short observation records its gap and runs on)
+        type: choice
+        options: [smoke, measure, qualify, discover]
+        default: smoke
+      lanes:
+        description: Comma list of lanes (cft, safari, electron)
+        type: string
+        default: cft,safari,electron
+      cells:
+        description: Comma list of cells (empty runs every cell)
+        type: string
+        default: ''
+      reps:
+        description: Repetitions per unit and head (empty takes the mode's)
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: probe-433-qualification-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; explicit product SHA pins required for hosted macOS qualification.'
+  plan:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          sparse-checkout: scripts/probe-433
+          persist-credentials: false
+      - id: plan
+        shell: bash
+        env:
+          LANES: ${{ inputs.lanes }}
+          MODE: ${{ inputs.mode }}
+          FIX: ${{ inputs.fix }}
+          PROBE_CELLS: ${{ inputs.cells }}
+          PROBE_REPS: ${{ inputs.reps }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == qualify && -z "$FIX" ]]; then echo 'qualify needs a fix SHA'; exit 1; fi
+          if [[ "$MODE" == discover && -n "$FIX" ]]; then echo 'discover measures main alone'; exit 1; fi
+          # Unknown cells or a malformed reps fail here, before any macOS job; a lane with no unit of the cells is dropped,
+          # and a dispatch that leaves none is refused.
+          node --input-type=module -e '
+            const {unitsForLane,repsOf}=await import("./scripts/probe-433/cells.mjs");
+            repsOf(process.env.PROBE_REPS);
+            const lanes=process.env.LANES.split(",").map(s=>s.trim()).filter(Boolean);
+            if(!lanes.length||lanes.some(l=>!["cft","safari","electron"].includes(l)))throw Error("unknown lane");
+            const run=lanes.filter(l=>unitsForLane(process.env.PROBE_CELLS,l).length);
+            const skipped=lanes.filter(l=>!run.includes(l));if(skipped.length)console.log("lanes without units, skipped: "+skipped.join(","));
+            if(!run.length)throw Error("no selected lane has a unit of these cells");
+            (await import("node:fs")).appendFileSync(process.env.GITHUB_OUTPUT,"matrix="+JSON.stringify({include:run.map(lane=>({lane}))})+"\n");'
+  qualify:
+    needs: plan
+    runs-on: macos-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.lane }}
+    env:
+      MAIN_SHA: ${{ inputs.main }}
+      FIX_SHA: ${{ inputs.fix }}
+      MODE: ${{ inputs.mode }}
+      LANE: ${{ matrix.lane }}
+      PROBE_CELLS: ${{ inputs.cells }}
+      PROBE_REPS: ${{ inputs.reps }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Validate the kit and build the pinned engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse "$MAIN_SHA^{commit}")" = "$MAIN_SHA"
+          if [[ -n "$FIX_SHA" ]]; then
+            [[ "$FIX_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" != "$MAIN_SHA" ]]
+            test "$(git rev-parse "$FIX_SHA^{commit}")" = "$FIX_SHA"
+            git merge-base --is-ancestor "$MAIN_SHA" "$FIX_SHA"
+          fi
+          git log -1 --format='kit %H %s'
+          sw_vers
+          node --test scripts/probe-433/kit.test.mjs
+          node -e 'import("./scripts/probe-433/cells.mjs").then(m=>console.log("units",m.unitsFor(process.env.PROBE_CELLS).length))'
+          heads=(main)
+          if [[ -n "$FIX_SHA" ]]; then heads=(main fix); fi
+          printf '%s\n' "${heads[@]}" > "$RUNNER_TEMP/q433-heads"
+          for head in "${heads[@]}"; do
+            pin="$MAIN_SHA"
+            if [[ "$head" == fix ]]; then pin="$FIX_SHA"; fi
+            base="$RUNNER_TEMP/q433-$head"
+            git worktree add --detach "$base-src" "$pin"
+            test "$(git -C "$base-src" rev-parse HEAD)" = "$pin"
+            test -z "$(git -C "$base-src" status --porcelain)"
+            swift build -c release --package-path "$base-src/native/engine" --scratch-path "$base-build"
+            test -z "$(git -C "$base-src" status --porcelain)"
+          done
+      - name: Install lane prerequisites and compile the owned helper and cover
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$LANE" == electron ]]; then npm ci --prefix scripts/probe-433/electron --no-audit --no-fund; fi
+          swiftc -O scripts/probe-433/host.swift -o "$RUNNER_TEMP/q433-host"
+          cover="$RUNNER_TEMP/Probe433 Cover.app"
+          mkdir -p "$cover/Contents/MacOS"
+          cat > "$cover/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>q433</string>
+          <key>CFBundleIdentifier</key><string>org.cua.probe395.cover</string>
+          <key>CFBundleName</key><string>Probe433</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleVersion</key><string>1</string>
+          </dict></plist>
+          PLIST
+          cp "$RUNNER_TEMP/q433-host" "$cover/Contents/MacOS/q433"
+          codesign --force --sign - "$cover"
+      - name: Run the lane and publish its coded evidence
+        id: qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/q433-evidence"
+          mkdir -p "$evidence"
+          rc=0
+          specs=()
+          while read -r head; do specs+=("$head::$RUNNER_TEMP/q433-$head-build/release/cua-engine"); done < "$RUNNER_TEMP/q433-heads"
+          node scripts/probe-433/run.mjs "$LANE" "$MODE" "$RUNNER_TEMP" "$evidence" "$RUNNER_TEMP/q433-host" \
+            "$RUNNER_TEMP/Probe433 Cover.app/Contents/MacOS/q433" "${specs[@]}" || rc=$?
+          if [[ ! -s "$evidence/status.json" ]]; then
+            printf '%s\n' '{"pass":false,"abort":"publication-missing"}' > "$evidence/status.json"
+            rc=1
+          fi
+          exit "$rc"
+      - name: Record setup failure when no runner evidence was produced
+        if: ${{ !cancelled() && steps.qualification.outcome == 'skipped' }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/q433-evidence"
+          printf '%s\n' '{"pass":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q433-evidence/status.json"
+      - name: Upload the coded evidence, never runner state
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-433-${{ matrix.lane }}-${{ env.MODE }}
+          path: ${{ runner.temp }}/q433-evidence/*.json
+          if-no-files-found: error
+          retention-days: 30

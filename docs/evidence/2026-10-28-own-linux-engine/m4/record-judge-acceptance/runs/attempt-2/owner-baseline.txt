@@ -1,0 +1,12 @@
+owner pid=2546101 start=51157914 :0 count=1 digest=5afa07ffbf55
+tmproot /tmp/cua171-task49-WqJ6JO
+wrap exit 0; tmproot left: [3038625_1793701006513050363.jpg
+3038625_1793701007439720808.jpg
+3038661_1793701008698445761.jpg
+3038661_1793701009513291404.jpg
+mesa-shader-cache]
+owner side DIFFERS:
+32c32
+< mtime ~/.config/google-chrome 1793697441.012622214
+---
+> mtime ~/.config/google-chrome 1793700980.988898430

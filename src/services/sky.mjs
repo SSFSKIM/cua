@@ -42,7 +42,8 @@
 // goes to the vendor unchanged, as on macOS. With cua's own Linux service (#171), whose engine refuses the first request
 // that acts after a late drag and drop it has not reported yet, the launch acts too: just before it, the wrapper calls
 // the service's `beforeLaunch` (the engine's `preflight`), whose refusal is the launch's answer; the vendor's service has
-// no such export and is not asked.
+// no such export and is not asked. The same goes for `kernelReset`, which the trusted worker calls when the REPL host
+// ended the kernel (js_reset, a cell's timeout): passed on only to a loaded service that has it (cua's Linux service).
 //
 // Approvals on Linux (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "The service", Policy and approvals,
 // its Linux sentence): sky_linux has no policy of its own, so this wrapper asks through the policy module
@@ -57,7 +58,7 @@ import {parseReference} from '../secrets/reference.mjs';
 import {createLinuxPolicy} from './engine/policy.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, inputFailedUnentered, concealedInputUnavailable,
-  interventionKind, userIntervened, secretsFromEnv,
+  interventionKind, userIntervened, secretMayShow, secretsFromEnv,
 } from './secret-input.mjs';
 
 export {SecretInputError};
@@ -88,7 +89,8 @@ const REQUEST_KEYS = ['type', 'method', 'args'];
 // errors.js); the five cua's engine raises that the vendor has no name for (the native engine spec's Interfaces); and
 // the names a concealed set_value can stop under in cua's engine: its element's resolution, the element not settable,
 // the value not of the element's type, the focus click finding nothing to click, refused in a background web page or
-// unconfirmed (#282), the write refused. All are fixed
+// unconfirmed (#282), the write refused; and typeUnconfirmed, which a concealed type_text that keyed ends with in cua's
+// engine when its field is a password field or does not match what was typed (#354; a match is success). All are fixed
 // names, never the value. invalidNumber and invalidDate do say the secret does not parse as the element's type, which
 // is what the model must know to stop retrying it there. Anything else from the service is withheld.
 const ADMITTED_ERROR_NAMES = new Set([
@@ -97,7 +99,7 @@ const ADMITTED_ERROR_NAMES = new Set([
   'permissionsNotGranted', 'invalidApp', 'noActiveSession', 'userStoppedSession', 'incompatibleClientVersion',
   'permissionsPending', 'blockedURL', 'userIntervened', 'couldNotGetSenderPID', 'ambiguousApp',
   'couldNotGetBootstrapPort', 'screenLocked', 'jsonRPCError',
-  'concealedInputUnavailable', 'inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed', 'windowMinimized',
+  'concealedInputUnavailable', 'inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed', 'windowMinimized', 'typeUnconfirmed',
   'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch', 'valueNotSettable', 'invalidNumber',
   'invalidDate', 'unsupportedValueType', 'cannotClickOffscreenElement', 'backgroundClickRefused', 'clickUnconfirmed', 'actionFailed',
 ]);
@@ -241,14 +243,25 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
       // cua's engine says nothing was posted (its input meta's startedAt null), whatever the error's name.
       const unentered = error?.name === 'SkyComputerUseError' && Boolean(error.meta) && error.meta.startedAt === null;
+      // #414: cua's engine typed into a password field that stopped being one, which may now show the secret.
+      const mayShow = method === 'type_text' && error?.name === 'SkyComputerUseError' && secretMayShow(error.meta);
       // The user intervened: which of its two sentences, so the model knows whether to wait or to re-query.
       const intervened = kind === 'userIntervened' ? interventionKind(error.message) : null;
-      if (intervened) throw userIntervened(method, reference.label, intervened, unentered);
+      if (intervened) throw userIntervened(method, reference.label, intervened, unentered, mayShow);
       if (unentered) throw inputFailedUnentered(method, reference.label, kind);
-      throw inputFailed(method, reference.label, kind);
+      throw inputFailed(method, reference.label, kind, mayShow);
     }
   }
-  return {handleRpc};
+
+  // The REPL host's kernel reset (js_reset or a cell's timeout; src/repl-host/trusted-worker.mjs): passed to the
+  // service already loaded when it has one of its own (cua's Linux service, which releases a held drag handle). The
+  // vendor's services and macOS's have none; nothing is loaded for it.
+  async function kernelReset() {
+    if (vendor === null) return;
+    const service = await Promise.resolve(vendor).catch(() => null);
+    if (typeof service?.kernelReset === 'function') await service.kernelReset();
+  }
+  return {handleRpc, kernelReset};
 }
 
 // The service as the trusted worker runs it, configured by the launch environment.
@@ -268,4 +281,7 @@ let service = null;
 export function handleRpc(request) {
   service ??= skyServiceFromEnv();
   return service.handleRpc(request);
+}
+export async function kernelReset() {
+  await service?.kernelReset();
 }

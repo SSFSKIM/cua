@@ -228,9 +228,9 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertGreaterThan(cut.omitted, cut.omittedAbove, "the collapsed container's blocks are placed nowhere")
   }
 
-  func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
-    // A list (1) of 600 rows 20 pt tall (100 + i), each with two cells (2000 + 2i, 2001 + 2i), scrolled 200 rows down,
-    // whose frames do not settle its shown run (`misplaceASample`), so the width rule prints none of them (#314).
+  /// A list (1) of 600 rows 20 pt tall (100 + i), each with two cells (2000 + 2i, 2001 + 2i), scrolled 200 rows down,
+  /// whose frames do not settle its shown run (`misplaceASample`), so the width rule prints none of them (#314).
+  private func omittedList() -> FakeTree {
     let tree = FakeTree()
     tree.extra[0] = ["AXRole": "AXWindow" as CFString]
     tree.frames[0] = windowFrame
@@ -244,6 +244,60 @@ final class VisibleFirstTests: XCTestCase {
       tree.frames[2001 + 2 * i] = CGRect(x: 500, y: y, width: 500, height: 20)
     }
     misplaceASample(tree, list: 100)
+    return tree
+  }
+
+  /// #330 (the review of 364e017d..51ce4138): the guard's record-only reads say, as the tree's do, whether each element's
+  /// AXChildren was read; a shown row whose read failed is not recorded with every child.
+  func testTheGuardsRecordOnlyReadsCarryAFailedChildrenRead() {
+    let tree = omittedList()
+    tree.childrenUnread = [310]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    XCTAssertTrue(recording.screenshotReads.contains { tree.id($0.element) == 310 && $0.number < 0 }, "a record-only row")
+    let complete = screenshotChildrenRecorded(recording.screenshotReads) { tree.id($0) }
+    XCTAssertEqual(complete[310], false)
+    XCTAssertEqual(complete[311], true)
+  }
+
+  /// #298: the guard's record-only reads keep, as the tree's do, an AXStaticText's value and every element's subrole.
+  func testTheGuardsRecordOnlyReadsCarryATextsValueAndTheSubrole() {
+    let tree = omittedList()
+    let cell = 2001 + 2 * 210
+    tree.extra[cell] = ["AXRole": "AXStaticText" as CFString, "AXValue": "Save" as CFString]
+    tree.extra[310] = ["AXSubrole": "AXTabButton" as CFString]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    let text = recording.screenshotReads.first { tree.id($0.element) == cell }
+    XCTAssertEqual(text.map { $0.number < 0 }, true, "a record-only cell")
+    XCTAssertEqual(text?.value, "Save")
+    XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 310 }?.subrole, "AXTabButton")
+  }
+
+  /// #298's edited-text exemption (ruling 1ea561bc:565): a text among the guard's record-only reads takes its region
+  /// from its recorded ancestors' roles, as the tree's do; an AXEditableAncestor it answers is neither read nor kept.
+  func testTheGuardsRecordOnlyReadsDeriveATextsRegion() {
+    let tree = omittedList()
+    let row = 310, cell = 2001 + 2 * 210
+    tree.extra[row] = ["AXRole": "AXTextArea" as CFString]
+    tree.extra[cell] = ["AXRole": "AXStaticText" as CFString, "AXEditableAncestor": Engine.element(0)]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == cell }.map { $0.number < 0 }, true, "a record-only cell")
+    let text = screenshotNodes(recording.screenshotReads).first { tree.id($0.element) == cell }
+    XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, row, "its row's role, not the window it answers")
+  }
+
+  /// The review of 7f6eb3dc..b2f00ad5 (P2 2): the guard's record-only reads keep which label attributes failed to read.
+  func testTheGuardsRecordOnlyReadsCarryTheUnreadableLabels() {
+    let tree = omittedList()
+    let cell = 2001 + 2 * 210
+    tree.unreadableAttributes[cell] = ["AXTitle"]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    let read = recording.screenshotReads.first { tree.id($0.element) == cell }
+    XCTAssertEqual(read.map { $0.number < 0 }, true, "a record-only cell")
+    XCTAssertEqual(read?.labelsUnread, [.title])
+  }
+
+  func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
+    let tree = omittedList()
     let shownRows = Set((200..<240).map { 100 + $0 })
     let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
     XCTAssertEqual(ids(recording), [0, 1], "the tree keeps the vendor's none")

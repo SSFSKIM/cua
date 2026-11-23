@@ -274,6 +274,7 @@ What fails the request: step 1, X errors on the fallback's root, the screenshot,
 - Traced: gedit's text view, 13 ancestors, only the `scroll pane` clipped, point (825,388) on the root, (455,388) in the window; two Enter+Motion pairs, press and release of button 3 12 ms apart; no raise, no pointer move.
 - Middle, multi-click, held key or duration on an element are refused (§2).
 - **Newest:** `…before clicking` replaces `…before right-clicking`; new sentences `element is disabled`, `element has no primary accessibility action and is not editable` and `element now exposes accessibility actions; refresh get_window_state()` [newest: strings].
+- cua: an element action that runs `showContextMenu` (this fallback, a named action, or a primary action that is it) answers ok only once a menu appears as a new child of the element's application holding a `menu item`, within 1 s; otherwise `showContextMenu was sent and no menu was seen within 1 s; the application may have shown its own menu or ignored the request; read the window before retrying` (`menuUnconfirmed`), where the vendor answers ok as soon as the action is asked for [cua: Decision Log, 2026-11-14, candidate 3].
 
 ### 7.3 Element scroll
 
@@ -526,7 +527,7 @@ vendor: `PasteText` (pinned) or targeted Ctrl+V with a confirm that compares the
 - **`clipboard_write {window, handle}`**: an unknown handle is refused **before** the lock (`unknown clipboard handle; copy again in this Linux helper`); the lock; an owner serving the snapshot's formats takes CLIPBOARD unconditionally; the Paste by the route choice of §12.1 (gedit: `PasteText`, which fails as there; Chrome: the context menu, success in about 1 s); release the lock. The prior clipboard is **not** restored either: the snapshot stays on CLIPBOARD as the persistent owner (§13.5) [read: 0xb53d4–0xb5456; traced: no restore at trace-clipboard x11.log:1790, the next write's STOP at 5333].
 - **`clipboard_release {handle}`**: removes the handle; an unknown or already released handle answers success, as the declaration promises ("releasing the same handle again has no effect") [A §1.3; read: 0xae9e6, untraced; open §22.15]. No lock; the JavaScript neither waits nor defers.
 - **Handles**: `<pid>-<nanoseconds since the epoch at client start, u128>-<n>`, n a per-client counter from 1 (`31747-1793171648543593690-1`); kept in a sorted map; at most 32 and 256 MiB in all; valid until released or the helper exits [read: `X11FullDesktopClient` constructor 0x7a4a0, template 0x25ff8d, counter 0xbdadb; traced]. **Corrects A §2.6**: `with_restored_clipboard_lifetime` (0x7a4a0) is the client's constructor, not a scope; its flag selects the one-shot hand-off of §13.5.
-- cua: the same handle format, limits and sentences; Copy by the vendor's route choice (no `PasteText` is needed to copy) [cua: Design, Text and clipboard].
+- cua: the same handle format, limits and sentences; Copy by the vendor's route choice (no `PasteText` is needed to copy) [cua: Design, Text and clipboard]. A context-menu Copy that times out adds to `clipboard update timed out` that the application may still complete the Copy later and that its menus on the window may stay unresponsive [cua: Decision Log, 2026-11-14, candidate 3].
 
 ### 13.2 The display lock: how the vendor acquires `SKY_CLIPBOARD_LOCK`
 

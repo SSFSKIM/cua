@@ -7,8 +7,16 @@ use std::time::{Duration, Instant};
 
 use crate::clipboard::{Outcome, Seen};
 
-/// The design's sentences (M2's Decisions; Decision Log, M2.1).
+/// The design's sentences (M2's Decisions; Decision Log, M2.1). `CHANGED` is said as `not_dispatched(CHANGED_CAUSE,
+/// false)`, its cause apart so the same refusal after a focusing click can say so ([`not_dispatched`]).
+#[cfg(test)]
 pub const CHANGED: &str = "requested field or selection changed before dispatch; nothing was sent";
+pub const CHANGED_CAUSE: &str = "requested field or selection changed before dispatch";
+/// How a refusal before the chord ends once a focusing click has gone to the window: the click may have moved the
+/// field's focus or caret, so a retry is not safe blind (the design session, M4's T5 round 3: "nothing was sent" only
+/// when nothing was).
+pub const AFTER_CLICK: &str =
+    "no paste was dispatched, but a focusing click already reached the window, so read the window before retrying";
 pub const UNCONFIRMED: &str = "Paste was sent once and could not be confirmed; read the field before retrying";
 /// The vendor's, for text the clipboard cannot hold (behaviour §12.1 step 4); cua's limit is 64 MiB.
 pub const TOO_LONG: &str = "clipboard text exceeds byte limit";
@@ -19,17 +27,40 @@ pub const MAX_TEXT_BYTES: usize = crate::clipboard::MAX_SNAPSHOT_BYTES;
 pub const CONFIRM_POLL: Duration = Duration::from_millis(20);
 pub const CONFIRM_WAIT: Duration = Duration::from_secs(2);
 
-/// While an earlier unconfirmed paste's `CurrentTime` refusal runs, `wait` long (Decision Log, M2.1).
-pub fn previous_unconfirmed(wait: Duration) -> String {
-    format!(
-        "a previous paste could not be confirmed and may still be read; nothing was sent; retry after {} s",
-        wait.as_secs() + u64::from(wait.subsec_nanos() > 0)
-    )
+/// How long a paste waits at most, between taking CLIPBOARD and its revalidation before the chord, for a target whose
+/// family asks for `TARGETS` at every owner change (`families.rs` `refreshes_targets`) to ask and be answered, and how
+/// often it looks (task 56, fix 3). A target that has not asked by then gets the chord as before. The smallest step
+/// of 5, 10, 25, 50, 100 ms that no measured wait reached at twice the load, with no proxy, every paste waiting up to
+/// 1 s (`--targets-wait-ms 1000`): gnome-terminal 200 pastes, median 2.3 ms, p95 8.7, max 12.8; gedit and Writer 30
+/// each, max 12.7 and 12.5 (`m4/focus-timer/fix3/`).
+pub const TARGETS_REFRESH_WAIT: Duration = Duration::from_millis(25);
+pub const TARGETS_POLL: Duration = Duration::from_millis(2);
+
+/// While an earlier unconfirmed paste's `CurrentTime` refusal runs, `wait` long (Decision Log, M2.1); `clicked` when
+/// the request's focusing click had already gone to the window.
+pub fn previous_unconfirmed(wait: Duration, clicked: bool) -> String {
+    let cause = "a previous paste could not be confirmed and may still be read";
+    let seconds = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+    if clicked {
+        format!("{cause}; {AFTER_CLICK} after {seconds} s")
+    } else {
+        format!("{cause}; nothing was sent; retry after {seconds} s")
+    }
 }
 
 /// A refusal before dispatch whose cause is another sentence (a snapshot bound, the owner's take).
 pub fn nothing_sent(cause: impl std::fmt::Display) -> String {
     format!("{cause}; nothing was sent")
+}
+
+/// A refusal before the chord: `cause`, then that nothing was sent, or, when the request's focusing click had already
+/// gone to the window, [`AFTER_CLICK`].
+pub fn not_dispatched(cause: impl std::fmt::Display, clicked: bool) -> String {
+    if clicked {
+        format!("{cause}; {AFTER_CLICK}")
+    } else {
+        nothing_sent(cause)
+    }
 }
 
 /// For a family with no verified paste route.
@@ -99,9 +130,107 @@ pub struct Expected {
     /// The field's character count before the paste, and what it read at the same offsets.
     pub count_before: i32,
     pub before: String,
+    /// The whole field as observed, in a family whose text scrolls away at its start (`families.rs`), else None.
+    pub whole: Option<Whole>,
+}
+
+/// The whole field as observed before the paste, in a family whose text scrolls its beginning away as text arrives (a
+/// terminal whose screen is full: task 56, fix 2): its text, and the offsets where the toolkit's own lines start.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Whole {
+    pub text: String,
+    pub line_starts: Vec<i32>,
 }
 
 impl Expected {
+    /// Whether the whole field read after the paste (`after`) shows the paste in a field that scrolled (the design
+    /// session's ruling, task 56 fix 2). Only a field observed whole can say, and only when both hold:
+    ///
+    /// - `after` is the expected text (the text observed whole, with the paste at the caret) less a prefix that ends
+    ///   where one of the observed lines starts, the paste still whole after it;
+    /// - nothing short of the whole paste reads the same: the observed text with none of the paste, or with only its
+    ///   first characters, at the caret, less a prefix that ends where an observed line starts, is not `after`.
+    ///
+    /// The second is what makes a confirm safe. When the text just before the caret is the paste text itself, a
+    /// field that scrolled by one line and took no paste reads exactly as the expected text less the next line, and a
+    /// paste whose text repeats itself can read as its first characters alone with one line less scrolled. Copies of
+    /// the paste text elsewhere on the screen, which every other reading leaves apart, do not make it ambiguous (task
+    /// 56 fix 3: a screen full of an earlier run's text held the paste text 67 times, and the landed paste stayed
+    /// unconfirmed under a count of its occurrences). Anything else stays unconfirmed: a wrong confirm is worse than a
+    /// false "unconfirmed".
+    ///
+    /// The readings are compared as UTF-8 bytes, in place, so the check allocates nothing of the paste's size: two
+    /// texts are the same characters exactly when they are the same bytes. Where the scroll would have to end is known
+    /// from the lengths alone, so a read too short to hold the paste whole (a terminal's screen after a long paste) is
+    /// refused before any comparison (task 56 fix 5: a 64 MiB paste took 260 ms and 268 MB at each judged read).
+    pub fn confirmed_scrolled(&self, after: &str) -> bool {
+        let Some(whole) = &self.whole else {
+            return false;
+        };
+        let Ok(at) = usize::try_from(self.at) else {
+            return false;
+        };
+        // outside Gecko a paste's offsets are its characters (`offsets`)
+        let Ok(pasted) = usize::try_from(self.len) else {
+            return false;
+        };
+        if self.feff_after_astral || self.text.is_empty() {
+            return false;
+        }
+        debug_assert_eq!(pasted, self.text.chars().count());
+        // where each observed character starts, in bytes, and the text's end
+        let observed: Vec<usize> = whole
+            .text
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain([whole.text.len()])
+            .collect();
+        let count = observed.len() - 1;
+        if at > count {
+            return false;
+        }
+        let read = after.chars().count();
+        let Some(prefix) = (count + pasted).checked_sub(read).filter(|&k| k > 0 && k <= at) else {
+            return false;
+        };
+        let starts: Vec<usize> = whole
+            .line_starts
+            .iter()
+            .filter_map(|&start| usize::try_from(start).ok())
+            .collect();
+        if !starts.contains(&prefix) {
+            return false;
+        }
+        // where the paste's last `d` characters start, in bytes, for each `d` a reading can leave out: a reading short
+        // of the paste starts at a line before `prefix`, so it leaves out at most `prefix` characters
+        let cut: Vec<usize> = std::iter::once(self.text.len())
+            .chain(self.text.char_indices().rev().map(|(i, _)| i))
+            .take(prefix.min(pasted) + 1)
+            .collect();
+        // the observed text with the paste's first `landed` characters at the caret, less its first `start`
+        // characters (`start` ≤ `at`), is `after`
+        let reads = |start: usize, landed: usize| {
+            let text = whole.text.as_bytes();
+            let head = &text[observed[start]..observed[at]];
+            let paste = &self.text.as_bytes()[..cut[pasted - landed]];
+            let tail = &text[observed[at]..];
+            let after = after.as_bytes();
+            let (with_head, with_paste) = (head.len(), head.len() + paste.len());
+            after.len() == with_paste + tail.len()
+                && same_bytes(&after[..with_head], head)
+                && same_bytes(&after[with_head..with_paste], paste)
+                && same_bytes(&after[with_paste..], tail)
+        };
+        reads(prefix, pasted)
+            && !starts.iter().any(|&start| {
+                // the line start fixes how much of the paste such a reading holds: one candidate each
+                let Some(landed) = (read + start).checked_sub(count) else {
+                    return false;
+                };
+                landed < pasted && reads(start, landed)
+            })
+    }
+
     /// Whether a read of the field's `count` and of its offsets `at..at + len` (`read`) shows the paste: the
     /// inserted segment is there, and the field changed (its count, or what those offsets held). Text around the
     /// segment (autocompletion, suggestions) is not judged.
@@ -115,6 +244,18 @@ impl Expected {
         };
         normalize(read) == self.text && (count != self.count_before || normalize(&self.before) != self.text)
     }
+}
+
+/// Whether two byte strings are the same, compared a block at a time with no early exit inside a block, which the
+/// compiler vectorizes: a slice's `==` calls the C library's `memcmp`, and musl's, the shipped build's, compares a byte
+/// at a time (task 56 fix 5: the scrolled rule's check at the field limit took 12 ms on musl through it and takes 2.6
+/// ms with this; glibc's `memcmp` is faster still, 1.3 ms against 3.1).
+fn same_bytes(a: &[u8], b: &[u8]) -> bool {
+    const BLOCK: usize = 64;
+    a.len() == b.len()
+        && a.chunks(BLOCK)
+            .zip(b.chunks(BLOCK))
+            .all(|(x, y)| x.iter().zip(y).fold(0, |differ, (p, q)| differ | (p ^ q)) == 0)
 }
 
 /// Whether X window `requestor` belongs to the X client that created `client` (Decision Log, M2.1: a request counts
@@ -228,6 +369,7 @@ mod tests {
             feff_after_astral: feff,
             count_before,
             before: before.into(),
+            whole: None,
         }
     }
 
@@ -242,6 +384,240 @@ mod tests {
         assert!(!e.confirmed_by(10, "xyzwvutsr"), "not yet");
         assert!(!e.confirmed_by(18, "cua171 🙃"));
         assert!(!e.confirmed_by(17, "cua171 "), "a short read");
+    }
+
+    /// A terminal's screen as its accessible text reads: rows of `width` characters, the last one partial, then the
+    /// newline VTE ends its text with; the caret before that newline. Observed whole, its lines starting at each row.
+    fn screen(rows: &[&str], paste: &str) -> Expected {
+        let before: String = rows.concat() + "\n";
+        let mut starts = Vec::new();
+        let mut at = 0;
+        for row in rows {
+            starts.push(at);
+            at += row.chars().count() as i32;
+        }
+        Expected {
+            text: paste.into(),
+            at,
+            len: offsets(paste, false),
+            feff_after_astral: false,
+            count_before: at + 1,
+            before: "\n".into(),
+            whole: Some(Whole {
+                text: before,
+                line_starts: starts,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_scrolled_field_whose_paste_landed_confirms() {
+        // the trace's case: the paste wraps the last row of a full screen, the first row scrolls out, and every offset
+        // the observation took is one row off
+        let e = screen(&["0123456789", "abcdefghij", "KLMNOP"], "Pasted");
+        assert!(
+            !e.confirmed_by(16, ""),
+            "the inserted segment's offsets read past the end"
+        );
+        assert!(e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"), "one row out");
+        assert!(e.confirmed_scrolled("KLMNOPPasted\n"), "two rows out");
+        assert!(
+            !e.confirmed_scrolled("0123456789abcdefghijKLMNOPPasted\n"),
+            "no scroll: the inserted segment's rule decides"
+        );
+        assert!(
+            !e.confirmed_scrolled("asted\n"),
+            "the paste itself partly scrolled out: not shown whole"
+        );
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOPPastex\n"));
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOP\n"), "nothing pasted");
+        let unobserved = Expected { whole: None, ..e };
+        assert!(
+            !unobserved.confirmed_scrolled("abcdefghijKLMNOPPasted\n"),
+            "a field not observed whole"
+        );
+    }
+
+    #[test]
+    fn a_scrolled_field_with_the_paste_text_already_in_it_and_no_paste_does_not_confirm() {
+        // the negative control: the paste never landed, the screen scrolled by one row, and what is left reads exactly
+        // as the paste would have, one row further: the text before the caret was the paste text already
+        let e = screen(&["r1\n", "ab\n", "ab\n"], "ab\n");
+        let after = "ab\nab\n\n";
+        let expected: String = "r1\nab\nab\nab\n\n".chars().skip(6).collect();
+        assert_eq!(
+            after, expected,
+            "the scrolled text equals the expected text less two rows"
+        );
+        assert!(!e.confirmed_scrolled(after));
+    }
+
+    #[test]
+    fn a_scroll_whose_prefix_does_not_end_where_a_line_starts_stays_unconfirmed() {
+        let mut e = screen(&["0123456789", "abcdefghij", "KLMNOP"], "Pasted");
+        e.whole.as_mut().unwrap().line_starts = vec![0, 20];
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"));
+        assert!(
+            !e.confirmed_scrolled("123456789abcdefghijKLMNOPPasted\n"),
+            "one character out, within a row"
+        );
+        assert!(e.confirmed_scrolled("KLMNOPPasted\n"));
+    }
+
+    #[test]
+    fn a_scrolled_field_whose_paste_text_shows_elsewhere_confirms_when_nothing_short_of_the_paste_reads_the_same() {
+        // the paste landed, and an earlier copy of its text is still on the screen
+        let e = screen(&["0123456789", "PastedXXXX", "KLMNOP"], "Pasted");
+        assert!(e.confirmed_scrolled("PastedXXXXKLMNOPPasted\n"));
+        // or one in the rows that scrolled out
+        let e = screen(&["Pasted6789", "abcdefghij", "KLMNOP"], "Pasted");
+        assert!(e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"));
+        // or one that overlaps the paste
+        let e = screen(&["0123456789", "abcdefghia", "KLMNOa"], "aa");
+        assert!(e.confirmed_scrolled("abcdefghiaKLMNOaaa\n"));
+    }
+
+    #[test]
+    fn a_screen_full_of_the_paste_text_confirms_the_paste_that_landed() {
+        // task 56 fix 3, the probe's trial 28: an earlier fill (`abcDefgHPasted` again and again) left the paste's own
+        // text (`Pastedabc`) all over a screen of rows of 69; the paste wrapped the last row, and one row scrolled out
+        let stream: Vec<char> = ("abcDefgHPasted".repeat(97) + "abcDefgHabcDefgH").chars().collect();
+        let rows: Vec<String> = stream.chunks(69).map(|row| row.iter().collect()).collect();
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        assert_eq!(
+            (rows.len(), rows[19].len()),
+            (20, 63),
+            "nineteen full rows and one the paste wraps"
+        );
+        let e = screen(&rows, "Pastedabc");
+        let mut after: String = stream[69..].iter().collect();
+        after.push_str("Pastedabc\n");
+        assert!(e.confirmed_scrolled(&after));
+        let nothing: String = stream[69..].iter().collect::<String>() + "\n";
+        assert!(!e.confirmed_scrolled(&nothing), "one row out and nothing pasted");
+    }
+
+    #[test]
+    fn a_reading_the_paste_s_first_characters_alone_explain_stays_unconfirmed() {
+        // the paste `aba` landed whole and one row scrolled out, or only its first `a` landed and nothing scrolled:
+        // both read `ababa`
+        let e = screen(&["ab", "ab"], "aba");
+        assert!(!e.confirmed_scrolled("ababa\n"));
+        // with the first row a line of its own, only the whole paste reads so
+        let e = screen(&["xy", "ab"], "aba");
+        assert!(e.confirmed_scrolled("ababa\n"));
+    }
+
+    #[test]
+    fn a_paste_longer_than_the_read_is_judged_without_an_allocation_of_its_size() {
+        // the largest paste the route serves, into the harness's terminal screen (20 rows of 69): the read after it is
+        // a screen again, which cannot hold the paste whole
+        let rows: Vec<String> = (0..20)
+            .map(|row| format!("{row:02}").repeat(35)[..69].to_string())
+            .collect();
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        let e = screen(&rows, &"a".repeat(MAX_TEXT_BYTES));
+        let after = "a".repeat(20 * 69) + "\n";
+        let (confirmed, largest) = crate::alloc_watch::largest_allocation(|| e.confirmed_scrolled(&after));
+        assert!(!confirmed);
+        assert!(largest < 64 << 10, "the check allocated {largest} bytes at once");
+    }
+
+    /// The scrolled rule as fix 3 wrote it, over vectors of characters: the meaning `confirmed_scrolled` keeps.
+    fn confirmed_scrolled_by_characters(e: &Expected, after: &str) -> bool {
+        let Some(whole) = &e.whole else {
+            return false;
+        };
+        let before: Vec<char> = whole.text.chars().collect();
+        let paste: Vec<char> = e.text.chars().collect();
+        let Ok(at) = usize::try_from(e.at) else {
+            return false;
+        };
+        if e.feff_after_astral || paste.is_empty() || at > before.len() {
+            return false;
+        }
+        let expected: Vec<char> = before[..at]
+            .iter()
+            .chain(&paste)
+            .chain(&before[at..])
+            .copied()
+            .collect();
+        let after: Vec<char> = after.chars().collect();
+        let Some(prefix) = expected.len().checked_sub(after.len()).filter(|&k| k > 0 && k <= at) else {
+            return false;
+        };
+        let starts: Vec<usize> = whole
+            .line_starts
+            .iter()
+            .filter_map(|&s| usize::try_from(s).ok())
+            .collect();
+        starts.contains(&prefix)
+            && expected[prefix..] == after[..]
+            && !starts.iter().any(|&s| {
+                let Some(landed) = (after.len() + s).checked_sub(before.len()) else {
+                    return false;
+                };
+                landed < paste.len()
+                    && before[..at]
+                        .iter()
+                        .chain(&paste[..landed])
+                        .chain(&before[at..])
+                        .skip(s)
+                        .eq(after.iter())
+            })
+    }
+
+    #[test]
+    fn the_scrolled_rule_answers_as_it_did_over_characters_on_every_screen_tried() {
+        // small screens over a few characters, two of them beyond one byte and one beyond the BMP, so that repeats,
+        // ambiguity and every scroll are common; each read is the expected text less some prefix, or that read with
+        // one character changed
+        let alphabet = ['a', 'b', 'é', '🙂'];
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let (mut confirmed, mut refused) = (0, 0);
+        for _ in 0..20_000 {
+            let rows: Vec<String> = (0..1 + next(4))
+                .map(|_| (0..1 + next(3)).map(|_| alphabet[next(4)]).collect())
+                .collect();
+            let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+            let paste: String = (0..1 + next(4)).map(|_| alphabet[next(4)]).collect();
+            let e = screen(&rows, &paste);
+            let whole = &e.whole.as_ref().unwrap().text;
+            let at = e.at as usize;
+            let expected: Vec<char> = whole
+                .chars()
+                .take(at)
+                .chain(paste.chars())
+                .chain(whole.chars().skip(at))
+                .collect();
+            let mut read: Vec<char> = expected[next(expected.len())..].to_vec();
+            if next(3) == 0 && !read.is_empty() {
+                let i = next(read.len());
+                read[i] = alphabet[next(4)];
+            }
+            let read: String = read.into_iter().collect();
+            let by_characters = confirmed_scrolled_by_characters(&e, &read);
+            assert_eq!(
+                e.confirmed_scrolled(&read),
+                by_characters,
+                "{rows:?} {paste:?} {read:?}"
+            );
+            if by_characters {
+                confirmed += 1;
+            } else {
+                refused += 1;
+            }
+        }
+        assert!(
+            confirmed > 1_000 && refused > 1_000,
+            "{confirmed} confirmed, {refused} refused"
+        );
     }
 
     #[test]
@@ -351,16 +727,31 @@ mod tests {
     #[test]
     fn the_sentences() {
         assert_eq!(
-            previous_unconfirmed(Duration::from_millis(7_200)),
+            previous_unconfirmed(Duration::from_millis(7_200), false),
             "a previous paste could not be confirmed and may still be read; nothing was sent; retry after 8 s"
         );
         assert_eq!(
-            previous_unconfirmed(Duration::from_secs(3)),
+            previous_unconfirmed(Duration::from_secs(3), false),
             "a previous paste could not be confirmed and may still be read; nothing was sent; retry after 3 s"
         );
         assert_eq!(
             nothing_sent("clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms"),
             "clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms; nothing was sent"
+        );
+    }
+
+    #[test]
+    fn a_refusal_says_nothing_was_sent_only_before_any_focusing_click() {
+        assert_eq!(not_dispatched(CHANGED_CAUSE, false), CHANGED);
+        assert_eq!(
+            not_dispatched("clipboard busy", true),
+            "clipboard busy; no paste was dispatched, but a focusing click already reached the window, so read the \
+             window before retrying"
+        );
+        assert_eq!(
+            previous_unconfirmed(Duration::from_millis(4_100), true),
+            "a previous paste could not be confirmed and may still be read; no paste was dispatched, but a focusing \
+             click already reached the window, so read the window before retrying after 5 s"
         );
     }
 }

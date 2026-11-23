@@ -532,7 +532,9 @@ final class BackgroundPointerTests: XCTestCase {
     let before = monotonicMilliseconds()
     var timings = Timings()
     let step = web.observeEnablement(eligible: true, pid: 7, launched: nil, connection: 1, access: access, timings: &timings)
-    XCTAssertEqual(writes, 1, "the write was attempted")
+    // The write was attempted; Electron's computed getter cannot confirm that a failed AXManualAccessibility write did
+    // not take, so it is rolled back too (#293's re-review).
+    XCTAssertEqual(writes, 2, "the write was attempted, then rolled back")
     XCTAssertNil(step?.set, "and failed")
     XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
     XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))
@@ -877,7 +879,7 @@ final class RereadDeadlineTests: XCTestCase {
     var clock: Double = 10_000
     func caret(boxesAt: Double, freshSince: Double?) -> Result<Int, CaretNotPlaced> {
       caretAwaitingBoxes(fresh: true, freshSince: freshSince, offset: { clock >= boxesAt ? .success(4) : .failure(.noCharacterBoxes) },
-                         focused: { true }, sameTarget: { true }, valueLength: { 10 }, now: { clock }, sleep: { clock += $0 })
+                         sameTarget: { true }, valueLength: { 10 }, now: { clock }, sleep: { clock += $0 })
     }
     XCTAssertEqual(caret(boxesAt: 12_400, freshSince: 10_000), .success(4), "boxes 2.4 s after the write")
     clock = 10_000

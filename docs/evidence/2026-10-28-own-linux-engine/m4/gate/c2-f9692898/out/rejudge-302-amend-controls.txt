@@ -1,0 +1,6 @@
+ok   L3b as stored (must PASS): PASS
+ok   L3b: a desktop-route #302 run whose desktop changed (desktop_clean false): FAIL (trial 5: fail: the desktop changed)
+ok   S1 on candidate 2 as stored (must PASS, unchanged): PASS
+ok   S1 on candidate 2: a background #302 run with its front window not active (front_active false): FAIL (trial 2: fail: the desktop changed)
+ok   S1 on candidate 1 as stored (must PASS, unchanged): PASS
+controls: every one as expected

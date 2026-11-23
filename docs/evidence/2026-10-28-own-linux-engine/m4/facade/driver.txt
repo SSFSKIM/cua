@@ -1,0 +1,10 @@
+2026-11-13T06:14:43Z start accept load=0.68 0.55 0.43
+2026-11-13T06:18:03Z end accept exit 0
+2026-11-13T06:19:43Z start device load=0.79 0.86 0.62
+2026-11-13T06:20:43Z end device exit 0
+2026-11-13T06:23:13Z start services load=0.74 1.01 0.74
+2026-11-13T06:23:35Z end services exit 0
+2026-11-13T06:24:25Z start parity load=0.71 1.00 0.76
+2026-11-13T07:01:58Z end parity exit 0
+2026-11-13T07:02:48Z start baseline load=0.77 1.17 1.23
+2026-11-13T07:24:09Z end baseline exit 0

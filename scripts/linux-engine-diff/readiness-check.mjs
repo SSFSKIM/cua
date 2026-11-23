@@ -12,13 +12,20 @@
 // the front window over part of it: the window is on screen but obscured, so the rule waits for damage) and `covered`
 // (the front window over the whole screen). The engine reports which way it judged the window (`--stats`), so a
 // trial the engine did not judge unobscured is never counted as the shortcut's.
+//
+// A window the server already keeps offscreen (M4's T9: GTK 4's ARGB frame) is captured with no first damage, and it
+// may never repaint, so its two captures agree whether right or wrong: such a first capture is also judged against the
+// same window's unobscured capture (`firstCaptureVerdict`). Each `--variant` is a control lane run beside the shipped
+// rule (`--variant control=--capture-wait quiet`, every pixmap taken as complete); the run passes only when each
+// control captured some first frame wrong, where the rule it drops is needed (`judgeControls`).
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 import { copyFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Engine } from './engine.mjs';
 import { familyNames, openFamily } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { IMAGE_TOLERANCE, imageVerdict } from './images.mjs';
 import { Oracle } from './oracle.mjs';
 import { XPROBE, configure, xdotool } from './scenes.mjs';
@@ -45,6 +52,33 @@ export const FRONT_FOR = {
 /** A same-window comparison: nothing masked, the differential run's tolerance. */
 export function captureVerdict(diff) {
   return imageVerdict(diff, { ...IMAGE_TOLERANCE, maskTopRows: 0 });
+}
+
+/**
+ * A first capture's verdict: against the same engine's later capture (`own`), and, when the engine took it as kept
+ * offscreen by the server (M4's T9: no first damage waited for), also against the window's capture unobscured
+ * (`unobscured`), because a window that never repaints shows the same pixels in both its captures, wrong or right.
+ * With no unobscured capture to judge it by, it is unjudged.
+ */
+export function firstCaptureVerdict(own, { offscreen = false, unobscured = undefined } = {}) {
+  const verdict = captureVerdict(own);
+  if (!verdict.ok || !offscreen) return verdict;
+  if (!unobscured) return { ok: null, reason: 'kept offscreen, and no unobscured capture to judge it by' };
+  const shown = captureVerdict(unobscured);
+  return shown.ok ? verdict : { ok: false, reason: `kept offscreen, and off the unobscured capture: ${shown.reason}` };
+}
+
+/**
+ * The control lanes' counts (each `--variant`, labelled `cua:<label>`): a control proves the rule it drops is needed
+ * only where it captured a first frame wrong, so one that missed nothing proves nothing (`missed` false).
+ */
+export function judgeControls(trials) {
+  const lanes = [...new Set(trials.map((t) => t.lane).filter((l) => l && l !== 'cua'))];
+  return lanes.map((lane) => {
+    const mine = trials.filter((t) => t.lane === lane);
+    const wrong = mine.filter((t) => t.ok === false).length;
+    return { lane, trials: mine.length, wrong, missed: wrong > 0 };
+  });
 }
 
 /**
@@ -83,8 +117,23 @@ export function judgeReadinessRun(trials, vendorTrials) {
   };
 }
 
+/**
+ * The sitting's outcome, named for what it showed (the design session, 2026-11-07). FAIL when one of cua's first
+ * captures is wrong or unjudged. Otherwise PASS only when the pinned build confirmed every truth and every control lane
+ * missed somewhere. A truth the pinned build's capture did not confirm is a REFERENCE MISMATCH; a control lane that
+ * captured every first frame right is CONTROL NON-DISCRIMINATING (the sitting could not have failed the rule it drops).
+ * Neither is a pass, and neither is a miss of cua's.
+ */
+export function readinessOutcome(verdict, controls) {
+  if (!(verdict.trials > 0 && verdict.wrong === 0 && verdict.unjudged === 0)) return { label: 'FAIL', pass: false };
+  const labels = [];
+  if (!(verdict.vendor_trials > 0 && verdict.vendor_wrong === 0 && verdict.vendor_unjudged === 0)) labels.push('REFERENCE MISMATCH');
+  if (controls.some((c) => !c.missed)) labels.push('CONTROL NON-DISCRIMINATING');
+  return labels.length ? { label: labels.join(', '), pass: false } : { label: 'PASS', pass: true };
+}
+
 function imgdiff(a, b) {
-  return JSON.parse(execFileSync(XPROBE, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
+  return JSON.parse(xExecFileSync(XPROBE, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
 }
 
 /** Arranges the front window for a condition, the scene raised beneath it; returns the front's real geometry. */
@@ -96,11 +145,14 @@ function arrange(desktop, scene, condition) {
   return [g.X, g.Y, g.WIDTH, g.HEIGHT].map(Number);
 }
 
-async function trial(ctx, scene, condition, i) {
+/** Where a lane's truth of a family and condition is kept: the shipped lane's by family and condition alone. */
+const truthKey = (lane, family, condition) => (lane === 'cua' ? `${family}|${condition}` : `${lane}|${family}|${condition}`);
+
+async function trial(ctx, scene, condition, i, lane = { label: 'cua', args: [] }) {
   const { args, emit, keepDir } = ctx;
   await sleep(ctx.gapMs);
-  const engine = new Engine({ label: 'cua', bin: args.cua, stats: true }).start();
-  const row = { kind: 'readiness-trial', family: scene.family, condition, i, load: args.load };
+  const engine = new Engine({ label: lane.label, bin: args.cua, args: lane.args, stats: true }).start();
+  const row = { kind: 'readiness-trial', lane: lane.label, family: scene.family, condition, i, load: args.load };
   try {
     const first = await engine.request('get_window_state', { window: { id: scene.id }, include_screenshot: true });
     row.ms = r1(first.sinceSpawnMs);
@@ -114,17 +166,22 @@ async function trial(ctx, scene, condition, i) {
       row.error = String(first.response.error ?? second.response.error ?? 'no screenshot').slice(0, 300);
     } else {
       const d = imgdiff(b, a);
-      const v = captureVerdict(d);
-      Object.assign(row, { ok: v.ok, over: d.over, mad: d.mad, compared: d.compared, reason: v.reason });
-      if (!v.ok || d.over > 0) {
+      // a capture the engine took as kept offscreen is judged against the window unobscured too (firstCaptureVerdict)
+      const offscreen = row.capture?.reason === 'offscreen';
+      const shown = ctx.truth.get(truthKey(lane.label, scene.family, 'unobscured'));
+      const unobscured = offscreen ? (shown ? imgdiff(shown, a) : null) : undefined;
+      const v = firstCaptureVerdict(d, { offscreen, unobscured });
+      Object.assign(row, { ok: v.ok, over: d.over, mad: d.mad, compared: d.compared, reason: v.reason, ...(offscreen ? { vs_unobscured: unobscured ? { over: unobscured.over, mad: unobscured.mad } : null } : {}) });
+      if (v.ok !== true || d.over > 0) {
         // the wrong frame and its truth, kept for the report (the harness's own window)
-        const stem = join(keepDir, `${scene.family}-${condition}-${args.load ? 'load' : 'idle'}-${i}`);
+        const stem = join(keepDir, `${lane.label.replace(/[^a-z0-9-]/gi, '_')}-${scene.family}-${condition}-${args.load ? 'load' : 'idle'}-${i}`);
         copyFileSync(a, `${stem}-first.jpg`);
         copyFileSync(b, `${stem}-truth.jpg`);
         row.kept = stem;
       }
-      ctx.truth.set(`${scene.family}|${condition}`, `${ctx.dir}/${scene.family}-${condition}-truth.jpg`);
-      copyFileSync(b, ctx.truth.get(`${scene.family}|${condition}`));
+      const key = truthKey(lane.label, scene.family, condition);
+      ctx.truth.set(key, `${ctx.dir}/${key.replace(/[^a-z0-9-]/gi, '_')}-truth.jpg`);
+      copyFileSync(b, ctx.truth.get(key));
     }
   } finally {
     await engine.close();
@@ -165,6 +222,9 @@ export async function engineReadiness(desktop, emit, args) {
   const oracle = new Oracle();
   const names = familyNames(args.families.length ? args.families : ['gedit', 'gnome-text-editor', 'kate', 'qtcreator', 'firefox', 'chrome', 'electron', 'writer', 'writer-gen', 'xterm', 'xterm-allow']);
   const trialsPer = args.samplesTrials ?? 12;
+  // the shipped rule, then each `--variant` as a control lane (M4's T9: `--capture-wait quiet` takes every pixmap as
+  // complete), each with its trials of every condition
+  const lanes = [{ label: 'cua', args: [] }, ...(args.variants ?? [])];
   const ctx = { args, emit, dir: desktop.dir, keepDir: desktop.keepDir ?? desktop.dir, truth: new Map(), gapMs: 500 };
   await desktop.openFront('covered');
   const all = [];
@@ -173,15 +233,16 @@ export async function engineReadiness(desktop, emit, args) {
   for (const name of names) {
     // `--geometry`: the families that open maximized (Firefox, Writer) open at that size instead, so the front window
     // can stand clear of them for the unobscured condition
-    const scene = await openFamily(desktop, oracle, name, 'ready', { geometry: args.geometry ?? null });
+    // the window's application verified as the family's before its trials count (app-identity.mjs)
+    const scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, name, 'ready', { geometry: args.geometry ?? null }), name);
     try {
       for (const condition of CONDITIONS) {
         const front = arrange(desktop, scene, condition);
         emit({ kind: 'readiness-arrangement', family: name, condition, front, window: scene.window });
         await sleep(800);
-        for (let i = 0; i < trialsPer; i++) all.push(await trial(ctx, scene, condition, i));
+        for (const lane of lanes) for (let i = 0; i < trialsPer; i++) all.push(await trial(ctx, scene, condition, i, lane));
         for (let i = 0; i < 2; i++) vendor.push(await vendorCapture(ctx, scene, condition, i));
-        const mine = all.filter((t) => t.family === name && t.condition === condition);
+        const mine = all.filter((t) => t.lane === 'cua' && t.family === name && t.condition === condition);
         const verdict = judgeReadiness(mine);
         process.stdout.write(`${name} ${condition}${args.load ? ' (loaded)' : ''}: ${mine.length - verdict.wrong - verdict.unjudged}/${mine.length} right, engine judged unobscured ${mine.filter((t) => t.capture?.unobscured).length}/${mine.length}\n`);
         if (verdict.stop) {
@@ -195,21 +256,26 @@ export async function engineReadiness(desktop, emit, args) {
     }
   }
   md.push(`Every family, ${trialsPer} trials per condition, a fresh cua-engine per trial${args.load ? ', every core busy (stress-ng)' : ', idle'}: the first capture against the same engine's capture ${TRUTH_AFTER_MS} ms later (same size, at most 0.1% of the pixels off by more than 32). The pinned build captured each condition twice, against that truth.`, '');
-  md.push('| family | condition | engine judged unobscured | first capture right | wait median ms | wait max ms | reasons | first damage median ms | cold request median ms | pinned against the truth |');
-  md.push('|---|---|---:|---:|---:|---:|---|---:|---:|---:|');
-  for (const name of names) {
-    for (const condition of CONDITIONS) {
-      const mine = all.filter((t) => t.family === name && t.condition === condition);
-      const theirs = vendor.filter((t) => t.family === name && t.condition === condition);
-      const waits = mine.map((t) => t.capture?.wait_ms).filter((v) => typeof v === 'number');
-      const reasons = [...new Set(mine.map((t) => t.capture?.reason).filter(Boolean))].join(', ');
-      const firsts = mine.map((t) => t.capture?.first_damage_ms).filter((v) => typeof v === 'number');
-      md.push(`| ${name} | ${condition} | ${mine.filter((t) => t.capture?.unobscured).length}/${mine.length} | ${mine.filter((t) => t.ok).length}/${mine.length} | ${r1(median(waits)) ?? '–'} | ${waits.length ? r1(Math.max(...waits)) : '–'} | ${reasons} | ${r1(median(firsts)) ?? '–'} | ${r1(median(mine.map((t) => t.ms))) ?? '–'} | ${theirs.filter((t) => t.ok).length}/${theirs.length} |`);
+  md.push('| lane | family | condition | engine judged unobscured / kept offscreen | first capture right | wait median ms | wait max ms | reasons | first damage median ms | cold request median ms | pinned against the truth |');
+  md.push('|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|');
+  for (const lane of lanes) {
+    for (const name of names) {
+      for (const condition of CONDITIONS) {
+        const mine = all.filter((t) => t.lane === lane.label && t.family === name && t.condition === condition);
+        const theirs = vendor.filter((t) => t.family === name && t.condition === condition);
+        const waits = mine.map((t) => t.capture?.wait_ms).filter((v) => typeof v === 'number');
+        const reasons = [...new Set(mine.map((t) => t.capture?.reason).filter(Boolean))].join(', ');
+        const firsts = mine.map((t) => t.capture?.first_damage_ms).filter((v) => typeof v === 'number');
+        md.push(`| ${lane.label} | ${name} | ${condition} | ${mine.filter((t) => t.capture?.unobscured).length} / ${mine.filter((t) => t.capture?.offscreen).length} of ${mine.length} | ${mine.filter((t) => t.ok).length}/${mine.length} | ${r1(median(waits)) ?? '–'} | ${waits.length ? r1(Math.max(...waits)) : '–'} | ${reasons} | ${r1(median(firsts)) ?? '–'} | ${r1(median(mine.map((t) => t.ms))) ?? '–'} | ${lane.label === 'cua' ? `${theirs.filter((t) => t.ok).length}/${theirs.length}` : '–'} |`);
+      }
     }
   }
-  const verdict = judgeReadinessRun(all, vendor);
-  emit({ kind: 'readiness-verdict', ...verdict });
+  const verdict = judgeReadinessRun(all.filter((t) => t.lane === 'cua'), vendor);
+  const controls = judgeControls(all);
+  const { label, pass } = readinessOutcome(verdict, controls);
+  emit({ kind: 'readiness-verdict', ...verdict, controls, outcome: label, pass });
   const firsts = verdict.wrong === 0 && verdict.unjudged === 0 ? 'every first capture right' : `${verdict.wrong} wrong first captures (${verdict.unobscured_wrong} judged unobscured), ${verdict.unjudged} unjudged`;
-  md.push('', `**${verdict.pass ? 'PASS' : 'FAIL'}: ${firsts}** of ${verdict.trials}; the pinned build's captures against the truth: ${verdict.vendor_wrong} off and ${verdict.vendor_unjudged} unjudged of ${verdict.vendor_trials}.`);
-  return { md, pass: verdict.pass };
+  md.push('', `**${label}: ${firsts}** of ${verdict.trials}; the pinned build's captures against the truth: ${verdict.vendor_wrong} off and ${verdict.vendor_unjudged} unjudged of ${verdict.vendor_trials}.`);
+  for (const c of controls) md.push('', `Control lane ${c.lane}: ${c.wrong} of ${c.trials} first captures wrong${c.missed ? '' : ', so the sitting could not have failed the rule it drops'}.`);
+  return { md, pass, label };
 }

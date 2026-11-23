@@ -1,0 +1,20 @@
+engine <task73fix3>/build-live/ba1f6bc4d92420765d1f0922f139581ca19c8f99/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+harness <task73fix3>/harness-ba1f6bc4
+cua-engine 0.3.0 (69d095f860f4)
+start red-slow 2026-11-12T00:50:15Z loadavg 1.33 0.80 0.59
+run exit 0; watchdog clean
+private run red-slow exit 0 00:52:25
+end red-slow 2026-11-12T00:52:25Z loadavg 0.34 0.60 0.54 status 0
+sitting red-slow status 0
+cua-engine 0.3.0 (a823346ed345)
+start red-moved 2026-11-12T00:52:25Z loadavg 0.34 0.60 0.54
+run exit 0; watchdog clean
+private run red-moved exit 0 00:53:43
+end red-moved 2026-11-12T00:53:43Z loadavg 0.45 0.56 0.53 status 0
+sitting red-moved status 0
+cua-engine 0.3.0 (ba1f6bc4d924)
+start green-moved-p3 2026-11-12T00:53:43Z loadavg 0.45 0.56 0.53
+run exit 0; watchdog clean
+private run green-moved-p3 exit 0 00:55:00
+end green-moved-p3 2026-11-12T00:55:00Z loadavg 0.26 0.46 0.50 status 0
+sitting green-moved-p3 status 0

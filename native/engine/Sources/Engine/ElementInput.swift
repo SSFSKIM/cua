@@ -79,11 +79,14 @@ private let focusFieldRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, "
 /// on it (`click`) when focus did not take; Safari's elements exposing AXDOMClassList go straight to the click. Nothing
 /// otherwise. `beforeMutating` runs before the write and before the click (the in-flight intervention check: a user
 /// event stops the preparation before it moves the user's focus). Answers whether the click ran.
+///
+/// #324: `caretFirst` is asked first, with the field's role, whether it focuses the field itself (a WebKit page's field,
+/// `focusByCaretFirst`); when it answers true nothing else here runs, no AXFocused write and no click.
 @discardableResult
 func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: AXOps, beforeMutating: () throws -> Void = {},
-                        click: () throws -> Void) throws -> Bool {
-  guard let role = ax.role(element), focusFieldRoles.contains(role), ax.isSettable(element, kAXFocusedAttribute) else { return false }
-  if bool(ax.read(element, kAXFocusedAttribute)) == true { return false }
+                        caretFirst: (_ role: String) throws -> Bool = { _ in false }, click: () throws -> Void) throws -> Bool {
+  guard let role = fieldNeedingFocus(element, ax: ax) else { return false }
+  if try caretFirst(role) { return false }
   let straightToClick = bundleIdentifier == "com.apple.Safari" && ax.read(element, "AXDOMClassList") != nil
   if !straightToClick {
     try beforeMutating()
@@ -92,6 +95,98 @@ func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: A
   }
   try beforeMutating()
   try click()
+  return true
+}
+
+/// The role of a field focusFieldIfNeeded acts on (a focusable text field, text area or date-time area that is not
+/// focused); nil for any other element, which needs no focusing.
+func fieldNeedingFocus(_ element: AXUIElement, ax: AXOps) -> String? {
+  guard let role = ax.role(element), focusFieldRoles.contains(role), ax.isSettable(element, kAXFocusedAttribute) else { return nil }
+  return bool(ax.read(element, kAXFocusedAttribute)) == true ? nil : role
+}
+
+// MARK: Caret first on a WebKit page's field (#324)
+//
+// #324's spike (runs 42468407027, 42472740707 and 42476788546, kit `probe/324-measure`): on Safari, focusFieldIfNeeded's
+// AXFocused write activates Safari (#313's finding), and its posted fallback click joins set_value's held activation and
+// takes #321's hold, a freeze of about 300 ms with the reorder hidden inside it. Writing the field's caret
+// (AXSelectedTextRange {0, 0}) focused it 32 of 32 with no raise and no pointer event on the page, and the freeze fell to
+// the held activation's own, about 120 ms. On an AppKit field the caret and the press both fail and the AXFocused write
+// works (16 of 16, no raise), so only a WebKit page's field takes this route (the design session's ruling 8c206e91).
+
+/// Whether a password field (AXSecureTextField, or a subrole that cannot be read) takes the caret-first route too. On
+/// since the hosted check measured it (runs 42480471918, 42480982911; ruling eecaccfe): Safari's password set_value
+/// 20 of 20 delivered, 0 raises, no page events, a 124 ms freeze. Off, a password field keeps main's AXFocused write and
+/// fallback click. Its value and range are never read either way.
+let caretFirstCoversSecureFields = true
+
+/// How focusField focuses a field that needs it (#324).
+enum FieldFocusRoute: Equatable {
+  /// focusFieldIfNeeded's: AXFocused written and read again, then the fallback click (a Safari DOM element straight to
+  /// the click).
+  case focusWrite
+  /// A text-entry field in a WebKit page (#313's classification, `textEntryClickRoute`'s `selecting`): its caret, then
+  /// its AXPress, each read back (`focusByCaretFirst`).
+  case caretFirst
+}
+
+/// The route of a field focusField must focus (`role` its role): caret first for a text-entry role in a web area in a
+/// WebKit process, a password field included while `caretFirstCoversSecureFields` is on; focusFieldIfNeeded's otherwise, an
+/// AppKit field, a field outside every web area and a Chromium or Gecko page's included. Only a process that is
+/// neither Chromium's nor Gecko's reads the field's parents.
+func fieldFocusRoute<Element>(_ element: Element, role: String, engine: PageEngine, roleOf: (Element) -> String?, parent: (Element) -> Element?,
+                              subrole: () -> SubroleRead, coversSecure: Bool = caretFirstCoversSecureFields) -> FieldFocusRoute {
+  guard textEntryClickRoute(element, role: role, engine: engine, roleOf: roleOf, parent: parent) == .pressConfirmingFocus(selecting: true) else {
+    return .focusWrite
+  }
+  if !coversSecure, secureTextField(role: role, subrole: subrole()) { return .focusWrite }
+  return .caretFirst
+}
+
+/// The caret-first route (#324, ruling 8c206e91): the in-flight check, then the field's caret written at its start
+/// (`writeCaret`, AXSelectedTextRange {0, 0}, its AXError kept) and its focus read back (`readingFocus`,
+/// `textEntryFocusSettleMs`); still unfocused, the in-flight check again and its AXPress where it advertises one
+/// (`actions`), read back again. `noted` records the last step and its read-back. A field that has not read focused by
+/// then is refused (`caretFirstUnconfirmed`) before the method writes anything. Nothing writes AXFocused and nothing is
+/// posted.
+func focusByCaretFirst(app: String, beforeMutating: () throws -> Void, writeCaret: () -> AXError, actions: () -> [String],
+                       press: (String) -> Void, focused: () -> Bool?, noted: (TextEntryFocusRecord) -> Void,
+                       now: () -> Double, sleep: (Double) -> Void) throws {
+  try beforeMutating()
+  var written = AXError.success
+  let caret = try readingFocus(after: { written = writeCaret() }, focused: focused, now: now, sleep: sleep)
+  var record = TextEntryFocusRecord(focus: caret, step: .selection, caretWriteError: written == .success ? nil : written.rawValue)
+  if caret != .readBack, actions().contains(kAXPressAction) {
+    try beforeMutating()
+    let pressed = try readingFocus(after: { press(kAXPressAction) }, focused: focused, now: now, sleep: sleep)
+    record = TextEntryFocusRecord(focus: pressed, step: .press, caretWriteError: record.caretWriteError)
+  }
+  noted(record)
+  if record.focus != .readBack { throw caretFirstUnconfirmed(app, pressed: record.step == .press) }
+}
+
+/// The caret-first route's refusal: the caret was written (and, `pressed`, the field's AXPress performed), but the field
+/// does not report focus, so the method wrote nothing of its own. Neither device mode is named: the route is both's.
+func caretFirstUnconfirmed(_ app: String, pressed: Bool) -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "\(app)'s text field could not be focused: its caret was written through accessibility\(pressed ? ", then its accessibility action was performed" : ""), but the field does not report focus, so the requested value or selection was not written. Observe \(app) with get_app_state before any retry, and never retry blindly.")
+}
+
+/// focusFieldIfNeeded's `caretFirst` through `ax` (#324): whether the field takes the caret-first route
+/// (`fieldFocusRoute`, by `engine` and the field's parents and subrole), and if so the route itself
+/// (`focusByCaretFirst`), the caret's write and the press each run inside `stepping` (the method's interval). Answers
+/// true once the route ran (the field then reads focused; otherwise it threw).
+func caretFirstFocus(_ element: AXUIElement, role: String, engine: PageEngine, app: String, ax: AXOps, subrole: (AXUIElement) -> SubroleRead,
+                     beforeMutating: () throws -> Void, stepping: (() -> Void) -> Void, noted: (TextEntryFocusRecord) -> Void) throws -> Bool {
+  guard fieldFocusRoute(element, role: role, engine: engine, roleOf: ax.role, parent: ax.parent, subrole: { subrole(element) }) == .caretFirst else {
+    return false
+  }
+  try focusByCaretFirst(app: app, beforeMutating: beforeMutating, writeCaret: {
+    var written = AXError.failure
+    stepping { written = ax.write(element, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: 0, length: 0))) }
+    return written
+  }, actions: { ax.actions(element) }, press: { action in stepping { _ = ax.perform(element, action) } },
+     focused: { bool(ax.read(element, kAXFocusedAttribute)) }, noted: noted, now: ax.now, sleep: ax.sleep)
   return true
 }
 
@@ -109,8 +204,9 @@ func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () thr
 
 /// The bookkeeping around focusFieldIfNeeded's fallback click (`click`, which fills the meta it is given): once the click
 /// has posted, the app counts as acted on (`acted`, arming the settle) whatever follows, a refusal of the action
-/// included, and the method's interval spans the click's; its guard time, `pointUnconfirmed` and `routeAdvice` ride in
-/// the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
+/// included, and the method's interval spans the click's; its guard time, `pointUnconfirmed`, `routeAdvice` and its
+/// delivery guard's record (`delivery`, #324: without it the click's raise reads as one outside any hold, #315's misread)
+/// ride in the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
 func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout InputMeta) throws -> Void) throws {
   var clickMeta = meta
   defer { if clickMeta.startedAt != nil { acted() } }
@@ -125,6 +221,7 @@ func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout Inp
   meta.activationGuardMs = clickMeta.activationGuardMs
   meta.pointUnconfirmed = clickMeta.pointUnconfirmed
   meta.routeAdvice = clickMeta.routeAdvice
+  meta.delivery = clickMeta.delivery
 }
 
 extension Engine {
@@ -144,9 +241,17 @@ extension Engine {
   /// sheet or panel is served by another process than the app) and whose attributed events count as the user's on the
   /// app from now on. A re-fetch walks what the lineage's current revision walked: the recorded menu-bar item when the
   /// observation was rooted there, else the window and the menu bar.
-  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded) throws -> ElementTarget {
+  /// An entry recorded before the app's Chromium readiness is first read again from its own handle (ruling 772,
+  /// `Lineage.resolve`'s `readiness`), its actions and identity those of the complete mode.
+  ///
+  /// `readsValue` false (#390, a sensitive set_value): every re-read and re-fetch here leaves AXValue unread.
+  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded,
+                     readsValue: Bool = true) throws -> ElementTarget {
     guard let lineage = context.lineage else { throw EngineError.invalidArguments("lineage is required with an element token") }
-    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch) { ElementResolver.live($0, pid: appPid) }
+    let readiness = entryReadiness(app: app, pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
+    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch, readiness: readiness) {
+      ElementResolver.live($0, pid: appPid, readsValue: readsValue)
+    }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
     actionTargets(owner, app: app, connection: context.connection)
@@ -157,9 +262,9 @@ extension Engine {
   /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll). The
   /// in-flight intervention check runs before each scroll operation.
   func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
-                        guarding: InterventionGuard) throws -> ElementTarget {
+                        guarding: InterventionGuard, readsValue: Bool = true) throws -> ElementTarget {
     try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight) {
-      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always)
+      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always, readsValue: readsValue)
     }
   }
 
@@ -171,22 +276,24 @@ extension Engine {
 
   /// A coordinate the model sent, in the pixels of the connection's last screenshot of the app's primary window, as a
   /// global point in that window (Screenshot.swift; refused as windowMinimized when that window is minimized, then as
-  /// noScreenshotForCoordinates when it cannot be placed).
-  func coordinatePoint(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect) {
-    let placed = try coordinatePlacement(x, y, app: app, appPid: appPid, context: context)
+  /// noScreenshotForCoordinates when it cannot be placed). A drag's end (`dragEnd`) outside the screenshot takes #334's
+  /// refusal.
+  func coordinatePoint(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
+                       dragEnd: Bool = false) throws -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect) {
+    let placed = try coordinatePlacement(x, y, app: app, appPid: appPid, context: context, dragEnd: dragEnd)
     return (placed.point, placed.window, placed.windowFrame)
   }
 
   /// `coordinatePoint` with the window-local point the conversion computed (`local`), for the click's record (#259).
-  func coordinatePlacement(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws
-    -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect, local: CGPoint) {
+  func coordinatePlacement(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
+                           dragEnd: Bool = false) throws -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect, local: CGPoint) {
     guard x.isFinite, y.isFinite else { throw EngineError.invalidArguments("x and y must be finite coordinates") }
     let application = prepare(AXUIElementCreateApplication(appPid))
     guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
       throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
     }
     let local = try placeCoordinate(in: window, app: app.displayName) {
-      try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
+      try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage, dragEnd: dragEnd)
     }
     return (CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y), window, windowFrame, local)
   }
@@ -271,6 +378,7 @@ extension Engine {
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                        beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                        announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
+                       pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) },
                        post: gatedPost, meta: &meta)
     }
   }
@@ -280,10 +388,22 @@ extension Engine {
   /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
   /// Inside a Chromium web area in shared mode the click is refused, never pressed (#282): an action is no focusing there.
   /// Inside a Gecko one it is carried by the field's own press, its focus read back (#315, `focusFallbackByPress`).
+  /// A WebKit page's text field (#324, `caretFirstFocus`) takes neither the write nor the click, in either device mode:
+  /// its caret, then its AXPress, each read back, recorded as `fieldFocus`; once either step has gone the app counts as
+  /// acted on, a refusal included.
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                   meta: inout InputMeta) throws {
     let connection = context.connection
-    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {
+    let engine = webAccessibility.pageEngine(app.appPath)
+    var stepped = false
+    defer { if stepped { connection.markActed(app) } }
+    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight, caretFirst: { role in
+      try caretFirstFocus(target.element, role: role, engine: engine, app: app.displayName, ax: .live, subrole: subroleRead,
+                          beforeMutating: guarding.checkInFlight, stepping: { step in
+        stepped = true
+        meta.posting { step(); return true }
+      }, noted: { meta.fieldFocus = $0 })
+    }) {
       try focusFallbackClick(target.element, ax: .live) {
         let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
         try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
@@ -355,8 +475,9 @@ extension Engine {
     }
     guard case .success(let resolved) = resolution else {
       guard case .failure(let why) = resolution else { return nil }
-      // A text field is focused instead: on Chromium by AXFocused (#283), with no re-read, since it works before complete
-      // mode; on Gecko by its own action, its focus read back (#315), since a background Firefox ignores the write.
+      // A text field is focused instead: on Chromium through accessibility (#283; by its caret's write, #341), with no
+      // action re-read, since it works before complete mode; on Gecko by its own action, its focus read back (#315),
+      // since a background Firefox ignores the write.
       if why == .editable {
         switch webAreaFocusCarrier(engine) {
         case .focusWrite:
@@ -450,6 +571,8 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed.
       try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)
@@ -474,13 +597,18 @@ extension Engine {
     }
   }
 
-  /// The focus route a plain left click into a web area's text field takes (#283, WebAreaFocus.swift): the text-entry
-  /// element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else AXFocused
-  /// written by route 1 with no activation and accepted once it reads back true, then the caret placed at the point
-  /// (`caretOffset` over the field's own characters' boxes when the hit is the field; over a contenteditable region's
-  /// AXStaticText hit's boxes, mapped into the region's offsets by `regionTextStart`; boxes still empty in a process
-  /// whose accessibility is fresh are re-read for up to 2 s, or 3 s just after an enablement write, `caretAwaitingBoxes`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
-  /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
+  /// The focus route a plain left click into a web area's text field takes (#283, WebAreaFocus.swift; #341's order): the
+  /// text-entry element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else,
+  /// with nothing written yet, the caret's offset at the point (`caretOffset` over the field's own characters' boxes when
+  /// the hit is the field; over a contenteditable region's AXStaticText hit's boxes, mapped into the region's offsets by
+  /// `regionTextStart`; boxes still empty in a process whose accessibility is fresh are re-read for up to 2 s, or 3 s
+  /// just after an enablement write, `caretAwaitingBoxes`), then AXSelectedTextRange {offset, 0} written by route 1 with
+  /// no activation, which focuses Chromium's field, AXFocused its fallback (and the whole of it where no offset is found
+  /// or the field is a password field), each accepted once the field reads focused; the caret read back on the field
+  /// and a reference character's box against its place before the writes (`focusPlacingCaret`), the result's note
+  /// saying what was done. Records the walk, the focused role, whether it was the hit, the write that focused it
+  /// (`focusStep`, also the plan's action), the box's shift and the caret (`elementClick` reason `focusField` or
+  /// `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                     context: ExecutionContext, stalePoint: StalePointGate<AXUIElement>? = nil) -> (inout InputMeta) throws -> Void {
     let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
@@ -503,6 +631,8 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
       try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)
@@ -517,22 +647,39 @@ extension Engine {
       let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
       let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
+      // The agent cursor at the point as the first write goes out, once.
+      var cursorShown = false
+      func showCursor() {
+        guard !cursorShown else { return }
+        cursorShown = true
+        cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
+      }
+      // #341: the element whose boxes gave the offset and the offset in its own text; the reference character, chosen at
+      // the first read of its box (`caretMarkIndex`).
+      var markAt: (element: AXUIElement, offset: Int)?
+      var markIndex: Int?
+      var focusRecord: WebAreaFocusRecord?
       let outcome = try focusPlacingCaret(
         app: app.displayName, secure: target.secure, fresh: fresh, freshSince: freshSince, beforeMutating: guarding.checkInFlight,
         beforeCaret: {
-          // After the focus's settle or the boxes' re-read, the guard again: a changed page places no caret.
-          guard waited, let stalePoint else { return nil }
+          // After the boxes' re-read, which precedes every write (#341), the guard again: a changed page is refused with
+          // nothing written.
+          guard waited, let stalePoint else { return }
           let checked = stalePoint.check(field, waited: true, now: monotonicMilliseconds, reads: .live)
           meta.stalePoint = checked.record
-          return checked.refusal == nil ? nil : .screenChanged
+          if let refusal = checked.refusal { throw refusal }
         },
         writeFocused: {
-          cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
+          showCursor()
           _ = meta.posting { _ = gatedWrite(field, kAXFocusedAttribute, kCFBooleanTrue); return true }
         },
         focused: { bool(attribute(field, kAXFocusedAttribute)) },
         offset: {
-          guard target.ancestor else { return fieldCaretOffset(field, at: point) }
+          guard target.ancestor else {
+            let found = fieldCaretOffset(field, at: point)
+            markAt = (try? found.get()).map { (field, $0) }
+            return found
+          }
           // A contenteditable region: the hit's own boxes give its text's offset, mapped into the region's.
           guard role(hit) == "AXStaticText" else { return .failure(.unmapped) }
           let local = fieldCaretOffset(hit, at: point)
@@ -541,6 +688,7 @@ extension Engine {
                                             value: { attribute($0, kAXValueAttribute) }, same: { CFEqual($0, $1) }) else {
             return .failure(.unmapped)
           }
+          markAt = (hit, offset)
           return .success(start + offset)
         },
         sameTarget: {
@@ -550,7 +698,17 @@ extension Engine {
           return CFEqual(now.element, field) && !now.secure
         },
         valueLength: { (attribute(field, kAXValueAttribute) as? String).map { ($0 as NSString).length } },
+        layoutMark: {
+          guard let (element, local) = markAt else { return nil }
+          let usableBox = { (index: Int) -> CGRect? in characterBounds(element, index).flatMap { $0.height > 0 ? $0 : nil } }
+          if markIndex == nil {
+            let length = (attribute(element, kAXValueAttribute) as? String).map { ($0 as NSString).length } ?? 0
+            markIndex = caretMarkIndex(offset: local, length: length, usable: { usableBox($0) != nil })
+          }
+          return markIndex.flatMap(usableBox)
+        },
         writeSelection: { offset in
+          showCursor()
           _ = meta.posting { _ = gatedWrite(field, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
         },
         selection: {
@@ -558,14 +716,20 @@ extension Engine {
                 let length = range["length"] else { return nil }
           return (location, length)
         },
+        noted: { focusRecord = $0 },
         now: monotonicMilliseconds, sleep: sleep)
+      // The plan's action is the write the field took focus from (#341).
+      let action = focusRecord?.step == .selection ? kAXSelectedTextRangeAttribute : kAXFocusedAttribute
       switch outcome {
       case .placed:
-        meta.elementClick?.caret = "placed"
+        meta.elementClick = ElementClickRecord(plan: .action(action), reason: .focusField, pressedRole: target.role,
+                                               pressedAncestor: target.ancestor, walk: walk, caret: "placed")
       case .notPlaced(let why):
-        meta.elementClick = ElementClickRecord(plan: .action(kAXFocusedAttribute), reason: .focusedNotPlaced, pressedRole: target.role,
+        meta.elementClick = ElementClickRecord(plan: .action(action), reason: .focusedNotPlaced, pressedRole: target.role,
                                                pressedAncestor: target.ancestor, walk: walk, caret: why.rawValue)
       }
+      meta.elementClick?.focusStep = focusRecord?.step.rawValue
+      meta.elementClick?.caretMarkShift = focusRecord?.markShift
       meta.note = focusNote(app.displayName, outcome)
     }
   }

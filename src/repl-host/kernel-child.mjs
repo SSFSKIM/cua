@@ -18,11 +18,13 @@
 // The child stays in the supervisor's process group, the group cua's proxy owns (src/mcp/upstream.mjs). Stopping it
 // freezes and SIGKILLs the child and every process descending from it (killProcessTree), so a kernel under the Codex
 // CLI's launcher (which runs it as its own child), what a cell started, or a kernel busy in synchronous code is gone,
-// not orphaned. Whenever a
+// not orphaned. On Linux a stop of the trusted worker first lets cua's engine in its tree run its orderly exit while the
+// rest stays frozen (stopProcessTree); there the spawned child is the launcher's resident shim (LAUNCHER_SHIM), which is
+// never stopped: the tree below it is. Whenever a
 // kernel ends, expectedly or not, `reap` (the supervisor's ownedGroupReaper) then removes what it left in the owned
 // group: a process a cell started is reparented when its kernel dies, so no tree leads to it any more.
 import {spawn, execFileSync} from 'node:child_process';
-import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, rmSync} from 'node:fs';
+import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, readFileSync, readlinkSync, rmSync, statSync} from 'node:fs';
 import {Socket} from 'node:net';
 import {constants, tmpdir} from 'node:os';
 import {isAbsolute, join} from 'node:path';
@@ -66,18 +68,112 @@ export function stderrTail() {
 export const exitDiagnostic = ({pid, status, tail, reason = 'stdout_eof', streamError = null, sentence = KERNEL_EXIT_SENTENCE}) =>
   `${sentence}\n\nnode_repl diagnostics: ${JSON.stringify({kernel_pid: pid ?? null, kernel_status: status, kernel_stderr_tail: tail, reason, stream_error: streamError})}`;
 
-// SIGKILLs `root` and every process descending from it. The tree is frozen first (SIGSTOP, root first, then each
-// newly listed descendant until a listing finds no new one), so nothing in it can fork or exit, and so leave the tree,
-// between a listing and the kill: a launcher killed first would orphan the kernel it had just started.
-export function killProcessTree(root, {list = descendantsOf, signal = sendSignal} = {}) {
+// Freezes `root` and every process descending from it (SIGSTOP, root first, then each newly listed descendant until a
+// listing finds no new one), so nothing in it can fork or exit, and so leave the tree, between a listing and the kill:
+// a launcher killed first would orphan the kernel it had just started. With `shim` the root is the launcher's shim,
+// which is left running: only what descends from it is frozen. -> the frozen pids, in the order frozen.
+function freezeProcessTree(root, {list, signal, shim = false}) {
   const frozen = new Set();
-  if (signal(root, 'SIGSTOP')) frozen.add(root);
+  if (!shim && signal(root, 'SIGSTOP')) frozen.add(root);
   for (let pass = 0; pass < 8; pass++) {
     const found = list(root).filter(pid => !frozen.has(pid));
     if (!found.length) break;
     for (const pid of found) if (signal(pid, 'SIGSTOP')) frozen.add(pid);
   }
+  return frozen;
+}
+
+// SIGKILLs `root` and every process descending from it, frozen first (freezeProcessTree).
+export function killProcessTree(root, {list = descendantsOf, signal = sendSignal} = {}) {
+  const frozen = freezeProcessTree(root, {list, signal});
   for (const pid of frozen) signal(pid, 'SIGKILL');
+  return [...frozen];
+}
+
+// How long a stop waits for cua's Linux engine to finish its orderly exit once told to: the engine's own backstop, which
+// ends it 1 s after the signal whatever its drain is doing (native/linux-engine/src/serve.rs EXIT_BACKSTOP), the forced
+// release it sends first, bounded at 200 ms (pressed.rs FORCED_RELEASE_BOUND), and 50 ms for that exit to be seen, so
+// the kill comes after the engine's latest end (the design session, M4 T7b; serve.rs checks the sum). Its drain is far
+// shorter: the 300 ms settle after its last key, about 600 ms after a watched drag's release, its late-take watch run
+// out first (the engine README, "Exit").
+export const ENGINE_EXIT_WAIT_MS = 1250;
+const ENGINE_EXIT_POLL_MS = 10;
+
+// The engine's subcommand that runs a program as the child of a resident shim (native/linux-engine/src/shim.rs, the
+// design session's ruling, M4 T7b fix 4): `cua-engine launcher-shim <parent pid> <program> [args...]`. The trusted
+// worker's launcher is started through it on Linux. The shim watches this process, and when it dies, however it dies,
+// SIGKILLs the launcher at once, held or not, and resumes nothing; the launcher's parent-death signal is SIGKILL against
+// the shim (should its watch fail, it SIGKILLs the launcher as for that death). Once the launcher has exited, for
+// whatever reason, the shim waits for the engine to close its held record, a pipe it hands down to the worker and no
+// path (fix 5: the worker gives it to its engines alone, ../services/engine/linux/held-record.mjs); should the engine
+// outlive the wait, the shim ends it first, so nothing is pressed after the release. Then it releases what the record
+// still shows down (an engine the sandbox's end SIGKILLed released nothing), and exits as the launcher did. The stop
+// signals never end it, and no stop here signals it: the tree below it is what is frozen, drained and killed.
+export const LAUNCHER_SHIM = 'launcher-shim';
+// How long the shim may outlive its launcher: its wait for the engine to close its record (the engine's latest exit,
+// ENGINE_EXIT_WAIT_MS), the wait for an engine it ended (200 ms), and its release, bounded like the engine's forced one
+// (200 ms).
+const SHIM_AFTER_LAUNCHER_MS = ENGINE_EXIT_WAIT_MS + 200 + 200;
+
+// Whether the engine at `engine` serves as that shim: its executable names the subcommand (an engine before M4 T7b
+// fix 4, 0.3.0 and fix 3's `exec-under-parent` among them, does not, and is never run with arguments it would take for
+// its own), and a program run through it once says it ran. -> boolean.
+export function servesAsShim(engine, {read = readFileSync, run = execFileSync} = {}) {
+  try {
+    if (!read(engine).includes(LAUNCHER_SHIM)) return false;
+    const said = run(engine, [LAUNCHER_SHIM, String(process.pid), '/bin/sh', '-c', 'echo ran'], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000});
+    return said === 'ran\n';
+  } catch {
+    return false;
+  }
+}
+
+// Whether process `pid` runs the executable at `path`: its /proc/<pid>/exe names that path (with the kernel's
+// " (deleted)" when the file was replaced since it started, as `cua install` replaces an engine with one rename), or is
+// that very file. Never its command name, which any process may set.
+export function runsExecutable(pid, path) {
+  const exe = `/proc/${pid}/exe`;
+  try {
+    const link = readlinkSync(exe);
+    if (link === path || link === `${path} (deleted)`) return true;
+  } catch { return false; }
+  try {
+    const running = statSync(exe), file = statSync(path);
+    return running.dev === file.dev && running.ino === file.ino;
+  } catch { return false; }
+}
+
+// Whether process `pid` has exited: gone, or a zombie its frozen parent has not reaped.
+export function processExited(pid) {
+  let stat;
+  try { stat = readFileSync(`/proc/${pid}/stat`, 'utf8'); } catch { return true; }
+  const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3);
+  return state === 'Z' || state === 'X';
+}
+
+// Stops `root`'s tree as killProcessTree does, but lets cua's Linux engine in it run its orderly exit first (Linux only;
+// the Decision Log, M4 T7b): the whole tree is frozen as above; each frozen process running the engine at `engine` (by
+// its executable, runsExecutable) alone is sent SIGTERM, then SIGCONT, so it finishes the request it is in, releases
+// what it holds and settles, then exits; once every such engine has exited, or after
+// `waitMs`, every process frozen at the start is SIGKILLed, the engines first (their pids still held by their frozen
+// parents). Nothing is listed again and nothing else is thawed, so a process the engine started, reparented when it
+// exits, is still killed, and the worker the engine answers stays frozen: the engine's drain reads nothing from it and
+// needs nothing written to it. With `shim` the root is the launcher's shim (LAUNCHER_SHIM), which runs the engine's
+// executable too: it is never frozen, so never taken for the engine, never sent its SIGTERM and never killed here; its
+// launcher's end lets it release and exit on its own. -> a promise of the frozen pids.
+export async function stopProcessTree(root, {engine, shim = false, list = descendantsOf, signal = sendSignal, ...drain} = {}) {
+  return drainThenKill(freezeProcessTree(root, {list, signal, shim}), {engine, signal, ...drain});
+}
+
+// SIGKILLs every process in `frozen` (frozen already, nothing listed again), after each one running the engine at
+// `engine` (none without it) alone was sent SIGTERM, then SIGCONT, and has exited or `waitMs` passed; the engines first,
+// their pids still held by their frozen parents. -> a promise of the frozen pids.
+async function drainThenKill(frozen, {engine, signal, isEngine = runsExecutable, exited = processExited, waitMs = ENGINE_EXIT_WAIT_MS,
+  wait = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
+  const engines = engine ? [...frozen].filter(pid => isEngine(pid, engine)) : [];
+  const draining = engines.filter(pid => signal(pid, 'SIGTERM') && signal(pid, 'SIGCONT'));
+  for (const deadline = Date.now() + waitMs; draining.some(pid => !exited(pid)) && Date.now() < deadline;) await wait(ENGINE_EXIT_POLL_MS);
+  for (const pid of [...engines, ...[...frozen].filter(pid => !engines.includes(pid))]) signal(pid, 'SIGKILL');
   return [...frozen];
 }
 
@@ -121,7 +217,12 @@ function ancestorsUpTo(rows, self, leader) {
 // processes they start) and releases a child only in that child's own cleanup. reap() is called only when a child has
 // ended, so every unprotected member is what it left behind: processes it started, reparented when it died. (A process that leaves the group, as bwrap's --new-session sandbox does, is not found; that
 // sandbox dies with its parent.)
-export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal} = {}) {
+// With `engine` (Linux: the cua-engine the trusted worker's service runs) every reap lets a stray running it drain
+// first, as a stop of the worker's tree does (drainThenKill): with the sandbox disabled the engine is in the owned
+// group, and a worker that ended on its own (its stdin closed, so the engine has begun its orderly exit) leaves it there
+// as a stray, which any child's cleanup may find first. Reaps run one at a time, each after the one before has ended,
+// so no reap freezes or kills an engine another one is draining. -> a promise.
+export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal, engine = null, ...drain} = {}) {
   const rows = table();
   const row = rows.find(([pid]) => pid === self);
   const leader = row?.[2];
@@ -134,18 +235,28 @@ export function ownedGroupReaper({self = process.pid, table = processTable, sign
     return current.filter(([pid, ppid, pgid, comm]) => pgid === leader && pid !== self && !ancestors.has(pid) && !spared.has(pid)
       && !(ppid === self && /(^|\/)ps$/.test(comm ?? ''))).map(([pid]) => pid);
   };
-  const reap = () => {
+  const reapOnce = () => {
     const frozen = new Set();
     for (let pass = 0; pass < 8; pass++) {
       const found = strays().filter(pid => !frozen.has(pid));
       if (!found.length) break;
       for (const pid of found) if (signal(pid, 'SIGSTOP')) frozen.add(pid);
     }
-    for (const pid of frozen) signal(pid, 'SIGKILL');
-    return [...frozen];
+    return drainThenKill(frozen, {engine, signal, ...drain});
   };
+  let last = Promise.resolve();
+  const reap = () => (last = last.then(reapOnce, reapOnce));
   const own = pid => { protectedRoots.add(pid); return () => protectedRoots.delete(pid); };
   return {reap, own};
+}
+
+// The children of `pid` (Linux: /proc's list, else one `ps` listing).
+function childrenOf(pid) {
+  try {
+    return readFileSync(`/proc/${pid}/task/${pid}/children`, 'utf8').trim().split(/\s+/).filter(Boolean).map(Number);
+  } catch {
+    return processTable().filter(([, ppid]) => ppid === pid).map(([child]) => child);
+  }
 }
 
 // Every process descending from `pid`, from one `ps` listing.
@@ -211,9 +322,15 @@ export function lifelinePipe(root = tmpdir()) {
 // Starts a kernel child (or the trusted worker, which the same wire and lifecycle serve; `exitSentence` opens its exit
 // diagnostic). `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print plain
 // text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when `stop()`
-// ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
+// ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure). `engine` (Linux,
+// for the trusted worker: the cua-engine its service runs, CUA_ENGINE_BIN) makes every stop of the child's tree let that
+// engine drain first (stopProcessTree). `shim` (Linux, for the trusted worker: that same trusted cua-engine) starts the
+// child through the engine's LAUNCHER_SHIM, which stays the child's parent: the spawned process (`pid`) is then the shim,
+// the launcher its child. A stop freezes, drains and kills what descends from the shim and never the shim, which exits
+// on its own once its launcher has and it has released what the engine left held; one still running past that is
+// SIGKILLed before the reap.
 export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null, reap = () => {},
-  exitSentence = KERNEL_EXIT_SENTENCE, lifelines = lifelinePipe}) {
+  exitSentence = KERNEL_EXIT_SENTENCE, lifelines = lifelinePipe, engine = null, shim = null, stopTree = stopProcessTree}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
@@ -225,7 +342,8 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   try {
     fifos = pipes?.() ?? null;
     lifeline = lifelines?.(isAbsolute(env?.TMPDIR ?? '') ? env.TMPDIR : tmpdir()) ?? null;
-    child = spawnProcess(command, args, {env: lifeline ? {...env, [LIFELINE_ENV]: lifeline.setting} : env, cwd, stdio: fifos?.child ?? ['pipe', 'pipe', 'pipe']});
+    const [program, argv] = shim ? [shim, [LAUNCHER_SHIM, String(process.pid), command, ...args]] : [command, args];
+    child = spawnProcess(program, argv, {env: lifeline ? {...env, [LIFELINE_ENV]: lifeline.setting} : env, cwd, stdio: fifos?.child ?? ['pipe', 'pipe', 'pipe']});
   } catch (error) {
     spawnError = error;
   } finally {
@@ -256,16 +374,29 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     let timer;
     return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, ms); })]).finally(() => clearTimeout(timer));
   };
-  const killTree = () => { if (child?.pid) killProcessTree(child.pid); };
+  // Without an engine, at once. With one, the engine's drain comes first, and a stop asked for while one runs waits for
+  // that one rather than freezing and killing the tree a second time under it.
+  let treeStop = null;
+  const killTree = () => {
+    if (!child?.pid) return undefined;
+    if (!engine) return killProcessTree(child.pid);
+    return treeStop ??= stopTree(child.pid, {engine, shim: Boolean(shim)}).finally(() => { treeStop = null; });
+  };
+
+  // The launcher held (holdLauncher).
+  let held = false;
 
   // Once, however it is reached: every caller (stdout's close, the exit, stop()) waits for the same cleanup.
   let ending = null;
   const end = () => (ending ??= finish());
   async function finish() {
     ended = true;
-    if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
+    if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { await killTree(); await within(exited, shim ? SHIM_AFTER_LAUNCHER_MS : EXIT_GRACE_MS); }
+    // a shim outlives its launcher only by its bounded release: one still running now, its launcher killed above, is
+    // ended, so no reap ever meets it
+    if (shim && !exitInfo && !spawnError && child?.pid) { sendSignal(child.pid, 'SIGKILL'); await within(exited, EXIT_GRACE_MS); }
     lifeline?.release();
-    reap();
+    await reap();
     await within(stderrClosed, EXIT_GRACE_MS);
     for (const stream of [stdin, stdout, stderr]) stream?.destroy();
     if (spawnError) return onEnd({expected: stopping, diagnostic: `failed to start Node runtime: ${spawnError.message}`});
@@ -283,12 +414,31 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
       stdin.write(`${JSON.stringify(message)}\n`);
       return true;
     },
-    // Ends the kernel on purpose: SIGKILL to it and its descendants, its input closed; resolves once its exit was seen
-    // (or a bounded wait passed).
+    // Stops the child itself, a sandbox launcher, and nothing below it: what it runs goes on, and a signal to the
+    // launcher waits there until the stop's SIGKILL (Linux, for the trusted worker: the supervisor holds it once its
+    // input has ended). codex-linux-sandbox takes a SIGTERM by ending its sandbox at once, and bwrap's
+    // --die-with-parent then ends the PID namespace, the engine in it with SIGKILL; held, the owned group's SIGTERM at
+    // upstream's by(0.4) reaches the engine only as the stop's own, after the freeze (stopProcessTree).
+    // A held launcher never outlives the stop (the design session, M4 T7b): the stop's SIGKILL takes it (stop(), on
+    // every path the supervisor stops the worker by, its forced shutdown included), so does the owned group's at
+    // upstream's by(0.7), and so does this process's end, however it ends: its shim (LAUNCHER_SHIM: the supervisor holds
+    // only the worker it started with `shim`, and then the launcher is the shim's child, never the shim) SIGKILLs it at
+    // once, which a stopped process takes too, and resumes nothing.
+    holdLauncher() {
+      if (!child?.pid || ended || held) return;
+      const launcher = shim ? childrenOf(child.pid)[0] : child.pid;
+      if (!launcher) return;
+      held = true;
+      sendSignal(launcher, 'SIGSTOP');
+    },
+    // Ends the kernel on purpose: SIGKILL to it and its descendants (after its engine's drain, with `engine`; with
+    // `shim`, to the shim's descendants, the shim then exiting on its own), its input closed; resolves once its exit was
+    // seen (or a bounded wait passed).
     async stop() {
       stopping = true;
-      killTree();
+      const killed = killTree();
       stdin?.destroy();
+      await killed;
       await within(exited, 2 * EXIT_GRACE_MS);
       await end();
     },

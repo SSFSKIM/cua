@@ -1,0 +1,14 @@
+[package]
+name = "task73-xgrab"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Task 73's probe tool, on a private display only: another client's pointer grab held across a drag_handle's press, the pre-press grab try on its own, and the displayed cursor's changes"
+
+[[bin]]
+name = "xgrab"
+path = "src/main.rs"
+
+# features of the crate the engine links, no new package
+[dependencies]
+x11rb = { version = "0.13.2", features = ["xinput", "xfixes"] }

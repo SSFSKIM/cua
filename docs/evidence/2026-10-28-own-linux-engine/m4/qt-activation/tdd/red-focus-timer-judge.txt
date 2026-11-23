@@ -1,0 +1,69 @@
+✔ a background burst's synthetic focus is one session: its FocusIn, its keys, its FocusOut (3.395733ms)
+✔ two windows under synthetic focus at once, input outside a session, a stray FocusOut and an unclosed session are each found (0.714937ms)
+✔ each FocusOut in the trace is attributed to the request whose input started its timer, deferred past its answer (0.942847ms)
+✔ a FocusOut sooner than the delay, a FocusOut the engine did not report, and one it reported but never sent each fail the audit (0.518968ms)
+✔ a trace with no requests is not clean (0.270369ms)
+✔ a step's events are read on until the synthetic focus it opened closes (0.419771ms)
+✔ a step whose focus closed before its answer is read once, as the vendor builds answer (1.211233ms)
+✔ a held key's session stays open: the step is read after the bound, and the next step starts with it open (0.564535ms)
+✔ a scenario's keys type its text, capitals through Shift, and each window's expected text is its own (0.659964ms)
+✔ click-then-paste: a click into the field at its first character, then a paste with no element, the paste's text expected where the click put the caret (0.661658ms)
+✔ each run's paste text is its own in the sitting, letters only: a terminal's screen holds many runs' text, and a paste whose text the scrolled screen already shows cannot be confirmed (14.343472ms)
+✔ the text must be the expected one at the caret read before, exactly: a key out of order, one missing or one late fails (0.14858ms)
+✔ a timer series needs 30 consecutive passes: a miss restarts it and is counted (0.264839ms)
+✔ the sessions a scenario must leave: one per request on every lane, its FocusOut before its answer (0.27021ms)
+✔ the verdict passes only when every family's lanes, audits and stops did what they must (1.860617ms)
+✔ the lanes: the engine as it ships; the paste settle's measured steps; the control, each request unredirected (0.205126ms)
+✔ click-then-paste's lanes: the click settle at each of its steps, 0 the engine before it; its control drops that settle alone (0.134703ms)
+✔ a scenario a family cannot have is left out of its series and audits, and the verdict lists it as measured (0.238811ms)
+✔ an audit pass runs each scenario on the flags its series ran with: the control's paste with no settle, not unredirected (0.375778ms)
+✔ --lanes runs only the lanes it names, in the experiment's order, with no stop runs (1.367698ms)
+✔ a settle lane is judged by the wait rule: short of 30 consecutive it fails, and its line says so (0.502106ms)
+✔ an audit is clean only with every FocusOut sent within its own request, before the request's answer (0.209125ms)
+✔ a stop run passes on SIGTERM when the burst kept its order, every session closed, and the exit settled before it ended; SIGKILL, with no settle, must not (0.251634ms)
+✔ a series' paste settle cost: how long each paste waited, and how soon after its window's last key it came (0.423258ms)
+✔ a missed run keeps the engine's FocusOut records, each with the request whose line carried it (0.23873ms)
+✔ --trace keeps a missed run's X trace with its synthetic-focus sessions and the engine's Composite requests (1.709825ms)
+✔ a run passes on its text and its answers; only a Qt paste's unconfirmed answer is excused, its text still exact (0.193565ms)
+✖ a run whose desktop changed fails, its text and answers good: an activation is never a pass (task 61) (1.017789ms)
+✔ a read settles when two reads agree, once the text is as long as the run must make it, at most the bound (0.815187ms)
+✔ a miss's cause: the guard refusing after an earlier miss is told apart from a miss of the run's own (0.224825ms)
+✔ a run's row names its index `trial`, so the sitting's own `run` name survives the emit (0.165542ms)
+✔ times are kept to a tenth of a millisecond, medians included (0.078899ms)
+✔ the raw count adds what independent starts hide: a tail an earlier cut left, a paste the retry guard would refuse (0.244951ms)
+✔ the summary shows each series' independent and raw counts; the verdict judges the independent ones (0.266362ms)
+✔ the exit settle's measured steps: the stop runs alone, the settle 0 included (0.285748ms)
+✔ a paste run keeps which rule confirmed it and what was observed whole; a series counts its runs by rule (0.380047ms)
+✔ --scenarios runs only the scenarios it names, in the experiment's order, with no stop runs; an unknown name is refused (0.479664ms)
+✔ a --stats line's FocusOuts are read apart from the exit's settle, which is no FocusOut (0.256875ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 37
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 160.00589
+
+✖ failing tests:
+
+test at test/linux-engine-diff/focus-timer.test.mjs:400:1
+✖ a run whose desktop changed fails, its text and answers good: an activation is never a pass (task 61) (1.017789ms)
+  AssertionError [ERR_ASSERTION]: the witness saw it and the front lost
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file://<checkout>/test/linux-engine-diff/focus-timer.test.mjs:403:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

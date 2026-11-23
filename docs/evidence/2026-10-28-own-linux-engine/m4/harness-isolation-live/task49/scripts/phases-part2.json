@@ -1,0 +1,51 @@
+[
+ {
+  "name": "sigterm-begin",
+  "kind": "cli",
+  "entry": "harness",
+  "expect": "nonzero",
+  "sigterm": true,
+  "args": [
+   "--dev",
+   "--vendor",
+   "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--newest",
+   "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--cua",
+   "/Users/new/.local/share/cua-171/task42/engine/cua-engine",
+   "--scene",
+   "gedit",
+   "--ops",
+   "tree",
+   "--blocks",
+   "1",
+   "--samples-tree",
+   "1",
+   "--run",
+   "t49-sigterm"
+  ]
+ },
+ {
+  "name": "record-judge",
+  "kind": "cli",
+  "entry": "harness",
+  "expect": "any",
+  "args": [
+   "--dev",
+   "--vendor",
+   "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--newest",
+   "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--cua",
+   "/Users/new/.local/share/cua-171/task42/engine/cua-engine",
+   "--scene",
+   "gedit,paste-target,gnome-text-editor",
+   "--ops",
+   "all",
+   "--blocks",
+   "3",
+   "--run",
+   "t49-recordjudge"
+  ]
+ }
+]

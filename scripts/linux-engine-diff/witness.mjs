@@ -3,7 +3,7 @@
 // sampled every 5 ms — from before the request is sent until after its answer; any change in that span fails the
 // operation, whatever the state at its end.
 
-import { spawn } from 'node:child_process';
+import { xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 /**
@@ -17,9 +17,22 @@ export function judgeSpan(report) {
   return { clean: fields.length === 0, fields, samples: report.samples, max_gap_ms: report.max_gap_ms };
 }
 
+/** The activation requests a span's witness saw (`xprobe witness`'s focus record): a client asking for any window. */
+export function spanActivations(report) {
+  return (report?.focus ?? []).filter((e) => e.kind === 'activate').map(({ window, source, t_ms: t }) => ({ window, source, t_ms: t }));
+}
+
+/**
+ * A background span's desktop left alone: no change (`judgeSpan`, strict) and no activation request, even one the
+ * window manager ignored (M4, task 61: Qt asks for its window's activation on a press it handles unfocused).
+ */
+export function spanClean(report) {
+  return judgeSpan(report).clean && spanActivations(report).length === 0;
+}
+
 /** A running witness; `span(tag, fn)` runs fn inside a watched span and returns `{value, witness}`. */
 export async function startWitness(xprobe, { tailMs = 20 } = {}) {
-  const child = spawn(xprobe, ['witness'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = xSpawn(xprobe, ['witness'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const lines = createInterface({ input: child.stdout });
   const waiting = [];
   const queued = [];
@@ -311,6 +324,24 @@ export function judgeForegroundSpan(report, { target, frame, focusWithin, opensW
   }
   allowed.forEach((f) => bad.has(f) && allowed.delete(f));
   return { clean: bad.size === 0, fields: [...bad], allowed: [...allowed] };
+}
+
+/**
+ * The quiet span after a request the foreground route's allowance judged (safety.mjs `routeWitness`): nothing may
+ * change, except that the input focus may still move within the target toplevel, every move from and to the target or
+ * a window inside it. GTK 4 keeps a focus window of its own inside each toplevel and moves the focus into it some
+ * milliseconds after the toplevel takes it (task 50: one cold sample's quiet span saw that move). Whether a window lies
+ * inside the target is `focusWithin`'s, read through the window tree (`xprobe within`): a window of the same client
+ * alone is not enough, since one client can own several toplevels. Returns `{clean, fields, allowed}`.
+ */
+export function judgeAfterForeground(report, { focusWithin }) {
+  const strict = judgeSpan(report);
+  if (strict.clean || !report || report.error) return { ...strict, allowed: [] };
+  const inside = (w) => typeof w === 'number' && w > 1 && focusWithin(w);
+  const moves = report.changes.filter((c) => c.field === 'focus');
+  if (!moves.length || !moves.every((c) => inside(c.from) && inside(c.to))) return { ...strict, allowed: [] };
+  const fields = strict.fields.filter((f) => f !== 'focus');
+  return { ...strict, clean: fields.length === 0, fields, allowed: ['focus'] };
 }
 
 /**

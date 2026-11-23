@@ -1,0 +1,13 @@
+test a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing ... FAILED
+test an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing ... FAILED
+thread 'a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing' (1919353) panicked at tests/live_device.rs:2530:5:
+assertion `left == right` failed: End: the release where the pointer is, no motion before it
+  left: [Motion { root: 988, x: 200, y: 120 }, Release { root: 988, x: 200, y: 120 }]
+ right: [Release { root: 988, x: 200, y: 120 }]
+---- an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing stdout ----
+thread 'an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing' (1919367) panicked at tests/live_device.rs:2530:5:
+assertion `left == right` failed: Exit: the release where the pointer is, no motion before it
+  left: [Motion { root: 988, x: 200, y: 120 }, Release { root: 988, x: 200, y: 120 }]
+ right: [Release { root: 988, x: 200, y: 120 }]
+    an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.51s

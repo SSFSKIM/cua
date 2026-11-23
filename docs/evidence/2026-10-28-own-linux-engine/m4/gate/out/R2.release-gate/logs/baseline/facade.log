@@ -1,0 +1,11 @@
+2026-11-13T12:13:29Z == baseline head 514f5c62dd6c74b1ed24c48f112ca9c35a70eece label counted dirty=no engine cua-engine 0.4.0 (514f5c62dd6c) sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937
+2026-11-13T12:18:46Z cv run-1 exit 0
+2026-11-13T12:20:47Z cc run-1 exit 0
+2026-11-13T12:25:55Z cv run-2 exit 0
+2026-11-13T12:27:54Z cc run-2 exit 0
+2026-11-13T12:32:59Z cv run-3 exit 0
+2026-11-13T12:34:59Z cc run-3 exit 0
+2026-11-13T12:34:59Z summary cv exit 0
+2026-11-13T12:35:00Z summary cc exit 0
+2026-11-13T12:35:00Z compare exit 0 VERDICT: PASS
+2026-11-13T12:35:00Z == baseline exit 0

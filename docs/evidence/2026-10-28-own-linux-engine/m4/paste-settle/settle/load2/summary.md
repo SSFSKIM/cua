@@ -1,0 +1,78 @@
+# linux-engine-diff summary
+
+## t60-settle-load2 (experiment focus-timer)
+
+| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---|---:|---:|---:|
+| chrome | settle-25 | paste | 60 | 21 | 0 | **not reached** (unconfirmed 11, refused 10) | 30 | 0 | 188.7 |
+| chrome | settle-50 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 198.8 |
+| chrome | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 211.6 |
+| chrome | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 245.1 |
+| electron | settle-25 | paste | 60 | 56 | 0 | **not reached** (unconfirmed 49, refused 7) | 60 | 0 | 2082.9 |
+| electron | settle-50 | paste | 60 | 33 | 1 | **not reached** (unconfirmed 23, refused 10) | 46 | 0 | 193.7 |
+| electron | settle-75 | paste | 60 | 13 | 5 | **not reached** (refused 9, unconfirmed 4) | 17 | 5 | 169.2 |
+| electron | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 191.8 |
+| gedit | settle-25 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 128.8 |
+| gedit | settle-50 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 162 |
+| gedit | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 186.5 |
+| gedit | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 208.4 |
+| kate | settle-25 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 133.5 |
+| kate | settle-50 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 155.5 |
+| kate | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 194.9 |
+| kate | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 217.2 |
+| qtcreator | settle-25 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 247.2 |
+| qtcreator | settle-50 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 258.6 |
+| qtcreator | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 288.7 |
+| qtcreator | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 332.5 |
+| firefox | settle-25 | paste | 60 | 19 | 4 | **not reached** (refused 6, unconfirmed 13) | 28 | 4 | 156.4 |
+| firefox | settle-50 | paste | 60 | 5 | 2 | **not reached** (unconfirmed 4, refused 1) | 9 | 1 | 157.7 |
+| firefox | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 167 |
+| firefox | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 198.1 |
+| writer | settle-25 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 612 |
+| writer | settle-50 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 576.6 |
+| writer | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 614.5 |
+| writer | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 649.3 |
+| gnome-terminal | settle-25 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 143.4 |
+| gnome-terminal | settle-50 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 172.3 |
+| gnome-terminal | settle-75 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 187.3 |
+| gnome-terminal | settle-100 | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 213.5 |
+
+| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---:|---|---|
+| chrome | settle-25 | clean | 9 (0) | yes | – |
+| chrome | settle-50 | clean | 9 (0) | yes | – |
+| chrome | settle-75 | clean | 9 (0) | yes | – |
+| chrome | settle-100 | clean | 9 (0) | yes | – |
+| electron | settle-25 | clean | 9 (0) | yes | – |
+| electron | settle-50 | clean | 9 (0) | yes | – |
+| electron | settle-75 | clean | 9 (0) | yes | – |
+| electron | settle-100 | clean | 9 (0) | yes | – |
+| gedit | settle-25 | clean | 9 (0) | yes | – |
+| gedit | settle-50 | clean | 9 (0) | yes | – |
+| gedit | settle-75 | clean | 9 (0) | yes | – |
+| gedit | settle-100 | clean | 9 (0) | yes | – |
+| kate | settle-25 | clean | 9 (0) | yes | – |
+| kate | settle-50 | clean | 9 (0) | yes | – |
+| kate | settle-75 | clean | 9 (0) | yes | – |
+| kate | settle-100 | clean | 9 (0) | yes | – |
+| qtcreator | settle-25 | clean | 9 (0) | yes | – |
+| qtcreator | settle-50 | clean | 9 (0) | yes | – |
+| qtcreator | settle-75 | clean | 9 (0) | yes | – |
+| qtcreator | settle-100 | clean | 9 (0) | yes | – |
+| firefox | settle-25 | clean | 9 (0) | yes | – |
+| firefox | settle-50 | clean | 9 (0) | yes | – |
+| firefox | settle-75 | clean | 9 (0) | yes | – |
+| firefox | settle-100 | clean | 9 (0) | yes | – |
+| writer | settle-25 | clean | 9 (0) | yes | – |
+| writer | settle-50 | clean | 9 (0) | yes | – |
+| writer | settle-75 | clean | 9 (0) | yes | – |
+| writer | settle-100 | clean | 9 (0) | yes | – |
+| gnome-terminal | settle-25 | clean | 9 (0) | yes | – |
+| gnome-terminal | settle-50 | clean | 9 (0) | yes | – |
+| gnome-terminal | settle-75 | clean | 9 (0) | yes | – |
+| gnome-terminal | settle-100 | clean | 9 (0) | yes | – |
+
+**Incomplete or failed:** chrome paste (settle-25): no 30 consecutive passing runs in 60; electron paste (settle-25): no 30 consecutive passing runs in 60; electron paste (settle-50): no 30 consecutive passing runs in 60; electron paste (settle-75): no 30 consecutive passing runs in 60; firefox paste (settle-25): no 30 consecutive passing runs in 60; firefox paste (settle-50): no 30 consecutive passing runs in 60.
+
+desktop: started with no window active, ended with 0x00a0000c active (harness), neither acted on; holder none; the harness's own trace: 906 requests, 74 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

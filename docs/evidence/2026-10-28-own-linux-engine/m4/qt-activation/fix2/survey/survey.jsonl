@@ -1,0 +1,119 @@
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x400008", "where": "other", "xembed": null}
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x400004", "where": "other", "xembed": null}
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x400006", "where": "toplevel", "xembed": "0x0, 0x1"}
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x400009", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x40000f", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x40000d", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 5 (PyQt5, native child)", "version": "5.15.13", "window": "0x40000b", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x400008", "where": "other", "xembed": null}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x400004", "where": "other", "xembed": null}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x400006", "where": "toplevel", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x400009", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x40000f", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x40000d", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (PyQt6, native child)", "version": "6.4.2", "window": "0x40000b", "where": "child", "xembed": "0x0, 0x1"}
+{"app": "Qt 5 (kate)", "version": "5.15.13", "window": "0x400008", "where": "other", "xembed": null}
+{"app": "Qt 5 (kate)", "version": "5.15.13", "window": "0x400004", "where": "other", "xembed": null}
+{"app": "Qt 5 (kate)", "version": "5.15.13", "window": "0x400006", "where": "toplevel", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (qtcreator)", "version": "6.4.2", "window": "0x400010", "where": "other", "xembed": null}
+{"app": "Qt 6 (qtcreator)", "version": "6.4.2", "window": "0x400004", "where": "other", "xembed": null}
+{"app": "Qt 6 (qtcreator)", "version": "6.4.2", "window": "0x40000e", "where": "toplevel", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (designer)", "version": "6.4.2", "window": "0x40000c", "where": "other", "xembed": null}
+{"app": "Qt 6 (designer)", "version": "6.4.2", "window": "0x400004", "where": "other", "xembed": null}
+{"app": "Qt 6 (designer)", "version": "6.4.2", "window": "0x400014", "where": "toplevel", "xembed": "0x0, 0x1"}
+{"app": "Qt 6 (designer)", "version": "6.4.2", "window": "0x40000a", "where": "toplevel", "xembed": "0x0, 0x1"}
+{"app": "GTK 3 (window and modal dialog)", "version": "3.24.41", "window": "0x40000c", "where": "other", "xembed": null}
+{"app": "GTK 3 (window and modal dialog)", "version": "3.24.41", "window": "0x400001", "where": "other", "xembed": null}
+{"app": "GTK 3 (window and modal dialog)", "version": "3.24.41", "window": "0x400049", "where": "toplevel", "xembed": null}
+{"app": "GTK 3 (window and modal dialog)", "version": "3.24.41", "window": "0x40004a", "where": "child", "xembed": null}
+{"app": "GTK 3 (window and modal dialog)", "version": "3.24.41", "window": "0x400003", "where": "toplevel", "xembed": null}
+{"app": "GTK 3 (window and modal dialog)", "version": "3.24.41", "window": "0x400004", "where": "child", "xembed": null}
+{"app": "GTK 4 (window and modal dialog)", "version": "4.14.5", "window": "0x400002", "where": "other", "xembed": null}
+{"app": "GTK 4 (window and modal dialog)", "version": "4.14.5", "window": "0x400003", "where": "other", "xembed": null}
+{"app": "GTK 4 (window and modal dialog)", "version": "4.14.5", "window": "0x400008", "where": "toplevel", "xembed": null}
+{"app": "GTK 4 (window and modal dialog)", "version": "4.14.5", "window": "0x40000c", "where": "child", "xembed": null}
+{"app": "GTK 4 (window and modal dialog)", "version": "4.14.5", "window": "0x400004", "where": "toplevel", "xembed": null}
+{"app": "GTK 4 (window and modal dialog)", "version": "4.14.5", "window": "0x400005", "where": "child", "xembed": null}
+{"app": "GTK 3 (gedit)", "version": "3.24.41", "window": "0x400090", "where": "other", "xembed": null}
+{"app": "GTK 3 (gedit)", "version": "3.24.41", "window": "0x400060", "where": "other", "xembed": null}
+{"app": "GTK 3 (gedit)", "version": "3.24.41", "window": "0x400001", "where": "other", "xembed": null}
+{"app": "GTK 3 (gedit)", "version": "3.24.41", "window": "0x400064", "where": "toplevel", "xembed": null}
+{"app": "GTK 3 (gedit)", "version": "3.24.41", "window": "0x400065", "where": "child", "xembed": null}
+{"app": "GTK 4 (gnome-text-editor)", "version": "4.14.5", "window": "0x40000a", "where": "other", "xembed": null}
+{"app": "GTK 4 (gnome-text-editor)", "version": "4.14.5", "window": "0x400002", "where": "other", "xembed": null}
+{"app": "GTK 4 (gnome-text-editor)", "version": "4.14.5", "window": "0x400003", "where": "other", "xembed": null}
+{"app": "GTK 4 (gnome-text-editor)", "version": "4.14.5", "window": "0x400004", "where": "toplevel", "xembed": null}
+{"app": "GTK 4 (gnome-text-editor)", "version": "4.14.5", "window": "0x400005", "where": "child", "xembed": null}
+{"app": "VTE (gnome-terminal)", "version": "3.52.0-1ubuntu2", "window": "0x600010", "where": "other", "xembed": null}
+{"app": "VTE (gnome-terminal)", "version": "3.52.0-1ubuntu2", "window": "0x600002", "where": "other", "xembed": null}
+{"app": "VTE (gnome-terminal)", "version": "3.52.0-1ubuntu2", "window": "0x600001", "where": "other", "xembed": null}
+{"app": "VTE (gnome-terminal)", "version": "3.52.0-1ubuntu2", "window": "0x600006", "where": "toplevel", "xembed": null}
+{"app": "VTE (gnome-terminal)", "version": "3.52.0-1ubuntu2", "window": "0x600007", "where": "child", "xembed": null}
+{"app": "Firefox (Mozilla deb)", "version": "159.0", "window": "0x400001", "where": "other", "xembed": null}
+{"app": "Firefox (Mozilla deb)", "version": "159.0", "window": "0x400003", "where": "toplevel", "xembed": null}
+{"app": "Firefox (Mozilla deb)", "version": "159.0", "window": "0x400010", "where": "child", "xembed": null}
+{"app": "Firefox (Mozilla deb)", "version": "159.0", "window": "0x400004", "where": "child", "xembed": null}
+{"app": "Chrome", "version": "156.0.8078.73", "window": "0x400005", "where": "other", "xembed": null}
+{"app": "Chrome", "version": "156.0.8078.73", "window": "0x400000", "where": "other", "xembed": null}
+{"app": "Chrome", "version": "156.0.8078.73", "window": "0x400002", "where": "toplevel", "xembed": null}
+{"app": "Electron (cua page app)", "version": "44.9.0", "window": "0x400009", "where": "other", "xembed": null}
+{"app": "Electron (cua page app)", "version": "44.9.0", "window": "0x400000", "where": "other", "xembed": null}
+{"app": "Electron (cua page app)", "version": "44.9.0", "window": "0x400003", "where": "toplevel", "xembed": null}
+_: line 12: 4053247 Trace/breakpoint trap   (core dumped) setsid $3 > /dev/null 2>&1
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x400008", "where": "other", "xembed": null}
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x400024", "where": "toplevel", "xembed": null}
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x40002a", "where": "child", "xembed": null}
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x400027", "where": "child", "xembed": null}
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x400007", "where": "toplevel", "xembed": null}
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x40001f", "where": "child", "xembed": null}
+{"app": "Java Swing (OpenJDK)", "version": "21.0.12.1", "window": "0x40001c", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400008", "where": "other", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400030", "where": "toplevel", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400038", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400035", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x40003b", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400007", "where": "toplevel", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x40001f", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x40001c", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400020", "where": "child", "xembed": null}
+{"app": "Java AWT (OpenJDK)", "version": "21.0.12.1", "window": "0x400029", "where": "child", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400024", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400023", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400022", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400021", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x40001d", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x40001c", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400001", "where": "other", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400027", "where": "toplevel", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400026", "where": "child", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400025", "where": "child", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400032", "where": "child", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x400031", "where": "child", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x40002c", "where": "toplevel", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x40002b", "where": "child", "xembed": null}
+{"app": "Tk (wish)", "version": "8.6.14", "window": "0x40002d", "where": "child", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x60008f", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600016", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600017", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600009", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600003", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600004", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600001", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600588", "where": "toplevel", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600589", "where": "child", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600075", "where": "toplevel", "xembed": null}
+{"app": "LibreOffice Writer (gtk3 VCL)", "version": "24.2.7.2", "window": "0x600076", "where": "child", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x6003a3", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x60039e", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x600399", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x600366", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x600361", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x60035c", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x60020f", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x60000d", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x60000b", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x600001", "where": "other", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x600919", "where": "toplevel", "xembed": null}
+{"app": "LibreOffice Writer (gen VCL, X11)", "version": "24.2.7.2", "window": "0x600204", "where": "toplevel", "xembed": null}
+{"app": "xterm (Xaw)", "version": "XTerm(390)", "window": "0x60000c", "where": "toplevel", "xembed": null}
+{"app": "xterm (Xaw)", "version": "XTerm(390)", "window": "0x600018", "where": "child", "xembed": null}

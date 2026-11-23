@@ -139,3 +139,17 @@ test('ownership is journaled before a layout migration: a move that fails leaves
   assert.equal(result.removed,true);
   assert.match(cleanup[0],/rm -rf '[^']*\.home'/,'both layouts are cleaned: the home (with any nested HOME) and the sibling');
 }));
+
+// #171 M4 (T18): the native suite binds no Chrome profile (its serves run with none), so a native-only preparation lists
+// no profile (the listing reaches the person's live Chrome backends), aliases no backend and records no profile.
+test('a native-only preparation installs the fresh managed home and binds no profile',()=>fixture(({source,owned,commands,deps})=>{
+ const listing=commands.length,prepared=prepareDevice({device:'cua-171',home:source,nativeOnly:true},deps);
+ assert.equal(commands.slice(listing).filter(c=>c.file).length,0,'no profile listing ran');
+ assert.ok(prepared.home.startsWith(owned+'/'));assert.equal(prepared.nativeOnly,true);
+ assert.equal(prepared.profile,null);assert.equal(prepared.extensionInstanceId,null);assert.equal(prepared.chromeProfileDirectory,null);
+ assert.ok(!existsSync(join(prepared.home,'profiles.json')),'no profile registry');
+ assert.ok(!existsSync(join(prepared.home,'chrome')),'no Chrome registration and no backend socket alias');
+ assert.equal(prepared.ownNode.path,join(prepared.home,'node/24.18.0/bin/node'));
+ assert.throws(()=>prepareDevice({device:'cua-171',home:source,nativeOnly:true,profile:'ssfs'},deps),/native-only.*profile/);
+ assert.throws(()=>prepareDevice({device:'mini',home:source,nativeOnly:true},deps),/native-only.*Linux/);
+}));

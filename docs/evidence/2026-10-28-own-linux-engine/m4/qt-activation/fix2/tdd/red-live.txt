@@ -1,0 +1,40 @@
+   Compiling cua-linux-engine v0.3.0 (<checkout>/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 31.01s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 3 tests
+test a_double_click_on_a_held_session_checks_the_focus_again_before_its_second_press ... FAILED
+test a_modal_dialog_over_a_modal_dialog_takes_input_and_the_dialog_below_it_is_refused ... FAILED
+test inside_a_sandbox_that_cannot_read_its_map_a_qt_window_with_no_tree_is_refused_by_its_mark ... FAILED
+
+failures:
+
+---- a_double_click_on_a_held_session_checks_the_focus_again_before_its_second_press stdout ----
+
+thread 'a_double_click_on_a_held_session_checks_the_focus_again_before_its_second_press' (4066880) panicked at tests/live_focus_ack.rs:722:9:
+assertion `left == right` failed: qt5: no second press took the X focus from the front window
+  left: 5
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_modal_dialog_over_a_modal_dialog_takes_input_and_the_dialog_below_it_is_refused stdout ----
+
+thread 'a_modal_dialog_over_a_modal_dialog_takes_input_and_the_dialog_below_it_is_refused' (4066963) panicked at tests/live_focus_ack.rs:760:13:
+qt5: input to the topmost dialog goes: Err("qt-late.py window 4194325 is blocked by its modal dialog, window 4194317, which takes the desktop's focus on background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop")
+
+---- inside_a_sandbox_that_cannot_read_its_map_a_qt_window_with_no_tree_is_refused_by_its_mark stdout ----
+
+thread 'inside_a_sandbox_that_cannot_read_its_map_a_qt_window_with_no_tree_is_refused_by_its_mark' (4066983) panicked at tests/live_focus_ack.rs:643:5:
+assertion `left == right` failed: qt5, sandboxed: no click took the X focus from the front window: [Object {"error": Null, "id": Number(2), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(3), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(4), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(5), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(6), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(7), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(8), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(9), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(10), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(11), "ok": Bool(true), "output": Null, "restart": Bool(false)}]
+  left: 9
+ right: 0
+
+
+failures:
+    a_double_click_on_a_held_session_checks_the_focus_again_before_its_second_press
+    a_modal_dialog_over_a_modal_dialog_takes_input_and_the_dialog_below_it_is_refused
+    inside_a_sandbox_that_cannot_read_its_map_a_qt_window_with_no_tree_is_refused_by_its_mark
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 10 filtered out; finished in 18.45s
+
+error: test failed, to rerun pass `--test live_focus_ack`

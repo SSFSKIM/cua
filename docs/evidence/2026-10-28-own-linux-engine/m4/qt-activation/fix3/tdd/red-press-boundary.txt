@@ -1,0 +1,25 @@
+running 1 test
+test every_press_spends_its_own_acknowledgement ... FAILED
+
+failures:
+
+---- every_press_spends_its_own_acknowledgement stdout ----
+
+thread 'every_press_spends_its_own_acknowledgement' (4168265) panicked at tests/press_boundary.rs:157:5:
+[
+    "engine/elements.rs: the per-request acknowledgement (before_press) is back",
+    "engine/paste.rs: the per-request acknowledgement (before_press) is back",
+    "engine/pointer.rs: the per-request acknowledgement (before_press) is back",
+    "focus_ack.rs: no PressAck",
+    "input.rs: a ButtonPress built outside send_button: BUTTON_PRESS_EVENT",
+    "input.rs: Session::press does not press",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    every_press_spends_its_own_acknowledgement
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.09s
+
+error: test failed, to rerun pass `--test press_boundary`

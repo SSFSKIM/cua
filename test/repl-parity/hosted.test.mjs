@@ -142,7 +142,7 @@ test('the public readers print labels, booleans and counts; free text is withhel
     const {lines, ok} = runLines(`progress ${PLANTED}\n${JSON.stringify({cases: 2, complete: false, assertions: 'FAIL', coveredCases: ['cells/a'], recordedVendorDefects: 0, out: `/x/${PLANTED}`})}\n`, dir, 'cua/cells');
     assert.equal(lines.join('\n').includes(PLANTED), false);
     assert.deepEqual(lines, ['hosted-parity: run cua/cells: cases 2 complete false assertions FAIL covered 1 pending 0 vendorDefects 0',
-      '  meta: complete false error present (withheld)', '  failed assertion: cells/b 3', '  rows 2, failed assertions 1']);
+      '  meta: complete false error present (withheld)', '  failed assertion: cells/b 3', '    reason other', '  rows 2, failed assertions 1']);
     assert.equal(ok, false);
     const passed = runLines(JSON.stringify({cases: 2, complete: true, assertions: 'PASS', coveredCases: ['a', 'b']}), dir, 'cua/cells');
     assert.deepEqual([passed.ok, passed.lines.length], [true, 1]);
@@ -151,6 +151,71 @@ test('the public readers print labels, booleans and counts; free text is withhel
       assert.equal(runLines(stdout, join(dir, 'absent'), 'cua/cells').ok, false, stdout);
     const reader = spawnSync(process.execPath, [join(HOSTED, 'public.mjs'), 'run', join(dir, 'absent.out'), join(dir, 'absent'), 'cua/cells'], {encoding: 'utf8'});
     assert.equal(reader.status, 1);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('a failed case\'s lines say why in fixture data only: the reason\'s kind, each cell\'s outcome, timing and labelled value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
+  const cell = (name, row, ms) => ({case: 'api/browser-cuaapi/drag', cell: name, ok: true, isError: false, ms,
+    content: [{type: 'text', text: `progress ${PLANTED}\nCUA_PARITY_RESULT ${JSON.stringify({...row, $imageCount: 0})}`}], meta: {'cua/taskId': PLANTED}});
+  const timedOut = {ok: false, error: {code: 'Error', message: `Timed out after 1500ms waiting for selector text=ended at /Users/runner/${PLANTED}`}};
+  const sideEffects = {events: [{text: 'pointer'}, {pointer: {x: 60, y: 180}}, {dragStart: true, x: 60, y: 180}, {note: `/Users/runner/${PLANTED}`}, {host: `runner@${PLANTED}.local`, dir: `Users/runner/${PLANTED}`}]};
+  const reasons = [
+    [`drag: ${timedOut.error.message}`, '    reason cell-error cell drag timeout true'],
+    [`scroll: unexpected fixture result ${JSON.stringify({before: 0, moved: false})}`, '    reason unexpected-result cell scroll: {"before":0,"moved":false}'],
+    [`fixture side effects differ: ${JSON.stringify(sideEffects)}`, '    reason side-effects: {"events":[{"text":"pointer"},{"pointer":{"x":60,"y":180}},{"dragStart":true,"x":60,"y":180},{"note":"<withheld>"},{"host":"<withheld>","dir":"<withheld>"}]}'],
+    [`api/browser-cuaapi/drag: ${PLANTED} at /Users/runner`, '    reason other'],
+  ];
+  try {
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: true}));
+    for (const [reason, line] of reasons) {
+      const rows = [cell('type', {ok: true, value: 'pointer'}, 486.4), cell('drag', timedOut, 1712.9), cell('scroll', {ok: true, value: {before: 0, moved: false}}, 228),
+        {case: 'api/browser-cuaapi/drag', cell: 'odd', ok: true, content: [{type: 'text', text: PLANTED}], ms: 3},
+        {case: 'api/other', cell: 'a', ok: true, content: [], ms: 1}, {case: 'api/other', assertion: {ok: true}},
+        {case: 'api/browser-cuaapi/drag', assertion: {ok: false, reason}}];
+      writeFileSync(join(dir, 'results.jsonl'), rows.map(r => JSON.stringify(r)).join('\n'));
+      const {lines} = runLines(JSON.stringify({cases: 2, complete: true, assertions: 'FAIL', coveredCases: ['api/other']}), dir, 'cua/api');
+      assert.equal(lines.join('\n').includes(PLANTED), false, reason);
+      assert.equal(lines.join('\n').includes('/Users/runner'), false, reason);
+      assert.deepEqual(lines.slice(2), ['  failed assertion: api/browser-cuaapi/drag -', line,
+        '    cell type: ok true ms 486 value "pointer"',
+        '    cell drag: ok false ms 1713 error Error timeout true',
+        '    cell scroll: ok true ms 228 value {"before":0,"moved":false}',
+        '    cell odd: no result marker ms 3',
+        '  rows 7, failed assertions 1'], reason);
+    }
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('a failed cell\'s error is told by its kind without its text: the CDP command that timed out, a detached debugger, the selector deadline; an other reason names the cells it mentions', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
+  const id = 'api/browser-playwrightlocator/waitfor';
+  const failing = (name, message) => ({case: id, cell: name, ok: true, isError: false, ms: 10,
+    content: [{type: 'text', text: `CUA_PARITY_RESULT ${JSON.stringify({ok: false, error: {code: 'Error', message}, $imageCount: 0})}`}]});
+  try {
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: true}));
+    const rows = [
+      failing('cdp', `Error: Timed out after 1500ms waiting for selector text=ended: Timed out after 1ms waiting for CDP command Runtime.evaluate.\nat /Users/runner/${PLANTED}`),
+      failing('deadline', 'Error: Playwright selector deadline exceeded\nlocator.waitFor(visible) timed out for selector #x'),
+      failing('detached', `Debugger is not attached to the tab with id: 5. ${PLANTED}`),
+      failing('odd-command', `Timed out after 9ms waiting for CDP command ${PLANTED}/x.`),
+      failing('plain', `Error: boom at /Users/runner/${PLANTED}`),
+      {case: id, cell: 'locator-contract-diagnostics-no-matches', ok: true, isError: false, ms: 318,
+        content: [{type: 'text', text: `CUA_PARITY_RESULT ${JSON.stringify({ok: true, value: {rejected: true, after: ['a sentence', `at /Users/runner/${PLANTED}`]}, $imageCount: 0})}`}]},
+      {case: id, assertion: {ok: false, reason: `${id}: locator-contract-diagnostics-no-matches did not satisfy the vendor locator contract ${PLANTED}`}},
+    ];
+    writeFileSync(join(dir, 'results.jsonl'), rows.map(r => JSON.stringify(r)).join('\n'));
+    const {lines} = runLines(JSON.stringify({cases: 1, complete: true, assertions: 'FAIL'}), dir, 'cua/api');
+    assert.equal(lines.join('\n').includes(PLANTED), false);
+    assert.deepEqual(lines.slice(2), [`  failed assertion: ${id} -`,
+      '    reason other names locator-contract-diagnostics-no-matches',
+      '    cell cdp: ok false ms 10 error Error timeout true cdp Runtime.evaluate',
+      '    cell deadline: ok false ms 10 error Error timeout true selector-deadline true',
+      '    cell detached: ok false ms 10 error Error timeout false detached true',
+      '    cell odd-command: ok false ms 10 error Error timeout true',
+      '    cell plain: ok false ms 10 error Error timeout false',
+      '    cell locator-contract-diagnostics-no-matches: ok true ms 318 value {"rejected":true,"after":["<withheld>","<withheld>"]}',
+      '  rows 7, failed assertions 1']);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
@@ -179,9 +244,49 @@ test('the script refuses to run off a GitHub-hosted macOS runner and touches not
     const usage = spawnSync('sh', [join(HOSTED, 'hosted.sh'), 'cfprefs'], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: home}});
     assert.equal(usage.status, 2);
     assert.match(usage.stderr, /^usage: /);
+    // The diagnosis-only load (#168) takes only cpu:<1-9> and only for the browser item; a valid one still meets the guard.
+    const stressed = (item, value) => spawnSync('sh', [join(HOSTED, 'hosted.sh'), item], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: home, PARITY_STRESS: value}});
+    for (const [item, value, refusal] of [['browser', 'cpu', /^hosted-parity: PARITY_STRESS must be cpu:<1-9>/], ['browser', 'cpu:0', /must be cpu:<1-9>/],
+      ['denials', 'cpu:1', /^hosted-parity: PARITY_STRESS is for the browser item/], ['browser', 'cpu:1', /^hosted-parity: refused: /]]) {
+      const run = stressed(item, value);
+      assert.equal(run.status, 2, `${item} ${value}`);
+      assert.match(run.stderr, refusal, `${item} ${value}`);
+    }
+    // The diagnosis-only Chrome flags take only their named sets; anything else would reach Chrome's command line. The
+    // renderer-backgrounding set (#384) is for a stress run only.
+    const flagged = (value, stress) => spawnSync('sh', [join(HOSTED, 'hosted.sh'), 'browser'], {encoding: 'utf8',
+      env: {PATH: process.env.PATH, HOME: home, PARITY_CHROME_FLAGS: value, ...(stress ? {PARITY_STRESS: stress} : {})}});
+    for (const [value, stress, refusal] of [
+      ['--remote-debugging-port=9222', undefined, /^hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling or renderer-backgrounding/],
+      ['anti-throttling', undefined, /^hosted-parity: refused: /],
+      ['renderer-backgrounding', undefined, /^hosted-parity: PARITY_CHROME_FLAGS=renderer-backgrounding is for a stress diagnosis/],
+      ['renderer-backgrounding', 'cpu:2', /^hosted-parity: refused: /]]) {
+      const run = flagged(value, stress);
+      assert.equal(run.status, 2, value);
+      assert.match(run.stderr, refusal, `${value} ${stress ?? ''}`);
+    }
+    assert.deepEqual(readdirSync(home), ['tmp']);
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
 test('the runner is a declared darwin device', () => {
   assert.deepEqual(declaredDevice('hosted-macos'), {platform: 'darwin'});
+});
+
+test('a failed cell that says what it saw (`; seen {...}`, #168) prints that in fixture data, its paths and text withheld', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
+  const id = 'api/browser-cuaapi/type';
+  const seen = {focused: false, active: {tag: 'body', id: ''}, value: '', where: `/Users/runner/${PLANTED}`};
+  const message = `the typed text was not acknowledged within 3000ms; seen ${JSON.stringify(seen)}`;
+  try {
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: true}));
+    writeFileSync(join(dir, 'results.jsonl'), [
+      {case: id, cell: 'type', ok: true, isError: false, ms: 3319, content: [{type: 'text', text: `CUA_PARITY_RESULT ${JSON.stringify({ok: false, error: {code: 'Error', message}, $imageCount: 0})}`}]},
+      {case: id, assertion: {ok: false, reason: `type: ${message}`}},
+    ].map(r => JSON.stringify(r)).join('\n'));
+    const {lines} = runLines(JSON.stringify({cases: 1, complete: true, assertions: 'FAIL'}), dir, 'vendor/api');
+    assert.equal(lines.join('\n').includes(PLANTED), false);
+    const view = '{"focused":false,"active":{"tag":"body","id":""},"value":"","where":"<withheld>"}';
+    assert.deepEqual(lines.slice(3, 5), [`    reason cell-error cell type timeout false seen ${view}`, `    cell type: ok false ms 3319 error Error timeout false seen ${view}`]);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 });

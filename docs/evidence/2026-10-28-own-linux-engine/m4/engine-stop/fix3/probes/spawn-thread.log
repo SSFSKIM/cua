@@ -1,0 +1,10 @@
+child 1723543
+ended
+exit 0
+node pid (its main thread's tid): 1723530
+the child: 1723543
+-- the clone that made the child, and the child's prctl and execs:
+1723530 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7c83c3eac010) = 1723543
+1723543 execve("<worktree>/native/linux-engine/target/release/cua-engine", ["~/Developer/GitHub/cua/".
+1723543 prctl(PR_SET_PDEATHSIG, SIGKILL) = 0
+1723543 execve("/bin/sh", ["/bin/sh", "-c", "sleep 0.3"], 0x7fffcc928d40 /* 1 var */) = 0

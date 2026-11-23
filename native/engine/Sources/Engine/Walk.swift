@@ -70,9 +70,10 @@ let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
 /// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
-/// FUN_10074cb90 runs only for a value it holds) and the role's settability counts in the window (Derivations.swift).
+/// FUN_10074cb90 runs only for a value it holds; a password field, whose value is never read, counts as holding one, as
+/// every app answers it one, #405) and the role's settability counts in the window (Derivations.swift).
 func readsValueSettable(_ data: ElementData, parentRole: String?, chromium: Bool) -> Bool {
-  data.value != nil && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
+  (data.value != nil || data.secure) && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
 }
 
 /// A node's flags as the walk derives them (FUN_10074cb90; Derivations.swift).
@@ -536,7 +537,8 @@ final class TreeWalk {
 
   /// The selection's state: what it read, for the tree and for the record, what failed, and its queues: `stack`, the
   /// elements to read next (depth first); `deferred`, what waits because nothing of it shows (`Waiting`); and `lastly`,
-  /// the children of AXColumn elements, taken up only once nothing else is left (#304). Each queue is latest in the
+  /// the children of AXColumn elements (#304) and, unread, the AXColumn elements a wide list's shown children hold
+  /// (#310), taken up only once nothing else is left. Each queue is latest in the
   /// document's order first.
   private var selected: [ElementKey: Selected] = [:]
   private var recorded: [ElementKey: Selected] = [:]
@@ -761,7 +763,8 @@ final class TreeWalk {
 
   /// Takes up a read element's children (then its record-only ones), the first to be read next. In the tree's selection,
   /// a list of more than 100 whose clip shows has the children that show taken up (`shownChildPositions`); the runs of
-  /// the others wait, unread, in `deferred` (#304). Without them (main's behaviour for that list) all are taken up.
+  /// the others wait, unread, in `deferred` (#304), and an AXColumn among those that show waits, unread, in `lastly`
+  /// (#310). Without them (main's behaviour for that list) all are taken up.
   private func expand(_ item: Selected, judging: Bool = true) {
     item.expanded = true
     let count = item.read.children.count + item.recordChildren.count
@@ -773,7 +776,12 @@ final class TreeWalk {
         if position > start { insertInOrder(.unread(item, start..<position), into: &deferred) }
         start = position + 1
       }
-      push(item, first)
+      // #310 (the design session's ruling d9f6902b): an AXColumn among them, known by the role its frame read brought,
+      // waits unread in `lastly`; its cells are read through their rows, and its own read would take its whole cell list.
+      let columns = Set(first.filter { source.roleReadWithFrame(item.read.children[$0]) == kAXColumnRole })
+      for position in columns.sorted() { insertInOrder(.unread(item, position..<(position + 1)), into: &lastly) }
+      if !columns.isEmpty { source.costs.count("wideListColumnsLast", columns.count) }
+      push(item, columns.isEmpty ? first : first.filter { !columns.contains($0) })
     } else {
       push(item, Array(0..<count))
     }
@@ -881,7 +889,24 @@ final class TreeWalk {
       // A node that kept its token has its children matched against the previous revision's; a new node's are new.
       let inherited: [Int?]
       if let previous, visit.inherited != nil {
-        inherited = matchSiblings(old: previous.siblings(of: number, menu: false), new: children)
+        let old = previous.siblings(of: number, menu: false)
+        // #303: then Chromium's re-created synthesized elements (`keepRecreated`), judged on what the walk read of them.
+        inherited = keepRecreated(matchSiblings(old: old, new: children), old: old, oldListed: previous.entries[number]?.listed,
+                                  entry: { previous.entries[$0] }, new: children.count, newListed: item.read.data.children.count,
+                                  read: { position in
+                                    self.selected[ElementKey(element: children[position])].map {
+                                      SiblingRead(identity: ElementIdentity($0.read.data, pid: $0.read.owner), frame: $0.read.data.frame,
+                                                  firstChild: $0.read.data.children.first)
+                                    }
+                                  },
+                                  parentRole: item.read.data.role, parentShift: {
+                                    guard let now = item.read.data.frame, let before = previous.entries[number]?.frame else { return .zero }
+                                    return CGVector(dx: now.minX - before.minX, dy: now.minY - before.minY)
+                                  }, gone: { [self] in
+                                    // The one AX read emission makes: none past the observation's deadline, where the
+                                    // candidate keeps the vendor's rule and takes a new token.
+                                    !pastDeadline() && source.isGone($0)
+                                  })
       } else {
         inherited = Array(repeating: nil, count: children.count)
       }
@@ -902,7 +927,9 @@ final class TreeWalk {
       let data = item.read.data
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
-                                                actions: item.read.actions, childCount: data.children.count))
+                                                actions: item.read.actions, childCount: data.children.count, childrenRead: data.childrenRead,
+                                                subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
+                                                labelsUnread: screenshotLabelsUnread(role: data.role, data.unreadable)))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
   }
@@ -970,8 +997,9 @@ final class TreeWalk {
        let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
       let length = text.utf16.count
       if length > 0 && length <= markdownMaxLength {
-        valueMarkdown = source.markdown(element, length: length)
-        markdownFetches += 1
+        // A field found closed just before the read (#405) comes back with its value dropped, and the node is made from that.
+        valueMarkdown = source.markdown(element, data: &data, length: length)
+        if !data.secure { markdownFetches += 1 }
       }
     }
     let (children, shown, recordable) = choose(element, data, actions, pending)
@@ -1082,11 +1110,15 @@ final class TreeWalk {
       titles.append((inMenu, inMenu ? menuBar.count : nodes.count, targets))
     }
     if inMenu { menuBar.append(node) } else { nodes.append(node) }
-    revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions, frame: read.data.frame)
+    revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions,
+                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count,
+                                            recordedAt: revision.recordedAt)
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
-                                                actions: read.actions, childCount: read.data.children.count))
+                                                actions: read.actions, childCount: read.data.children.count, childrenRead: read.data.childrenRead,
+                                                subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
+                                                labelsUnread: screenshotLabelsUnread(role: read.data.role, read.data.unreadable)))
     }
     attach(number, parent: parent, inMenu: inMenu)
     return number
@@ -1156,6 +1188,9 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
+  // #405: a password field's value was never kept; the node says so, with no value, length or Markdown. Another element
+  // whose classification failed says only that its value was not read (ruling 1ea561bc:813).
+  if data.secure { node["secure"] = true } else if data.classificationFailed { node["valueUnread"] = true }
   return node
 }
 

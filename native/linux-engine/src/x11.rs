@@ -41,6 +41,10 @@ pub struct WindowInfo {
     pub focused: bool,
     pub height: u16,
     pub id: u32,
+    /// `Some(true)` for an iconified window (`WM_STATE` Iconic), which the vendor leaves out of `list_windows`
+    /// (Design, Minimized windows; M4): an additive field the vendor JavaScript passes through.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimized: Option<bool>,
     pub modal: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -52,6 +56,7 @@ pub struct WindowInfo {
 }
 
 const ATOM_NAMES: &[&str] = &[
+    "XdndAware",
     "_NET_ACTIVE_WINDOW",
     "_NET_CLIENT_LIST_STACKING",
     "_NET_CLIENT_LIST",
@@ -61,9 +66,14 @@ const ATOM_NAMES: &[&str] = &[
     "_GTK_APPLICATION_ID",
     "_NET_WM_STATE",
     "_NET_WM_STATE_MODAL",
+    "_NET_WM_STATE_ABOVE",
+    "_NET_WM_WINDOW_TYPE_DOCK",
+    "_NET_WM_WINDOW_TYPE_NOTIFICATION",
     "_NET_WM_PID",
     "AT_SPI_BUS",
     "XdndSelection",
+    "_NET_FRAME_EXTENTS",
+    "_XEMBED_INFO",
 ];
 
 pub struct X11 {
@@ -124,6 +134,79 @@ fn values32(reply: &GetPropertyReply) -> Vec<u32> {
     reply.value32().map(|v| v.collect()).unwrap_or_default()
 }
 
+/// ICCCM's `WM_STATE` value for an iconified window.
+const ICONIC_STATE: u32 = 3;
+
+/// Whether a window is minimized: not viewable, and its `WM_STATE` (ICCCM 4.1.3.1) says Iconic. A window manager also
+/// marks a shaded window or one on another desktop Iconic; each is out of sight, and activating it brings it back.
+pub fn iconic(map_state: MapState, wm_state: &[u32]) -> bool {
+    map_state != MapState::VIEWABLE && wm_state.first() == Some(&ICONIC_STATE)
+}
+
+/// Whether a window's properties make it a modal transient that can take another window's focus (task 61's fix):
+/// `_NET_WM_STATE` names `_NET_WM_STATE_MODAL`, `WM_TRANSIENT_FOR` names a window (its parent, or its group's leader for
+/// an application-modal dialog), and it is shown: viewable, or iconic, since a toolkit still counts a minimized dialog
+/// as blocking and its activation would bring it back.
+pub fn modal_transient(
+    state: &[u32],
+    modal: Atom,
+    transient_for: &[u32],
+    map_state: MapState,
+    wm_state: &[u32],
+) -> bool {
+    state.contains(&modal)
+        && transient_for.first().is_some_and(|w| *w != x11rb::NONE)
+        && (map_state == MapState::VIEWABLE || iconic(map_state, wm_state))
+}
+
+/// One window of the target's own X client, as the modal lookup reads it (`X11::modal_transient_of`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Candidate {
+    pub window: Window,
+    /// Its `WM_TRANSIENT_FOR`, when it names a window.
+    pub transient_for: Option<Window>,
+    /// Whether it is a modal transient that is shown (`modal_transient`).
+    pub modal_shown: bool,
+}
+
+/// The first of `candidates` (the other windows of the target's X client) that blocks the target, whose own
+/// `WM_TRANSIENT_FOR` is `transient_for`: a shown modal transient that is not one of the target's ancestors along the
+/// transient chain. A dialog's own modal parent does not block it: a modal D1 that opened a modal D2 leaves D2 the
+/// dialog the person can use (the bounded re-review's P2), while D2 still blocks D1 and both block the window below.
+pub fn blocking_dialog(transient_for: Option<Window>, candidates: &[Candidate]) -> Option<Window> {
+    let mut ancestors = Vec::new();
+    let mut next = transient_for;
+    while let Some(w) = next {
+        if ancestors.contains(&w) {
+            break;
+        }
+        ancestors.push(w);
+        next = candidates.iter().find(|c| c.window == w).and_then(|c| c.transient_for);
+    }
+    candidates
+        .iter()
+        .find(|c| c.modal_shown && !ancestors.contains(&c.window))
+        .map(|c| c.window)
+}
+
+/// The viewable managed top-levels at one moment, bottom to top, each with its rectangle in root coordinates (left, top,
+/// right and bottom, exclusive, its border included): the override-redirect ones, a drag and drop's drag image among
+/// them, are passed over ([`X11::top_levels`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopLevels(pub Vec<(Window, (i32, i32, i32, i32))>);
+
+impl TopLevels {
+    /// The topmost of them whose rectangle holds a root point.
+    pub fn at(&self, (x, y): (i16, i16)) -> Option<Window> {
+        let (x, y) = (i32::from(x), i32::from(y));
+        self.0
+            .iter()
+            .rev()
+            .find(|(_, (left, top, right, bottom))| x >= *left && y >= *top && x < *right && y < *bottom)
+            .map(|&(window, _)| window)
+    }
+}
+
 /// The pending replies for one window's description.
 struct Describe<'c> {
     attributes: Cookie<'c, RustConnection, GetWindowAttributesReply>,
@@ -135,6 +218,7 @@ struct Describe<'c> {
     wm_class: Cookie<'c, RustConnection, GetPropertyReply>,
     window_type: Cookie<'c, RustConnection, GetPropertyReply>,
     wm_state: Cookie<'c, RustConnection, GetPropertyReply>,
+    icccm_state: Cookie<'c, RustConnection, GetPropertyReply>,
 }
 
 /// A described window before its type atom is named.
@@ -206,10 +290,12 @@ impl X11 {
             wm_class: self.property(id, AtomEnum::WM_CLASS.into())?,
             window_type: self.property(id, self.atom("_NET_WM_WINDOW_TYPE"))?,
             wm_state: self.property(id, self.atom("_NET_WM_STATE"))?,
+            icccm_state: self.property(id, self.atom("WM_STATE"))?,
         })
     }
 
-    /// `describe_window` (behaviour §3): None when the window is not Viewable or has no size.
+    /// `describe_window` (behaviour §3): None when the window has no size, or is not Viewable unless it is minimized
+    /// (`iconic`), which the vendor leaves out and cua lists with `minimized: true` (M4).
     fn describe_finish(&self, id: Window, pending: Describe<'_>, focus: Window) -> Result<Option<Described>> {
         let attributes = pending.attributes.reply()?;
         let geometry = pending.geometry.reply()?;
@@ -220,7 +306,9 @@ impl X11 {
         let wm_class = pending.wm_class.reply();
         let window_type = pending.window_type.reply().ok();
         let wm_state = pending.wm_state.reply()?;
-        if attributes.map_state != MapState::VIEWABLE || geometry.width == 0 || geometry.height == 0 {
+        let icccm_state = pending.icccm_state.reply().map(|r| values32(&r)).unwrap_or_default();
+        let minimized = iconic(attributes.map_state, &icccm_state);
+        if (attributes.map_state != MapState::VIEWABLE && !minimized) || geometry.width == 0 || geometry.height == 0 {
             return Ok(None);
         }
         let title = property_text(&net_wm_name.value).or_else(|| property_text(&wm_name.value));
@@ -237,6 +325,7 @@ impl X11 {
                 focused: focus == id,
                 height: geometry.height,
                 id,
+                minimized: minimized.then_some(true),
                 modal,
                 title,
                 width: geometry.width,
@@ -278,7 +367,8 @@ impl X11 {
     }
 
     /// The window `get_window_state` and window requests act on: `X11 window <id> is not mapped` when it does
-    /// not describe (minimized, unmapped and zero-size windows alike); X errors propagate.
+    /// not describe (unmapped and zero-size windows alike); a minimized window describes, with `minimized` set;
+    /// X errors propagate.
     pub fn get_window(&mut self, id: Window) -> Result<WindowInfo> {
         let focus = self.focus()?;
         let pending = self.describe_start(id)?;
@@ -416,6 +506,83 @@ impl X11 {
         Ok(out)
     }
 
+    /// Whether `window` is minimized (`iconic`) now: one round trip, its two requests together. A window that cannot be
+    /// read is not minimized here; the request that names it answers its own error.
+    pub fn minimized(&self, window: Window) -> bool {
+        let attributes = self.conn.get_window_attributes(window);
+        let state = self.property(window, self.atom("WM_STATE"));
+        let (Ok(attributes), Ok(state)) = (attributes, state) else {
+            return false;
+        };
+        match (attributes.reply(), state.reply()) {
+            (Ok(attributes), Ok(state)) => iconic(attributes.map_state, &values32(&state)),
+            _ => false,
+        }
+    }
+
+    /// A modal transient of `window`'s own X client that is shown (`modal_transient`) and blocks it
+    /// (`blocking_dialog`: not one of its own ancestors), if any. The candidates are the window manager's client list,
+    /// else, with no window manager, the root's children, of the same client (its resource-id base): a toolkit's
+    /// dialogs share its connection. Two round trips, the candidates' requests and the window's own `WM_TRANSIENT_FOR`
+    /// pipelined. A dialog that blocks a sibling window of the same application, not this one, counts too (X11 does
+    /// not tell window-modal from application-modal), which refuses more, never less.
+    pub fn modal_transient_of(&self, window: Window) -> Result<Option<Window>> {
+        let mask = self.conn.setup().resource_id_mask;
+        let listed = values32(&self.get_property(self.root, self.atom("_NET_CLIENT_LIST"))?);
+        let candidates = if listed.is_empty() {
+            self.conn.query_tree(self.root)?.reply()?.children
+        } else {
+            listed
+        };
+        let own = self.property(window, AtomEnum::WM_TRANSIENT_FOR.into())?;
+        let pending = candidates
+            .into_iter()
+            .filter(|&w| w != window && w & !mask == window & !mask)
+            .map(|w| {
+                Ok((
+                    w,
+                    self.property(w, self.atom("_NET_WM_STATE"))?,
+                    self.property(w, AtomEnum::WM_TRANSIENT_FOR.into())?,
+                    self.conn.get_window_attributes(w)?,
+                    self.property(w, self.atom("WM_STATE"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let modal = self.atom("_NET_WM_STATE_MODAL");
+        let named = |reply: &GetPropertyReply| values32(reply).first().copied().filter(|w| *w != x11rb::NONE);
+        let mut read = Vec::new();
+        for (w, state, transient_for, attributes, wm_state) in pending {
+            // a window gone meanwhile blocks nothing
+            let (Ok(state), Ok(transient_for), Ok(attributes), Ok(wm_state)) = (
+                state.reply(),
+                transient_for.reply(),
+                attributes.reply(),
+                wm_state.reply(),
+            ) else {
+                continue;
+            };
+            read.push(Candidate {
+                window: w,
+                transient_for: named(&transient_for),
+                modal_shown: modal_transient(
+                    &values32(&state),
+                    modal,
+                    &values32(&transient_for),
+                    attributes.map_state,
+                    &values32(&wm_state),
+                ),
+            });
+        }
+        Ok(blocking_dialog(named(&own.reply()?), &read))
+    }
+
+    /// Whether `window` carries `_XEMBED_INFO`, Qt's mark on every window it creates (`families::QtMark::Xembed`). A
+    /// window that cannot be read carries nothing here; the request that names it answers its own error.
+    pub fn xembed_marked(&self, window: Window) -> bool {
+        self.get_property(window, self.atom("_XEMBED_INFO"))
+            .is_ok_and(|reply| reply.type_ != x11rb::NONE)
+    }
+
     /// `_NET_WM_PID` when it is exactly one non-zero value.
     pub fn pid(&self, window: Window) -> Option<u32> {
         let reply = self.get_property(window, self.atom("_NET_WM_PID")).ok()?;
@@ -435,6 +602,13 @@ impl X11 {
         self.get_property(window, AtomEnum::WM_NAME.into())
             .ok()
             .and_then(|r| property_text(&r.value))
+    }
+
+    /// `_NET_FRAME_EXTENTS` (`[left, right, top, bottom]`), the window manager's frame around the window, when it
+    /// publishes exactly four values (`identity::Placement`).
+    pub fn frame_extents(&self, window: Window) -> Option<[u32; 4]> {
+        let reply = self.get_property(window, self.atom("_NET_FRAME_EXTENTS")).ok()?;
+        values32(&reply).try_into().ok()
     }
 
     /// The class part of `WM_CLASS` (`families.rs`).
@@ -458,6 +632,62 @@ impl X11 {
             return None;
         }
         self.client_in(top, 0)
+    }
+
+    /// The client window at a root point as [`X11::client_at`] finds it, with the override-redirect top-levels passed
+    /// over: the topmost viewable managed top-level whose rectangle holds the point, then the client in it. A browser's
+    /// drag and drop puts its drag image, an override-redirect window of its own, under the pointer, over the window the
+    /// drop is for (task 73's sittings, `m4/drag-handle/`). The top-levels' attributes and geometries are asked for at
+    /// once, so the lookup costs about one round trip.
+    pub fn managed_client_at(&self, rx: i16, ry: i16) -> Option<Window> {
+        self.client_of(self.top_levels()?.at((rx, ry))?)
+    }
+
+    /// The viewable managed top-levels now, the override-redirect ones passed over, bottom to top, each with its
+    /// rectangle ([`TopLevels`]): attributes and geometries asked for at once, about one round trip.
+    pub fn top_levels(&self) -> Option<TopLevels> {
+        let children = self.conn.query_tree(self.root).ok()?.reply().ok()?.children;
+        let pending: Vec<_> = children
+            .iter()
+            .map(|&w| {
+                Some((
+                    self.conn.get_window_attributes(w).ok()?,
+                    self.conn.get_geometry(w).ok()?,
+                ))
+            })
+            .collect::<Option<_>>()?;
+        let mut levels = Vec::new();
+        for (&w, (attributes, geometry)) in children.iter().zip(pending) {
+            let (Ok(attributes), Ok(g)) = (attributes.reply(), geometry.reply()) else {
+                continue;
+            };
+            if attributes.map_state == MapState::VIEWABLE && !attributes.override_redirect {
+                let border = 2 * i32::from(g.border_width);
+                let (left, top) = (i32::from(g.x), i32::from(g.y));
+                levels.push((
+                    w,
+                    (
+                        left,
+                        top,
+                        left + i32::from(g.width) + border,
+                        top + i32::from(g.height) + border,
+                    ),
+                ));
+            }
+        }
+        Some(TopLevels(levels))
+    }
+
+    /// The client window in a top-level (the top-level itself, or the client a window manager's frame holds).
+    pub fn client_of(&self, top_level: Window) -> Option<Window> {
+        self.client_in(top_level, 0)
+    }
+
+    /// Whether a top-level client takes drag and drop: it carries `XdndAware`, which a drag's source looks for on the
+    /// top-level under the pointer before it sends that window anything. A window it cannot read takes none.
+    pub fn xdnd_aware(&self, window: Window) -> bool {
+        self.get_property(window, self.atom("XdndAware"))
+            .is_ok_and(|reply| !reply.value.is_empty())
     }
 
     /// The window's parent (the root, or a reparenting window manager's frame).
@@ -512,6 +742,11 @@ impl X11 {
             self.composite_ready = true;
         }
         Ok(())
+    }
+
+    /// Whether `window`'s redirect is held past its request (session retention), so the engine's exit drops it.
+    pub fn holds_redirect(&self, window: Window) -> bool {
+        self.retained.contains(&window)
     }
 
     /// Drops retained windows that were destroyed (their redirection ended with them).
@@ -591,11 +826,69 @@ impl X11 {
             .is_some_and(|(rect, levels)| crate::cover::points_unobscured(rect, &levels, &points))
     }
 
+    /// Where real pointer input at root `points` would go now (`cover.rs` `reach`): the X errors of the stacking read are
+    /// the caller's, since a window gone or its ancestry changing is not a judgement of the points.
+    pub fn reach(&self, window: Window, points: &[(i16, i16)]) -> Result<crate::cover::Reach> {
+        let points: Vec<(i32, i32)> = points.iter().map(|&(x, y)| (x as i32, y as i32)).collect();
+        let geometry = self.conn.get_geometry(window)?.reply()?;
+        let (rect, levels) = self.cover(window, &geometry)?;
+        Ok(crate::cover::reach(rect, &levels, &points))
+    }
+
+    /// Whether `window` is on top over its visible area now, as `activate_window` waits for it (task 63; the design
+    /// session's ruling, 2026-11-06): no window in the window manager's normal layer covers it. Of the windows
+    /// `cover::covers` finds, one whose client the window manager keeps in another layer neither holds the wait nor fails
+    /// it: `_NET_WM_STATE_ABOVE`, or `_NET_WM_WINDOW_TYPE` DOCK or NOTIFICATION, read on the client a frame holds, else on the window. A
+    /// covering window gone before its properties are read covers nothing. The X errors of the stacking read are the
+    /// caller's.
+    pub fn on_top(&self, window: Window) -> Result<bool> {
+        let geometry = self.conn.get_geometry(window)?.reply()?;
+        let (rect, levels) = self.cover(window, &geometry)?;
+        let Some(covers) = crate::cover::covers(rect, &levels) else {
+            return Ok(false);
+        };
+        for cover in covers {
+            if self.normal_layer(cover.id).unwrap_or(false) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether a window stacked above is in the window manager's normal layer, from what its client says: not
+    /// `_NET_WM_STATE_ABOVE`, and of no `_NET_WM_WINDOW_TYPE` DOCK or NOTIFICATION.
+    fn normal_layer(&self, window: Window) -> Result<bool> {
+        // the client a frame holds (the window with `WM_STATE` in it), else the window itself (no window manager)
+        let client = self.client_in(window, 0).unwrap_or(window);
+        let states = self.property(client, self.atom("_NET_WM_STATE"))?;
+        let types = self.property(client, self.atom("_NET_WM_WINDOW_TYPE"))?;
+        let (states, types) = (values32(&states.reply()?), values32(&types.reply()?));
+        let other = [
+            self.atom("_NET_WM_WINDOW_TYPE_DOCK"),
+            self.atom("_NET_WM_WINDOW_TYPE_NOTIFICATION"),
+        ];
+        Ok(!states.contains(&self.atom("_NET_WM_STATE_ABOVE")) && !types.iter().any(|t| other.contains(t)))
+    }
+
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
     fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
         self.cover(window, geometry)
             .map(|(rect, levels)| crate::cover::fully_unobscured(rect, &levels))
             .unwrap_or(false)
+    }
+
+    /// What a fresh pixmap of `window` would hold, from one read of its stacking (`cover.rs`): whether it is fully
+    /// unobscured, and whether the server already keeps its whole contents offscreen (`complete_offscreen`). Any X
+    /// error is doubt for both, and doubt waits for the first damage.
+    fn complete_now(&self, window: Window, geometry: &GetGeometryReply) -> (bool, bool) {
+        self.cover(window, geometry)
+            .map(|(rect, levels)| {
+                (
+                    crate::cover::fully_unobscured(rect, &levels),
+                    crate::cover::complete_offscreen(rect, geometry.depth, &levels),
+                )
+            })
+            .unwrap_or((false, false))
     }
 
     /// The window's rectangle in root coordinates and its ancestry's stacking, from its parent up to the root.
@@ -612,6 +905,7 @@ impl X11 {
             w: geometry.width as i32,
             h: geometry.height as i32,
         };
+        let mask = self.conn.setup().resource_id_mask;
         let mut levels = Vec::new();
         let mut current = window;
         while current != self.root {
@@ -638,12 +932,14 @@ impl X11 {
                     w: parent_geometry.width as i32,
                     h: parent_geometry.height as i32,
                 },
+                depth: parent_geometry.depth,
                 above: Vec::with_capacity(pending.len()),
             };
-            for (attributes, geometry) in pending {
+            for (&w, (attributes, geometry)) in above.iter().zip(pending) {
                 let (attributes, g) = (attributes.reply()?, geometry.reply()?);
                 let border = 2 * g.border_width as i32;
                 level.above.push(Above {
+                    id: w,
                     rect: Rect {
                         x: px + g.x as i32,
                         y: py + g.y as i32,
@@ -652,6 +948,8 @@ impl X11 {
                     },
                     viewable: attributes.map_state == MapState::VIEWABLE,
                     input_only: attributes.class == WindowClass::INPUT_ONLY,
+                    own: w & !mask == window & !mask,
+                    override_redirect: attributes.override_redirect,
                 });
             }
             levels.push(level);
@@ -674,7 +972,7 @@ impl X11 {
             mode => {
                 self.ensure_composite()?;
                 let geometry = self.conn.get_geometry(window)?.reply()?;
-                let unobscured = self.fully_unobscured(window, &geometry);
+                let (unobscured, offscreen) = self.complete_now(window, &geometry);
                 self.readiness().watch(window, (geometry.width, geometry.height))?;
                 let redirect = self
                     .conn
@@ -687,7 +985,7 @@ impl X11 {
                     self.readiness().forget(window);
                     return Err(error);
                 }
-                self.readiness().redirected(window, unobscured)?;
+                self.readiness().redirected(window, unobscured, offscreen)?;
                 if mode == Retention::Session {
                     // Our own event selection on the window, so its destruction ends the retention record.
                     let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
@@ -834,7 +1132,9 @@ impl X11 {
     // -----------------------------------------------------------------------------------------------------------
     // The X11 fallback tree (behaviour §5.7)
 
-    pub fn fallback_tree(&self, window: Window) -> Result<AxNode> {
+    /// The vendor's X11 tree for a window whose association failed. It takes the leave only the vendor's own failures
+    /// give (`atspi::Fallback`), so a window whose association met duplicates never answers it.
+    pub fn fallback_tree(&self, window: Window, _leave: crate::atspi::Fallback) -> Result<AxNode> {
         let mut count = 0u32;
         self.fallback_node(window, 0, &mut count)
     }
@@ -905,11 +1205,149 @@ impl X11 {
         self.conn.flush()?;
         Ok(())
     }
+
+    /// A round trip: once it returns, the server has handled every request sent before it (the exit's last
+    /// `FocusOut` included, so the engine never exits with one still unread in its socket).
+    pub fn sync(&self) -> Result<()> {
+        self.conn.get_input_focus()?.reply()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_top_level_at_a_point_is_the_topmost_whose_rectangle_holds_it() {
+        // bottom to top: a window, another over its right part, the right edge exclusive
+        let levels = TopLevels(vec![(1, (0, 0, 900, 700)), (2, (800, 100, 1000, 300))]);
+        assert_eq!(levels.at((10, 10)), Some(1));
+        assert_eq!(levels.at((850, 150)), Some(2), "the upper one where they overlap");
+        assert_eq!(levels.at((999, 299)), Some(2));
+        assert_eq!(levels.at((1000, 150)), None, "the bare root");
+        assert_eq!(levels.at((899, 699)), Some(1));
+        assert_eq!(levels.at((900, 699)), None);
+    }
+
+    #[test]
+    fn a_modal_transient_is_modal_transient_for_a_window_and_shown() {
+        const MODAL: Atom = 401;
+        const ABOVE: Atom = 402;
+        let (iconic_state, normal_state) = ([3u32, 0], [1u32, 0]);
+        // a Qt dialog: modal, transient for its parent (or its group's leader), mapped
+        assert!(modal_transient(
+            &[ABOVE, MODAL],
+            MODAL,
+            &[0x600006],
+            MapState::VIEWABLE,
+            &normal_state
+        ));
+        // minimized, it still blocks: its activation would bring it back
+        assert!(modal_transient(
+            &[MODAL],
+            MODAL,
+            &[0x600006],
+            MapState::UNMAPPED,
+            &iconic_state
+        ));
+        assert!(
+            !modal_transient(&[MODAL], MODAL, &[0x600006], MapState::UNMAPPED, &[]),
+            "a hidden (withdrawn) dialog blocks nothing"
+        );
+        assert!(
+            !modal_transient(&[ABOVE], MODAL, &[0x600006], MapState::VIEWABLE, &normal_state),
+            "a transient that is not modal"
+        );
+        assert!(
+            !modal_transient(&[MODAL], MODAL, &[], MapState::VIEWABLE, &normal_state),
+            "a modal window transient for nothing is a top-level of its own"
+        );
+        assert!(!modal_transient(
+            &[MODAL],
+            MODAL,
+            &[0],
+            MapState::VIEWABLE,
+            &normal_state
+        ));
+    }
+
+    #[test]
+    fn a_dialog_s_modal_ancestors_do_not_block_it_and_a_modal_dialog_above_a_window_does() {
+        // the bounded re-review's P2: modal D1 over the main window opens modal D2; D2 is the dialog the person can
+        // use, so input to it goes, while input to D1 or to the main window is refused (each blocked by a dialog
+        // above it)
+        const MAIN: Window = 0x600006;
+        const D1: Window = 0x600010;
+        const D2: Window = 0x600020;
+        const LEADER: Window = 0x600001;
+        let shown = |w, transient_for| Candidate {
+            window: w,
+            transient_for,
+            modal_shown: true,
+        };
+        let nested = [
+            Candidate {
+                window: MAIN,
+                transient_for: None,
+                modal_shown: false,
+            },
+            shown(D1, Some(MAIN)),
+            shown(D2, Some(D1)),
+        ];
+        let others = |of: Window| {
+            nested
+                .iter()
+                .filter(move |c| c.window != of)
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            blocking_dialog(Some(D1), &others(D2)),
+            None,
+            "D2 is not blocked by its ancestor D1"
+        );
+        assert_eq!(
+            blocking_dialog(Some(MAIN), &others(D1)),
+            Some(D2),
+            "D1 is blocked by D2"
+        );
+        assert_eq!(
+            blocking_dialog(None, &others(MAIN)),
+            Some(D1),
+            "the main window is blocked"
+        );
+        // two dialogs transient for their group's leader (application-modal, the leader a window no list holds):
+        // neither is the other's ancestor, so the other one blocks, which refuses more, never less
+        let leader = [shown(D1, Some(LEADER))];
+        assert_eq!(
+            blocking_dialog(Some(LEADER), &leader),
+            Some(D1),
+            "a sibling dialog blocks"
+        );
+        assert_eq!(blocking_dialog(Some(LEADER), &[]), None);
+        // a window transient for a tool window that is not modal, itself transient for modal D1: D1 is still the
+        // window's ancestor, so it does not block it, while D2, a modal dialog of D1's, does
+        const TOOL: Window = 0x600030;
+        let through = [
+            Candidate {
+                window: TOOL,
+                transient_for: Some(D1),
+                modal_shown: false,
+            },
+            shown(D1, Some(MAIN)),
+        ];
+        assert_eq!(
+            blocking_dialog(Some(TOOL), &through),
+            None,
+            "an ancestor along a chain through a window that is not modal"
+        );
+        let with_d2 = [through[0], through[1], shown(D2, Some(D1))];
+        assert_eq!(blocking_dialog(Some(TOOL), &with_d2), Some(D2));
+        // a cycle of transients ends
+        let cycle = [shown(D1, Some(D2)), shown(D2, Some(D1))];
+        assert_eq!(blocking_dialog(Some(D1), &cycle), None);
+    }
 
     #[test]
     fn property_text_is_lossy_trimmed_and_drops_trailing_nuls() {
@@ -945,6 +1383,7 @@ mod tests {
             focused: false,
             height: 1,
             id: 4194591,
+            minimized: None,
             modal: false,
             title: Some("Openbox".into()),
             width: 1,
@@ -955,6 +1394,202 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&w).unwrap(),
             r#"{"app":"x11:4194591","focused":false,"height":1,"id":4194591,"modal":false,"title":"Openbox","width":1,"x":-100,"y":-100}"#
+        );
+        let minimized = WindowInfo {
+            minimized: Some(true),
+            ..w
+        };
+        assert_eq!(
+            serde_json::to_string(&minimized).unwrap(),
+            r#"{"app":"x11:4194591","focused":false,"height":1,"id":4194591,"minimized":true,"modal":false,"title":"Openbox","width":1,"x":-100,"y":-100}"#,
+            "the additive field, in its alphabetical place"
+        );
+    }
+
+    #[test]
+    fn a_window_is_minimized_when_it_is_not_viewable_and_its_wm_state_is_iconic() {
+        assert!(iconic(MapState::UNMAPPED, &[3, 0]));
+        assert!(iconic(MapState::UNVIEWABLE, &[3]));
+        assert!(
+            !iconic(MapState::VIEWABLE, &[3, 0]),
+            "a mapped window is not minimized, whatever it says"
+        );
+        assert!(!iconic(MapState::UNMAPPED, &[1, 0]), "NormalState");
+        assert!(!iconic(MapState::UNMAPPED, &[0, 0]), "WithdrawnState");
+        assert!(!iconic(MapState::UNMAPPED, &[]), "no WM_STATE");
+    }
+
+    /// Capture readiness for windows the server already keeps offscreen (M4's T9 and its review), through the engine's
+    /// own redirect and wait. An ARGB frame on the 24-bit root holds its children in a pixmap of its own, complete
+    /// whatever covers the frame; a child's new pixmap is filled from that one (`compNewPixmap` copies the parent's
+    /// contents, inferiors included). So a child with nothing over it inside the frame is captured as itself with no
+    /// first damage, as is an ARGB top-level, which owns its pixmap. A child that a same-depth sibling covers inside the
+    /// frame, or that reaches past the frame, has the sibling's pixels or nothing there in its new pixmap, and its
+    /// capture must wait for its own repaint, which the test's application draws 40 ms after the exposure. A 24-bit
+    /// covered top-level waits for its damage as before. Everything lies under a 24-bit window covering it on the
+    /// screen, so no window is fully unobscured. Needs an X display with Composite and a 32-bit visual
+    /// (`--features live`; Xvfb has both).
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_window_kept_offscreen_is_captured_without_a_first_damage_only_where_nothing_covers_it_inside_its_frame() {
+        use crate::readiness::Reason;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use x11rb::wrapper::ConnectionExt as _;
+        const GREEN: u32 = 0xff00_ff00;
+        let (conn, screen) = x11rb::connect(None).unwrap();
+        let (root, root_depth, root_visual) = {
+            let s = &conn.setup().roots[screen];
+            (s.root, s.root_depth, s.root_visual)
+        };
+        assert_eq!(root_depth, 24, "a 24-bit screen, as the VM's and the gate's");
+        let argb = conn.setup().roots[screen]
+            .allowed_depths
+            .iter()
+            .find(|d| d.depth == 32)
+            .and_then(|d| d.visuals.iter().find(|v| v.class == VisualClass::TRUE_COLOR))
+            .expect("a 32-bit TrueColor visual (Composite's)")
+            .visual_id;
+        let colormap = conn.generate_id().unwrap();
+        conn.create_colormap(ColormapAlloc::NONE, colormap, root, argb).unwrap();
+        // background None unless a pixel is given: the server paints nothing into an exposed child, as a toolkit's
+        let window = |parent: Window, depth: u8, (x, y, w, h): (i16, i16, u16, u16), pixel: Option<u32>| {
+            let id = conn.generate_id().unwrap();
+            let mut aux = CreateWindowAux::new().override_redirect(1).border_pixel(0);
+            if let Some(pixel) = pixel {
+                aux = aux.background_pixel(pixel);
+            }
+            let visual = if depth == 32 {
+                aux = aux.colormap(colormap);
+                argb
+            } else {
+                root_visual
+            };
+            conn.create_window(
+                depth,
+                id,
+                parent,
+                x,
+                y,
+                w,
+                h,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                visual,
+                &aux,
+            )
+            .unwrap()
+            .check()
+            .unwrap();
+            id
+        };
+        let paint = |c: &RustConnection, w: Window| {
+            let gc = c.generate_id().unwrap();
+            c.create_gc(gc, w, &CreateGCAux::new().foreground(GREEN)).unwrap();
+            c.poly_fill_rectangle(
+                w,
+                gc,
+                &[Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 60,
+                    height: 40,
+                }],
+            )
+            .unwrap();
+            c.free_gc(gc).unwrap();
+        };
+        let frame = window(root, 32, (0, 0, 200, 100), Some(0xff80_8080));
+        let sheltered = window(frame, 32, (10, 10, 60, 40), None);
+        let sibling = window(frame, 32, (10, 10, 60, 40), Some(0xffff_0000));
+        let alone = window(frame, 32, (100, 10, 60, 40), None);
+        let past = window(frame, 32, (170, 55, 60, 40), None);
+        let argb_top = window(root, 32, (300, 0, 60, 40), Some(GREEN));
+        let plain = window(root, root_depth, (400, 0, 60, 40), Some(GREEN & 0xff_ffff));
+        let painted = [sheltered, alone, past];
+        for w in [frame, sheltered, alone, past, argb_top, plain] {
+            conn.map_window(w).unwrap();
+        }
+        conn.sync().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        for w in painted {
+            paint(&conn, w);
+        }
+        conn.sync().unwrap();
+        // the sibling over `sheltered` inside the frame, then a window over everything on the screen
+        conn.map_window(sibling).unwrap();
+        let cover = window(root, root_depth, (0, 0, 500, 100), Some(0x00ff_0000));
+        conn.map_window(cover).unwrap();
+        conn.sync().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        // the application: it repaints an exposed window of its own 40 ms after the exposure, as a slow toolkit does
+        let (app, _) = x11rb::connect(None).unwrap();
+        for w in painted {
+            app.change_window_attributes(w, &ChangeWindowAttributesAux::new().event_mask(EventMask::EXPOSURE))
+                .unwrap()
+                .check()
+                .unwrap();
+        }
+        let done = Arc::new(AtomicBool::new(false));
+        let repaints = {
+            let done = done.clone();
+            std::thread::spawn(move || {
+                let mut repainted = Vec::new();
+                while !done.load(Ordering::SeqCst) {
+                    match app.poll_for_event().unwrap() {
+                        Some(Event::Expose(e)) if e.count == 0 => {
+                            std::thread::sleep(Duration::from_millis(40));
+                            paint(&app, e.window);
+                            app.flush().unwrap();
+                            repainted.push(e.window);
+                        }
+                        Some(_) => {}
+                        None => std::thread::sleep(Duration::from_millis(1)),
+                    }
+                }
+                repainted
+            })
+        };
+        let mut x11 = X11::connect(Retention::Session, Duration::ZERO, CaptureWait::Damage).unwrap();
+        let mut capture = |w: Window| {
+            let (rgb, _, _) = x11.capture_window(w).unwrap();
+            let waited = x11.last_capture_wait.unwrap();
+            let off = rgb.chunks(3).filter(|p| *p != [0, 0xff, 0]).count();
+            (waited, off)
+        };
+        let results: Vec<_> = [sheltered, alone, past, argb_top, plain]
+            .into_iter()
+            .map(&mut capture)
+            .collect();
+        done.store(true, Ordering::SeqCst);
+        let repainted = repaints.join().unwrap();
+        for w in [cover, frame, argb_top, plain] {
+            conn.destroy_window(w).unwrap();
+        }
+        conn.free_colormap(colormap).unwrap();
+        conn.sync().unwrap();
+        let [sheltered_r, alone_r, past_r, argb_r, plain_r] = results.try_into().unwrap();
+        for (name, (waited, off)) in [
+            ("covered by a sibling in its frame", sheltered_r),
+            ("alone in its frame", alone_r),
+            ("past its frame", past_r),
+            ("an ARGB top-level", argb_r),
+            ("a 24-bit top-level", plain_r),
+        ] {
+            assert_eq!(
+                off, 0,
+                "{name}: {off} of 2400 pixels not the window's own green ({waited:?})"
+            );
+        }
+        assert_eq!(alone_r.0.reason, Reason::Offscreen, "{alone_r:?}");
+        assert!(alone_r.0.waited < Duration::from_millis(40), "{alone_r:?}");
+        assert_eq!(argb_r.0.reason, Reason::Offscreen, "{argb_r:?}");
+        for (name, waited) in [("sheltered", sheltered_r.0), ("past", past_r.0), ("plain", plain_r.0)] {
+            assert_ne!(waited.reason, Reason::Offscreen, "{name}: {waited:?}");
+        }
+        assert!(
+            repainted.contains(&sheltered) && repainted.contains(&past),
+            "the redirect exposed the parts the frame's pixmap did not hold: {repainted:?}"
         );
     }
 }

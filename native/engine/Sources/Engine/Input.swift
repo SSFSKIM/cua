@@ -24,6 +24,9 @@ import Foundation
 // area is refused as backgroundClickRefused with nothing posted, or a plain click there is carried by the hit's own
 // action (`elementClick.reason` webArea); one whose own down consumed the activation's arm in a view not known to accept
 // first mouse answers clickUnconfirmed after its events.
+// A type_text, keyed or pasted (#361, Paste.swift), reads the focused field back and answers `typeUnconfirmed` unless
+// it holds the text (#354, TypeReadback.swift, meta `typeReadback`), a password field by its length, its success with a
+// note (#414, TypeReadbackLength.swift); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
@@ -96,6 +99,9 @@ struct InputMeta {
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
   var elementClick: ElementClickRecord?
+  /// set_value's and select_text's focus of a WebKit page's field by its caret, then its press (#324,
+  /// `focusByCaretFirst`): the last step and its read-back, and the caret write's AXError when it was not success.
+  var fieldFocus: TextEntryFocusRecord?
   /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
   var note: String? = nil
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
@@ -104,6 +110,21 @@ struct InputMeta {
   var pointerEstablish: PointerEstablishRecord?
   /// #296's stale-point guard at a coordinate pointer's point (StalePoint.swift): kept or refused and why, rechecked after an element route's wait.
   var stalePoint: StalePointRecord?
+  /// #328's scroll confirmation (ScrollConfirm.swift): the container read, the move seen, the end, the fallback's write.
+  var scroll: ScrollConfirmRecord?
+  /// #354's read-back of a keyed type_text (TypeReadback.swift): confirmed or why not, its cost, lengths on a mismatch.
+  var typeReadback: TypeReadbackRecord?
+  /// #354: press_key answers once its keys are posted, so what an editing key did is not confirmed; said on its every
+  /// answer once it posts (`keyEffect: "unconfirmed"`).
+  var keyEffectUnconfirmed = false
+  /// #374's Show Menu confirmation (MenuConfirm.swift): where the new menu was seen, or that none was, and the wait.
+  var menu: MenuConfirmRecord?
+  /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
+  /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
+  var pendingClick: PendingClickRecord?
+  /// #390's read-back of a set_value written without the focus fallback (ValueWithoutFocus.swift): its result, reads and
+  /// time, never the value.
+  var unfocusedValue: UnfocusedValueReadback?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -158,9 +179,20 @@ struct InputMeta {
     if let delivery { wire["delivery"] = delivery.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
+    if let fieldFocus {
+      var focus: [String: Any] = ["focus": fieldFocus.focus.rawValue, "focusStep": fieldFocus.step.rawValue]
+      if let error = fieldFocus.caretWriteError { focus["caretWriteError"] = Int(error) }
+      wire["fieldFocus"] = focus
+    }
     if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
     if let stalePoint { wire["stalePoint"] = stalePoint.wire }
+    if let scroll { wire["scroll"] = scroll.wire }
+    if let typeReadback { wire["typeReadback"] = typeReadback.wire }
+    if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
+    if let menu { wire["menu"] = menu.wire }
+    if let pendingClick { wire["pendingClick"] = pendingClick.wire }
+    if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -185,10 +217,10 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
                   activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil,
                   pointer: PointerTarget = .acceptingFirstMouse, targetActive: () -> Bool,
                   beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
-                  post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
+                  pointerPosted: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
   try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, postsLeftMouseDown: button == .left,
                      foreground: foreground, pointer: pointer, beforeActivating: beforeActivating, beforePosting: beforePosting,
-                     announce: announce, post: post, meta: &meta) {
+                     announce: announce, pointerPosted: pointerPosted, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
@@ -220,7 +252,8 @@ struct PointerTarget {
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
 /// screen-update hold when this action ran it, on the window the events name; in shared mode held until the window order
-/// reads back, to a 200 ms cap, when that activation clicked its in-window activation point (#321). An action whose
+/// reads back, to a 200 ms cap after the events under a 300 ms ceiling from the hold's start (#324), when that
+/// activation clicked its in-window activation point (#321). An action whose
 /// events open with a left mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's
 /// arm, as before #187's inert click: no inert click goes before it, and one goes at the release only when none went (a
 /// stop before the events); the click that consumed it rides in the meta when this action ran the activation or
@@ -237,10 +270,13 @@ struct PointerTarget {
 /// #296: a pointer whose point the stale-point guard refused (`pointer.staleRefusal`) throws that refusal before anything
 /// is posted, activated, withdrawn or pressed, #282's element route included (the design session's ruling 1ea561bc
 /// ca82a6f4); a kept point's element route checks again what it presses (StalePoint.swift `StalePointGate`).
+///
+/// #359: `pointerPosted` runs once the action's own events are posted (ClickOrdering.swift: the window in which an
+/// accessibility action on the process's text waits for them to land); never on #282's element route, which posts none.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, pointer: PointerTarget = .acceptingFirstMouse,
                     beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
-                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    pointerPosted: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   if let stale = pointer.staleRefusal { throw stale }
   let shared = meta.context.connection.desktop == .shared
@@ -285,7 +321,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
-    func postAll() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    func postAll() {
+      meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
+      pointerPosted()
+    }
     func postEvents() {
       if let standing { if standing.postAction(made, postAll) { reportsArm = true; consumedArm = true } } else { postAll() }
     }
@@ -304,13 +343,16 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
 /// last, the intervention guard between units (never between a key down and its key up), `pause` after every event. The
 /// meta's interval runs from the first event to the last one posted, and `entered` counts the UTF-16 units entered,
-/// stopped or not, unless the request is concealed.
+/// stopped or not, unless the request is concealed. `beforeUnit` runs before each unit's guard (#354's checkpoint before
+/// a key, TypeReadback.swift), so a stop there leaves the unit unsent and the guard runs after its wait.
 func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int, _ total: Int) throws -> Void,
+             beforeUnit: (_ index: Int) throws -> Void = { _ in },
              checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   let total = units.reduce(0) { $0 + $1.consumed }
   var entered = 0
   defer { if !concealed { meta.entered = entered } }
-  for unit in units {
+  for (index, unit) in units.enumerated() {
+    try beforeUnit(index)
     try checkIntervention()
     for spec in unit.events {
       try checkSource(entered, total)
@@ -322,8 +364,11 @@ func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int
   try checkSource(entered, total)
 }
 
-/// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses.
+/// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses. Answered
+/// once posted, as the vendor's (#354: no tested signal fences a key's effect), so once anything is posted the meta says
+/// the keys' effect is unconfirmed.
 func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, meta: inout InputMeta) throws {
+  defer { if meta.startedAt != nil { meta.keyEffectUnconfirmed = true } }
   for press in presses {
     try checkIntervention()
     for spec in keyPressEvents(press) { meta.posting { post(spec) } }
@@ -417,6 +462,8 @@ extension Engine {
             let entry: TextEntryClickRoute = forced != nil ? .press : textEntryClickRoute(
               element, role: target.entry.identity.role, engine: webAccessibility.pageEngine(app.appPath),
               roleOf: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
+            // #359: a text field's action, within the window of a pointer press posted to the app, after its range settles.
+            if entry != .press { awaitPendingClick(on: element, pids: [appPid, target.owner], meta: &meta) }
             try carryActionClick(entry, app: app.displayName, press: {
               let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
               try elementActionClick(element, owner: target.owner, action: action, route: route, point: pointing.point,
@@ -490,11 +537,12 @@ extension Engine {
           }
           pointer = established
         }
-        // #296: what the screenshot showed at the point is checked against what is there now, every button and route; a
+        // #296: what the screenshot showed at the point is checked against what is there now (#316: and the app's windows
+        // above the screenshot's against the screenshot's window list), every button and route; a
         // refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
         let stale = signposted("click.stalePoint") {
-          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, hit: pointerHit,
-                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, context: context)
+          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
+                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
@@ -507,7 +555,7 @@ extension Engine {
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
-          let gate = StalePointGate(first: stale.verdict, firstMs: stale.record.ms) { [self] in
+          let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
             stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
           }
           pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
@@ -521,6 +569,7 @@ extension Engine {
                              beforeActivating: guarding.checkInFlight,
                              beforePosting: { try guarding.checkInFlight(); frameBeforePost = frame(of: placed.window) },
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
+                             pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) },
                              post: gatedPost, meta: &meta) }
           }
         }
@@ -540,7 +589,9 @@ extension Engine {
   /// keys by 2′ delivered on every scene without firing the app's activation hooks); a sequence holding a ⌘ chord, a
   /// menu key equivalent, by route 3 when the app does not believe it has focus, its activation held (FocusHold.swift)
   /// and taken before the first press. A sequence stops between presses at a user event attributed to the app. A spike
-  /// cell may force route 3's per-action activation first, or label the post route 2.
+  /// cell may force route 3's per-action activation first, or label the post route 2. It answers once its keys are
+  /// posted, not once the app has acted on them (#354): the meta says `keyEffect: "unconfirmed"`, since an editing key's
+  /// effect (⌘A, ⌘Z, ⌘V) can land after text typed right after it.
   func pressKey(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let key = args["key"] as? String else { throw EngineError.invalidArguments("key is required") }
     let presses = try parseKeySequence(key)  // validated before anything is resolved, so an unknown name never posts
@@ -561,7 +612,8 @@ extension Engine {
       try signposted("pressKey.minimizedCheck") {  // keys land nowhere (Minimized.swift)
         try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       }
-      meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid))
+      meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid),
+                                      engine: webAccessibility.pageEngine(app.appPath))
       if forced == nil, meta.inputRoute == .activation {
         try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
       }
@@ -569,6 +621,7 @@ extension Engine {
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
+      defer { if meta.startedAt != nil { recentKeys.record(pid: pid) } }  // its effect may land after a type_text's snapshot
       try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
       return ["meta": meta.wire]
     } catch let error as EngineError {
@@ -583,7 +636,9 @@ extension Engine {
   /// activation, with the source checked before every event and after the last; anything else takes the paste route
   /// (Paste.swift), its newlines pressed as Return. A concealed request never takes the paste route and never keys
   /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered. A keyed
-  /// request stops between characters at a user event attributed to the app, reporting what it entered.
+  /// request stops between characters at a user event attributed to the app, reporting what it entered. Either route
+  /// answers success only once the focused field reads its text in place of the selection, else `typeUnconfirmed`
+  /// (#354, TypeReadback.swift; the paste route's since #361, its snapshot after the paste's activation).
   func typeText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let text = args["text"] as? String else { throw EngineError(name: "invalidArguments", "Missing text to type") }
     let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
@@ -606,6 +661,8 @@ extension Engine {
       // Neither route reaches a minimized window (Minimized.swift); a concealed request is refused the same way.
       try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
 
+      // #359: select_text's range, taken whichever route types, so a later type_text never expects it again.
+      let selection = clickOrdering.takeSelection(pid: pid)
       let source = currentInputSource()
       // macOS may hold a source per app; the session's reading then says nothing about a background app.
       let perContextUnknown = perContextInputEnabled() && frontmostPid() != pid
@@ -613,8 +670,13 @@ extension Engine {
       case .refusedConcealed:
         throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
       case .paste:
+        // #361: read back as the keyed route is, over the same live reads, its snapshot taken after the paste's activation.
         let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
-                                       context, meta: &meta)
+                                       context, selection: selection, settle: { self.recentKeys.settles(pid: pid) },
+                                       pointerPending: { self.clickOrdering.pointerPending(pids: [pid, target]) },
+                                       reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
+                                         bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
+                                       meta: &meta)
         return pasteResult(meta, note: note)
       case .keyed: break
       }
@@ -627,12 +689,24 @@ extension Engine {
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       let initialSource = currentInputSourceID()
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
-      try keyText(typedUnits(text, press: layout.press(for:)), concealed: concealed,
-                  checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
-                  checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
-                  pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
-                  meta: &meta)
-      return ["meta": meta.wire]
+      // #354: the focused field snapshotted here, the last thing before the first event, and read back after the last;
+      // settled first when press_key posted to the app within the window (ruling 1ea561bc:754); before that, #359's wait
+      // for select_text's range or, within a posted click's window, a stable range (ruling 1ea561bc:785). In Safari, by
+      // the bundle identifier of the process read, a field no focus attribute names is found by WebKit's text-marker
+      // route before the walk (#395, ruling 1ea561bc:824).
+      try keyTextReadBack(typedUnits(text, press: layout.press(for:)), concealed: concealed,
+                          settle: recentKeys.settles(pid: pid),
+                          baseline: baselineWait(selection: selection, pointerPending: clickOrdering.pointerPending(pids: [pid, target])),
+                          reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
+                            bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
+                          checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
+                          checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
+                          pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
+                          meta: &meta)
+      // #414: a password field's success carries what its length confirmation proves (`readbackLengthNote`).
+      var result: [String: Any] = ["meta": meta.wire]
+      if let note = meta.note { result["note"] = note }
+      return result
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }

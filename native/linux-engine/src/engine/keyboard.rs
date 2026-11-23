@@ -89,7 +89,8 @@ impl Engine {
     }
 
     /// Releases a hold on the route it was made on: a foreground hold through the desktop, its window activated again
-    /// first (the keys are released whether or not that succeeds, since XTEST's keys are the server's). A hold not
+    /// first unless it is minimized (the keys are released whether or not that succeeds, since XTEST's keys are the
+    /// server's), a background hold to its window whether or not that is minimized (M4: releases always run). A hold not
     /// found (on this target) is a no-op, though the chord must still parse, unless the window's family ignores
     /// synthetic keys in shared mode, which is refused as `key_down` is. A release that fails keeps the hold with its
     /// own references still unreleased, and answers the error.
@@ -112,6 +113,13 @@ impl Engine {
             return Ok(Value::Null);
         };
         let entered = match target {
+            // a release always runs, a minimized window's included, and activates nothing there: the window stays
+            // where the person put it, and XTEST's keys are released at the server wherever the focus is (M4)
+            Target::Foreground(window) if self.x.minimized(window) => {
+                self.record_route(Way::Foreground);
+                self.extra.insert("minimized".into(), json!(true));
+                Ok(())
+            }
             Target::Foreground(window) => {
                 self.record_route(Way::Foreground);
                 self.enter(window)

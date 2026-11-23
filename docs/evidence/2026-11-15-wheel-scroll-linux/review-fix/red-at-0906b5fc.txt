@@ -1,0 +1,7 @@
+✖ real Chrome: a same-site cross-origin frame (the same host, another port) is unobservable: the wheel goes and the scroll answers ok, whether the frame scrolls or takes the wheel (3643.03808ms)
+ℹ pass 11
+ℹ fail 1
+ℹ skipped 0
+✖ failing tests:
+✖ real Chrome: a same-site cross-origin frame (the same host, another port) is unobservable: the wheel goes and the scroll answers ok, whether the frame scrolls or takes the wheel (3643.03808ms)
+  Error [BrowserServiceError]: Timed out after 3000ms waiting for the scroll to take effect: the wheel was sent, but nothing was seen to scroll; the page may handle the wheel itself, so observe the page before retrying.

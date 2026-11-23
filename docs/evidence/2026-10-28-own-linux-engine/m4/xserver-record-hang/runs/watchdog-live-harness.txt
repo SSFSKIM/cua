@@ -1,0 +1,3 @@
+ready
+cua171 WATCHDOG: the X display :94 stopped answering (no GetInputFocus reply in 2000 ms); killed the guarded processes 2404855 and stopped the run (pid 2404856). Do not run anything more against :94 until it answers again.
+{"guarded":"SIGKILL","run":"SIGTERM","stalled":true,"last":{"kind":"stall","ms":1793673288746,"display":":94","bound_ms":2000,"round_trips":3,"reason":"no GetInputFocus reply in 2000 ms","killed":[2404855],"stopped":2404856}}

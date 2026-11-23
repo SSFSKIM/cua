@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -42,9 +42,14 @@ test("the Qt style scenes measure the move on their tool button's highlight, bes
   assert.deepEqual(KIND_FAMILIES['qt5-breeze'], ['move']);
   assert.deepEqual(KIND_FAMILIES['qt5-fusion'], ['move']);
   assert.deepEqual(await hoverTarget(null, null, { family: 'qt5-breeze', kindOf: 'qt-style' }), QT_TOOL_BUTTON);
-  const record = join(mkdtempSync(join(tmpdir(), 'qt-counts-')), 'counts');
-  writeFileSync(record, 'moves 0 wheels 0 presses 0 hovers 0\nmoves 3 wheels 1 presses 2 hovers 4\n');
-  assert.deepEqual(readQtCounts({ record }), { moves: 3, wheels: 1, presses: 2, hovers: 4 });
-  writeFileSync(record, '');
-  assert.equal(readQtCounts({ record }), null);
+  const dir = mkdtempSync(join(tmpdir(), 'qt-counts-'));
+  try {
+    const record = join(dir, 'counts');
+    writeFileSync(record, 'moves 0 wheels 0 presses 0 hovers 0\nmoves 3 wheels 1 presses 2 hovers 4\n');
+    assert.deepEqual(readQtCounts({ record }), { moves: 3, wheels: 1, presses: 2, hovers: 4 });
+    writeFileSync(record, '');
+    assert.equal(readQtCounts({ record }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

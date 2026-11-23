@@ -1,0 +1,2 @@
+default status 0 stdout "wrote\ntouch: cannot touch '<probes>/run-Vz96DG/tmp/x-default': Read-only file system\nno-touch\nprw------- 1 new new 0 Nov  4 09:47 <probes>/run-Vz96DG/tmp/cua-held-fePXeq/held\n" stderr "" read "default-ok"
+scoped status 0 stdout "wrote\ntouched\nprw------- 1 new new 0 Nov  4 09:47 <probes>/run-Vz96DG/tmp/cua-held-fePXeq/held\n" stderr "" read "scoped-ok"

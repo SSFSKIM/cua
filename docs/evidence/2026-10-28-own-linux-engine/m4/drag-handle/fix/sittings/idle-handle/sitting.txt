@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (d70b9e8956ad)
+start idle-handle 2026-11-11T11:00:06Z loadavg 2.00 1.00 0.85
+run exit 0; watchdog clean
+private run idle-handle exit 0 11:10:37
+end idle-handle 2026-11-11T11:10:37Z loadavg 0.85 0.91 0.89 status 0

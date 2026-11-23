@@ -368,14 +368,28 @@ value, so it is an interrupted write) or cannot be read (`secret_unreadable`), s
 (`CUA_SHIM_SECRETS=off`: `secrets_disabled`), or the command is not in its pinned shape (`unsupported_secret_shape`).
 Exactly one trailing newline is dropped from a file's contents, so a file written with `echo` works. If the native command fails after substitution, the error is a fixed diagnostic
 (`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is
-withheld because it can contain the value, and the input may have been partly entered.
+withheld because it can contain the value, and the input may have been partly entered. On macOS cua's engine reads a
+keyed `typeText` of a secret back by equality alone (#354): a field that does not match ends `secret_input_failed` with
+`typeUnconfirmed`. A password field's text is never read, so it is confirmed by its length alone (#414): it must take
+exactly as many characters as the secret has, in place of any selection, which shows that none was dropped or added
+but not that the right ones went in (another keyboard layout, an input method or a page that rewrites what is typed can
+put in the same number of other characters), and the result's text says so; one that does not, or whose length cannot
+be read, ends the same way. The keys were sent, so the field is observed, not retyped; but one that stopped being a
+password field while the secret was typed (a page's show-password button) is read no further and may show the secret,
+which the diagnostic then says in a fixed sentence of its own, so it is put right with `setValue` without a screenshot
+or an observation of it.
 
 This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
 app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it
 restores the previous contents; a clipboard manager may record it). `typeText` enters the value as keystrokes, so an
 ordinary text view's own substitutions (autocorrect, automatic capitalization, smart dashes) can change it, and even
 text typed before it, as they would for a person typing; password fields do not do this. Only authorize secrets for
-apps you would type them into yourself. In Chrome the same rules apply to the two browser rows above, only on the
+apps you would type them into yourself, and only into fields that mask their input, such as password fields: in a field
+that does not, the value itself is in the agent's later screenshots and observations, as it is on the screen. A masked
+field still shows the value's length on the screen, and so in the agent's screenshots: in the apps tested (Chrome,
+Electron, Safari, Firefox, AppKit) one mask character per character. cua's macOS observation reads such a field as
+`secure text`, with no length (#405); the Linux engine's observation still shows the masks (#407). In Chrome
+the same rules apply to the two browser rows above, only on the
 pinned version of cua's browser service (`src/browser-service/VERSION`; `unsupported_browser_runtime` otherwise);
 script evaluation, CDP commands and every other browser command are never scanned. A failed `locator.fill` makes the
 REPL client read back diagnostics of the matched elements (tag, role, type, label, text; not the input's value).
@@ -712,6 +726,11 @@ and identity calls. No launch runs that service since #79.
   but keeps the visible-DOM listing's caps (20,000 characters, 200 elements): neither REPL client can ask for more, and
   #116 preserves that API rather than adding a configurable cap. A navigation to a document whose response arrives
   while a JavaScript dialog is open stays paused until the tab is detached, as on the vendor's service.
+- Under near-saturating CPU load, a tab the agent drives in the background (not the active tab of a visible window)
+  can stall: Chrome lowers a hidden renderer's priority, and page reads and `evaluate` then wait 3–15 s before they
+  answer, or time out. Clicks and other input are not affected. Measured with one CPU burner per core: no stall at
+  25% or 50% load (0/18 runs), 3/4 at 75%, 9/10 at 100%. A stalled command costs one timeout and the tab recovers on
+  the next call (#384). Under heavy load, give a slow read its own `timeoutMs`, or keep the agent's tab in front.
 - Any process of your user that can open `$CUA_HOME/chrome/b` (0700) can talk to the host. The ChatGPT extension's host
   checks its peer's code signature; cua's does not, the same trust cua gives your user's processes elsewhere
   (allow-all approvals, a 0600 secret store).

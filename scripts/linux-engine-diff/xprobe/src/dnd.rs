@@ -18,7 +18,7 @@ pub fn selection_watch(names: &[String]) -> Result<()> {
     if names.is_empty() {
         return Err("usage: xprobe selection-watch <selection>...".into());
     }
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     conn.xfixes_query_version(5, 0)?.reply()?;
     let mut atoms = Vec::new();

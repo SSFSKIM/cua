@@ -7,8 +7,9 @@
 //!   override-redirect window, followed as they are created or reparented to the root). A frame's `FocusIn` names the
 //!   top-level the focus entered; the root's, with detail `PointerRoot` or `None`, that it went to neither.
 //! - `_NET_ACTIVE_WINDOW` activation requests: a client asks the window manager to activate a window with a
-//!   `ClientMessage` sent to the root with `SubstructureNotify` and `SubstructureRedirect`, which every client that
-//!   selects `SubstructureNotify` on the root receives too.
+//!   `ClientMessage` sent to the root with `SubstructureRedirect` and `SubstructureNotify` (most clients) or
+//!   `StructureNotify` (Qt's own request, task 61), which every client that selects that mask on the root receives too:
+//!   the witness selects both.
 //!
 //! `xprobe focus-grabbed <other> <target>`: under one server grab, the focus and `_NET_ACTIVE_WINDOW` set to `other`,
 //! then back to `target`: the harness's coalesced negative check of the activation evidence.
@@ -91,7 +92,7 @@ pub fn focus_grabbed(args: &[String]) -> Result<()> {
         .iter()
         .map(|a| crate::parse_window(a))
         .collect::<Result<Vec<_>>>()?;
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let active = crate::atom(&conn, "_NET_ACTIVE_WINDOW")?;
     conn.grab_server()?;

@@ -14,8 +14,12 @@ private let viewport = CGRect(x: 0, y: 100, width: 1000, height: 700)
 
 private func ids(_ walk: TreeWalk) -> [Int] { walk.nodes.map { Int(($0["title"] as! String).dropFirst(5))! } }
 
-/// The violations of #304's invariant in `tree`, each as "parent → child".
-func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkLimits, chromium: Bool, placesWaitingEarlier: Bool = true) -> [String] {
+/// The violations of #304's invariant in `tree`, each as "parent → child". An AXColumn is no shown child for it (#310,
+/// the design session's ruling d9f6902b amending f1a7589f): its cells are reached through the rows, so the column waits
+/// in `lastly`; its header cells and the table's header group are judged as any child. `exemptingColumns` false judges
+/// the columns too, to show the exemption binds.
+func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkLimits, chromium: Bool, placesWaitingEarlier: Bool = true,
+                                 exemptingColumns: Bool = true) -> [String] {
   let main = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium, wideListRules: false)
   let rules = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium, placesWaitingEarlier: placesWaitingEarlier)
   var visits = [0]
@@ -28,6 +32,7 @@ func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkL
     for child in facts.children {
       let c = tree.id(child)
       guard main.selectionFacts(of: child) != nil, let frame = tree.frames[c], showsBeyondStrip(frame, in: clip) else { continue }
+      if exemptingColumns, tree.extra[c]?["AXRole"] as? String == kAXColumnRole { continue }
       if rules.selectionFacts(of: child) == nil { found.append("\(next) → \(c)") }
     }
   }
@@ -359,6 +364,106 @@ final class WideListInvariantTests: XCTestCase {
                   "main reads them")
     XCTAssertTrue(shown.isSubset(of: Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true)))))
     XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true), [])
+  }
+
+  // MARK: #310, the columns themselves wait last (the design session's ruling d9f6902b, amending f1a7589f)
+
+  /// A Chromium table page as Chrome lists it: the window (0), its web area (1, the viewport), a table (3) whose
+  /// children are a header row (80: header cells 81 and 82), `rows` rows 20 pt tall (100_000 + i, each with two cells
+  /// 200_000 + 10 i + c), then the two AXColumn elements (90, 91: their header cell, then their cells, framed as the
+  /// whole table) and the header AXGroup (85, listing the header cells, framed as the header row); then, given
+  /// `section`, a section (4) of that many leaves below the table (400_000 + k). Scrolled `scroll` rows down; offscreen
+  /// boxes are strips at the viewport's edges.
+  private func chromiumTablePage(rows: Int, scroll: Int, section: Int = 0) -> FakeTree {
+    let tree = FakeTree()
+    func place(_ frame: CGRect) -> CGRect {
+      if frame.maxY <= viewport.minY { return CGRect(x: frame.minX, y: viewport.minY, width: frame.width, height: 1) }
+      if frame.minY >= viewport.maxY { return CGRect(x: frame.minX, y: viewport.maxY - 1, width: frame.width, height: 1) }
+      return frame
+    }
+    for (id, role) in [0: "AXWindow", 1: "AXWebArea", 3: "AXTable", 80: "AXRow", 81: "AXCell", 82: "AXCell", 85: "AXGroup",
+                       90: "AXColumn", 91: "AXColumn"] { tree.extra[id] = ["AXRole": role as CFString] }
+    tree.frames[0] = windowFrame
+    tree.frames[1] = viewport
+    let top = viewport.minY - Double(scroll) * 20
+    let height = Double(rows + 1) * 20
+    tree.frames[3] = CGRect(x: 0, y: top, width: 1000, height: height)
+    tree.frames[80] = place(CGRect(x: 0, y: top, width: 1000, height: 20))
+    tree.frames[85] = tree.frames[80]
+    for c in 0..<2 { tree.frames[81 + c] = place(CGRect(x: Double(c) * 500, y: top, width: 500, height: 20)) }
+    tree.children = [0: [1], 1: section > 0 ? [3, 4] : [3], 80: [81, 82], 85: [81, 82]]
+    for i in 0..<rows {
+      let y = top + Double(i + 1) * 20
+      tree.frames[100_000 + i] = place(CGRect(x: 0, y: y, width: 1000, height: 20))
+      tree.children[100_000 + i] = [200_000 + 10 * i, 200_001 + 10 * i]
+      for c in 0..<2 { tree.frames[200_000 + 10 * i + c] = place(CGRect(x: Double(c) * 500, y: y, width: 500, height: 20)) }
+    }
+    for c in 0..<2 {
+      tree.frames[90 + c] = CGRect(x: Double(c) * 500, y: top, width: 500, height: height)
+      tree.children[90 + c] = [81 + c] + (0..<rows).map { 200_000 + 10 * $0 + c }
+      tree.visible[90 + c] = tree.children[90 + c]
+    }
+    tree.children[3] = [80] + (0..<rows).map { 100_000 + $0 } + [90, 91, 85]
+    tree.visible[3] = tree.children[3]
+    if section > 0 {
+      tree.frames[4] = place(CGRect(x: 0, y: top + height, width: 1000, height: Double(section) * 20))
+      tree.children[4] = (0..<section).map { 400_000 + $0 }
+      for k in 0..<section { tree.frames[400_000 + k] = place(CGRect(x: 0, y: top + height + Double(k) * 20, width: 1000, height: 20)) }
+    }
+    return tree
+  }
+
+  /// A table that fits the budget prints exactly main's tree, the columns included, at a list judged child by child
+  /// (120 rows) and at one bisected (600); the columns are read after everything else, the cells already read through
+  /// their rows by then.
+  func testColumnsThatFitStillPrintAndAreReadLast() {
+    for rows in [120, 600] {
+      let tree = chromiumTablePage(rows: rows, scroll: rows / 3, section: 50)
+      let limits = WalkLimits(nodes: 10_000, deadline: .infinity)
+      let main = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, wideListRules: false)
+      let source = FakeSource(tree)
+      let rules = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, source: source, chromium: true)
+      XCTAssertEqual(ids(rules), ids(main), "\(rows) rows: the printed node set unchanged")
+      XCTAssertEqual(rules.nodes.count, main.nodes.count)
+      let order = source.readOrder
+      let columns = [90, 91].map { order.firstIndex(of: $0)! }
+      let others = order.enumerated().filter { ![90, 91].contains($0.element) }.map(\.offset)
+      XCTAssertGreaterThan(columns.min()!, others.max()!, "\(rows) rows: the columns read last")
+    }
+  }
+
+  /// Before #310 rule B read the columns with the table's shown run, as shown end children (their frames span the table),
+  /// and each read took its whole cell list: a frame read in the same call now tells their role, so no column is read
+  /// until nothing else is left, and the header group and header row, which show, are read with the shown run.
+  func testAColumnIsNotReadWithTheShownRunAndTheHeaderIs() {
+    let tree = chromiumTablePage(rows: 600, scroll: 0, section: 300)
+    let source = FakeSource(tree)
+    let limits = WalkLimits(nodes: 300, deadline: .infinity)
+    let rules = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, source: source, chromium: true)
+    let read = Set(ids(rules))
+    XCTAssertTrue(read.isDisjoint(with: [90, 91]), "the columns wait last")
+    XCTAssertTrue(read.isSuperset(of: [80, 81, 82, 85]), "the header row, its cells and the header group are read")
+    XCTAssertEqual(source.reads[90], nil, "no column read at all at this cut")
+  }
+
+  /// The invariant with the exemption, over Chromium table pages cut at budgets either side of where main reads the
+  /// columns (main reads every row and cell, then the columns, then the section below the table): zero losses, the
+  /// header cells and group judged; with the columns judged too, the losses are the columns alone, which is the
+  /// exemption the ruling states.
+  func testTheInvariantExemptsTheColumnsAloneOverTablePages() {
+    for (rows, scroll) in [(120, 40), (600, 0), (600, 200)] {
+      let tree = chromiumTablePage(rows: rows, scroll: scroll, section: 300)
+      let columnsAt = 2 + 1 + 3 + rows * 3 + 2  // window, web area, table, header row and cells, the rows, the columns
+      for budget in [columnsAt / 2, columnsAt + 10, columnsAt + 150, columnsAt + 400] {
+        let limits = WalkLimits(nodes: budget, deadline: .infinity)
+        XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true), [], "\(rows) at \(scroll), budget \(budget)")
+        let judged = wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true, exemptingColumns: false)
+        XCTAssertTrue(Set(judged).isSubset(of: ["3 → 90", "3 → 91"]), "\(rows) at \(scroll), budget \(budget): \(judged)")
+      }
+    }
+    let binding = wideListInvariantViolations(chromiumTablePage(rows: 600, scroll: 200, section: 300), window: windowFrame,
+                                              limits: WalkLimits(nodes: 1_900, deadline: .infinity), chromium: true, exemptingColumns: false)
+    XCTAssertEqual(binding, ["3 → 90", "3 → 91"], "main read the columns before this cut and the rules leave them for last")
   }
 
   /// The move charges nothing: the walk with it and the walk without it stop at the same node count, the one reading the

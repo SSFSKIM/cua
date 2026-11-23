@@ -19,7 +19,7 @@ private func meta() -> InputMeta {
 }
 
 /// A pasteboard of the test's own, never the general one.
-private final class TestPasteboard {
+final class TestPasteboard {
   let board = NSPasteboard(name: NSPasteboard.Name("io.github.ssfskim.cua.engine-test.\(UUID().uuidString)"))
   lazy var access = SystemPasteboard(board)
 
@@ -1481,10 +1481,66 @@ final class PasteOperationTests: XCTestCase {
     slow.keyPosted(at: 0)
     XCTAssertEqual(slow.settle(timeoutMs: 100, intervalMs: 25), .timeout)
   }
+
+  /// #405: a paste into a password field (9 characters, 2 selected) confirms only once its count moved by exactly the
+  /// paste less the selection, and neither answer nor meta carries any of the field's numbers.
+  func testAPasteIntoAPasswordFieldIsJudgedInsideTheEngineAndReportsNoCount() throws {
+    for (after, confirmed) in [(13, true), (12, false)] {
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      var characters = 9
+      var entered = 0
+      var meta = meta()
+      let watch = effect { EffectReading(range: [characters - 2, 2], characters: characters, secure: true) }
+      var answer = ""
+      do {
+        try run([.content(plain("hunter"), units: 6)], pasteboard, effect: watch, postPaste: {
+          _ = pasteboard.appReads()
+          characters = after
+          return true
+        }, entered: &entered, meta: &meta)
+      } catch let error as EngineError {
+        answer = error.message
+      }
+      XCTAssertEqual(answer.isEmpty, confirmed, "count \(after)")
+      XCTAssertEqual(meta.paste?.confirmed, confirmed, "count \(after)")
+      let text = String(data: try JSONSerialization.data(withJSONObject: diagnostics(meta), options: [.sortedKeys]), encoding: .utf8)!
+      XCTAssertFalse(text.contains("\"characters\"") || text.contains("\"range\""), text)
+      XCTAssertTrue(text.contains("\"secure\":true"), text)
+      XCTAssertFalse(answer.contains("9") || answer.contains("\(after)"), answer)
+    }
+  }
+
+  /// #405: a markup paste into a password field is judged against the plain text it delivers, not the markup's length.
+  func testAMarkupPasteIntoAPasswordFieldIsJudgedByItsPlainText() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var entered = 0
+    var meta = meta()
+    let markup = "<b>hunter</b>"
+    let representations = [PasteRepresentation(type: .html, data: Data(markup.utf8)), PasteRepresentation(type: .string, data: Data("hunter".utf8))]
+    try run([.content(representations, units: markup.utf16.count)], pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters, secure: true) },
+            postPaste: {
+              _ = pasteboard.appReads()
+              characters = 6
+              return true
+            }, entered: &entered, meta: &meta)
+    XCTAssertEqual(meta.paste?.confirmed, true)
+  }
 }
 
 
 // MARK: The paste's activation
+
+/// type_text's paste route through `engine`, read back over `field` (TypeReadbackTests' fake, #361), with no selection,
+/// settle or pending click.
+@discardableResult
+private func typeByPaste(_ engine: Engine, _ text: String, _ target: PasteTarget, _ context: ExecutionContext,
+                         field: FakeField = FakeField(value: "", range: NSRange(location: 0, length: 0)), meta: inout InputMeta) throws -> String? {
+  try engine.typeTextByPaste(text, target, context, selection: nil, settle: { false }, pointerPending: { false }, reads: FakeApp(field).reads,
+                             meta: &meta)
+}
 
 final class PasteActivationTests: XCTestCase {
   private let target: pid_t = 990_001, user: pid_t = 990_002
@@ -1508,7 +1564,7 @@ final class PasteActivationTests: XCTestCase {
       var meta = InputMeta(context)
       var entered = 0
       XCTAssertThrowsError(try typed
-        ? String(describing: engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta))
+        ? String(describing: typeByPaste(engine, "x\ny", pasteTarget, context, meta: &meta))
         : String(describing: engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta))) {
         XCTAssertEqual(($0 as? EngineError)?.errorName, "activationFailed", typed ? "type_text" : "paste")
       }
@@ -1622,7 +1678,7 @@ extension PasteActivationTests {
     var meta = InputMeta(context)
     var entered = 0
     XCTAssertThrowsError(try typed
-      ? String(describing: engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta))
+      ? String(describing: typeByPaste(engine, "x\ny", pasteTarget, context, meta: &meta))
       : String(describing: engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta))) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened", "stopped before ⌘V")
     }
@@ -1672,18 +1728,20 @@ extension PasteActivationTests {
   // MARK: The delivery guard and the after-action watch on the paste route (#200's, the slot of 2026-11-01)
 
   /// A paste through the engine to its end on the seam, into a window it places (frame and number 41): the paste's keys
-  /// go out through route 3's post (the seam's), the fake app reads the pasteboard at each ⌘V's key down, and `onKeyDown`
-  /// runs at each key down with its key code (⌘V's 0x09, Return's 0x24). `before` runs on the engine first (another
-  /// holder's activation). The meta it answered with.
+  /// go out through route 3's post (the seam's), the fake app reads the pasteboard at each ⌘V's key down into its field
+  /// (type_text's, which its read-back reads, #361), and `onKeyDown` runs at each key down with its key code (⌘V's 0x09,
+  /// Return's 0x24). `before` runs on the engine first (another holder's activation). The meta it answered with.
   private func pasteToItsEnd(_ text: String, typed: Bool, seam: GuardSeam, connection: ConnectionState, pasteboard: TestPasteboard,
                              onKeyDown: @escaping (CGKeyCode) -> Void = { _ in },
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     var system = seam.system
     let post = system.post
     system.post = { event, pid in
       if event.type == .keyDown {
         let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        if code == 0x09 { _ = pasteboard.appReads() }
+        if code == 0x09, let pasted = pasteboard.appReads() { field.deliver(Array(pasted.utf16)) }
+        if code == returnKeyCode { field.deliver([0x0D]) }
         onKeyDown(code)
       }
       post(event, pid)
@@ -1700,7 +1758,8 @@ extension PasteActivationTests {
     var meta = InputMeta(context)
     var entered = 0
     if typed {
-      _ = try engine.typeTextByPaste(text, pasteTarget, context, meta: &meta)
+      try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta)
+      XCTAssertEqual(meta.typeReadback?.confirmed, true, "read back")
     } else {
       try engine.pasteOperation([.content(plain(text), units: text.utf16.count)], pasteTarget, context, entered: &entered, meta: &meta)
     }

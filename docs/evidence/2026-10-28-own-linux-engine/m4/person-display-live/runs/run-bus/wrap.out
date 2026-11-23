@@ -1,0 +1,37 @@
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+family gnome-text-editor
+family firefox
+family gedit
+family gnome-terminal
+| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click pinned / newest / cua | key pinned / newest / cua | type_text pinned / newest / cua | witness | background route | run |
+|---|---|---|---|---|---|---|---|---|---|
+| GTK4 gnome-text-editor | GTK 4.14.5 | gnome-text-editor / gnome-text-editor | at_spi (64) | 0/5 / 0/5 / ?/5 (5 failed) | 0/5 / 0/5 / ?/5 (5 failed) | 0/2 (2 failed) / 0/2 (2 failed) / 0/2 (2 failed) | clean | ignores | task50-run-bus |
+| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 / ?/5 (5 failed) | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 / 2/2 | clean | partial: takes keys; ignores clicks | task50-run-bus |
+| GTK3 gedit | gtk 3.24.41 | gedit / Gedit | at_spi (486) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 / 2/2 | clean | takes | task50-run-bus |
+| gnome-terminal (VTE) | gtk 3.24.41 | gnome-terminal-server / Gnome-terminal | at_spi (49) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) / 2/2 | clean | takes | task50-run-bus |
+
+Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:
+
+| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click cua / cua:none | key cua / cua:none | type_text  | witness | background route | run |
+|---|---|---|---|---|---|---|---|---|---|
+| GTK4 gnome-text-editor | GTK 4.14.5 | gnome-text-editor / gnome-text-editor | at_spi (64) | ?/5 (5 failed) / ?/5 (5 failed) | ?/5 (5 failed) / ?/5 (5 failed) |  | clean | unknown | task50-run-bus |
+| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | ?/5 (5 failed) / ?/5 (5 failed) | 5/5 / 5/5 |  | clean | partial: takes keys; clicks unknown | task50-run-bus |
+| GTK3 gedit | gtk 3.24.41 | gedit / Gedit | at_spi (486) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | task50-run-bus |
+| gnome-terminal (VTE) | gtk 3.24.41 | gnome-terminal-server / Gnome-terminal | at_spi (49) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | task50-run-bus |
+
+Families that do not take the background route:
+
+- GTK4 gnome-text-editor (gnome-text-editor / gnome-text-editor; GTK): ignores (run `task50-run-bus`)
+- Firefox (Navigator / firefox; Gecko): takes keys; ignores clicks (run `task50-run-bus`)
+
+Background left alone (Acceptance 5): every request in a witness span; each engine's keys and clicks audited through xtrace in an untimed pass:
+
+| family | witness pinned / newest / cua | audit pinned / newest / cua | cua |
+|---|---|---|---|
+| GTK4 gnome-text-editor | clean / clean / clean | clean / clean / **requests failed** | **FAIL**: cua's audited requests failed, so the audit did not exercise them |
+| Firefox | clean / clean / clean | clean / clean / **requests failed** | **FAIL**: cua's audited requests failed, so the audit did not exercise them |
+| GTK3 gedit | clean / clean / clean | clean / clean / clean | PASS |
+| gnome-terminal (VTE) | clean / clean / clean | clean / clean / clean | PASS |
+
+**The run is incomplete:** gnome-text-editor: cua's audited requests failed, so the audit did not exercise them; firefox: cua's audited requests failed, so the audit did not exercise them
+{"exit": 1, "samples": 2334, "maps_samples": 779, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 421, "browsers": 31}

@@ -40,7 +40,7 @@ const shot = dir + '/shot.jpg';
 function fallback(command, input) {
   switch (command) {
     case 'capabilities': return {output: {backend: 'x11', tree: 'at_spi', input: {background: true, desktop: true}, capture: {window: 'retained', desktop: true},
-      text: {paste: 'verified', literal: true}, desktop, version: '0.3.0', build: 'fake'}};
+      text: {paste: 'verified', literal: true}, desktop, version: '0.4.0', build: 'fake'}};
     case 'list_windows': return {output: WINDOWS};
     case 'list_apps': return {output: [{id: 'org.gnome.gedit', name: 'Text Editor', windows: WINDOWS}]};
     case 'get_window_state': return {output: {window: WINDOWS[0], ax_tree: TREE, ax_tree_source: 'at_spi',
@@ -58,9 +58,9 @@ createInterface({input: process.stdin}).on('line', async line => {
   const result = (await answer(request.command, request.input, {pid: process.pid, desktop, count})) ?? fallback(request.command, request.input);
   if ('exit' in result) { if (result.stderr) process.stderr.write(result.stderr); setTimeout(() => process.exit(result.exit), 20); return; }
   if ('raw' in result) { process.stdout.write(result.raw + '\\n'); return; }
-  const answerLine = 'error' in result
+  const answerLine = {...('error' in result
     ? {id: request.id, ok: false, error: result.error, ...(result.restart ? {restart: true} : {})}
-    : {id: request.id, ok: true, output: result.output};
+    : {id: request.id, ok: true, output: result.output ?? fallback(request.command, request.input).output}), ...('notice' in result ? {notice: result.notice} : {})};
   process.stdout.write(JSON.stringify(answerLine) + '\\n');
 });
 `;
@@ -68,7 +68,7 @@ createInterface({input: process.stdin}).on('line', async line => {
 // -> {path, dir, shot, spawns(), requests(), behave(source), setVersion(line)}. `version` is the line `--version` prints
 // (setVersion changes it, as installing another engine would); `behaviour` the answer module's source (see above);
 // behave() replaces it for processes started afterwards.
-export function fakeLinuxEngine(t, {version = 'cua-engine 0.3.0 (fake0000)', behaviour = 'export function answer() {}'} = {}) {
+export function fakeLinuxEngine(t, {version = 'cua-engine 0.4.0 (fake0000)', behaviour = 'export function answer() {}'} = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua-fake-linux-engine-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const path = join(dir, 'cua-engine.mjs');

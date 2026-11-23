@@ -1,0 +1,120 @@
+fatal: not a git repository (or any of the parent directories): .git
+negative check: the witness failed the activating stub (stacking, active, focus)
+family firefox, input: 21 cells
+cell firefox click visible pointer-in
+| Firefox | click | visible | in | 10/10 | 10/10 |
+cell firefox scroll visible pointer-in
+| Firefox | scroll | visible | in | 10/10 | 10/10 |
+cell firefox move visible pointer-in
+| Firefox | move | visible | in | 10/10 | 10/10 |
+cell firefox click visible pointer-out
+| Firefox | click | visible | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox scroll visible pointer-out
+| Firefox | scroll | visible | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox move visible pointer-out
+| Firefox | move | visible | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox click partial pointer-in
+| Firefox | click | partial | in | 10/10 | 10/10 |
+cell firefox scroll partial pointer-in
+| Firefox | scroll | partial | in | 10/10 | 10/10 |
+cell firefox move partial pointer-in
+| Firefox | move | partial | in | 10/10 | 10/10 |
+cell firefox click partial pointer-under
+| Firefox | click | partial | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox scroll partial pointer-under
+| Firefox | scroll | partial | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox move partial pointer-under
+| Firefox | move | partial | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox click partial pointer-out
+| Firefox | click | partial | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox scroll partial pointer-out
+| Firefox | scroll | partial | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox move partial pointer-out
+| Firefox | move | partial | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox click covered pointer-under
+| Firefox | click | covered | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox scroll covered pointer-under
+| Firefox | scroll | covered | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox move covered pointer-under
+| Firefox | move | covered | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox click covered pointer-out
+| Firefox | click | covered | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox scroll covered pointer-out
+| Firefox | scroll | covered | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox move covered pointer-out
+| Firefox | move | covered | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+family firefox, drag: 7 cells
+cell firefox select visible pointer-in
+| Firefox | select | visible | in | 10/10 | 10/10 |
+cell firefox select visible pointer-out
+| Firefox | select | visible | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox select partial pointer-in
+| Firefox | select | partial | in | 10/10 | 10/10 |
+cell firefox select partial pointer-under
+| Firefox | select | partial | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox select partial pointer-out
+| Firefox | select | partial | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox select covered pointer-under
+| Firefox | select | covered | under | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+cell firefox select covered pointer-out
+| Firefox | select | covered | out | 0/10 (10 ok with no effect) | 0/10 (10 ok with no effect) |
+family chrome, input: 21 cells
+cell chrome click visible pointer-in
+| Chrome | click | visible | in | 10/10 | – |
+cell chrome scroll visible pointer-in
+| Chrome | scroll | visible | in | 10/10 | – |
+cell chrome move visible pointer-in
+| Chrome | move | visible | in | 10/10 | – |
+cell chrome click visible pointer-out
+| Chrome | click | visible | out | 10/10 | – |
+cell chrome scroll visible pointer-out
+| Chrome | scroll | visible | out | 10/10 | – |
+cell chrome move visible pointer-out
+| Chrome | move | visible | out | 10/10 | – |
+cell chrome click partial pointer-in
+| Chrome | click | partial | in | 10/10 | – |
+cell chrome scroll partial pointer-in
+| Chrome | scroll | partial | in | 10/10 | – |
+cell chrome move partial pointer-in
+| Chrome | move | partial | in | 10/10 | – |
+cell chrome click partial pointer-under
+| Chrome | click | partial | under | 10/10 | – |
+cell chrome scroll partial pointer-under
+| Chrome | scroll | partial | under | 10/10 | – |
+cell chrome move partial pointer-under
+| Chrome | move | partial | under | 10/10 | – |
+cell chrome click partial pointer-out
+| Chrome | click | partial | out | 10/10 | – |
+cell chrome scroll partial pointer-out
+| Chrome | scroll | partial | out | 10/10 | – |
+cell chrome move partial pointer-out
+| Chrome | move | partial | out | 10/10 | – |
+cell chrome click covered pointer-under
+| Chrome | click | covered | under | 10/10 | – |
+cell chrome scroll covered pointer-under
+| Chrome | scroll | covered | under | 10/10 | – |
+cell chrome move covered pointer-under
+| Chrome | move | covered | under | 10/10 | – |
+cell chrome click covered pointer-out
+| Chrome | click | covered | out | 10/10 | – |
+cell chrome scroll covered pointer-out
+| Chrome | scroll | covered | out | 10/10 | – |
+cell chrome move covered pointer-out
+| Chrome | move | covered | out | 10/10 | – |
+family chrome, drag: 7 cells
+cell chrome select visible pointer-in
+| Chrome | select | visible | in | 10/10 | – |
+cell chrome select visible pointer-out
+| Chrome | select | visible | out | 0/10 (10 not ok) | – |
+cell chrome select partial pointer-in
+| Chrome | select | partial | in | 10/10 | – |
+cell chrome select partial pointer-under
+| Chrome | select | partial | under | 0/10 (10 not ok) | – |
+cell chrome select partial pointer-out
+| Chrome | select | partial | out | 0/10 (10 not ok) | – |
+cell chrome select covered pointer-under
+| Chrome | select | covered | under | 0/10 (10 not ok) | – |
+cell chrome select covered pointer-out
+| Chrome | select | covered | out | 0/10 (10 not ok) | – |
+family electron, input: 21 cells
+{"exit": 143, "samples": 26729, "maps_samples": 8911, "flags": 1, "decoy_connections": 0, "leftovers": [{"pid": 178143, "comm": "xprobe", "argv": "<task71>/harness-7ada8597/scripts/linux-engine-diff/xprobe/target/release/xprobe witness"}], "processes": 8921, "browsers": 42}

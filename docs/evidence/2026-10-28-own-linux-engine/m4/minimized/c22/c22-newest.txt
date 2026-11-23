@@ -1,0 +1,10 @@
+gedit pid 906669 window 18874468
+-- before: map_state IsViewable, WM_STATE Normal, active 0x1200064, focus 
+{"window":18874468,"iconic":true,"ms":5.4}
+-- minimized: map_state IsUnMapped, WM_STATE Iconic, active 0x600002, focus 
+list_windows: target listed: false 
+activate_window: {"ok":false,"error":"failed to focus X11 window 18874468: X11 error X11Error { error_kind: Match, error_code: 8, sequence: 174, bad_value: 18874468, minor_opcode: 0, major_opcode: 42, extension_name: None, request_name: Some(\"SetInputFocus\") }"}
+-- after activate +0.05s: map_state IsViewable, WM_STATE Normal, active 0x1200064, focus 
+-- after activate +0.2s: map_state IsViewable, WM_STATE Normal, active 0x1200064, focus 
+-- after activate +0.5s: map_state IsViewable, WM_STATE Normal, active 0x1200064, focus 
+done

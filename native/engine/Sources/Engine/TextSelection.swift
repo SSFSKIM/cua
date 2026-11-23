@@ -7,8 +7,10 @@ import Foundation
 // `suffix` immediately adjacent, overlapping occurrences counted, exactly one match required; a Markdown match maps to
 // the source's UTF-16 offsets with syntax at its edges skipped inward; `selection_type` text, cursor_before or
 // cursor_after gives (L, N), (L, 0) or (L + N, 0), written as AXSelectedTextRange after the settable check and the
-// field's focus. No scroll into view. Route 1, or route 3 when the app does not believe it has focus (its activation
-// held, FocusHold.swift): nothing is posted to the field unless the focus fallback clicks.
+// field's focus (a field needing focus checked again after it, #324). No scroll into view. Route 1, or route 3 when the app does not believe it has focus (its activation
+// held, FocusHold.swift): nothing is posted to the field unless the focus fallback clicks. Within the window of a posted
+// pointer press to the app, the range is let settle before the write, and the range written is what a type_text right
+// after expects (#359, ClickOrdering.swift). A password field is refused before anything of it is read (#405).
 
 /// A text element's value as an attributed string over its first `length` UTF-16 units (the parameterized read the
 /// observation's Markdown comes from); nil when the element gives none.
@@ -134,6 +136,44 @@ let selectTextNotSettable = EngineError(name: "selectionNotSettable",
   "Cannot select text for an element that does not support a settable selected text range")
 let selectTextNotFound = EngineError(name: "textNotFound", "Could not find the requested text to select in the element")
 
+/// select_text's range check before the field's focus (#324): an unfocused AppKit text field answers its
+/// AXSelectedTextRange not settable until it is focused (its field editor holds the range), so a field that needs
+/// focusing (`fieldNeedingFocus`) goes on to its focus and is checked again after it (`selectionSettableAfterFocus`);
+/// any other element whose range is not settable is refused here. Answers whether the check after the focus is due.
+func selectionSettableBeforeFocus(_ element: AXUIElement, ax: AXOps) throws -> Bool {
+  if ax.isSettable(element, kAXSelectedTextRangeAttribute) { return false }
+  guard fieldNeedingFocus(element, ax: ax) != nil else { throw selectTextNotSettable }
+  return true
+}
+
+/// The check after the focus, when `selectionSettableBeforeFocus` made it due: a range still not settable is refused.
+func selectionSettableAfterFocus(_ element: AXUIElement, ax: AXOps, due: Bool) throws {
+  guard !due || ax.isSettable(element, kAXSelectedTextRangeAttribute) else { throw selectTextNotSettable }
+}
+
+let selectTextSecure = EngineError(name: "selectionNotSettable",
+  "Cannot select text in a password field, or in a field whose kind cannot be read: its text is not read")
+
+/// The text select_text searches: the element's plain value and, for a text field or area (by `observedRole`) within
+/// the walk's bound, the Markdown the observation would render (`attributed`). #405: the value is read in one batch
+/// with the role and subrole (`classifiedRead`), and the attributed read, which no batch can carry, only after a
+/// classification just before it; a password field, or one whose role or subrole cannot be read, at either point, or a
+/// classification that fails before the attributed read, is refused with nothing more of it read and nothing searched,
+/// so no search can tell what it holds. A value read that fails searches nothing.
+func selectionSearchText(_ element: AXUIElement, observedRole: String, ax: AXOps,
+                         attributed: (AXUIElement, Int) -> NSAttributedString?) throws -> (plain: String?, markdown: (text: String, offsets: [Int?])?) {
+  let plain: String?
+  switch classifiedRead([kAXValueAttribute], request: { ax.batch(element, $0) }) {
+  case .closed: throw selectTextSecure
+  case .failed: plain = nil
+  case .read(let read): plain = plainText(read.values[kAXValueAttribute])
+  }
+  let length = plain?.utf16.count ?? 0
+  guard [kAXTextAreaRole, kAXTextFieldRole].contains(observedRole), length > 0, length <= markdownMaxLength else { return (plain, nil) }
+  guard let classification = ax.batch(element, classifyingAttributes), !valueReadClosed(classification) else { throw selectTextSecure }
+  return (plain, attributed(element, length).flatMap(markdownMapped))
+}
+
 extension Engine {
   /// `select_text {app, element, text, prefix?, suffix?, selection_type?}`.
   func selectText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
@@ -151,27 +191,32 @@ extension Engine {
       let target = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
       let ax = AXOps.live
-      guard ax.isSettable(target.element, kAXSelectedTextRangeAttribute) else { throw selectTextNotSettable }
-      let value = ax.read(target.element, kAXValueAttribute)
-      let plain = plainText(value)
-      let length = plain?.utf16.count ?? 0
-      // The Markdown the observation would render: a text field's or area's value within the walk's bound.
-      let markdown = [kAXTextAreaRole, kAXTextFieldRole].contains(target.entry.identity.role) && length > 0 && length <= markdownMaxLength
-        ? attributedValue(of: target.element, length: length).flatMap(markdownMapped) : nil
-      guard let match = textRange(of: text, prefix: prefix, suffix: suffix, markdown: markdown, plain: plain) else { throw selectTextNotFound }
+      let checkAfterFocus = try selectionSettableBeforeFocus(target.element, ax: ax)
+      let searched = try selectionSearchText(target.element, observedRole: target.entry.identity.role, ax: ax,
+                                             attributed: attributedValue(of:length:))
+      guard let match = textRange(of: text, prefix: prefix, suffix: suffix, markdown: searched.markdown, plain: searched.plain) else {
+        throw selectTextNotFound
+      }
       // Route 3's held activation when the app does not believe it has focus (FocusHold.swift), before the focus.
       if actionRoute(for: target, app: app, connection: context.connection) == .activation {
         try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
       try focusField(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+      try selectionSettableAfterFocus(target.element, ax: ax, due: checkAfterFocus)
+      // #359: a pointer press posted to the app within the window (an earlier click, or the focus's own fallback click)
+      // may land after the write and move the caret back: its range is let settle first.
+      awaitPendingClick(on: target.element, pids: [appPid, target.owner], meta: &meta)
       try guarding.checkInFlight()
       var written = AXError.failure
+      let selection = selectionType.selection(match)
       cursor.afterElementAction(connection: context.connection.id, app: app.key, element: target.element, storedFrame: target.entry.frame) {
-        meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selectionType.selection(match))); return true }
+        meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selection)); return true }
         return written == .success
       }
       context.connection.markActed(app)
       guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the text selection.") }
+      // The range type_text right after expects to type over (#359).
+      clickOrdering.selectionWritten(pid: appPid, range: NSRange(location: selection.location, length: selection.length))
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

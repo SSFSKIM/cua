@@ -8,7 +8,7 @@
 import {test, before} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -345,6 +345,29 @@ test('the engine creates its socket directory with mode 0700', {skip}, async t =
   const {socket} = await engine(t, 'engine-dir');
   assert.equal(statSync(join(socket, '..')).mode & 0o777, 0o700);
   assert.ok(statSync(socket).isSocket());
+});
+
+test('at its start, before it serves, the engine drops a dead engine\'s enablement record entry whose process is gone and skips a malformed one (#293)', {skip}, async t => {
+  // Two reaped pids: the target and the engine that recorded it are both gone, so nothing is written to any process.
+  const gone = () => spawnSync('/usr/bin/true').pid;
+  const socket = scratchSocket(t, 'record');
+  const folder = join(socket, '..', 'enablement');
+  mkdirSync(folder, {recursive: true, mode: 0o700});
+  const target = gone();
+  const entry = join(folder, `${target}-1.json`);
+  writeFileSync(entry, JSON.stringify({pid: target, start: 1, attribute: 'AXEnhancedUserInterface', ownerPid: gone(), ownerStart: 2}));
+  const malformed = join(folder, '3-3.json');
+  writeFileSync(malformed, '{"pid": 3');
+  // Enough entries that a restore run after the socket was bound would still be at work when it first answers.
+  const owner = gone();
+  for (let i = 0; i < 4000; i++) {
+    writeFileSync(join(folder, `${target}-${10 + i}.json`), JSON.stringify({pid: target, start: 10 + i, attribute: 'AXEnhancedUserInterface', ownerPid: owner, ownerStart: 2}));
+  }
+  const {stderr} = await startEngine(t, bin, {socket});
+  assert.deepEqual(readdirSync(folder), ['3-3.json'], 'every entry dropped before the socket answered; the malformed one kept');
+  assert.equal(existsSync(entry), false);
+  assert.equal(existsSync(malformed), true, 'skipped, not fatal');
+  assert.match(stderr(), /enablement record: 3-3\.json is unreadable or malformed; skipped/);
 });
 
 test('the peerPolicy setting: absent or "uid" serves, any other value or an unreadable settings file stops the engine at start, naming it', {skip}, async t => {

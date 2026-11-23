@@ -1,0 +1,11 @@
+--- /Users/new/.local/share/cua-171/task75/exp/native/linux-engine/tests/live_device.rs	2026-11-11 05:03:39.736884084 -0800
++++ /Users/new/.local/share/cua-171/task75/expfix/native/linux-engine/tests/live_device.rs	2026-11-11 05:14:14.894162133 -0800
+@@ -101,6 +101,8 @@
+         sleep(SETTLE);
+         // task 75: the bytes waiting on the probe's socket at the read
+         let queued = rustix::io::ioctl_fionread(self.conn.stream()).unwrap_or(u64::MAX);
++        // task 75's fix: a round trip on the window's own connection before the drain
++        self.conn.sync().unwrap();
+         let (seen, others) = self.drain();
+         let read_ms = race::ms();
+         if race::enabled() {

@@ -14,6 +14,7 @@
   #source { position: absolute; left: 360px; top: 130px; width: 100px; height: 50px; background: #6a8fd0; color: #ffffff; }
   #target { position: absolute; left: 560px; top: 120px; width: 200px; height: 100px; background: #d8e8d0; }
   #near { position: absolute; left: 505px; top: 165px; width: 50px; height: 40px; background: #6a8fd0; }
+  #inzone { position: absolute; left: 700px; top: 180px; width: 40px; height: 30px; background: #6a8fd0; }
   #canvas { position: absolute; left: 20px; top: 350px; width: 400px; height: 200px; background: #eeeeee; touch-action: none; }
   #status { position: absolute; left: 460px; top: 350px; margin: 0; font-size: 16px; }
   #status p { margin: 2px 0; }
@@ -31,10 +32,15 @@
        where the next press misses it).
      - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target. `near` is a
        second source 5 px from the target, for a short drag and drop (about 40 px, task 18). The `moves` line logs the
-       pointer between a source's press and its release (task 20).
+       pointer between a source's press and its release (task 20). `inzone` is a third source inside the target, its
+       drag's first status already an accept, for the press-inside control (M4's T14: a path out of the zone must
+       drop nothing).
      - canvas: a path-tracking target that draws what plain pointermove events (no coalesced events) report while the
        button is down; the status line counts the moves of the last stroke and the farthest of the path's corners from
        the stroke drawn (CORNERS, canvas pixels), so a drag whose motions arrive merged shows a large deviation.
+     - received: the motions the browser received during the last press, as the coalesced samples of its
+       pointerrawupdate and pointermove events (and the events), which the harness keeps beside each drag's distance
+       (T10).
      The title comes from the URL's fragment, so every window has its own. -->
 <p id="words">alpha bravo charlie delta echo foxtrot golf</p>
 <input id="range" type="range" min="0" max="100" value="0" aria-label="Range">
@@ -42,6 +48,7 @@
 <div id="source" draggable="true" aria-label="Source">drag me</div>
 <div id="target" aria-label="Target"></div>
 <div id="near" draggable="true" aria-label="Near source"></div>
+<div id="inzone" draggable="true" aria-label="In-zone source"></div>
 <canvas id="canvas" width="400" height="200" aria-label="Canvas"></canvas>
 <div id="status">
   <p id="s-select">select none</p>
@@ -50,6 +57,7 @@
   <p id="s-dnd">dnd starts 0 drops 0 downs 0 detail 0 gap -1 selects 0 ends 0 effect -1 lat -1 dur -1 ups 0 at 0</p>
   <p id="s-canvas">canvas strokes 0 moves 0 dev -1</p>
   <p id="s-moves">moves seq 0 n 0 start -1 up -1 cancel -1 end -1 m</p>
+  <p id="s-received">received seq 0 target none raw 0 moves 0 raw_events 0 move_events 0</p>
 </div>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
@@ -104,13 +112,14 @@
   // whether the renderer saw a move past Blink's drag threshold (4 px) with the button held before the mouseup. Per
   // event, `t` its own time and `h` the time its handler ran, both ms after the press's; per move its offset from the
   // press, `buttons`, and how many platform moves the renderer coalesced into it. The line is written once, when the
-  // press ends (pointerup, or dragend once a drag started), so nothing the log does runs during the drag.
+  // press ends (pointerup, or dragend once a drag started), so nothing the log does runs during the drag. Every source
+  // the page counts presses on is logged, the in-zone one too, so a log's `seq` is always the press the counts name.
   const MAX_MOVES = 80;
   let plog = null;
   const since = (e) => `${(e.timeStamp - plog.t0).toFixed(1)}/${(performance.now() - plog.h0).toFixed(1)}`;
   const showLog = () => line('s-moves', `moves seq ${plog.seq} n ${plog.moves.length} start ${plog.start} up ${plog.up} cancel ${plog.cancel} end ${plog.end} m${plog.moves.map((m) => ` ${m}`).join('')}`);
   document.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || !['source', 'near'].includes(e.target.id)) return;
+    if (e.button !== 0 || !['source', 'near', 'inzone'].includes(e.target.id)) return;
     plog = { seq: dnd.downs + 1, t0: e.timeStamp, h0: performance.now(), x0: e.clientX, y0: e.clientY, start: -1, up: -1, cancel: -1, end: -1, moves: [], open: true };
   }, true);
   document.addEventListener('pointermove', (e) => {
@@ -132,13 +141,47 @@
     plog.open = false;
     showLog();
   }, true);
-  for (const id of ['source', 'near']) {
+  for (const id of ['source', 'near', 'inzone']) {
     $(id).addEventListener('mousedown', down);
     $(id).addEventListener('dragstart', dragstart);
     $(id).addEventListener('dragend', dragend);
   }
   $('target').addEventListener('dragover', (e) => e.preventDefault());
   $('target').addEventListener('drop', (e) => { e.preventDefault(); dnd.drops += 1; showDnd(); });
+
+  // the motions the browser received during each press (T10): from a left press anywhere in the page to its release
+  // (or the dragend of a drag and drop it started), the samples of the pointerrawupdate events, which Chrome dispatches
+  // as it takes each motion, a scrollbar drag's included (no pointermove reaches the page while the scrollbar holds the
+  // press: task 65's probe), and the samples of the pointermove events. One dispatched event can carry several
+  // coalesced samples (Pointer Events, getCoalescedEvents()), each a motion the browser took, so `raw` and `moves` count
+  // samples, and `raw_events` and `move_events` the events. An event without the list, or with an empty one, is its
+  // own one sample. Written once, when the press ends.
+  let rec = null;
+  let recSeq = 0;
+  const samples = (e) => Math.max(1, typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents().length : 1);
+  const endRec = () => {
+    if (!rec?.open) return;
+    rec.open = false;
+    line('s-received', `received seq ${recSeq} target ${rec.target} raw ${rec.raw} moves ${rec.moves} raw_events ${rec.rawEvents} move_events ${rec.moveEvents}`);
+  };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    recSeq += 1;
+    rec = { target: e.target.id || e.target.localName, raw: 0, moves: 0, rawEvents: 0, moveEvents: 0, open: true };
+  }, true);
+  document.addEventListener('pointerrawupdate', (e) => {
+    if (!rec?.open) return;
+    rec.raw += samples(e);
+    rec.rawEvents += 1;
+  }, true);
+  document.addEventListener('pointermove', (e) => {
+    if (!rec?.open) return;
+    rec.moves += samples(e);
+    rec.moveEvents += 1;
+  }, true);
+  document.addEventListener('pointerup', (e) => { if (e.button === 0) endRec(); }, true);
+  document.addEventListener('mouseup', (e) => { if (e.button === 0) endRec(); }, true);
+  document.addEventListener('dragend', endRec, true);
 
   // the canvas: the path the harness drags along, in canvas pixels
   const CORNERS = [[20, 20], [380, 40], [200, 180], [40, 100]];

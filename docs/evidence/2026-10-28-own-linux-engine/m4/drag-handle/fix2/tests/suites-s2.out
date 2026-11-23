@@ -1,0 +1,29 @@
+green-handles status 0
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 14.51s
+fmt status 0
+clippy status 0
+clippy-live status 0
+unit status 0
+live status 101
+test result: ok. 386 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 21.26s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+test result: FAILED. 449 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 60.26s
+services status 0
+harness status 1
+ℹ tests 47
+ℹ pass 47
+ℹ fail 0
+ℹ skipped 0
+ℹ tests 876
+ℹ pass 874
+ℹ fail 2
+ℹ skipped 0

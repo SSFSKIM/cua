@@ -1,0 +1,6 @@
+release gate
+2026-11-13T12:35:06Z == accept head 514f5c62dd6c74b1ed24c48f112ca9c35a70eece label counted dirty=no engine cua-engine 0.4.0 (514f5c62dd6c) sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937
+2026-11-13T12:35:40Z run home /tmp/cua171-gl-d54ido/accept/home installed
+2026-11-13T12:38:29Z linux-native exit 0
+2026-11-13T12:38:29Z == accept exit 0
+release gate: R3 exit 0

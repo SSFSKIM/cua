@@ -1,0 +1,10 @@
+error[E0609]: no field `held_lead_pause` on type `families::DragPacing`
+1054 |                 .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
+error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+1054 |                 .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
+  29 | pub fn paused_before(points: &[(i16, i16)], pointer: (i16, i16), i: usize) -> bool {
+1054 -                 .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
+1054 +                 .map(|i| paused_before(&points, start, i))
+error[E0609]: no field `held_lead_pause` on type `families::DragPacing`
+1065 |             !DragPacing::NONE.held_lead_pause,
+error: could not compile `cua-linux-engine` (bin "cua-engine" test) due to 3 previous errors

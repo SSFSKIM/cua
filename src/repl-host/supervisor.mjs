@@ -39,7 +39,12 @@
 // - running + cancellation: nothing is stopped; the eventual result still settles (the vendor's behaviour).
 // - running + timeout: the kernel's generation ends first (its later messages are dropped), then it is killed; the
 //   timeout sentence answers the call once and the next execution starts a fresh kernel, bindings gone.
-// - js_reset: the kernel is stopped (bindings gone, a fresh banner next time); the task identity is the proxy's.
+// - js_reset: the kernel is stopped (bindings gone, a fresh banner next time); the task identity is the proxy's. A
+//   ready worker is told at the same time (`kernel_reset`, which only this host sends it; a kernel's messages reach the
+//   worker only as `service` and `run_hooks`), so its services release what the ended kernel held (cua's Linux service:
+//   a held drag handle's button, #171 M4 T18) before the reset answers; the answer waits for that at most
+//   KERNEL_RESET_MS, so a busy engine never holds it longer, and a worker whose services have nothing to release (any
+//   but cua's Linux one) answers at once. A cell's timeout ends the kernel the same way, and tells the worker too.
 // - turn_ended: the session/turn key is reserved before the worker's turn-ended handlers start (concurrently, each
 //   under its own deadline); every request for that key shares the one acknowledgement.
 // - a child ends while an execution waits on it: the kernel's exit diagnostic answers the execution; the worker's exit
@@ -87,7 +92,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
 import {InvalidParams, initializeResult, jsArguments, parseToolOverrides, resetArguments, toolsFor, turnEndedArguments} from './tools.mjs';
 import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
-import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
+import {ownedGroupReaper, servesAsShim, startKernelChild} from './kernel-child.mjs';
 import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
 import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
@@ -127,6 +132,9 @@ export const TURN_MARGIN_MS = 2_000;
 // What the EOF drain allows an admitted execution beyond its budget left and its hooks' bound before it gives up on it
 // (the header's EOF): enough that the bounds the host already keeps answer first.
 export const DRAIN_MARGIN_MS = 2_000;
+// How long js_reset and a cell's timeout wait for the trusted worker's services to release what the ended kernel held
+// (the header's js_reset), before they answer anyway.
+export const KERNEL_RESET_MS = 1_000;
 const hostMarker = {host: 'cua', version: REPL_HOST_VERSION};
 
 // serde_json's maps are sorted, so a JSON value crossing the vendor's host has its keys in byte order, at every depth;
@@ -156,7 +164,10 @@ export function hostSettings(env, {cwd}) {
   }
   const pipeTimeout = Number(env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS);
   const workerEnv = Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string'));
-  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd,
+  // On Linux, the cua-engine the worker's service runs (src/services/engine/linux/service.mjs reads the same name): a
+  // stop of the worker lets it drain first (kernel-child.mjs stopProcessTree). macOS stops as before.
+  const engine = process.platform === 'linux' ? absolute(env.CUA_ENGINE_BIN) : null;
+  return {node, launcher, engine, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd,
     kernelDir: absolute(env.CUA_REPL_KERNEL_DIR), kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
@@ -199,19 +210,20 @@ export function workerLaunch(settings, policy) {
 // Serves MCP on `input`/`output` -> {closed: Promise<exit code>, shutdown()}. `startKernel` is the child seam for both
 // children (tests); `launchServices` the LaunchServices boundary; `log` gets diagnostics (stderr).
 export function createSupervisor({input, output, env, cwd = process.cwd(), startKernel = startKernelChild, log = line => process.stderr.write(`cua-repl-host: ${line}\n`),
-  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction, readyTimeoutMs = READY_TIMEOUT_MS}) {
+  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction, readyTimeoutMs = READY_TIMEOUT_MS,
+  shimProbe = servesAsShim}) {
   const settings = hostSettings(env, {cwd});
   // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
   // whatever a finished child left in the group is removed with it. Every live child, kernel and trusted worker alike, is
   // registered with `own` while it runs, so another child's end never takes it or what it started.
-  const groupReaper = reaper();
+  const groupReaper = reaper({engine: settings.engine});
   const reap = groupReaper?.reap ?? (() => {});
   const sandboxed = settings.launcher !== null;
   let initialized = false;
   let formSupported = false;  // the client's initialize offered form elicitation
   let closing = false;
   let kernel = null;          // the current kernel generation {child, key}: only its messages reach an execution
-  let worker = null;          // the current trusted worker {child, key, pending, turns, relay, release}
+  let worker = null;          // the current trusted worker {child, key, pending, turns, resets, relay, release}
   let terminated = false;     // a forced shutdown began: nothing launches any more
   let execCounter = 0;
   let execution = null;       // the execution waiting on the kernel
@@ -236,7 +248,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function launchKernel(launch) {
     const self = {key: launch.key, release: () => {}, ready: false};
     self.readied = new Promise(resolve => { self.markReady = resolve; });
-    self.child = startKernel(launch, {reap: () => { self.release(); reap(); },
+    self.child = startKernel(launch, {reap: () => { self.release(); return reap(); },
       onMessage: message => {
         if (kernel !== self) return;
         if (message.type === 'runtime_ready') { self.ready = true; return self.markReady(true); }
@@ -349,7 +361,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
 
   function launchWorker(policy) {
     if (terminated) return null;
-    const self = {key: null, launch: workerLaunch(settings, policy), pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false,
+    const self = {key: null, launch: workerLaunch(settings, policy), sandboxed: !policy.disabled, pending: new Map(), turns: new Map(), resets: new Map(), queue: [], attempts: 0, ready: false, failed: false,
       deadlines: {afterCode: 0, turnEnded: 0}, bounds: new Map(), suspensions: new Map()};
     self.key = self.launch.key;
     // Work for the worker waits in `queue` until it announced it is ready (the header).
@@ -363,12 +375,17 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     return self;
   }
 
+  let shimServed;  // whether settings.engine serves as the launcher's shim, checked at the first worker's start
   function startWorkerChild(self) {
     self.attempts++;
     self.ready = false;
     let release = () => {};
-    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE,
-      reap: () => { release(); reap(); },
+    // on Linux the engine is also the launcher's resident shim, when it serves as one (checked once): the shim SIGKILLs
+    // the worker's tree when this process dies, however it ends, then releases what the engine's record still holds, and
+    // only then may its launcher be held (holdLauncher)
+    self.shimmed = Boolean(settings.engine) && (shimServed ??= shimProbe(settings.engine));
+    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine, shim: self.shimmed ? settings.engine : null,
+      reap: () => { release(); return reap(); },
       onMessage: message => {
         if (worker !== self || self.child !== child) return;
         if (message.type === 'runtime_ready') return workerReady(self);
@@ -387,7 +404,20 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function workerReady(self) {
     self.ready = true;
     self.cancelReady();
+    holdLauncher(self);
     for (const message of self.queue.splice(0)) self.child.send(message);
+  }
+
+  // Once the input has ended, the trusted worker's sandbox launcher is held (kernel-child.mjs holdLauncher; Linux, where
+  // the engine drains at the worker's stop): the owned group's SIGTERM at upstream's by(0.4), sent while admitted work
+  // still holds the drain, would otherwise make codex-linux-sandbox end the sandbox at once, the engine in it SIGKILLed
+  // with nothing released (measured in M4 T7b's fix, task 57). Held only once the worker is ready, its sandbox started;
+  // the worker itself runs on. With the sandbox disabled there is no launcher, and the engine takes that SIGTERM itself.
+  // Held only when the launcher was started through the shim: a held launcher must never outlive this process (the
+  // design session, M4 T7b), and its shim is what takes it when nothing else can. An engine that does not serve as the
+  // shim (before T7b's fix 4) leaves the launcher unheld, as before T7b.
+  function holdLauncher(self) {
+    if (closing && settings.engine && self?.sandboxed && self.ready && self.shimmed) self.child.holdLauncher?.();
   }
 
   // The worker stayed silent past its bound: another is started, or, after START_ATTEMPTS, the work it held fails.
@@ -436,6 +466,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
+    for (const resolve of self.resets.values()) resolve();
     // Its elicitations stay open at the client: the cell is back on its budget, and a late answer is still the
     // connection's (cua's proxy remembers it: src/mcp/approval-memory.mjs).
     for (const request of clientRequests.values()) if (request.worker === self) request.resume();
@@ -472,6 +503,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         if (kernel === kernelSelf) kernelSelf.child.send(sortedJson(message));
         return;
       }
+      case 'kernel_reset_result':
+        return self.resets.get(message.id)?.();
       case 'turn_ended_result': {
         const resolve = self.turns.get(message.id);
         self.turns.delete(message.id);
@@ -576,7 +609,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     current.budget = executionBudget(timeoutMs, async () => {
       if (current.settled) return;
       current.expired = true;
-      if (kernel && kernel === current.kernel) await stopKernel();
+      if (kernel && kernel === current.kernel) await Promise.all([stopKernel(), kernelReset()]);
       settle(current, sentenceResult(TIMEOUT_SENTENCE));
     });
     if (closing) drainExecution(current);
@@ -606,8 +639,23 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
 
   async function runReset(id) {
     if (terminated) return toolResult(id, sentenceResult(SHUTTING_DOWN_SENTENCE));
-    await stopKernel();
+    await Promise.all([stopKernel(), kernelReset()]);
     toolResult(id, sentenceResult(RESET_SENTENCE, {isError: false}));
+  }
+
+  // The kernel generation has ended (stopKernel ran first, so nothing it sends reaches the worker any more): a ready
+  // worker's services release what it held (the header's js_reset); resolves when the worker has answered, it ends, or
+  // KERNEL_RESET_MS passed. A worker not yet ready has loaded no service, so it is not asked.
+  let resetCounter = 0;
+  function kernelReset() {
+    const self = worker;
+    if (!self?.ready || terminated) return Promise.resolve();
+    const id = `kernel-reset-${resetCounter++}`;
+    const answered = new Promise(resolve => {
+      self.resets.set(id, resolve);
+      if (!self.post({type: 'kernel_reset', id})) resolve();
+    });
+    return within(answered, KERNEL_RESET_MS).finally(() => self.resets.delete(id));
   }
 
   // The worker's turn-ended handlers for this turn; resolves when they are done (or there is no worker to run any).
@@ -745,6 +793,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     closing = true;
     if (drain) {
       if (!draining) {
+        holdLauncher(worker);
         cancelClientRequests();
         if (execution) drainExecution(execution);
       }

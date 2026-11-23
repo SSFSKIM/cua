@@ -1,0 +1,2 @@
+run exit 0; watchdog clean
+{"exit": 0, "samples": 207, "maps_samples": 70, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 88, "browsers": 0}

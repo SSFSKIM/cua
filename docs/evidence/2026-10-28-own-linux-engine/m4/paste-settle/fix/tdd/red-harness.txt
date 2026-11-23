@@ -1,0 +1,25 @@
+file://<checkout>/test/linux-engine-diff/focus-timer.test.mjs:11
+import { EXIT_WITHIN_MS, LANES, SCENARIOS, ALL_SCENARIOS, CLICK_STEPS, auditRuns, insertionAt, laneArgs, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+                                           ^^^^^^^^^^^^^
+SyntaxError: The requested module '../../scripts/linux-engine-diff/focus-timer.mjs' does not provide an export named 'ALL_SCENARIOS'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:455:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:553:5)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.22.1
+✖ test/linux-engine-diff/focus-timer.test.mjs (81.400641ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 91.108087
+
+✖ failing tests:
+
+test at test/linux-engine-diff/focus-timer.test.mjs:1:1
+✖ test/linux-engine-diff/focus-timer.test.mjs (81.400641ms)
+  'test failed'

@@ -13,6 +13,7 @@
 //!   - `quit` (or EOF): exits.
 //! - `xprobe clip-read`: reads CLIPBOARD as `UTF8_STRING` with a real timestamp, never `CurrentTime` (which an engine
 //!   refuses for 10 s after an unconfirmed paste); prints `{"ok":…,"owner":…,"text":…}` or why not.
+//! - `xprobe reader`: that read, and `_NET_ACTIVE_WINDOW`'s, on a connection kept open, each asked for on stdin.
 //! - `xprobe grabs`: whether a pointer or keyboard grab is in force (a grab of its own is refused as
 //!   `AlreadyGrabbed`); a grab it obtains is released at once.
 //! - `xprobe within <window> <ancestor>`: whether the window is the ancestor or lies inside it.
@@ -24,8 +25,8 @@ use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode, SelectionNotifyEvent,
-    SelectionRequestEvent, Window, WindowClass,
+    AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, GrabMode, GrabStatus, PropMode, Property,
+    SelectionNotifyEvent, SelectionRequestEvent, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -85,6 +86,7 @@ fn server_time(conn: &RustConnection, window: Window, property: u32) -> Result<u
     while Instant::now() < deadline {
         if let Some(Event::PropertyNotify(e)) = conn.poll_for_event()?
             && e.window == window
+            && e.state == Property::NEW_VALUE
         {
             return Ok(e.time);
         }
@@ -230,7 +232,7 @@ impl Owner {
 
 pub fn own(args: &[String]) -> Result<()> {
     let text = args.first().ok_or("clip-own <text>")?.clone();
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let window = own_window(&conn, screen)?;
     let atoms = Atoms::new(&conn)?;
     let mut owner = Owner {
@@ -274,14 +276,54 @@ pub fn own(args: &[String]) -> Result<()> {
 }
 
 pub fn read() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let window = own_window(&conn, screen)?;
     let atoms = Atoms::new(&conn)?;
+    say(clipboard_text(&conn, window, &atoms)?)
+}
+
+/// `xprobe reader`: the settle experiment's readers kept running on one connection, so a read starts the moment it is
+/// asked for, with no process to start (action-settle.mjs). Stdin lines: `clip`, CLIPBOARD's text as `clip-read`
+/// prints it; `active`, the root's `_NET_ACTIVE_WINDOW` as `{"active":<id>}` (0 when unset). One line each; `quit` or
+/// EOF ends it. It prints `{"ready":true}` once connected.
+pub fn reader() -> Result<()> {
+    let (conn, screen) = crate::xconnect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let window = own_window(&conn, screen)?;
+    let atoms = Atoms::new(&conn)?;
+    let active = atom(&conn, "_NET_ACTIVE_WINDOW")?;
+    conn.flush()?;
+    say("{\"ready\":true}".into())?;
+    for line in std::io::stdin().lock().lines() {
+        match line?.trim() {
+            "clip" => say(clipboard_text(&conn, window, &atoms)?)?,
+            "active" => {
+                let reply = conn
+                    .get_property(false, root, active, AtomEnum::WINDOW, 0, 1)?
+                    .reply()?;
+                let id = reply.value32().and_then(|mut v| v.next()).unwrap_or(0);
+                say(format!("{{\"active\":{id}}}"))?;
+            }
+            "quit" => return Ok(()),
+            other => say(format!(
+                "{{\"error\":{}}}",
+                json_str(&format!("unknown reader command {other}"))
+            ))?,
+        }
+    }
+    Ok(())
+}
+
+/// CLIPBOARD's text read as `UTF8_STRING` with a real timestamp, as one JSON line: `{"ok":true,"owner":…,"text":…}` or
+/// why not. On a kept connection the events an earlier read left (its property's deletion) are dropped first, so the
+/// timestamp and the answer are this read's own.
+fn clipboard_text(conn: &RustConnection, window: Window, atoms: &Atoms) -> Result<String> {
+    while conn.poll_for_event()?.is_some() {}
     let owner = conn.get_selection_owner(atoms.clipboard)?.reply()?.owner;
     if owner == x11rb::NONE {
-        return say("{\"ok\":false,\"owner\":0,\"why\":\"no owner\"}".into());
+        return Ok("{\"ok\":false,\"owner\":0,\"why\":\"no owner\"}".into());
     }
-    let time = server_time(&conn, window, atoms.property)?;
+    let time = server_time(conn, window, atoms.property)?;
     conn.convert_selection(window, atoms.clipboard, atoms.utf8, atoms.property, time)?;
     conn.flush()?;
     let deadline = Instant::now() + READ_WAIT;
@@ -289,20 +331,20 @@ pub fn read() -> Result<()> {
         match conn.poll_for_event()? {
             Some(Event::SelectionNotify(e)) if e.requestor == window => {
                 if e.property == x11rb::NONE {
-                    return say(format!("{{\"ok\":false,\"owner\":{owner},\"why\":\"refused\"}}"));
+                    return Ok(format!("{{\"ok\":false,\"owner\":{owner},\"why\":\"refused\"}}"));
                 }
                 let reply = conn
                     .get_property(true, window, atoms.property, AtomEnum::ANY, 0, u32::MAX / 4)?
                     .reply()?;
                 if reply.type_ != atoms.utf8 {
                     let name = conn.get_atom_name(reply.type_)?.reply()?.name;
-                    return say(format!(
+                    return Ok(format!(
                         "{{\"ok\":false,\"owner\":{owner},\"why\":{}}}",
                         json_str(&format!("answered as {}", String::from_utf8_lossy(&name)))
                     ));
                 }
                 let text = String::from_utf8_lossy(&reply.value);
-                return say(format!(
+                return Ok(format!(
                     "{{\"ok\":true,\"owner\":{owner},\"text\":{}}}",
                     json_str(&text)
                 ));
@@ -311,7 +353,7 @@ pub fn read() -> Result<()> {
             None => std::thread::sleep(Duration::from_millis(1)),
         }
     }
-    say(format!("{{\"ok\":false,\"owner\":{owner},\"why\":\"no answer\"}}"))
+    Ok(format!("{{\"ok\":false,\"owner\":{owner},\"why\":\"no answer\"}}"))
 }
 
 fn status(s: GrabStatus) -> &'static str {
@@ -324,9 +366,27 @@ fn status(s: GrabStatus) -> &'static str {
     }
 }
 
+/// The root property that marks a private display the harness started (events.mjs `startPrivateX`): `grabs` runs only
+/// there, since it takes the root's pointer and keyboard for a moment, which on a person's display (`:0`) would take
+/// their input.
+pub const PRIVATE_MARK: &str = "CUA171_PRIVATE_DISPLAY";
+
+/// Whether the display is a private one the harness started: its root carries [`PRIVATE_MARK`] (a read).
+pub(crate) fn private_display(conn: &RustConnection, root: Window) -> Result<bool> {
+    let mark = conn.intern_atom(true, PRIVATE_MARK.as_bytes())?.reply()?.atom;
+    if mark == x11rb::NONE {
+        return Ok(false);
+    }
+    let value = conn.get_property(false, root, mark, AtomEnum::ANY, 0, 1)?.reply()?;
+    Ok(value.type_ != x11rb::NONE)
+}
+
 pub fn grabs() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
+    if !private_display(&conn, root)? {
+        return Err(format!("grabs takes the pointer and the keyboard, so it runs only on a private display marked {PRIVATE_MARK}, never on a person's").into());
+    }
     let pointer = conn
         .grab_pointer(
             false,
@@ -363,7 +423,7 @@ pub fn within(args: &[String]) -> Result<()> {
         return Err("within <window> <ancestor>".into());
     };
     let (window, ancestor) = (crate::parse_window(window)?, crate::parse_window(ancestor)?);
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let mut at = window;
     let mut inside = false;
@@ -390,7 +450,7 @@ pub fn quarantine_left(end: u32, now: u32) -> Option<u32> {
 
 /// `xprobe quarantine`: `{"open":…,"remaining_ms":…,"client":…}` for the display's unconfirmed-paste window.
 pub fn quarantine() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let window = own_window(&conn, screen)?;
     let property = atom(&conn, "XPROBE_CLIP")?;

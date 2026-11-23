@@ -448,13 +448,14 @@ final class SeamStub {
     }
     system.frontmost = { self.frontmost }
     system.keyFocus = { self.keyFocus }
-    system.holdScreenUpdates = { self.holds += 1; return { self.releases += 1 } }
+    system.holdScreenUpdates = { _ in self.holds += 1; return { self.releases += 1 } }
     system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
     system.userWindow = { _ in nil }
     system.activationPoint = { _ in nil }
     system.now = { self.clock }
     system.sleep = { self.clock += $0 }
-    system.schedule = { _, _ in }  // the cap's timer never fires here: every guard ends first
+    system.schedule = { _, _ in }
+    system.scheduleHoldRelease = { _, _ in }  // the cap's timer never fires here: every guard ends first
     return system
   }
 }

@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (d70b9e8956ad)
+start load2-floor 2026-11-11T11:34:09Z loadavg 0.86 0.79 0.84
+run exit 0; watchdog clean
+private run load2-floor exit 0 11:47:19
+end load2-floor 2026-11-11T11:47:19Z loadavg 17.29 16.04 10.24 status 0

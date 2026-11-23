@@ -6,7 +6,15 @@
 //! pixmap followed by 10 ms with no further damage, capped at 150 ms (`--capture-wait damage`, the default), or
 //! for a fixed 100 ms once per pixmap (`--capture-wait fixed`, the fallback the harness can select). A window fully
 //! unobscured at the redirect needs no first damage: the server's copy of it is already complete and only an
-//! application repaint can follow, so it waits for 10 ms with no damage (still capped at 150 ms).
+//! application repaint can follow, so it waits for 10 ms with no damage (still capped at 150 ms). So does a window
+//! whose whole contents the server already keeps offscreen (`cover.rs` `complete_offscreen`): one of another depth than
+//! its parent (an ARGB window on the 24-bit root), or one inside such a window (GTK 4's ARGB frame) with nothing over it
+//! inside that window and none of it past it. Its new pixmap is filled from those complete contents whatever covers it
+//! on the screen, and no repaint follows: GTK 4's covered windows sent no damage after the redirect in any trial, and
+//! every such capture was right (M4's T9, evidence `m4/waits/`). Where a same-depth sibling covers it inside that
+//! window, the copy holds the sibling's pixels, so it waits for its damage like any other (the review of T9). The
+//! caller judges both at the redirect ([`Readiness::redirected`]). `--capture-wait quiet` takes every pixmap as
+//! complete, a control lane that shows the first damage is needed elsewhere.
 //!
 //! Events are read on a connection of their own by a thread of their own, so they are consumed as they arrive
 //! (the server never queues them for an engine waiting on stdin) and their times are when they happened: each
@@ -34,18 +42,22 @@ pub enum CaptureWait {
     Damage,
     /// 100 ms once per pixmap.
     Fixed,
+    /// Every pixmap taken as complete: 10 ms quiet, no first damage (a measurement control only).
+    QuietOnly,
 }
 
 pub const QUIET: Duration = Duration::from_millis(10);
 pub const CAP: Duration = Duration::from_millis(150);
 pub const FIXED: Duration = Duration::from_millis(100);
 
-/// One pixmap's readiness: when it was created, whether the window was fully unobscured then, the last damage
-/// drawn into it, and whether a capture already found it ready.
+/// One pixmap's readiness: when it was created, whether the window was fully unobscured then, whether the server
+/// already kept its whole contents offscreen then (`cover.rs` `complete_offscreen`), the last damage drawn into it, and
+/// whether a capture already found it ready.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pixmap {
     pub since: Instant,
     pub unobscured: bool,
+    pub offscreen: bool,
     pub last_damage: Option<Instant>,
     pub ready: bool,
 }
@@ -55,6 +67,7 @@ impl Pixmap {
         Pixmap {
             since,
             unobscured,
+            offscreen: false,
             last_damage: None,
             ready: false,
         }
@@ -70,6 +83,8 @@ pub enum Reason {
     Quiet,
     /// Fully unobscured at the redirect, and the quiet period without damage, or after the last.
     Unobscured,
+    /// Kept offscreen by the server before the redirect, and the quiet period without damage, or after the last.
+    Offscreen,
     /// No quiet period within the cap.
     Cap,
     /// The fixed wait.
@@ -84,6 +99,7 @@ impl Reason {
             Reason::Ready => "ready",
             Reason::Quiet => "quiet",
             Reason::Unobscured => "unobscured",
+            Reason::Offscreen => "offscreen",
             Reason::Cap => "cap",
             Reason::Fixed => "fixed",
             Reason::Unwatched => "unwatched",
@@ -101,10 +117,11 @@ pub fn verdict(rule: CaptureWait, pixmap: &Pixmap, now: Instant) -> Result<Reaso
             let until = pixmap.since + FIXED;
             if now >= until { Ok(Reason::Fixed) } else { Err(until) }
         }
-        CaptureWait::Damage => {
+        CaptureWait::Damage | CaptureWait::QuietOnly => {
             let cap = pixmap.since + CAP;
-            // Quiet is counted from the last damage; an unobscured window's from the pixmap itself.
-            let quiet_from = match (pixmap.last_damage, pixmap.unobscured) {
+            // Quiet is counted from the last damage; a complete pixmap's from the pixmap itself.
+            let complete = pixmap.unobscured || pixmap.offscreen || rule == CaptureWait::QuietOnly;
+            let quiet_from = match (pixmap.last_damage, complete) {
                 (Some(damage), _) => Some(damage),
                 (None, true) => Some(pixmap.since),
                 (None, false) => None,
@@ -114,6 +131,8 @@ pub fn verdict(rule: CaptureWait, pixmap: &Pixmap, now: Instant) -> Result<Reaso
             {
                 return Ok(if pixmap.unobscured {
                     Reason::Unobscured
+                } else if pixmap.offscreen {
+                    Reason::Offscreen
                 } else {
                     Reason::Quiet
                 });
@@ -135,6 +154,7 @@ pub struct Waited {
     pub waited: Duration,
     pub reason: Reason,
     pub unobscured: bool,
+    pub offscreen: bool,
     /// Damage reports from before the redirect took effect, which did not count.
     pub ignored: u32,
     /// Damage reports on the new pixmap, and the first one's time after the pixmap was made.
@@ -163,8 +183,11 @@ struct Watched {
 }
 
 impl Watched {
-    fn renew(&mut self, now: Instant, unobscured: bool) {
-        self.pixmap = Pixmap::fresh(now, unobscured);
+    fn renew(&mut self, now: Instant, unobscured: bool, offscreen: bool) {
+        self.pixmap = Pixmap {
+            offscreen,
+            ..Pixmap::fresh(now, unobscured)
+        };
         self.ignored = 0;
         self.counted = 0;
         self.first = None;
@@ -192,13 +215,13 @@ fn on_structure(state: &mut State, event: &Event, now: Instant) {
                 && (e.width, e.height) != watched.size
             {
                 watched.size = (e.width, e.height);
-                watched.renew(now, false);
+                watched.renew(now, false, false);
                 watched.passed = true;
             }
         }
         Event::MapNotify(e) => {
             if let Some(watched) = state.windows.get_mut(&e.window) {
-                watched.renew(now, false);
+                watched.renew(now, false, false);
                 watched.passed = true;
             }
         }
@@ -312,8 +335,10 @@ impl Readiness {
     }
 
     /// The redirect of `window` has taken effect: its pixmap is new from here, and only damage the server
-    /// generates after a request sent now counts. `unobscured`: the window was fully unobscured at the redirect.
-    pub fn redirected(&self, window: Window, unobscured: bool) -> Result<()> {
+    /// generates after a request sent now counts. `unobscured`: the window was fully unobscured at the redirect;
+    /// `offscreen`: the server kept its whole contents offscreen then (`cover.rs` `complete_offscreen`). Either makes
+    /// the pixmap complete from the start.
+    pub fn redirected(&self, window: Window, unobscured: bool, offscreen: bool) -> Result<()> {
         let barrier = match (&self.conn, self.damage) {
             (Some(conn), true) => {
                 let cookie = conn.get_input_focus()?;
@@ -326,7 +351,7 @@ impl Readiness {
         let now = Instant::now();
         let mut state = self.shared.state.lock().unwrap();
         if let Some(watched) = state.windows.get_mut(&window) {
-            watched.renew(now, unobscured);
+            watched.renew(now, unobscured, offscreen);
             watched.barrier = barrier;
             watched.passed = false;
             for (seq, at) in std::mem::take(&mut watched.early) {
@@ -382,6 +407,7 @@ impl Readiness {
                     waited: started.elapsed(),
                     reason: Reason::Unwatched,
                     unobscured: false,
+                    offscreen: false,
                     ignored: 0,
                     counted: 0,
                     first: None,
@@ -395,6 +421,7 @@ impl Readiness {
                         waited: started.elapsed(),
                         reason,
                         unobscured: watched.pixmap.unobscured,
+                        offscreen: watched.pixmap.offscreen,
                         ignored: watched.ignored,
                         counted: watched.counted,
                         first: watched.first.map(|f| f.saturating_duration_since(watched.pixmap.since)),
@@ -494,6 +521,36 @@ mod tests {
     }
 
     #[test]
+    fn a_window_the_server_kept_offscreen_needs_no_first_damage() {
+        let t0 = Instant::now();
+        let mut p = Pixmap {
+            offscreen: true,
+            ..Pixmap::fresh(t0, false)
+        };
+        assert_eq!(verdict(CaptureWait::Damage, &p, t0 + 5 * MS), Err(t0 + QUIET));
+        assert_eq!(verdict(CaptureWait::Damage, &p, t0 + 10 * MS), Ok(Reason::Offscreen));
+        // a repaint after the redirect restarts the quiet period, still capped
+        p.last_damage = Some(t0 + 8 * MS);
+        assert_eq!(verdict(CaptureWait::Damage, &p, t0 + 10 * MS), Err(t0 + 18 * MS));
+        assert_eq!(verdict(CaptureWait::Damage, &p, t0 + 18 * MS), Ok(Reason::Offscreen));
+        p.last_damage = Some(t0 + 149 * MS);
+        assert_eq!(verdict(CaptureWait::Damage, &p, t0 + 150 * MS), Ok(Reason::Cap));
+    }
+
+    #[test]
+    fn the_quiet_only_control_takes_every_pixmap_as_complete() {
+        let t0 = Instant::now();
+        let p = Pixmap::fresh(t0, false);
+        assert_eq!(verdict(CaptureWait::QuietOnly, &p, t0 + 5 * MS), Err(t0 + QUIET));
+        assert_eq!(verdict(CaptureWait::QuietOnly, &p, t0 + 10 * MS), Ok(Reason::Quiet));
+        assert_eq!(
+            verdict(CaptureWait::Damage, &p, t0 + 10 * MS),
+            Err(t0 + CAP),
+            "the shipped rule still waits for a first damage"
+        );
+    }
+
+    #[test]
     fn the_wait_is_capped_at_150_ms() {
         let t0 = Instant::now();
         let mut p = Pixmap::fresh(t0, false);
@@ -549,7 +606,7 @@ mod tests {
         let readiness = Readiness::over(None, false, CaptureWait::Damage);
         assert!(!readiness.watches_structure());
         readiness.watch(7, (40, 40)).unwrap();
-        readiness.redirected(7, true).unwrap();
+        readiness.redirected(7, true, false).unwrap();
         let first = readiness.wait(7);
         assert_eq!(
             first.reason,
@@ -600,7 +657,7 @@ mod tests {
             .unwrap()
             .check()
             .unwrap();
-        readiness.redirected(window, false).unwrap();
+        readiness.redirected(window, false, false).unwrap();
         let first = readiness.wait(window);
         let settle = || std::thread::sleep(Duration::from_millis(50));
         conn.configure_window(window, &ConfigureWindowAux::new().width(60).height(60))

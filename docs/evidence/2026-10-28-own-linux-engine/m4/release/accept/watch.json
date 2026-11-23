@@ -1,0 +1,22 @@
+{
+ "exit": {
+  "code": 0,
+  "signal": null
+ },
+ "samples": 3355,
+ "maxSkyLinux": 0,
+ "engines": [
+  {
+   "pid": 4052389,
+   "exe": "/Users/new/.local/share/cua-171/task80/homes/accept/cua/engine/linux/cua-engine",
+   "ppid": "4052350",
+   "parent": "/Users/new/.local/share/cua-171/task80/homes/accept/cua/node/24.22.0/bin/node --disable-sigusr1 /Users/new/Developer/GitHub/cua/.claude/worktrees/t80-release/src/repl-host/supervisor.mjs"
+  },
+  {
+   "pid": 4052410,
+   "exe": "/Users/new/.local/share/cua-171/task80/homes/accept/cua/engine/linux/cua-engine",
+   "ppid": "4052397",
+   "parent": "/Users/new/.local/share/cua-171/task80/homes/accept/cua/node/24.22.0/bin/node --experimental-vm-modules /Users/new/Developer/GitHub/cua/.claude/worktrees/t80-release/src/repl-host/trusted-worker.mjs"
+  }
+ ]
+}

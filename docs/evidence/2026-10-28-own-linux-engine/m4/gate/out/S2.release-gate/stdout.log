@@ -1,0 +1,58 @@
+release gate
+release gate; candidate: sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.0 (514f5c62dd6c); attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43405393873/attempts/1, built from 514f5c62dd6c74b1ed24c48f112ca9c35a70eece (refs/heads/feat/171-m4) on a github-hosted runner
+| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| firefox-input press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input key_up background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input right_click background | shipped | 31 | 1 (0 / 0 / 1 / 0) | 30 | 30 consecutive |
+| firefox-input secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input right_click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input scroll dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input drag dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit clipboard_read background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit clipboard_write background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit press_key desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit click desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit drag desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit drag_handle desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+
+| cell | audit | requests | runs that ran their input | effects missed |
+|---|---|---:|---:|---:|
+| firefox-input press_key background | clean | 31283 | 5 of 5 | 0 |
+| firefox-input key_down background | clean | 31358 | 5 of 5 | 0 |
+| firefox-input key_up background | clean | 31380 | 5 of 5 | 0 |
+| firefox-input click background | clean | 31569 | 5 of 5 | 0 |
+| firefox-input click_element background | clean | 39035 | 5 of 5 | 0 |
+| firefox-input right_click background | clean | 39273 | 5 of 5 | 0 |
+| firefox-input secondary_action background | clean | 39035 | 5 of 5 | 0 |
+| firefox-input move background | clean | 71877 | 5 of 5 | 0 |
+| firefox-input scroll background | clean | 39395 | 5 of 5 | 0 |
+| firefox-input drag background | clean | 37915 | 5 of 5 | 0 |
+| firefox-text press_key background | clean | 23513 | 5 of 5 | 0 |
+| firefox-text type_text background | clean | 32185 | 5 of 5 | 0 |
+| gedit press_key background | clean | 15064 | 5 of 5 | 0 |
+| gedit key_down background | clean | 15069 | 5 of 5 | 0 |
+| gedit click background | clean | 303 | 5 of 5 | 0 |
+| gedit drag background | clean | 2007 | 5 of 5 | 0 |
+| gedit type_text background | clean | 20842 | 5 of 5 | 0 |
+| gedit clipboard_read background | clean | 5575 | 5 of 5 | 0 |
+| gedit clipboard_write background | clean | 26638 | 5 of 5 | 0 |
+release gate: m4-gate-S2 complete
+release gate: S2 exit 0

@@ -16,6 +16,9 @@ struct ServerPaths {
   let lock: String
   let usage: String
 
+  /// The enablement record's directory beside the socket (#293, EnablementRecord.swift).
+  var enablementRecord: String { directory + "/enablement" }
+
   /// Exit status when no socket can be chosen (EX_USAGE), the lock or a live socket shows another engine (EX_TEMPFAIL),
   /// or the settings name a peer policy this engine does not have (EX_CONFIG).
   static let usageExit: Int32 = 64
@@ -61,14 +64,18 @@ final class Server: @unchecked Sendable {
     // device's cursor off (engine.json), the hub draws nothing and observes nothing.
     let cursor = settings.cursor ? MainActor.assumeIsolated { CursorHub.live(debug: settings.cursorDebug) } : CursorHub()
     if let arm = settings.cursorDebug { FileHandle.standardError.write(Data("cua-engine: cursor: the diagnostic arm \(arm.rawValue) is on (engine.json cursorDebug)\n".utf8)) }
-    self.engine = Engine(paths: paths, routes: settings.routes, cursor: cursor, cursorEnabled: settings.cursor, cursorDebug: settings.cursorDebug)
+    self.engine = Engine(paths: paths, routes: settings.routes, cursor: cursor, cursorEnabled: settings.cursor, cursorDebug: settings.cursorDebug,
+                         enablementRecord: .live(directory: paths.enablementRecord))
   }
 
-  /// Claims the directory, the lock and the socket, then accepts on a thread of its own.
+  /// Claims the directory and the lock, restores the web enablement dead engines left on (#293: after the lock, so no
+  /// other engine of this directory runs, and before the socket, so before any connection), claims the socket, then
+  /// accepts on a thread of its own.
   func start() {
     signal(SIGPIPE, SIG_IGN)
     prepareDirectory()
     takeLock()
+    engine.webAccessibility.restoreRecorded()
     bindSocket()
     engine.server = self
     Lifecycle.beforeSignalExit = { [engine] in engine.webAccessibility.releaseAll() }  // SIGTERM's stop releases too (#292)

@@ -1,0 +1,4 @@
+tmproot /tmp/c76-3IPScr
+head 514f5c62dd6c74b1ed24c48f112ca9c35a70eece status 0
+started 2026-11-13T10:05:31Z finished 2026-11-13T10:05:55Z wrap exit 0
+tmproot left: []

@@ -1,0 +1,30 @@
+fatal: not a git repository (or any of the parent directories): .git
+| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| chrome-input move background | settle-0 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input move desktop | settle-0 | 31 | 31 (31 / 0 / 0 / 0) | 0 | not reached |
+| chrome-input move desktop | settle-10 | 31 | 29 (29 / 0 / 0 / 0) | 0 | not reached |
+| chrome-input move desktop | settle-25 | 32 | 13 (13 / 0 / 0 / 0) | 0 | not reached |
+| chrome-input move desktop | settle-50 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input move_relative desktop | settle-0 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input move background | settle-0 | 31 | 2 (2 / 0 / 0 / 0) | 0 | not reached |
+| electron-input move background | settle-10 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input move desktop | settle-0 | 31 | 31 (31 / 0 / 0 / 0) | 0 | not reached |
+| electron-input move desktop | settle-10 | 31 | 31 (31 / 0 / 0 / 0) | 0 | not reached |
+| electron-input move desktop | settle-25 | 31 | 31 (31 / 0 / 0 / 0) | 0 | not reached |
+| electron-input move desktop | settle-50 | 32 | 29 (29 / 0 / 0 / 0) | 0 | not reached |
+| electron-input move desktop | settle-75 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input move_relative desktop | settle-0 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move background | settle-0 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move dedicated | settle-0 | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+
+| cell | held step (ms) |
+|---|---:|
+| chrome-input move background | 0 |
+| chrome-input move desktop | 50 |
+| chrome-input move_relative desktop | 0 |
+| electron-input move background | 10 |
+| electron-input move desktop | 75 |
+| electron-input move_relative desktop | 0 |
+| firefox-input move background | 0 |
+| firefox-input move dedicated | 0 |

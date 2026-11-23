@@ -13,9 +13,12 @@
 // - `cancel` (shared mode, a drag that Chrome turns into a drag and drop): the request answers that the drag and drop
 //   was cancelled before the drop, exactly, with nothing dropped, the witness unchanged and the background audit clean
 //   (the cancel's Escape is a synthetic key event, never XTEST);
-// - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`): every answer is honest (that
-//   the drop may have happened, or that nothing was dropped only where nothing dropped and the witness is unchanged),
-//   at least one answer says the drop may have happened, and the background audit is clean;
+// - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`, along a path that holds the
+//   button until Chrome has taken): every answer is honest (that the drop may have happened, or that nothing was dropped
+//   only where nothing dropped and the witness is unchanged), at least one answer says the drop may have happened, the
+//   background audit is clean, and every sample is on the branch: a drag Chrome took nothing for by its release is
+//   unexercised, a failure of the case, whatever it answered; every sample's notice is read with the next acting
+//   request's answer and held to T14's contract;
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
 //   run), and wherever the drop landed the witness shows the change the notice reports;
@@ -31,8 +34,9 @@
 // - `answer`: `capabilities`, its answer checked.
 //
 // Scenes: `device-gtk4` (the harness's GTK 4 scene, pages/gtk4-input.py: GTK 4 ignores synthetic input always),
-// `device-firefox` (Firefox on pages/input.html: Gecko ignores synthetic coordinate clicks unless its window is fully
-// unobscured; the cases put a window over its bottom half, or part of it off the screen, or leave it fully visible),
+// `device-firefox` (Firefox on pages/input.html: Gecko takes synthetic pointer input only while the real pointer is in
+// its window, T19; the cases park the pointer in the window's visible part, under a window over its bottom half, or
+// outside it),
 // `device-xterm` (xterm running the recorder: it ignores synthetic keys and takes clicks), `device-qt` (kate on a long
 // document: Qt ignores synthetic wheel events), `device-chrome` (Chrome on pages/input.html: Chromium takes a drag only
 // along a visible path), `device-chrome-dnd` (Chrome on pages/drag.html: its HTML5 drag and drop, cancelled in shared
@@ -41,11 +45,14 @@
 
 import { readFileSync } from 'node:fs';
 
-import { execFileSync, spawn } from 'node:child_process';
-
+import { pendingOf } from './drop-signals-judge.mjs';
 import { readGtk4Status } from './families.mjs';
+import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
+import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
 import { stacking, startOverlay } from './clip.mjs';
+import { parkAt, restorePointer } from './park.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
+import { spawnXdotool } from './xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -55,8 +62,20 @@ export const deviceSentence = (app) => `${app} does not accept background input;
 /** The answers to a drag Chrome turned into a drag and drop, in shared mode (dnd.rs). */
 export const dndCancelledSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped. Use a dedicated desktop, or activate the window first`;
-export const dndLateNotice = (app) =>
-  `${app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again`;
+/**
+ * What a drag's after-release watch leaves pending (dnd.rs `pending_notice` and `pending_refusal`, M4's T14): the
+ * notice every reply carries, and the refusal of the first acting request (`command`, its wire name), not run.
+ */
+const lateCause = (app) =>
+  `Pending from your last drag, a late drag and drop: ${app} started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop`;
+const unconfirmedCause = (app) =>
+  `Pending from your last drag, an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not confirm a drop after the release, so the drop may not have landed as the drag answered`;
+const pendingNotice = (cause) => `${cause}. Read the window before sending input again: your next input request will not be run`;
+const pendingRefusal = (cause, command) => `${cause}; this ${command} request was not run, so read the window before sending it again`;
+export const dndLateNotice = (app) => pendingNotice(lateCause(app));
+export const dndLateRefusal = (app, command) => pendingRefusal(lateCause(app), command);
+export const dndUnconfirmedNotice = (app) => pendingNotice(unconfirmedCause(app));
+export const dndUnconfirmedRefusal = (app, command) => pendingRefusal(unconfirmedCause(app), command);
 export const dndMayHaveDroppedSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first`;
 
@@ -66,7 +85,7 @@ export const strayNotice = (app) =>
 
 /** The desktop state a drop could change: the active window, the X input focus, the stacking order. */
 export function desktopState() {
-  const focus = execFileSync('xdotool', ['getwindowfocus'], { encoding: 'utf8' }).trim();
+  const focus = xdotool('getwindowfocus');
   return { active: activeWindow(), focus: Number(focus), stacking: stacking() };
 }
 
@@ -138,8 +157,18 @@ const moveTo = (ctx, a, b) => ['move', { window: { id: ctx.scene.id }, ...(ctx.i
 const DND_SETTLE_MS = 1200;
 /** The drag page's drag-and-drop path (`scene.dndPath`, drag.mjs's): the source dragged to the drop zone. */
 const dndDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndPath }];
+/**
+ * The late cases' drag and drop (`scene.dndLingerPath`): the same into the zone, then back and forth across it, so the
+ * button is held long enough for Chrome's take to come before the release at the gate's load, which is the cases'
+ * branch: a cancel after the release (V5's line 266 released before Chrome began the drag).
+ */
+const dndLingerDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndLingerPath }];
 /** The short drag and drop (`scene.dndShortPath`): the page's near source to just inside the drop zone, 40 px. */
 const dndShortDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndShortPath }];
+/** The press-inside control (M4's T14): the in-zone source pressed inside the target and dragged out of it. */
+const dndInzoneDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndInzonePath }];
+/** The long-path control (M4's T14): the source across the zone and out of it, longer than the floor. */
+const dndLongLeftDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndLongLeftPath }];
 
 /** The input page back at its top after a scroll series: Home through the background route (Gecko takes keys). */
 async function pageHome({ scene, cua }) {
@@ -188,7 +217,7 @@ const covered = (ctx) => ctx.desktop.arrangeFront('covered');
 /** The scene window fully visible and already in front: activated (the active window, the focus, on top). */
 function alreadyInFront(ctx) {
   visible(ctx);
-  execFileSync('xdotool', ['windowactivate', '--sync', String(ctx.scene.id)]);
+  xdotool('windowactivate', '--sync', ctx.scene.id);
 }
 
 /**
@@ -217,7 +246,8 @@ async function obscuredInFront(ctx) {
  */
 export async function cornerOverlay(ctx, g, start = startOverlay) {
   const corner = { x: g.WIDTH - CORNER - 8, y: g.HEIGHT - CORNER - 8 };
-  if ((ctx.scene.dndPath ?? []).some((point) => point.x >= corner.x - 20 && point.y >= corner.y - 20)) throw new Error('the drag path runs under the corner overlay');
+  const paths = [...(ctx.scene.dndPath ?? []), ...(ctx.scene.dndLingerPath ?? [])];
+  if (paths.some((point) => point.x >= corner.x - 20 && point.y >= corner.y - 20)) throw new Error('the drag path runs under the corner overlay');
   const overlay = await start([g.X + corner.x, g.Y + corner.y, CORNER, CORNER].map(String));
   ctx.dispose(() => overlay.stop());
   return overlay;
@@ -225,25 +255,38 @@ export async function cornerOverlay(ctx, g, start = startOverlay) {
 /** The corner overlay's side, px. */
 const CORNER = 40;
 
-/** The real pointer's place on the screen. */
-function pointerAt() {
-  const out = execFileSync('xdotool', ['getmouselocation', '--shell'], { encoding: 'utf8' });
+/** The real pointer's place on the screen, and the window under it (`xdotool getmouselocation`: the client window). */
+function pointerAt(tool = xdotool) {
+  const out = tool('getmouselocation', '--shell');
   const get = (k) => Number(out.match(new RegExp(`^${k}=(-?\\d+)`, 'm'))?.[1]);
-  return { x: get('X'), y: get('Y') };
-}
-
-/**
- * The real pointer parked at a screen point for the sample, and put back where the case found it by the sample's cleanup
- * (outside every span), so the cases after it find it where they did before.
- */
-function parkPointer(ctx, point) {
-  const found = pointerAt();
-  ctx.dispose(() => xdotool('mousemove', found.x, found.y));
-  xdotool('mousemove', point.x, point.y);
+  return { x: get('X'), y: get('Y'), window: get('WINDOW') };
 }
 
 /** The front window's middle, in its corner in the visible arrangement (scenes.mjs `arrangeFront`): outside Chrome. */
 const OUTSIDE = { x: 1170, y: 715 };
+
+/**
+ * The real pointer parked at a screen point for the sample, and put back by the sample's cleanup (outside every span)
+ * where the case found it, so the cases after it find it where they did before. Every move goes only onto the root or
+ * a live window of the run's, read at its point just before the move (scenes.mjs `pointerSafeAt`): a motion into
+ * another's window, a popup of the person's Chrome over the scene included, is a change of it (T4b's audit round). A
+ * park point under another's window fails the case unmoved; a place to go back to under another's falls back to the
+ * front window's middle, and with that under another's too, the pointer stays and the skip is recorded. The park is
+ * verified where it landed (park.mjs `parkAt`): over the run's window on top at the point (the scene, the cover over
+ * it, the front window), or the bare root where none is; a park that did not land there throws `ParkRefused`, and the
+ * case is not run. Returns the park's reading. `read` (the pointer's reading) is given only by the tests.
+ */
+export function parkPointer(ctx, point, { tool = xdotool, read } = {}) {
+  const found = pointerAt(tool);
+  if (!ctx.desktop.pointerSafeAt(point)) throw new Error(`the pointer's park point (${point.x}, ${point.y}) is over a window the run did not open: the case is not run`);
+  ctx.dispose(() => {
+    const back = [found, OUTSIDE].find((p) => ctx.desktop.pointerSafeAt(p));
+    // verified where it landed, a restore refused recorded as a skip (park.mjs `restorePointer`)
+    if (back) restorePointer(ctx.desktop, back, { move: (p) => tool('mousemove', p.x, p.y), ...(read ? { read } : {}) });
+    else ctx.desktop.skip('pointer restore', `(${found.x}, ${found.y})`, 'that place and the front window\'s middle are under a window the run did not open');
+  });
+  return parkAt(ctx.desktop, point, { move: (p) => tool('mousemove', p.x, p.y), ...(read ? { read } : {}) });
+}
 /**
  * Where a Chromium case that takes the background route parks the real pointer, window-relative, away from every path
  * and every cover: a Chromium drag needs the pointer in its window (task 20: Chrome's capture grab crosses in from a
@@ -253,6 +296,10 @@ const OUTSIDE = { x: 1170, y: 715 };
  */
 const INSIDE = { x: 600, y: 600 };
 const INSIDE_TOP = { x: 950, y: 150 };
+/** Under the window over the scene's bottom half (`overlapped`), inside the scene's geometry: window-relative. */
+const UNDER = { x: 700, y: 650 };
+/** Outside every scene window, on the front window in its corner: a screen point (`OUTSIDE`). */
+const OUT = () => OUTSIDE;
 
 /** Chrome in front (`alreadyInFront`) with the real pointer parked outside its window, on the front window. */
 function pointerOutside(ctx) {
@@ -267,7 +314,7 @@ function pointerOutside(ctx) {
  */
 function nudges() {
   const chain = Array.from({ length: 150 }, () => ['mousemove_relative', '--', '1', '0', 'sleep', '0.002', 'mousemove_relative', '--', '-1', '0', 'sleep', '0.002']).flat();
-  const child = spawn('xdotool', chain, { stdio: 'ignore' });
+  const child = spawnXdotool(chain, { stdio: 'ignore' });
   return new Promise((resolve) => {
     child.once('exit', resolve);
     child.once('error', resolve);
@@ -289,9 +336,11 @@ const selectDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.s
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false }) {
+function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false, confirm = false }) {
   const dedicated = expect === 'foreground';
   return {
+    // a drop the engine confirms or reports: its notice read on the same engine after the drop's window (`confirm`)
+    confirm,
     // the witness's in-front allowance (witness.mjs), for the request the engine records as made to a window in front
     inFront,
     // the drop's signature already held when the watched drag began (`obscuredInFront`), as the engine records it
@@ -308,11 +357,12 @@ function device({ device: expect, condition = covered, park, read, request, effe
     cuaArgs: () => args ?? (dedicated ? DEDICATED : []),
     // the witness: the foreground allowance only where the foreground route is expected and reported (run.mjs)
     route: () => route ?? (dedicated ? 'foreground' : null),
-    // the real pointer parked in the window, window-relative, after the condition (`INSIDE`)
+    // the real pointer parked after the condition: window-relative (`INSIDE`), or a screen point a function gives
+    // (`OUT`)
     park,
     prepare: async (ctx) => {
       await condition(ctx);
-      if (park) parkPointer(ctx, { x: ctx.scene.window.x + park.x, y: ctx.scene.window.y + park.y });
+      if (park) parkPointer(ctx, typeof park === 'function' ? park(ctx) : { x: ctx.scene.window.x + park.x, y: ctx.scene.window.y + park.y });
       await sleep(settleMs);
       if (inFront) ctx.desktopBefore = desktopState();
     },
@@ -321,6 +371,15 @@ function device({ device: expect, condition = covered, park, read, request, effe
     effect: ['refusal', 'cancel', 'late', 'late-take', 'stray'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
+      // past the drop's window: a confirmed drop leaves nothing pending, an unconfirmed one its notice; a late case's
+      // drag, whatever it answered, may leave the after-release watch's report of a late take
+      if ((confirm && response.ok) || expect === 'late') Object.assign(out, await readPending(ctx));
+      if (expect === 'leaves') {
+        // whether a drag that leaves the zone started its drag and drop, and whether anything dropped on the zone
+        const after = await read(ctx);
+        out.started = typeof ctx.before?.starts === 'number' && typeof after?.starts === 'number' && after.starts > ctx.before.starts;
+        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+      }
       if (expect === 'refusal') {
         out.expected_error = deviceSentence(ctx.scene.app);
         await sleep(QUIET_MS);
@@ -328,11 +387,12 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.unchanged = ctx.before !== null && after !== null && JSON.stringify(after) === JSON.stringify(ctx.before);
       }
       if (expect === 'late-take') {
-        // the drag answered as a plain drag; on the same engine a read runs, and the first acting request (a pointer
-        // move into the window, harmless had it run) carries the late drag and drop
-        out.expected_notice = dndLateNotice(ctx.scene.app);
+        // the drag answered as a plain drag; on the same engine a read runs, carrying the notice, and the first acting
+        // request (a pointer move into the window, harmless had it run) is refused with it
+        out.expected_notice = dndLateRefusal(ctx.scene.app, 'move');
         const listed = await ctx.engine.request('list_windows', {});
         out.read_ok = listed.response.ok === true;
+        out.read_notice = listed.response.notice === dndLateNotice(ctx.scene.app);
         const next = await ctx.engine.request('move', { window: { id: ctx.scene.id }, x: 10, y: 10 });
         out.next_ok = next.response.ok === true;
         out.next_error = next.response.ok ? null : String(next.response.error);
@@ -368,6 +428,43 @@ function device({ device: expect, condition = covered, park, read, request, effe
   };
 }
 
+/**
+ * What the drag left pending, read through the engine once its after-release watch has run out (T14's contract): the
+ * read's notice, and the answer of the next acting request, `preflight`, which sends nothing, so it clears what was
+ * pending and the next sample's drag is not the one refused. Kept with each request's id and the engine's raw record of
+ * the watch: `--stats` `notice` on the read, and `late_dnd` (what the watch saw: the take's time after the release, the
+ * Escape's, or unconfirmed, or failed) on the refused request; both null where nothing was pending.
+ */
+async function readPending(ctx) {
+  await sleep(QUIET_MS);
+  const state = await ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: false });
+  const next = await ctx.engine.request('preflight', {});
+  return {
+    state_notice: state.response.notice ?? null,
+    next_ok: next.response.ok === true,
+    next_error: next.response.ok ? null : String(next.response.error),
+    late_watch: { read: { id: state.id, notice: state.stats?.notice ?? null }, next: { id: next.id, late_dnd: next.stats?.late_dnd ?? null } },
+  };
+}
+
+/** Whether a pending read holds T14's contract: the read's notice and the next acting request's refusal agree. */
+const pendingKept = (r) => pendingOf({ notice: r.state_notice, next: { ok: r.next_ok, error: r.next_error } }).kept;
+
+/**
+ * Whether a drag-and-drop sample's pointer log is its own press's (pages/drag.html: a source's press counts in `downs`
+ * and opens the log numbered with it): where the press reached a source, the log read after must carry that number. A
+ * press on no source (a text selection) leaves both as they were. A stale or unread log leaves the sample's motion
+ * unaccounted for, which is how V5's in-zone false success could not be told apart.
+ */
+function ownPointerLog(r) {
+  const { before, after } = r.drop_status ?? {};
+  if (typeof before?.downs !== 'number' || typeof after?.downs !== 'number' || after.downs === before.downs) return true;
+  return after.log?.seq === after.downs;
+}
+
+/** Whether a late case's drag reached its branch: a take before the release, so the engine decided an order (dnd.rs `Outcome`). */
+const lateBranch = (r) => typeof r.dnd?.outcome === 'string' && r.dnd.outcome !== 'no_start';
+
 const at = (point) => ({ x: point.x, y: point.y });
 
 export const DEVICE_OPS = {
@@ -388,24 +485,32 @@ export const DEVICE_OPS = {
   gtk4_move_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => moveTo(ctx, { x: 200, y: 300 }, { x: 400, y: 300 }), effect: grew('moves') }),
   // gnome-text-editor (GTK 4): typeText in shared mode
   gte_type_text_shared: device({ device: 'refusal', read: fieldText, request: (ctx) => ['type_text', { window: { id: ctx.scene.id }, text: 'cua171 refused' }] }),
-  // Firefox (`device-firefox`): coordinate clicks refused with any overlap and with part of the window off the screen,
-  // foreground in dedicated mode, background while fully visible; the element right click refused under overlap; the
-  // element click on a covered window, background
-  firefox_click_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
-  firefox_click_offscreen_shared: device({ device: 'refusal', condition: offscreen, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
-  firefox_right_click_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.menu, mouse_button: 'right' }] }),
-  firefox_click_overlap_dedicated: device({ device: 'foreground', condition: overlapped, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
-  firefox_click_visible_shared: device({ device: 'background', route: 'background', condition: visible, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
-  firefox_scroll_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }] }),
-  firefox_scroll_covered_dedicated: {
-    ...device({ device: 'foreground', condition: covered, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
+  // Firefox (`device-firefox`), by the real pointer (T19): with it in the window's visible part, coordinate clicks,
+  // scrolls, moves and drags take the background route, half covered or not; with it under the cover or outside, they
+  // are refused in shared mode and take the foreground route in dedicated mode; the element click on a covered window,
+  // background
+  firefox_click_pointer_out_shared: device({ device: 'refusal', condition: visible, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
+  firefox_click_pointer_under_shared: device({ device: 'refusal', condition: overlapped, park: UNDER, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
+  firefox_right_click_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.menu, mouse_button: 'right' }] }),
+  firefox_click_pointer_out_dedicated: device({ device: 'foreground', condition: overlapped, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
+  firefox_click_visible_shared: device({ device: 'background', route: 'background', condition: visible, park: INSIDE_TOP, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
+  firefox_click_overlap_pointer_in_shared: device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
+  firefox_scroll_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }] }),
+  firefox_scroll_overlap_pointer_in_shared: {
+    ...device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
     reset: pageHome,
   },
-  firefox_move_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
-  firefox_move_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
-  firefox_drag_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: padDrag }),
-  firefox_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
-  firefox_element_click_covered: device({ device: 'background', condition: covered, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.press }], effect: rose('clicks') }),
+  firefox_scroll_covered_dedicated: {
+    ...device({ device: 'foreground', condition: covered, park: OUT, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
+    reset: pageHome,
+  },
+  firefox_move_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
+  firefox_move_overlap_pointer_in_shared: device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
+  firefox_move_covered_dedicated: device({ device: 'foreground', condition: covered, park: OUT, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
+  firefox_drag_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: padDrag }),
+  firefox_drag_overlap_pointer_in_shared: device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: padDrag, effect: rose('drags') }),
+  firefox_drag_covered_dedicated: device({ device: 'foreground', condition: covered, park: OUT, read: page, request: padDrag, effect: rose('drags') }),
+  firefox_element_click_covered: device({ device: 'background', condition: covered, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.press }], effect: rose('clicks') }),
   // xterm (`device-xterm`): keys refused or foreground; a click on the background route (a mouse report arrives)
   xterm_key_shared: device({ device: 'refusal', read: record, request: (ctx) => ['press_key', { window: { id: ctx.scene.id }, key: 'x' }] }),
   xterm_key_dedicated: device({ device: 'foreground', read: record, request: (ctx) => ['press_key', { window: { id: ctx.scene.id }, key: 'x' }], effect: (before, after) => typeof before === 'string' && after === `${before}x` }),
@@ -425,26 +530,35 @@ export const DEVICE_OPS = {
   // is already in front, the desktop unchanged; an honest answer when the cancel comes too late; the drop through the
   // foreground route in dedicated mode, Chrome's own drag windows coming and going beside its frame's raise
   chrome_dnd_shared: device({ device: 'cancel', condition: visible, park: INSIDE, read: dropStatus, request: dndDrag, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_late_shared: device({ device: 'late', condition: visible, park: INSIDE, read: dropStatus, request: dndDrag, args: LATE, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS }),
-  // a short drag and drop (40 px) where the drop goes ahead, in front and dedicated: the release still comes no sooner
-  // than the take's delay after the take (dnd.rs RELEASE_AFTER_TAKE), so it lands and its cost shows
-  chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS }),
+  // the drops that land carry nothing pending: Chrome's activation request confirmed each (`confirm`, M4's T14), the
+  // control of the after-release watch's reports
+  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_late_shared: device({ device: 'late', condition: visible, park: INSIDE, read: dropStatus, request: dndLingerDrag, args: LATE, settleMs: DND_SETTLE_MS }),
+  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  // a short drag and drop (40 px) where the drop goes ahead, in front and dedicated: released at Chrome's accept cursor,
+  // or at the floor after the take (dnd.rs RELEASE_AFTER_TAKE), so it lands
+  chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  // the press-inside control at the floor (the design session, 2026-11-10): a press on a source inside the zone, its
+  // first status already an accept, and a path out of it. Chrome must not drop on the stale accept; nothing landing,
+  // the drag is never answered ok with nothing pending (task 69 saw one released early that Chrome confirmed)
+  chrome_dnd_inzone_out_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  // and the long path that crosses the zone and ends outside it, its steps after the take outlasting the floor, so the
+  // release follows its last step (the design session, 2026-11-10: measured clean, the control stays in the gate)
+  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
   chrome_dnd_obscured_in_front_shared: device({ device: 'cancel', condition: obscuredInFront, park: INSIDE, read: dropStatus, request: dndDrag, heldAtStart: true, settleMs: DND_SETTLE_MS }),
   // a take left unseen until the release (the forced late take): the drag answers at its release, the next request
   // carries the notice, and the witness shows the change the notice reports
   chrome_dnd_late_take_shared: device({ device: 'late-take', condition: visible, park: INSIDE, read: dropStatus, request: dndDrag, args: DEFER, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_obscured_in_front_late_shared: device({ device: 'late', condition: obscuredInFront, park: INSIDE, read: dropStatus, request: dndDrag, args: LATE, heldAtStart: true, settleMs: DND_SETTLE_MS }),
+  chrome_dnd_obscured_in_front_late_shared: device({ device: 'late', condition: obscuredInFront, park: INSIDE, read: dropStatus, request: dndLingerDrag, args: LATE, heldAtStart: true, settleMs: DND_SETTLE_MS }),
   // the real pointer outside Chrome (task 20): Chrome's capture grab crosses in from it with no button, so the drop
   // cannot start; in shared mode the drag is sent and answers that it may not have started, in dedicated mode it takes
   // the foreground route, which puts the pointer there, and the drop lands. And the real pointer nudged all through a
   // text selection: the press window of a drag that never takes a drag and drop runs to its release
   chrome_dnd_short_pointer_outside_shared: device({ device: 'stray', condition: pointerOutside, read: dropStatus, request: dndShortDrag, inFront: true, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_short_pointer_outside_dedicated: device({ device: 'foreground', condition: pointerOutside, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS }),
+  chrome_dnd_short_pointer_outside_dedicated: device({ device: 'foreground', condition: pointerOutside, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
   chrome_select_nudged_shared: device({ device: 'stray', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: selectDrag, inFront: true, alongside: nudges, pointerMoves: true, settleMs: DND_SETTLE_MS }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
@@ -457,6 +571,10 @@ export const DEVICE_OPS = {
     request: () => ['capabilities', {}],
     check: (ctx, response) => ({ answer_ok: capabilitiesAnswer(response.output, ctx.cuaVersion) }),
   },
+  // M4's T4: minimized windows (minimized.mjs), cua's cases on gedit and xterm
+  ...MINIMIZED_OPS,
+  // M4's T5: identity (identity.mjs), cua's cases on windows of one title and size
+  ...IDENTITY_OPS,
 };
 
 // the device cases' effect functions take (before, after); run.mjs calls effect(ctx, input, before, after)
@@ -470,13 +588,16 @@ for (const op of Object.values(DEVICE_OPS)) {
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   // the scroll last: its series ends with the page put back at its top (`reset`)
-  'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
+  'device-firefox': ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_right_click_pointer_out_shared', 'firefox_click_pointer_out_dedicated', 'firefox_click_visible_shared', 'firefox_click_overlap_pointer_in_shared', 'firefox_element_click_covered', 'firefox_move_pointer_out_shared', 'firefox_move_overlap_pointer_in_shared', 'firefox_move_covered_dedicated', 'firefox_drag_pointer_out_shared', 'firefox_drag_overlap_pointer_in_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_pointer_out_shared', 'firefox_scroll_overlap_pointer_in_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
-  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_dnd_short_pointer_outside_dedicated', 'chrome_select_nudged_shared'],
+  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_dnd_short_pointer_outside_dedicated', 'chrome_select_nudged_shared',
+    'chrome_dnd_inzone_out_in_front_shared', 'chrome_dnd_long_left_in_front_shared'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],
   desktop: ['capabilities'],
+  ...MINIMIZED_SCENE_OPS,
+  ...IDENTITY_SCENE_OPS,
 };
 
 /** Whether `capabilities` answered the X11 backend's report in shared mode, for this engine's version. */
@@ -504,6 +625,10 @@ export function capabilitiesAnswer(output, version) {
  * success), so a trace of requests that never did what the case measures proves nothing. Returns `{pass, reasons}`.
  */
 export function judgeDevice(op, rows, audit) {
+  // the minimized cases have expectations of their own (minimized.mjs)
+  if (op in MINIMIZED_OPS) return judgeMinimized(op, rows, audit);
+  // and so do the identity cases (identity.mjs)
+  if (op in IDENTITY_OPS) return judgeIdentity(op, rows, audit);
   const expect = DEVICE_OPS[op].device;
   const reasons = [];
   if (!rows.length) return { pass: false, reasons: ['no samples'] };
@@ -527,15 +652,49 @@ export function judgeDevice(op, rows, audit) {
   if (expect === 'late-take') {
     bad('the drag did not answer as a plain drag', (r) => r.ok);
     bad('the read after the drag did not run', (r) => r.read_ok === true);
+    bad('the read did not carry the notice', (r) => r.read_notice === true);
     bad('the next acting request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
     // the notice says the desktop may have changed: where the drop landed, the witness must show it
     bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
     if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
   }
+  // the drops the engine confirms or reports, counted (the design session, 2026-11-10): a drop that landed and was
+  // reported unconfirmed is honest, counted for the run (stats.mjs `dropCounts`, a finding only over 5% of a load's
+  // landed drops); a drag answered ok with no drop and nothing pending is a false ok, the one failure
+  let drops = null;
+  if (DEVICE_OPS[op].confirm) {
+    // a notice holds only when the acting request after it was refused with it (drop-signals-judge.mjs `pendingOf`)
+    const held = (r) => pendingOf({ notice: r.state_notice, next: r.state_notice == null ? null : { ok: r.next_ok, error: r.next_error } });
+    const pending = (r) => r.state_notice != null && held(r).kept;
+    const landed = rows.filter((r) => r.effect === true);
+    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r));
+    drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
+    if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+    const unrefused = rows.filter((r) => r.state_notice != null && !held(r).kept);
+    if (unrefused.length) reasons.push(`a notice the next acting request was not refused with on ${unrefused.length} of ${rows.length} samples (${unrefused.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+    // and the other way: the next acting request refused for something pending that the read did not announce
+    bad('the next acting request was refused for something pending with no notice on the read', (r) => r.state_notice != null || r.next_ok !== false);
+  }
+  // a drag-and-drop sample's motion is accounted for by its own press's pointer log
+  if (DEVICE_OPS[op].read === dropStatus) bad("the page's pointer log was not the sample's own press", ownPointerLog);
+  if (expect === 'leaves') {
+    // a drag and drop whose path ends outside the zone (the press inside it, or a long path that outlasts the floor):
+    // Chrome must not drop on a stale accept, and a drag that started is what the control needs
+    if (!rows.some((r) => r.started)) reasons.push('no drag and drop started: the control proved nothing');
+  }
   if (expect === 'late') {
-    bad('a request answered success', (r) => !r.ok);
-    // "nothing was dropped" only where nothing dropped and the desktop is as it was
-    bad('an answer was not honest', (r) => r.error === r.late_error || (r.error === r.expected_error && r.dropped === false && r.witness === true));
+    // the case measures a cancel that comes after the release, so only a drag Chrome took by its release is on its
+    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266)
+    bad('unexercised: Chrome took no drag and drop by the release, so the late branch was not reached,', lateBranch);
+    bad('a request answered success', (r) => !lateBranch(r) || !r.ok);
+    // "nothing was dropped" only where nothing dropped and the desktop is as it was; off the branch, a plain drag's ok
+    // only where nothing dropped, or what dropped was reported pending (the after-release watch's late take)
+    const reported = (r) => r.state_notice != null && pendingKept(r);
+    bad('an answer was not honest', (r) =>
+      lateBranch(r) ? r.error === r.late_error || (r.error === r.expected_error && r.dropped === false && r.witness === true) : r.ok && (reported(r) || (r.dropped === false && r.witness === true)),
+    );
+    // every drag's pending read, on the branch or off it, held to T14's contract
+    bad("the read's notice and the next acting request's refusal did not agree", (r) => r.state_notice !== undefined && r.next_ok !== undefined && pendingKept(r));
     if (!rows.some((r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
   }
   if (expect === 'foreground' || expect === 'background') {
@@ -568,5 +727,5 @@ export function judgeDevice(op, rows, audit) {
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  return { pass: reasons.length === 0, reasons };
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}) };
 }

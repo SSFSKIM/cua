@@ -1,0 +1,10 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running tests/live_focus_out.rs (target/release/deps/live_focus_out-d2698581c69c2c45)
+
+running 3 tests
+test a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_click ... ok
+test a_paste_waits_for_nothing_after_a_click_to_another_window_or_once_its_click_settle_has_passed ... ok
+test clicks_alone_hold_the_exit_back_for_the_settle_too ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 1.56s
+

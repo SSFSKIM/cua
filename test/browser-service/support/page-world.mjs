@@ -412,8 +412,8 @@ export function pageWorld() {
     },
     async detachTarget(tabId, targetId) { calls.push({op: 'detachTarget', tabId, targetId}); return {}; },
     async getCommittedTabUrl() { return 'https://fixture.test/'; },
-    async executeCdp({target, method, commandParams, timeoutMs}) {
-      calls.push({op: 'executeCdp', target, method, params: commandParams, timeoutMs});
+    async executeCdp({target, method, commandParams, timeoutMs, preserveDebuggerOnTimeout}) {
+      calls.push({op: 'executeCdp', target, method, params: commandParams, timeoutMs, ...(preserveDebuggerOnTimeout ? {preserveDebuggerOnTimeout} : {})});
       await new Promise(resolve => setImmediate(resolve));
       const i = failures.findIndex(f => f.method === method && f.times > 0);
       if (i >= 0) { failures[i].times--; throw new Error(failures[i].message); }

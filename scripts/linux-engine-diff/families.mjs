@@ -5,18 +5,29 @@
 // so nothing of the person's sessions or documents is opened, and its window is told apart by a label the harness
 // chose (the file name, the page title, the terminal title) or by its process.
 //
+// Every one starts as an instance of the run's own, never handing its window to a person's running instance or
+// taking over a person's profile (task 43): gedit and gnome-text-editor `--standalone` (no GApplication handoff), kate
+// `-n` (a new instance, never KDE's unique-instance handoff), qtcreator on its own settings path (it joins a running
+// instance only with `-client`, `-block` or `-pid`), Firefox `--no-remote --new-instance` on a scratch profile,
+// LibreOffice on a scratch user installation (its single-instance pipe is named for it), Electron on a scratch user
+// data directory (neither app asks for the single-instance lock), Chrome as the run's own instance (chrome.mjs),
+// gnome-terminal on a terminal server of the scene's own (`vteLaunch`), and xterm and the harness's Python scenes as
+// plain processes (no single-instance mechanism at all). And none writes the person's files or settings (task 45):
+// every one runs with a home of the run's (app-env.mjs).
+//
 // Kinds: `editor` (one editable text object holds the document), `paragraphs` (a Writer document: one object per
 // paragraph), `page` (a browser on pages/matrix.html: a field that holds the focus and a button counting its
 // clicks), `electron` (cua's Electron fixture: its field and its "Pressed N times" status), `terminal` (xterm
 // running a recorder of what it receives, with mouse reporting on).
 
-import { execFileSync, spawn } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { CHROME_ENV } from './chrome.mjs';
 import { preorder } from './normalize.mjs';
-import { PAGES, configure } from './scenes.mjs';
+import { PAGES, placeOnScreen } from './scenes.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, '..', '..');
@@ -27,6 +38,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The subtrees an effect never lands in, skipped when the harness walks an application's objects itself.
 const PRUNE = ['menu bar', 'menu', 'popup menu', 'tool bar', 'status bar', 'statusbar', 'page tab list', 'tree', 'list'];
+
+/** Firefox's own variable: accessibility on, whatever the session bus and the settings say (B2, task 47). */
+const A11Y_ON_GECKO = { GNOME_ACCESSIBILITY: '1' };
 
 const FIREFOX_PREFS = {
   'browser.shell.checkDefaultBrowser': false,
@@ -55,6 +69,16 @@ const WRITER_PROFILE = `<?xml version="1.0" encoding="UTF-8"?>
 </oor:items>
 `;
 
+// Impress's presentation: one slide (its master page and page layout, which ODF requires) holding one text frame, in
+// flat ODF (one XML file, opened as the presentation its mimetype names where Impress is installed).
+export const IMPRESS_DOC = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.presentation">
+<office:automatic-styles><style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm" style:print-orientation="landscape"/></style:page-layout></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles>
+<office:body><office:presentation><draw:page draw:name="cua171" draw:master-page-name="Default"><draw:frame svg:x="2cm" svg:y="3cm" svg:width="20cm" svg:height="3cm"><draw:text-box><text:p>cua171 slide text</text:p></draw:text-box></draw:frame></draw:page></office:presentation></office:body>
+</office:document>
+`;
+
 function scratchFile(ctx, ext = 'txt') {
   const file = join(ctx.dir, `${ctx.label}.${ext}`);
   writeFileSync(file, ctx.doc ?? DOC);
@@ -63,6 +87,8 @@ function scratchFile(ctx, ext = 'txt') {
 
 /** The page a browser family opens: the caller's (`page`, a file under pages/) or the matrix's. */
 const pageOf = (ctx) => ctx.page ?? 'matrix.html';
+/** A page's own parameters (`openFamily`'s `query`), as the URL's query, or nothing. */
+const queryOf = (ctx) => (ctx.query ? `?${ctx.query}` : '');
 export const ELECTRON_PAGE_APP = join(here, 'pages', 'electron-page');
 
 const byTitle = (label) => (w) => typeof w.title === 'string' && w.title.includes(label);
@@ -70,7 +96,7 @@ const byPid = (pid) => (w) => windowPid(w.id) === pid;
 
 export function windowPid(id) {
   try {
-    const text = execFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8', timeout: 5000 });
+    const text = xExecFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8', timeout: 5000 });
     const m = text.match(/= (\d+)/);
     return m ? Number(m[1]) : null;
   } catch {
@@ -79,12 +105,31 @@ export function windowPid(id) {
 }
 
 export function wmClass(id) {
-  const text = execFileSync('xprop', ['-id', String(id), 'WM_CLASS'], { encoding: 'utf8', timeout: 5000 });
+  const text = xExecFileSync('xprop', ['-id', String(id), 'WM_CLASS'], { encoding: 'utf8', timeout: 5000 });
   const parts = [...text.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
   return parts.join(' / ');
 }
 
-/** Each family: its title in the matrix, its kind, its window's size, and how it is launched. */
+/**
+ * How long a GTK 4 window may take to register its AT-SPI frame before its case fails (task 51): a cold shader cache
+ * held the tree back about 15 s after the map in task 49's probes.
+ */
+export const GTK4_REGISTRATION_MS = 45000;
+
+/** The family of the run's GTK 4 warm-up window (`warmGtk4`): the GTK 4 application whose cold start task 49 measured. */
+export const GTK4_WARM_UP = 'gnome-text-editor';
+
+/**
+ * Each family: its title in the matrix, its kind, its window's size, and how it is launched. `gtk4`: a GTK 4
+ * application, which always registers its tree: its window settles only on its AT-SPI tree, and the run's first one
+ * waits for the run's warm-up (`warmGtk4`). Every launch runs with the
+ * run's environment (scenes.mjs `appEnvironment`: a home of the run's on every display, settings in memory on a
+ * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts when it
+ * would put no tree on the bus (`assertQtBridge`): on a display a person uses when the run's stand-in for org.a11y.Bus,
+ * through which alone Qt turns its bridge on there, is not running (a11y-stub.mjs), and on a private display when the
+ * run's accessibility switches are off. `home: 'xdg'` would keep the harness's HOME for a
+ * family a separate HOME breaks (the run's XDG directories still apply); none needs it so far (task 45).
+ */
 export const FAMILIES = {
   gedit: {
     title: 'GTK3 gedit',
@@ -94,6 +139,7 @@ export const FAMILIES = {
   },
   'gnome-text-editor': {
     title: 'GTK4 gnome-text-editor',
+    gtk4: true,
     kind: 'editor',
     geometry: [900, 700],
     // GTK 4.14 reports its objects' extents relative to the window, not the screen (the text box at 0,0 and the
@@ -109,6 +155,7 @@ export const FAMILIES = {
   },
   'gtk4-button': {
     title: 'GTK 4 button (harness scene)',
+    gtk4: true,
     kind: 'button',
     geometry: [600, 400],
     // pages/gtk4-button.py: one button whose label counts its presses
@@ -118,6 +165,7 @@ export const FAMILIES = {
   // presses and keys, for the device mode's scroll, drag, move and click measurements and cases
   'gtk4-input': {
     title: 'GTK 4 input (harness scene)',
+    gtk4: true,
     kind: 'gtk4-input',
     geometry: [600, 400],
     // window-relative, as the scene lays itself out (pages/gtk4-input.py): GTK 4.14's extents are not window coordinates
@@ -129,12 +177,14 @@ export const FAMILIES = {
   // difference is the version's or the applications'
   'qt5-input': {
     title: 'Qt 5 input (harness scene)',
+    qt: true,
     kind: 'qt-input',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5'),
   },
   'qt6-input': {
     title: 'Qt 6 input (harness scene)',
+    qt: true,
     kind: 'qt-input',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt6'),
@@ -143,15 +193,64 @@ export const FAMILIES = {
   // Breeze and under Qt's own Fusion: whether a hover highlight that misses a background move is Breeze's
   'qt5-breeze': {
     title: 'Qt 5 Breeze (harness scene)',
+    qt: true,
     kind: 'qt-style',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5', 'breeze'),
   },
   'qt5-fusion': {
     title: 'Qt 5 Fusion (harness scene)',
+    qt: true,
     kind: 'qt-style',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5', 'fusion'),
+  },
+  // M4 T8: the settle experiment's own scenes (action-settle.mjs): a push button counting its presses and a pad counting
+  // the pointer moves (and, under GTK 3, the wheel steps) it receives, each count in an accessible name the window's tree
+  // carries, under GTK 3 (pages/settle-gtk3.py) and Qt 5 and 6 (pages/settle-qt.py)
+  'settle-gtk3': {
+    title: 'GTK 3 settle scene (harness scene)',
+    kind: 'settle-scene',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'settle-gtk3.py'), ctx.label], match: (w) => w.title === ctx.label }),
+  },
+  'settle-qt5': {
+    title: 'Qt 5 settle scene (harness scene)',
+    qt: true,
+    kind: 'settle-scene',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'settle-qt.py'), ctx.label, 'qt5'], match: (w) => w.title === ctx.label }),
+  },
+  'settle-qt6': {
+    title: 'Qt 6 settle scene (harness scene)',
+    qt: true,
+    kind: 'settle-scene',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'settle-qt.py'), ctx.label, 'qt6'], match: (w) => w.title === ctx.label }),
+  },
+  // M4 T6: the AT-SPI probe's scenes (atspi-probe.mjs): a GTK 4 window and a Qt 5 and Qt 6 one holding open menus, a
+  // tree that changes on a timer, and (GTK 4) text widgets recording the signals their edits raise, to a record file;
+  // `mode` (openFamily's) names the GTK 4 scene's (pages/atspi-gtk4.py)
+  'atspi-gtk4': {
+    title: 'GTK 4 AT-SPI probe (harness scene)',
+    gtk4: true,
+    kind: 'atspi',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'atspi-gtk4.py'), ctx.label, join(ctx.dir, 'record.jsonl'), ctx.mode ?? 'menus'], match: (w) => w.title === ctx.label, record: join(ctx.dir, 'record.jsonl') }),
+  },
+  'atspi-qt5': {
+    title: 'Qt 5 AT-SPI probe (harness scene)',
+    qt: true,
+    kind: 'atspi',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'atspi-qt.py'), ctx.label, join(ctx.dir, 'record.jsonl'), 'qt5'], match: (w) => w.title === ctx.label, record: join(ctx.dir, 'record.jsonl') }),
+  },
+  'atspi-qt6': {
+    title: 'Qt 6 AT-SPI probe (harness scene)',
+    qt: true,
+    kind: 'atspi',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'atspi-qt.py'), ctx.label, join(ctx.dir, 'record.jsonl'), 'qt6'], match: (w) => w.title === ctx.label, record: join(ctx.dir, 'record.jsonl') }),
   },
   'gtk-scale': {
     title: 'GTK 3 scale (harness scene)',
@@ -162,6 +261,7 @@ export const FAMILIES = {
   },
   kate: {
     title: 'Qt 5 kate',
+    qt: true,
     kind: 'editor',
     geometry: [900, 700],
     // `-b` (block) as its desktop entry runs it: kate otherwise forks into the background
@@ -169,6 +269,7 @@ export const FAMILIES = {
   },
   qtcreator: {
     title: 'Qt 6 qtcreator',
+    qt: true,
     kind: 'editor',
     geometry: [1100, 760],
     launch: (ctx) => ({ cmd: 'qtcreator', args: ['-settingspath', join(ctx.dir, 'qtcreator'), scratchFile(ctx)], match: byTitle(ctx.label) }),
@@ -188,16 +289,19 @@ export const FAMILIES = {
         const [width, height] = ctx.geometry;
         writeFileSync(join(profile, 'xulstore.json'), JSON.stringify({ 'chrome://browser/content/browser.xhtml': { 'main-window': { sizemode: 'normal', screenX: '0', screenY: '0', width: String(width), height: String(height) } } }));
       }
-      const url = `${pathToFileURL(join(PAGES, pageOf(ctx))).href}#${encodeURIComponent(ctx.label)}`;
-      return { cmd: 'firefox', args: ['--no-remote', '--new-instance', '--profile', profile, url], match: byTitle(ctx.label) };
+      const url = `${pathToFileURL(join(PAGES, pageOf(ctx))).href}${queryOf(ctx)}#${encodeURIComponent(ctx.label)}`;
+      // accessibility on: Gecko reads GNOME_ACCESSIBILITY first, then org.a11y.Status on the session bus, which the
+      // run's has no launcher for on a person's display, then GSettings, in memory there (accessible/atk/Platform.cpp
+      // `ShouldA11yBeEnabled`; B2, task 47)
+      return { cmd: 'firefox', args: ['--no-remote', '--new-instance', '--profile', profile, url], env: A11Y_ON_GECKO, match: byTitle(ctx.label) };
     },
   },
   chrome: {
     title: 'Chrome',
     kind: 'page',
     geometry: [1050, 780],
-    // a window of the running Chrome (the person's browser, which keeps --force-renderer-accessibility), closed
-    // with WM_DELETE_WINDOW
+    // a window of the run's own Chrome (scenes.mjs `openChrome`, chrome.mjs, with --force-renderer-accessibility),
+    // closed with WM_DELETE_WINDOW
     chrome: true,
   },
   electron: {
@@ -205,17 +309,21 @@ export const FAMILIES = {
     kind: 'electron',
     geometry: [900, 700],
     // Chromium's web contents expose no tree on Linux without --force-renderer-accessibility (neither
-    // ACCESSIBILITY_ENABLED=1 nor the bus's ScreenReaderEnabled turned it on; M0.4 probe)
+    // ACCESSIBILITY_ENABLED=1 nor the bus's ScreenReaderEnabled turned it on; M0.4 probe), and its ATK bridge none without
+    // ACCESSIBILITY_ENABLED=1 on the run's session bus, which has no org.a11y.Status on a person's display (chrome.mjs
+    // `CHROME_ENV`; B2, task 47)
     launch: (ctx) =>
       ctx.page
         ? {
             cmd: ELECTRON,
-            args: [ELECTRON_PAGE_APP, `--cua-page=${pathToFileURL(join(PAGES, ctx.page)).href}#${encodeURIComponent(ctx.label)}`, `--cua-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
+            args: [ELECTRON_PAGE_APP, `--cua-page=${pathToFileURL(join(PAGES, ctx.page)).href}${queryOf(ctx)}#${encodeURIComponent(ctx.label)}`, `--cua-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
+            env: CHROME_ENV,
             match: byTitle(ctx.label),
           }
         : {
             cmd: ELECTRON,
             args: [ELECTRON_FIXTURE, `--cua-fixture-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
+            env: CHROME_ENV,
             byPid: true,
           },
   },
@@ -259,6 +367,28 @@ export const FAMILIES = {
       };
     },
   },
+  // T16 (M4): LibreOffice Impress on its gtk3 plugin, a one-slide presentation with a text frame (`IMPRESS_DOC`, flat
+  // ODF), for the VCL coordinate probes (vcl-probe.mjs). Needs libreoffice-impress: without it (the #171 VM as of
+  // 2026-11-10) LibreOffice opens any presentation in Writer, `--impress` notwithstanding (task 72's review, finding 3),
+  // so each scene's application is verified before it counts (app-identity.mjs)
+  impress: {
+    title: 'LibreOffice Impress (gtk3)',
+    kind: 'slides',
+    geometry: [1100, 700],
+    launch: (ctx) => {
+      const profile = join(ctx.dir, 'lo');
+      mkdirSync(join(profile, 'user'), { recursive: true });
+      writeFileSync(join(profile, 'user', 'registrymodifications.xcu'), WRITER_PROFILE);
+      const file = join(ctx.dir, `${ctx.label}.fodp`);
+      writeFileSync(file, IMPRESS_DOC);
+      return {
+        cmd: 'soffice',
+        args: ['--impress', '--norestore', '--nologo', `-env:UserInstallation=${pathToFileURL(profile).href}`, file],
+        env: { SAL_USE_VCLPLUGIN: 'gtk3' },
+        match: byTitle(ctx.label),
+      };
+    },
+  },
   xterm: {
     title: 'xterm',
     kind: 'terminal',
@@ -272,8 +402,9 @@ export const FAMILIES = {
     launch: (ctx) => terminalLaunch(ctx, ['-xrm', 'XTerm*allowSendEvents: true']),
   },
   // M2: the VTE family, whose paste chord is Ctrl+Shift+V (Ctrl+V inserts the next key literally in a shell; Design,
-  // Device mode and the foreground route; Decision Log, M0.4). Its window belongs to the session's gnome-terminal
-  // server, not to the process the harness starts, so the recorder writes its own PID for the harness to end it
+  // Device mode and the foreground route; Decision Log, M0.4). Its window belongs to a terminal server of the scene's
+  // own, in the process group the harness starts (`vteLaunch`); the recorder still writes its own PID for the harness
+  // to end it first
   'gnome-terminal': {
     title: 'gnome-terminal (VTE)',
     kind: 'terminal',
@@ -332,74 +463,151 @@ export function terminalLaunch(ctx, extra) {
   return { cmd: 'xterm', args: ['-T', ctx.label, ...extra, '-e', 'sh', '-c', script, 'sh', record], match: (w) => w.title === ctx.label, record };
 }
 
+/** The D-Bus name of a scene's own gnome-terminal server: unique to the scene's label, a valid application id. */
+export const terminalAppId = (label) => `org.cua171.Terminal.${String(label).replace(/[^A-Za-z0-9_]/g, '_')}`;
+
+/** The terminal server, and the client that asks a server by its name (Ubuntu's `gnome-terminal` wrapper starts a server of its own for `--app-id`). */
+export const TERMINAL_SERVER = '/usr/libexec/gnome-terminal-server';
+export const terminalClient = (exists = existsSync) => (exists('/usr/bin/gnome-terminal.real') ? '/usr/bin/gnome-terminal.real' : 'gnome-terminal');
+
+// The scene's own terminal server started under its name, then, once the name is on the session bus, the client
+// asking that server, and only it, for the window. Server and client stay in the process group the harness started.
+// The server, the client, the name and the client's arguments are the script's arguments, never its text.
+const TERMINAL_SCRIPT = 'server="$1"; client="$2"; id="$3"; shift 3; "$server" --app-id "$id" & gdbus wait --session --timeout 20 "$id" || exit 1; exec "$client" --app-id "$id" "$@"';
+
 /**
- * gnome-terminal running the recorder: the title set by the program itself as well as asked for, its PID written to a
- * file (the window is the gnome-terminal server's, so ending the started process does not close it; ending the
- * recorder does, as the terminal exits with its command). The recorder also shows what it receives, so a paste's text
- * appears in the terminal's own text, where an engine can confirm it.
+ * gnome-terminal running the recorder, on a terminal server of the scene's own (`terminalAppId`): a plain
+ * `gnome-terminal` hands its window to the session's running server, the person's. The title is set by the program
+ * itself as well as asked for, and its PID written to a file (ending the recorder closes the window, as the terminal
+ * exits with its command). The recorder also shows what it receives, so a paste's text appears in the terminal's own
+ * text, where an engine can confirm it.
  */
-export function vteLaunch(ctx) {
+export function vteLaunch(ctx, { client = terminalClient() } = {}) {
+  const terminal = (args) => ({ cmd: 'sh', args: ['-c', TERMINAL_SCRIPT, 'sh', TERMINAL_SERVER, client, terminalAppId(ctx.label), '--wait', '--title', ctx.label, '--', ...args] });
   if (ctx.doc) {
     const file = scratchFile(ctx);
     const pidfile = join(ctx.dir, `${ctx.label}.pid`);
     const script = `echo $$ > "$2"; printf '\\033]0;%s\\007' "$3"; cat "$1"; exec sleep 86400`;
-    return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', file, pidfile, ctx.label], match: (w) => w.title === ctx.label, record: null, pidfile };
+    return { ...terminal(['sh', '-c', script, 'sh', file, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record: null, pidfile };
   }
   const record = join(ctx.dir, `${ctx.label}.input`);
   const pidfile = join(ctx.dir, `${ctx.label}.pid`);
   writeFileSync(record, '');
   const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?${ctx.motion ? 1003 : 1000}h' "$3"; stty raw -echo; exec tee -a "$1"`;
-  return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', record, pidfile, ctx.label], match: (w) => w.title === ctx.label, record, pidfile };
+  return { ...terminal(['sh', '-c', script, 'sh', record, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record, pidfile };
 }
 
 /**
  * Opens a family's window on the harness's desktop: launched, found, sized and placed, its objects resolved.
- * Returns the scene: `{kind: 'family', family, id, pid, group, ...targets}`.
+ * `stem`: the name in its window's label, where two scenes open one family for one engine (minimized-xterm beside
+ * device-xterm), so each window has its own title and scratch directory. `env`: the application's own variables.
+ * `bridge: false` skips a Qt family's check of the session's accessibility switches (`assertQtBridge`), for the one
+ * experiment that opens Qt with them off on purpose (qt-bridge.mjs). `warmUp`: the run's GTK 4 warm-up window itself
+ * (`warmGtk4`), opened and settled with no targets resolved. `mode`: a harness scene's own mode (the AT-SPI probe's
+ * GTK 4 scene, pages/atspi-gtk4.py). Returns the scene: `{kind: 'family', family, id, pid,
+ * group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, query = '', doc = null, mode = null, motion = false, stem = name, bridge = true, warmUp = false } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
-  const label = desktop.label(name.replace(/[^a-z0-9]+/gi, ''), role);
+  // the run's first GTK 4 window comes after the run's own warm-up has filled the shader cache of the run's home
+  if (family.gtk4 && !warmUp) await desktop.warmGtk4();
+  const label = desktop.label(stem.replace(/[^a-z0-9]+/gi, ''), role);
   let scene;
   if (family.chrome) {
-    const opened = await desktop.openChrome(role, page ?? 'matrix.html');
-    scene = { ...opened, family: name, kindOf: family.kind };
+    // the window the run registered itself, not a copy: a copy closed (`Desktop.close`) leaves the registered window
+    // behind, and the run's end then asks for the gone window again and records its close as left undone (task 55)
+    scene = Object.assign(await desktop.openChrome(role, page ?? 'matrix.html', { query }), { family: name, kindOf: family.kind });
   } else {
     // a stopping run opens nothing more (scenes.mjs `stop`); the process is registered as soon as it is started
     desktop.assertOpen();
-    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
+    const ctx = { label, dir: join(desktop.dir, label), geometry, page, query, doc, mode, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
-    const child = spawn(spec.cmd, spec.args, { stdio: 'ignore', detached: true, env: { ...process.env, ...(spec.env ?? {}), ...env } });
-    child.unref();
+    // the application's own variables only: the rest of its environment is the run's (scenes.mjs `appEnvironment`)
+    const own = { ...(spec.env ?? {}), ...env };
+    // a Qt family puts no tree on the bus with the session's switches off, and on a person's display they stay as found
+    if (family.qt && bridge) desktop.assertQtBridge(label, own);
+    const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: own, home: family.home ?? 'run', app: name });
     scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, pidfile: spec.pidfile ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
     desktop.windows.push(scene);
     const match = spec.byPid ? byPid(child.pid) : spec.match;
     const info = await desktop.waitForWindow(match, label, 60000);
     scene.id = info.id;
   }
-  const [w, h] = geometry ?? family.geometry;
-  configure(scene.id, 0, 0, w, h);
-  await settle(desktop, scene);
-  await resolveTargets(desktop, oracle, scene);
+  // at the screen's top left, its frame wholly on the screen whatever the window manager's theme (`placeOnScreen`)
+  placeOnScreen(scene.id, ...(geometry ?? family.geometry));
+  await settle(desktop, scene, { registers: Boolean(family.gtk4) });
+  if (!warmUp) await resolveTargets(desktop, oracle, scene);
   return scene;
 }
 
 /**
- * Waits until the window's tree (when it has one) reads the same twice. An application whose tree keeps changing
- * (qtcreator's) is taken as it is after 20 s, and the scene says so.
+ * The run's GTK 4 warm-up (task 51; the design session's ruling, sminos 336), once a run, before its first GTK 4
+ * window: a gnome-text-editor window of the run's own, on a document of its own, through the one launcher in the run's
+ * home, settled on its AT-SPI frame (`settle`) and closed. A run's fresh home starts with a cold GPU shader cache, and
+ * GTK 4's GL renderer compiles its shaders before the window's tree reaches the bus, for seconds (task 49's finding 1);
+ * the warm-up fills the cache of the run's home, which every later GTK 4 window of the run shares. Nothing of the
+ * person's cache is copied or read. A warm-up that fails fails each GTK 4 scene of the run that waits for it.
  */
-async function settle(desktop, scene) {
+export function warmGtk4(desktop) {
+  desktop.gtk4Warm ??= (async () => {
+    const started = Date.now();
+    let scene;
+    let failure = null;
+    try {
+      scene = await openFamily(desktop, null, GTK4_WARM_UP, 'gtk4warmup', { warmUp: true });
+    } catch (error) {
+      failure = new Error(`the run's GTK 4 warm-up failed: ${error.message}`);
+    }
+    // closed whatever came of it, as every window of the run's is; a warm-up that failed keeps its own error, a close
+    // that fails too attached to it (`cleanup`)
+    const opened = desktop.windows.filter((w) => w.role === 'gtk4warmup');
+    if (opened.length) {
+      try {
+        await desktop.close(opened);
+      } catch (error) {
+        if (!failure) throw error;
+        failure.cleanup = [error];
+      }
+    }
+    if (failure) throw failure;
+    return { family: GTK4_WARM_UP, label: scene.label, ms: Date.now() - started };
+  })();
+  return desktop.gtk4Warm;
+}
+
+/**
+ * Why a GTK 4 scene fails when its AT-SPI frame did not register within `boundMs` (`settle`'s words), or, with `frames`
+ * (`{found, of}`), when not every frame of the scene's several windows did (scenes.mjs `waitForFrames`).
+ */
+export function unregistered(label, boundMs, frames = null) {
+  const what = frames ? `its AT-SPI frames did not register within ${boundMs / 1000} s (${frames.found} of ${frames.of} did)` : `its AT-SPI frame did not register within ${boundMs / 1000} s`;
+  return `${label}: ${what}, and a GTK 4 window always registers its tree; the case fails rather than read the window${frames ? 's' : ''} as X11`;
+}
+
+/**
+ * Waits until the window's tree (when it has one) reads the same twice. An application whose tree keeps changing
+ * (qtcreator's) is taken as it is after 20 s, and the scene says so. A family that always registers (`registers`, GTK
+ * 4) counts only its AT-SPI reads: its wait ends on its frame's registration, and a window not registered within
+ * `GTK4_REGISTRATION_MS` (the Desktop's `registrationMs`, the tests') fails the case rather than settle as X11.
+ */
+async function settle(desktop, scene, { registers = false } = {}) {
   const started = Date.now();
+  const bound = desktop.registrationMs ?? GTK4_REGISTRATION_MS;
+  // when the reads that count began: at once, or at the frame's registration
+  let from = registers ? null : started;
   let previous = null;
   let last = null;
-  while (Date.now() - started < 30000) {
+  while (from === null || Date.now() - from < 30000) {
+    if (from === null && Date.now() - started > bound) throw new Error(unregistered(scene.label ?? scene.id, bound));
     const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
-    if (response.ok) {
+    if (response.ok && (!registers || response.output.ax_tree_source === 'at_spi')) {
+      from ??= Date.now();
       const text = JSON.stringify(response.output.ax_tree);
       last = response.output;
       const steady = text === previous;
-      if (steady || Date.now() - started > 20000) {
+      if (steady || Date.now() - from > 20000) {
         scene.window = last.window;
         scene.source = last.ax_tree_source;
         if (!steady) scene.unsettled = true;
@@ -464,6 +672,9 @@ async function resolveTargets(desktop, oracle, scene) {
     scene.button = nodes.find((n) => n.name === 'press')?.id ?? null;
   } else if (scene.kindOf === 'button') {
     scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
+  } else if (scene.kindOf === 'settle-scene') {
+    scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
+    scene.status = nodes.find((n) => /^moves \d+/.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'electron') {
     scene.field = nodes.find((n) => n.role === 'entry' && n.name === 'Fixture text')?.id ?? null;
     scene.button = nodes.find((n) => n.role === 'push button' && n.name === 'Fixture button')?.id ?? null;

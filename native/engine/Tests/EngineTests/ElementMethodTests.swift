@@ -30,6 +30,8 @@ final class FakeAX {
   var onPerform: (Int, String) -> Void = { _, _ in }
   var clock: Double = 0
   var sleeps = 0
+  /// Ids whose children and focused-element reads fail (the reads that tell "none" from "unknown").
+  var unreadable: Set<Int> = []
 
   static func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 
@@ -40,6 +42,12 @@ final class FakeAX {
     ops.frame = { self.frames[FakeAX.id($0)] }
     ops.parent = { self.parents[FakeAX.id($0)].map(Engine.element) }
     ops.children = { (self.children[FakeAX.id($0)] ?? []).map(Engine.element) }
+    ops.childrenRead = { self.unreadable.contains(FakeAX.id($0)) ? nil : (self.children[FakeAX.id($0)] ?? []).map(Engine.element) }
+    ops.focusedElement = { application in
+      let id = FakeAX.id(application)
+      if self.unreadable.contains(id) { return (nil, false) }
+      return ((self.values[id]?[kAXFocusedUIElementAttribute]).map { $0 as! AXUIElement }, true)
+    }
     ops.actions = { self.actions[FakeAX.id($0)] ?? [] }
     ops.read = { self.values[FakeAX.id($0)]?[$1] }
     ops.element = { element, name in
@@ -400,6 +408,22 @@ final class ValueSettingTests: XCTestCase {
     XCTAssertThrowsError(try focusingClick(&refused, acted: { marks += 1 }) { _ in throw EngineError(name: "activationFailed", "guard") })
     XCTAssertNil(refused.startedAt, "a click refused before its events posts nothing")
     XCTAssertEqual(marks, 1, "and changes nothing")
+  }
+
+  /// #324: the fallback click's delivery guard record rides in the method's meta, as its guard time does, so its raise
+  /// is read against the hold it fell in (#315's misread came from its absence).
+  func testAFocusClicksDeliveryRecordRidesInTheMethodsMeta() throws {
+    var meta = meta(), marks = 0
+    var outcome = DeliveryGuardOutcome()
+    outcome.restores = 2
+    outcome.screenHoldMs = 210
+    outcome.transientRaise = TransientRaise(seen: true, ms: 40, outlivedHold: false)
+    try focusingClick(&meta, acted: { marks += 1 }) { click in
+      click.posting { true }
+      click.delivery = outcome
+    }
+    XCTAssertEqual(meta.delivery, outcome)
+    XCTAssertEqual(meta.inputRoute, .action, "the method's own route")
   }
 
   func testAUserEventBeforeTheFocusWriteMovesNoFocus() {

@@ -14,8 +14,22 @@ use x11rb::protocol::xtest::ConnectionExt as _;
 use crate::input::Keys;
 use crate::x11::X11;
 
-/// The pause between the points of a desktop pointer path (behaviour §10.2).
-const PATH_STEP: Duration = Duration::from_millis(8);
+/// The pause between two positions of a desktop pointer path: the vendor's 8 ms (behaviour §10.2), kept. Shorter, an
+/// Electron page's move misses the service's move settle (0 to 6 ms missed idle, 7 held one step from them; M4's
+/// T9, evidence `m4/waits/`), and the service's settle was set at 8. The points stay
+/// the vendor's, the leading one at the pointer's own position included: the server delivers a motion there as it
+/// does any other (task 64's motion listener), so leaving it out, as the newest build does, would change what an
+/// application receives. What goes is the pause after it ([`paused_before`]). `--path-step-ms` sets the pause for
+/// measurement only.
+pub const PATH_STEP: Duration = Duration::from_millis(8);
+
+/// Whether a path pauses before its point `i` (> 0): not after a leading motion at the pointer's own position
+/// (`pointer`, where the path began), which moves nothing, so no two positions are closer in time than the step, and a
+/// one-step move answers at once as the newest build's does (M4's T9, closing M1a's declared gap); unless `lead_pause`
+/// keeps that pause too (a held move measured with `--held-lead-pause`, `DragPacing::held_lead_pause`).
+pub fn paused_before(points: &[(i16, i16)], pointer: (i16, i16), i: usize, lead_pause: bool) -> bool {
+    lead_pause || !(i == 1 && points.first() == Some(&pointer))
+}
 
 /// The points a desktop move visits from `start` to `end` (behaviour §10.2): none to interpolate when already there
 /// (one motion to the end); else n = ⌈distance / 160 × 10⌉ clamped to 1–10, the points start + d·i/n for i = 0…n
@@ -38,12 +52,29 @@ pub fn path_points(start: (i16, i16), end: (i16, i16)) -> Vec<(i16, i16)> {
     points
 }
 
+/// A held `drag_handle` move's points: [`path_points`], and for a family that rests (`DragPacing.rest`) its end once
+/// more, after the rest. The agent names a held move's end, so the end is the path's corner or its last point, which
+/// a browser sees only if the pointer stays there into a frame of its own, and Gecko's drop target accepts only a
+/// position that comes after it has answered an earlier one (`pointer.rs` `drag_plan`).
+pub fn held_points(start: (i16, i16), end: (i16, i16), rest: bool) -> Vec<(i16, i16)> {
+    let mut points = path_points(start, end);
+    if rest {
+        points.push(end);
+    }
+    points
+}
+
 /// The desktop's held keys: counted per keycode as a window's are, shared by every desktop request (the server
 /// computes the events' state itself, so no modifier masks are kept).
 pub struct Desktop {
     pub keys: Keys,
     /// After each new key edge (Design: no pacing).
     pub key_pace: Duration,
+    /// Between a pointer path's points ([`PATH_STEP`]).
+    pub path_step: Duration,
+    /// How long the request's foreground pointer input waited for its window to be on top at its points
+    /// (`Route::on_top_at`), for the `--stats` line.
+    pub on_top_waited: Option<Duration>,
 }
 
 fn fake(x: &X11, kind: u8, detail: u8, root: u32, rx: i16, ry: i16) -> Result<()> {
@@ -52,20 +83,25 @@ fn fake(x: &X11, kind: u8, detail: u8, root: u32, rx: i16, ry: i16) -> Result<()
 }
 
 impl Desktop {
-    pub fn new(key_pace: Duration) -> Desktop {
+    pub fn new(key_pace: Duration, path_step: Duration) -> Desktop {
         Desktop {
             keys: Keys::new(Vec::new()),
             key_pace,
+            path_step,
+            on_top_waited: None,
         }
     }
 
     fn key(x: &X11, keycode: u8, press: bool) -> Result<()> {
         let kind = if press { KEY_PRESS_EVENT } else { KEY_RELEASE_EVENT };
         let send = || fake(x, kind, keycode, x.root, 0, 0);
-        #[cfg(test)]
-        return crate::fault::key(keycode, press, send);
-        #[cfg(not(test))]
-        send()
+        // recorded for the exits that cannot wait for the bookkeeping (pressed.rs)
+        crate::pressed::desktop_key(keycode, press, || {
+            #[cfg(test)]
+            return crate::fault::key(keycode, press, send);
+            #[cfg(not(test))]
+            send()
+        })
     }
 
     /// Presses each keycode not already held, in order (behaviour §11.3).
@@ -122,7 +158,18 @@ impl Desktop {
         } else {
             BUTTON_RELEASE_EVENT
         };
-        fake(x, kind, button, x.root, 0, 0)
+        // recorded for the exits that cannot wait for the bookkeeping (pressed.rs)
+        crate::pressed::desktop_button(button, press, || fake(x, kind, button, x.root, 0, 0))
+    }
+
+    /// A button's release through XTEST on a connection of another thread's own (`engine/idle_watchdog.rs`), recorded
+    /// as [`Desktop::button`]'s.
+    pub fn release_on(conn: &impl x11rb::connection::Connection, root: u32, button: u8) -> Result<()> {
+        crate::pressed::desktop_button(button, false, || -> Result<()> {
+            conn.xtest_fake_input(BUTTON_RELEASE_EVENT, button, 0, root, 0, 0, 0)?
+                .check()?;
+            Ok(())
+        })
     }
 
     /// One absolute motion of the real pointer.
@@ -135,23 +182,141 @@ impl Desktop {
         fake(x, MOTION_NOTIFY_EVENT, 1, x11rb::NONE, dx, dy)
     }
 
-    /// `move_path`: from wherever the pointer is to the point, through [`path_points`], 8 ms between points.
-    pub fn move_path(x: &X11, rx: i16, ry: i16) -> Result<()> {
-        Self::move_path_paced(x, rx, ry, PATH_STEP)
+    /// `move_path`: from wherever the pointer is to the point, through [`path_points`], with the path's step
+    /// ([`PATH_STEP`]) between points.
+    pub fn move_path(&self, x: &X11, rx: i16, ry: i16) -> Result<()> {
+        Self::move_path_paced(x, rx, ry, self.path_step, false, Duration::ZERO)
     }
 
-    /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family.
-    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration) -> Result<()> {
+    /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family;
+    /// `lead_pause` keeps the step after the leading motion too ([`paused_before`]); a nonzero `rest` is spent at the
+    /// end, which is then visited once more ([`held_points`]).
+    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration, lead_pause: bool, rest: Duration) -> Result<()> {
         let pointer = x.conn.query_pointer(x.root)?.reply()?;
-        let points = path_points((pointer.root_x, pointer.root_y), (rx, ry));
+        let start = (pointer.root_x, pointer.root_y);
+        let points = held_points(start, (rx, ry), !rest.is_zero());
+        let last = points.len() - 1;
         for (i, &(px, py)) in points.iter().enumerate() {
-            if i > 0 {
+            if i > 0 && !rest.is_zero() && i == last {
+                std::thread::sleep(rest);
+            } else if i > 0 && !step.is_zero() && paused_before(&points, start, i, lead_pause) {
                 std::thread::sleep(step);
             }
             Self::motion(x, px, py)?;
         }
         Ok(())
     }
+}
+
+/// The live tests' hooks in `drag_handle` (`engine/handle.rs`), only in a build with the `live` feature, never a release
+/// asset, each a second X client's input as a person's arriving at that moment:
+/// - in the pre-press try (`pointer_free`; `CUA_ENGINE_FAULT=handle-try-click`): a click of button 3, sent while the try
+///   holds the server. Its requests wait for the server's release, which comes after the try has given its grab up, so
+///   the click must land where the pointer is. Here with the desktop route's other XTEST buttons;
+/// - in the release dwell (`release_handle`; `CUA_ENGINE_FAULT=handle-dwell-move`): a motion to (300, 250), handled
+///   before the dwell goes on, which the release must then find.
+#[cfg(feature = "live")]
+pub mod handle_hooks {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _, MOTION_NOTIFY_EVENT};
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    use x11rb::rust_connection::RustConnection;
+
+    /// The second client, connected before the server is held (a connection's setup waits for it otherwise).
+    pub fn before_try() -> Option<RustConnection> {
+        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("handle-try-click") {
+            return None;
+        }
+        let (conn, _) = x11rb::connect(None).ok()?;
+        conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
+        Some(conn)
+    }
+
+    /// The person's motion at the release dwell's start, waited for.
+    pub fn during_dwell() {
+        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("handle-dwell-move") {
+            return;
+        }
+        let moved = (|| -> Option<()> {
+            let (conn, screen) = x11rb::connect(None).ok()?;
+            let root = conn.setup().roots[screen].root;
+            conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
+            conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, x11rb::CURRENT_TIME, root, 300, 250, 0)
+                .ok()?;
+            conn.get_input_focus().ok()?.reply().ok()?;
+            Some(())
+        })();
+        assert!(moved.is_some(), "the dwell hook's motion went out");
+    }
+
+    /// Its click sent, not waited for: the server handles it once it is let go.
+    pub fn during_try(clicker: Option<&RustConnection>) {
+        if let Some(conn) = clicker {
+            for kind in [BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT] {
+                let _ = conn.xtest_fake_input(kind, 3, x11rb::CURRENT_TIME, x11rb::NONE, 0, 0, 0);
+            }
+            let _ = conn.flush();
+        }
+    }
+
+    /// Once the server is let go: the click handled before the second client goes.
+    pub fn after_try(clicker: Option<RustConnection>) {
+        if let Some(conn) = clicker {
+            let _ = conn.get_input_focus().map(|c| c.reply());
+        }
+    }
+}
+
+/// The live build's hook in a plain `drag` (`engine/pointer.rs` `drag_along`), only with the `live` feature, never a
+/// release asset: with `CUA_ENGINE_FAULT=drag-release-move` and `CUA_ENGINE_FAULT_AT=<x>,<y>`, a second X client's
+/// motion of the real pointer to that root point, as a person's arriving just before the release, handled before the
+/// drag goes on to its release (the third review of task 73, P3: the release then goes where the pointer is, not where
+/// the path ended). The drop-signals experiment's `moved` cell runs it on the run's own Electron.
+#[cfg(feature = "live")]
+pub mod drag_hooks {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{ConnectionExt as _, MOTION_NOTIFY_EVENT};
+    use x11rb::protocol::xtest::ConnectionExt as _;
+
+    /// The person's motion just before the release's reads, waited for.
+    pub fn before_release() {
+        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("drag-release-move") {
+            return;
+        }
+        let at = std::env::var("CUA_ENGINE_FAULT_AT").ok().and_then(|at| {
+            let (x, y) = at.split_once(',')?;
+            Some((x.trim().parse::<i16>().ok()?, y.trim().parse::<i16>().ok()?))
+        });
+        let moved = (|| -> Option<()> {
+            let (x, y) = at?;
+            let (conn, screen) = x11rb::connect(None).ok()?;
+            let root = conn.setup().roots[screen].root;
+            conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
+            conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, x11rb::CURRENT_TIME, root, x, y, 0)
+                .ok()?;
+            conn.get_input_focus().ok()?.reply().ok()?;
+            Some(())
+        })();
+        assert!(
+            moved.is_some(),
+            "the release hook's motion went out (CUA_ENGINE_FAULT_AT=<x>,<y>)"
+        );
+    }
+}
+
+#[cfg(not(feature = "live"))]
+pub mod drag_hooks {
+    pub fn before_release() {}
+}
+
+#[cfg(not(feature = "live"))]
+pub mod handle_hooks {
+    pub fn before_try() -> Option<()> {
+        None
+    }
+    pub fn during_try(_: Option<&()>) {}
+    pub fn after_try(_: Option<()>) {}
+    pub fn during_dwell() {}
 }
 
 #[cfg(test)]
@@ -178,6 +343,47 @@ mod tests {
             "13.33 and 26.67 round to the nearest"
         );
         assert_eq!(path_points((0, 0), (1, 1)), vec![(0, 0), (1, 1)]);
+    }
+
+    #[test]
+    fn a_path_pauses_between_two_positions_but_not_after_the_motion_at_the_pointer_s_own_position() {
+        let start = (640, 400);
+        let points = path_points(start, (1260, 790));
+        let paused: Vec<bool> = (1..points.len())
+            .map(|i| paused_before(&points, start, i, false))
+            .collect();
+        assert_eq!(
+            paused,
+            [false, true, true, true, true, true, true, true, true, true],
+            "nine pauses for the ten steps: none after the leading motion, which moves nothing"
+        );
+        // a short move: the leading motion, then the point, at once (the newest build's one motion and no pause)
+        let short = path_points((300, 300), (310, 300));
+        assert!(!paused_before(&short, (300, 300), 1, false));
+        assert!(
+            paused_before(&short, (300, 300), 1, true),
+            "kept where a held move asks for it"
+        );
+        // the leading motion counts as the pointer's own position only when it is
+        assert!(paused_before(&[(0, 0), (5, 5)], (9, 9), 1, false));
+    }
+
+    #[test]
+    fn a_resting_held_move_visits_its_end_once_more_after_its_rest() {
+        let points = path_points((300, 300), (700, 500));
+        assert_eq!(
+            held_points((300, 300), (700, 500), false),
+            points,
+            "no rest: the vendor's points"
+        );
+        let mut rested = points.clone();
+        rested.push((700, 500));
+        assert_eq!(held_points((300, 300), (700, 500), true), rested);
+        assert_eq!(
+            held_points((5, 5), (5, 5), true),
+            vec![(5, 5), (5, 5)],
+            "a move to the pointer's own place"
+        );
     }
 
     #[test]

@@ -14,16 +14,31 @@
 // readiness once more with every core busy (`--load`), and adds the matrix (`--experiment matrix`, matrix.mjs).
 
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
-import { availableParallelism, loadavg } from 'node:os';
+
+import { xExecFileSync } from './xspawn.mjs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { PreparationStopped, candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
+import { RunRefused, runHasRows } from './run.mjs';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
+import { runAtspi } from './atspi-probe.mjs';
 import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
+import { controlLabel, runEngineStop } from './engine-stop.mjs';
+import { runFocusTimer } from './focus-timer.mjs';
+import { runQtActivation } from './qt-activation.mjs';
+import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
+import { runDropSignals } from './drop-signals.mjs';
+import { runWriterDrag } from './writer-drag.mjs';
 import { runKinds } from './kinds.mjs';
+import { runPredicates } from './predicates.mjs';
+import { runPointerRoute } from './pointer-route.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
@@ -32,8 +47,9 @@ import { qtBridge } from './qt-bridge.mjs';
 import { engineReadiness } from './readiness-check.mjs';
 import { analyzeTrial } from './readiness.mjs';
 import { writeSummary } from './report.mjs';
-import { Desktop, GEOMETRY, XPROBE } from './scenes.mjs';
+import { Desktop, GEOMETRY, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
+import { retentionTrials } from './xtools.mjs';
 
 /** The fixed wait before a window's first capture (Decision Log, M0.3), and the margin M0.4 holds it to. */
 export const CAPTURE_WAIT_MS = 40;
@@ -47,10 +63,6 @@ const pct = (xs, p) => {
   return s.length ? s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)] : null;
 };
 
-function retentionTrials(window, trials, spanMs, gapMs, dump) {
-  const text = execFileSync(XPROBE, ['retention', String(window), String(trials), String(spanMs), String(gapMs), dump], { encoding: 'utf8', timeout: 600000 });
-  return text.trim().split('\n').map((l) => JSON.parse(l));
-}
 
 /** How many interim (pre-ready) captures were mostly black, of all interim captures. */
 function interim(analyzed) {
@@ -94,7 +106,7 @@ async function captureReadiness(desktop, emit, { families, trials = 20, spanMs =
       desktop.arrangeFront(condition);
       if (condition === 'visible') desktop.raise(scene);
       await sleep(800);
-      const raw = retentionTrials(scene.id, trials, spanMs, gapMs, join(desktop.dir, `${scene.name}-${condition}`));
+      const raw = retentionTrials(desktop, scene.id, trials, spanMs, gapMs, join(desktop.dir, `${scene.name}-${condition}`));
       const analyzed = raw.map((t) => analyzeTrial(t, { pollMs: POLLS }));
       // the window's real contents: what it shows visible and redirected, at the end of every visible trial
       if (condition === 'visible') truth.hash = analyzed.every((a) => a.final === analyzed[0].final) ? analyzed[0].final : null;
@@ -302,26 +314,151 @@ function startLoad(emit, factor = 1) {
   };
 }
 
-export async function runExperiment(args) {
+const STOP_CODES = { SIGINT: 130, SIGTERM: 143 };
+
+/**
+ * `body(args, record)` on the experiment's candidate (M4's T18, the design session's ruling: an experiment that joins the
+ * gate takes its candidate as a verdict run does). With `--gate` the candidate `--cua` names is stored as `cua-engine`
+ * (mode 0700) in a directory of the run's own and checked by candidate.mjs's preparation before anything runs; a refusal
+ * is thrown as a `CandidateRefused` and nothing starts. `body` gets the stored copy and its record, and the copy is
+ * removed on a refusal, an error, the end and a stop. A stop (SIGINT or SIGTERM) while this listener is the process's
+ * only one (the checks, or a part of the run before a Desktop hooks its own cleanup, stop.mjs) kills the command the
+ * checks wait on, removes the copy and exits as the signal would; once a Desktop's handler is in place it is that
+ * handler's, and the exit removes the copy. Without `--gate`, `body` gets `--cua` as given and no record.
+ */
+export async function withExperimentCandidate(args, body, { prepare = prepareCandidate, proc = process } = {}) {
+  if (!args.gate) return body(args, null);
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
+  const remove = () => rmSync(dir, { recursive: true, force: true });
+  proc.once('exit', remove);
+  const stopping = new AbortController();
+  let preparing = null;
+  const onStop = (signal) => {
+    if (proc.listenerCount(signal) !== 1) return;
+    stopping.abort();
+    Promise.resolve(preparing)
+      .catch(() => {})
+      .finally(() => {
+        remove();
+        proc.exit(STOP_CODES[signal]);
+      });
+  };
+  for (const signal of Object.keys(STOP_CODES)) proc.on(signal, onStop);
+  try {
+    preparing = prepare({ source: args.cua, gate: true, dir, signal: stopping.signal });
+    let candidate;
+    try {
+      candidate = await preparing;
+    } catch (error) {
+      if (!(error instanceof PreparationStopped) || !stopping.signal.aborted) throw error;
+    }
+    // stopped during the checks: the stop exits once the command in flight has ended, and nothing more starts
+    if (stopping.signal.aborted) await new Promise(() => {});
+    return await body({ ...args, cua: candidate.path }, candidate.record);
+  } finally {
+    for (const signal of Object.keys(STOP_CODES)) proc.off(signal, onStop);
+    proc.off('exit', remove);
+    remove();
+  }
+}
+
+/** The rows that carry the run's label: its `meta` (with the candidate's record) and its summary. */
+const LABELLED = new Set(['meta', 'experiment-summary']);
+
+/**
+ * An experiment run: a release gate's with `--gate`, its candidate checked first (`withExperimentCandidate`), otherwise
+ * a development run's. Either way its label ("release gate", or "development run, not a release gate") is in its
+ * `meta` and summary rows, its summary.md (report.mjs) and the first and last lines it prints. `start` is the
+ * experiment proper (the tests pass their own): it gets the run's args and `{emit, results}`, and answers whether the
+ * run is complete.
+ */
+export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun } = {}) {
   const run = args.run ?? `${args.experiment}-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
-  mkdirSync(args.out, { recursive: true });
+  // nothing runs, and no candidate is checked, for a run that cannot stand as one execution's or a gate's: a name the
+  // out directory already has rows of (a retry with the same --out and --run would render under the first run's label
+  // and candidate), or a gate step with no judge to fail it
   const results = join(args.out, 'results.jsonl');
-  const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
-  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
+  if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
+  if (args.gate && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args)) {
+    throw new RunRefused(`no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'}): its counts would pass whatever they are; run it as a development run`);
+  }
+  if (args.gate && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
+  return withExperimentCandidate(args, async (runArgs, record) => {
+    mkdirSync(args.out, { recursive: true });
+    const gate = Boolean(args.gate);
+    const label = gateLabel(gate);
+    const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row, ...(LABELLED.has(row.kind) ? { gate, label, ...(row.kind === 'meta' && record ? { candidate: record } : {}) } : {}) })}\n`);
+    process.stdout.write(`${label}${record ? `; ${candidateLine(record)}` : ''}\n`);
+    const complete = await start({ ...runArgs, run }, { emit, results });
+    process.stdout.write(`${label}: ${run} ${complete ? 'complete' : 'incomplete or failed'}\n`);
+    return complete;
+  }, { prepare });
+}
+
+async function experimentRun(args, { emit, results }) {
+  const { run } = args;
+  if (args.experiment === 'focus-timer') {
+    // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runFocusTimer(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  if (args.experiment === 'qt-activation') {
+    // on a private X server of its own, as the focus-timer experiment (qt-activation.mjs), its load started there
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runQtActivation(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  if (args.experiment === 'settle') {
+    // through cua's own service, on a private X server of its own (action-settle.mjs), its load started there
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, kinds: args.kinds ?? [], routes: args.routes ?? [], lanes: args.lanes ?? null, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runSettle(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  if (args.experiment === 'engine-stop') {
+    // on a private X server of its own, through cua serve on that display (engine-stop.mjs)
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), control_label: controlLabel(args.controlRoot), load: args.load ?? false, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runEngineStop(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  if (args.experiment === 'atspi') {
+    // on a private X server of its own, the only display it may reach (atspi-probe.mjs); nothing runs before it exists
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runAtspi(args, { emit, run });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), ...(args.experiment === 'drop-signals' ? { plan: args.plan ?? 'main', ballast: args.ballast ?? null, load_factor: args.load ? (args.loadFactor ?? 1) : null, lanes: args.lanes ?? null, trials: args.samplesTrials ?? null } : {}), ...(args.experiment === 'writer-drag' ? { plan: args.plan ?? 'observe', trials: args.samplesTrials ?? null, variants: args.variants.map((v) => v.label) } : {}), ...(args.experiment === 'drag' ? { load_factor: args.load ? (args.loadFactor ?? 1) : null, ops: args.ops, trials: args.samplesTrials ?? null } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
-    // on a private X server of its own: no scene windows, no desktop
+    // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
     const { md, pass } = await runEvents(args, emit);
     emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return pass;
   }
-  const desktop = new Desktop({ cua: args.cua, run });
+  const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
   let md;
   // a matrix run that could not judge a family it was asked for is incomplete, and the run exits nonzero
   let outcome = { complete: true, failed: [] };
   try {
+    // the run's own trace, and the holder when a foreign window is active (scenes.mjs `begin`)
+    await desktop.begin();
     if (args.experiment === 'capture-readiness') md = await captureReadiness(desktop, emit, { families: args.families });
     else if (args.experiment === 'key-pace') md = await keyPace(desktop, emit, args.cua, { families: args.families });
     else if (args.experiment === 'qt-bridge') md = await qtBridge(desktop, emit, { vendor: args.vendor });
@@ -332,13 +469,25 @@ export async function runExperiment(args) {
       mkdirSync(desktop.keepDir, { recursive: true });
       const result = await engineReadiness(desktop, emit, args);
       md = result.md;
-      outcome = { complete: result.pass, failed: result.pass ? [] : ["a first capture was wrong or unjudged, or the pinned build's capture did not confirm a truth"] };
+      outcome = { complete: result.pass, failed: result.pass ? [] : [`${result.label} (FAIL: a first capture of cua's wrong or unjudged; REFERENCE MISMATCH: the pinned build's capture did not confirm a truth; CONTROL NON-DISCRIMINATING: a control lane captured every first frame right)`] };
     }
-    else if (['drag', 'kinds', 'dnd'].includes(args.experiment)) {
-      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd }[args.experiment];
+    else if (['drag', 'kinds', 'dnd', 'drop-signals', 'predicates', 'pointer-route', 'writer-drag'].includes(args.experiment)) {
+      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, predicates: runPredicates, 'pointer-route': runPointerRoute, 'writer-drag': runWriterDrag }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
-      outcome = { complete: result.complete, failed: result.failed };
+      // the drag experiment's judges (T10) and the predicate cases' (T15) fail the run as an incomplete one does; the others
+      // report completeness only
+      outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
+      // the gate's drop-signals cells are judged (drop-signals-judge.mjs `dropSignalsVerdict`): T17's Electron cells and
+      // T14's Chrome cells. A false ok, an unreported late take, a broken pending contract, a missing landing or a
+      // missing cell fails the run; the unconfirmed drops are findings with their counts. A gate run of any other plan
+      // was refused before it began (`runExperiment`)
+      const judged = args.experiment === 'drop-signals' ? dropSignalsVerdict(args, readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run)) : null;
+      if (judged) {
+        emit({ kind: judged.judge === 'electronDropVerdict' ? 'electron-drop-verdict' : 'chrome-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
+        md = [...md, ...judged.md];
+        outcome = { complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] };
+      }
     } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
@@ -349,7 +498,11 @@ export async function runExperiment(args) {
     await desktop.closeAll();
     if (load) await load.stop();
   }
-  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, finished: new Date().toISOString() });
+  // the harness's own trace, judged once every window of the run's is closed: a change of a window it did not open
+  // makes the run incomplete, whatever it measured
+  const ending = desktopEnding(desktop.ending);
+  if (ending.foreign.length) outcome = { complete: false, failed: [...outcome.failed, ...ending.foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
+  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, desktop: ending.record, finished: new Date().toISOString() });
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
   return outcome.complete;

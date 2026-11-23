@@ -1,0 +1,8 @@
+run exit 0; watchdog clean
+exit 0
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+foreground checks: held (another raised and the top raised back: stacking; the same under one server grab: stacking; the target raised: clean; the focus and the active window switched away and back under one server grab: focus, active; the target activated: clean; another client's override-redirect window mapped: stacking; order restored)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+run valid; development run, not a release gate: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: <task62fix>/runs/device-idle/run/results.jsonl
+fatal: not a git repository (or any of the parent directories): .git

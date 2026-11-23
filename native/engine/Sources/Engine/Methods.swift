@@ -33,7 +33,8 @@ private let inputMethods: Set<String> = ["click", "press_key", "type_text", "pas
 final class Engine: @unchecked Sendable {
   let paths: ServerPaths
   let apps: AppDirectory
-  let webAccessibility = WebAccessibility()
+  /// Per process, the web enablement (Enablement.swift); the server's engine keeps its record (#293).
+  let webAccessibility: WebAccessibility
   /// The intervention tap and its ledger (Intervention.swift).
   let intervention: InterventionMonitor
   /// The owner's per-app route-4 override, `routes` in engine.json as read at launch (Config.swift).
@@ -42,6 +43,11 @@ final class Engine: @unchecked Sendable {
   let routeAdvice = RouteAdviceTracker()
   /// The held activations of menus and focus holds, one per process across connections (MenuSpan.swift, FocusHold.swift).
   let heldActivations = HeldActivations()
+  /// press_key's last post per app, which settles a type_text's snapshot soon after (TypeReadbackSettle.swift, #354).
+  let recentKeys = RecentKeyPosts()
+  /// The posted pointer presses and select_text's ranges per process, which an accessibility action on the process's
+  /// text waits for or type_text expects (ClickOrdering.swift, #359).
+  let clickOrdering = ClickOrdering()
   /// The workspace's real activations and deactivations, which make a held process's activation stale.
   private var activationObservers: [NSObjectProtocol] = []
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
@@ -52,6 +58,9 @@ final class Engine: @unchecked Sendable {
   let pasteLock = FIFOLock()
   /// The outside world of the paste's route-3 activation (Paste.swift): the system's, replaced in the unit tests.
   let pasteActivation: ActivationSystem
+  /// The paste's effect reading of the application's focused element within a budget (Paste.swift `effectReading`): the
+  /// live one when nil, replaced in the unit tests (#361's, whose fake fields have no process to read).
+  let pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)?
   /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
   let cursor: CursorHub
   /// The after-action watches of closed connections, still running (#237, Activation.swift).
@@ -60,13 +69,22 @@ final class Engine: @unchecked Sendable {
   let cursorEnabled: Bool
   /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
   let cursorDebug: CursorDebug?
+  /// The monotonic clock (ms) the web enablement stamps its writes on and the Chromium readiness wait reads (#366,
+  /// ChromiumReadiness.swift), and the sleeper that wait runs on: the system's, replaced in the unit tests.
+  let monotonicClock: () -> Double
+  let pause: (Double) -> Void
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
-       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
-       cursorDebug: CursorDebug? = nil) {
+       pasteActivation: ActivationSystem = ActivationSystem(), pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
+       cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
+       cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil,
+       clock: @escaping () -> Double = monotonicMilliseconds, sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }) {
     self.paths = paths
+    self.monotonicClock = clock
+    self.pause = sleep
+    self.webAccessibility = WebAccessibility(record: enablementRecord, now: clock)
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.cursorEnabled = cursorEnabled
@@ -75,6 +93,7 @@ final class Engine: @unchecked Sendable {
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
     self.pasteActivation = pasteActivation
+    self.pasteEffectReading = pasteEffectReading
     self.cursor = cursor
     // The person acting in an app a cursor acts in turns that cursor half-transparent: from the detector's own ledger.
     intervention.ledger.onRecord = { [cursor] pid in cursor.userActed(pid: pid) }
@@ -233,6 +252,8 @@ final class Engine: @unchecked Sendable {
     let active = (inputMethods.contains(method) || method == "get_app_state") ? target.flatMap { app in
       app.pid.map { (pid: $0, generation: processGeneration(launchDate: app.running?.launchDate, pid: $0), app: app) }
     } : nil
+    // #359: an input that can move the caret leaves select_text's range no longer the one type_text types over.
+    if let active, inputMethods.contains(method), !selectionKeepingMethods.contains(method) { clickOrdering.dropSelection(pid: active.pid) }
     if let active, inputMethods.contains(method) {
       webAccessibility.inputEnablement(chromium: webAccessibility.isChromiumFamily(active.app.appPath), pid: active.pid, launched: active.generation,
                                        connection: connection.id, access: .live(pid: active.pid, launched: active.generation))
@@ -255,6 +276,19 @@ final class Engine: @unchecked Sendable {
     }
     // The focus hold ends before anything aimed at another app.
     if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
+    // #366: an element action into a Chromium-family app waits out the rest of 2.5 s after the engine's last enablement
+    // write, before the method takes any hold, within the request's deadline (ChromiumReadiness.swift): a window the
+    // deadline cannot wait out is timeoutReached with the input meta, nothing dispatched.
+    if let active {
+      do {
+        _ = try signposted("prologue.chromiumReady") {
+          try awaitChromiumReadiness(method: method, args: args, app: active.app, pid: active.pid, launched: active.generation,
+                                     connection: connection, budgetMs: Double(deadline - unixMilliseconds()))
+        }
+      } catch let error as EngineError {
+        throw withMeta(error, InputMeta(context))
+      }
+    }
     let spanBefore = connection.menuSpan.serial
     defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
     switch method {

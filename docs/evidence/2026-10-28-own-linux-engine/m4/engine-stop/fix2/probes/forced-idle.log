@@ -1,0 +1,25 @@
+stress-ng before: 0
+loadavg: 0.34 1.38 1.30 1/545 1539993
+{"label":"idle","trial":0,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1004.3,"release_ms":4.3,"stderr":""}
+{"label":"idle","trial":1,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1002,"release_ms":2,"stderr":""}
+{"label":"idle","trial":2,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.7,"release_ms":1.7,"stderr":""}
+{"label":"idle","trial":3,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.9,"release_ms":1.9,"stderr":""}
+{"label":"idle","trial":4,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1002.1,"release_ms":2.1,"stderr":""}
+{"label":"idle","trial":5,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1002.1,"release_ms":2.1,"stderr":""}
+{"label":"idle","trial":6,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.8,"release_ms":1.8,"stderr":""}
+{"label":"idle","trial":7,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.7,"release_ms":1.7,"stderr":""}
+{"label":"idle","trial":8,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1002,"release_ms":2,"stderr":""}
+{"label":"idle","trial":9,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.7,"release_ms":1.7,"stderr":""}
+{"label":"idle","trial":10,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.7,"release_ms":1.7,"stderr":""}
+{"label":"idle","trial":11,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.7,"release_ms":1.7,"stderr":""}
+{"label":"idle","trial":12,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.8,"release_ms":1.8,"stderr":""}
+{"label":"idle","trial":13,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.8,"release_ms":1.8,"stderr":""}
+{"label":"idle","trial":14,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.6,"release_ms":1.6,"stderr":""}
+{"label":"idle","trial":15,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.6,"release_ms":1.6,"stderr":""}
+{"label":"idle","trial":16,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.6,"release_ms":1.6,"stderr":""}
+{"label":"idle","trial":17,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.6,"release_ms":1.6,"stderr":""}
+{"label":"idle","trial":18,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.7,"release_ms":1.7,"stderr":""}
+{"label":"idle","trial":19,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1001.5,"release_ms":1.5,"stderr":""}
+{"summary":"idle","trials":20,"loadavg":[0.21,1.24,1.25],"released_all":true,"held_before_all":true,"release_ms":{"min":1.5,"p50":1.7,"p90":2.1,"max":4.3}}
+exit 0
+stress-ng after: 0

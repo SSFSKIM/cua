@@ -6,11 +6,14 @@ import Foundation
 
 let elementMessagingTimeout: Float = 1.0
 
+/// The shortest messaging timeout a bounded read is given.
+let messagingTimeoutFloorMs: Double = 50
+
 /// The messaging timeout of a read bounded by `leftMs` of a deadline: the time left, at most the usual 1 s and at least
-/// 50 ms; nil once nothing is left (no read is sent).
+/// `messagingTimeoutFloorMs`; nil once nothing is left (no read is sent).
 func boundedMessagingTimeout(leftMs: Double) -> Float? {
   guard leftMs > 0 else { return nil }
-  return Float(max(0.05, min(Double(elementMessagingTimeout), leftMs / 1000)))
+  return Float(max(messagingTimeoutFloorMs / 1000, min(Double(elementMessagingTimeout), leftMs / 1000)))
 }
 
 func prepare(_ element: AXUIElement) -> AXUIElement {
@@ -50,6 +53,17 @@ func present(_ value: Any?) -> CFTypeRef? {
   if CFGetTypeID(ref) == AXValueGetTypeID(), AXValueGetType(ref as! AXValue) == .axError { return nil }
   if CFGetTypeID(ref) == CFNullGetTypeID() { return nil }
   return ref
+}
+
+/// Whether a batched fetch's slot holds a failed read: an error placeholder whose error is not the attribute's absence
+/// (kAXErrorNoValue, kAXErrorAttributeUnsupported), so the element may carry a value this read could not get.
+func failedSlot(_ value: Any?) -> Bool {
+  guard let value else { return false }
+  let ref = value as CFTypeRef
+  guard CFGetTypeID(ref) == AXValueGetTypeID(), AXValueGetType(ref as! AXValue) == .axError else { return false }
+  var error = AXError.success
+  guard AXValueGetValue(ref as! AXValue, .axError, &error) else { return true }
+  return error != .noValue && error != .attributeUnsupported
 }
 
 /// The elements of an AXChildren value (an empty list for anything else).

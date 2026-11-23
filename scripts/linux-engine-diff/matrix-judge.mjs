@@ -3,6 +3,8 @@
 // for a terminal, through what the terminal's program received; and the per-family summary and table. Pure
 // functions; matrix.mjs runs the families.
 
+import { DEVICE_REFUSAL } from './deviations.mjs';
+
 const chars = (s) => [...s];
 const occurrences = (text, marker) => text.split(marker).length - 1;
 
@@ -92,14 +94,21 @@ export function terminalClickArrived(before, after) {
 
 const OPS = ['click', 'key', 'type_text'];
 
-/** Per operation and engine: samples, requests answered ok, effects seen, effects readable, clean witnesses. */
+/** A request the engine refused in shared mode, before anything was sent (Design, Device mode): a refusal, not a failure. */
+export const isRefusal = (r) => r.ok !== true && DEVICE_REFUSAL.test(String(r.error ?? ''));
+
+/**
+ * Per operation and engine: samples, requests answered ok, requests refused in shared mode, effects seen, effects
+ * readable, clean witnesses.
+ */
 export function summarizeFamily(rows) {
   const out = {};
   for (const r of rows.filter((x) => x.kind === 'matrix-sample')) {
     out[r.op] ??= {};
-    const s = (out[r.op][r.engine] ??= { n: 0, ok: 0, effect: 0, effect_known: 0, witness_clean: 0 });
+    const s = (out[r.op][r.engine] ??= { n: 0, ok: 0, refused: 0, effect: 0, effect_known: 0, witness_clean: 0 });
     s.n += 1;
     if (r.ok) s.ok += 1;
+    else if (isRefusal(r)) s.refused += 1;
     if (r.effect === true) s.effect += 1;
     if (typeof r.effect === 'boolean') s.effect_known += 1;
     if (r.witness === true) s.witness_clean += 1;
@@ -166,12 +175,13 @@ export function backgroundAlone(rows, family) {
     const mine = samples.filter((r) => r.engine === engine);
     return mine.length ? mine.every((r) => r.witness === true) : null;
   };
-  // the audit pass's keys and clicks answer as the series' do (every one ok): one that failed early traced only its
-  // setup, which proves nothing
+  // the audit pass's keys and clicks answer as the series' do (every one ok, or refused in shared mode with nothing
+  // sent, which its trace shows: matrix.mjs `auditPass`, task 53): one that failed early traced only its setup, which
+  // proves nothing
   const audit = (engine) => {
     const row = audits.find((r) => r.engine === engine);
     if (!row) return null;
-    return row.clean && row.ok === true ? true : row.clean ? 'unexercised' : false;
+    return row.clean && (row.ok === true || row.exercised === true) ? true : row.clean ? 'unexercised' : false;
   };
   const engines = [...VENDORS, 'cua'];
   const out = { witness: Object.fromEntries(engines.map((e) => [e, witness(e)])), audit: Object.fromEntries(engines.map((e) => [e, audit(e)])) };
@@ -186,12 +196,32 @@ export function backgroundAlone(rows, family) {
 const NEEDED = { editor: ['field'], paragraphs: ['document'], page: ['field', 'button'], button: ['button'], electron: ['field', 'button'], terminal: [], pixels: [] };
 
 /**
- * Whether a sample's effect was meant to be read: not a key or click the engine refused (nothing was sent to read
- * back), nor a click or typed text under the pixel reader (a caret move may draw nothing; typed text it cannot see).
- * A type_text is read back whatever its answer, since a failed answer may follow an applied paste.
+ * The operations whose effect the matrix reads, by the family's kind (matrix.mjs: the text a key or a paste leaves, the
+ * caret or counter a click moves, what a terminal's program received; the pixel reader sees keys only, since a caret
+ * move may draw nothing and typed text it cannot read). The other kinds (`table`, `qt-input`, `qt-style`, `scale`,
+ * `gtk4-input`, `button`) are the differential run's and the kinds experiment's scenes, whose effects those read
+ * (kinds.mjs, device.mjs); the matrix records their identity, tree, witness and audit, and no effect (task 53).
  */
-function readable(sample, pixels) {
-  if (pixels && sample.op !== 'key') return false;
+const READS = {
+  editor: ['key', 'type_text', 'click'],
+  paragraphs: ['key', 'type_text', 'click'],
+  page: ['key', 'type_text', 'click'],
+  electron: ['key', 'type_text', 'click'],
+  terminal: ['key', 'type_text', 'click'],
+  pixels: ['key'],
+};
+
+/** Whether the matrix reads any effect of a family of this kind. */
+export const readsEffects = (kind) => kind in READS;
+
+/**
+ * Whether a sample's effect was meant to be read: an operation the family's kind is read for (`READS`), and not a key
+ * or click the engine refused (nothing was sent to read back). A type_text is read back whatever its answer, since a
+ * failed answer may follow an applied paste.
+ */
+function readable(sample, kind) {
+  // rows from before the kind was recorded read every operation, as the matrix then did
+  if (kind !== undefined && !(READS[kind] ?? []).includes(sample.op)) return false;
   return sample.op === 'type_text' || sample.ok === true;
 }
 
@@ -224,7 +254,7 @@ export function matrixOutcome(rows, families) {
       const whose = engine ? `the ${engine} window's` : 'its';
       if (missing.length) failed.push(`${family}: ${whose} ${missing.join(' and ')} ${missing.length > 1 ? 'were' : 'was'} not found`);
     }
-    const unread = samples.filter((r) => r.effect === null && readable(r, pixels));
+    const unread = samples.filter((r) => r.effect === null && readable(r, kind));
     if (unread.length) {
       const which = [...new Set(unread.map((r) => `${r.engine} ${r.op}`))].join(', ');
       failed.push(`${family}: ${unread.length} effect${unread.length > 1 ? 's' : ''} could not be read (${which})`);
@@ -240,9 +270,11 @@ export function matrixOutcome(rows, families) {
 
 const cell = (s) => {
   if (!s) return '–';
-  const failed = s.n - s.ok;
+  const refused = s.refused ?? 0;
+  const failed = s.n - s.ok - refused;
   const effect = s.effect_known === 0 && s.n > 0 ? `?/${s.n}` : `${s.effect}/${s.n}`;
-  return failed ? `${effect} (${failed} failed)` : effect;
+  const notes = [...(refused ? [`${refused} refused`] : []), ...(failed ? [`${failed} failed`] : [])];
+  return notes.length ? `${effect} (${notes.join(', ')})` : effect;
 };
 
 /** The matrix table: one row per family, its identity, each operation's effects per engine, the classification. */
@@ -281,12 +313,18 @@ export function matrixMarkdown(rows) {
   const md = renderMatrix(families);
   const none = renderMatrix(families, { engines: ['cua', 'cua:none'], textEngines: [] });
   md.push('', 'Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:', '', ...none);
-  const ignoring = families.filter((f) => classifyFamily(f.summary).background !== 'takes');
+  const unreadKind = (f) => f.identity.kindOf !== undefined && !readsEffects(f.identity.kindOf);
+  const ignoring = families.filter((f) => !unreadKind(f) && classifyFamily(f.summary).background !== 'takes');
   md.push('', 'Families that do not take the background route:', '');
   if (ignoring.length === 0) md.push('- none');
   for (const f of ignoring) {
     const c = classifyFamily(f.summary);
     md.push(`- ${f.title} (${f.identity.wm_class}; ${f.identity.toolkit ?? 'no AT-SPI provider'}): ${c.description} (run \`${f.run}\`)`);
+  }
+  const unreadFamilies = families.filter(unreadKind);
+  if (unreadFamilies.length) {
+    md.push('', "Families whose effects the matrix does not read (the differential run's and the kinds experiment's scenes, which read them):", '');
+    for (const f of unreadFamilies) md.push(`- ${f.title} (kind \`${f.identity.kindOf}\`; run \`${f.run}\`)`);
   }
   if (rows.some((r) => r.kind === 'matrix-audit')) {
     const mark = (v) => (v === true ? 'clean' : v === false ? '**changed**' : '–');

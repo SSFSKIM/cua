@@ -1,0 +1,11 @@
+== client windows on :0
+0x600002 "google-chrome", "Google-chrome"
+== the owner's Chrome
+   9910 Tue Oct 27 23:14:52 2026
+== KDE session services
+235848 /usr/lib/x86_64-linux-gnu/libexec/kactivitymanagerd
+235892 /usr/bin/kglobalaccel5
+== scratch directories held by a process
+0 held
+== load
+ 08:49:38 up 5 days, 10:39,  3 users,  load average: 0.65, 0.70, 0.50

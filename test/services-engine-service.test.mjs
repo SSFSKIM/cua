@@ -18,6 +18,7 @@ import {createSkyService} from '../src/services/sky.mjs';
 import {bind_mac_app} from '../src/cua-api/bind-mac-app.mjs';
 import {createEngineClient} from '../src/services/engine/client.mjs';
 import {METHODS, createService, cursorParams} from '../src/services/engine/service.mjs';
+import {WINDOW_PLACEMENT} from '../src/services/engine/render.mjs';
 import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
 
 const APPS = {
@@ -592,6 +593,117 @@ test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its re
   assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
 });
 
+test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reaches the tool result\'s text, and scrollUnconfirmed and the out-of-screenshot refusal reach the model with their sentence, name and meta', async t => {
+  const moved = {container: 'scrollArea', outcome: 'moved', moved: 120, by: 'content', polls: 3, readMs: 4.1, ms: 49.2, walked: 61};
+  const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, endBefore: true, barBefore: 1, polls: 0, readMs: 3, ms: 3.2, walked: 40};
+  const unconfirmed = {container: null, outcome: 'unconfirmed', polls: 0, readMs: 0.3, ms: 0.5};
+  const endNote = 'What is at that point in TextEdit is already scrolled as far down as it goes.';
+  const unsent = 'The scroll was sent to TextEdit, but nothing at that point was seen to move. Observe the app (take a screenshot or call getAXState()) before scrolling again.';
+  const outside = 'The point (600, 2000) lies outside the screenshot, which is 1220 × 860 pixels. Give a point inside it: x from 0 to 1219 and y from 0 to 859.';
+  let answer = 'moved';
+  const {getApp, call, meta, record} = await session(t, {handlers: {'execute:scroll': () => {
+    if (answer === 'moved') return {meta: {...INPUT_META, scroll: moved}};
+    if (answer === 'atEnd') return {meta: {...INPUT_META, scroll: atEnd}, note: endNote};
+    if (answer === 'outside') throw new EngineFailure(-10005, outside, 'pointOutsideScreenshot', {meta: {...INPUT_META, inputRoute: null, startedAt: null, endedAt: null}});
+    throw new EngineFailure(-10005, unsent, 'scrollUnconfirmed', {meta: {...INPUT_META, scroll: unconfirmed}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.scroll([300, 400], 'down', 1));
+  assert.deepEqual(meta['cua/scroll'], moved);
+  assert.deepEqual(record.items, [], 'no note for a move');
+  answer = 'atEnd';
+  await call(() => app.scroll([300, 400], 'down', 1));
+  assert.deepEqual(meta['cua/scroll'], atEnd);
+  assert.deepEqual(record.items, [endNote]);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/scroll'], null, 'reset by the next call');
+  answer = 'unconfirmed';
+  await assert.rejects(call(() => app.scroll([300, 400], 'down', 1)), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unsent}`, 'the whole sentence');
+    assert.equal(error.errorName, 'scrollUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/scroll'], unconfirmed);
+  answer = 'outside';
+  await assert.rejects(call(() => app.scroll([600, 2000], 'down', 1)), error => error.errorName === 'pointOutsideScreenshot' && error.message.endsWith(outside));
+  assert.equal(meta['cua/scroll'], null);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
+});
+
+test('#354: type_text\'s read-back rides as cua/typeReadback, typeUnconfirmed reaches the model with its excerpt, and press_key says its effect is unconfirmed', async t => {
+  const confirmed = {confirmed: true, snapshotMs: 1.2, pollMs: 21.4, reads: 3};
+  const mismatch = {confirmed: false, reason: 'valueMismatch', snapshotMs: 1.1, pollMs: 1003.2, reads: 201, expectedLength: 8, actualLength: 10};
+  const sentence = 'The text was typed, but the field does not read as expected, so it is not confirmed and some or all of it may have gone in. Observe the field with getAXState() before going on, then use setValue to put it right; do not type the text again. From character 1, expected "word  is"; the field reads "word. . is". The expected text is 8 characters long, the field\'s 10.';
+  let answer = 'confirmed';
+  const {getApp, call, meta} = await session(t, {handlers: {
+    'execute:type_text': () => {
+      if (answer === 'confirmed') return {meta: {...INPUT_META, inputRoute: "2'", entered: 3, typeReadback: confirmed}};
+      throw new EngineFailure(-10005, sentence, 'typeUnconfirmed', {meta: {...INPUT_META, inputRoute: "2'", entered: 4, typeReadback: mismatch}});
+    },
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", keyEffect: 'unconfirmed'}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.typeText('abc'));
+  assert.deepEqual(meta['cua/typeReadback'], confirmed);
+  assert.equal(meta['cua/keyEffect'], null);
+  answer = 'mismatch';
+  await assert.rejects(call(() => app.typeText('  is')), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${sentence}`, 'the whole sentence, the excerpt included');
+    assert.equal(error.errorName, 'typeUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/typeReadback'], mismatch);
+  assert.equal(meta['cua/entered'], 4);
+  await call(() => app.pressKey('super+a'));
+  assert.equal(meta['cua/keyEffect'], 'unconfirmed');
+  assert.equal(meta['cua/typeReadback'], null, 'reset by the next call');
+});
+
+test('#414: a password field\'s length confirmation rides as cua/typeReadback with its strength and its note reaches the tool result\'s text; a plain confirmation adds no text', async t => {
+  const lengthNote = 'Typed into a password field, confirmed by its length only: the field took exactly as many characters as were typed, in place of any selected text, so none was dropped or added. A password field\'s characters are never read, so whether they are the right ones is not confirmed: a keyboard layout, an input method or the page itself can change what goes in.';
+  const byLength = {confirmed: true, snapshotMs: 0.4, secure: true, confirmation: 'length'};
+  const exact = {confirmed: true, snapshotMs: 1.2, pollMs: 21.4, reads: 3};
+  let field = 'password';
+  const {getApp, call, meta, record} = await session(t, {handlers: {
+    'execute:type_text': () => (field === 'password'
+      ? {meta: {...INPUT_META, inputRoute: "2'", entered: 4, typeReadback: byLength}, note: lengthNote}
+      : {meta: {...INPUT_META, inputRoute: "2'", entered: 3, typeReadback: exact}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.typeText('pass'));
+  assert.deepEqual(meta['cua/typeReadback'], byLength);
+  assert.deepEqual(record.items, [lengthNote], 'what a length proves, and what it cannot, in the text the model reads');
+  field = 'text';
+  await call(() => app.typeText('abc'));
+  assert.deepEqual(meta['cua/typeReadback'], exact, 'a plain field\'s exact read-back names no strength');
+  assert.deepEqual(record.items, [lengthNote], 'and adds no text');
+});
+
+test('#374: a Show Menu\'s confirmation rides as cua/menu, and menuUnconfirmed reaches the model with its sentence, name and meta', async t => {
+  const seen = {seen: 'ancestor', openBefore: 0, polls: 2, ms: 21.4};
+  const unseen = {seen: null, openBefore: 1, polls: 51, ms: 1000.2, actionError: -25204};
+  const unconfirmed = 'The Show Menu action was sent to TextEdit, but no menu was seen to open within 1 s. TextEdit may have shown a menu of its own that accessibility does not expose (a web page\'s own menu, for one), or ignored the request. Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.';
+  const actionMeta = {...INPUT_META, inputRoute: 1, activationGuardMs: undefined, pointUnconfirmed: undefined};
+  let shown = true;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:perform_secondary_action': () => {
+    if (shown) return {meta: {...actionMeta, menu: seen}};
+    throw new EngineFailure(-10005, unconfirmed, 'menuUnconfirmed', {meta: {...actionMeta, menu: unseen}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.performSecondaryAction(2, 'Show Menu'));
+  assert.deepEqual(meta['cua/menu'], seen);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/menu'], null, 'reset by the next call');
+  shown = false;
+  await assert.rejects(call(() => app.performSecondaryAction(2, 'Show Menu')), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unconfirmed}`, 'the whole sentence');
+    assert.equal(error.errorName, 'menuUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/menu'], unseen);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, 'the action was sent');
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});
@@ -616,6 +728,36 @@ test('an observation of a minimized window carries no screenshot and its meta sa
   assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized', 'getScreenshot\'s refusal is the facade\'s; the meta says why');
   Object.assign(tree, {screenshot: shown, screenshotOmitted: undefined});
   await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/screenshotOmitted'], null);
+});
+
+test('#367: a window off screen or on another Space: the state says so in one line and getScreenshot names the reason; back on screen, both are as before', async t => {
+  const {getApp, call, meta, trees} = await session(t);
+  const {app} = await getApp('TextEdit');
+  const tree = trees.get(APPS.TextEdit.appPath);
+  const shown = {screenshot: tree.screenshot, window: tree.window};
+  // On screen: the text and the screenshot as ever, pinned byte for byte.
+  const before = await call(() => app.getAXState({emit: false, disableDiffing: true}));
+  assert.equal(before, 'Window: "Untitled", App: TextEdit.\n0 standard window Untitled, Secondary Actions: Raise\n\t1 button OK\n\t2 button Cancel\n');
+  assert.deepEqual([...await call(() => app.getScreenshot({emit: false}))], [0xff, 0xd8, 0xff, 0xd9]);
+
+  for (const [placement, omitted, reason] of [
+    ['offScreen', 'windowOffScreen', 'the window is off screen, outside every display. Ask the user to move it onto a display.'],
+    ['anotherSpace', 'windowOnAnotherSpace', 'the window is on another Space. Ask the user to bring it here or switch to its Space.'],
+  ]) {
+    Object.assign(tree, {screenshot: null, screenshotOmitted: omitted, window: {...shown.window, placement}});
+    const state = await call(() => app.getAXState({emit: false, disableDiffing: true}));
+    assert.equal(state, `${before}${WINDOW_PLACEMENT[placement].line}\n`, 'one line after the tree');
+    assert.equal(meta['cua/screenshotOmitted'], omitted);
+    await assert.rejects(call(() => app.getScreenshot({emit: false})), {message: `Screenshot unavailable for ${APPS.TextEdit.appPath}: ${reason}`});
+    const both = await call(() => app.getAXStateAndScreenshot({emit: false}));
+    assert.equal(both.screenshot, undefined, 'the combined observation returns the state alone');
+    assert.ok(both.state.includes(WINDOW_PLACEMENT[placement].line), 'its diff keeps the line');
+  }
+
+  Object.assign(tree, {...shown, screenshotOmitted: undefined});
+  assert.equal(await call(() => app.getAXState({emit: false, disableDiffing: true})), before, 'back on screen: byte for byte as before');
+  assert.deepEqual([...await call(() => app.getScreenshot({emit: false}))], [0xff, 0xd8, 0xff, 0xd9]);
   assert.equal(meta['cua/screenshotOmitted'], null);
 });
 

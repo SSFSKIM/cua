@@ -6,6 +6,10 @@
 // input operation. M0's first cut; the library lives in scripts/linux-engine-diff/.
 
 import { parseArgs } from './linux-engine-diff/cli.mjs';
+import { declareLiveRun } from './linux-engine-diff/xspawn.mjs';
+
+// the harness reaches the session's display by design: its X tools, engines and applications may (xspawn.mjs)
+declareLiveRun('the differential harness (scripts/linux-engine-diff.mjs)');
 
 const args = (() => {
   try {
@@ -30,7 +34,18 @@ if (args.mode === 'check-wire') {
   await recordWire(args);
 } else if (args.mode === 'experiment') {
   const { runExperiment } = await import('./linux-engine-diff/experiments.mjs');
-  process.exit((await runExperiment(args)) ? 0 : 1);
+  const { RunRefused } = await import('./linux-engine-diff/run.mjs');
+  const { CandidateRefused } = await import('./linux-engine-diff/candidate.mjs');
+  try {
+    process.exit((await runExperiment(args)) ? 0 : 1);
+  } catch (error) {
+    // nothing ran: the run's name is taken, a gate step has no judge, or a gate experiment's candidate is not one a gate
+    // takes (candidate.mjs)
+    if (error instanceof RunRefused) process.stderr.write(`run refused: ${error.message}\n`);
+    else if (error instanceof CandidateRefused) process.stderr.write(`candidate refused: ${error.message}\n`);
+    else throw error;
+    process.exit(2);
+  }
 } else {
   const { RunRefused, runDiff } = await import('./linux-engine-diff/run.mjs');
   const { CandidateRefused } = await import('./linux-engine-diff/candidate.mjs');

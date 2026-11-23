@@ -1,0 +1,16 @@
+{"wall":1794659930613,"chrome_pid":3240222,"user_data_dir":null,"descendant_of_this_check":true}
+{"wall":1794659934314,"probe":"start","nodes":237,"menu_count":0,"showing_menus":0,"menus":[],"x_popups":"{\"popups\":[]}","x_grabs":"{\"pointer\":\"free\",\"keyboard\":\"free\"}"}
+{"wall":1794659934450,"read":"base-0","ok":true,"error":null,"ms":59.4,"clipboard_after":"cua171","page":"esc 0 menus 1"}
+{"wall":1794659934580,"read":"base-1","ok":true,"error":null,"ms":56.9,"clipboard_after":"cua171","page":"esc 0 menus 2"}
+{"wall":1794659934709,"read":"base-2","ok":true,"error":null,"ms":59.1,"clipboard_after":"cua171","page":"esc 0 menus 3"}
+{"wall":1794659938471,"read":"forced","ok":false,"error":"clipboard update timed out; the application may still complete the Copy later, and its menus on this window may stay unresponsive","ms":2054.2,"clipboard_after":"stale forced","page":"esc 0 menus 4"}
+{"wall":1794659938773,"froze_at":1794659935794,"stop_ms":2600,"state_after_continue":"S","forced_ok":false,"forced_error":"clipboard update timed out; the application may still complete the Copy later, and its menus on this window may stay unresponsive"}
+{"wall":1794659938779,"late_service_check_ms":0,"clipboard":"cua171"}
+{"wall":1794659939784,"late_service_check_ms":1000,"clipboard":"cua171"}
+{"wall":1794659941797,"late_service_check_ms":3000,"clipboard":"cua171"}
+{"wall":1794659941981,"probe":"after the timeout","nodes":237,"menu_count":0,"showing_menus":0,"menus":[],"x_popups":"{\"popups\":[]}","x_grabs":"{\"pointer\":\"free\",\"keyboard\":\"free\"}"}
+{"wall":1794659942128,"read":"fidelity-0","ok":true,"error":null,"ms":60.4,"clipboard_after":"cua171","page":"esc 0 menus 5"}
+{"wall":1794659942267,"read":"fidelity-1","ok":true,"error":null,"ms":60.6,"clipboard_after":"cua171","page":"esc 0 menus 6"}
+{"wall":1794659942414,"probe":"fidelity","nodes":237,"menu_count":0,"showing_menus":0,"menus":[],"x_popups":"{\"popups\":[]}","x_grabs":"{\"pointer\":\"free\",\"keyboard\":\"free\"}"}
+{"wall":1794659942414,"faithful":false,"forced_timed_out":true}
+{"wall":1794659943509,"end":true,"watchdog_clean":true}

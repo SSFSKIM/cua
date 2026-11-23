@@ -7,9 +7,49 @@ import { join } from 'node:path';
 
 import { candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
-import { summarizeEngine, verdictLine } from './stats.mjs';
+import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
+
+const windowId = (id) => `0x${id.toString(16).padStart(8, '0')}`;
+function activeText(a) {
+  if (!a) return 'an unreadable active window';
+  if (a.owner === 'none') return 'no window active';
+  return `${windowId(a.id)} active (${a.owner})`;
+}
+
+/**
+ * The run's desktop in one line (scenes.mjs `desktopEnding`): the start and end active windows, each marked foreign or
+ * the harness's (the harness acts on neither), the holder, and the audit of the harness's own trace.
+ */
+export function desktopLine(record) {
+  if (!record) return "desktop: **the harness's own trace did not run**, so its requests went unaudited";
+  const { trace } = record;
+  const changes = `${trace.mutating} change${trace.mutating === 1 ? '' : 's'} of a window`;
+  const audit = trace.foreign.length
+    ? `**${trace.foreign.length} change${trace.foreign.length === 1 ? '' : 's'} of a window it did not open: ${trace.foreign.join('; ')}**`
+    : trace.clean
+      ? 'every one of its own'
+      : '**it recorded no request, so its requests went unaudited**';
+  const line = `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
+  const parts = [line, ...(record.record ? [recordText(record.record)] : [])];
+  if (record.skipped?.length) parts.push(`left undone, the window not the run's then: ${record.skipped.map((s) => `${s.what} on ${s.window}`).join('; ')}`);
+  return parts.join('; ');
+}
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** The whole run's record (foreign.mjs `auditRecord`) in the desktop line. */
+function recordText(r) {
+  // the reason the run's end recorded: a person's display refused (task 41), or a private display's caller declined
+  if (r.skipped) return `the run's record: not run (${r.skipped})`;
+  if (r.error) return `the run's record: **${r.error}**`;
+  const verdict = r.foreign.length ? `**${plural(r.foreign.length, 'change')} of a window it did not open: ${r.foreign.join('; ')}**` : 'every one of its own';
+  const notes = [];
+  if (r.unplaced) notes.push(`${plural(r.unplaced, 'XTEST input')} it could not place`);
+  if (r.unattributed?.clients) notes.push(`${plural(r.unattributed.clients, 'client')} it could not attribute (${r.unattributed.mutating} of ${r.unattributed.clients === 1 ? 'its' : 'their'} requests change a window)`);
+  return [`the run's record: ${r.requests} requests of the harness's and the engines' clients, ${plural(r.mutating, 'change')} of a window, ${verdict}`, ...notes].join('; ');
+}
 const frac = (rows, key) => {
   const known = rows.filter((r) => typeof r[key] === 'boolean');
   return known.length ? `${known.filter((r) => r[key]).length}/${known.length}` : '–';
@@ -22,10 +62,26 @@ export function renderSummary(lines) {
     const rows = lines.filter((l) => l.run === run);
     const meta = rows.find((r) => r.kind === 'meta');
     if (meta?.experiment) {
-      out.push(`## ${run} (experiment ${meta.experiment})`, '');
+      // one execution's rows only (the harness-fix wave): every experiment writes one meta row, so a run name with more
+      // (a run from before the reused name was refused) is not rendered, and no row's label or candidate stands for
+      // another execution's
+      const metas = rows.filter((r) => r.kind === 'meta');
+      const labelled = rows.filter((r) => r.kind === 'meta' || r.kind === 'experiment-summary');
+      const candidates = new Set(metas.map((r) => r.candidate?.sha256 ?? null));
+      const mix = new Set(labelled.map((r) => r.gate)).size > 1 ? 'a release gate and a development run' : candidates.size > 1 ? 'two or more candidates' : metas.length > 1 ? `${metas.length} executions` : null;
+      if (mix) {
+        out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
+        continue;
+      }
+      // an experiment run since T18 says whether it was a release gate (`--gate`) or a development run; one from before, nothing
+      const label = gateLabel(meta.gate);
+      out.push(`## ${run} (experiment ${meta.experiment}${label ? `; ${label}` : ''})`, '');
+      if (meta.candidate) out.push(candidateLine(meta.candidate), '');
       // a matrix is rendered from its rows with the current judgement; other experiments keep their own summary
       if (meta.experiment === 'matrix') out.push(...matrixMarkdown(rows), '');
       else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
+      // a run from before the harness audited its own trace has no record
+      for (const r of rows.filter((x) => x.kind === 'experiment-summary' && 'desktop' in x)) out.push(desktopLine(r.desktop), '');
       continue;
     }
     // one execution's rows only: a run name whose rows come from a gate and a dev run (or a run from before #267) is not
@@ -93,13 +149,22 @@ export function renderSummary(lines) {
         const noise = labelled || (v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '');
         const r2 = (x) => Math.round(x * 100) / 100;
         const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
-        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared refusal' ? `**declared refusal**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : ['declared refusal', 'declared unconfirmed'].includes(v.verdict) ? `**${v.verdict}**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');
         out.push(`| ${scene} | ${op} | ${engine} | ${fmt(s.cold)} | ${fmt(s.warm)} | ${s.n_warm} | ${cold ? `${cold.calls} / ${warm?.calls ?? '–'}` : '–'} | ${cold ? `${cold.serial_calls} / ${warm?.serial_calls ?? '–'}` : '–'} | ${wasted.length ? Math.max(...wasted) : '–'} | ${frac(mine, 'witness')} | ${audit} | ${frac(mine, 'effect')} | ${eq ? `${eq.equal}/${eq.of}${eq.declared ? ` (${eq.declared} declared)` : ''}` : '–'} | ${verdict} |`);
       }
       if (bar) out.push(`| ${scene} | ${op} | **bar** | ${fmt(bar.cold)} | ${fmt(bar.warm)} | | | | | | | | | |`);
+    }
+    // the Chrome drops the engine confirms or reports, per case and for the run, one load (M4's T14; the design
+    // session, 2026-11-10): an unconfirmed drop that landed is honest, a finding only over its share of the landed
+    const drops = dropCounts(verdicts);
+    if (drops.cases) {
+      out.push('', `Chrome's drops, confirmed or reported. A landed drop reported unconfirmed is honest, and a finding only above ${UNCONFIRMED_LANDED_SHARE * 100}% of the run's landed drops${drops.finding ? ' (**this run is above it**)' : ''}. A false ok (answered ok with no drop and nothing pending) fails its case:`, '');
+      out.push('| scene | op | samples | landed | answered ok | false ok | landed, reported unconfirmed |', '|---|---|---:|---:|---:|---:|---:|');
+      for (const v of verdicts.filter((x) => x.drops)) out.push(`| ${v.scene} | ${v.op} | ${v.drops.samples} | ${v.drops.landed} | ${v.drops.ok} | ${v.drops.false_ok} | ${v.drops.unconfirmed_landed} |`);
+      out.push(`| **run** | | ${drops.samples} | ${drops.landed} | ${drops.ok} | ${drops.false_ok} | ${drops.unconfirmed_landed} |`);
     }
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
     // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
@@ -178,6 +243,8 @@ export function renderSummary(lines) {
     const endLabel = gateLabel(end?.gate);
     const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
+    // a run from before the harness audited its own trace has no record
+    if (end && 'desktop' in end) out.push(desktopLine(end.desktop), '');
   }
   return out.join('\n');
 }

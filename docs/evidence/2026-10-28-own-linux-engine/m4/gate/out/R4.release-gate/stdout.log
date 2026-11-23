@@ -1,0 +1,6 @@
+release gate
+2026-11-13T12:39:04Z == device head 514f5c62dd6c74b1ed24c48f112ca9c35a70eece label counted dirty=no engine cua-engine 0.4.0 (514f5c62dd6c) sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937
+2026-11-13T12:39:35Z run home /tmp/cua171-gl-OU7iQt/device/home installed
+2026-11-13T12:40:05Z device-mode exit 0
+2026-11-13T12:40:05Z == device exit 0
+release gate: R4 exit 0

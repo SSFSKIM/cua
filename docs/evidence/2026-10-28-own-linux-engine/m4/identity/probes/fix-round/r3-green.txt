@@ -1,0 +1,64 @@
+   Compiling cua-linux-engine v0.3.0 (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 48.88s
+     Running unittests src/main.rs (target/release/deps/cua_engine-70057b6b8a99fa9b)
+
+running 51 tests
+test atspi::tests::a_context_menu_copy_is_refused_on_every_route_of_cuas_own ... ok
+test atspi::tests::an_error_on_cuas_own_routes_is_their_answer_never_an_error_that_falls_back ... ok
+test atspi::tests::how_a_frame_was_told_is_named_for_the_stats_line ... ok
+test atspi::tests::only_the_vendors_own_match_falls_back_when_its_tree_cannot_be_read ... ok
+test atspi::tests::the_active_state_is_read_from_the_state_words_themselves ... ok
+test atspi::tests::what_cuas_own_routes_answer_reads_as_their_sentences ... ok
+test copy::tests::a_menu_item_is_its_label_alone_or_with_its_shortcut ... ok
+test copy::tests::a_menu_left_open_is_said_to_have_had_an_escape_sent_never_to_have_closed ... ok
+test copy::tests::siblings_are_fetched_together_within_the_window ... ok
+test copy::tests::the_focus_is_the_first_focused_node_in_post_order ... ok
+test copy::tests::the_search_stops_at_the_depth_limit ... ok
+test engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing ... dbus-daemon[1974597]: [session uid=501 pid=1974597] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=501 pid=1975079 comm="python3 -c import gi; gi.require_version('Gtk', '3" label="unconfined")
+dbus-daemon[1974597]: [session uid=501 pid=1974597] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[1975087]: Activating service name='org.a11y.atspi.Registry' requested by ':1.1' (uid=501 pid=1975088 comm="python3 /Users/new/Developer/GitHub/cua/.claude/wo" label="unconfined")
+dbus-daemon[1975087]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+ok
+test engine::identity_faults::a_copy_whose_active_frame_is_corrected_after_its_selection_is_read_copies_nothing ... ok
+test engine::identity_faults::a_focus_change_between_choosing_the_frame_and_verifying_it_is_the_retry_sentence_never_the_x11_tree ... ok
+test engine::identity_faults::a_paste_whose_active_frame_is_corrected_before_its_focusing_click_clicks_nothing ... ok
+test engine::identity_faults::a_paste_whose_frame_changes_after_its_focusing_click_says_the_click_was_sent_and_restores_nothing ... ok
+test engine::identity_faults::a_paste_whose_frame_is_no_longer_told_apart_before_its_chord_sends_nothing ... ok
+test engine::identity_faults::a_read_whose_active_frame_is_corrected_once_read_is_the_retry_sentence ... ok
+test engine::identity_faults::a_stale_paste_into_the_focused_field_sends_nothing ... ok
+test engine::identity_faults::an_action_whose_active_frame_is_corrected_before_it_presses_nothing ... ok
+test engine::identity_faults::the_stale_state_is_real_and_a_corrected_one_reads_the_right_window ... ok
+test engine::paste::tests::a_confirming_reply_in_time_confirms_and_the_read_is_given_the_deadline ... ok
+test engine::paste::tests::a_confirming_reply_that_arrives_after_the_deadline_does_not_confirm ... ok
+test engine::paste::tests::a_focusing_click_the_application_dropped_is_made_once_more_past_the_double_click_time ... ok
+test engine::paste::tests::an_error_after_the_focusing_click_and_before_the_chord_says_the_click_reached_the_window ... ok
+test engine::paste::tests::an_identity_refusal_says_safe_to_retry_only_before_any_focusing_click ... ok
+test engine::paste::tests::the_focusing_click_stops_at_its_second_try_or_at_the_focus ... ok
+test engine::refusal_faults::a_clipboard_lock_held_after_the_click_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::a_clipboard_taken_from_the_paste_after_the_click_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::a_context_menu_copy_on_the_vendor_s_own_match_still_copies ... ok
+test engine::refusal_faults::a_context_menu_with_no_copy_says_an_escape_was_sent_to_close_it_not_that_it_closed ... ok
+test engine::refusal_faults::a_copy_between_the_snapshot_and_the_take_after_the_click_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::a_desktop_focus_change_after_the_click_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::a_field_changed_at_the_revalidation_after_the_click_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::a_field_that_loses_the_focus_at_its_restore_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::a_field_that_never_takes_the_focus_says_its_clicks_reached_the_window ... ok
+test engine::refusal_faults::a_silent_clipboard_owner_after_the_click_says_the_click_reached_the_window ... ok
+test engine::refusal_faults::an_unconfirmed_paste_s_window_opened_after_the_click_says_the_click_reached_the_window ... ok
+test paste::tests::a_refusal_says_nothing_was_sent_only_before_any_focusing_click ... ok
+test paste::tests::a_request_is_the_target_s_when_its_window_is_the_target_client_s ... ok
+test paste::tests::a_target_that_never_asks_ends_the_transfer_at_the_start_bound ... ok
+test paste::tests::a_transfer_in_flight_stays_open_until_the_owner_ends_it ... ok
+test paste::tests::gecko_counts_one_more_offset_per_character_beyond_the_bmp ... ok
+test paste::tests::gecko_s_reading_is_compared_without_its_feffs ... ok
+test paste::tests::only_a_feff_right_after_a_character_beyond_the_bmp_is_stripped ... ok
+test paste::tests::text_already_there_confirms_only_once_the_field_changes ... ok
+test paste::tests::text_lands_at_the_selection_s_start_else_at_a_valid_caret ... ok
+test paste::tests::the_inserted_segment_confirms_whatever_surrounds_it ... ok
+test paste::tests::the_sentences ... ok
+test paste::tests::the_target_s_requests_before_the_chord_are_not_the_paste_s ... ok
+test paste::tests::the_transfer_is_served_only_by_a_data_format_to_the_target ... ok
+
+test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 19.02s
+

@@ -1,0 +1,18 @@
+fatal: not a git repository (or any of the parent directories): .git
+| cell | lane | runs | misses (late / never) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| electron-input move background | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input move background | settle-25 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input move background | settle-50 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input move background | settle-75 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input move background | settle-100 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input scroll background | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input scroll background | settle-25 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input scroll background | settle-50 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input scroll background | settle-75 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input scroll background | settle-100 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| xterm scroll background | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| xterm scroll background | settle-25 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| xterm scroll background | settle-50 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| xterm scroll background | settle-75 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| xterm scroll background | settle-100 | 30 | 0 (0 / 0) | 30 | 30 consecutive |

@@ -21,7 +21,7 @@ import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 import {homeLayout} from './layout.mjs';
 import {verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
-import {engineLookup} from './linux-engine.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
@@ -249,16 +249,21 @@ export function assertSandboxFits(mode, launch) {
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
-  conflicts.push(...engineLinkConflicts(launch.linuxEngine?.lookup, scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR})));
+  conflicts.push(...engineLinkConflicts(launch, scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR})));
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
 }
 
-// The symbolic links on the path cua's Linux engine was found by (src/runtime/linux-engine.mjs engineLookup) that lie
-// in a write root, where a cell could re-point one: each is a conflict, though the engine it leads to lies outside.
-// A link is compared by where it lies (its directory's real path and its name), never by its target.
-function engineLinkConflicts(lookup, writeRoots) {
-  if (!lookup) return [];
-  const links = engineLookup(lookup).links.map(link => join(realish(dirname(link)), basename(link)));
+// The symbolic links on the path cua's Linux engine was found by that lie in a write root, where a cell could re-point
+// one: each is a conflict, though the engine it leads to lies outside. A link is compared by where it lies (its
+// directory's real path and its name), never by its target. The links are the ones the selection's own resolution
+// followed (`launch.linuxEngine.links`, src/runtime/launch.mjs), carried here so nothing walks the lookup another way;
+// a selection that carries none (an injected one) has its lookup walked again by the same resolver, which keeps out of
+// the vendor's tree (src/runtime/vendor-tree.mjs).
+function engineLinkConflicts(launch, writeRoots) {
+  const engine = launch.linuxEngine;
+  if (!engine?.lookup) return [];
+  const links = (engine.links ?? outsideVendorTree(engine.lookup, launch.engineRoot ? dirname(launch.engineRoot) : undefined).links ?? [])
+    .map(link => join(realish(dirname(link)), basename(link)));
   const conflicts = [];
   for (const root of writeRoots.filter(r => r.path)) {
     const path = realish(root.path);

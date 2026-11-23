@@ -6,10 +6,10 @@ import './helpers/scratch-home.mjs'; // first: nothing here may read the account
 // for the one test that runs doctor whole over a scratch home.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
+import {mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {defaultReadLinuxCapabilities, engineCheck} from '../src/runtime/doctor-engine.mjs';
+import {defaultInspectLinuxEngine, defaultReadLinuxCapabilities, engineCheck} from '../src/runtime/doctor-engine.mjs';
 import {fakeLinuxEngine} from './helpers/fake-linux-engine.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {replHostFor} from '../src/runtime/launch.mjs';
@@ -129,7 +129,8 @@ test('a capability failure of the engine CUA_LINUX_ENGINE_BIN names says to unse
   const s = scratch();
   t.after(s.cleanup);
   const built = join(realpathSync(s.dir), 'cua-engine');
-  writeFileSync(built, '#!/bin/sh\n', {mode: 0o755});
+  // An engine of a version this cua recognizes: the selection probes an override's --version at the open.
+  writeFileSync(built, `#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (fixture0)"\n`, {mode: 0o755});
   const check = await row({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}, {capabilities: () => new Error('cua-engine stopped (signal=SIGSEGV)')});
   assert.equal(check.row.status, 'fail');
   assert.ok(check.row.detail.endsWith('cua-engine stopped (signal=SIGSEGV); unset CUA_LINUX_ENGINE_BIN to run the installed engine instead'), check.row.detail);
@@ -172,7 +173,8 @@ test('CUA_LINUX_ENGINE_BIN is named as what sessions run, a harness setting, bes
   const s = scratch();
   t.after(s.cleanup);
   const built = join(realpathSync(s.dir), 'cua-engine');
-  writeFileSync(built, '#!/bin/sh\n', {mode: 0o755});
+  // An engine of a version this cua recognizes: the selection probes an override's --version at the open.
+  writeFileSync(built, `#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (fixture0)"\n`, {mode: 0o755});
   const {row: check, report} = await row({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built});
   assert.equal(check.status, 'warn');
   assert.ok(check.detail.startsWith(`cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run ${built}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine `
@@ -312,3 +314,23 @@ async function waitGone(pid) {
   }
   assert.fail(`engine ${pid} still runs`);
 }
+
+// Integration with T3: the engine row reads the engine the selection reads, resolved by the same walk
+// (vendor-tree.mjs outsideVendorTree), never through a link into the vendor's tree.
+test('the engine row inspects the engine as the selection resolves it: one that leads into the vendor\'s tree reads as absent', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = realpathSync(s.dir);
+  const dir = join(home, 'engine', 'linux');
+  mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, 'cua-engine'), '#!/bin/sh\n', {mode: 0o755});
+  assert.equal(defaultInspectLinuxEngine({home, arch: 'x64'}).exists, true, 'a file of the home\'s own is read');
+  const vendored = join(home, 'runtimes', '26.928.40906-linux-x64', 'sky_linux_x64');
+  mkdirSync(join(vendored, '..'), {recursive: true});
+  writeFileSync(vendored, 'vendor bytes', {mode: 0o755});
+  rmSync(join(dir, 'cua-engine'));
+  symlinkSync(vendored, join(dir, 'cua-engine'));
+  const facts = defaultInspectLinuxEngine({home, arch: 'x64'});
+  assert.equal(facts.exists, false);
+  assert.equal(facts.sha256, null, 'nothing under the vendor\'s tree is read');
+});

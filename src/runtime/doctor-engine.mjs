@@ -44,6 +44,7 @@
 // start would; else `skip` while the vendor's engine is preferred. Every remedy names this cua's own installer by its
 // absolute path, `node <this cua>/bin/cua.mjs install --engine` (ruling 1110).
 import {realpathSync} from 'node:fs';
+import {join} from 'node:path';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
 import {BUNDLE_ID} from './engine-bundle.mjs';
@@ -51,7 +52,9 @@ import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine
 import {readEngineSettings} from './engine-sign.mjs';
 import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
-import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
+import {ENGINE_BINARY, ENGINE_RECORD, inspectLinuxEngine, linuxEngineDir, loadEnginePin} from './linux-engine.mjs';
+import {realHome} from './layout.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 import {ownInstaller} from './manifest.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 
@@ -66,14 +69,19 @@ export const defaultInspectEngine = ({env, mayLaunch, location}) => inspectEngin
 export const defaultEngineRecords = ({env}) => engineRecords({dir: engineDirectory(env.HOME || homedir())});
 
 // The Linux engine placed in the cua home, against this cua's pin (src/runtime/linux-engine.mjs inspectLinuxEngine); a
-// pin this checkout cannot parse is reported as none, with why (`pinProblem`).
+// pin this checkout cannot parse is reported as none, with why (`pinProblem`). The engine and its record are read where
+// the selection reads them (launch.mjs linuxEngineFor): resolved by vendor-tree.mjs outsideVendorTree, so one that leads
+// into the vendor's tree, or does not resolve, reads as absent, and nothing under that tree is read.
 export function defaultInspectLinuxEngine({home, arch}) {
+  const real = realHome(home);
+  const resolved = name => outsideVendorTree(join(linuxEngineDir(real), name), real).real ?? null;
+  const at = {engine: resolved(ENGINE_BINARY), record: resolved(ENGINE_RECORD)};
   let pin = null, pinProblem = null;
   try { pin = loadEnginePin(); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     pinProblem = error.message;
   }
-  return {...inspectLinuxEngine({home, arch, pin}), ...(pinProblem ? {pinProblem} : {})};
+  return {...inspectLinuxEngine({home, arch, pin, at}), ...(pinProblem ? {pinProblem} : {})};
 }
 
 // The capability report of the Linux engine at `path`, started as cua's service starts it (its client: the version

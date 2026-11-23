@@ -14,7 +14,7 @@ import {createHash} from 'node:crypto';
 import {chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {buildLaunch, defaultNativeEngine, desktopModeFor, nativeEngineFor, replHostFor, LINUX_ENGINE_SERVICE, SKY_SERVICE} from '../src/runtime/launch.mjs';
-import {isOlder, MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
+import {engineVersionOf, isOlder, MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {REPO, forgeActiveRuntime} from './fixtures/runtime-fixture.mjs';
 import {CUA_ENTRY, resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
@@ -37,10 +37,11 @@ function cuaHome(t) {
   mkdirSync(home);
   return {dir, home, user: join(dir, 'user')};
 }
-// An executable file standing in for cua-engine at `path`, with no record of what it is.
-function engineAt(path) {
+// An executable file standing in for cua-engine at `path`, with no record of what it is, answering --version as
+// `version` would (an override's version is read at the open: fix wave 1), or printing `line` instead.
+function engineAt(path, {version = MIN_ENGINE_VERSION, line = `cua-engine ${version} (0123456789ab)`} = {}) {
   mkdirSync(join(path, '..'), {recursive: true});
-  writeFileSync(path, '#!/bin/sh\n', {mode: 0o755});
+  writeFileSync(path, `#!/bin/sh\necho "${line}"\n`, {mode: 0o755});
   return path;
 }
 // The engine `cua install` would leave in the directory `dir` at `version`: an executable and its install.json, whose
@@ -157,7 +158,68 @@ test('CUA_LINUX_ENGINE_BIN names the engine only when the selection is cua: abso
   assert.equal(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: ''}).bin.source, 'installed', 'empty reads as unset');
   assert.throws(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: 'target/cua-engine'}), {code: 'invalid_setting', message: 'CUA_LINUX_ENGINE_BIN must be an absolute path'});
   assert.throws(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: join(dir, 'absent')}),
-    error => error.code === 'engine_not_installed' && error.message.includes(join(dir, 'absent')) && /CUA_LINUX_ENGINE_BIN/.test(error.message));
+    error => error.code === 'engine_not_installed' && error.message.includes(join(dir, 'absent')) && /CUA_LINUX_ENGINE_BIN/.test(error.message)
+      && error.message.includes(`${INSTALLER} --engine`), 'the override\'s own fix, then the installer that restores the installed engine');
+});
+
+// Ruling 1110: an explicit selection below the minimum is refused at the open, the named override included. Its version
+// is read once, from the approved path, at the open; the service still checks whatever it starts.
+test('CUA_LINUX_ENGINE_BIN below MIN_ENGINE_VERSION, or answering no version, is refused at the open; at or above it is taken', t => {
+  const {dir, home, user} = cuaHome(t);
+  for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {}]) {
+    const at = engineAt(join(dir, 'at', 'cua-engine'));
+    assert.equal(select(home, {HOME: user, ...env, CUA_LINUX_ENGINE_BIN: at}).bin.path, at);
+    const older = engineAt(join(dir, 'older', 'cua-engine'), {version: '0.4.2'});
+    assert.throws(() => select(home, {HOME: user, ...env, CUA_LINUX_ENGINE_BIN: older}), error => error.code === 'engine_outdated' && error.message.includes(older)
+      && error.message.includes(`0.4.2, older than ${MIN_ENGINE_VERSION}`) && /CUA_LINUX_ENGINE_BIN/.test(error.message) && error.message.includes(`${INSTALLER} --engine`));
+    const garbled = engineAt(join(dir, 'garbled', 'cua-engine'), {line: 'hello'});
+    assert.throws(() => select(home, {HOME: user, ...env, CUA_LINUX_ENGINE_BIN: garbled}), error => error.code === 'engine_unrecorded' && error.message.includes(garbled)
+      && error.message.includes(`${INSTALLER} --engine`));
+  }
+});
+
+// Fix wave 2: the resolver answers as the kernel does. A path that climbs out of a regular file, or names one with a
+// trailing slash or dot, is ENOTDIR to the kernel, so it is refused as written, never reinterpreted into something that
+// exists.
+test('CUA_LINUX_ENGINE_BIN that the kernel would refuse (ENOTDIR) is refused, not reinterpreted', t => {
+  const {dir, home, user} = cuaHome(t);
+  const engine = engineAt(join(dir, 'bin', 'cua-engine'));
+  const file = join(dir, 'bin', 'plain');
+  writeFileSync(file, 'not a directory');
+  const climbs = join(dir, 'bin', 'climbs');
+  symlinkSync('plain/../cua-engine', climbs);
+  for (const path of [`${file}/../cua-engine`, `${engine}/`, `${engine}/.`, climbs])
+    for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {}])
+      assert.throws(() => select(home, {HOME: user, ...env, CUA_LINUX_ENGINE_BIN: path}), error => error.code === 'invalid_setting' && error.message.includes(path)
+        && /not a directory/.test(error.message) && error.message.includes(`${INSTALLER} --engine`), path);
+  assert.equal(select(home, {HOME: user, CUA_LINUX_ENGINE_BIN: engine}).bin.path, engine, 'the same engine named plainly is taken');
+});
+
+// Fix wave 2: the open's version probe is bounded even by a child that ignores SIGTERM, so one bad override cannot stall
+// every connection of the process.
+test('the open\'s version probe of CUA_LINUX_ENGINE_BIN is killed at its deadline, even when it ignores SIGTERM', t => {
+  const {dir, home, user} = cuaHome(t);
+  const stubborn = engineAt(join(dir, 'stubborn', 'cua-engine'));
+  writeFileSync(stubborn, '#!/bin/sh\ntrap \'\' TERM\nwhile :; do :; done\n', {mode: 0o755});
+  const started = Date.now();
+  assert.throws(() => select(home, {HOME: user, CUA_LINUX_ENGINE_BIN: stubborn}, {probeTimeoutMs: 300}), {code: 'engine_unrecorded'});
+  assert.ok(Date.now() - started < 3000, `the probe returned after ${Date.now() - started} ms`);
+});
+
+// Fix wave 2: one version-line reading at both boundaries, the open's and the service's per-start check
+// (src/services/engine/linux/client.mjs engineVersionOf), so no override is compatible at one and unrecognised at the
+// other.
+test('the open reads an override\'s --version line exactly as the service does', t => {
+  const {dir, home, user} = cuaHome(t);
+  let n = 0;
+  for (const line of [`cua-engine ${MIN_ENGINE_VERSION} (0123456789ab)`, `cua-engine ${MIN_ENGINE_VERSION} (a local build)`, `cua-engine ${MIN_ENGINE_VERSION} x`,
+    `cua-engine ${MIN_ENGINE_VERSION}`, `cua-engine v${MIN_ENGINE_VERSION} (x)`, 'cua-engine 0.4.2 (x)', 'sky_linux 9.9.9 (x)']) {
+    const path = engineAt(join(dir, `v${n++}`, 'cua-engine'), {line});
+    const service = engineVersionOf(line);
+    const expected = service === null ? 'engine_unrecorded' : isOlder(service, MIN_ENGINE_VERSION) ? 'engine_outdated' : 'taken';
+    const outcome = (() => { try { select(home, {HOME: user, CUA_LINUX_ENGINE_BIN: path}); return 'taken'; } catch (error) { return error.code; } })();
+    assert.equal(outcome, expected, line);
+  }
 });
 
 // ---- no lookup of cua's engine is led into the vendor's tree (#171 M6a, F2a; the pre-flight's §3.3, §3.5) ----
@@ -178,7 +240,7 @@ test('CUA_LINUX_ENGINE_BIN under the vendor\'s tree, by its spelling or through 
   for (const path of [inTree, link, join(dirLink, 'sky_linux_x64'), join(home, 'runtimes', 'absent', 'cua-engine')]) {
     for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {}])
       assert.throws(() => select(home, {HOME: user, ...env, CUA_LINUX_ENGINE_BIN: path}), error => error.code === 'invalid_setting' && error.message.includes(path)
-        && /CUA_LINUX_ENGINE_BIN/.test(error.message) && /vendor's tree/.test(error.message), path);
+        && /CUA_LINUX_ENGINE_BIN/.test(error.message) && /vendor's tree/.test(error.message) && error.message.includes(`${INSTALLER} --engine`), path);
   }
 });
 
@@ -344,7 +406,8 @@ test('scoped: an installed engine reached through a link into a write root is re
   symlinkSync(join(home, 'run', SESSION, 'planted'), join(home, 'engine', 'linux'));
   const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_NATIVE_ENGINE: 'cua'}, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
   assert.equal(launch.env.CUA_ENGINE_BIN, real, 'the canonical file, never the replaceable link');
-  assert.deepEqual(launch.linuxEngine, {path: real, lookup: join(home, 'engine', 'linux', 'cua-engine'), source: 'installed'});
+  assert.deepEqual(launch.linuxEngine, {path: real, lookup: join(home, 'engine', 'linux', 'cua-engine'), source: 'installed', links: [join(home, 'engine', 'linux')]},
+    'the link the selection followed, carried to the preflight');
   assert.throws(() => assertSandboxFits('scoped', launch), error => error.code === 'sandbox_conflict' && /cua's Linux engine/.test(error.message) && error.message.includes(real));
 });
 

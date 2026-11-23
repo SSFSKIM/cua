@@ -247,7 +247,7 @@ test('runtime.node: the pinned Node passes; one behind the pin warns naming both
   // The real lookup refuses what CUA_NODE names when it cannot run it: the row fails with that sentence, its correction.
   const gone = byName(await doctor(home, pin, {env: {DISPLAY: ':9', CUA_NODE: '/nonexistent/node'}}))['runtime.node'];
   assert.equal(gone.status, 'fail');
-  assert.match(gone.detail, /^cua's own REPL host needs Node 24 or later, and CUA_NODE names \/nonexistent\/node, which is not found: set CUA_NODE to the absolute path of a Node 24 or later, or unset it/);
+  assert.match(gone.detail, /^cua's own REPL host needs Node 24 or later, and CUA_NODE names \/nonexistent\/node, which is not found: set CUA_NODE to the absolute path of a Node 24 or later, or unset CUA_NODE/);
 
   const none = await linuxHome(t, {node: null});
   const failed = byName(await doctor(none.home, none.pin))['runtime.node'];

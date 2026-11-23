@@ -1,4 +1,4 @@
-# The H8 counted rows re-judged at 9e80f9b6 (task 139), per step; each step's own file beside its README
+# The H8 counted rows re-judged at 74a5a91a (task 139), per step; each step's own file beside its README
 
 x64 zero/V5.pinned-release: 52 device verdicts, 0 rows reached, moved none
 x64 out/K1.pinned-release: 2 device verdicts, 0 rows reached, moved none

@@ -1,4 +1,4 @@
-# arm64 out/K1.pinned-release: the device verdicts re-judged at 9e80f9b6 (task 139; the final review's P1, ruling 1091)
+# arm64 out/K1.pinned-release: the device verdicts re-judged at 74a5a91a (task 139; the final review's P1, ruling 1091)
 
 drop cells' samples: 9; reached by the new reading (effect not seen, a drop seen): 0
 

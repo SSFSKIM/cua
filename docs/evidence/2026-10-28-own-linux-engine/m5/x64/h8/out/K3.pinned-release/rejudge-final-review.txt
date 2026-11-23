@@ -1,4 +1,4 @@
-# x64 out/K3.pinned-release: the drop-signals verdict re-judged at 9e80f9b6 (task 139; the final review's P2s)
+# x64 out/K3.pinned-release: the drop-signals verdict re-judged at 74a5a91a (task 139; the final review's P2s)
 
 run pinned-K3: chrome hold-regression, gate pinned, lanes null, trials null, judge holdRegressionVerdict
   stored: pass

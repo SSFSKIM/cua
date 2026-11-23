@@ -132,6 +132,10 @@ enum MenuItemPoint<Element> {
 struct RecordedMenuItem<Element> {
   let element: Element
   let title: String?
+  /// #519 (rulings 1146, 1151): the title did not read at the observation as text or as absent
+  /// (`ScreenshotNode.strictLabel`: a failed read, a null slot or a value that is no text), so `title` says nothing, and
+  /// no title read now can be checked against it. It only refuses the item already identified, never chooses another.
+  var titleUnread = false
 }
 
 /// The menu item the observation recorded at the point, as the guard found it: the recorded node itself (its handle as
@@ -139,24 +143,26 @@ struct RecordedMenuItem<Element> {
 /// which the walk hangs under the window's groups, so the deepest node at the point is the page's group under the menu:
 /// `underlyingRole: AXMenuItem`). Nil when the record names none there.
 func recordedMenuItem<Element>(_ verdict: StalePointVerdict<Element>) -> RecordedMenuItem<Element>? {
-  recordedAtPoint(verdict, roles: [kAXMenuItemRole]).map { RecordedMenuItem(element: $0.element, title: $0.title) }
+  recordedAtPoint(verdict, roles: [kAXMenuItemRole]).map { RecordedMenuItem(element: $0.element, title: $0.title, titleUnread: $0.titleUnread) }
 }
 
 /// The recorded node of one of `roles` at the point, as the guard found it (`recordedMenuItem`'s search, which #458's
 /// pop-up button shares): the recorded node itself (its handle as found now), else its nearest recorded ancestor of such
 /// a role, else #433's recorded control beneath it. Nil when the record names none there.
-func recordedAtPoint<Element>(_ verdict: StalePointVerdict<Element>, roles: Set<String>) -> (element: Element, role: String, title: String?)? {
+func recordedAtPoint<Element>(_ verdict: StalePointVerdict<Element>, roles: Set<String>)
+  -> (element: Element, role: String, title: String?, titleUnread: Bool)? {
+  func unread(_ node: ScreenshotNode<Element>) -> Bool { node.strictLabel(.title) != .text(node.title) }
   if let node = verdict.node {
-    if roles.contains(node.role) { return (verdict.current ?? node.element, node.role, node.title) }
+    if roles.contains(node.role) { return (verdict.current ?? node.element, node.role, node.title, unread(node)) }
     var index = node.ancestor
     var levels = 0
     while let at = index, at < verdict.nodes.count, levels < stalePointAncestorLevels {
       let ancestor = verdict.nodes[at]
-      if roles.contains(ancestor.role) { return (ancestor.element, ancestor.role, ancestor.title) }
+      if roles.contains(ancestor.role) { return (ancestor.element, ancestor.role, ancestor.title, unread(ancestor)) }
       (index, levels) = (ancestor.ancestor, levels + 1)
     }
   }
-  if let control = verdict.underlying, roles.contains(control.role) { return (control.element, control.role, control.title) }
+  if let control = verdict.underlying, roles.contains(control.role) { return (control.element, control.role, control.title, unread(control)) }
   return nil
 }
 
@@ -177,7 +183,7 @@ func recordedMenuItems<Element>(_ verdict: StalePointVerdict<Element>) -> Record
   guard let point = verdict.point else { return found }
   let shown = CGPoint(x: point.x - verdict.windowShift.dx, y: point.y - verdict.windowShift.dy)
   found.holding = verdict.nodes.filter { $0.role == kAXMenuItemRole && $0.shown.map { holdsPoint($0, shown) } == true }
-    .map { RecordedMenuItem(element: $0.element, title: $0.title) }
+    .map { RecordedMenuItem(element: $0.element, title: $0.title, titleUnread: $0.strictLabel(.title) != .text($0.title)) }
   if found.identified == nil, found.holding.count == 1 { found.identified = found.holding[0] }
   return found
 }
@@ -245,7 +251,7 @@ func menuItemPoint<Element>(hit: Element?, recorded: RecordedMenuItems<Element>,
   guard anyNative else { return .refuse(.unobserved, window: window) }
   guard let recorded = identified, reads.same(recorded.element, hit) else { return .refuse(.notRecorded, window: window) }
   let title = reads.title(hit)
-  guard sameMenuTitle(recorded: recorded.title, live: title) else { return .refuse(.relabelled, window: window) }
+  guard !recorded.titleUnread, sameMenuTitle(recorded: recorded.title, live: title) else { return .refuse(.relabelled, window: window) }
   guard reads.enabled(hit) == true else { return .refuse(.disabled, window: window) }
   guard let action = reads.actions(hit).flatMap({ actions in ["AXPick", "AXPress"].first(where: actions.contains) }) else {
     return .refuse(.noAction, window: window)

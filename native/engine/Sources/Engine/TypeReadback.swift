@@ -128,7 +128,8 @@ enum TypeReadbackReason: String, Equatable {
 }
 
 /// Whether a field's value and range may not be read by themselves: role or subrole AXSecureTextField, or a role or
-/// subrole that cannot be read. Fails closed. Such a field that is a password field (`readbackPasswordField`) is read
+/// subrole that cannot be read, except a subrole on a role never secure text entry (`neverSecureRoles`, #525), as
+/// `valueClassification` has it. Fails closed. Such a field that is a password field (`readbackPasswordField`) is read
 /// only through its length batch (#414); any other is read no further.
 func readbackSecure(role: String?, subrole: ReadbackSubrole) -> Bool {
   guard let role else { return true }
@@ -136,7 +137,7 @@ func readbackSecure(role: String?, subrole: ReadbackSubrole) -> Bool {
   switch subrole {
   case .value(let found): return found == "AXSecureTextField"
   case .absent: return false
-  case .failed: return true
+  case .failed: return !neverSecureRoles.contains(role)
   }
 }
 

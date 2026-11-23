@@ -241,6 +241,35 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
   }
 }
 
+/// What `deliverFrontmostFieldClick` did (#258, ruling 1171).
+enum FrontmostFieldDelivery: Equatable {
+  case posted
+  /// Another app was frontmost just before the events: nothing posted, for main's action route to carry the click.
+  case frontmostLost
+}
+
+/// #258's carrier for a web page's text field in the frontmost app (ElementClickCarrier `frontmostField`): a plain left
+/// click (route 2′) posted to the field's serving process with no activation and no foreground assist, since the app
+/// is in front by the gate's own identity (`frontmostIsTarget`: the serving process or the app, never key focus alone),
+/// so a helper-served field gets the plain click too. `beforePosting` (the in-flight check) runs first, then the front
+/// is read again, immediately before the events: if another app has come forward since the plan, nothing is posted and
+/// the answer is `.frontmostLost`, with no route recorded.
+func deliverFrontmostFieldClick(_ target: ClickTarget, appPid: pid_t, frontmost: () -> pid_t?, beforePosting: () throws -> Void = {},
+                                announce: () -> Void = {}, pointerPosted: () -> Void = {}, post: (CGEvent, pid_t) -> Void,
+                                meta: inout InputMeta) throws -> FrontmostFieldDelivery {
+  struct FrontmostLost: Error {}
+  do {
+    try deliverClick(target, route: .plainPost, button: .left, count: 1, activation: nil, targetActive: { true }, beforePosting: {
+      try beforePosting()
+      guard frontmostIsTarget(frontmost(), pid: target.pid, appPid: appPid) else { throw FrontmostLost() }
+    }, announce: announce, pointerPosted: pointerPosted, post: post, meta: &meta)
+  } catch is FrontmostLost {
+    meta.inputRoute = nil
+    return .frontmostLost
+  }
+  return .posted
+}
+
 /// What a left pointer action aims at, for #282's rules (Routes.swift): the view its point hits, the app's name for the
 /// sentences, the action's noun, and the element route a refused plain click takes instead (the hit's own action, which
 /// fills the meta it is given; nil where there is none, and the action is refused).
@@ -428,7 +457,9 @@ extension Engine {
   /// service's translation of the facade's element_index). An element is first scrolled into view (positionElement,
   /// Positioning.swift). An element click takes route 1 (AXPick, else AXPress) for a plain left click on an element
   /// that advertises the action and whose clickable point does not land on a strict descendant of it (the vendor's
-  /// nested-content gate, applied to every element by cua); every other element click is synthesized by route 3 at the
+  /// nested-content gate, applied to every element by cua), nor, for a text-entry role in a web page of the frontmost
+  /// app, on the element itself (#258, `elementClickGate`), which is carried by a plain click, the front read again just
+  /// before its events, main's action where it was lost (ruling 1171); every other element click is synthesized by route 3 at the
   /// midpoint of the element's visible frame (`synthesizedClick`), its activation click sparing the element for any
   /// button but the left; its meta records the plan, the ladder's reason and the hit-test's answer (`elementClick`,
   /// ElementClickRecord). Where the ladder chose the action for a text-entry element (#313, `textEntryClickRoute`), the action
@@ -484,24 +515,30 @@ extension Engine {
         }
         let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
-        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
-                                        synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {
-          pointing.relation == .descendant  // no point, or no answer: the action needs no point
+        // #258 (ruling 1170): in the frontmost app, a web page's text field whose point hits the field itself is synthesized
+        // there, as the vendor's click is; behind another app it keeps main's route. The field's web-area ancestry is read
+        // at most once for the gate and #313's route together.
+        let routes = try elementClickRoutes(
+          forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
+          synthesized: synthesizedClickRoute(forced: nil, foreground: foreground), engine: webAccessibility.pageEngine(app.appPath),
+          frontmost: { frontmostIsTarget(frontmostPid(), pid: target.owner, appPid: appPid) },
+          insideWebArea: {
+            elementInsideWebArea(target.element, role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
+          }) {
+          pointing.relation  // no point, or no answer: the action needs no point
         }
-        meta.elementClick = elementClickRecord(plan, forced: forced, button: button, count: count, actions: target.entry.actions, hit: pointing.taken)
+        let entry = routes.textEntry
+        meta.elementClick = elementClickRecord(routes.plan, forced: forced, button: button, count: count, actions: target.entry.actions,
+                                               hit: pointing.taken)
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           // A synthesized click takes its reach check's hit-test itself: recorded on a refusal too.
           defer { meta.elementClick?.hit = pointing.taken }
-          switch plan {
-          case .action(let action):
+          func carryAction(_ action: String, _ meta: inout InputMeta) throws {
             // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift); the cursor at
             // the element's clickable point, as the action goes out.
             // #313: a text-entry element's action answers success only once its focus reads back, and on a WebKit page a
             // field still unfocused gets its caret written and is read again. Nothing writes AXFocused.
             let element = target.element
-            let entry: TextEntryClickRoute = forced != nil ? .press : textEntryClickRoute(
-              element, role: target.entry.identity.role, engine: webAccessibility.pageEngine(app.appPath),
-              roleOf: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
             // #359: a text field's action, within the window of a pointer press posted to the app, after its range settles.
             if entry != .press { awaitPendingClick(on: element, pids: [appPid, target.owner], meta: &meta) }
             try carryActionClick(entry, app: app.displayName, press: {
@@ -533,9 +570,20 @@ extension Engine {
               }
               meta.note = caretFocusNote(app.displayName, caret)
             }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+          }
+          switch routes.carrier {
+          case .action(let action):
+            try carryAction(action, &meta)
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
                                  context: context, meta: &meta)
+          case .frontmostField(let fallback):
+            // #258 (ruling 1171): the plain click while the app is in front, read again just before the events; an app
+            // that lost the front by then gets main's action, nothing posted, and the record says so.
+            if try frontmostFieldClick(pointing, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta) == .frontmostLost {
+              meta.elementClick = ElementClickRecord(plan: .action(fallback), reason: .webTextEntryFrontmostLost, hit: pointing.taken)
+              try carryAction(fallback, &meta)
+            }
           }
         }
         context.connection.clearMenuRecord(app: app.key)

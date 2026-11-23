@@ -699,6 +699,61 @@ export function settleOutcomeOf(r) {
 const COPY = 1;
 
 /**
+ * The settle's rest (#487; task 142, ruling 1102): from linux-engine 0.4.4 an Electron drop's settle takes its press
+ * source's family's rest between its two pings, Electron's 30 ms (cua-engine `pointer.rs` `settle_rest`, `BROWSER_REST`),
+ * and records it on every settle, a drag's and a handle end's (`drop_cursor.settle.rest_ms`, an integer in ms). Item 1's
+ * plan (`plan`) holds every settled row of a run whose engine is `since` or later to it; an earlier engine's rows predate
+ * the field and are not held to it.
+ */
+export const SETTLE_REST = { plan: 't17-fix3', since: [0, 4, 4], rest_ms: 30 };
+
+/**
+ * The engine's version from a run's meta row's `cua_version` (`cua-engine X.Y.Z (sha)`, the engine's own `--version`,
+ * experiments.mjs), as `[X, Y, Z]`, or null where it does not read so.
+ */
+export function engineVersionOf(cuaVersion) {
+  const m = typeof cuaVersion === 'string' ? /^cua-engine (\d+)\.(\d+)\.(\d+)(?: \(|$)/.exec(cuaVersion) : null;
+  return m ? m.slice(1).map(Number) : null;
+}
+
+/** Whether version `a` is `b` or later, part by part. */
+const atLeast = (a, b) => {
+  for (let k = 0; k < b.length; k++) if (a[k] !== b[k]) return a[k] > b[k];
+  return true;
+};
+
+/** A row's settle record: its drag's drop cursor's (`drop_cursor.settle`), or its handle's; null for a drop that settled nothing. */
+export const settleOf = (r) => r.drop_cursor?.settle ?? r.handle?.drop_cursor?.settle ?? null;
+
+/**
+ * `SETTLE_REST` held to a run's rows (`cuaVersion`, its meta row's): on an engine of 0.4.4 or later, a settled row
+ * (`settleOf`) whose `rest_ms` is not 30, or is no integer or missing, fails, named; on an earlier engine nothing is
+ * checked, and a finding says why; a version that cannot be read fails, so the check is never skipped. Pushes its fails
+ * and findings; answers its counts (`applies` null for an unreadable version).
+ */
+function settleRestCheck(rows, cuaVersion, failed, findings) {
+  const version = engineVersionOf(cuaVersion);
+  if (!version) {
+    failed.push(`the run's engine version is unreadable (its meta row's cua_version: ${JSON.stringify(cuaVersion ?? null)}), so the settle's rest cannot be checked (#487)`);
+    return { applies: null, version: null };
+  }
+  const shown = version.join('.');
+  if (!atLeast(version, SETTLE_REST.since)) {
+    findings.push(`the settle's rest is not checked: engine ${shown} predates its record (from ${SETTLE_REST.since.join('.')})`);
+    return { applies: false, version: shown };
+  }
+  const settled = rows.filter((r) => settleOf(r) !== null);
+  const restOf = (r) => settleOf(r).rest_ms;
+  const missing = settled.filter((r) => !Number.isInteger(restOf(r)));
+  const wrong = settled.filter((r) => Number.isInteger(restOf(r)) && restOf(r) !== SETTLE_REST.rest_ms);
+  const named = (rs, say) => `${rs.slice(0, 5).map(say).join(', ')}${rs.length > 5 ? ', …' : ''}`;
+  const of = (rs) => `${rs.length} of ${settled.length} settled drags`;
+  if (wrong.length) failed.push(`the settle's rest (drop_cursor.settle.rest_ms) is not Electron's ${SETTLE_REST.rest_ms} ms on ${of(wrong)} (${named(wrong, (r) => `${r.lane} ${r.cell} #${r.i} rested ${restOf(r)} ms`)}) (#487, engine ${shown})`);
+  if (missing.length) failed.push(`a settled drag lacks the settle's rest (drop_cursor.settle.rest_ms, an integer in ms) on ${of(missing)} (${named(missing, (r) => `${r.lane} ${r.cell} #${r.i}`)}) (#487: engine ${shown} records it on every settle)`);
+  return { applies: true, version: shown, settled: settled.length, rest_30: settled.length - wrong.length - missing.length, wrong: wrong.length, missing: missing.length };
+}
+
+/**
  * A zone-truth mismatch (the design session's ruling 830, 2026-11-18): an ok answer, nothing honestly pending, in a cell
  * in the window, whose own completed dragend, stamped with its press (`stampedDragend`), reported copy while the zone's
  * drop counter, read before and after, did not move. Electron's own word agrees with the ok, so the dragend rule stands
@@ -763,10 +818,11 @@ function longPathCheck(name, list, ends, failed, findings) {
  * was not verified is left out of its cell and counted apart; and, per lane and cell in the window, at every load and in
  * every plan, the zone-truth mismatches (`zoneMismatch`, ruling 830), a declared app-level limit; and a root cell's
  * unverified ends by their answer (ruling 838: at the gate's window load the release lands on the Chrome ballast), the
- * oks listed with their settle outcome (`settleOutcomeOf`), a finding for the design session, never a fail. Answers
- * `{md, failed, findings, counts}`.
+ * oks listed with their settle outcome (`settleOutcomeOf`), a finding for the design session, never a fail. On item 1's
+ * plan (`SETTLE_REST`), the settle's rest on every settled row of a run whose engine (`cuaVersion`, its meta row's) is
+ * 0.4.4 or later (#487), and a version that cannot be read fails. Answers `{md, failed, findings, counts}`.
  */
-export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null, ends = PATH_ENDS } = {}) {
+export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null, ends = PATH_ENDS, cuaVersion = null } = {}) {
   if (!['hard', 'declared-race'].includes(slowMode)) throw new Error(`the slow cell's mode is hard or declared-race, not ${slowMode}`);
   const failed = [];
   // #365's declared race: the hung sink's false oks per lane, and its drags
@@ -855,6 +911,9 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${unverified.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${count((r) => ![null, 'unconfirmed'].includes(honest(r)))} | ${count((r) => r.ok !== true)} | ${falseOk.length} | ${landedUnconfirmed.length} (${byClass['move-link']} / ${byClass['cold-load']} / ${byClass.other}) | ${stale.length} | ${ambiguous.length} |`);
   }
   if (ambiguousRows.length) findings.push(ambiguousFinding(ambiguousRows));
+  // #487's settle rest: item 1's plan, every settled row on an engine that records it (`SETTLE_REST`)
+  const settleRest = plan === SETTLE_REST.plan ? settleRestCheck(rows, cuaVersion, failed, findings) : undefined;
+  if (settleRest?.applies) md.push('', `The settle's rest (#487, engine ${settleRest.version}): ${settleRest.rest_30} of ${settleRest.settled} settled drags rested ${SETTLE_REST.rest_ms} ms; ${settleRest.wrong} another rest, ${settleRest.missing} without the record.`);
   total.race_false_ok = race.false_ok;
   total.race_drags = race.drags;
   if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
@@ -878,7 +937,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const rootOks = rootUnverified.filter((x) => x.ok > 0);
   const rootOkLine = rootOks.length ? ` ${rootOks.reduce((n, x) => n + x.ok, 0)} ok answers on the root cells' unverified ends (${rootOks.map((x) => `${x.lane} ${x.cell} ${x.ok}`).join(', ')}): a finding for the design session (ruling 838), not a fail.` : '';
   md.push('', `${failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no drop at a stale position, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`}${rootOkLine}`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
-  return { md, failed, findings, counts: { load, ...total, over_share: over, residue, zone_mismatch: mismatches, root_unverified: rootUnverified } };
+  return { md, failed, findings, counts: { load, ...total, over_share: over, residue, zone_mismatch: mismatches, root_unverified: rootUnverified, ...(settleRest ? { settle_rest: settleRest } : {}) } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1199,7 +1258,7 @@ export function dropSignalsVerdict(args, rows, { specs: held = null } = {}) {
   const manifest = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? null;
   const specs = held ?? manifest ?? [];
   if (judgedHoldRegressionPlan(args)) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs: manifest }) };
-  if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
+  if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan, cuaVersion: rows.find((r) => r.kind === 'meta')?.cua_version ?? null }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;
 }
@@ -1284,7 +1343,8 @@ export function partsVerdict(args, rows) {
   const parts = [];
   for (const [k, part] of PART_PLANS[args.plan].entries()) {
     const name = `part ${k + 1} (${part.family} ${part.plan})`;
-    const own = rows.filter((r) => r.part === k);
+    // the part's rows, and the run's meta row (its engine's version), which no part marks
+    const own = rows.filter((r) => r.part === k || (r.kind === 'meta' && r.part === undefined));
     const scene = own.find((r) => r.kind === 'drop-signal-scene');
     const trials = args.samplesTrials ?? null;
     // the part's own fails, before its judge's: its scene row missing, or its manifest short of the plan's cells

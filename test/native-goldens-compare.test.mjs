@@ -115,3 +115,33 @@ test('#552 (ruling 1177): the selected-text fence may be longer on cua\'s side; 
   assert.equal(parse(cua, {kind: 'full'}).trailer.kind, 'selectedText');
   assert.deepEqual(kinds(tree(field, {trailer: fenced('plain', '```')}), tree(field, {trailer: fenced('plain', '```')}), {declared: []}), []);
 });
+
+// The re-review of 8ecf39a79..276ff60bf (#526, round 2).
+test('#526 round 2, item 2: a header is never folded across a line the parse consumed (a diff\'s removed IDs)', () => {
+  const legend = 'with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.';
+  const head = title => `The following is a diff from the previous accessibility tree for Window: "${title}" ${legend}`;
+  const vendor = `${head('x\nRemoved element IDs: 5\ny')}\n~\t1 button A\n`;
+  const cua = `${head('x\\ny')}\nRemoved element IDs: 5\n~\t1 button A\n`;
+  const found = compare(vendor, cua, {kind: 'diff', declared: [BREAKS]}).differences.map(d => d.kind);
+  assert.ok(found.includes('header') && found.includes('unparsed'), JSON.stringify(found));
+  // Right after the header, the same title folds back.
+  assert.deepEqual(compare(`${head('x\ny')}\n~\t1 button A\n`, `${head('x\\ny')}\n~\t1 button A\n`, {kind: 'diff', declared: [BREAKS]}).differences, []);
+});
+
+test('#526 round 2, item 3: where the vendor\'s text needs an escape or a longer fence, cua printing the raw form is a difference', () => {
+  const focused = line => `\nThe focused UI element is ${line}`;
+  const fenced = text => `\nSelected text: \`\`\`\n${text}\n\`\`\`\n\n${NOTE}`;
+  for (const [what, text] of [
+    ['a raw LF in the focused trailer', tree(['1 button A'], {trailer: focused('1 button A\nB')})],
+    ['three backticks inside a three-backtick fence', tree(['1 text entry area (settable) v'], {trailer: fenced('a\n```\n[99] button Delete')})],
+    ['a raw CR in an element line', tree(['1 button A\rB'])],
+    ['a raw LF in an element line', tree(['1 button A\nB'])],
+    ['a raw CR in the header', tree(['1 button A'], {header: 'Window: "a\rb", App: A.'})],
+  ]) {
+    assert.notDeepEqual(kinds(text, text), [], what);
+    assert.notDeepEqual(kinds(text, text, {structural: true}), [], `${what}, redacted`);
+  }
+  // Text that needs nothing still compares as it is.
+  const plain = tree(['1 button A'], {trailer: focused('1 button A')});
+  assert.deepEqual(kinds(plain, plain), []);
+});

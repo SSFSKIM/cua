@@ -50,7 +50,9 @@ export function parse(text, {kind}) {
   const lines = text.replace(/\n$/, '').split('\n');
   const header = lines.shift();
   const items = [];
-  const out = {header, items, trailer: null, removed: null, unparsed: []};
+  // headerTail: how many of the unparsed lines directly follow the header, before any line the parse consumed (a
+  // diff's removed IDs): only those can be a window title's or app name's later lines.
+  const out = {header, items, trailer: null, removed: null, unparsed: [], headerTail: 0};
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
@@ -64,7 +66,7 @@ export function parse(text, {kind}) {
     const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) ([^]*)$/ : /^()(\t*)(\d+) ([^]*)$/).exec(line);
     if (match) items.push({mark: match[1], depth: match[2].length, index: match[3], rest: match[4]});
     else if (items.length) items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
-    else out.unparsed.push(line);
+    else { out.unparsed.push(line); if (out.removed === null) out.headerTail++; }
   }
   return out;
 }
@@ -216,11 +218,12 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     const v = vendor.items[i], c = cua.items[j];
     if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});
     const raw = textOf(v.rest, structural), escaped = asCua(raw);
+    // Where the vendor's text holds a break, only its escaped form is cua's: cua printing it raw is a difference.
+    const required = escaped !== raw;
     let cuaLine = textOf(c.rest, structural);
-    if (same(raw, cuaLine)) continue;
-    if (escaped !== raw && escaped === cuaLine) { lineBreaks++; continue; }
-    // The declared part and subset differences, on the vendor's text as cua would print it (redacted: as recorded).
-    const vendorLine = structural ? raw : escaped;
+    if (required ? escaped === cuaLine : same(raw, cuaLine)) { if (required) lineBreaks++; continue; }
+    // The declared part and subset differences, on the vendor's text as cua must print it.
+    const vendorLine = escaped;
     const applied = [];
     for (const rule of subsets) {
       const next = rule.left > 0 ? applySubsetCount(vendorLine, cuaLine, rule) : null;
@@ -230,7 +233,7 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
       const next = rule.left > 0 ? applyPart(cuaLine, rule) : null;
       if (next !== null) { cuaLine = next; applied.push(rule); }
     }
-    if (applied.length && same(vendorLine, cuaLine)) { for (const rule of applied) rule.left--; if (vendorLine !== raw) lineBreaks++; }
+    if (applied.length && (required ? vendorLine === cuaLine : same(vendorLine, cuaLine))) { for (const rule of applied) rule.left--; if (required) lineBreaks++; }
     else differences.push({kind: 'text', vendor: v.rest, cua: c.rest});
   }
 
@@ -239,11 +242,12 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
   const redactedWhole = /^⟨(\d+)⟩$/.exec(vendor.header);
   const headerOf = text => (structural ? text.replace(/App: .*\.$/, 'App: ⟨⟩.').replace(/⟨\d+⟩/g, '⟨⟩') : text);
   let sameHeader = structural && redactedWhole ? Number(redactedWhole[1]) === [...cua.header].length : headerOf(vendor.header) === headerOf(cua.header);
-  if (!sameHeader && escapesBreaks && !cua.unparsed.length) {
-    for (const spans of [[vendor.header], [vendor.header, ...vendor.unparsed]]) {
-      const escaped = escapeLineBreaks(spans.join('\n'));
-      if (escaped !== spans.join('\n') && escaped === cua.header) { sameHeader = true; lineBreaks++; vendor.unparsed = vendor.unparsed.slice(spans.length - 1); break; }
-    }
+  if (escapesBreaks) {
+    // Only the lines right after the header, before any line the parse consumed, can continue it; and where the
+    // vendor's header holds a break, only its escaped form is cua's.
+    const tail = vendor.unparsed.slice(0, vendor.headerTail), whole = [vendor.header, ...tail].join('\n'), own = escapeLineBreaks(vendor.header);
+    if (tail.length && !cua.unparsed.length && escapeLineBreaks(whole) === cua.header) { sameHeader = true; lineBreaks++; vendor.unparsed = vendor.unparsed.slice(tail.length); }
+    else if (own !== vendor.header) { sameHeader = own === cua.header; if (sameHeader) lineBreaks++; }
   }
   if (!sameHeader && !allow('header', rule => rule.vendor === vendor.header && rule.cua === cua.header)) {
     differences.push({kind: 'header', vendor: vendor.header, cua: cua.header});
@@ -251,11 +255,15 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
 
   // The trailer, whole: its kind and its text, the elements it names by their indexes; under the departure, the
   // vendor's as cua prints it (asCuaTrailer), compared exactly.
-  let sameTrailer = !vendor.trailer || !cua.trailer ? vendor.trailer === cua.trailer
-    : vendor.trailer.kind === cua.trailer.kind && same(textOf(vendor.trailer.text, structural), textOf(cua.trailer.text, structural));
-  if (!sameTrailer && escapesBreaks && vendor.trailer && cua.trailer && vendor.trailer.kind === cua.trailer.kind) {
-    const escaped = asCuaTrailer(vendor.trailer);
-    if (escaped !== vendor.trailer.text && textOf(escaped, structural) === textOf(cua.trailer.text, structural)) { sameTrailer = true; lineBreaks++; }
+  // Where the vendor's trailer needs an escape or a longer fence, only that form is cua's.
+  const requiredTrailer = escapesBreaks && vendor.trailer ? asCuaTrailer(vendor.trailer) : null;
+  let sameTrailer;
+  if (requiredTrailer !== null && requiredTrailer !== vendor.trailer.text) {
+    sameTrailer = Boolean(cua.trailer) && vendor.trailer.kind === cua.trailer.kind && textOf(requiredTrailer, structural) === textOf(cua.trailer.text, structural);
+    if (sameTrailer) lineBreaks++;
+  } else {
+    sameTrailer = !vendor.trailer || !cua.trailer ? vendor.trailer === cua.trailer
+      : vendor.trailer.kind === cua.trailer.kind && same(textOf(vendor.trailer.text, structural), textOf(cua.trailer.text, structural));
   }
   if (!sameTrailer && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {
     differences.push({kind: 'trailer', vendor: vendor.trailer?.text ?? null, cua: cua.trailer?.text ?? null});

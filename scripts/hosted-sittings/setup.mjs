@@ -31,7 +31,8 @@
 //                       sides alike. A screen not read is recorded, the frames stay unplaced and the setup goes on
 //   textedit defaults   TextEdit's own preferences on this throwaway runner (./venue.mjs writeTextEditDefaults): its
 //                       width in characters, which sizes its windows (TextEdit places none: its origin stays AppKit's
-//                       cascade, which each run reads back), and the Open panel's saved frame and size; each read back,
+//                       cascade, which each run reads back), no untitled document at launch (the documents a run makes
+//                       are its only windows), and the Open panel's saved frame and size; each read back,
 //                       and one that does not read back as written fails the setup. After the warm-ups' TextEdit ended,
 //                       before any run launches one. Kept in `venue.textEdit`
 //   key-window trust    whether the key-window reader (../cursor-sitting/ax-state.swift, ./key-window.mjs) holds the
@@ -87,7 +88,7 @@ function warmUpDetail({capture, captureAlerts, frontAfter, wait}) {
   return `${made}, ${lines}, ${frontName(frontAfter)} in front after it; ${left}`;
 }
 
-const TEXTEDIT_PLACED = `sized by its own preferences (WidthInChars ${TEXTEDIT_WIDTH_IN_CHARS}, the textedit defaults step); its origin is AppKit's, read back by each run`;
+const TEXTEDIT_PLACED = `sized by its own preferences (WidthInChars ${TEXTEDIT_WIDTH_IN_CHARS}, no untitled document at launch, the textedit defaults step); its origin is AppKit's, read back by each run`;
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
 const rectText = r => `${r.x},${r.y} ${r.width}x${r.height}`;
 // The placement step's record from one screen read ({windows, displays}, or null unread): the alert windows read fresh,

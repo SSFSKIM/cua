@@ -98,7 +98,7 @@ export function writeTextEditDefaults(writes, {env = process.env, platform = pro
     const wrote = exec('/usr/bin/defaults', ['write', TEXTEDIT_DOMAIN, key, `-${type}`, value]);
     const read = exec('/usr/bin/defaults', ['read', TEXTEDIT_DOMAIN, key]);
     const readBack = read?.status === 0 ? String(read.stdout ?? '').trim() : null;
-    return {key, value, written: wrote?.status === 0, readBack, matched: wrote?.status === 0 && readBack === readsAs};
+    return {key, value, ...(readsAs !== value.trim() ? {readsAs} : {}), written: wrote?.status === 0, readBack, matched: wrote?.status === 0 && readBack === readsAs};
   });
   return {domain: TEXTEDIT_DOMAIN, writes: done, ok: done.every(w => w.matched)};
 }
@@ -121,7 +121,7 @@ const GROUNDING = {
   openPanel: 'element-addressed (its Cancel, A\'s New Document): the frame decides only whether the guard refuses them',
 };
 const PANEL_CELLS = ['openPanel/frontmost/getAXState.panel', 'openPanel/frontmost/click.cancel', 'openPanel/background/getAXState.panel@finder', 'openPanel/background/click.cancel@finder',
-  'native-baseline setup.newDocument (the panel at TextEdit\'s launch)'];
+  'native-baseline setup.newDocument (the panel at TextEdit\'s launch, where one shows: the mini\'s)'];
 const cellsOf = scene => [...framedCells(scene).map(c => c.id), NATIVE_MAC[scene]];
 
 // The venue block: the alert windows read fresh after the switch, the display, the frames the scenes launch at, TextEdit's

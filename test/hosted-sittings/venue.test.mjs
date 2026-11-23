@@ -71,7 +71,6 @@ test('TextEdit\'s preferences: its own domain only, its width in characters, the
   for (const {key, value} of writes) {
     const at = args.indexOf(`-${key}`);
     if (at >= 0) assert.equal(args[at + 1], value, key);
-    else assert.notEqual(key, UNTITLED_AT_LAUNCH_KEY);
   }
   assert.ok(args.includes(`-${UNTITLED_AT_LAUNCH_KEY}`));
 });
@@ -100,6 +99,12 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
   const stuck = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: '75\n'} : {status: 0, stdout: ''})});
   assert.equal(stuck.ok, false);
   assert.equal(stuck.writes[0].readBack, '75');
+  // A bool reads back as 0 or 1, never as the word written: NO is in force only when it reads 0.
+  const bool = writes.filter(w => w.key === UNTITLED_AT_LAUNCH_KEY);
+  for (const [printed, matched] of [['0', true], ['1', false], ['NO', false]]) {
+    const [done] = writeTextEditDefaults(bool, {env: HOSTED, platform: 'darwin', exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: `${printed}\n`} : {status: 0, stdout: ''})}).writes;
+    assert.deepEqual([done.readsAs, done.matched], ['0', matched], printed);
+  }
 });
 
 test('the venue record declares each frame that differs from the mini\'s: the frame, the alerts read fresh as the reason, the cells grounded on it', () => {

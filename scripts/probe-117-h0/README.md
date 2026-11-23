@@ -143,8 +143,11 @@ after a close, since none came. The alerts stay on screen above the scenes.
 
 ## O0a: replayd's approval pre-recorded (runs [45161413076](https://github.com/SSFSKIM/cua/actions/runs/45161413076), [45163139714](https://github.com/SSFSKIM/cua/actions/runs/45163139714), main b1b15484, macos-latest)
 
-Written by `tcc.mjs`'s one writer (`preRecordReplayd`, guarded by O0 and O0a; `tcc.test.mjs` proves the refusals with a
-spy store), before either copy's first capture, then replayd restarted and the engine relaunched.
+A negative result, recorded in the design spec's Decision Log (docs/117-progress b3588b5a). Ruling 1141 removed the
+pre-record from the kit (a system-state write with no effect is a liability); `tcc.mjs`'s one writer again writes TCC
+rows only, guarded by O0, and `tcc.test.mjs` proves its refusals with a spy store. What the two runs did: written
+through that writer, guarded by O0 and O0a, before either copy's first capture, then replayd restarted and the engine
+relaunched.
 
 - **Where:** `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`, merged into its current
   contents and imported through cfprefsd (`defaults import`).

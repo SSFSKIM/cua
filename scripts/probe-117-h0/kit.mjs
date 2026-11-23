@@ -19,7 +19,7 @@ import {openSession, resultText} from '../accept/mcp-session.mjs';
 import {watchCaptureAlerts, enginePaths, engineDirectory} from '../../src/runtime/engine.mjs';
 import {BUNDLE_ID as ENGINE_BUNDLE_ID, EXECUTABLE} from '../../src/runtime/engine-bundle.mjs';
 import {launchProbe, runProbe} from '../native-matrix/live-device.mjs';
-import {USER_DB, readRows, writability, grantRows, revokeRows, restartTccd, preRecordReplayd, readReplayd} from './tcc.mjs';
+import {USER_DB, readRows, writability, grantRows, revokeRows, restartTccd} from './tcc.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.platform !== 'darwin') {
   console.error('probe-117-h0: refused: a disposable GitHub-hosted macOS runner only');
@@ -384,70 +384,6 @@ async function alertMode() {
 }
 if (process.env.H0_MODE === 'alert') { await alertMode(); process.exit(0); }
 
-// ---- O0a: replayd's approval pre-recorded before each copy's first capture (H0_MODE=prerecord) ----
-// Rows and the pre-record (both through tcc.mjs's one guarded writer), a relaunch, then one capture per copy with the
-// alert's window sampled, then the focus-sensitive cells judged with the alert sampled before and after each. Nothing
-// here dismisses or answers an alert: if one appears, it is recorded and left.
-const execOf = app => join(app, 'Contents', 'MacOS', sh('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', join(app, 'Contents', 'Info.plist')]).stdout.trim());
-const allSamples = [];
-const sampleNow = tag => { const w = alertWindows(); const x = {tag, at: new Date().toISOString(), present: Array.isArray(w.alert) ? w.alert.length > 0 : null, windows: w.alert ?? w.error, front: ssh('frontmost').out?.bundleId ?? null}; allSamples.push(x); return x; };
-function keystrokeCell(text) {
-  const w = textEditWindow();
-  if (!w) return {verdict: 'NO VERDICT', why: 'no TextEdit scene window recorded'};
-  const probe = args => { try { return runProbe(PATHS.bundle, args); } catch (e) { return {error: err(e)}; } };
-  const alertBefore = sampleNow('keystroke-before');
-  const activate = ssh(`activate textedit --run '${SCENE_RUN}'`);
-  const before = probe(['focus', '--window', w.spec]);
-  const keys = probe(['keystroke', '--user-pid', String(w.pid), '--user-bounds', w.spec.split(',').slice(1).join(','), text]);
-  const after = probe(['focus', '--window', w.spec]);
-  const alertAfter = sampleNow('keystroke-after');
-  // The judge: a verdict only when the named window held the focus on both sides; then the text must have changed.
-  const judged = before.named === true && after.named === true && before.valueHash && after.valueHash;
-  const verdict = !judged ? 'NO VERDICT' : keys.exitStatus === 0 && before.valueHash !== after.valueHash ? 'PASS' : 'FAIL';
-  return {verdict, activate: activate.out, before: {named: before.named, focusedApp: before.focusedApp?.bundleId ?? null}, keystroke: {exitStatus: keys.exitStatus, error: keys.error, aborted: keys.aborted ?? false},
-    after: {named: after.named, focusedApp: after.focusedApp?.bundleId ?? null}, textChanged: judged ? before.valueHash !== after.valueHash : null, alertBefore: alertBefore.present, alertAfter: alertAfter.present};
-}
-function activationCell(scene) {
-  const before = sampleNow(`activate-${scene}-before`);
-  const r = ssh(`activate ${scene} --run '${SCENE_RUN}'`);
-  const front = ssh('frontmost').out?.bundleId ?? null;
-  let key; try { key = runProbe(PATHS.bundle, ['focus']).focusedApp?.bundleId ?? null; } catch (e) { key = {error: err(e)}; }
-  const after = sampleNow(`activate-${scene}-after`);
-  const want = SCENES[scene];
-  return {verdict: r.code === 0 && front === want && key === want ? 'PASS' : 'FAIL', activate: r.out, front, key, want, alertBefore: before.present, alertAfter: after.present};
-}
-async function prerecordMode() {
-  const ALL = ['accessibility', 'screenRecording', 'inputMonitoring', 'postEvent'];
-  await step('pre-setup', async () => {
-    const vendorApps = (record.setup?.runtimeApps ?? []).filter(a => /sky|CUAService|computer/i.test(a.bundleId));
-    const rows = [...grantRows({client: ENGINE_BUNDLE_ID, bundle: PATHS.bundle, services: ALL}),
-      ...vendorApps.flatMap(a => grantRows({client: a.bundleId, bundle: a.path, services: ALL}))];
-    // Each copy's app bundle, before anything has captured (replayd keys approvals by the bundle's file URL).
-    const replayd = preRecordReplayd({bundles: [PATHS.bundle, ...vendorApps.map(a => a.path)]});
-    const relaunch = await relaunchLS();
-    return {rows, replayd, idleVendor: skyProcesses(), relaunch, harnessApproval: harnessApproval(), alert: sampleNow('setup')};
-  });
-  for (const [copy, env] of [['cua', {CUA_NATIVE_ENGINE: 'cua'}], ['vendor', {CUA_NATIVE_ENGINE: 'vendor'}]]) {
-    await step(`pre-${copy}-capture`, async () => ({capture: await oneCapture(`p-${copy}-1`, env, SCENES.textedit), alert: await sampleAlert(`pre-${copy}`, {maxMs: 60_000}), shot: front(`pre-${copy}-after-capture`)}));
-  }
-  await step('pre-cells', async () => ({
-    keystroke: keystrokeCell('h0pre'),
-    activateFinder: activationCell('finder'),
-    activateTextEdit: activationCell('textedit'),
-    probes: probeModes(),
-    keystrokeAgain: keystrokeCell('h0two'),
-    shot: front('pre-cells'),
-  }));
-  await step('pre-end', async () => {
-    const alerts = sh('/usr/bin/log', ['show', '--last', '60m', '--style', 'ndjson', '--predicate', 'process == "replayd" AND eventMessage CONTAINS "[SCAlert "']);
-    writeFileSync(join(OUT, 'alert-samples-pre-all.json'), JSON.stringify(allSamples, null, 2) + '\n');
-    return {replaydAfter: readReplayd(), samples: allSamples.length, alertSeenAtAnySample: allSamples.some(x => x.present), fronts: [...new Set(allSamples.map(x => x.front))],
-      scAlertLinesLast60m: alerts.stdout.split('\n').filter(l => l.startsWith('{') && l.includes('SCAlert')).length};
-  });
-  await step('teardown', async () => ({down: ssh(`down all --run '${SCENE_RUN}'`), stopped: stopEngine(), rowsAtEnd: readRows()}));
-  log('done (prerecord mode)');
-}
-if (process.env.H0_MODE === 'prerecord') { await prerecordMode(); process.exit(0); }
 
 // Part 1, step 1: the bundle at the approved location, its own TCC client through LaunchServices, no rows.
 await step('step1-bundle-no-rows', async () => {

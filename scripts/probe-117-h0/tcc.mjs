@@ -6,7 +6,7 @@
 // db775127). Every write (insert, delete, a tccd restart) goes through tccWrite, whose guard exits the process before
 // anything is written unless RUNNER_ENVIRONMENT=github-hosted and that entry is present in the fetched spec.
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
 import {join} from 'node:path';
 
@@ -19,13 +19,6 @@ export const SERVICES = Object.freeze({
   postEvent: 'kTCCServicePostEvent',
 });
 const DECISION = '2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only';
-// O0a (docs/117-progress ccb46e28, right after O0): replayd's screen-capture approval may be pre-recorded by kits on
-// GitHub-hosted runners only, for cua's engine bundle and the vendor's helper, before their first capture, through
-// this same writer. Never on any of the owner's Macs.
-const DECISION_O0A = '(O0a; extends O0)';
-// replayd's store of capture approvals (the "bypass the system private window picker" confirmation's answers).
-export const REPLAYD_DIR = join(homedir(), 'Library/Group Containers/group.com.apple.replayd');
-export const REPLAYD_APPROVALS = join(REPLAYD_DIR, 'ScreenCaptureApprovals.plist');
 const SPEC = 'docs/doperpowers/specs/2026-10-18-own-native-engine-design.md';
 
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000, ...opts});
@@ -75,13 +68,13 @@ export function writability() {
 // macOS runner, and the owner's yes must be in the spec's Decision Log as fetched from docs/117-progress (or HEAD).
 // Anything else exits the process non-zero. `deps` are the test's seams (scripts/probe-117-h0/tcc.test.mjs): env,
 // platform, readSpec (the spec's text at a ref, or null), exit.
-export function guard({env = process.env, platform = process.platform, readSpec = specAt, exit = code => process.exit(code), stderr = process.stderr, decisions = [DECISION]} = {}) {
+export function guard({env = process.env, platform = process.platform, readSpec = specAt, exit = code => process.exit(code), stderr = process.stderr} = {}) {
   if (env.RUNNER_ENVIRONMENT !== 'github-hosted' || platform !== 'darwin') {
     stderr.write('probe-117-h0: refused: TCC rows are written only on a GitHub-hosted macOS runner (RUNNER_ENVIRONMENT=github-hosted; O0, ruling 1111)\n');
     return exit(3);
   }
-  if (!['origin/docs/117-progress', 'HEAD'].some(ref => { const text = readSpec(ref); return typeof text === 'string' && decisions.every(d => text.includes(d)); })) {
-    stderr.write(`probe-117-h0: refused: the owner's yes (${decisions.length > 1 ? 'O0 and O0a' : 'O0'}) is not in ${SPEC}'s Decision Log on docs/117-progress or HEAD\n`);
+  if (!['origin/docs/117-progress', 'HEAD'].some(ref => readSpec(ref)?.includes(DECISION))) {
+    stderr.write(`probe-117-h0: refused: the owner's yes (O0) is not in ${SPEC}'s Decision Log on docs/117-progress or HEAD\n`);
     return exit(3);
   }
   return true;
@@ -94,27 +87,6 @@ const STORE = {
   csreq: bundle => csreqHex(bundle).hex,
   sql: (db, statement) => sql(db, statement),
   restart: () => run('/usr/bin/sudo', ['-n', '/usr/bin/killall', 'tccd']),
-  // replayd's store: its directory listing and the approvals as plutil prints them (dates included), or null.
-  replaydRead: () => ({
-    dir: existsSync(REPLAYD_DIR) ? run('/bin/ls', ['-la', REPLAYD_DIR]).trim().split('\n') : null,
-    approvals: existsSync(REPLAYD_APPROVALS) ? run('/usr/bin/plutil', ['-p', REPLAYD_APPROVALS]).trim() : null,
-  }),
-  // The approvals merged into the store's current contents and imported through cfprefsd (defaults import), so
-  // replayd's own reads see them. `entries`: [{key, xml}], each value the XML of its dict.
-  replaydWrite: entries => {
-    const current = existsSync(REPLAYD_APPROVALS) ? run('/usr/bin/plutil', ['-convert', 'xml1', '-o', '-', REPLAYD_APPROVALS]) : PLIST_EMPTY;
-    const at = current.lastIndexOf('</dict>');
-    if (at < 0) throw new Error('replayd\'s store is not a dictionary');
-    const merged = current.slice(0, at) + entries.map(e => `\t<key>${xmlEscape(e.key)}</key>\n${e.xml}\n`).join('') + current.slice(at);
-    const dir = mkdtempSync(join(tmpdir(), 'h0-replayd-'));
-    try {
-      writeFileSync(join(dir, 'merged.plist'), merged);
-      run('/usr/bin/plutil', ['-lint', join(dir, 'merged.plist')]);
-      return run('/usr/bin/defaults', ['import', REPLAYD_APPROVALS.replace(/\.plist$/, ''), join(dir, 'merged.plist')]);
-    } finally { rmSync(dir, {recursive: true, force: true}); }
-  },
-  // replayd started afresh (launchd relaunches it on demand), so it reads the store again.
-  replaydRestart: () => { try { return run('/usr/bin/killall', ['replayd']); } catch { return run('/usr/bin/sudo', ['-n', '/usr/bin/killall', 'replayd']); } },
 };
 
 // The one function that writes: the guard first, then the action against the store. Every public writer below is a
@@ -165,38 +137,4 @@ export function restartTccd(deps = {}) {
   return tccWrite(store => {
     try { store.restart(); return {restarted: true}; } catch (error) { return {restarted: false, error: String(error.stderr || error.message).trim().slice(0, 300)}; }
   }, deps);
-}
-
-const PLIST_EMPTY = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n</dict>\n</plist>\n';
-const xmlEscape = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-// replayd keys an approval by the app bundle's file URL (percent-encoded, with a trailing slash), as it records one
-// itself (run 45161413076), and the runner image pre-records its own agent with both dates at 3024-01-01.
-export const replaydKey = bundlePath => `file://${encodeURI(bundlePath.replace(/\/$/, ''))}/`;
-const iso = date => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-const approvalXml = now => `\t<dict>
-\t\t<key>kScreenCaptureAlertableUsageCount</key>\n\t\t<integer>1</integer>
-\t\t<key>kScreenCaptureApprovalLastAlerted</key>\n\t\t<date>3024-01-01T00:00:00Z</date>
-\t\t<key>kScreenCaptureApprovalLastUsed</key>\n\t\t<date>${iso(now)}</date>
-\t\t<key>kScreenCapturePrivacyHintDate</key>\n\t\t<date>3024-01-01T00:00:00Z</date>
-\t</dict>`;
-
-// O0a: pre-records replayd's capture approval for each app bundle (cua's engine bundle, the vendor's helper app) before
-// its first capture, in the image's own form, then restarts replayd. Guarded by O0 and O0a both. -> what the store held
-// before, what was written, and what it holds after.
-export function preRecordReplayd({bundles}, deps = {}) {
-  return tccWrite(store => {
-    const before = store.replaydRead();
-    const now = new Date();
-    const entries = bundles.map(b => ({key: replaydKey(b), xml: approvalXml(now)}));
-    store.replaydWrite(entries);
-    const written = entries.map(e => ({key: e.key, kScreenCaptureApprovalLastAlerted: '3024-01-01T00:00:00Z', kScreenCapturePrivacyHintDate: '3024-01-01T00:00:00Z', kScreenCaptureApprovalLastUsed: iso(now), kScreenCaptureAlertableUsageCount: 1}));
-    let restarted;
-    try { store.replaydRestart(); restarted = true; } catch (error) { restarted = String(error.stderr || error.message).trim().slice(0, 200); }
-    return {store: REPLAYD_APPROVALS, before, written, restarted, after: store.replaydRead()};
-  }, {...deps, decisions: [DECISION, DECISION_O0A]});
-}
-
-// replayd's store read under the same guard (it is a store access too).
-export function readReplayd(deps = {}) {
-  return tccWrite(store => store.replaydRead(), {...deps, decisions: [DECISION, DECISION_O0A]});
 }

@@ -18,7 +18,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys} from './steps.mjs';
-import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, readDeclarations, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
+import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, NOT_JUDGED, readDeclarations, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
 // A reading that follows an action asynchronously (a web view's value after a key, an app's input source after its
@@ -47,6 +47,8 @@ export async function unicodeSection(ctx, plan) {
       else await perContextRows(ctx, field, ofField);
     }
   }
+  // A condition ruled out of the judged matrix still runs; its rows are reported with the cause (ruling 1119).
+  for (const row of ctx.rows.slice(first)) if (row.section === 'unicode' && Object.hasOwn(NOT_JUDGED, row.condition)) row.excluded = NOT_JUDGED[row.condition];
   const {unused} = applyDeclarations(ctx.rows.slice(first), readDeclarations());
   ctx.meta.unicode.unusedDeclarations = unused.map(({id, engine}) => ({id, engine}));
 }
@@ -112,7 +114,7 @@ async function frontmostRows(ctx, field, rows, source) {
 // The user window in front with its field emptied and focused, read back empty by the focus probe; the driven field
 // focused first while its scene was in front of its own app. Before the user's field is emptied, the Latin source is
 // selected with it in front, which ends a composition its input method may still hold from an earlier row (the Korean
-// condition's `r k` leaves 가 composing where the keys go through the input method, as in Chromium; an earlier group's
+// condition's `r k` leaves 가 composing, the keys going through the input method in every scene (ruling 1119); an earlier group's
 // composition stays in its user window): emptying the field does not end it, and the probe's r would then compose onto
 // it (각, ㄲ) rather than start ㄱ. Then the Korean source is established in the user window (koreanIn, whose refocus
 // also ends a composition that selection did not reach, the switch being made with the field focused as in MAWS B2),
@@ -170,7 +172,8 @@ async function composingRows(ctx, field, rows) {
 
 // The per-context preference on, the driven scene's context holding the Korean source (selected while it was in front),
 // the user window in front under the Latin source; the rows behind it; then the driven scene brought back to the front,
-// where its context must still read Korean. Without those readings the rows say nothing: invalid.
+// where its context must still read Korean. Without those readings the rows say nothing: invalid. Held or not, the rows
+// are out of every verdict (ruling 1119, #185; unicodeSection marks them `excluded`): they run and report what they read.
 async function perContextRows(ctx, field, rows) {
   const {user} = rows[0];
   await quiet(ctx, field);

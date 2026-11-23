@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
-import {KOREAN_2SET, MID_SWITCH, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
+import {KOREAN_2SET, MID_SWITCH, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {HANGUL_LAYOUT, judgeMidSwitch} from '../../scripts/native-matrix/unicode-run.mjs';
 import {matrixSteps, runWith} from './run-doubles.mjs';
 
@@ -219,4 +219,44 @@ test('each target\'s source is read with the target in front and selected there 
   const stuck = await runWith({plan, cellName: 'korean', ops: refused});
   assert.ok(stuck.result.rows.filter(r => r.condition === 'korean').every(r => /Korean source did not hold with chrome in front/.test(r.invalid)));
   assert.ok(stuck.result.rows.filter(r => r.condition === 'latin').every(r => r.ok === true));
+});
+
+// #189, ruling 1119: r k by pressKey reads back 가 under engaged Korean 2-Set and rk under Latin, in every field; a
+// Korean row counts only once the source and its layout read 2-Set after the refocus.
+test('the pressKey row is read back as 가 under engaged Korean and rk under Latin in all three fields; Korean not engaged leaves it invalid', async () => {
+  const plan = {...planOf('korean'), unicode: {fields: UNICODE_FIELDS, conditions: ['latin', 'korean']}};
+  const calls = [];
+  const {result} = await runWith({plan, cellName: 'korean', calls});
+  const keyed = result.rows.filter(r => r.method === 'pressKey');
+  assert.deepEqual(keyed.map(r => [r.id, r.ok, r.invalid ?? null]), [...UNICODE_FIELDS.map(f => [`${f}/latin/pressKey.rk`, true, null]), ...UNICODE_FIELDS.map(f => [`${f}/korean/pressKey.rk`, true, null])]);
+  const checks = text => calls.filter(c => c.code.includes(`const exact = __hash === ${JSON.stringify(sha256Hex(text))}`)).length;
+  assert.deepEqual([checks('가'), checks('rk')], [3, 3], 'each field\'s Korean row reads back 가, its Latin row rk');
+  // 2-Set selected and read back as the source, its layout still ABC after the refocus: not engaged, so not counted.
+  const raw = {matrix: (base, a) => {
+    const out = base(a);
+    return a[0] === 'source' && a[1] === 'current' && out.answer?.current === KOREAN_2SET ? {...out, answer: {...out.answer, layout: 'com.apple.keylayout.ABC'}} : out;
+  }};
+  const unengaged = await runWith({plan, cellName: 'korean', ops: raw});
+  const korean = unengaged.result.rows.filter(r => r.condition === 'korean' && r.method === 'pressKey');
+  assert.equal(korean.length, 3);
+  assert.ok(korean.every(r => r.ok === false && /did not engage in \w+ after its refocus: the source read com\.apple\.inputmethod\.Korean\.2SetKorean, the layout com\.apple\.keylayout\.ABC/.test(r.invalid)),
+    JSON.stringify(korean[0]));
+  assert.ok(unengaged.result.rows.filter(r => r.condition === 'latin' && r.method === 'pressKey').every(r => r.ok === true));
+});
+
+// #185, ruling 1119: the per-context rows run and report, excluded from every verdict with the ruling's cause.
+test('the per-context rows still run and carry ruling 1119\'s cause; failed or held, they never pass or fail the cell', async () => {
+  const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['latin', 'perContext']}};
+  const held = await runWith({plan, cellName: 'korean', ops: contextHeld});
+  const perContext = held.result.rows.filter(r => r.condition === 'perContext');
+  assert.equal(perContext.length, 18);
+  assert.ok(perContext.every(r => r.excluded === NOT_JUDGED.perContext && r.ok === true && !r.invalid), 'run and read back as before');
+  assert.ok(held.result.rows.filter(r => r.condition === 'latin').every(r => r.excluded === undefined));
+  assert.deepEqual(validateCellResult(held.result), []);
+  // Every per-context read-back unequal: the rows say so, and the cell's verdict does not count them.
+  const only = {...plan, unicode: {fields: ['chrome'], conditions: ['perContext']}};
+  const unequal = c => (c.includes('const exact = __hash ===') ? {ok: false, outcome: {exact: false}} : null);
+  const failed = await runWith({plan: only, cellName: 'korean', ops: contextHeld, cell: unequal});
+  assert.ok(failed.result.rows.every(r => r.ok === false && !r.invalid && r.excluded === NOT_JUDGED.perContext));
+  assert.equal(failed.result.verdict, 'no-verdict', 'excluded rows alone are no verdict, never a fail');
 });

@@ -31,6 +31,15 @@ test('a declared row is not ok and does not fail the verdict; it needs a kind an
   assert.ok(rowProblems({...defect, declared: {kind: 'vendor-defect'}}).some(p => /declared needs a kind and a cause/.test(p)));
 });
 
+test('an excluded row is reported and counts for nothing: never a pass, never a fail (ruling 1119\'s per-context rows)', () => {
+  const excluded = extra => row({id: 'chrome/perContext@textedit/typeText.hangul', section: 'unicode', excluded: 'out of the judged matrix', ...extra});
+  assert.equal(verdictOf({complete: true, rows: [row(), excluded({ok: false})]}), 'pass');
+  assert.equal(verdictOf({complete: true, rows: [excluded({ok: true})]}), 'no-verdict', 'excluded rows alone prove nothing');
+  assert.equal(verdictOf({complete: true, rows: [row(), excluded({ok: true, interference: {ok: false}})], judgesInterference: true}), 'pass');
+  assert.deepEqual(validateCellResult(base({rows: [row(), excluded({ok: false})]})), []);
+  assert.ok(rowProblems(excluded({excluded: ''})).some(p => /excluded is not a reason/.test(p)));
+});
+
 test('a built result conforms, carries its verdict and bounds its sentences', () => {
   const result = base({rows: [row({error: 'x'.repeat(400)})], problems: ['y'.repeat(400)]});
   assert.equal(result.schema, CELL_RESULT_SCHEMA);

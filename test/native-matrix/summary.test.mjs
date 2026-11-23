@@ -8,7 +8,9 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-result.mjs';
+import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary} from '../../scripts/native-matrix/summary.mjs';
+import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 
 const m = (engine, sample, ok, extra = {}) => ({section: 'method', id: 'textedit/frontmost/click.control', engine, sample, ok, regime: 'frontmost', method: 'click', case: 'control', ...extra});
 
@@ -33,7 +35,7 @@ test('the speed beat: cua\'s median at most 90% of the vendor\'s and its p95 not
   assert.equal(judgeSpeed(rows('vendor', [50, 50]), rows('cua', [40, 40])).deltaPct, -20);
 });
 
-// One full matrix run of one engine, every manifest row present and passing; `tweak(rows)` edits the rows, `meta` and
+// One full matrix run of one engine, every manifest row present and passing; `tweak(rows, run)` edits the rows, `meta` and
 // `lane` the result's.
 const CLICK = 'textedit/frontmost/click.control', BACK = 'textedit/background/click.control@finder', LAUNCH = 'electron/background/launch@finder';
 function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, meta = {}, lane = {}, complete = true} = {}) {
@@ -56,7 +58,7 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
     }
     return row;
   });
-  return cellResult({cell: 'matrix', device: 'mini', started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows),
+  return cellResult({cell: 'matrix', device: 'mini', started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows, run),
     meta: {run, samples, sitting: 's1', commit: 'c', os: '26.0', planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...meta}});
 }
 const set = (id, patch) => rows => rows.map(r => (r.id === id ? {...r, ...patch} : r));
@@ -207,7 +209,7 @@ test('the probe cells and the Korean matrix are in every full run\'s manifest, j
   assert.deepEqual(manifest.filter(e => ['concurrent', 'intervention'].includes(e.section)).map(e => `${e.section} ${e.id} ${e.sample}`),
     ['concurrent finder/concurrent@textedit 2', 'concurrent chrome/concurrent@textedit 2', 'concurrent textedit/concurrent.sheet@electron 2',
       'intervention textedit/intervention.fires 2', 'intervention textedit/intervention.preAction 2']);
-  assert.equal(manifest.filter(e => e.section === 'unicode').length, 225);
+  assert.equal(manifest.filter(e => e.section === 'unicode').length, 225 - 54, 'every Unicode row but the 54 per-context rows (ruling 1119)');
   const pass = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40}});
   assert.equal(pass.verdict, 'PASS');
   assert.ok(pass.probe.every(p => p.verdict === 'equal') && pass.unicode.every(u => u.verdict === 'equal'));
@@ -239,6 +241,44 @@ test('the probe cells\' and the Korean matrix\'s background rows are judged by t
   const unread = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: rows => rows.map(r => (r.id === SHEET || r.id === COMPOSING ? (({interference, ...rest}) => rest)(r) : r))}});
   assert.equal(unread.verdict, 'NO VERDICT');
   assert.ok(unread.missing.some(p => /6 valid background or launch row\(s\) on cua carry no oracle reading/.test(p)), unread.missing.join('\n'));
+});
+
+// #185, ruling 1119: the per-context rows run and report, and the judge never counts them.
+const PER_CONTEXT = 'chrome/perContext@textedit/typeText.hangul';
+test('the per-context rows are out of the verdict: absent from the manifest, never blocking or missing, listed as not judged with ruling 1119\'s cause', () => {
+  assert.ok(!manifestOf({run: 1, samples: 2}).some(e => e.id.includes('/perContext')));
+  const planned = unicodeRowsOf(FULL_PLAN.unicode).filter(r => r.condition === 'perContext').map(r => r.id);
+  assert.equal(planned.length, 54);
+  // cua's per-context rows all failed and one interfered, the vendor's are invalid and carry no `excluded` (as hold 3's
+  // rows, recorded before the ruling): none of it counts.
+  const perContext = engine => (rows, run) => [...rows, ...planned.map(id => ({section: 'unicode', id, engine, sample: run, ok: false,
+    ...(engine === 'cua' ? {excluded: NOT_JUDGED.perContext, interference: {ok: id !== PER_CONTEXT, frontmost: true, topWindow: true, focus: true, activations: 1, route4: false}} : {invalid: 'the context did not read Korean afterwards'})}))];
+  const j = judged({vendor: {axMs: 50, resolved: 9, tweak: perContext('vendor')}, cua: {axMs: 40, tweak: perContext('cua')}});
+  assert.deepEqual([j.verdict, j.blocking, j.missing, j.owner], ['PASS', [], [], []]);
+  assert.ok(!j.unicode.some(u => u.id.includes('/perContext')), 'not among the judged Unicode rows');
+  assert.equal(j.interference.cua.rows, j.interference.vendor.rows, 'not among the interference rows');
+  assert.deepEqual(j.notJudged.map(n => n.id), [...planned].sort());
+  assert.deepEqual(j.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext,
+    vendor: {ok: 0, valid: 0, invalid: 3}, cua: {ok: 0, valid: 3, invalid: 0}});
+  // Not run at all: still listed, with nothing counted.
+  const none = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40}});
+  assert.equal(none.verdict, 'PASS');
+  assert.deepEqual(none.notJudged.find(n => n.id === PER_CONTEXT).cua, {ok: 0, valid: 0, invalid: 0});
+  const text = renderSummary(j);
+  for (const part of ['## Not judged', `### perContext\n\n${NOT_JUDGED.perContext}`, `| ${PER_CONTEXT} | 0/3 | 0/0 (+3 invalid) |`,
+    '**Korean and Unicode**: 171 of 171 rows pass on cua; 54 perContext rows are not judged (below).'])
+    assert.ok(text.includes(part), part);
+  assert.ok(text.indexOf('## Not judged') > text.indexOf('## Korean and Unicode'));
+});
+
+// #189, ruling 1119: a Korean row counts only with 2-Set engaged; without it the row has no verdict, never a pass.
+test('the Korean pressKey row with no valid cua sample is NO VERDICT, never counted', () => {
+  const KEYS = 'textedit/korean/pressKey.rk';
+  const unengaged = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, invalid: 'the Korean source did not engage in textedit after its refocus'})}});
+  assert.deepEqual([unengaged.verdict, unengaged.blocking], ['NO VERDICT', []]);
+  assert.ok(unengaged.missing.includes(`unicode: ${KEYS} has no valid cua sample`), unengaged.missing.join('\n'));
+  const composedOtherwise = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, outcome: {exact: false}})}});
+  assert.ok(composedOtherwise.blocking.includes(`unicode: ${KEYS} failed on cua`));
 });
 
 test('the hold is judged per run number: each run\'s vendor and cua results share one hold, one commit and one approved build; the run numbers may span holds', () => {

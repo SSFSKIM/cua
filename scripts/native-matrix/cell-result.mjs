@@ -43,6 +43,9 @@
 //              two engines' samples, ./summary.mjs, not row by row)
 //   invalid    optional, a reason: the sample says nothing (its target was not in front, its probe post fell outside
 //              the action's interval); never a pass and never a fail, kept out of every verdict and statistic
+//   excluded   optional, a cause: the row ran and is reported as measured, but a ruling put it out of the judged
+//              matrix (ruling 1119's per-context rows, ./unicode-plan.mjs NOT_JUDGED); like an invalid row it counts in
+//              no verdict, and the summary lists it as not judged with its cause
 //   scene, user, regime ('frontmost' | 'background'), method, case   optional, what the row drove
 //   inCellMs, wallMs   optional numbers: performance.now() around the facade call inside the cell; the harness's time
 //   inputRoute optional: the `cua/inputRoute` the action reported (1, "2'", 2, 3, 4, "paste"), null when none came
@@ -73,13 +76,14 @@ const bounded = text => String(text).slice(0, ERROR_CHARS);
 
 // The cell's verdict from its rows: refused before anything ran; no-verdict without a valid row or when the cell did
 // not complete (its evidence is missing: a cell with missing samples is NO VERDICT, which blocks); fail on any valid
-// row that is neither ok nor declared (a declared row is not ok and says why); else pass.
+// row that is neither ok nor declared (a declared row is not ok and says why); else pass. An excluded row counts for
+// nothing, as an invalid one does.
 export const counts = row => row.ok === true || row.declared !== undefined;
 // The row's oracle reading held, or the oracle declared why not (an owner-accepted route 4, a self-activating family).
 const interferenceHolds = row => row.interference === undefined || row.interference.ok === true || row.interference.declared !== undefined;
 export function verdictOf({refused = false, complete, rows, judgesInterference = false}) {
   if (refused) return 'refused';
-  const valid = rows.filter(row => !row.invalid);
+  const valid = rows.filter(row => !row.invalid && !row.excluded);
   if (!valid.length || !complete) return 'no-verdict';
   return valid.every(row => counts(row) && (!judgesInterference || interferenceHolds(row))) ? 'pass' : 'fail';
 }
@@ -104,6 +108,7 @@ export function rowProblems(row, at = 'row') {
   if (row.sample !== undefined && !(Number.isSafeInteger(row.sample) && row.sample > 0)) out.push(`${at}.sample is not a positive integer`);
   if (typeof row.ok !== 'boolean') out.push(`${at}.ok is not a boolean`);
   if (row.invalid !== undefined && !isString(row.invalid)) out.push(`${at}.invalid is not a reason`);
+  if (row.excluded !== undefined && !isString(row.excluded)) out.push(`${at}.excluded is not a reason`);
   if (row.regime !== undefined && !REGIMES.includes(row.regime)) out.push(`${at}.regime is not frontmost or background`);
   for (const key of ['inCellMs', 'wallMs']) if (row[key] !== undefined && !Number.isFinite(row[key])) out.push(`${at}.${key} is not a number`);
   if (row.inputRoute !== undefined && row.inputRoute !== null && !INPUT_ROUTES.includes(row.inputRoute)) out.push(`${at}.inputRoute is not one of 1, "2'", 2, 3, 4, "paste" or null`);

@@ -13,9 +13,11 @@
 //               every row (the focus probe's hash)
 //   perContext  the per-context preference on, the driven scene holding the Korean source in its context (selected while
 //               it was in front) and the user window in front under the Latin source: the case the Text rule routes to
-//               paste; valid only when the readings show it held
-// and one pressKey row, `r k`, under the Latin and the Korean source, which must enter `rk` under both. Every row is read
-// back inside its cell and compared by SHA-256 with the expected string. A failed row with a named cause is declared in
+//               paste; valid only when the readings show it held. Its rows run and are reported, out of every verdict
+//               (NOT_JUDGED, ruling 1119)
+// and one pressKey row, `r k`, under the Latin and the Korean source, which must enter `rk` under Latin and compose 가
+// under Korean 2-Set engaged (PRESS_KEY, ruling 1119). Every row is read back inside its cell and compared by SHA-256
+// with the expected string. A failed row with a named cause is declared in
 // the expected file (EXPECTED_FILE), per row id and engine, never silently absorbed: a declaration no failed row needed
 // is itself named (applyDeclarations' `unused`).
 import * as fs from 'node:fs';
@@ -33,8 +35,16 @@ export const UNICODE_STRINGS = Object.freeze([
 ].map(Object.freeze));
 export const UNICODE_FIELDS = Object.freeze(['textedit', 'chrome', 'electron']);
 export const UNICODE_METHODS = Object.freeze(['typeText', 'paste']);
-// The pressKey row: r then k, which Korean 2-Set would compose to 가 through the input method; a key name is a key.
-export const PRESS_KEY = Object.freeze({id: 'rk', text: 'rk', keys: 'r k'});
+// The pressKey row: r then k. pressKey sends physical keys, which the active input method composes (ruling 1119, #189):
+// under the Latin source they enter rk, under Korean 2-Set engaged (its source and layout read after the refocus,
+// ./unicode-run.mjs koreanIn) they compose 가. One row id under both; the text read back is the condition's. typeText
+// keeps its exact-text contract: its rows expect the string sent under either source.
+export const PRESS_KEY = Object.freeze({id: 'rk', keys: 'r k', expected: Object.freeze({latin: 'rk', korean: '가'})});
+const pressKeyString = condition => Object.freeze({id: PRESS_KEY.id, keys: PRESS_KEY.keys, text: PRESS_KEY.expected[condition]});
+// The conditions whose rows run and are reported but are out of every verdict, each with its cause.
+export const NOT_JUDGED = Object.freeze({
+  perContext: 'out of M5\'s judged matrix (ruling 1119, #185): a stored per-context preference does not show live behaviour, and establishing it would mean focusing each window, which non-interference forbids',
+});
 // The mid-switch row's long keyed text, so the switch lands inside it.
 export const MID_SWITCH = Object.freeze({id: 'long', text: Array.from({length: 24}, () => TYPED).join(' ')});
 // The engine's inputSourceChanged sentence (native/engine/Sources/Engine/Input.swift checkInputSource). The cell sees a
@@ -70,7 +80,7 @@ export function unicodeRowsOf(plan) {
     for (const field of UNICODE_FIELDS.filter(f => plan.fields.includes(f))) {
       if (condition === 'midSwitch') { add(condition, field, 'typeText', MID_SWITCH); continue; }
       for (const string of UNICODE_STRINGS) for (const method of UNICODE_METHODS) add(condition, field, method, string);
-      if (condition === 'latin' || condition === 'korean') add(condition, field, 'pressKey', PRESS_KEY);
+      if (condition === 'latin' || condition === 'korean') add(condition, field, 'pressKey', pressKeyString(condition));
     }
   }
   return out;
@@ -86,6 +96,9 @@ export function parseDeclarations(json) {
     if (!(typeof d?.id === 'string' && ['vendor', 'cua'].includes(d.engine) && typeof d.kind === 'string' && d.kind && typeof d.cause === 'string' && d.cause)) {
       throw new Error(`${EXPECTED_FILE.pathname}: a declaration needs an id, an engine, a kind and a cause (${JSON.stringify(d).slice(0, 120)})`);
     }
+    if (d.id.endsWith(`/pressKey.${PRESS_KEY.id}`)) {
+      throw new Error(`${EXPECTED_FILE.pathname}: ${d.id} cannot be declared: r k composes as the active input method composes it, and a row that composes otherwise fails (ruling 1119)`);
+    }
     const key = `${d.id}\0${d.engine}`;
     if (seen.has(key)) throw new Error(`${EXPECTED_FILE.pathname}: ${d.id} on ${d.engine} is declared twice`);
     seen.add(key);
@@ -94,12 +107,12 @@ export function parseDeclarations(json) {
 }
 export const readDeclarations = (file = EXPECTED_FILE) => parseDeclarations(JSON.parse(fs.readFileSync(file, 'utf8')));
 
-// The declarations applied to the Unicode rows, in place: a valid row that is not ok gets its engine's declaration.
-// -> {unused: the declarations no row needed}.
+// The declarations applied to the Unicode rows, in place: a valid row that is not ok gets its engine's declaration; an
+// excluded row (NOT_JUDGED) is judged by nothing, so it needs none. -> {unused: the declarations no row needed}.
 export function applyDeclarations(rows, declarations) {
   const used = new Set();
   for (const row of rows) {
-    if (row.section !== 'unicode' || row.invalid || row.ok) continue;
+    if (row.section !== 'unicode' || row.invalid || row.excluded || row.ok) continue;
     const d = declarations.find(x => x.id === row.id && x.engine === row.engine);
     if (!d) continue;
     row.declared = {kind: d.kind, cause: d.cause};

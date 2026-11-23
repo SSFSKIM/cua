@@ -25,6 +25,10 @@
 //   row is (the cell's rule, not the vendor's result, is the reference; the vendor's is recorded beside it): a valid
 //   cua sample that failed blocks, none valid is no verdict; a declared Unicode row is the owner's to read, and a
 //   declaration of the expected file no full run needed is named for the owner.
+// - Not judged (./unicode-plan.mjs NOT_JUDGED, ruling 1119: the per-context rows): rows that run and are reported but a
+//   ruling put out of the judged matrix. They are outside the manifest and every judgment (method, interference,
+//   declarations, the verdict), whatever they read and whether or not the run marked them `excluded`; the report lists
+//   each of the plan's with its cause and what both engines read, under "Not judged".
 // - Any other cell (the settle cell, M2a's residue): each cell's verdict per engine as its rows give it
 //   (./cell-result.mjs verdictOf), listed.
 //
@@ -48,7 +52,7 @@ import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, SC
 import {MATRIX_CELLS} from './registry.mjs';
 import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN} from './run.mjs';
-import {CONDITIONS, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {CONDITIONS, NOT_JUDGED, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 
 export const BEAT = 0.9;
 export const RUNS_PER_SIDE = 3;
@@ -83,8 +87,22 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
   }
   for (const {scene, user} of plan.launch) out.push({section: 'launch', id: `${scene}/background/launch@${user}`, sample: run});
   for (const {section, id} of probeRowsOf(plan)) out.push({section, id, sample: run});
-  if (plan.unicode) for (const {id} of unicodeRowsOf(plan.unicode)) out.push({section: 'unicode', id, sample: run});
+  if (plan.unicode) for (const {id, condition} of unicodeRowsOf(plan.unicode)) if (!Object.hasOwn(NOT_JUDGED, condition)) out.push({section: 'unicode', id, sample: run});
   return out;
+}
+
+// The cause that keeps a row out of every judgment, or null: the run's `excluded` mark, else its Unicode condition's
+// (NOT_JUDGED), so a row recorded before the ruling is kept out too.
+const conditionOf = id => id.split('/')[1]?.split('@')[0] ?? null;
+const exclusionOf = row => row.excluded ?? (row.section === 'unicode' && Object.hasOwn(NOT_JUDGED, conditionOf(row.id)) ? NOT_JUDGED[conditionOf(row.id)] : null);
+const sampleCounts = rows => { const valid = rows.filter(r => !r.invalid); return {ok: valid.filter(r => r.ok === true).length, valid: valid.length, invalid: rows.length - valid.length}; };
+// Every not-judged row of the plan, and any other row a run marked excluded, with its cause and what each engine read.
+// -> [{id, condition, cause, vendor: {ok, valid, invalid}, cua: {…}}], by id.
+function notJudgedOf(excluded, plan = FULL_PLAN) {
+  const planned = unicodeRowsOf(plan.unicode).filter(r => Object.hasOwn(NOT_JUDGED, r.condition)).map(r => ({id: r.id, condition: r.condition, cause: NOT_JUDGED[r.condition]}));
+  const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, {id: r.id, condition: conditionOf(r.id), cause: exclusionOf(r)}])).values()];
+  return [...planned, ...others].map(entry => ({...entry, ...Object.fromEntries(['vendor', 'cua'].map(engine => [engine, sampleCounts(excluded.filter(r => r.id === entry.id && r.engine === engine))]))}))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 // What a full run's own metadata must say before its manifest can be built. -> [sentence].
@@ -198,12 +216,16 @@ export function findingMeasures(rows) {
 }
 
 // The judgment of everything read. `problems`: results that could not be read, missing proof. -> {problems, runs,
-// narrowed, methods, launch, speed, finding, interference, others, owner, blocking, missing, verdict}.
+// narrowed, methods, launch, speed, finding, interference, probe, unicode, notJudged, others, owner, blocking, missing,
+// verdict}.
 export function judge(results, problems = []) {
   const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
   const full = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
   const narrowed = results.filter(r => own(r) && !full.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
-  const rows = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell})));
+  const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell})));
+  // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
+  const rows = all.filter(r => !exclusionOf(r));
+  const notJudged = full.length ? notJudgedOf(all.filter(r => exclusionOf(r))) : [];
   const runs = {vendor: 0, cua: 0};
   for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
   const missingProof = [...problems, ...proofProblems(full)];
@@ -319,7 +341,7 @@ export function judge(results, problems = []) {
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
   ];
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, others, owner, blocking, missing,
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, others, owner, blocking, missing,
     options: OWNER_OPTIONS.map(o => ({...o})), verdict};
 }
 
@@ -366,7 +388,8 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push(`- **Not interfering**: cua ${share('cua')}, vendor ${share('vendor')}; cua route-4 actions outside accepted families: ${j.interference.cua.route4}; declared for the owner: ${j.interference.cua.declared.length}.`);
   const passing = list => list.filter(r => ['equal', 'better'].includes(r.verdict)).length;
   out.push(`- **Concurrent use and intervention**: ${passing(j.probe)} of ${j.probe.length} rows pass on cua (concurrent use and its sheet variant, intervention fires, the pre-action refusal).`);
-  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua.`, '');
+  const notJudged = j.notJudged.length ? `; ${j.notJudged.length} ${[...new Set(j.notJudged.map(n => n.condition))].join(', ')} rows are not judged (below)` : '';
+  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${notJudged}.`, '');
 
   out.push('## Methods', '', methodTable(j.methods), '', 'F: frontmost regime (the vendor\'s outcome is the reference, sample for sample); B: background regime (the fixture\'s ground truth). n/a: no meaningful target on that scene, on both engines:', '');
   for (const target of TARGETS) for (const [method, reason] of Object.entries(NOT_APPLICABLE[target] ?? {})) out.push(`- ${target} ${ENGINE_METHOD[method]}: ${reason}`);
@@ -400,7 +423,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     out.push('');
   }
   if (j.unicode.length) {
-    out.push('## Korean and Unicode', '', 'Each field\'s cell: cua ok/valid, then the vendor\'s; a cua row that failed is marked. Read back by SHA-256 against the string sent.', '');
+    out.push('## Korean and Unicode', '', 'Each field\'s cell: cua ok/valid, then the vendor\'s; a cua row that failed is marked. Read back by SHA-256 against the text expected: the string sent, and for pressKey r k, rk under Latin and 가 under Korean 2-Set (ruling 1119).', '');
     for (const condition of CONDITIONS) {
       const list = j.unicode.filter(r => r.id.split('/')[1].split('@')[0] === condition);
       if (!list.length) continue;
@@ -411,6 +434,14 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
         const cell = field => { const r = list.find(x => x.id.startsWith(`${field}/`) && x.id.endsWith(`/${name}`)); return r ? `${r.verdict === 'worse' ? '**' : ''}${r.cua.ok}/${r.cua.valid}${r.verdict === 'worse' ? '**' : ''} · ${r.vendor.ok}/${r.vendor.valid}` : '-'; };
         out.push(`| ${name} | ${UNICODE_FIELDS.map(cell).join(' | ')} |`);
       }
+      out.push('');
+    }
+  }
+  if (j.notJudged.length) {
+    out.push('## Not judged', '', 'Rows that ran and are reported, which a ruling put out of the judged matrix: they count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s.', '');
+    for (const [condition, list] of groupBy(j.notJudged, n => n.condition)) {
+      out.push(`### ${condition}`, '', list[0].cause, '', '| row | cua ok | vendor ok |', '|---|---|---|');
+      for (const n of list) out.push(`| ${n.id} | ${counts(n.cua)} | ${counts(n.vendor)} |`);
       out.push('');
     }
   }

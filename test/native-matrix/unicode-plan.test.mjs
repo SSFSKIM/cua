@@ -3,7 +3,8 @@
 // file's declarations applied to failed rows only, never silently.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {applyDeclarations, CONDITIONS, parseDeclarations, readDeclarations, UNICODE_FIELDS, UNICODE_STRINGS, UNICODE_USERS, unicodeCase, unicodeRowsOf, UNICODE_PLAN} from '../../scripts/native-matrix/unicode-plan.mjs';
+import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
+import {applyDeclarations, CONDITIONS, NOT_JUDGED, parseDeclarations, readDeclarations, UNICODE_FIELDS, UNICODE_STRINGS, UNICODE_USERS, unicodeCase, unicodeRowsOf, UNICODE_PLAN} from '../../scripts/native-matrix/unicode-plan.mjs';
 
 test('the strings are part 6\'s eight and Acceptance 4\'s, the combining one as e plus U+0301 and the lines one with a real newline', () => {
   assert.deepEqual(UNICODE_STRINGS.map(s => s.text), ['The quick brown fox jumps over the lazy dog.', '한글 테스트', 'ㄱㄴㄷ', '가나다 abc 123', '😀 이모지', 'é', '日本語',
@@ -50,6 +51,23 @@ test('a row\'s case: one facade call under the key guard, its read-back by hash 
   assert.deepEqual(keys.keys, ['r', 'k']);
 });
 
+// #189, ruling 1119: pressKey sends physical keys, which the active input method composes; typeText keeps its exact text.
+test('the pressKey row r k expects rk under the Latin source and 가 under engaged Korean 2-Set, in all three fields', () => {
+  const rows = unicodeRowsOf(UNICODE_PLAN);
+  const keyed = rows.filter(r => r.method === 'pressKey');
+  assert.deepEqual(keyed.map(r => [r.id, r.string.text]), [...UNICODE_FIELDS.map(f => [`${f}/latin/pressKey.rk`, 'rk']), ...UNICODE_FIELDS.map(f => [`${f}/korean/pressKey.rk`, '가'])]);
+  for (const r of keyed) {
+    const c = unicodeCase(r);
+    assert.equal(c.act, 'await __app.pressKey("r k");', r.id);
+    assert.ok(c.check.includes(JSON.stringify(sha256Hex(r.string.text))), `${r.id} reads back ${r.string.text}`);
+  }
+  // typeText and paste send the same exact text under either source.
+  for (const condition of ['latin', 'korean']) {
+    assert.deepEqual(rows.filter(r => r.condition === condition && r.method !== 'pressKey' && r.field === 'chrome').map(r => r.string.text),
+      UNICODE_STRINGS.flatMap(s => [s.text, s.text]), condition);
+  }
+});
+
 test('the expected file: a declaration excuses a failed valid row of its engine only, and one nothing needed is named', () => {
   const declarations = [{id: 'chrome/latin/typeText.combining', engine: 'cua', kind: 'normalization', cause: 'the page composes e and U+0301 into é'},
     {id: 'textedit/latin/typeText.latin', engine: 'vendor', kind: 'x', cause: 'not needed'}];
@@ -68,4 +86,21 @@ test('the expected file: a declaration excuses a failed valid row of its engine 
   for (const d of readDeclarations()) assert.ok(d.id && ['vendor', 'cua'].includes(d.engine) && d.kind && d.cause, JSON.stringify(d));
   assert.throws(() => parseDeclarations({declarations: [{id: 'x'}]}), /needs an id, an engine, a kind and a cause/);
   assert.throws(() => parseDeclarations({declarations: [declarations[0], declarations[0]]}), /twice/);
+  // A pressKey row that composes otherwise fails and cannot be declared (ruling 1119), on either engine.
+  for (const engine of ['vendor', 'cua']) {
+    assert.throws(() => parseDeclarations({declarations: [{id: 'chrome/korean/pressKey.rk', engine, kind: 'composition', cause: 'composes otherwise'}]}),
+      /chrome\/korean\/pressKey\.rk cannot be declared: .*ruling 1119/);
+  }
+});
+
+// #185, ruling 1119: the per-context rows run and report, out of every verdict, with the ruling's cause.
+test('the per-context rows still run, out of the judged matrix with ruling 1119\'s cause, and are never declared', () => {
+  assert.deepEqual(Object.keys(NOT_JUDGED), ['perContext']);
+  assert.match(NOT_JUDGED.perContext, /ruling 1119.*stored per-context preference does not show live behaviour.*focusing each window, which non-interference forbids/);
+  assert.equal(unicodeRowsOf(UNICODE_PLAN).filter(r => r.condition === 'perContext').length, 3 * 9 * 2, 'they stay in the plan');
+  const id = 'chrome/perContext@textedit/typeText.hangul';
+  const rows = [{section: 'unicode', id, engine: 'cua', ok: false, excluded: NOT_JUDGED.perContext}];
+  const {unused} = applyDeclarations(rows, [{id, engine: 'cua', kind: 'x', cause: 'y'}]);
+  assert.equal(rows[0].declared, undefined);
+  assert.deepEqual(unused.map(d => d.id), [id]);
 });

@@ -209,8 +209,11 @@ node bin/cua.mjs install --engine     # or: node bin/cua.mjs engine build
 `cua install` builds the engine, last, after the runtime and Node, when it is selected (`CUA_NATIVE_ENGINE`, else
 `engine.json`, else the default, cua's engine), or with `--engine` whatever selects; `--engine` makes the build
 required (without it a failed build, such as one with no signing identity yet, is a warning and the rest of the install
-stands: it names the cause, such as Xcode missing, no signing identity or a compile error, says which engine sessions
-keep until a build is approved, and gives the remedy) and does not change the selection. A failed build is recorded
+stands: it names the cause, such as Xcode missing or not selected, no signing identity or a compile error; says what a
+macOS computer session gets meanwhile, by the session's own selection: an approved build that still serves, the vendor
+engine (the default's fallback, also where no Node 24 runs cua's own host), or a refusal for an explicit selection of
+cua's engine; names a build from an earlier build still pending that `cua engine approve` takes now; and gives the
+remedy) and does not change the selection. A failed build is recorded
 beside the approved engine (`build-failed.json`) so sessions and `cua doctor` can name its cause; a build that succeeds,
 or an approve, removes the record. Install never approves: it sends no grant request,
 launches nothing and captures nothing, so an ordinary or CI install raises no permission dialog. The build goes into the
@@ -263,7 +266,8 @@ text-only observation without it. macOS applies a Screen Recording grant only to
 granted the next observation or screenshot relaunches the engine, when no other session holds it, and retries once;
 until then they fail with the sentence, which says a relaunch is pending. That recovery and `cua/permission` came with
 the 0.2.0 engine, the oldest this cua drives. An explicit selection of cua's engine with none approved is refused
-before launch (`engine_not_installed`, naming `cua install --engine` and then `cua engine approve`), and the default
+before launch (`engine_not_installed`, with the same reason and remedy as the default's line below: `cua engine approve`
+alone for a build already pending that this cua drives, else `cua install --engine` and then `cua engine approve`), and the default
 keeps the vendor's engine with a warning instead (Use, Native engine); a pending build is not an approved one.
 
 **Typing.** `typeText` keys its text under a Latin keyboard layout whose reading is reliable (macOS's "Automatically
@@ -367,7 +371,8 @@ vendor's engine by default until that approval, and refuses an explicit selectio
 
 **The first-run state.** Between the install that builds cua's engine and the owner's first `cua engine approve`, every
 Mac has no approved engine. That is normal, not a fault: macOS computer sessions use the vendor engine, and each
-connection says so once, at the end of its first `js` result and as `_meta['cua/engineNotice']` (the same string), in
+connection says so once, at the end of its first successful `js` or `js_reset` result (a tool error does not carry it)
+and as `_meta['cua/engineNotice']` (the same string), in
 one line that gives the reason, then the remedy:
 
 ```text

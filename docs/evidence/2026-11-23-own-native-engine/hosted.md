@@ -85,7 +85,8 @@ paths come from the runner's record, so `plan` only works on a runner after setu
   - *The owner's Mac before F's approve (O1; ruling 1148).* After the flip's `cua install`, the Mac has cua's engine
     built pending and nothing approved. That is the flip's normal first-run state, not a failure: every macOS computer
     session uses the vendor engine until the owner runs `cua engine approve` at the console. Each connection says so
-    once, at the end of its first `js` result and in `_meta['cua/engineNotice']`, the same string:
+    once, at the end of its first successful `js` or `js_reset` result and in `_meta['cua/engineNotice']`, the same
+    string:
 
     ```text
     cua: this session keeps the vendor engine: no approved cua engine (build <id> built, awaiting approve); to use it, run `cua engine approve` with the owner at the console

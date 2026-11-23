@@ -37,8 +37,8 @@ differ from the pinned record, and never modifies vendor files. Doctor's `runtim
 `helper.live` and `helper.permissions` stay BLOCKED until a native call, and the `engine` row warns until step 7 (no
 approved engine yet, so computer sessions keep the vendor's). `install` also tries to build cua's engine, the default
 (step 7); until step 7's Xcode and signing identity are in place that build fails with a warning that names the cause
-(Xcode missing, no signing identity, a compile error), says sessions keep the vendor engine until a build is approved,
-and gives the remedy. The install still succeeds.
+(Xcode missing or not selected, no signing identity, a compile error), says what sessions get until a build is approved
+(on a new Mac, the vendor engine), and gives the remedy. The install still succeeds.
 
 ### 2. Secrets (only if secret substitution will be used)
 
@@ -105,7 +105,10 @@ terminal. Every step marked *owner* is done by the owner at this Mac's console; 
 answers a system alert or touches System Settings. Over SSH the prompts cannot be shown, so steps 4 and 7 happen at
 the console.
 
-1. *Owner, once per Mac.* Install Xcode (its Swift toolchain builds the engine). Create an Apple Development
+1. *Already built?* If step 1's `cua install` left a build pending that this cua drives (it said "a new build is
+   pending; cua engine approve to use it", and a session's line or `cua doctor` says "built, awaiting approve"), go
+   straight to step 4: the identity and the first sign are done. Otherwise, *owner, once per Mac:* install Xcode (its
+   Swift toolchain builds the engine). Create an Apple Development
    certificate in Xcode's Accounts settings, or import the owner's certificate with its private key into the login
    keychain, and check that `security find-identity -v -p codesigning` lists it as valid (if it does not, add the Apple
    WWDR intermediate it chains to).
@@ -177,7 +180,8 @@ the version this cua drives. Under the same identity the grants carry over, so t
 the Mac.
 
 **Until an engine is approved, and as the rollback,** computer sessions run the vendor's engine. From step 1's
-install to step 4's approve this is every new Mac's normal state, not a fault: each session's first `js` result ends
+install to step 4's approve this is every new Mac's normal state, not a fault: each session's first successful `js` or
+`js_reset` result (a tool error does not carry it, and the next success does) ends
 with one line (also in `_meta['cua/engineNotice']`), and doctor's `repl.host` and `engine` rows warn with the same
 words, the reason first, then the remedy:
 
@@ -211,9 +215,10 @@ fallbacks, an explicit selection's `repl_host_node` and `CUA_REPL_HOST=vendor` a
 rollback), add `-e CUA_NATIVE_ENGINE=vendor` before `--` in the command above for this server, or set `"engine":
 "vendor"` in `~/.config/cua/engine.json` for every session of the account; the variable wins over the file.
 Configuring `signingIdentity` selects nothing for `serve`. An explicit selection of cua's engine (`CUA_NATIVE_ENGINE=cua`
-or `"engine": "cua"`) with no approved engine this cua drives is refused: with none approved (`engine_not_installed`),
-naming `cua install --engine` and then `cua engine approve`; with one older than 0.2.0 (`engine_outdated`), naming
-`cua engine approve` alone when a build at or above the minimum is already pending, else both.
+or `"engine": "cua"`) with no approved engine this cua drives is refused, naming `cua engine approve` alone when a build
+at or above the minimum is already pending, else `cua install --engine` and then `cua engine approve`: with none
+approved (`engine_not_installed`, in the same words as step 7's line), or with one older than 0.2.0
+(`engine_outdated`).
 
 `~/.claude.json` is per machine; run this on each. Two hand-made parts of `~/.claude/settings.json` also have to be
 copied: the `mcp__cua_repl__*` permission entries, and the `Elicitation` hook matched to `cua_repl` that runs

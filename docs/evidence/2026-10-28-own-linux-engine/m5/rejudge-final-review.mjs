@@ -56,7 +56,8 @@ for (const [arch, { device, drops }] of Object.entries(STEPS)) {
       const runs = rejudgeDevice(rows, { lines: evidenceOf(dir) });
       for (const run of runs) {
         lines.push('', `run ${run.run}: ${run.verdicts.length} device verdicts; moved ${run.moved.length ? run.moved.join('; ') : 'none'}; failing now ${run.failing.length ? run.failing.join(', ') : 'none'}; the end record's other failures ${run.others.length ? run.others.join('; ') : 'none'}`);
-        for (const v of run.verdicts) lines.push(`  ${v.name}: stored ${v.stored.verdict}, now ${v.now.verdict === 'fail' ? 'fail' : 'pass'}${v.moved ? ' MOVED' : ''}`);
+        if (run.premise.length) lines.push("  (ruling 823's premise cells' replays read as rejudge-device.mjs gives them: diagnostic only, never cited as a pass (ruling 847); their stored live verdicts stand, and `moved` compares the judged verdict with the stored one)");
+        for (const v of run.verdicts) lines.push(`  ${v.name}: stored ${v.stored.verdict}, now ${v.now.verdict}${v.moved ? ' MOVED' : ''}`);
       }
       const moved = runs.flatMap((r) => r.moved);
       summary.push(`${arch} ${step}: ${runs.reduce((n, r) => n + r.verdicts.length, 0)} device verdicts, ${reached.length} rows reached, moved ${moved.length ? moved.join('; ') : 'none'}`);

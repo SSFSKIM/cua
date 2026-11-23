@@ -1193,11 +1193,11 @@ export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGR
   return { failed, findings: [], counts, md };
 }
 
-export function dropSignalsVerdict(args, rows) {
+export function dropSignalsVerdict(args, rows, { specs: held = null } = {}) {
   if (PART_PLANS[args.plan]) return partsVerdict(args, rows);
   const drags = rows.filter((r) => r.kind === 'drop-signal');
   const manifest = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? null;
-  const specs = manifest ?? [];
+  const specs = held ?? manifest ?? [];
   if (judgedHoldRegressionPlan(args)) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs: manifest }) };
   if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
@@ -1248,12 +1248,24 @@ export const judgedDropSignalsPlan = (args) => judgedPartsPlan(args) || judgedHo
  * at least its drags. A lane filter is never excused.
  */
 function manifestShort(specs, plan, trials) {
-  return PART_CELLS[plan].flatMap(([lane, cell, n]) => {
-    const want = trials ? Math.min(trials, n) : n;
+  return declaredCells(plan, trials).flatMap(({ lane, cell, n }) => {
     const got = specs.filter((s) => s.lane === lane && s.cell === cell).reduce((sum, s) => sum + s.n, 0);
-    return got >= want ? [] : [`${lane} ${cell} x${want}${got ? ` (${got} in the manifest)` : ''}`];
+    return got >= n ? [] : [`${lane} ${cell} x${n}${got ? ` (${got} in the manifest)` : ''}`];
   });
 }
+
+/** A part's declared cells as specs, each capped by `trials` where the sitting was. */
+const declaredCells = (plan, trials) => PART_CELLS[plan].map(([lane, cell, n]) => ({ lane, cell, n: trials ? Math.min(trials, n) : n }));
+
+/**
+ * The specs a part is judged against: its manifest, with each declared cell it leaves out or holds short added at its
+ * declared drags, so the part's own judge counts the missing drags as a missing case and its status and summary agree
+ * with the manifest's fail (the re-review's P3: they said every cell of the plan ran).
+ */
+const partSpecs = (specs, plan, trials) => [...specs, ...declaredCells(plan, trials).filter(({ lane, cell }) => !specs.some((s) => s.lane === lane && s.cell === cell))].map((s) => {
+  const want = declaredCells(plan, trials).find((d) => d.lane === s.lane && d.cell === s.cell)?.n ?? 0;
+  return { ...s, n: Math.max(s.n, want) };
+});
 
 /**
  * A plan of parts judged (`PART_PLANS`): each part's rows (`part`) by its own plan's judge, as a run of that plan alone
@@ -1270,20 +1282,24 @@ export function partsVerdict(args, rows) {
     const name = `part ${k + 1} (${part.family} ${part.plan})`;
     const own = rows.filter((r) => r.part === k);
     const scene = own.find((r) => r.kind === 'drop-signal-scene');
-    if (!scene) failed.push(`${name}: its scene row is missing: which cells ran is unknown`);
+    const trials = args.samplesTrials ?? null;
+    // the part's own fails, before its judge's: its scene row missing, or its manifest short of the plan's cells
+    const partFails = [];
+    if (!scene) partFails.push('its scene row is missing: which cells ran is unknown');
     else {
-      const short = manifestShort(scene.specs ?? [], part.plan, args.samplesTrials ?? null);
-      if (short.length) failed.push(`${name}: the manifest leaves out the plan's ${short.join(', ')}`);
+      const short = manifestShort(scene.specs ?? [], part.plan, trials);
+      if (short.length) partFails.push(`the manifest leaves out the plan's ${short.join(', ')}`);
     }
-    const v = dropSignalsVerdict({ ...args, families: [part.family], plan: part.plan }, own);
+    failed.push(...partFails.map((f) => `${name}: ${f}`));
+    const v = dropSignalsVerdict({ ...args, families: [part.family], plan: part.plan }, own, { specs: partSpecs(scene?.specs ?? [], part.plan, trials) });
     if (!v) {
       failed.push(`${name}: no gate judge holds it`);
       continue;
     }
     failed.push(...v.failed.map((f) => `${name}: ${f}`));
     findings.push(...v.findings.map((f) => `${name}: ${f}`));
-    md.push(`### ${name}`, '', ...v.md);
-    parts.push({ part: k, family: part.family, plan: part.plan, judge: v.judge, pass: v.failed.length === 0, counts: v.counts });
+    md.push(`### ${name}`, '', ...(partFails.length ? [`**The part fails:** ${partFails.join('; ')}.`, ''] : []), ...v.md);
+    parts.push({ part: k, family: part.family, plan: part.plan, judge: v.judge, pass: partFails.length === 0 && v.failed.length === 0, counts: v.counts });
   }
   return { judge: 'partsVerdict', md, failed, findings, counts: { parts } };
 }

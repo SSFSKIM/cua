@@ -103,11 +103,18 @@ test("a part's manifest is held to its plan's declared cells: one a lane filter 
   // `--lanes cua:handle` on t14-stale: every part's scene row with an empty manifest, and no drags
   const emptied = PART_PLANS['t14-stale'].map((p, part) => ({ kind: 'drop-signal-scene', part, family: p.family, plan: p.plan, specs: [] }));
   const v = partsVerdict(args, emptied);
-  assert.deepEqual(v.failed, [
+  for (const f of [
     "part 1 (chrome t14-long): the manifest leaves out the plan's cua long-left x100",
     "part 2 (chrome t14-floor): the manifest leaves out the plan's cua plain-long x300, cua left x30, cua inzone-out x30",
     "part 3 (electron t17-long): the manifest leaves out the plan's cua long-left x30",
-  ]);
+    // and each part's own judge counts the declared drags that never ran as a missing case
+    "part 1 (chrome t14-long): cua long-left: 0 of the plan's 100 drags ran (a missing case)",
+    "part 2 (chrome t14-floor): cua plain-long: 0 of the plan's 300 drags ran (a missing case)",
+  ]) assert.ok(v.failed.includes(f), `${f}\n${v.failed.join('\n')}`);
+  // each part's status and summary agree with the run's verdict (the re-review's P3): none passes, none says every cell ran
+  assert.deepEqual(v.counts.parts.map((p) => p.pass), [false, false, false]);
+  assert.equal(v.md.filter((l) => /every cell of the plan ran/.test(l)).length, 0, v.md.join('\n'));
+  assert.equal(v.md.filter((l) => /^\*\*The part fails:\*\* the manifest leaves out/.test(l)).length, 3);
   // a short cell, its drags all run, fails as well
   const short = [{ kind: 'drop-signal-scene', part: 2, family: 'electron', plan: 't17-long', specs: [{ lane: 'cua', cell: 'long-left', n: 10 }] }];
   assert.ok(partsVerdict(args, short).failed.includes("part 3 (electron t17-long): the manifest leaves out the plan's cua long-left x30 (10 in the manifest)"));
@@ -154,7 +161,7 @@ test('the rejudge of stored sittings reports each run beside its stored verdict:
     writeFileSync(join(dir, 'results.jsonl'), [meta, ...scenes, { run: 'r', kind: 'drop-parts-verdict', pass: true, failed: [] }].map((r) => JSON.stringify(r)).join('\n'));
     const [line] = await rejudge([dir]);
     assert.deepEqual([line.judge, line.gate, line.lanes, line.trials, line.stored, line.moved], ['partsVerdict', 'pinned', ['cua:handle'], null, { pass: true, failed: [] }, true]);
-    assert.equal(line.failed.length, 3);
+    assert.equal(line.failed.filter((f) => /the manifest leaves out/.test(f)).length, 3);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

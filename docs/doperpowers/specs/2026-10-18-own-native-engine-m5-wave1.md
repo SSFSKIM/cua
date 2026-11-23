@@ -120,6 +120,10 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   the alert-frontmost NO VERDICT rule and its test in the oracle, H0's row order and the two-pass approve), T3b (the
   hosted staged-onboarding driver, a relaunch at every stage per H0 step 10) and T8e after T10. Order: T8b to T8d,
   T10, T3b, T8e, T11 (the flip an unmerged commit). T10b stays parked until O11 triggers.
+- 2026-11-23, M4's dependencies (the design session): T10 consumes M4's T4 and T5 and T3b consumes T2 and T3, all on
+  `feat/117-m4-recut`. T10's judge and oracle work builds now with unit tests; T10's hosted pilot and T3b run after M4
+  (#505) merges to main and origin/main is merged into `feat/117-m5` (a merge, no rebase). The moving M4 branch is not
+  merged directly. T8e and T11 may come before T3b.
 - 2026-11-23: M5 is ticket #506 (a child of #117); M4 is #505.
 - 2026-11-23, the design session clears #420's kit: built on `probe/420-qual` from `probe/414-qual` b7aebd311,
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,

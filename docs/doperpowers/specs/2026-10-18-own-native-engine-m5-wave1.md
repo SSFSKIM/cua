@@ -198,7 +198,8 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   only after O1 and after M4 (PR #513, which carries engineVersion 0.2.0) is on main, and must stay last on top of
   M5's work so the rest can merge without it if O1 is late. So T11a (the mode) lands on `feat/117-m5` and T11b (the
   flip) on a branch `feat/117-m5-flip` stacked on it, which follows `feat/117-m5` by merges (never a rebase) as later
-  tasks land.
+  tasks land. The design session approved it and cleared pushing `feat/117-m5-flip` (merges only, no force, no
+  rebase, no PR, no CI: its pushes carry `[skip ci]` until the design session opens the flip's pull request).
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

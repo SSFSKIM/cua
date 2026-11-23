@@ -15,7 +15,7 @@ import {cell} from '../native-baseline/cells.mjs';
 import {FINDER_TYPING_NAME} from '../repl-parity/scenes-mac.mjs';
 import {INTERVENTION_DEBOUNCE_MS} from './live-device.mjs';
 import {prelude} from './matrix-cells.mjs';
-import {sha256Hex} from './matrix-text.mjs';
+import {elementLines, focusedIndexOf, lineOfIndex, parentIndexOf, sha256Hex, valueOfIndex} from './matrix-text.mjs';
 import {FOCUS_REASONS, TEXT_FIELDS, TYPED} from './plan.mjs';
 
 const j = JSON.stringify;
@@ -234,16 +234,17 @@ return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 
 // #212's save sheet (its gate's hosted cell, the M5 pre-flight §6): the sheet variant's dirty untitled document (its
 // new-document and typing cells) given its Save sheet by super+s, its destination moved to a folder the run made (the
-// sheet's Go To field), then set_value on the sheet's name field (ID saveAsNameTextField, the field #212's report
+// panel's Go To dialog), then set_value on the sheet's name field (ID saveAsNameTextField, the field #212's report
 // names) at the cell's time, a probe keystroke aimed just after the engine receives the request. The save sheet is told
 // from the keep-or-delete sheet by its missing Delete button. Its name field's index is kept across cells
 // (`__saveNameIndex`), so the act's call holds the set_value alone and its meta is its own. The check reads the sheet
 // again after a settle, and the run's folder: the sheet still open and the folder empty are the proof that nothing
 // committed it (the probe types two letters, no Return), and a save that did commit lands in the run's folder, not the
-// one the sheet inherited. The cancel is Escape on the sheet (and on the Go To field, if left up), the run's folder
+// one the sheet inherited. The cancel is Escape on the sheet (and on the Go To dialog, if left up), the run's folder
 // then removed when empty; the untitled document closes as the sheet variant's does (CLOSE_UNTITLED_CELL). The ids come
-// from #212's report and the keep-or-delete cells, not yet read on a runner's Save sheet (nor the Go To field, known
-// here only as the field the typed path lands in): the pilot's first run reads them.
+// from #212's report and the keep-or-delete cells, not yet read on a runner's Save sheet, and the Go To dialog's
+// controls are not read at all (SAVE_PANEL_CONTROLS): until a pilot run reads them, the destination cell only observes
+// and the cell never acts.
 export const SAVE_NAME = 'cua-212-intended';
 // The run's own save folder, made under the runner's temporary directory by the destination cell.
 export const SAVE_DIR_PREFIX = 'cua-212-save-';
@@ -267,33 +268,101 @@ await __app.pressKey("super+s");
 for (const end = Date.now() + 5000; !__saveSheet(ax) && Date.now() < end;) ax = await observe();
 globalThis.__saveNameIndex = __saveSheet(ax) ? __nameField(ax) : null;
 return {opened: globalThis.__saveNameIndex !== null, ...(globalThis.__saveNameIndex === null ? {reason: __saveSheet(ax) ? "the sheet's name field has no index" : "no Save sheet came up"} : {})};`);
-// The sheet's destination: a folder made for this attempt, reached through the sheet's Go To field (super+shift+g, the
-// path typed, Return). The Return is sent only when the name field still reads as it did and the path was typed
-// elsewhere, so it can only go to the Go To field, never save the document; afterwards the sheet must be up with the
-// Go To field gone, the folder's name showing as its destination and the name field as it was. Anything else fails
-// closed: not ready, and no act. -> {ready} or {ready: false, reason}.
-export const SAVE_SHEET_DESTINATION_CELL = cell(`${prelude('textedit')}
+// The Save panel's controls the destination cell must identify, each {id, role}: its identifier and its role word as
+// the observation prints them (the grammar carries no raw role or subrole; TextEdit runs in English). `panel` is the
+// sheet around the name field, `goTo` the Go To dialog inside it, `goToField` the dialog's path field, `location` the
+// panel's pop-up naming the selected folder. None is read on a runner yet, so all are null: the destination cell then
+// only observes (it opens the Go To dialog and records the panel's structure, nothing typed, no Return), the row is
+// invalid and nothing acts. A pilot run's `outcome.observed` is where they are read.
+export const SAVE_PANEL_CONTROLS = Object.freeze({panel: null, goTo: null, goToField: null, location: null});
+
+// The one element whose line begins with the role word `control.role` and carries the identifier `control.id` (its
+// `ID:` part, or its lone part); null when none or more than one does.
+export function controlIndexOf(ax, control) {
+  if (typeof control?.id !== 'string' || typeof control?.role !== 'string') return null;
+  const id = control.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const labelled = new RegExp(`(?:^| |, )ID: ${id}(?:,| \\(showing |$)`), lone = new RegExp(` ${id}$`);
+  const found = elementLines(ax).filter(l => (l.content === control.role || l.content.startsWith(`${control.role} `)) && (labelled.test(l.content) || lone.test(l.content)));
+  return found.length === 1 ? found[0].index : null;
+}
+// Whether the element `index` lies inside the element `ancestor`.
+export function isInside(ax, index, ancestor) {
+  if (index === null || ancestor === null) return false;
+  for (let at = parentIndexOf(ax, index); at !== null; at = parentIndexOf(ax, at)) if (at === ancestor) return true;
+  return false;
+}
+// The line's role word and bare title (its flags and labelled parts dropped), at most 40 characters.
+export function headOf(content) {
+  const flagless = String(content).replace(/ \([^)]*\)/, '');
+  const part = /(?:^| |, )(?:Description|Rows|Columns|URL|Help|Value|Details|Placeholder|ID|Secondary Actions): /.exec(flagless);
+  return (part ? flagless.slice(0, part.index) : flagless).replace(/,$/, '').trim().slice(0, 40);
+}
+// The save panel as the destination cell reads it (`controls`, SAVE_PANEL_CONTROLS' shape): the panel; the Go To dialog
+// inside it and the path field inside that, whether the field is the focused element and its value; the location
+// pop-up inside the panel and outside the dialog, and the folder it names (its value, else its bare title). ->
+// {panel, goTo, field, fieldFocused, fieldValue, location, locationName}.
+export function savePanelReading(ax, controls) {
+  const panel = controlIndexOf(ax, controls.panel);
+  const goTo = [controlIndexOf(ax, controls.goTo)].find(at => isInside(ax, at, panel)) ?? null;
+  const field = [controlIndexOf(ax, controls.goToField)].find(at => isInside(ax, at, goTo)) ?? null;
+  const location = [controlIndexOf(ax, controls.location)].find(at => isInside(ax, at, panel) && !isInside(ax, at, goTo)) ?? null;
+  const clean = text => (text === null || text === undefined ? null : String(text).replace(/\*\*/g, ''));
+  const named = location === null ? null : clean(valueOfIndex(ax, location)) ?? (headOf(lineOfIndex(ax, location)).slice(controls.location.role.length).trim() || null);
+  return {panel, goTo, field, fieldFocused: field !== null && focusedIndexOf(ax) === field, fieldValue: field === null ? null : clean(valueOfIndex(ax, field)),
+    location, locationName: named};
+}
+// The panel's structure for a pilot's reading of SAVE_PANEL_CONTROLS: the trailer's kind and, for at most 80 element
+// lines, the index, depth, parent, `ID:` part, role word and bare title (`headOf`) and whether it is focused. No value
+// leaves; the titles are the panel's own on a run's fixture document.
+export function savePanelStructure(ax) {
+  const focused = focusedIndexOf(ax);
+  const trailer = /\nSelected text: /.test(ax) ? 'selectedText' : /\nSelected:\n/.test(ax) ? 'selected' : focused !== null ? 'focused' : 'none';
+  const lines = elementLines(ax);
+  return {trailer, count: lines.length, lines: lines.slice(0, 80).map(l => ({index: l.index, depth: l.depth, parent: parentIndexOf(ax, l.index),
+    id: /(?:^| |, )ID: ([^,]+?)(?:,| \(showing |$)/.exec(l.content)?.[1] ?? null, head: headOf(l.content), focused: l.index === focused}))};
+}
+
+// The sheet's destination: a folder made for this attempt, reached through the panel's Go To dialog. Every control is
+// identified first (`controls`; unread, the cell only observes, `SAVE_PANEL_CONTROLS`). After super+shift+g the dialog
+// and its path field must be identified, inside the panel, the field focused, before anything is typed; after typing,
+// the field must still be the focused one, hold the path exactly, and the name field must read as before, checked again
+// on the observation just before the Return, so the Return can only reach the dialog's field and never save the
+// document. Afterwards the dialog must be gone, the panel up and the panel's location pop-up must name the folder (not a
+// listing entry), the name field as it was. Anything else fails closed: not ready, no Return, and no act. -> {ready} or
+// {ready: false, reason, observed?}.
+export const saveSheetDestinationCell = (controls = SAVE_PANEL_CONTROLS) => cell(`${prelude('textedit')}
 // cua-matrix-cell: savesheet.destination
 ${saveSheet}
-const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
-const __dir = globalThis.__saveDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), ${j(SAVE_DIR_PREFIX)}));
+${[controlIndexOf, isInside, headOf, savePanelReading, savePanelStructure].map(f => f.toString()).join('\n')}
+const __controls = ${j(controls)};
 const __named = ax => { const i = __nameField(ax); return i === null ? null : plain(valueOfIndex(ax, i) ?? ""); };
 let ax = await observe();
 if (!__saveSheet(ax)) return {ready: false, reason: "the Save sheet was not up"};
 const __name = __named(ax), __before = ax;
+if (!["panel", "goTo", "goToField", "location"].every(k => typeof __controls[k]?.id === "string" && typeof __controls[k]?.role === "string")) {
+  await __app.pressKey("super+shift+g");
+  for (const end = Date.now() + 3000; ax === __before && Date.now() < end;) ax = await observe();
+  return {ready: false, reason: "the save panel's controls are not identified yet: observation only, nothing typed and no Return", observed: {before: savePanelStructure(__before), after: savePanelStructure(ax)}};
+}
+let __r = savePanelReading(ax, __controls);
+if (__r.panel === null || !isInside(ax, __nameField(ax), __r.panel)) return {ready: false, reason: "the save panel was not identified around the name field"};
+const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
+const __dir = globalThis.__saveDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), ${j(SAVE_DIR_PREFIX)}));
 await __app.pressKey("super+shift+g");
-for (const end = Date.now() + 3000; ax === __before && Date.now() < end;) ax = await observe();
-if (ax === __before) return {ready: false, reason: "no Go To field came up"};
+for (const end = Date.now() + 3000; !__r.fieldFocused && Date.now() < end;) { ax = await observe(); __r = savePanelReading(ax, __controls); }
+if (!__r.fieldFocused) return {ready: false, reason: "the Go To dialog and its focused path field were not identified"};
 await __app.typeText(__dir);
-ax = await observe();
-if (__named(ax) !== __name || !ax.includes(__dir)) return {ready: false, reason: "the folder's path did not land in the Go To field"};
+ax = await observe(); __r = savePanelReading(ax, __controls);
+if (!__r.fieldFocused || __r.fieldValue !== __dir || __named(ax) !== __name) return {ready: false, reason: "the path was not in the Go To dialog's focused field alone"};
 await __app.pressKey("Return");
-for (const end = Date.now() + 5000; ax.includes(__dir) && Date.now() < end;) ax = await observe();
-globalThis.__saveNameIndex = __saveSheet(ax) ? __nameField(ax) : null;
-if (globalThis.__saveNameIndex === null) return {ready: false, reason: "the Save sheet was not up after the Go To field"};
-if (ax.includes(__dir) || !ax.includes(path.basename(__dir))) return {ready: false, reason: "the sheet's destination does not read as the run's folder"};
+for (const end = Date.now() + 5000; __r.goTo !== null && Date.now() < end;) { ax = await observe(); __r = savePanelReading(ax, __controls); }
+globalThis.__saveNameIndex = __saveSheet(ax) && __r.panel !== null ? __nameField(ax) : null;
+if (globalThis.__saveNameIndex === null) return {ready: false, reason: "the Save sheet was not up after the Go To dialog"};
+if (__r.goTo !== null) return {ready: false, reason: "the Go To dialog stayed up"};
+if (__r.locationName !== path.basename(__dir)) return {ready: false, reason: "the panel's selected location is not the run's folder"};
 if (__named(ax) !== __name) return {ready: false, reason: "the name field changed"};
 return {ready: true};`);
+export const SAVE_SHEET_DESTINATION_CELL = saveSheetDestinationCell();
 export const saveSheetActCell = ({at}) => scheduledActCell('textedit', {at, act: `await __app.setValue(globalThis.__saveNameIndex, ${j(SAVE_NAME)});`, tag: 'savesheet.act'});
 // -> {sheetOpen, nameWritten (whether the field reads the name set_value wrote; the probe's letters may follow it),
 // destinationFiles (the run's folder's entries, at most ten; null when it could not be read)}.
@@ -307,7 +376,7 @@ const fs = await import("node:fs");
 let destinationFiles = null;
 try { if (typeof globalThis.__saveDir === "string") destinationFiles = fs.readdirSync(globalThis.__saveDir).slice(0, 10); } catch {}
 return {sheetOpen: __saveSheet(ax), nameWritten: __index !== null && plain(valueOfIndex(ax, __index) ?? "").startsWith(${j(SAVE_NAME)}), destinationFiles};`);
-// Escape on the Save sheet (once more for a Go To field left up), the sheet awaited gone, then the run's folder removed
+// Escape on the Save sheet (once more for a Go To dialog left up), the sheet awaited gone, then the run's folder removed
 // when it is empty (a file in it is left as found). -> {cancelled, destinationRemoved}.
 export const SAVE_SHEET_CANCEL_CELL = cell(`${prelude('textedit')}
 // cua-matrix-cell: savesheet.cancel

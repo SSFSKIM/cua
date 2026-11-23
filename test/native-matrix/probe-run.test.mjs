@@ -7,7 +7,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
-import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_SHEET_AIM_MS, SAVE_SHEET_PRE_MS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
+import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_PANEL_CONTROLS, SAVE_SHEET_AIM_MS, SAVE_SHEET_PRE_MS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
@@ -303,11 +303,8 @@ test('#212\'s save sheet: super+n, the text typed and super+s under the key guar
   const open = calls.find(c => tagOf(c.code) === 'savesheet.open').code, act = calls.find(c => tagOf(c.code) === 'savesheet.act').code;
   assert.match(open, /__app\.pressKey\("super\+s"\)/);
   assert.match(open, /saveAsNameTextField/);
-  // The sheet's destination set to a run-owned folder before the act, its Return only into the Go To field.
-  const destination = calls.find(c => tagOf(c.code) === 'savesheet.destination').code;
-  assert.match(destination, /mkdtempSync\(path\.join\(fs\.realpathSync\(os\.tmpdir\(\)\), "cua-212-save-"\)\)/);
-  assert.match(destination, /__app\.pressKey\("super\+shift\+g"\)/);
-  assert.ok(destination.indexOf('__named(ax) !== __name || !ax.includes(__dir)') < destination.indexOf('__app.pressKey("Return")'), 'the Return is guarded');
+  // The sheet's destination cell, the one probe-plan's fixtures judge (test/native-matrix/probe-plan.test.mjs).
+  assert.ok(calls.find(c => tagOf(c.code) === 'savesheet.destination').code.includes(`const __controls = ${JSON.stringify(SAVE_PANEL_CONTROLS)};`), 'the shipped controls, unread');
   assert.match(calls.find(c => tagOf(c.code) === 'savesheet.check').code, /readdirSync\(globalThis\.__saveDir\)/);
   assert.ok(act.includes(`await __app.setValue(globalThis.__saveNameIndex, ${JSON.stringify(SAVE_NAME)});`), act);
   assert.doesNotMatch(act, /pressKey|click\(/, 'the act holds the set_value alone, so its meta is its own');
@@ -421,6 +418,13 @@ test('#212\'s save sheet: no act without the run\'s own destination; a file in i
   const row = rowOf(result, SAVE_SHEET);
   assert.match(row.invalid, /destination was not set/);
   assert.ok(!calls.some(c => tagOf(c.code) === 'savesheet.act'), 'nothing is sent toward the sheet');
+  // Observation only (the panel's controls unread): the row is invalid and carries what the cell observed.
+  const observed = {before: {trailer: 'focused', count: 9, lines: []}, after: {trailer: 'focused', count: 11, lines: []}};
+  const reading = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({destination: {ready: false, reason: 'the save panel\'s controls are not identified yet: observation only, nothing typed and no Return', observed}})});
+  const first = rowOf(reading.result, SAVE_SHEET);
+  assert.match(first.invalid, /observation only/);
+  assert.deepEqual([first.attempts, first.outcome.observed], [1, observed]);
   assert.ok(calls.some(c => tagOf(c.code) === 'savesheet.cancel'));
   const saved = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
     cell: saveCells({check: {sheetOpen: true, nameWritten: true, destinationFiles: ['cua-212-intended.rtf']}})});

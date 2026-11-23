@@ -377,7 +377,10 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   if (!sheet?.ok || sheet.value?.opened !== true) return unprepared(`the Save sheet did not open (${sheet?.error ?? sheet?.value?.reason ?? 'not sent'})`);
   const destination = await keys(SAVE_SHEET_DESTINATION_CELL, ['super+shift+g', 'typeText', 'Return']);
   if (!destination?.ok || destination.value?.ready !== true) {
-    return unprepared(`the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'})`);
+    // Until the panel's controls are read (probe-plan.mjs SAVE_PANEL_CONTROLS) the cell only observes: what it saw rides on the row.
+    const observed = destination?.value?.observed;
+    return span.end({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'})`,
+      ...(observed ? {outcome: {observed}} : {})}, {cleanup});
   }
   const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
   if (!window) return unprepared(`${scene}'s window was not in front`);

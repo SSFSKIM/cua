@@ -4,12 +4,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {readFileSync, readdirSync, rmdirSync} from 'node:fs';
+import {basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {TEXT_FIELDS} from '../../scripts/native-matrix/plan.mjs';
-import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS} from '../../scripts/native-matrix/probe-plan.mjs';
+import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS,
+  SAVE_PANEL_CONTROLS, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell} from '../../scripts/native-matrix/probe-plan.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
+import {node as axNode, skyshot as axSkyshot} from '../native-goldens/builder.mjs';
 
 const act = (engine, meta = {}, value = {callAt: 1_000, endAt: 3_000}) => ({engine: {actionInterval: null, receivedAt: null, ...meta}, value});
 
@@ -114,4 +117,134 @@ test('Chrome and Electron prepare and read back as before, the preparation chang
     ['e8b238e9385f95ec', '41639a7e0fddf612', '5cf0e282ecc58ddc'],
     ['3c254c5f5131ca19', '3495030f8aa3813c', 'bb2fde8b360fdc61'],
   ]);
+});
+
+// ---- #212's save sheet: the destination cell against AX fixtures ----------------------------------------------------
+
+// The controls as a pilot's reading would name them (the shipped SAVE_PANEL_CONTROLS are unread: observation only).
+const CONTROLS = Object.freeze({panel: {id: 'fixture-save-panel', role: 'sheet'}, goTo: {id: 'fixture-go-to', role: 'sheet'},
+  goToField: {id: 'fixture-go-to-field', role: 'text field'}, location: {id: 'fixture-location', role: 'pop up button'}});
+// TextEdit's Save sheet as a double observed through cua's renderer: the name field, the location pop-up, a search
+// field, the file list, the buttons, and the Go To dialog when it is up. `goTo` says what super+shift+g does: 'opens'
+// (the dialog, its field focused), 'unfocused' (the dialog, the focus left on the name field) or 'list' (no dialog:
+// a list row appears, the reviewer's counter-case); `typing` where typed text goes: 'focused' or 'search' (the
+// reviewer's: into the search field, the name field still focused); `navigates` whether the dialog's Return moves the
+// location (else the folder shows only as a list row). A Return anywhere but the Go To field saves the document.
+const savePanelDouble = ({goTo = 'opens', typing = 'focused', navigates = true, duplicateField = false} = {}) => {
+  const state = {dialog: false, focus: 'name', name: 'Untitled', search: '', path: '', location: 'Documents', rows: ['Notes.rtf'], keys: [], typed: [], saved: false};
+  const nodes = () => [
+    axNode('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'Untitled'}),
+    axNode('p', 1, 'AXSheet', {roleDescription: 'sheet', identifier: 'fixture-save-panel'}),
+    axNode('n', 2, 'AXTextField', {roleDescription: 'text field', identifier: 'saveAsNameTextField', value: state.name, flags: {settable: true, focused: state.focus === 'name'}}),
+    axNode('l', 2, 'AXPopUpButton', {roleDescription: 'pop up button', identifier: 'fixture-location', value: state.location}),
+    axNode('s', 2, 'AXTextField', {roleDescription: 'search field', identifier: 'fixture-search', placeholder: 'Search', value: state.search || null, flags: {settable: true}}),
+    axNode('list', 2, 'AXList', {roleDescription: 'list'}),
+    ...state.rows.map((title, i) => axNode(`r${i}`, 3, 'AXRow', {title})),
+    axNode('save', 2, 'AXButton', {roleDescription: 'button', title: 'Save'}),
+    axNode('cancel', 2, 'AXButton', {roleDescription: 'button', title: 'Cancel'}),
+    ...(state.dialog ? [axNode('g', 2, 'AXSheet', {roleDescription: 'sheet', identifier: 'fixture-go-to'}),
+      axNode('gf', 3, 'AXTextField', {roleDescription: 'text field', identifier: 'fixture-go-to-field', placeholder: 'Path', value: state.path || null, flags: {settable: true, focused: state.focus === 'goTo'}}),
+      ...(duplicateField ? [axNode('gf2', 3, 'AXTextField', {roleDescription: 'text field', identifier: 'fixture-go-to-field', placeholder: 'Path'})] : [])] : []),
+  ];
+  const observe = () => {
+    const s = axSkyshot(nodes(), {focused: state.focus === 'goTo' ? 'gf' : 'n'});
+    return render(s, advanceNumbering(null, s));
+  };
+  const app = {
+    getAXState: async () => observe(),
+    pressKey: async key => {
+      state.keys.push(key);
+      if (key === 'super+shift+g') {
+        if (goTo === 'list') state.rows.push('Recents');
+        else { state.dialog = true; state.focus = goTo === 'opens' ? 'goTo' : 'name'; }
+      } else if (key === 'Return') {
+        if (state.focus === 'goTo') {
+          if (navigates) state.location = basename(state.path); else state.rows.push(basename(state.path));
+          state.dialog = false; state.focus = 'name';
+        } else { state.saved = true; state.rows.push(basename(state.search || state.name)); }
+      }
+    },
+    typeText: async text => {
+      state.typed.push(text);
+      if (typing === 'search') { state.search = text; state.rows.push(basename(text)); }
+      else if (state.focus === 'goTo') state.path = text;
+      else state.name = text;
+    },
+  };
+  return {state, app, observe};
+};
+const runDestination = async (app, code) => {
+  globalThis.__apps = {textedit: app};
+  const output = [];
+  try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', code)({write: t => output.push(t)}); }
+  finally { delete globalThis.__apps; }
+  const made = globalThis.__saveDir;
+  delete globalThis.__saveDir; delete globalThis.__saveNameIndex;
+  if (typeof made === 'string') rmdirSync(made);
+  return {result: parseCell(output.join('\n')), made};
+};
+
+test('#212\'s save panel: each control is the one element with its identifier and role word, placed inside its parent; the location named by the pop-up, not a row', () => {
+  const {state, observe} = savePanelDouble();
+  state.dialog = true; state.focus = 'goTo'; state.path = '/tmp/x/cua-212-save-a';
+  const ax = observe();
+  const reading = savePanelReading(ax, CONTROLS);
+  assert.deepEqual({fieldFocused: reading.fieldFocused, fieldValue: reading.fieldValue, locationName: reading.locationName}, {fieldFocused: true, fieldValue: '/tmp/x/cua-212-save-a', locationName: 'Documents'});
+  assert.ok([reading.panel, reading.goTo, reading.field, reading.location].every(Number.isInteger), JSON.stringify(reading));
+  assert.equal(controlIndexOf(ax, {id: 'fixture-go-to-field', role: 'search field'}), null, 'the role word must match');
+  assert.equal(controlIndexOf(ax, {id: 'fixture-search', role: 'search field'}) !== null, true);
+  assert.equal(controlIndexOf(ax, null), null);
+  const twice = savePanelDouble({duplicateField: true});
+  twice.state.dialog = true; twice.state.focus = 'goTo';
+  assert.equal(savePanelReading(twice.observe(), CONTROLS).field, null, 'an identifier two elements carry identifies neither');
+});
+
+test('#212\'s destination cell: the Go To dialog and its focused field identified before typing and again before Return; the panel\'s location then names the run\'s folder', async () => {
+  const {state, app} = savePanelDouble();
+  const {result, made} = await runDestination(app, saveSheetDestinationCell(CONTROLS));
+  assert.deepEqual(result?.value, {ready: true});
+  assert.match(basename(made), /^cua-212-save-/);
+  assert.deepEqual(state.keys, ['super+shift+g', 'Return']);
+  assert.deepEqual(state.typed, [made]);
+  assert.deepEqual([state.location, state.saved, state.name], [basename(made), false, 'Untitled']);
+});
+
+test('#212\'s destination cell fails closed, with no Return, when the Go To dialog or its focused field is not positively identified (the reviewer\'s counter-case among them)', async () => {
+  const cases = [
+    {label: 'the reviewer\'s: no dialog, a list row appears, the path typed into the search field, the name field focused', double: {goTo: 'list', typing: 'search'},
+      reason: /Go To dialog and its focused path field were not identified/, typed: 0},
+    {label: 'the dialog up, the focus left on the name field', double: {goTo: 'unfocused'}, reason: /Go To dialog and its focused path field were not identified/, typed: 0},
+    {label: 'the dialog\'s field focused, but the typing landed elsewhere', double: {typing: 'search'}, reason: /path was not in the Go To dialog's focused field/, typed: 1},
+    {label: 'an identifier two fields carry', double: {duplicateField: true}, reason: /Go To dialog and its focused path field were not identified/, typed: 0},
+  ];
+  for (const {label, double, reason, typed} of cases) {
+    const {state, app} = savePanelDouble(double);
+    const {result} = await runDestination(app, saveSheetDestinationCell(CONTROLS));
+    assert.equal(result?.value?.ready, false, label);
+    assert.match(result.value.reason, reason, label);
+    assert.ok(!state.keys.includes('Return'), `${label}: no Return`);
+    assert.equal(state.saved, false, label);
+    assert.equal(state.typed.length, typed, label);
+  }
+  // The dialog's Return that leaves the folder only as a listing entry: the panel's location is what is read.
+  const {state, app} = savePanelDouble({navigates: false});
+  const {result, made} = await runDestination(app, saveSheetDestinationCell(CONTROLS));
+  assert.deepEqual([result?.value?.ready, state.location, state.rows.includes(basename(made))], [false, 'Documents', true]);
+  assert.match(result.value.reason, /panel's selected location is not the run's folder/);
+});
+
+test('#212\'s destination cell as shipped is observation only: the controls are unread, so it opens the Go To dialog, records the panel\'s structure, and types nothing', async () => {
+  assert.deepEqual(SAVE_PANEL_CONTROLS, {panel: null, goTo: null, goToField: null, location: null});
+  const {state, app} = savePanelDouble();
+  const {result, made} = await runDestination(app, SAVE_SHEET_DESTINATION_CELL);
+  assert.equal(made, undefined, 'no folder made');
+  assert.equal(result?.value?.ready, false);
+  assert.match(result.value.reason, /observation only/);
+  assert.deepEqual([state.keys, state.typed, state.saved], [['super+shift+g'], [], false]);
+  const {before, after} = result.value.observed;
+  assert.equal(before.trailer, 'focused');
+  assert.deepEqual(after.lines.filter(l => l.id).map(l => l.id), ['saveAsNameTextField', 'fixture-location', 'fixture-search', 'fixture-go-to-field']);
+  const dialog = after.lines.find(l => l.head === 'sheet fixture-go-to'), field = after.lines.find(l => l.id === 'fixture-go-to-field');
+  assert.deepEqual([field.focused, field.parent, field.head, dialog.parent], [true, dialog.index, 'text field', after.lines.find(l => l.head === 'sheet fixture-save-panel').index]);
+  assert.ok(!JSON.stringify(result.value.observed).includes('Documents'), 'no value leaves the cell');
 });

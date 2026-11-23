@@ -140,3 +140,26 @@ The keystroke cell (the matrix's stand-in user: `activate textedit`, the probe's
 probe's value hash) then **passed with both alerts still on screen**: the activation brought TextEdit to the front and
 took the key focus, the named window was focused before and after, and the text changed. It ran after the windows, not
 after a close, since none came. The alerts stay on screen above the scenes.
+
+## O0a: replayd's approval pre-recorded (runs [45161413076](https://github.com/SSFSKIM/cua/actions/runs/45161413076), [45163139714](https://github.com/SSFSKIM/cua/actions/runs/45163139714), main b1b15484, macos-latest)
+
+Written by `tcc.mjs`'s one writer (`preRecordReplayd`, guarded by O0 and O0a; `tcc.test.mjs` proves the refusals with a
+spy store), before either copy's first capture, then replayd restarted and the engine relaunched.
+
+- **Where:** `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`, merged into its current
+  contents and imported through cfprefsd (`defaults import`).
+- **Run 45161413076:** keys = each copy's executable path and bundle id, value a date (2100-01-01). Not replayd's form:
+  replayd dropped them and alerted. The store showed its own form, as the image pre-records its agent
+  (`/opt/hca/hosted-compute-agent`) and as replayd records our copies after alerting.
+- **Run 45163139714:** keys = each bundle's file URL as replayd writes them
+  (`file:///Users/runner/Library/Application%20Support/cua/engine/cua%20Engine.app/`, the vendor's
+  `file://…/Codex%20Computer%20Use.app/`), each a dict: `kScreenCaptureApprovalLastAlerted` and
+  `kScreenCapturePrivacyHintDate` 3024-01-01, `kScreenCaptureApprovalLastUsed` now, `kScreenCaptureAlertableUsageCount`
+  1, the image's own form. replayd read them (it updated the count) and **still raised the alert** for both copies at
+  their first capture (2 SCAlert lines each; the window at the first sample; front UserNotificationCenter), then
+  rewrote both entries with `LastAlerted` now, `PrivacyHintDate` +30 days and `kScreenCapturePrivacyHintPolicy` 2592000.
+
+So pre-recording in this store does not prevent the alert. The judged cells still got verdicts, all **PASS**, with the
+alerts on screen: keystroke twice (the named window focused before and after, the text changed), activation of Finder
+and of TextEdit (front and focused app the scene's), and the probe modes (focus, keystroke, watch-activations). The
+activation takes the front and key focus from the alert. Nothing dismissed the alert.

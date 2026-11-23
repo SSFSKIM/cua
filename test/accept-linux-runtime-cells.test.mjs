@@ -67,6 +67,11 @@ test('nothing launched: no REPL host process and no engine at any sample', () =>
 test('a process already exited (a zombie, whose executable cannot be read) is not judged, and an executable read later fills one unread before', () => {
   const zombie = {...cuaEngine(null), state: 'Z'};
   assert.deepEqual(watched([WORKER, zombie]).engines, []);
+  // One sampled while it exits (PF_EXITING; its memory, and with it the executable's link, already gone): the same.
+  const exiting = {...cuaEngine(null), state: 'S', exiting: true};
+  assert.deepEqual(watched([WORKER, exiting]).engines, []);
+  // A sky_linux is counted by its name in any state: one seen only while it exits still fails a run on cua's engine.
+  assert.match(cuaEngineProblems(watched([WORKER, cuaEngine()], [WORKER, cuaEngine(), {...sky(null), state: 'Z'}]), {engine: ENGINE}).join('; '), /sky_linux was seen/);
   assert.deepEqual(cuaEngineProblems(watched([WORKER, cuaEngine(null)], [WORKER, cuaEngine()], [WORKER, zombie]), {engine: ENGINE}), []);
   // Unread for all its life: never taken for the home's engine.
   assert.match(cuaEngineProblems(watched([WORKER, cuaEngine(null)]), {engine: ENGINE}).join('; '), /ran null, not the run home's installed engine/);

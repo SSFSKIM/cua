@@ -25,21 +25,24 @@ const replRole = ({exe, argv}) => {
 export const newWatch = () => ({samples: 0, maxSkyLinux: 0, engines: new Map(), sky: new Map(), replHost: new Map()});
 
 /**
- * One sample folded in: `entries`, each `{pid, ppid, state, comm, exe, argv, parent?: {argv, env}}` for the root's
- * process tree at that moment (`parent` read for engines only); a zombie (`state` Z) is skipped. -> the state.
+ * One sample folded in: `entries`, each `{pid, ppid, state, exiting, comm, exe, argv, parent?: {argv, env}}` for the root's
+ * process tree at that moment (`parent` read for engines only); a zombie (`state` Z) or an exiting process is skipped.
  */
 export function foldSample(state, entries) {
   state.samples += 1;
   let skyNow = 0;
   for (const entry of entries) {
-    // A process that has exited and not yet been reaped (strace holds its children so) has no executable to read.
-    if (entry.state === 'Z') continue;
+    // A sky_linux counts at every sample it is in, by its name, whatever state it is in.
+    if (isSky(entry)) skyNow += 1;
+    // A process that is exiting (PF_EXITING: its memory, and with it the executable's link, may already be gone) or has
+    // exited and is not yet reaped (strace holds its children so) has no executable to read: it is judged by the
+    // samples that saw it alive, and one seen only so (a version probe gone in a moment) by none.
+    if (entry.state === 'Z' || entry.exiting) continue;
     const parent = (entry.parent?.argv ?? []).join(' ');
     // An executable unread at one sample (the process was going) is filled by any sample that read it.
     const keep = (map, record) => { const seen = map.get(entry.pid); if (!seen) map.set(entry.pid, record); else if (seen.exe === null && record.exe !== null) map.set(entry.pid, record); };
     if (isEngine(entry)) keep(state.engines, {pid: entry.pid, exe: entry.exe ?? null, parent});
     if (isSky(entry)) {
-      skyNow += 1;
       keep(state.sky, {pid: entry.pid, exe: entry.exe ?? null, parent, service: entry.parent?.env?.CUA_SKY_SERVICE ?? null, bin: entry.parent?.env?.OAI_SKY_LINUX_BIN ?? null});
     }
     const role = replRole(entry);
@@ -94,7 +97,8 @@ export function sampleTree(root) {
     if (!stat) continue;
     const close = stat.lastIndexOf(')');
     const fields = stat.slice(close + 2).split(' ');
-    table.set(Number(name), {state: fields[0], ppid: Number(fields[1]), comm: stat.slice(stat.indexOf('(') + 1, close)});
+    // fields[6] is the kernel's flags: PF_EXITING, 0x4.
+    table.set(Number(name), {state: fields[0], ppid: Number(fields[1]), exiting: (Number(fields[6]) & 0x4) !== 0, comm: stat.slice(stat.indexOf('(') + 1, close)});
   }
   const children = new Map();
   for (const [pid, {ppid}] of table) { if (!children.has(ppid)) children.set(ppid, []); children.get(ppid).push(pid); }
@@ -102,8 +106,8 @@ export function sampleTree(root) {
   const queue = table.has(root) ? [root] : [];
   while (queue.length) {
     const pid = queue.shift();
-    const {state, ppid, comm} = table.get(pid);
-    const entry = {pid, ppid, state, comm, exe: exeOf(pid), argv: argvOf(pid)};
+    const {state, ppid, exiting, comm} = table.get(pid);
+    const entry = {pid, ppid, state, exiting, comm, exe: exeOf(pid), argv: argvOf(pid)};
     if (isEngine(entry) || isSky(entry)) entry.parent = {argv: argvOf(ppid), env: envOf(ppid)};
     entries.push(entry);
     queue.push(...(children.get(pid) ?? []));

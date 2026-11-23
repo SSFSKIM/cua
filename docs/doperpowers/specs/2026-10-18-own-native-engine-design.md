@@ -8101,6 +8101,40 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   selection or identity never builds an engine under a scratch home. `hosted.sh`, `hosted-gate.sh` (T4) and the
   acceptance scripts (T3) are left to their tasks.
   Date/Author: 2026-11-23, M4 re-cut controller (T1).
+- Decision (design ruling 1118; amends T1's first entry and the design's "Install, signing and permissions", where
+  `buildEngine` replaced the approved bundle in place): **a build never takes away a working engine.** `buildEngine`
+  (`cua install` with the engine selected or `--engine`, and `cua engine build` alike) builds and signs into a pending
+  slot beside the approved bundle and leaves the approved bundle, `approved.json` and the running engine untouched; it
+  says "a new build is pending; cua engine approve to use it". `cua engine approve` promotes the pending build: it
+  stops the engine (refusing while another connection is open, as before), moves the approved bundle aside and the
+  pending one into the approved path, relaunches and runs the approve flow; if approval fails after the promote, the
+  previous bundle is restored, so the previous approved engine keeps serving. `doctor` shows both builds. A Mac drops to
+  the vendor's engine only when R4's minimum (T9) rises above its approved build, and the warning names the remedy.
+  Promoting under the same Apple Development identity is expected to keep the three grants with no capture
+  confirmation (U8: a same-path replacement, a staged same-path rebuild and a new-path copy all kept both grants and
+  raised none); approve still watches replayd and asks the operator if a confirmation appears. Nothing in the approval
+  model needed the approved bundle to equal the current source: the service checks the running engine against the
+  bundle on disk (`client.mjs` `check()`), and selection checks the bundle against `approved.json`.
+  Rationale: with in-place rebuilds, every update that changed the engine would de-approve a working Mac and drop it to
+  the vendor's engine until the owner approved; beside-builds leave it one `cua engine approve` away while it keeps
+  serving.
+  Date/Author: 2026-11-23, M4 re-cut controller, on the design session's ruling 1118.
+- Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
+  its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
+  (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the
+  tool result carries it as `cua/permission`. Main had already wrapped the prompting requests in DesktopGate
+  (`gatedAccessibilityPrompt`, `gatedScreenCaptureRequest`), so M4's raw calls were not ported; the owner's decision to
+  retain the system permission requests (M4's last entry) stands. After a screenshot fails `permissionsPending` for
+  Screen Recording, the next screenshot relaunches the engine through the relay when it has no other connection and
+  retries once. Later decisions kept over M4's code: `withMeta` keeps main's replace semantics and carries over only
+  the `permission` marker (M4 merged all earlier meta, which leaves stale keys on a twice-wrapped error); the relaunch
+  respects main's end_task generation (an end_task during the relaunch launches nothing for the ended task, the owed
+  recovery survives it per client, and the new connection gets the session's cursor and device mode through the
+  ordinary path). The service puts input meta only on input methods' errors (M4's guard). `cua engine approve
+  --foreground` makes M4's foreground-launch lead reachable from the command (off by default; only `engine approve`
+  takes it). The client reads `status` once before each connection's first screenshot, one extra round trip per
+  connection. The engine changed (sentences, `meta.permission`), which under R4 moves `engineVersion`; T9 moves it.
+  Date/Author: 2026-11-23, M4 re-cut controller (T2).
 
 ## Outcomes & Retrospective
 

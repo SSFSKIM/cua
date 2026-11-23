@@ -15,6 +15,7 @@ import {fakeUpstream, harness, tick} from './fixtures/mcp-harness.mjs';
 import {lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
 import {elicitationOutcome, elicitationParams} from '../src/repl-host/elicitation.mjs';
 import {createPolicy} from '../src/services/engine/policy.mjs';
+import {approvalConnectionId} from '../src/mcp/approval-memory.mjs';
 
 const MAWS = '/Users/someone/MAWS/node_modules/electron/dist/Electron.app';
 const ENGINE = {
@@ -26,15 +27,17 @@ const RECORD = {initialize: {protocolVersion: '2025-06-18', capabilities: {tools
   tools: {tools: [{name: 'js', description: 'Recorded.', inputSchema: {type: 'object'}}]}};
 const INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'approval-216', version: '0'}};
 
-// One runtime launch: a fake of cua's REPL host whose `js` cell `bind <app>` runs the policy before get_app_state, as the
-// service does, its createElicitation going up to the connection the way the supervisor sends it.
+// One runtime launch: a fake of cua's REPL host whose `js` cell `bind <app>[,<app>…]` runs the policy before
+// get_app_state for each app at once, as the service does, its createElicitation going up to the connection the way the
+// supervisor sends it and the response meta the policy sets coming back on the cell's result, as the host returns it.
 function fakeRuntime() {
   const runtime = fakeUpstream();
   const send = runtime.send;
   const pending = new Map();   // the runtime's own elicitation ids (they restart with every launch) -> settle
   let asks = 0;
+  let meta = {};
   const nodeRepl = {
-    setResponseMeta() {},
+    setResponseMeta(value) { Object.assign(meta, structuredClone(value)); },
     createElicitation(request) {
       const {params, error} = elicitationParams({message: request.message, requested_schema: {type: 'object', properties: {}}, meta: request.meta}, {formSupported: true});
       if (error) return Promise.reject(new Error(error));
@@ -56,13 +59,11 @@ function fakeRuntime() {
   async function call(msg) {
     const {name, arguments: args} = msg.params;
     if (name === 'turn_ended' || name === 'js_reset') return runtime.text(msg, '{}');
-    const app = /^bind (.+)$/.exec(args.code)?.[1];
-    try {
-      await policy.withPolicy('get_app_state', {app}, () => undefined);
-      runtime.text(msg, `bound ${ENGINE[app].displayName}`);
-    } catch (error) {
-      runtime.reply(msg, {content: [{type: 'text', text: error.message}], isError: true});
-    }
+    meta = {};
+    const apps = /^bind (.+)$/.exec(args.code)[1].split(',');
+    const settled = await Promise.allSettled(apps.map(app => policy.withPolicy('get_app_state', {app}, () => `bound ${ENGINE[app].displayName}`)));
+    const isError = settled.some(s => s.status === 'rejected');
+    runtime.reply(msg, {content: settled.map(s => ({type: 'text', text: s.status === 'fulfilled' ? s.value : s.reason.message})), isError, _meta: meta});
   }
   runtime.send = msg => {
     send(msg);
@@ -78,27 +79,32 @@ function fakeRuntime() {
 }
 
 // A connection over a lazy runtime (so an idle stop replaces the runtime under it, as in `cua serve`) and a client that
-// answers every app approval with `answers[bundle id]` (a function of the ask's number for that app) and counts asks.
-function connection(answers) {
+// answers every app approval with `answers[bundle id]` (a function of the ask's number for that app; it may return a
+// promise, to answer late) and counts asks. `approvals` keeps each bind's `cua/approval` result meta.
+function connection(answers, {sessionId = 'session-under-test'} = {}) {
   const runtimes = [];
   const timers = [];
   const upstream = lazyRuntime({start: async () => { const runtime = fakeRuntime(); runtimes.push(runtime); return runtime; },
     records: {read: () => RECORD, write: () => {}}});
-  const h = harness({upstream, server: {runtimeIdleMs: 60_000, idleTimer: (fn, ms) => { const entry = {fn, ms, live: true}; timers.push(entry); return () => { entry.live = false; }; }}});
+  const h = harness({upstream, server: {sessionId, runtimeIdleMs: 60_000, idleTimer: (fn, ms) => { const entry = {fn, ms, live: true}; timers.push(entry); return () => { entry.live = false; }; }}});
   const asked = {};
+  const asks = [];   // {app, id}: the client's copy of each ask
+  const approvals = [];
   createInterface({input: h.output}).on('line', line => {
     const msg = JSON.parse(line);
     if (msg.method !== 'elicitation/create') return;
     const app = msg.params._meta.tool_params.app;
     asked[app] = (asked[app] ?? 0) + 1;
-    h.client.send({jsonrpc: '2.0', id: msg.id, result: answers[app](asked[app])});
+    asks.push({app, id: msg.id});
+    Promise.resolve(answers[app](asked[app])).then(result => h.client.send({jsonrpc: '2.0', id: msg.id, result}));
   });
   let idle = 0;
   return {
-    ...h, runtimes, asked,
+    ...h, runtimes, asked, asks, approvals,
     async start() { await h.client.request('initialize', INIT).response; h.client.notify('notifications/initialized', {}); },
     async bind(app) {
       const {result} = await h.client.call('js', {code: `bind ${app}`}).response;
+      approvals.push(result._meta?.['cua/approval'] ?? null);
       return {ok: !result.isError, text: result.content.map(c => c.text).join('\n')};
     },
     endTask: async () => (await h.client.call('end_task').response).result,
@@ -165,4 +171,65 @@ test('#216: a cancelled approval is not remembered and refuses only its own app,
   assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_NOW});
   assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
   assert.deepEqual(c.asked, {'com.github.Electron': 1, 'com.anthropic.claudefordesktop': 2, 'com.openai.codex': 1});
+});
+
+// `cua/approval` as the policy reports it from the connection's stamp.
+const provenance = (action, answeredBy, {sessionId = 'session-under-test', runtimeGeneration = 0} = {}) =>
+  ({action, answeredBy, connection: approvalConnectionId(sessionId), runtimeGeneration, scope: 'connection'});
+
+test('#216: the connection, not the client, says an answer came from memory; the meta names the connection and the runtime generation', async t => {
+  // A client (or a hook) that copies the persisted-state mark into its own answers cannot pass them off as remembered.
+  const MARK = {source: 'computer-use-persisted-state'};
+  const c = connection({'com.github.Electron': () => ({action: 'accept', content: {...MARK}}), 'com.openai.codex': () => ({action: 'decline', content: {...MARK}})});
+  t.after(() => c.close());
+  await c.start();
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_NOW}, 'a fresh decline is the client\'s, whatever its content says');
+  assert.deepEqual(c.approvals.at(-1), provenance('decline', 'client'));
+  const forwarded = c.runtimes[0].sent.find(m => m.method === undefined && m.result?.action === 'decline');
+  assert.deepEqual(forwarded.result.content, {}, 'the client\'s copy of the mark never reaches the runtime');
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_EARLIER});
+  assert.deepEqual(c.approvals.at(-1), provenance('decline', 'memory'));
+  assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
+  assert.deepEqual(c.approvals.at(-1), provenance('accept', 'client'));
+  await c.endTask();
+  await c.idleStop();
+  assert.equal((await c.bind(MAWS)).ok, true);
+  assert.deepEqual(c.approvals.at(-1), provenance('accept', 'memory', {runtimeGeneration: 1}), 'a new runtime on the same connection: the generation moves, the connection does not');
+  assert.deepEqual(c.asked, {'com.openai.codex': 1, 'com.github.Electron': 1});
+
+  const next = connection({'com.github.Electron': accept}, {sessionId: 'another-session'});
+  t.after(() => next.close());
+  await next.start();
+  assert.equal((await next.bind(MAWS)).ok, true);
+  assert.deepEqual(next.approvals.at(-1), provenance('accept', 'client', {sessionId: 'another-session'}), 'a new connection has another id');
+  assert.notEqual(approvalConnectionId('another-session'), approvalConnectionId('session-under-test'));
+});
+
+test('#216: overlapping approvals answered out of order each reach their own app', async t => {
+  let release;
+  const late = new Promise(resolve => { release = resolve; });
+  const c = connection({'com.github.Electron': () => late.then(accept), 'com.openai.codex': () => { setTimeout(release, 5); return decline(); }});
+  t.after(() => c.close());
+  await c.start();
+  // One cell binds both at once; ChatGPT's decline is answered first, Electron's accept after it.
+  assert.deepEqual(await c.bind(`${MAWS},com.openai.codex`), {ok: false, text: `bound Electron\n${DECLINED_NOW}`});
+  assert.deepEqual(c.asks.map(a => a.app), ['com.github.Electron', 'com.openai.codex']);
+  assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_EARLIER});
+  assert.deepEqual(c.asked, {'com.github.Electron': 1, 'com.openai.codex': 1});
+});
+
+test('#216: a second answer to a request already answered (a hook and a dialog both answering) changes nothing', async t => {
+  const c = connection({'com.github.Electron': accept, 'com.openai.codex': decline});
+  t.after(() => c.close());
+  await c.start();
+  assert.equal((await c.bind(MAWS)).ok, true);
+  assert.equal((await c.bind('com.openai.codex')).ok, false);
+  const [electron, chatgpt] = c.asks;
+  c.client.send({jsonrpc: '2.0', id: electron.id, result: {action: 'decline'}});
+  c.client.send({jsonrpc: '2.0', id: chatgpt.id, result: {action: 'accept', content: {}}});
+  await tick(10);
+  assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'}, 'the stray decline did not touch Electron');
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_EARLIER}, 'nor did the stray accept widen ChatGPT');
+  assert.deepEqual(c.asked, {'com.github.Electron': 1, 'com.openai.codex': 1});
 });

@@ -13,7 +13,7 @@ import {elicitationParams} from '../src/repl-host/elicitation.mjs';
 import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {serverError} from '../src/services/engine/protocol.mjs';
 import {
-  FORBIDDEN, HIGH_RISK, RISK_SUBTITLE, SWIFT_POLICY_FILE, SYSTEM_SECURITY, approvalRequest, createPolicy, refusal, riskOf, swiftPolicySource,
+  FORBIDDEN, HIGH_RISK, RISK_SUBTITLE, SWIFT_POLICY_FILE, SYSTEM_SECURITY, approvalMeta, approvalRequest, createPolicy, refusal, riskOf, swiftPolicySource,
 } from '../src/services/engine/policy.mjs';
 
 const TARGETS = {
@@ -111,8 +111,9 @@ test('withPolicy: the tool surface reset then named, the approval asked on every
   assert.deepEqual(seen, [{given: {app: TARGETS.TextEdit.appPath, element_index: 3}, target: TARGETS.TextEdit, frozen: true}]);
   assert.equal(input.app, 'TextEdit', 'the caller\'s input is left alone');
   assert.deepEqual(meta, [
-    {'codex/toolSurface': {app: null, kind: 'computerUse'}},
+    {'codex/toolSurface': {app: null, kind: 'computerUse'}, 'cua/approval': null},
     {'codex/toolSurface': {app: {appId: 'com.apple.TextEdit', kind: 'appId'}, kind: 'computerUse'}},
+    {'cua/approval': {action: 'accept', answeredBy: 'client', connection: null, runtimeGeneration: null, scope: null}},
   ]);
   await policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => {});
   assert.equal(asked.length, 2, 'the policy asks on every call; remembering is the host\'s');
@@ -120,7 +121,7 @@ test('withPolicy: the tool surface reset then named, the approval asked on every
 
   const chrome = policyFor();
   await chrome.policy.withPolicy('get_app_state', {app: 'Chrome'}, () => {});
-  assert.deepEqual(chrome.meta.at(-1), {'codex/toolSurface': {app: {appId: 'com.google.Chrome', kind: 'appId'}, kind: 'computerUse'}, 'codex/computerUseChrome': true});
+  assert.deepEqual(chrome.meta.at(-2), {'codex/toolSurface': {app: {appId: 'com.google.Chrome', kind: 'appId'}, kind: 'computerUse'}, 'codex/computerUseChrome': true});
 });
 
 test('withPolicy: anything but accept fails "Computer Use was not approved to use <app>", saying where the answer came from (#216), and runs nothing', async () => {
@@ -138,6 +139,29 @@ test('withPolicy: anything but accept fails "Computer Use was not approved to us
     await assert.rejects(policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => { ran = true; }), {message: `Computer Use was not approved to use TextEdit${why}`}, JSON.stringify(answer));
     assert.equal(ran, false);
   }
+});
+
+test('#216: the connection\'s stamp decides who answered, over any mark in the content; cua/approval carries only checked fields', async () => {
+  const MARK = {source: 'computer-use-persisted-state'};
+  const stamp = (answeredBy, extra = {}) => ({'cua/approval': {connection: 'a5a26df15524', runtimeGeneration: 2, scope: 'connection', answeredBy, ...extra}});
+  const cases = [
+    // A fresh client decline that copied the mark: the stamp says the client answered.
+    [{action: 'decline', content: MARK, _meta: stamp('client')}, ': the client declined the approval request; it is not asked again on this connection.', 'client'],
+    [{action: 'decline', content: MARK, _meta: stamp('memory')}, ': it was declined earlier on this connection, so it was not asked again.', 'memory'],
+    // No stamp: the vendor host's own store answered below cua's connection, and its mark is read.
+    [{action: 'decline', content: MARK, _meta: null}, ': it was declined earlier on this connection, so it was not asked again.', 'memory'],
+    // A stamp that is not the connection's shape is no stamp.
+    [{action: 'decline', content: null, _meta: stamp('someone')}, ': the client declined the approval request; it is not asked again on this connection.', 'client'],
+  ];
+  for (const [answer, why, answeredBy] of cases) {
+    const {policy, meta} = policyFor({answer: () => answer});
+    await assert.rejects(policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => {}), {message: `Computer Use was not approved to use TextEdit${why}`}, JSON.stringify(answer));
+    assert.equal(meta.at(-1)['cua/approval'].answeredBy, answeredBy, JSON.stringify(answer));
+  }
+  assert.deepEqual(approvalMeta({action: 'accept', content: {secret: 'x'}, _meta: stamp('client', {note: 'dropped', app: 'com.apple.TextEdit'})}),
+    {action: 'accept', answeredBy: 'client', connection: 'a5a26df15524', runtimeGeneration: 2, scope: 'connection'}, 'only the checked fields; never content');
+  assert.deepEqual(approvalMeta({action: 'decline', _meta: stamp('client', {connection: 'Not Hex!', runtimeGeneration: -1, scope: 'global'})}),
+    {action: 'decline', answeredBy: 'client', connection: null, runtimeGeneration: null, scope: null}, 'a field out of shape reads null');
 });
 
 test('withPolicy: the supervisor\'s memory answers a repeat for the same resolved bundle, whatever string named it, and asks for another app', async () => {

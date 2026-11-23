@@ -35,7 +35,9 @@
 //   (./approval-memory.mjs): a computer-use app approval the client accepted (with `_meta.persist`) or declined, in an
 //   answer the runtime takes, is answered here on its repeats, across idle stops and worker replacements, and never
 //   reaches the client again; an answer that arrives after its runtime stopped is remembered for its app and not
-//   forwarded.
+//   forwarded. Every computer-use answer the runtime gets says, in `_meta["cua/approval"]`, which connection and
+//   runtime generation it went to and whether this memory or the client answered; a client cannot claim the memory's
+//   mark (#216).
 // - tools/list passes the runtime's tools through surface.mjs modelTools, which puts cua's rules ahead of the js
 //   description; on Linux their text rule follows `engine` ('vendor' | 'cua', the native engine the connection
 //   selected at its open; null without the computer surface, which keeps the vendor engine's rule).
@@ -72,7 +74,7 @@ import {sandboxModeFrom, withSandbox} from '../runtime/sandbox.mjs';
 import {runtimeIdleFrom} from './lazy-runtime.mjs';
 import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs';
 import {realHome} from '../runtime/layout.mjs';
-import {approvalMemory} from './approval-memory.mjs';
+import {approvalConnectionId, approvalMemory} from './approval-memory.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
@@ -120,7 +122,7 @@ export function createServer({
   const elicitations = new Map();
   let elicitationCount = 0;
   let generation = 0;                  // the running runtime's: an idle stop starts the next
-  const approvals = approvalMemory();  // the connection's computer-use app approvals (./approval-memory.mjs)
+  const approvals = approvalMemory({connection: approvalConnectionId(sessionId)});  // the connection's computer-use app approvals (./approval-memory.mjs)
   const localReplies = new Set();      // local tool replies still being computed (profiles_list may take a launch)
 
   // The client transport. Losing it closes the connection like EOF; callers are still settled internally, just not
@@ -381,7 +383,7 @@ export function createServer({
     // The answer is the connection's, for the app it was asked about, even when the runtime or worker that asked is gone.
     approvals.record(pending.params, msg);
     if (pending.generation !== generation) return;
-    upstream.send({...msg, id: pending.upstreamId});
+    upstream.send({...approvals.fromClient(pending.params, msg, pending.generation), id: pending.upstreamId});
   }
 
   // readline re-emits an input error on its interface, where an unhandled one would throw out of the stream before
@@ -404,7 +406,7 @@ export function createServer({
       if (lifecycle.state === 'failed') return;
       if (msg.id !== undefined && msg.method === 'elicitation/create') {
         // An app the connection already answered is answered from its memory; the client is not asked again.
-        const remembered = approvals.recall(msg.params);
+        const remembered = approvals.recall(msg.params, generation);
         if (remembered) return void upstream.send({jsonrpc: '2.0', id: msg.id, result: remembered});
         const id = `cua-elicitation-${++elicitationCount}`;
         elicitations.set(idKey(id), {upstreamId: msg.id, generation, params: msg.params});

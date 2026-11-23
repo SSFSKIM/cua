@@ -11,7 +11,8 @@
 //   6. the approval is asked on every call through nodeRepl.createElicitation, with the vendor's message and meta
 //      (`tool_params.app` the resolved bundle id, which the host's per-connection memory keys on and answers repeats
 //      from: src/mcp/approval-memory.mjs), and anything but accept fails `Computer Use was not approved to use <app>`,
-//      followed by where the refusal came from (notApproved, #216);
+//      followed by where the refusal came from (notApproved, #216); the answer's provenance is the call's
+//      `cua/approval` result meta (approvalMeta);
 //   7. the action runs on a frozen copy of the input whose `app` is the resolved path, the bound identity.
 //
 // The lists are data, below: the forbidden list (password managers and the keychain; system security processes) and
@@ -78,19 +79,47 @@ export function approvalRequest({toolName, target, callId, risk = riskOf(target.
   };
 }
 
+// Where an approval's answer came from (#216). cua's MCP connection stamps every computer-use answer it passes on with
+// `_meta["cua/approval"]` (src/mcp/approval-memory.mjs): its opaque id, the runtime generation, the scope and who
+// answered, "memory" (the connection's memory; the client was not asked) or "client". A client cannot claim the
+// memory's answer: the connection overwrites that key and removes the persisted-state mark from a client's content. An
+// answer with no stamp did not pass through cua's connection as a client's reply (the vendor host's own store answers
+// below it), so its persisted-state mark (`content.source`) is the vendor host's and is read as "memory".
+const PERSISTED_STATE_SOURCE = 'computer-use-persisted-state';
+const APPROVAL_META = 'cua/approval';
+const ANSWERED_BY = ['memory', 'client'];
+const plainRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value);
+function stampOf(answer) {
+  const stamp = plainRecord(answer?._meta) ? answer._meta[APPROVAL_META] : undefined;
+  return plainRecord(stamp) && ANSWERED_BY.includes(stamp.answeredBy) ? stamp : null;
+}
+const answeredBy = answer => stampOf(answer)?.answeredBy ?? (plainRecord(answer?.content) && answer.content.source === PERSISTED_STATE_SOURCE ? 'memory' : 'client');
+
+// The approval's result meta, `cua/approval`, on every app-scoped call that asked (null when none did): the answer's
+// action and who gave it, and the connection's id, runtime generation and scope when its connection stamped them. Only
+// these fields, each checked; never the answer's content or any other part of the client's reply.
+export function approvalMeta(answer) {
+  const stamp = stampOf(answer);
+  const action = ['accept', 'decline', 'cancel'].includes(answer?.action) ? answer.action : null;
+  return {
+    action, answeredBy: answeredBy(answer),
+    connection: typeof stamp?.connection === 'string' && /^[0-9a-f]{1,32}$/.test(stamp.connection) ? stamp.connection : null,
+    runtimeGeneration: Number.isSafeInteger(stamp?.runtimeGeneration) && stamp.runtimeGeneration >= 0 ? stamp.runtimeGeneration : null,
+    scope: stamp?.scope === 'connection' ? 'connection' : null,
+  };
+}
+
 // The refusal of an approval answered with anything but accept (#216): the vendor's sentence, then where the answer came
-// from, so a refusal is never read as one a person gave, nor a cancel as a decline. A decline the connection remembered
-// carries the vendor host's mark (`content.source`, src/mcp/approval-memory.mjs PERSISTED_STATE_SOURCE): it was given
-// earlier on this connection and the client was not asked. A decline or a cancel without it is the client's answer to
+// from, so a refusal is never read as one a person gave, nor a cancel as a decline. A decline the memory answered was
+// given earlier on this connection and the client was not asked. A decline or a cancel the client gave is its answer to
 // this request; the client may be a person, a hook answering for them, or the client itself (Claude Code 2.1.330 answers
 // decline when an Elicitation hook blocks, and cancel when the request is aborted, refused by its own limits or its
 // handler fails; docs/evidence/2026-11-23-own-native-engine/gates/216.md). A declined app is remembered for the connection
 // and a cancelled one is asked again, as the memory does; neither sentence suggests a way around the answer.
-const PERSISTED_STATE_SOURCE = 'computer-use-persisted-state';
 export function notApproved(displayName, answer) {
   const refused = `Computer Use was not approved to use ${displayName}`;
   if (answer?.action === 'decline') {
-    return answer.content?.source === PERSISTED_STATE_SOURCE
+    return answeredBy(answer) === 'memory'
       ? `${refused}: it was declined earlier on this connection, so it was not asked again.`
       : `${refused}: the client declined the approval request; it is not asked again on this connection.`;
   }
@@ -154,7 +183,7 @@ export function createPolicy({nodeRepl, resolve}) {
 
   // Runs `fn(input with app = the resolved path, target)` once the app is resolved, allowed and approved.
   async function withPolicy(toolName, input, fn) {
-    setMeta(toolSurface(null));
+    setMeta({...toolSurface(null), [APPROVAL_META]: null});
     const checked = checkedInput(input);
     const createElicitation = required(nodeRepl, 'createElicitation');
     const target = await targetOf(checked.app);
@@ -162,6 +191,7 @@ export function createPolicy({nodeRepl, resolve}) {
     const refused = refusal(target.bundleIdentifier);
     if (refused) throw new Error(refused);
     const answer = await createElicitation(approvalRequest({toolName, target, callId: toolCallId(nodeRepl)}));
+    setMeta({[APPROVAL_META]: approvalMeta(answer)});
     if (answer?.action !== 'accept') throw new Error(notApproved(target.displayName, answer));
     return fn(checkedInput(checked, target.appPath), target);
   }
@@ -234,10 +264,12 @@ export function createLinuxPolicy({nodeRepl, listWindows}) {
   }
 
   async function approve(request, method) {
+    nodeRepl?.setResponseMeta?.({[APPROVAL_META]: null});
     const scope = await scopeOf(request, method);
     if (!scope) return;
     const createElicitation = required(nodeRepl, 'createElicitation');
     const answer = await createElicitation(linuxApprovalRequest({...scope, callId: toolCallId(nodeRepl)}));
+    nodeRepl?.setResponseMeta?.({[APPROVAL_META]: approvalMeta(answer)});
     if (answer?.action !== 'accept') throw new Error(notApproved(scope.display, answer));
   }
 

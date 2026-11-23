@@ -2,7 +2,7 @@
 // and late answers, is in test/mcp-server.test.mjs and test/serve-lazy.test.mjs.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {PERSISTED_STATE_SOURCE, approvalMemory} from '../src/mcp/approval-memory.mjs';
+import {PERSISTED_STATE_SOURCE, approvalConnectionId, approvalMemory} from '../src/mcp/approval-memory.mjs';
 
 // An `elicitation/create` request's params for the vendor's computer-use app approval (R/A-contract.md §2.6).
 const approval = (app, meta = {}) => ({message: `Allow Computer Use to use "${app}"?`, mode: 'form', requestedSchema: {type: 'object', properties: {}},
@@ -13,13 +13,13 @@ test('a connection\'s accept or decline of a computer-use app answers its repeat
   const textEdit = approval('com.apple.TextEdit');
   assert.equal(memory.recall(textEdit), null, 'nothing is known before the client answered');
   memory.record(textEdit, {result: {action: 'accept', content: {}, _meta: {persist: 'session'}}});
-  const remembered = {action: 'accept', content: {source: PERSISTED_STATE_SOURCE}};
+  const remembered = {action: 'accept', content: {source: PERSISTED_STATE_SOURCE}, _meta: {'cua/approval': {connection: null, runtimeGeneration: 0, scope: 'connection', answeredBy: 'memory'}}};
   assert.deepEqual(memory.recall(textEdit), remembered);
   assert.deepEqual(memory.recall(approval('com.apple.TextEdit', {tool_name: 'click', riskLevel: 'high'})), remembered, 'keyed by the app alone, whatever the tool');
   assert.equal(memory.recall(approval('com.apple.finder')), null, 'another app asks');
 
   memory.record(approval('com.apple.finder'), {result: {action: 'decline'}});
-  assert.deepEqual(memory.recall(approval('com.apple.finder')), {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}});
+  assert.deepEqual(memory.recall(approval('com.apple.finder')), {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}, _meta: remembered._meta});
 
   // Only a reply the runtime takes (src/repl-host/elicitation.mjs elicitationOutcome) is an answer.
   const persisted = {_meta: {persist: 'session'}};
@@ -50,4 +50,30 @@ test('a connection\'s accept or decline of a computer-use app answers its repeat
   }
   assert.deepEqual(memory.recall(textEdit), remembered, 'none of those touched the remembered app');
   assert.equal(approvalMemory().recall(textEdit), null, 'another connection\'s memory starts empty');
+});
+
+test('#216: a client reply reaches the runtime with the connection\'s provenance; the persisted-state mark is the memory\'s alone; nothing it decides changes', () => {
+  const connection = approvalConnectionId('s1');
+  assert.match(connection, /^[0-9a-f]{12}$/);
+  assert.notEqual(connection, approvalConnectionId('s2'));
+  const memory = approvalMemory({connection});
+  const stamp = (answeredBy, runtimeGeneration) => ({'cua/approval': {connection, runtimeGeneration, scope: 'connection', answeredBy}});
+  const textEdit = approval('com.apple.TextEdit');
+  assert.deepEqual(memory.fromClient(textEdit, {jsonrpc: '2.0', id: 'x', result: {action: 'decline', content: {source: PERSISTED_STATE_SOURCE, note: 'kept'}}}, 2),
+    {jsonrpc: '2.0', id: 'x', result: {action: 'decline', content: {note: 'kept'}, _meta: stamp('client', 2)}}, 'the client\'s copy of the mark is removed');
+  assert.deepEqual(memory.fromClient(textEdit, {result: {action: 'accept', content: {}, _meta: {persist: 'session', 'cua/approval': {answeredBy: 'memory'}}}}, 0).result._meta,
+    {persist: 'session', ...stamp('client', 0)}, 'a client cannot claim the stamp');
+  // A reply the runtime would refuse stays one, and another connector's elicitation is not touched.
+  const refusedError = {error: {code: -1, message: 'no'}};
+  assert.equal(memory.fromClient(textEdit, refusedError, 0), refusedError);
+  const notObject = {result: 'x'};
+  assert.equal(memory.fromClient(textEdit, notObject, 0), notObject);
+  assert.equal(memory.fromClient(textEdit, {result: {action: 'accept', content: 'x'}}, 0).result.content, 'x', 'malformed content still fails');
+  assert.deepEqual(memory.fromClient(textEdit, {result: {action: 'decline', _meta: [1]}}, 0).result._meta, [1], 'a malformed _meta still fails');
+  const browser = {...textEdit, _meta: {...textEdit._meta, connector_id: 'browser-use'}};
+  const reply = {result: {action: 'accept', content: {source: PERSISTED_STATE_SOURCE}}};
+  assert.equal(memory.fromClient(browser, reply, 0), reply);
+
+  memory.record(textEdit, {result: {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}}});
+  assert.deepEqual(memory.recall(textEdit, 3), {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}, _meta: stamp('memory', 3)}, 'the memory\'s own answer names the generation it went to');
 });

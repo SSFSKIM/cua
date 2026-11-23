@@ -16,6 +16,7 @@ import {REPO, scratch, userHomeBeside} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
 import {serve, settingsFrom} from '../src/mcp/server.mjs';
+import {approvalConnectionId} from '../src/mcp/approval-memory.mjs';
 import {handshakeRecords, lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
@@ -518,6 +519,8 @@ const answer = async (runtime, name, text) => runtime.text(await runtime.nextCal
 // #117 M3: the connection's approval memory outlives the runtime. A computer-use app approval for `app` from `runtime`.
 const approvalAsk = (runtime, id, app) => runtime.emit({jsonrpc: '2.0', id, method: 'elicitation/create', params: {message: `Allow Computer Use to use "${app}"?`,
   mode: 'form', requestedSchema: {type: 'object', properties: {}}, _meta: {connector_id: 'computer-use', tool_params: {app}}}});
+// The connection's provenance on each computer-use answer (#216); every answer below goes to the runtime after one idle stop.
+const stamped = (answeredBy, runtimeGeneration = 1) => ({'cua/approval': {connection: approvalConnectionId('session-under-test'), runtimeGeneration, scope: 'connection', answeredBy}});
 const answerTo = (runtime, id) => runtime.next(m => m.id === id && m.method === undefined, {label: `the answer to ${id}`});
 const asks = h => h.client.frames.filter(m => m.method === 'elicitation/create').map(m => m.params._meta.tool_params.app);
 const clientCopy = (h, app) => h.client.next(m => m.method === 'elicitation/create' && m.params._meta.tool_params.app === app, {label: `the client's ask for ${app}`});
@@ -548,8 +551,8 @@ test('an app accepted and an app declined before an idle stop are answered from 
   const call2 = await second.nextCall('js');
   approvalAsk(second, 1, 'org.gnome.gedit');
   approvalAsk(second, 2, 'org.gnome.Terminal');
-  assert.deepEqual((await answerTo(second, 1)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}});
-  assert.deepEqual((await answerTo(second, 2)).result, {action: 'decline', content: {source: 'computer-use-persisted-state'}});
+  assert.deepEqual((await answerTo(second, 1)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}, _meta: stamped('memory')});
+  assert.deepEqual((await answerTo(second, 2)).result, {action: 'decline', content: {source: 'computer-use-persisted-state'}, _meta: stamped('memory')});
   second.text(call2, 'answered from memory');
   await again.response;
   assert.deepEqual(asks(h), ['org.gnome.gedit', 'org.gnome.Terminal'], 'nothing was asked after the stop');
@@ -583,12 +586,12 @@ test('a fresh runtime reusing a stopped runtime\'s request id is its own request
   await tick(20);
   assert.equal(second.sent.filter(m => m.id === 1 && m.method === undefined).length, 0, 'gedit\'s answer did not answer the Terminal request');
   h.client.send({jsonrpc: '2.0', id: terminalAsk.id, result: {action: 'decline'}});
-  assert.deepEqual((await answerTo(second, 1)).result, {action: 'decline'}, 'the Terminal request got the Terminal answer');
+  assert.deepEqual((await answerTo(second, 1)).result, {action: 'decline', _meta: stamped('client')}, 'the Terminal request got the Terminal answer');
 
   approvalAsk(second, 2, 'org.gnome.gedit');
-  assert.deepEqual((await answerTo(second, 2)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}}, 'the late gedit answer was recorded for gedit');
+  assert.deepEqual((await answerTo(second, 2)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}, _meta: stamped('memory')}, 'the late gedit answer was recorded for gedit');
   approvalAsk(second, 3, 'org.gnome.Terminal');
-  assert.deepEqual((await answerTo(second, 3)).result, {action: 'decline', content: {source: 'computer-use-persisted-state'}}, 'Terminal stays declined');
+  assert.deepEqual((await answerTo(second, 3)).result, {action: 'decline', content: {source: 'computer-use-persisted-state'}, _meta: stamped('memory')}, 'Terminal stays declined');
   second.text(call2, 'ok');
   await again.response;
   assert.deepEqual(asks(h), ['org.gnome.gedit', 'org.gnome.Terminal']);
@@ -618,7 +621,7 @@ test('an answer that arrives after its runtime stopped is still the connection\'
   await tick(20);
   assert.equal(second.sent.filter(m => m.id === 1 && m.method === undefined).length, 0, 'the stopped runtime\'s id is not the new one\'s');
   approvalAsk(second, 1, 'org.gnome.gedit');
-  assert.deepEqual((await answerTo(second, 1)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}}, 'the late answer was remembered');
+  assert.deepEqual((await answerTo(second, 1)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}, _meta: stamped('memory')}, 'the late answer was remembered');
   second.text(call2, 'ok');
   await again.response;
   assert.deepEqual(asks(h), ['org.gnome.gedit']);

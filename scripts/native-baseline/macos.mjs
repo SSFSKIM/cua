@@ -6,8 +6,21 @@
 // TextEdit it launched. Every cell guards the window it acts on (./cells.mjs). The engine is the run's (--engine,
 // ./engine.mjs): the vendor's helper or cua's engine; the service attestation names the one that answered and both
 // engines' processes.
+//
+// The alert guard (rulings 1154, 1160, 1164; ../hosted-sittings/alert-guard.mjs, the module every sitting calls), on
+// both engines alike: before each cell that may click (the scratch document's New Document button, a task's close and
+// its sheet's Delete button) a fresh reading of the screen (../hosted-sittings/guard-device.mjs read on the device)
+// refuses it when an alert window overlaps one of the run's TextEdit's windows or the Open panel's, or the alert holds
+// the front or the key; before each key cell, when the alert holds the key; before each screenshot sample, when the
+// alert overlaps TextEdit's windows (the vendor may crop a display capture to the window). A refusal sends nothing,
+// writes the sample's row with its cause (NO VERDICT `alert` or `unread`), keeps it in meta.alertGuards (per cell) and
+// stops the run (meta.alertGuardStop), which the hosted record check reads as NO VERDICT; nothing is retried. The run's
+// windows are placed clear of the alerts from fresh readings, once TextEdit is up (the Open panel) and once its scratch
+// document is (meta.placement: from, to and the read-back), and never again mid-run.
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
+import {quote} from '../browser-parity/topology.mjs';
+import {captureCause, countGuards, guardCause, guardMark, keyCause, placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
@@ -50,7 +63,58 @@ export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}
     processOf: pid => parseProcess(remote(`LC_ALL=C /bin/ps -o etime=,lstart=,comm= -p ${Number(pid)} || true`)),
     // Ends the TextEdit the run launched, by its pid, when it has no document (no scratch document was ever made).
     terminateTextEdit: pid => remote(`/bin/kill -TERM ${Number(pid)}`),
+    // The alert guard's fresh reading of the run's TextEdit's windows (and the Open panel's), with the key when asked
+    // (../hosted-sittings/guard-device.mjs read), and a window of it placed (place).
+    guard: ({pid, key = false}) => lastJson(remote(guardDevice(checkout, ['read', '--target', `textedit:${Number(pid)}`, ...(key ? ['--key'] : [])]))),
+    place: ({pid = null, panel = false, window, frame}) => lastJson(remote(guardDevice(checkout, ['place', ...(panel ? ['--panel'] : ['--pid', String(Number(pid))]),
+      '--window', String(Number(window)), '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')]))),
   };
+}
+const guardDevice = (checkout, args) => `cd ${quote(checkout)} && node scripts/hosted-sittings/guard-device.mjs ${args.map(quote).join(' ')}`;
+const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
+
+// ---- the alert guard (see the header) ----------------------------------------------------------------------------------
+
+// The device's fresh reading, or null when it could not be read (the guard reads null as unread, never as clear).
+function reading(ctx, {key = false} = {}) {
+  try { return ctx.device.guard({pid: ctx.meta.textEdit?.pid, key}) ?? null; } catch { return null; }
+}
+// A refused sample: its row with the cause, the per-cell record, the run's stop. Nothing of the cell was sent.
+function refuse(ctx, op, sample, cause) {
+  const {meta} = ctx;
+  (meta.alertGuards ??= []).push({cell: op, sample, cause: cause.category, detail: cause.detail});
+  meta.alertGuardCounts = countGuards(meta.alertGuards);
+  meta.alertGuardStop ??= {cause: cause.category, detail: cause.detail, at: op};
+  ctx.emit({op, sample, ok: false, ...guardMark(cause)});
+  throw new Error(`${op} sample ${sample}: nothing sent: ${cause.detail} (the alert guard, ruling 1154)`);
+}
+// Before a cell that may click: the run's TextEdit's windows and the Open panel's clear of every alert, the alert
+// holding neither front nor key. -> the reading.
+function pointerGuard(ctx, op, sample) {
+  const r = reading(ctx, {key: true});
+  const cause = guardCause(r?.bounds ?? null, {front: r?.front ?? null, key: r?.key ?? null}, {scenes: ['textedit']});
+  if (cause) refuse(ctx, op, sample, cause);
+  return r;
+}
+// Before a key cell: the alert does not hold the key.
+function keyGuard(ctx, op, sample) {
+  const r = reading(ctx, {key: true});
+  const cause = r ? keyCause({key: r.key}) : null;
+  if (cause) refuse(ctx, op, sample, cause);
+}
+// Before a screenshot sample: the window it captures clear of every alert.
+function captureGuard(ctx, op, sample) {
+  const cause = captureCause(reading(ctx)?.bounds ?? null, {scenes: ['textedit']});
+  if (cause) refuse(ctx, op, sample, cause);
+}
+// The run's windows placed clear of the alerts from a fresh reading (../hosted-sittings/alert-guard.mjs placeWindows),
+// kept in meta.placement with the step it followed (`at`).
+async function place(ctx, at) {
+  const pid = ctx.meta.textEdit?.pid;
+  const placed = await placeWindows(reading(ctx)?.bounds ?? null, {move: ({scene, number, frame}) => {
+    try { return ctx.device.place({...(scene === 'openPanel' ? {panel: true} : {pid}), window: number, frame}); } catch (error) { return {error: error.message}; }
+  }});
+  (ctx.meta.placement ??= []).push({at, ...placed});
 }
 
 // The Open and Save panels are served out of process: a TextEdit fresh from its launch may show only that panel, and
@@ -70,10 +134,13 @@ function alertCause(meta, at, front) {
 // (#162, scripts/accept/key-guard.mjs, by pid since M1b: another TextEdit process is not the target); otherwise it is not
 // sent, the skip is recorded (meta.keySkipped and a key.skipped row), and the run stops with no further input. The
 // scratch document's click on the Open panel's New Document button (a fresh launch; the panel is served out of process,
-// so it may be what is frontmost then, and a click sends no modifier) is not guarded; its super+n path is, as its own
-// cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are separate cells, each checked right before it is
+// so it may be what is frontmost then, and a click sends no modifier) is not key-guarded, only alert-guarded
+// (pointerGuard); its super+n path is key-guarded, as its own cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are separate cells, each checked right before it is
 // sent, since the first waits up to TRANSITION_MS for the document.
-async function keyCell(ctx, code, keys) {
+// Each key cell is first checked by the alert guard (keyGuard), unless the cell's own pointer guard already read the key
+// (`guarded`); `at` names the sample a refusal is written for.
+async function keyCell(ctx, code, keys, {op = 'key', sample = 1, guarded = false} = {}) {
+  if (!guarded) keyGuard(ctx, op, sample);
   const target = {pid: ctx.meta.textEdit?.pid, bundleId: TEXTEDIT_BUNDLE};
   const out = await sendIfFrontmost({target, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
   if (out.sent) return out.result;
@@ -136,7 +203,7 @@ async function quitTextEdit(ctx) {
 async function quitFromScratch(ctx) {
   const {meta, device} = ctx;
   if (!meta.textEdit?.launchedByRun || meta.textEdit.quitByRun || !ctx.warmOpen()) return;
-  const quit = await keyCell(ctx, cells.QUIT_TEXTEDIT, ['super+q']);
+  const quit = await keyCell(ctx, cells.QUIT_TEXTEDIT, ['super+q'], {op: 'quit'});
   let running = true;
   for (let i = 0; i < 10 && running; i++) { await sleep(500); running = device.leftovers().textEditRunning; }
   meta.textEdit.quitByRun = Boolean(quit.cell?.ok) && !running;
@@ -199,11 +266,17 @@ export const macosAdapter = {
     meta.textEdit.pid ??= device.textEditPid();
     await activate(ctx);
 
+    // The Open panel a fresh TextEdit shows placed clear of the alerts; then the cell that may click its New Document
+    // button only under the alert guard.
+    await place(ctx, 'setup.activate');
+    pointerGuard(ctx, 'setup.newDocument', 1);
     let scratch = guard(await js(cells.NEW_DOCUMENT), 'the scratch document');
-    if (scratch.cell?.ok && scratch.cell.value?.needsKeys) scratch = guard(await keyCell(ctx, cells.NEW_DOCUMENT_KEYS, ['super+n']), 'the scratch document');
+    if (scratch.cell?.ok && scratch.cell.value?.needsKeys) scratch = guard(await keyCell(ctx, cells.NEW_DOCUMENT_KEYS, ['super+n'], {op: 'setup.newDocument'}), 'the scratch document');
     row('setup.newDocument', 1, scratch);
     if (!scratch.cell?.ok) throw new Error(`no scratch document: ${scratch.cell?.error ?? scratch.failure}`);
     meta.textEdit.scratchDocument = true;
+    // The scratch document, which every task's document cascades from, placed clear of the alerts: the last placement.
+    await place(ctx, 'setup.newDocument');
     // The scratch document in front, checked between series (op guard.scratch, not charged to any sample).
     const scratchGuard = async sample => {
       const r = row('guard.scratch', sample, guard(await js(cells.SCRATCH_GUARD), 'the scratch guard'));
@@ -214,18 +287,20 @@ export const macosAdapter = {
     // invalidated when it is no longer in front afterwards.
     await measure('warm.getAXState', ctx.samples, cells.AX_FULL);
     if (!await scratchGuard(1)) throw new Error('the scratch document is not in front before the screenshot series');
-    const shots = await measure('warm.getScreenshot', ctx.samples, cells.SCREENSHOT, {hold: true});
+    const shots = await measure('warm.getScreenshot', ctx.samples, cells.SCREENSHOT, {hold: true, before: sample => captureGuard(ctx, 'warm.getScreenshot', sample)});
     const stillInFront = await scratchGuard(2);
     for (const shot of shots) emit(stillInFront || !shot.ok ? shot : {...shot, ok: false, invalid: 'the scratch document was not in front after the screenshot series'});
     if (!stillInFront) throw new Error('the scratch document is not in front after the screenshot series');
 
     for (let sample = 1; sample <= ctx.tasks; sample++) {
       const steps = [];
-      const opened = guard(await keyCell(ctx, cells.TASK_NEW, ['super+n']), `task ${sample}`);
-      const act = opened.cell?.ok ? joined(opened, guard(await keyCell(ctx, cells.TASK_TYPE, ['typeText']), `task ${sample}`)) : opened;
+      const opened = guard(await keyCell(ctx, cells.TASK_NEW, ['super+n'], {op: 'task.act', sample}), `task ${sample}`);
+      const act = opened.cell?.ok ? joined(opened, guard(await keyCell(ctx, cells.TASK_TYPE, ['typeText'], {op: 'task.act', sample}), `task ${sample}`)) : opened;
       steps.push(row('task.act', sample, act));
       if (act.cell?.ok) steps.push(row('task.verify', sample, guard(await js(cells.TASK_VERIFY), `task ${sample}`)));
-      const close = guard(await keyCell(ctx, cells.TASK_CLOSE, ['super+w']), `task ${sample}`);
+      // The close may click its sheet's Delete button: the pointer guard, whose reading holds the key too.
+      pointerGuard(ctx, 'task.close', sample);
+      const close = guard(await keyCell(ctx, cells.TASK_CLOSE, ['super+w'], {op: 'task.close', sample, guarded: true}), `task ${sample}`);
       steps.push(row('task.close', sample, close));
       const ok = steps.length === 3 && steps.every(s => s.ok);
       const sum = key => round(steps.reduce((total, s) => total + (s[key] ?? 0), 0));

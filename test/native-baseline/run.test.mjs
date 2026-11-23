@@ -11,6 +11,7 @@ import {run} from '../../scripts/native-baseline.mjs';
 import {geditDesktop} from './gedit-double.mjs';
 import {textEdit} from './textedit-double.mjs';
 import {parseProcess} from '../../scripts/native-baseline/macos.mjs';
+import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
 
 const AsyncFunction = (async () => {}).constructor;
 const RELEASE = '26.928.40906-linux-arm64';
@@ -204,12 +205,21 @@ const engineFacts = (extra = {}) => ({checkoutBuild: BUILD, installed: {bundlePa
 const attestationOf = engine => (engine === 'cua' ? {engine: 'cua', version: '0.1.0', build: BUILD} : {engine: 'vendor', version: '26.924.1001281', build: '26.928.40906-darwin-arm64'});
 const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine', kind: 'cua', origin: 'approved engine', ageSeconds: 0}
   : {path: '~/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService', kind: 'vendor', origin: 'pinned runtime', ageSeconds: 0});
+// The alert guard's device reading (scripts/hosted-sittings/guard-device.mjs read): by default the run's TextEdit window
+// clear of the one alert, TextEdit front and key. `screen(n, key)` answers the run's n-th reading.
+const rect = (x, y, width, height) => ({x, y, width, height});
+const UNC = 'com.apple.UserNotificationCenter';
+const ALERT = rect(382, 118, 260, 348);
+const guardScreen = (windowBounds, {front = 'com.apple.TextEdit', key = 'com.apple.TextEdit'} = {}) => (n, withKey) => ({
+  bounds: {alerts: [{number: 90, layer: 8, bounds: ALERT}], windows: [{scene: 'textedit', number: 7, recorded: false, bounds: windowBounds}], displays: [rect(0, 0, 1920, 1080)]},
+  front, key: withKey ? key : null, at: [n, n]});
+const CLEAR_SCREEN = guardScreen(rect(700, 31, 627, 677));
 // One macOS run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162): a bundle id
 // (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
 async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
   helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs, serviceMs,
-  textEditProcess = () => TEXTEDIT_PROCESS, terminate, textEditBeforeBind = false, runner, env = {}} = {}) {
-  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, serviceMs, terminated: [], binds: 0};
+  textEditProcess = () => TEXTEDIT_PROCESS, terminate, textEditBeforeBind = false, runner, env = {}, screen = CLEAR_SCREEN} = {}) {
+  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, serviceMs, terminated: [], binds: 0, guards: [], places: []};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
   let launched = false;
@@ -251,7 +261,9 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
     frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id === null || typeof id === 'object' ? id : {pid: id === 'com.apple.TextEdit' ? TEXTEDIT_PID : 777, bundleId: id}; },
     textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; },
     processOf: pid => { state.processReads = [...(state.processReads ?? []), pid]; return textEditProcess(state.processReads.length); },
-    terminateTextEdit: pid => { if (terminate) terminate(pid); state.terminated.push(pid); terminatedApp = true; }};
+    terminateTextEdit: pid => { if (terminate) terminate(pid); state.terminated.push(pid); terminatedApp = true; },
+    guard: ({pid, key}) => { state.guards.push({pid, key}); return screen(state.guards.length, key); },
+    place: args => { state.places.push(args); return {requested: args.frame, readBack: args.frame, matched: true, exitStatus: 0, pid: args.pid ?? 12}; }};
   const out = outDir(t);
   let code, refusal = null;
   try {
@@ -750,4 +762,72 @@ test('--pinned-check records an accepted home\'s provenance in the run\'s meta; 
   assert.ok(state.scripts.some(s => /hostIdentity/.test(s)), 'the run went on to its preflight');
   for (const lane of [{engine: 'vendor'}, {engine: 'cua', engineBin: '/b/cua-engine'}])
     await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', ...lane, pinnedCheck: true, ...plan, io}), /--pinned-check is a Linux computer run's on cua's installed engine/);
+});
+
+// ---- the alert guard (rulings 1154, 1160, 1164; scripts/hosted-sittings/alert-guard.mjs) --------------------------------
+
+// The hosted record check of a lane's run (scripts/hosted-sittings/checks.mjs `record`).
+const recordCheck = (meta, engine) => CHECKS.record({record: 'meta.json', engine}, {exit: 1, readJson: () => meta});
+const UNDER = guardScreen(rect(79, 31, 627, 677));
+
+test('sitting A: under an overlapping alert the scratch document\'s click is refused on both sides; nothing sent, NO VERDICT alert to the hosted check', async t => {
+  const sides = [];
+  for (const engine of ['vendor', 'cua']) {
+    const r = await macRun(t, {engine, screen: UNDER});
+    sides.push(r);
+    assert.equal(r.meta.complete, false);
+    assert.deepEqual([r.app.clicks, r.app.keys], [[], []], 'nothing of the cell was sent');
+    const refused = r.rows.find(row => row.op === 'setup.newDocument');
+    assert.equal(refused.ok, false);
+    assert.equal(refused.alertGuard.cause, 'alert');
+    assert.match(refused.alertGuard.detail, /alert window 90 \(382,118 260x348\) overlaps the textedit window 7/);
+    assert.ok(refused.invalid, 'no statistic reads it');
+    assert.deepEqual(r.meta.alertGuardStop, {cause: 'alert', detail: refused.alertGuard.detail, at: 'setup.newDocument'});
+    assert.deepEqual(r.meta.alertGuardCounts, {'setup.newDocument': {alert: 1, unread: 0}});
+    assert.deepEqual(recordCheck(r.meta, engine)[0], 'NO VERDICT');
+    assert.match(recordCheck(r.meta, engine)[1], /^alert: meta\.json stopped: the alert guard refused/);
+    // The placement tried first, from the same fresh reading: the window under the alert moved clear, read back.
+    const [placed] = r.meta.placement;
+    assert.equal(placed.at, 'setup.activate');
+    assert.deepEqual(placed.windows[0].from, rect(79, 31, 627, 677));
+    assert.equal(placed.windows[0].moved, true);
+    assert.deepEqual(placed.windows[0].readBack, placed.windows[0].to);
+    assert.deepEqual(r.state.places, [{pid: TEXTEDIT_PID, window: 7, frame: placed.windows[0].to}]);
+  }
+  assert.deepEqual(sides[0].state.guards, sides[1].state.guards, 'the same readings on both sides');
+  assert.deepEqual(sides[0].meta.placement, sides[1].meta.placement, 'the same placement on both sides');
+  // An unread screen is NO VERDICT unread, never a clear one.
+  const unread = await macRun(t, {screen: () => ({bounds: null, front: null, key: null})});
+  assert.equal(unread.rows.find(row => row.op === 'setup.newDocument').alertGuard.cause, 'unread');
+  assert.equal(recordCheck(unread.meta, 'vendor')[0], 'NO VERDICT');
+  assert.deepEqual(unread.meta.placement[0], {at: 'setup.activate', unread: true});
+});
+
+test('sitting A: a clear screen places nothing and runs whole; every click, key and capture went through a fresh reading', async t => {
+  const r = await macRun(t);
+  assert.equal(r.code, 0, r.meta.error);
+  assert.deepEqual(r.meta.placement.map(p => [p.at, p.windows.map(w => w.moved)]), [['setup.activate', [false]], ['setup.newDocument', [false]]]);
+  assert.deepEqual(r.state.places, []);
+  assert.equal(r.meta.alertGuards, undefined);
+  // Placements 2, the scratch document's click 1, screenshots `samples`, per task its new document, typing and close (with
+  // the close's pointer reading carrying the key), and the quit.
+  assert.equal(r.state.guards.length, 2 + 1 + plan.samples + plan.tasks * 3 + 1);
+  assert.equal(r.state.guards.filter(g => g.key).length, 1 + plan.tasks * 3 + 1);
+});
+
+test('sitting A: the alert holding the key refuses a key cell; a window under an alert at a screenshot refuses that sample', async t => {
+  let keyed = 0;
+  // The first reading with the key is the scratch document's click's; the second, the first task's new document's.
+  const keyHeld = await macRun(t, {screen: (n, withKey) => ({...CLEAR_SCREEN(n, withKey), key: withKey ? (++keyed >= 2 ? UNC : 'com.apple.TextEdit') : null})});
+  const held = keyHeld.rows.find(row => row.alertGuard);
+  assert.deepEqual([held.op, held.sample, held.alertGuard.cause], ['task.act', 1, 'alert']);
+  assert.match(held.alertGuard.detail, /holds the key/);
+  assert.ok(!keyHeld.app.keys.includes('super+n'), 'the task\'s keys were never sent');
+  assert.equal(recordCheck(keyHeld.meta, 'vendor')[0], 'NO VERDICT');
+  // The window moved under an alert after the placements (a reading the guard makes fresh at each sample).
+  const shot = await macRun(t, {screen: (n, withKey) => (n <= 3 ? CLEAR_SCREEN : UNDER)(n, withKey)});
+  const refused = shot.rows.find(row => row.alertGuard);
+  assert.deepEqual([refused.op, refused.sample, refused.alertGuard.cause], ['warm.getScreenshot', 1, 'alert']);
+  assert.ok(!shot.rows.some(row => row.op === 'warm.getScreenshot' && row.ok), 'no capture was taken');
+  assert.equal(recordCheck(shot.meta, 'vendor')[0], 'NO VERDICT');
 });

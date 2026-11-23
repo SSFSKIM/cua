@@ -72,10 +72,14 @@ const resetBlocked = (path, record) => (record.meta?.fixturesHeld ?? []).some(f 
 // 1141). -> the reason, or null for any other stop.
 const alertStopped = (path, record) => (record.incompleteCause?.cause === 'alert'
   ? `alert: ${path} stopped at ${record.incompleteCause.at} with ${record.incompleteCause.front?.bundleId} (pid ${record.incompleteCause.front?.pid}) in front (${firstProblem(record)})` : null);
-// A matrix run stopped because the alert guard refused a harness cell (../native-matrix/run.mjs `alertGuardStop`; ruling
-// 1154): it never clicked where the alert was, so its proof is missing, not failed. -> the reason, or null.
-const guardStopped = (path, record) => (record.meta?.alertGuardStop
-  ? `${record.meta.alertGuardStop.cause}: ${path} stopped: the alert guard refused a harness cell (${record.meta.alertGuardStop.detail})` : null);
+// A run stopped because the alert guard refused an event (rulings 1154, 1160; ./alert-guard.mjs): the matrix's harness
+// cell (../native-matrix/run.mjs, result.json's meta.alertGuardStop), the native baseline's click, key or capture
+// (../native-baseline/macos.mjs) or the native-mac lane's action (../repl-parity/native-mac.mjs), both in meta.json's own
+// alertGuardStop. It never sent where the alert was, so its proof is missing, not failed. -> the reason, or null.
+const guardStopped = (path, record) => {
+  const stop = record.meta?.alertGuardStop ?? record.alertGuardStop;
+  return stop ? `${stop.cause}: ${path} stopped: the alert guard refused ${stop.at ? `${stop.at}` : 'a harness cell'} (${stop.detail})` : null;
+};
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 // One of #212's records against the step (`run` {path, record}), by the step's precedence (`rank`): another engine

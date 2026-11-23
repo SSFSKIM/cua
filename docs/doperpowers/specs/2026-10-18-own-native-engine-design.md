@@ -8925,6 +8925,31 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     is the vendor's own and escapes `\r`, `\n` and `\t` likewise, unmentioned in `core.md` and `linux-engine.md`; the
     same pitfall exists there and is left to its own decision. The selected-text fence and the residues are their own
     tickets.
+  - Ruling 1177 folds #552 into #526: the selected text stays raw inside its fence, but the fence is longer than the
+    longest run of backticks in the text, and at least three (`selectedTextFence`), so the text cannot close it and put
+    a line after it that reads as an element. The renderer's comment that the trailer is "printed as it is" now says so.
+    The vendor's fence is a fixed three; the `lineBreaks` departure covers the difference (rulings 1175 and 1177), and
+    the judges and readers (`compare.mjs`'s trailer pattern, `matrix-text.mjs` `selectedTextOf`, `live-checks.mjs`
+    `vendorSelectedText`, the native-mac fixtures) read a fence of any length from three.
+  - The review of da6576e2..8ecf39a79 (reviewer-high), fixed:
+    - `compare.mjs`'s parse matched a numbered line's rest with `.`, which stops at a CR, LS or PS, so such a line was
+      folded into the item before it and the escape turned the boundary into value text (a missing element compared
+      clean). The numbered prefix is now matched apart from the rest.
+    - A vendor item is keyed and compared by its escaped text under the departure (it was keyed by its first line, so a
+      two-line title or bare value read as missing plus added).
+    - The departure now covers the header (a window title or app name with a break, its lines before the first element
+      folded back) and the `Selected:` trailer, element by element with the boundaries before each element and the note
+      kept. This absorbs #554.
+    - The departure holds only on exact equality; redacted, `same()` compares lengths, which accepted `a\nb` against
+      `xyz!`. The focused trailer takes the same check.
+    - `matrix-text.mjs` `valueOfIndex` finds the Value part's end (the first `, <Label>: ` once the value holds a break)
+      before decoding, and reads CR and LS as breaks on the vendor's lane. It decodes only cua's rendering: the bind of a
+      run's lane records it (`BIND(scene, app, engine)`, `globalThis.__axRendering`); the vendor's text, or a lane that
+      names none, is read as printed, so a vendor path like `\new` keeps its backslash. On cua's lane a literal
+      backslash-n decodes as a break (#555); `{decoded: false}` and `renderedAs` compare at the rendered form instead.
+    - The join's trim is Foundation's set exactly, read from `CharacterSet.whitespacesAndNewlines` on macOS 27: U+0009–
+      U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200B, U+2028, U+2029, U+202F, U+205F, U+3000. Unicode's Z*
+      lacks U+200B, so a cell holding only a zero-width space no longer adds an empty line to the join.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

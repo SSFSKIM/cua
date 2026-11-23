@@ -89,9 +89,17 @@ function overlapCause(bounds, scenes) {
 // activation click cua's route 3 may synthesize around a keyed typeText, a paste or an element action is posted to the
 // target's pid and window only (native/engine/Sources/Engine/Activation.swift: "Only the target's pid and window are
 // posted to"; activate()), never to whatever is under the point. So a key cell is checked for the alert holding the key
-// (here) or the front (the key guard), not for an alert overlapping the target's windows. A reading that could not be
-// taken is no refusal of its own here: the key guard's front check still stands before the cell.
+// (here) or the front (the key guard), not for an alert overlapping the target's windows. A key reading that could not
+// be taken refuses nothing here, and the cell is sent unguarded against the alert holding the key: the key guard's
+// front check cannot see UserNotificationCenter holding the key while the target is in front. Every such cell is
+// counted (recordKeyUnread), so a sitting shows how many key cells went unchecked.
 export const keyCause = ({key = null} = {}) => (key === CAPTURE_ALERT ? {category: 'alert', detail: `${CAPTURE_ALERT} holds the key`} : null);
+// A key cell sent with its key reading not taken (see keyCause), counted per cell in the record its side keeps, beside
+// the refusals: `keyUnread: {cell: n}`.
+export function recordKeyUnread(record, cell) {
+  const counts = record.keyUnread ??= {};
+  counts[cell] = (counts[cell] ?? 0) + 1;
+}
 
 // Why a capture is NO VERDICT, from the fresh reading: `kind` 'window' (the target `scenes`' windows: one under an alert
 // may come back as the vendor's display crop showing it; one clear of every alert is exempt), 'screen' (any alert at all)

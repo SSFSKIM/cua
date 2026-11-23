@@ -832,6 +832,16 @@ test('sitting A: the alert holding the key refuses a key cell; a window under an
   assert.equal(recordCheck(shot.meta, 'vendor')[0], 'NO VERDICT');
 });
 
+// The key-cell premise leaves a key cell whose key reading was not taken unguarded against the alert holding the key;
+// each such cell is counted per cell (meta.keyUnread), the run going on.
+test('sitting A: a key cell sent with its key reading not taken is counted per cell; a click\'s reading is not a key cell\'s', async t => {
+  const r = await macRun(t, {screen: (n, withKey) => ({...CLEAR_SCREEN(n, withKey), key: null})});
+  assert.equal(r.code, 0, r.meta.error);
+  assert.deepEqual(r.meta.keyUnread, {'task.act': plan.tasks * 2, 'task.close': plan.tasks, quit: 1});
+  assert.equal(r.meta.alertGuards, undefined);
+  assert.equal((await macRun(t)).meta.keyUnread, undefined, 'every key read: nothing counted');
+});
+
 test('sitting A: a capture refusal mid-series keeps the samples already taken, unconfirmed, and marks only the refused one', async t => {
   // Readings: the two placements, the scratch document's click, screenshot sample 1 clear; sample 2 under the alert.
   const r = await macRun(t, {screen: (n, withKey) => (n <= 4 ? CLEAR_SCREEN : UNDER)(n, withKey)});

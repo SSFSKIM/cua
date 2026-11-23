@@ -1261,9 +1261,11 @@ with doubles only; the first hosted run is the evidence still owed.
   - `keyCause` applies the key rule: UserNotificationCenter holds the key. Every sitting's key cells share one premise:
     the activation click cua's route 3 may synthesize around a keyed typeText, a paste or an element action is posted
     to the target's pid and window only (`Activation.swift`). So a key cell is checked for the alert holding the key
-    (here) or the front (the key guard). An alert that only overlaps the target's windows does not stop a key cell. A
-    reading that could not be taken refuses nothing of its own, because the key guard's front check still runs before
-    the cell.
+    (here) or the front (the key guard). An alert that only overlaps the target's windows does not stop a key cell.
+    When the key reading could not be taken, nothing refuses the cell, and it goes unguarded against the alert holding
+    the key: the key guard's front check cannot see UserNotificationCenter holding the key while the target is in
+    front. A, C and D keep this one premise. Each such cell is counted per cell and per side with `recordKeyUnread`
+    (`keyUnread: {cell: n}`), so a sitting shows how many key cells went unchecked.
   - `captureCause` applies the capture rule. A screen or region capture that intersects an alert is refused as `alert`.
     A window capture is refused only when its own window is overlapped.
   - `clearFrame` makes the smallest move that clears the alerts, below the 25-point menu bar and with an 8-point margin.
@@ -1341,8 +1343,16 @@ The sittings share the rules:
     fixture: item 6 holds the secrets CLI, MCP `secrets_list` and the live probe, and item 8 holds the lifecycle
     suites. In those items, only the checks the fixture itself produces may go unproven (`isFixtureCheck` in
     `scripts/accept/textedit.mjs`): item 5's verdict and own steps, item 6's UI delivery and item 8's approvals
-    observation. Every other check must pass, and every other item too. Anything else not passed is FAIL, named, with
-    the refusal noted.
+    observation. Even those are excused only when BLOCKED. Every way the refusal leaves a fixture check unrun reads
+    BLOCKED: the refused step, an inventory check of a step never run, an approvals observation not made, and item
+    5's rollup of them. So a fixture check that FAILed ran and failed. An example is the typed text not being the marker
+    while the fixture went on to a refusal at the secret's key cell. Every other check must pass, and every other item
+    too. Anything else not passed is FAIL, named, with the refusal noted.
+
+`sitting.md` gains a section "The alert guard" (`guardTally` in `counts.mjs`). For every record the plan names, it
+lists per step and cell the refusals (NO VERDICT `alert`, NO VERDICT `unread`) and the key cells sent with their key
+reading not taken (`key unread`). The matrix's `counts.md` adds a `key unread` column per side beside its NO VERDICT
+`alert` column. A row's span (`row:<index>`) maps to that row's cell, and a harness key cell gets its own line.
 
 A and B also guard off hosted runners, on the mini and anywhere else, as the matrix does. The cost is one launch of
 the focus probe for each guarded cell, outside the cell's timing. D and T3b guard on a GitHub-hosted runner only.
@@ -1366,8 +1376,13 @@ Per sitting:
     - If no scratch document was made, it sends SIGTERM to the pid the run launched.
 
     A TextEdit it cannot quit is left running, and the next run would refuse it at its preflight. So the plan chains
-    A's runs: each run needs the one before it to have passed. The runs after a stop are SKIP, never failures of their
-    own, and the stopped run's NO VERDICT is the sitting's.
+    A's runs: each run needs the one before it to have passed. Each comparison (A, B, C) needs every run of both its
+    lanes. After a stop, the remaining runs and the comparisons are SKIP, never failures of their own, and the stopped
+    run's NO VERDICT is the sitting's.
+
+    As a second line of defence, `compareDirs` prints `VERDICT: NO VERDICT` when a lane has no complete run to compare,
+    naming the lane. That covers a missing directory, a run not whole, or only incomplete runs. It used to throw with
+    no VERDICT line, which the hosted check read as FAIL.
 - **B (repl-parity native-mac, `scripts/repl-parity/native-mac.mjs`).**
   - After each scene's bring-up, the scene's window is placed (`meta.scenes[id].placement`).
   - Each lane guards the ACTION cell before sending it, from its own fresh reading on its own device. Each lane decides
@@ -1376,6 +1391,8 @@ Per sitting:
     It ends only that scene (`GuardRefused`, kept in `meta.guardRefused`, apart from `meta.problems`), and the lane
     goes on to its next scene.
   - `record` reads the lane as NO VERDICT only when its refusals are its only problems.
+  - B's diff needs both lanes to have passed. So when either lane has a refusal, the diff does not run, and the parity
+    of every other scene, the ones both lanes did record, goes unjudged until the sitting is re-run.
 - **C (the matrix).** The matrix already ran under T8e's guard. It now imports the shared module, and `placeScenes` and
   `placePanel` go through `placeWindows`.
 - **D (accept-native, verify `--bind`, the approval cycles, T3b).**
@@ -1394,12 +1411,16 @@ Per sitting:
       refusal through `recordRefusal`, and the judge returns NO VERDICT.
   - accept-native's live TextEdit run is shared by items 5, 6 and 8. On a hosted runner it takes the guard, and its
     document is placed after open (`observations.placement`).
-    - Each key cell (`fixtureKeyCell`) waits out any pause first. It then reads the guard fresh and is refused when
-      the alert holds the key (the key-cell premise). After that comes the front check, then the cell.
+    - Each key cell (`fixtureKeyCell`) waits out any pause first. It then takes one fresh guard reading and is
+      refused when the alert holds the key (the key-cell premise). After that comes the front check, then the cell.
+      A key reading not taken is counted in `keyUnread`.
+    - The marker cell types and then captures TextEdit's window (`getScreenshot`). It is held to the capture rule as
+      well, with window kind, from the same reading. If TextEdit's window is under an alert, or the screen is unread,
+      the whole cell is refused before it is sent.
     - A refusal sends nothing. The step is BLOCKED "NO VERDICT <cause>: …" and carries the mark. The observations
       hold `alertGuards`, `alertGuardCounts` and `alertGuardStop`.
-  - The report carries `alertGuardStop` and `alertGuardCounts` (`fixtureGuardRecord`). D's step is judged by the
-    `acceptance` check on `acceptance.json`.
+  - The report carries `alertGuardStop`, `alertGuardCounts` and `keyUnread` (`fixtureGuardRecord`). D's step is judged
+    by the `acceptance` check on `acceptance.json`.
 
 ### The setup record's shape
 
@@ -1468,3 +1489,29 @@ New tests:
 - **Display mode.** A 2x read-back, another mode id, and a window list unread after the switch.
 - **T3b.** The capture cell under an alert, and with the screen unread.
 - **`recordRefusal`.** Its shape.
+
+### Review round 2
+
+Test counts after the fixes:
+
+- `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`, `test/accept-textedit-{cells,readback}`:
+  955/955.
+- `test/repl-parity`, `test/cursor-sitting`: 1041/1041.
+- `test/accept-{native-cli,scripts-load,key-guard,window-close,onboarding,engine-lane}`: 123/123.
+
+New tests:
+
+- **`acceptance`.** Item 5's type step FAILs, then a refusal comes at "secret: type the reference". The result is
+  FAIL, naming the type step.
+- **A's comparisons.** The real CLI, `native-baseline.mjs compare --engines`, run on a missing lane and on a lane
+  holding only a stopped run. Each prints `VERDICT: NO VERDICT` naming the lane, and the hosted `verdict` check reads
+  NO VERDICT. The plan test runs `runSitting` with a refused vv-1 in both the pilot and full forms, with no comparison
+  output faked. Only vv-1 runs, every other step is SKIP, and the sitting is NO VERDICT, exit 4.
+- **`keyUnread`.**
+  - The helper's shape.
+  - A counts its key cells sent with the key unread per cell (`task.act`, `task.close`, `quit`).
+  - The matrix counts them under the row's span, which `counts.md` maps to the row's cell.
+  - D counts them, through `fixtureKeyCell`.
+  - `guardTally` reads every record shape.
+- **D's marker cell.** It is refused unsent when TextEdit's window is under an alert or the screen is unread. A window
+  clear of every alert is exempt.

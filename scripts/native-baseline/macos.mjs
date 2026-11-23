@@ -27,7 +27,7 @@
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {quote} from '../browser-parity/topology.mjs';
-import {captureCause, guardCause, keyCause, placeWindows, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
+import {captureCause, guardCause, keyCause, placeWindows, recordKeyUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
@@ -83,8 +83,9 @@ const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 // ---- the alert guard (see the header) ----------------------------------------------------------------------------------
 
 // The device's fresh reading, or null when it could not be read. The pointer and capture guards read null as unread,
-// never as clear; the key guard reads it as no refusal of its own (the key-cell premise,
-// ../hosted-sittings/alert-guard.mjs keyCause), the key guard's front check still standing before the cell.
+// never as clear. The key guard refuses nothing on a key reading not taken (the key-cell premise,
+// ../hosted-sittings/alert-guard.mjs keyCause): the cell goes unguarded against the alert holding the key, which the
+// front check cannot see, and is counted in meta.keyUnread (recordKeyUnread).
 function reading(ctx, {key = false} = {}) {
   try { return ctx.device.guard({pid: ctx.meta.textEdit?.pid, key}) ?? null; } catch { return null; }
 }
@@ -98,17 +99,20 @@ function refuse(ctx, op, sample, cause, held = []) {
   throw new Error(`${op} sample ${sample}: nothing sent: ${cause.detail} (the alert guard, ruling 1154)`);
 }
 // Before a cell that may click: the run's TextEdit's windows and the Open panel's clear of every alert, the alert
-// holding neither front nor key. -> the reading.
-function pointerGuard(ctx, op, sample) {
+// holding neither front nor key. `keyCell`: the cell sends keys as well (a task's close), so its key reading not taken
+// is counted as a key cell's. -> the reading.
+function pointerGuard(ctx, op, sample, {keyCell = false} = {}) {
   const r = reading(ctx, {key: true});
   const cause = guardCause(r?.bounds ?? null, {front: r?.front ?? null, key: r?.key ?? null}, {scenes: ['textedit']});
   if (cause) refuse(ctx, op, sample, cause);
+  if (keyCell && !r?.key) recordKeyUnread(ctx.meta, op);
   return r;
 }
-// Before a key cell: the alert does not hold the key.
+// Before a key cell: the alert does not hold the key; a key reading not taken is counted (see reading).
 function keyGuard(ctx, op, sample) {
   const r = reading(ctx, {key: true});
-  const cause = r ? keyCause({key: r.key}) : null;
+  if (!r?.key) { recordKeyUnread(ctx.meta, op); return; }
+  const cause = keyCause({key: r.key});
   if (cause) refuse(ctx, op, sample, cause);
 }
 // Before a screenshot sample: the window it captures clear of every alert. `held`: the series' samples taken so far.
@@ -308,7 +312,7 @@ export const macosAdapter = {
       steps.push(row('task.act', sample, act));
       if (act.cell?.ok) steps.push(row('task.verify', sample, guard(await js(cells.TASK_VERIFY), `task ${sample}`)));
       // The close may click its sheet's Delete button: the pointer guard, whose reading holds the key too.
-      pointerGuard(ctx, 'task.close', sample);
+      pointerGuard(ctx, 'task.close', sample, {keyCell: true});
       const close = guard(await keyCell(ctx, cells.TASK_CLOSE, ['super+w'], {op: 'task.close', sample, guarded: true}), `task ${sample}`);
       steps.push(row('task.close', sample, close));
       const ok = steps.length === 3 && steps.every(s => s.ok);

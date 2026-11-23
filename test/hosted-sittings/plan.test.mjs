@@ -64,15 +64,25 @@ test('A: each run needs the one before it; after a run the guard stopped the res
     const runs = plan('a', {pilot}).steps.filter(s => s.kind === 'run');
     assert.deepEqual(runs.map(s => s.needs ?? []), runs.map((s, i) => (i ? [runs[i - 1].id] : [])), `pilot ${pilot}`);
   }
-  const p = plan('a', {pilot: true});
-  const stopped = {complete: false, error: 'task.act sample 1: nothing sent', alertGuardStop: {cause: 'alert', detail: 'd', at: 'task.act'}, nativeEngine: {attested: [{engine: 'vendor'}]}};
-  const ran = [];
-  const report = await runSitting(p, {out: '/w/out', exec: async s => { ran.push(s.id); return {exit: s.id === 'vv-1' ? 1 : 0}; }, keep: () => {}, readText: () => 'VERDICT: NO VERDICT',
-    readJson: path => (path === '/w/out/vv/run-1/meta.json' ? stopped : null), exists: () => false, remove: () => {}, now: () => 0, log: () => {}});
-  const status = Object.fromEntries(report.steps.map(s => [s.id, s.status]));
-  assert.deepEqual(ran.filter(id => /^(vv|vc|cc)-/.test(id)), ['vv-1'], 'no run after the stop');
-  assert.deepEqual([status['vv-1'], status['vc-1'], status['cc-1']], ['NO VERDICT', 'SKIP', 'SKIP']);
-  assert.deepEqual([report.verdict, report.exit], ['NO VERDICT', 4]);
+  // Each comparison needs every run of both its lanes, so a lane a stop left unmeasured skips it rather than crash it.
+  for (const pilot of [false, true]) {
+    const p = plan('a', {pilot}), runIds = lane => p.steps.filter(s => s.kind === 'run' && s.id.startsWith(`${lane}-`)).map(s => s.id);
+    assert.deepEqual(p.steps.filter(s => s.kind === 'verdict').map(s => [s.id, s.needs]),
+      [['compare-A', [...runIds('vv'), ...runIds('vc')]], ['compare-B', [...runIds('vc'), ...runIds('cc')]], ['compare-C', [...runIds('vv'), ...runIds('cc')]]]);
+  }
+  // The comparisons' output is never faked here: a step that ran and printed no VERDICT line would read FAIL.
+  for (const pilot of [true, false]) {
+    const p = plan('a', {pilot});
+    const stopped = {complete: false, error: 'task.act sample 1: nothing sent', alertGuardStop: {cause: 'alert', detail: 'd', at: 'task.act'}, nativeEngine: {attested: [{engine: 'vendor'}]}};
+    const ran = [];
+    const report = await runSitting(p, {out: '/w/out', exec: async s => { ran.push(s.id); return {exit: s.id === 'vv-1' ? 1 : 0}; }, keep: () => {}, readText: () => '',
+      readJson: path => (path === '/w/out/vv/run-1/meta.json' ? stopped : null), exists: () => false, remove: () => {}, now: () => 0, log: () => {}});
+    const status = Object.fromEntries(report.steps.map(s => [s.id, s.status]));
+    assert.deepEqual(ran, ['vv-1'], 'no run after the stop, and no comparison');
+    assert.equal(status['vv-1'], 'NO VERDICT');
+    assert.ok(report.steps.filter(s => s.id !== 'vv-1').every(s => s.status === 'SKIP'), JSON.stringify(status));
+    assert.deepEqual([report.verdict, report.exit], ['NO VERDICT', 4], `pilot ${pilot}`);
+  }
 });
 
 test('B: the native-mac pair on the run\'s install, its diff against the declared differences, and the preparation given back', () => {

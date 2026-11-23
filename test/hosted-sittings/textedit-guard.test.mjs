@@ -4,7 +4,8 @@
 // hosted check as NO VERDICT, and only the fixture's own checks may go unproven by it. All with doubles.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {alertGuardRefusal, APPROVALS_CHECK, FIXTURE_VERDICT_CHECK, fixtureGuardRecord, fixtureKeyCell, OWN_STEPS, SECRET_STEPS, STEP, uiDeliveryCheck} from '../../scripts/accept/textedit.mjs';
+import {APPROVALS_CHECK, FIXTURE_VERDICT_CHECK, fixtureGuardRecord, fixtureKeyCell, OWN_STEPS, SECRET_STEPS, STEP, uiDeliveryCheck} from '../../scripts/accept/textedit.mjs';
+import {recordKeyUnread} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
 import {sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
 import {textEditGuard} from '../../scripts/hosted-sittings/textedit-guard.mjs';
@@ -18,44 +19,70 @@ const io = (bounds, {key = 'com.apple.TextEdit', moves = []} = {}) => ({screen: 
   frontmost: () => ({pid: 600, bundleId: 'com.apple.TextEdit'}), focus: () => ({focusedApp: {pid: 600, bundleId: key}, focusedWindow: null}),
   frameProbe: args => { moves.push(args); const f = args.at(-1).split(',').map(Number); return {readBack: rect(...f), matched: true, exitStatus: 0}; }});
 
+// One fixture key cell against a guard (fixtureKeyCell): the session's pause, the guard's one fresh reading, the front
+// check, the cell; `order` records them.
+async function keyCellWith(guard, {captures = false, observations = {}} = {}) {
+  const order = [], sent = [];
+  const session = {pauseWait: async () => { order.push('pause'); }, dispatch: async code => { order.push('dispatch'); sent.push(code); return {ok: true}; }};
+  const reading = {read: options => { order.push('guard'); return guard.read(options); }};
+  const out = await fixtureKeyCell({session, step: STEP.type, keys: ['typeText'], code: 'type', stepMs: 5, frontmost: () => { order.push('frontmost'); return 'com.apple.TextEdit'; },
+    guard: reading, captures, observations});
+  return {out, order, sent, observations};
+}
+const guardOn = (bounds, options) => textEditGuard({pids: () => [600], io: io(bounds, options)});
+const UNDER = rect(79, 31, 627, 677), CLEAR = rect(700, 31, 627, 677);
+
 // The key-cell premise A and C share (scripts/hosted-sittings/alert-guard.mjs keyCause): route 3's activation click
 // goes to the target's pid only, so a key cell is refused when the alert holds the key, and the key guard's own check
-// refuses it when TextEdit is not in front; an alert merely overlapping the document refuses no key cell.
-test('sitting D: the fixture\'s key cells follow the key-cell premise: refused only with the alert holding the key; a reading not taken refuses nothing of its own', () => {
-  const holding = textEditGuard({pids: () => [600], io: io(rect(700, 31, 627, 677), {key: UNC})});
-  assert.equal(alertGuardRefusal(holding).category, 'alert');
-  assert.match(alertGuardRefusal(holding).detail, /holds the key/);
-  assert.equal(alertGuardRefusal(textEditGuard({pids: () => [600], io: io(rect(79, 31, 627, 677))})), null, 'an overlapping alert alone is the pointer rule\'s, not a key cell\'s');
-  assert.equal(alertGuardRefusal(textEditGuard({pids: () => [600], io: io(rect(700, 31, 627, 677))})), null);
-  assert.equal(alertGuardRefusal({check: () => { throw new Error('pgrep failed'); }}), null, 'as A\'s keyGuard: the front check still stands before the cell');
+// refuses it when TextEdit is not in front; an alert merely overlapping the document refuses no key cell. A key reading
+// not taken refuses nothing either: the cell goes unguarded against the alert holding the key, and is counted.
+test('sitting D: the fixture\'s key cells follow the key-cell premise; a key reading not taken is counted, never hidden', async () => {
+  const holding = await keyCellWith(guardOn(CLEAR, {key: UNC}));
+  assert.equal(holding.out.refused.category, 'alert');
+  assert.match(holding.out.refused.detail, /holds the key/);
+  assert.equal((await keyCellWith(guardOn(UNDER))).out.sent, true, 'an overlapping alert alone is the pointer rule\'s, not a key cell\'s');
+  const unread = await keyCellWith({read: () => { throw new Error('pgrep failed'); }});
+  assert.equal(unread.out.sent, true);
+  assert.deepEqual(unread.observations.keyUnread, {[STEP.type]: 1});
+  const noFocus = await keyCellWith(guardOn(CLEAR, {key: null}));
+  assert.deepEqual([noFocus.out.sent, noFocus.observations.keyUnread], [true, {[STEP.type]: 1}]);
+  assert.equal((await keyCellWith(guardOn(CLEAR))).observations.keyUnread, undefined);
+});
+
+// The marker cell types and then captures TextEdit's window (markerCell's getScreenshot): it is held to the capture rule
+// as well, a window under an alert or an unread screen refusing the whole cell before it is sent.
+test('sitting D: the marker cell\'s capture under the shared capture rule: TextEdit\'s window under an alert, or unread, refuses the cell unsent', async () => {
+  const under = await keyCellWith(guardOn(UNDER), {captures: true});
+  assert.deepEqual([under.out.sent, under.out.refused.category], [false, 'alert']);
+  assert.match(under.out.refused.detail, /overlaps the textedit window 7/);
+  assert.deepEqual(under.sent, []);
+  assert.deepEqual(under.observations.alertGuardStop, {cause: 'alert', detail: under.out.refused.detail, at: STEP.type});
+  const unread = await keyCellWith({read: () => ({key: 'com.apple.TextEdit', bounds: null})}, {captures: true});
+  assert.equal(unread.out.refused.category, 'unread');
+  assert.equal((await keyCellWith(guardOn(CLEAR), {captures: true})).out.sent, true, 'a window clear of every alert is exempt');
 });
 
 // runTextEdit's key cell (scripts/accept/textedit.mjs fixtureKeyCell): the pause wait first, then the guard's fresh
 // reading, then the front check and the cell; a refusal sends nothing and is recorded as every sitting records it, and
 // it reaches accept-native's report (fixtureGuardRecord) and the hosted check as NO VERDICT.
 test('sitting D: a refused key cell sends nothing, reads the guard after the pause, and its record reaches the hosted check as NO VERDICT', async () => {
-  const order = [], sent = [];
-  const session = {pauseWait: async () => { order.push('pause'); }, dispatch: async code => { order.push('dispatch'); sent.push(code); return {ok: true}; }};
-  const holding = {check: () => { order.push('guard'); return {category: 'alert', detail: 'com.apple.UserNotificationCenter holds the key'}; }};
-  const observations = {};
-  const out = await fixtureKeyCell({session, step: STEP.type, keys: ['typeText'], code: 'type', stepMs: 5, frontmost: () => { order.push('frontmost'); return 'com.apple.TextEdit'; }, guard: holding, observations});
+  const {out, order, sent, observations} = await keyCellWith(guardOn(CLEAR, {key: UNC}));
   assert.deepEqual(order, ['pause', 'guard'], 'the guard is read after the pause, and nothing is checked or sent after a refusal');
   assert.deepEqual(sent, []);
   assert.equal(out.sent, false);
-  assert.equal(out.refused.category, 'alert');
   assert.deepEqual(out.mark.alertGuard, {cause: 'alert', detail: 'com.apple.UserNotificationCenter holds the key'});
   assert.deepEqual(observations.alertGuardStop, {cause: 'alert', detail: 'com.apple.UserNotificationCenter holds the key', at: STEP.type});
   assert.deepEqual(observations.alertGuardCounts, {[STEP.type]: {alert: 1, unread: 0}});
+  recordKeyUnread(observations, STEP.closeDoc);
   const kept = fixtureGuardRecord(observations);
-  assert.deepEqual(kept, {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts});
-  assert.deepEqual(fixtureGuardRecord({}), {}, 'no refusal: nothing in the report');
+  assert.deepEqual(kept, {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts, keyUnread: {[STEP.closeDoc]: 1}});
+  assert.deepEqual(fixtureGuardRecord({}), {}, 'nothing refused or unread: nothing in the report');
+  assert.deepEqual(fixtureGuardRecord({keyUnread: {a: 1}}), {keyUnread: {a: 1}});
   assert.equal(CHECKS.acceptance({record: '/o/a.json'}, {exit: 1, readJson: () => ({...refusedReport(), alertGuardStop: undefined, ...kept})})[0], 'NO VERDICT');
-
   // Clear: the pause, the guard, the front check, then the cell.
-  order.length = 0;
-  const clear = await fixtureKeyCell({session, step: STEP.type, keys: ['typeText'], code: 'type', stepMs: 5, frontmost: () => { order.push('frontmost'); return 'com.apple.TextEdit'; }, guard: {check: () => { order.push('guard'); return null; }}, observations: {}});
-  assert.deepEqual(order, ['pause', 'guard', 'frontmost', 'dispatch']);
-  assert.deepEqual(clear, {sent: true, result: {ok: true}});
+  const clear = await keyCellWith(guardOn(CLEAR));
+  assert.deepEqual(clear.order, ['pause', 'guard', 'frontmost', 'dispatch']);
+  assert.deepEqual(clear.out, {sent: true, result: {ok: true}});
 });
 
 test('sitting D: the document placed clear of the alerts by its pid, from, to and the read-back recorded', async () => {
@@ -110,6 +137,18 @@ test('sitting D\'s hosted check: a real failure in items 6 or 8 beside the fixtu
   // another cause than the guard's: not the refusal's to excuse.
   assert.equal(CHECKS.acceptance(step, {exit: 1, readJson: () => refusedReport({six: [checkOf('opt-in --live-secrets', 'BLOCKED')]})})[0], 'FAIL');
   assert.equal(CHECKS.acceptance(step, {exit: 1, readJson: () => refusedReport({six: [checkOf('subprocess output complete', 'FAIL')]})})[0], 'FAIL');
+  // A fixture check that FAILed ran and failed: a step the refusal left unrun reads BLOCKED (the refused step, an
+  // inventory check of a step never run, an approvals observation not made), never FAIL. The typed text not the marker
+  // (STEP.type FAIL, the fixture going on) beside a refusal at connection B's secret key cell is a failure, named.
+  const typeFailed = refusedReport();
+  typeFailed.alertGuardStop = {...STOP, at: STEP.secretType};
+  const own = typeFailed.items.find(item => item.id === 5);
+  own.checks = [checkOf(FIXTURE_VERDICT_CHECK, 'FAIL'), ...OWN_STEPS.map(step => checkOf(step, step === STEP.type ? 'FAIL' : 'PASS'))];
+  typeFailed.items.find(item => item.id === 6).checks.find(c => c.name === uiDeliveryCheck(STEP.secretType)).status = 'BLOCKED';
+  const [typed, why] = CHECKS.acceptance(step, {exit: 1, readJson: () => typeFailed});
+  assert.equal(typed, 'FAIL');
+  assert.match(why, new RegExp(`item 5: ${STEP.type} FAIL`));
+  assert.match(why, /the alert guard also refused secret: type the reference/);
   // An item of the three with no checks to read is not excused either.
   assert.equal(CHECKS.acceptance(step, {exit: 1, readJson: () => ({...refusedReport(), items: [{id: 6, status: 'BLOCKED'}]})})[0], 'FAIL');
 });

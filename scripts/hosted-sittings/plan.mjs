@@ -53,7 +53,11 @@ function sittingA(ctx) {
       ...(steps.length ? {needs: [steps.at(-1).id]} : {}),
       argv: ['node', 'scripts/native-baseline.mjs', 'run', '--device', DEVICE, '--experiment', exp, '--host', host, '--engine', engine, ...approvedArgs(ctx), '--out', `${ctx.out}/${lane}/run-${i}`]});
   }
-  const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true,
+  // Each comparison needs every run of both its lanes: after a stop it is SKIP, the sitting staying the stop's NO VERDICT
+  // (the compare itself also prints NO VERDICT for a lane with no complete run, ../native-baseline.mjs compareDirs).
+  const lanesRuns = (...lanes) => steps.filter(s => lanes.some(lane => s.id.startsWith(`${lane}-`))).map(s => s.id)
+    .sort((a, b) => lanes.indexOf(a.split('-')[0]) - lanes.indexOf(b.split('-')[0]) || a.localeCompare(b));
+  const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true, needs: lanesRuns(left, right),
     argv: ['node', 'scripts/native-baseline.mjs', 'compare', mode, `${ctx.out}/${left}`, `${ctx.out}/${right}`, '--out', `${ctx.out}/comparison-${id.slice(-1)}.md`]});
   return [...steps, compare('compare-A', '--engines', 'vv', 'vc'), compare('compare-B', '--hosts', 'vc', 'cc'), compare('compare-C', '--end-to-end', 'vv', 'cc')];
 }

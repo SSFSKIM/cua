@@ -3,7 +3,7 @@
 // and the pilot's readings of what part 1 left unread on a runner. Results are built in memory; nothing runs.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {cellCounts, renderCounts} from '../../scripts/hosted-sittings/counts.mjs';
+import {cellCounts, guardTally, renderCounts, renderGuardTally} from '../../scripts/hosted-sittings/counts.mjs';
 import {pilotReads, renderPilotReads} from '../../scripts/hosted-sittings/pilot-reads.mjs';
 import {timeFocusProbe} from '../../scripts/hosted-sittings/focus-timing.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
@@ -31,14 +31,14 @@ test('per cell: the runs every sample of which has a verdict, and each run\'s ve
   const counts = cellCounts([{path: 'c/vendor/run-1/result.json', result: {cell: 'matrix', meta: {planId: 'full'}, rows: []}}, saveSheet], {judgeFull: () => JUDGMENT});
   assert.deepEqual(counts, [
     {cell: 'method textedit/frontmost/click.control', source: 'matrix', pairs: 0, qualifies: false,
-      vendor: {complete: 1, runs: 1, byRun: {1: {verdicts: 10, samples: 10}}, alert: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 7, samples: 10}}, alert: 0}},
+      vendor: {complete: 1, runs: 1, byRun: {1: {verdicts: 10, samples: 10}}, alert: 0, keyUnread: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 7, samples: 10}}, alert: 0, keyUnread: 0}},
     {cell: 'intervention textedit/intervention.saveSheet', source: 'intervention-save-sheet', pairs: null, qualifies: null,
-      vendor: {complete: 0, runs: 0, byRun: {}, alert: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 1, samples: 2}}, alert: 0}},
+      vendor: {complete: 0, runs: 0, byRun: {}, alert: 0, keyUnread: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 1, samples: 2}}, alert: 0, keyUnread: 0}},
   ], 'a cell with no sample on either side is left out');
   const text = renderCounts(counts);
-  assert.match(text, /^\| cell \| source \| vendor: complete runs \| vendor: verdicts by run \| vendor: NO VERDICT alert \| cua: complete runs \| cua: verdicts by run \| cua: NO VERDICT alert \| complete pairs \|$/m);
-  assert.match(text, /^\| method textedit\/frontmost\/click\.control \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 of 1 \| 1: 7\/10 \| 0 \| 0 \|$/m);
-  assert.match(text, /^\| intervention textedit\/intervention\.saveSheet \| intervention-save-sheet \| 0 of 0 \| - \| 0 \| 0 of 1 \| 1: 1\/2 \| 0 \| - \|$/m);
+  assert.match(text, /^\| cell \| source \| vendor: complete runs \| vendor: verdicts by run \| vendor: NO VERDICT alert \| vendor: key unread \| cua: complete runs \| cua: verdicts by run \| cua: NO VERDICT alert \| cua: key unread \| complete pairs \|$/m);
+  assert.match(text, /^\| method textedit\/frontmost\/click\.control \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 \| 0 of 1 \| 1: 7\/10 \| 0 \| 0 \| 0 \|$/m);
+  assert.match(text, /^\| intervention textedit\/intervention\.saveSheet \| intervention-save-sheet \| 0 of 0 \| - \| 0 \| 0 \| 0 of 1 \| 1: 1\/2 \| 0 \| 0 \| - \|$/m);
   assert.match(renderCounts([]), /No matrix cell result/);
 });
 
@@ -50,7 +50,47 @@ test('ruling 1154: per cell and per side, the samples NO VERDICT alert, the aler
       alertGuard: {cause: 'alert', detail: 'com.apple.UserNotificationCenter holds the key'}}]}};
   const counts = cellCounts([{path: 'c/vendor/run-1/result.json', result: {cell: 'matrix', meta: {planId: 'full'}, rows: []}}, guarded], {judgeFull: () => judged});
   assert.deepEqual(counts.map(c => [c.cell, c.vendor.alert, c.cua.alert]), [['method electron/frontmost/click.point', 1, 2], ['intervention textedit/intervention.saveSheet', 1, 0]]);
-  assert.match(renderCounts(counts), /^\| method electron\/frontmost\/click\.point \| matrix \| 0 of 1 \| 1: 9\/10 \| 1 \| 0 of 1 \| 1: 7\/10 \| 2 \| 0 \|$/m);
+  assert.match(renderCounts(counts), /^\| method electron\/frontmost\/click\.point \| matrix \| 0 of 1 \| 1: 9\/10 \| 1 \| 0 \| 0 of 1 \| 1: 7\/10 \| 2 \| 0 \| 0 \|$/m);
+});
+
+// The key-cell premise: a key cell whose key reading was not taken is sent unguarded against the alert holding the key.
+// Each result counts them under the span's key (meta.keyUnread); a row's `row:<index>` is that row's cell.
+test('per cell and per side, the key cells sent with their key reading not taken, beside NO VERDICT alert; a harness key cell on its own line', () => {
+  const full = side => ({path: `c/${side}/run-1/result.json`, result: {cell: 'matrix', lanes: [{host: side, engine: side}], meta: {planId: 'full', keyUnread: {'row:1': 2, 'row:1:2': 1, 'close-panel:escape': 1}},
+    rows: [{section: 'method', id: 'textedit/frontmost/click.control', engine: side}, {section: 'method', id: 'textedit/frontmost/typeText.replace', engine: side}]}});
+  const judged = {cells: [{section: 'method', id: 'textedit/frontmost/typeText.replace', verdict: 'equal', qualifies: false,
+    account: account({vendor: {1: {verdicts: 10, samples: 10}}, cua: {1: {verdicts: 10, samples: 10}}})}]};
+  const counts = cellCounts([full('vendor'), full('cua')], {judgeFull: () => judged});
+  assert.deepEqual(counts.map(c => [c.cell, c.source, c.vendor.keyUnread, c.cua.keyUnread]), [
+    ['method textedit/frontmost/typeText.replace', 'matrix', 3, 3],
+    ['harness close-panel:escape', 'matrix', 1, 1],
+  ]);
+  const text = renderCounts(counts);
+  assert.match(text, /^\| method textedit\/frontmost\/typeText\.replace \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 3 \| 1 of 1 \| 1: 10\/10 \| 0 \| 3 \| 0 \|$/m);
+  assert.match(text, /key unread/);
+});
+
+// Every sitting's records, whatever their producer (A's meta.json, the matrix's result.json meta, D's acceptance.json):
+// per step and cell, the refusals NO VERDICT `alert` and `unread`, and the key cells sent with their key reading not
+// taken, so sitting.md shows how many key cells went unchecked on each side.
+test('the guard tally per step and cell: refusals by cause beside the key cells sent unread, from every record shape', () => {
+  const tally = guardTally([
+    {step: 'vv-1', record: {alertGuardCounts: {'task.act': {alert: 1, unread: 0}}, keyUnread: {'task.act': 2, quit: 1}}},
+    {step: 'matrix-cua-1', record: {meta: {keyUnread: {'row:3': 1}}}},
+    {step: 'accept-native', record: {alertGuardCounts: {'connection A: type and observe the marker': {alert: 0, unread: 1}}}},
+    {step: 'vc-1', record: {complete: true}},
+    {step: 'cc-1', record: null},
+  ]);
+  assert.deepEqual(tally, [
+    {step: 'vv-1', cell: 'task.act', alert: 1, unread: 0, keyUnread: 2},
+    {step: 'vv-1', cell: 'quit', alert: 0, unread: 0, keyUnread: 1},
+    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyUnread: 1},
+    {step: 'accept-native', cell: 'connection A: type and observe the marker', alert: 0, unread: 1, keyUnread: 0},
+  ]);
+  const text = renderGuardTally(tally);
+  assert.match(text, /^\| step \| cell \| NO VERDICT alert \| NO VERDICT unread \| key unread \|$/m);
+  assert.match(text, /^\| vv-1 \| task\.act \| 1 \| 0 \| 2 \|$/m);
+  assert.match(renderGuardTally([]), /No refusal and no key cell sent unread/);
 });
 
 test('without any full run the judge is not asked', () => {

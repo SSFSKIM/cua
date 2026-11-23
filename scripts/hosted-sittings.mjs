@@ -36,7 +36,7 @@ import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
 import {readResults} from './native-matrix/summary.mjs';
 import {hostedApprove} from './hosted-sittings/approve.mjs';
-import {cellCounts, renderCounts} from './hosted-sittings/counts.mjs';
+import {cellCounts, guardTally, renderCounts, renderGuardTally} from './hosted-sittings/counts.mjs';
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
@@ -94,6 +94,11 @@ async function runCommand(sitting, values) {
       parts.push(reads);
     }
   }
+  // The alert guard's tally (rulings 1154, 1160, 1164): per step and cell, its refusals and the key cells sent with
+  // their key reading not taken, from every record the plan names.
+  const readRecord = path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } };
+  const records = plan.steps.flatMap(step => [step.record, ...(step.records ?? [])].filter(Boolean).map(path => ({step: step.id, record: readRecord(path)})));
+  parts.push('## The alert guard', '', renderGuardTally(guardTally(records)));
   // The cleanup's record (rulings 1160, 1164): the alert windows (number, layer, bounds) and the display's mode as they
   // stand once every step ran, so the alerts' survival and the mode's hold through the sitting are shown.
   const screenAtEnd = readScreenAtEnd();

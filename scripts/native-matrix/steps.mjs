@@ -5,7 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
-import {guardCause, PANEL_SERVICE, sceneOfCell, sendsPointer} from './alert-guard.mjs';
+import {guardCause, PANEL_SERVICE, recordKeyUnread, sceneOfCell, sendsPointer} from './alert-guard.mjs';
 import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
@@ -150,6 +150,9 @@ export function guardLane(ctx, lane) {
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
   const seenKey = keyReading(front?.frontKey ? front : read(ctx, null, {frontKey: true}));
   if (seenKey.key === CAPTURE_ALERT_PROCESS && seenKey.front !== CAPTURE_ALERT_PROCESS) refuse(ctx, guardCause(null, {key: seenKey.key}), seenKey);
+  // The key not read: the cell goes unguarded against the alert holding the key (the key-cell premise), counted under its
+  // span's key (meta.keyUnread; a row's `row:<index>`, which the hosted counts map to the row's cell).
+  if (seenKey.key === null) recordKeyUnread(ctx.meta, key);
   const target = guardOf(scene, ctx.records[scene]);
   const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
     send: () => js(ctx, kind, key, code, {apps: [SCENES[scene].bundleId]}),

@@ -35,7 +35,7 @@
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {guardReading} from '../hosted-sittings/alert-guard.mjs';
 
-export {ALERT_MARGIN, clearFrame, contains, guardCause, isAlertWindow, isPanelWindow, MENU_BAR, overlaps, PANEL_SERVICE} from '../hosted-sittings/alert-guard.mjs';
+export {ALERT_MARGIN, clearFrame, contains, guardCause, isAlertWindow, isPanelWindow, MENU_BAR, overlaps, PANEL_SERVICE, recordKeyUnread} from '../hosted-sittings/alert-guard.mjs';
 
 // The scene a cell's code is bound to: the one its prelude takes `__app` from (./matrix-cells.mjs sceneHead), or null.
 export const sceneOfCell = code => /const __app = globalThis\.__apps\?\.\["([a-z]+)"\];/.exec(String(code ?? ''))?.[1] ?? null;

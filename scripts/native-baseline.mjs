@@ -466,7 +466,26 @@ export function summary(dir) {
 // failure (`UNDETERMINED AFTER TOP-UP ...`), or unproved under a declared gap (`UNPROVED ...`, not a pass). `declared`
 // replaces compare.mjs DECLARED_ENGINE_GAPS, for tests; the command line takes no declaration. -> 0 only on a PASS
 // verdict: an unproved series is reported from the comparison's list, never from this status.
+// A lane with no complete run to compare: none at all (a hosted sitting skips the runs after one the alert guard stopped,
+// scripts/hosted-sittings/plan.mjs), a run directory not whole, or only incomplete runs. -> why, or null when it has one.
+function noCompleteRun(dir) {
+  let runs;
+  try { runs = readRuns(dir); } catch (error) { return error.message; }
+  return runs.some(run => run.meta?.complete === true) ? null : `no complete run among ${runs.length} (${runs.map(run => run.name).join(', ')})`;
+}
+
 export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, lanes, topUp, declared} = {}) {
+  // Missing proof, never a failure: the comparison has nothing to judge on such a lane, and says which.
+  const missing = Object.entries({baseline: baselineDir, candidate: candidateDir, ...(topUp ? {'top-up baseline': topUp.baseline, 'top-up candidate': topUp.candidate} : {})})
+    .map(([side, dir]) => [side, dir, noCompleteRun(resolve(dir))]).filter(([, , why]) => why);
+  if (missing.length) {
+    const lines = missing.map(([side, dir, why]) => `the ${side} lane (${resolve(dir)}) has no complete run to compare: ${why}`);
+    const text = `# Comparison not made\n\n${lines.map(line => `- ${line}`).join('\n')}\n\nVERDICT: NO VERDICT\n`;
+    if (out) writeFileSync(resolve(out), text); else process.stdout.write(text);
+    for (const line of lines) console.error(`problem: ${line}`);
+    console.error('VERDICT: NO VERDICT');
+    return 1;
+  }
   const [baseline, candidate] = [baselineDir, candidateDir].map(dir => readRuns(resolve(dir)));
   const extra = topUp && {baseline: readRuns(resolve(topUp.baseline)), candidate: readRuns(resolve(topUp.candidate))};
   const options = {...(extra ? {topUp: extra} : {}), ...(declared ? {declared} : {})};

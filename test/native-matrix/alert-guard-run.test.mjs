@@ -116,6 +116,24 @@ test('a key cell is refused when the alert holds the key, its keys never sent', 
   assert.ok(!sent(calls, typed.act));
 });
 
+// The key-cell premise leaves a key cell unguarded against the alert holding the key when its key reading was not
+// taken; it is sent, and counted under its span's key (meta.keyUnread: `row:<index>` for a row's, which the hosted counts
+// map to the row's cell).
+test('a key cell whose key reading was not taken is sent and counted per cell, never refused or hidden', async () => {
+  const calls = [];
+  const typed = caseOf('electron', 'typeText', 'replace');
+  const {result} = await runWith({plan: planOf('method', {scene: 'electron'}), calls, ops: {matrix: (base, a) => {
+    const out = base(a);
+    return a[0] === 'read' && withList(a).includes('front-key') && !isGuardRead(a) ? {...out, frontKey: {...out.frontKey, key: null}} : out;
+  }}});
+  assert.ok(sent(calls, typed.act), 'the key cell was sent');
+  const counted = Object.entries(result.meta.keyUnread ?? {});
+  assert.ok(counted.length > 0);
+  const index = result.rows.findIndex(r => r.section === 'method' && r.id === 'electron/frontmost/typeText.replace');
+  assert.ok(counted.some(([key]) => key === `row:${index}`), JSON.stringify(counted));
+  assert.equal(result.meta.alertGuardStop, undefined);
+});
+
 test('a screenshot of a window under an alert is NO VERDICT alert, unsent (the vendor may crop a display capture); one clear of it is exempt', async () => {
   const shots = result => result.rows.filter(r => r.section === 'speed' && r.id === 'electron/getScreenshot');
   const over = await runWith({plan: planOf('speed', {scene: 'electron'}), ops: alertsBy(() => [OVER])});

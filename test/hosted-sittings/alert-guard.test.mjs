@@ -3,7 +3,7 @@
 // replayd's alerts. The matrix's own tests (test/native-matrix/alert-guard.test.mjs) cover the rules it shares.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, overlaps, PANEL_SERVICE, placeWindows, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
+import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, overlaps, PANEL_SERVICE, placeWindows, recordKeyUnread, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import * as matrixGuard from '../../scripts/native-matrix/alert-guard.mjs';
 
 const UNC = 'com.apple.UserNotificationCenter';
@@ -107,4 +107,13 @@ test('a refusal recorded once, alike in every sitting: the per-cell entry, the c
   assert.deepEqual(record.alertGuards, [{cell: 'task.close', sample: 2, cause: 'alert', detail: 'd1'}, {cell: 'quit', cause: 'unread', detail: 'd2'}]);
   assert.deepEqual(record.alertGuardCounts, {'task.close': {alert: 1, unread: 0}, quit: {alert: 0, unread: 1}});
   assert.deepEqual(record.alertGuardStop, {cause: 'alert', detail: 'd1', at: 'task.close'}, 'the first refusal is the stop');
+});
+
+test('a key cell sent with its key reading not taken is counted per cell beside the refusals: unguarded, never hidden', () => {
+  const record = {};
+  recordKeyUnread(record, 'task.act');
+  recordKeyUnread(record, 'task.act');
+  recordKeyUnread(record, 'quit');
+  assert.deepEqual(record.keyUnread, {'task.act': 2, quit: 1});
+  assert.equal(record.alertGuardStop, undefined, 'no refusal: the cell was sent');
 });

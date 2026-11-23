@@ -160,10 +160,12 @@ export const CHECKS = Object.freeze({
     if (exit === 0) return ['PASS', null];
     const report = readJson(step.record), stop = report?.alertGuardStop;
     if (!stop) return ['FAIL', null];
-    // Check by check: in the fixture's items only the checks the fixture itself produces may go unproven by its stop;
-    // anything else not passed (a secrets CLI check, a lifecycle observation, another item) is a failure of its own.
+    // Check by check: in the fixture's items only the checks the fixture itself produces may go unproven by its stop, and
+    // only as BLOCKED: every way a fixture check is left unrun reads BLOCKED (the refused step, an inventory check of a
+    // step never run, an approvals observation not made), so a FAIL is a step that ran and failed. Anything else not
+    // passed (a fixture check that failed, a secrets CLI check, a lifecycle observation, another item) is a failure.
     const failures = (report.items ?? []).flatMap(item => (FIXTURE_ITEMS.includes(item.id) && Array.isArray(item.checks)
-      ? item.checks.filter(c => !SOUND.has(c.status) && !isFixtureCheck(item.id, c.name)).map(c => `item ${item.id}: ${c.name} ${c.status}`)
+      ? item.checks.filter(c => !SOUND.has(c.status) && !(c.status === 'BLOCKED' && isFixtureCheck(item.id, c.name))).map(c => `item ${item.id}: ${c.name} ${c.status}`)
       : SOUND.has(item.status) ? [] : [`item ${item.id} ${item.status}`]));
     if (failures.length) return ['FAIL', `${failures.join('; ')}; the alert guard also refused ${stop.at}`];
     return ['NO VERDICT', `${stop.cause}: the alert guard refused ${stop.at} in the TextEdit fixture (${stop.detail}); the fixture's checks in items ${FIXTURE_ITEMS.join(', ')} unproven`];

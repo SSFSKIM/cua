@@ -157,6 +157,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
       sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), nativeEngine: planned.nativeEngine,
       // The engine every launch of this connection drives, for the js rules (src/mcp/surface.mjs jsRulesFor).
       engine: replHost.engine?.engine ?? null,
+      // The REPL host every launch runs, which decides whether approval answers carry their provenance (#216).
+      replHost: replHost.host,
       cursorContext: cursorContext ? () => cursorContext : null,
       ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {

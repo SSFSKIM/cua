@@ -35,9 +35,9 @@
 //   (./approval-memory.mjs): a computer-use app approval the client accepted (with `_meta.persist`) or declined, in an
 //   answer the runtime takes, is answered here on its repeats, across idle stops and worker replacements, and never
 //   reaches the client again; an answer that arrives after its runtime stopped is remembered for its app and not
-//   forwarded. Every computer-use answer the runtime gets says, in `_meta["cua/approval"]`, which connection and
-//   runtime generation it went to and whether this memory or the client answered; a client cannot claim the memory's
-//   mark (#216).
+//   forwarded. On cua's own REPL host (`replHost` 'cua') every computer-use answer the runtime gets says, in
+//   `_meta["cua/approval"]`, which connection and runtime generation it went to and whether this memory or the client
+//   answered, and a client cannot claim the memory's mark (#216); the vendor host gets its answers unchanged.
 // - tools/list passes the runtime's tools through surface.mjs modelTools, which puts cua's rules ahead of the js
 //   description; on Linux their text rule follows `engine` ('vendor' | 'cua', the native engine the connection
 //   selected at its open; null without the computer surface, which keeps the vendor engine's rule).
@@ -104,7 +104,7 @@ export function createServer({
   hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null, feedbackDir}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
-  cursorContext = null, engine = null,
+  cursorContext = null, engine = null, replHost = null,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -122,7 +122,9 @@ export function createServer({
   const elicitations = new Map();
   let elicitationCount = 0;
   let generation = 0;                  // the running runtime's: an idle stop starts the next
-  const approvals = approvalMemory({connection: approvalConnectionId(sessionId)});  // the connection's computer-use app approvals (./approval-memory.mjs)
+  // The connection's computer-use app approvals (./approval-memory.mjs), stamped with their provenance only for cua's own
+  // REPL host (`replHost`, 'cua' | 'vendor'): the vendor's node_repl gets its answers as before #216.
+  const approvals = approvalMemory({connection: approvalConnectionId(sessionId), stamped: replHost === 'cua'});
   const localReplies = new Set();      // local tool replies still being computed (profiles_list may take a launch)
 
   // The client transport. Losing it closes the connection like EOF; callers are still settled internally, just not

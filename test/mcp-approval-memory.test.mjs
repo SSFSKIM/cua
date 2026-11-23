@@ -13,13 +13,13 @@ test('a connection\'s accept or decline of a computer-use app answers its repeat
   const textEdit = approval('com.apple.TextEdit');
   assert.equal(memory.recall(textEdit), null, 'nothing is known before the client answered');
   memory.record(textEdit, {result: {action: 'accept', content: {}, _meta: {persist: 'session'}}});
-  const remembered = {action: 'accept', content: {source: PERSISTED_STATE_SOURCE}, _meta: {'cua/approval': {connection: null, runtimeGeneration: 0, scope: 'connection', answeredBy: 'memory'}}};
+  const remembered = {action: 'accept', content: {source: PERSISTED_STATE_SOURCE}};
   assert.deepEqual(memory.recall(textEdit), remembered);
   assert.deepEqual(memory.recall(approval('com.apple.TextEdit', {tool_name: 'click', riskLevel: 'high'})), remembered, 'keyed by the app alone, whatever the tool');
   assert.equal(memory.recall(approval('com.apple.finder')), null, 'another app asks');
 
   memory.record(approval('com.apple.finder'), {result: {action: 'decline'}});
-  assert.deepEqual(memory.recall(approval('com.apple.finder')), {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}, _meta: remembered._meta});
+  assert.deepEqual(memory.recall(approval('com.apple.finder')), {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}});
 
   // Only a reply the runtime takes (src/repl-host/elicitation.mjs elicitationOutcome) is an answer.
   const persisted = {_meta: {persist: 'session'}};
@@ -56,7 +56,7 @@ test('#216: a client reply reaches the runtime with the connection\'s provenance
   const connection = approvalConnectionId('s1');
   assert.match(connection, /^[0-9a-f]{12}$/);
   assert.notEqual(connection, approvalConnectionId('s2'));
-  const memory = approvalMemory({connection});
+  const memory = approvalMemory({connection, stamped: true});
   const stamp = (answeredBy, runtimeGeneration) => ({'cua/approval': {connection, runtimeGeneration, scope: 'connection', answeredBy}});
   const textEdit = approval('com.apple.TextEdit');
   assert.deepEqual(memory.fromClient(textEdit, {jsonrpc: '2.0', id: 'x', result: {action: 'decline', content: {source: PERSISTED_STATE_SOURCE, note: 'kept'}}}, 2),
@@ -76,4 +76,21 @@ test('#216: a client reply reaches the runtime with the connection\'s provenance
 
   memory.record(textEdit, {result: {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}}});
   assert.deepEqual(memory.recall(textEdit, 3), {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}, _meta: stamp('memory', 3)}, 'the memory\'s own answer names the generation it went to');
+});
+
+test('#216: for the vendor\'s node_repl nothing is stamped or stripped: its answers are exactly as before', () => {
+  const memory = approvalMemory({connection: approvalConnectionId('s1')});
+  const textEdit = approval('com.apple.TextEdit');
+  for (const reply of [
+    {jsonrpc: '2.0', id: 'cua-elicitation-1', result: {action: 'decline', content: {source: PERSISTED_STATE_SOURCE}}},
+    {jsonrpc: '2.0', id: 'cua-elicitation-2', result: {action: 'accept', content: {}, _meta: {persist: 'session'}}},
+    {jsonrpc: '2.0', id: 'cua-elicitation-3', result: {action: 'cancel'}},
+  ]) {
+    const text = JSON.stringify(reply);
+    const out = memory.fromClient(textEdit, reply, 4);
+    assert.equal(out, reply, 'the very reply');
+    assert.equal(JSON.stringify(out), text, 'byte for byte');
+  }
+  memory.record(textEdit, {result: {action: 'accept', content: {}, _meta: {persist: 'session'}}});
+  assert.equal(JSON.stringify(memory.recall(textEdit, 4)), JSON.stringify({action: 'accept', content: {source: PERSISTED_STATE_SOURCE}}), 'a remembered answer in its pre-#216 shape');
 });

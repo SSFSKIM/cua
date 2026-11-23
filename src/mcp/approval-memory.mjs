@@ -23,7 +23,9 @@
 // opaque id (a hash of its session id), the runtime generation it went to (an idle stop starts the next), the scope
 // ("connection") and who answered ("memory" or "client"). Nothing else changes: which replies the runtime takes and
 // which are remembered are decided before the stamp, and a reply whose content or `_meta` is malformed is passed on
-// unchanged, so it still fails.
+// unchanged, so it still fails. Only cua's own REPL host gets the stamp (`stamped`): the vendor's node_repl, unmodified,
+// gets every answer exactly as before #216 (a client's reply as sent, a remembered one as {action, content: {source}}),
+// and the policy then reads the mark (src/services/engine/policy.mjs).
 import {createHash} from 'node:crypto';
 import {elicitationOutcome} from '../repl-host/elicitation.mjs';
 
@@ -45,17 +47,19 @@ export const APPROVAL_META = 'cua/approval';
 // The connection's opaque id in `cua/approval`: not its session id, which the runtime's turn metadata carries.
 export const approvalConnectionId = sessionId => createHash('sha256').update(`cua-approval:${sessionId}`).digest('hex').slice(0, 12);
 
-// One connection's memory (`connection`: its approvalConnectionId): recall(params, generation) -> the MCP result to
+// One connection's memory (`connection`: its approvalConnectionId; `stamped`: the runtime is cua's own host, whose
+// answers carry the connection's provenance): recall(params, generation) -> the MCP result to
 // answer a remembered app with, or null to ask the client; record(params, reply) takes the client's JSON-RPC reply
 // ({result} or {error}) as it goes on to the runtime; fromClient(params, reply, generation) -> that reply as the runtime
 // gets it, with the connection's provenance.
-export function approvalMemory({connection = null} = {}) {
+export function approvalMemory({connection = null, stamped = false} = {}) {
   const answers = new Map();   // app -> 'accept' | 'decline'
   const stamp = (generation, answeredBy) => ({connection, runtimeGeneration: generation, scope: 'connection', answeredBy});
   return {
     recall(params, generation = 0) {
       const action = answers.get(approvalKey(params));
-      return action ? {action, content: {source: PERSISTED_STATE_SOURCE}, _meta: {[APPROVAL_META]: stamp(generation, 'memory')}} : null;
+      if (!action) return null;
+      return {action, content: {source: PERSISTED_STATE_SOURCE}, ...(stamped ? {_meta: {[APPROVAL_META]: stamp(generation, 'memory')}} : {})};
     },
     record(params, reply) {
       const app = approvalKey(params);
@@ -65,7 +69,7 @@ export function approvalMemory({connection = null} = {}) {
       else if (outcome.action === 'accept' && REMEMBERED_PERSIST.includes(outcome._meta?.persist)) answers.set(app, 'accept');
     },
     fromClient(params, reply, generation = 0) {
-      if (approvalKey(params) === null || reply?.error !== undefined || !isPlainObject(reply?.result)) return reply;
+      if (!stamped || approvalKey(params) === null || reply?.error !== undefined || !isPlainObject(reply?.result)) return reply;
       const result = {...reply.result};
       if (isPlainObject(result.content) && result.content.source === PERSISTED_STATE_SOURCE) {
         const {source, ...rest} = result.content;

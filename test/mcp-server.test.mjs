@@ -7,7 +7,6 @@ import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {SecretStoreError, connectionSecrets} from '../src/secrets/store.mjs';
-import {approvalConnectionId} from '../src/mcp/approval-memory.mjs';
 
 const PNG_AS_JPEG = '/9j/4AAQSkZJRgABAQAAAQABAAD';
 
@@ -231,9 +230,7 @@ const approvalRequest = (id, app, {connector = 'computer-use'} = {}) => ({jsonrp
   _meta: {codex_approval_kind: 'mcp_tool_call', connector_id: connector, persist: ['session'], tool_name: 'click', tool_params: {app}}}});
 const upstreamAnswer = (h, id) => h.upstream.next(m => m.id === id && m.method === undefined, {label: `the answer to ${id}`});
 const clientAsked = h => h.client.frames.filter(m => m.method === 'elicitation/create').map(m => m.params._meta?.tool_params?.app ?? null);
-// What the connection says of each computer-use answer it passes on (#216): its id, the runtime generation, who answered.
-const STAMP = (answeredBy, runtimeGeneration = 0) => ({'cua/approval': {connection: approvalConnectionId('session-under-test'), runtimeGeneration, scope: 'connection', answeredBy}});
-const REMEMBERED = action => ({action, content: {source: 'computer-use-persisted-state'}, _meta: STAMP('memory')});
+const REMEMBERED = action => ({action, content: {source: 'computer-use-persisted-state'}});
 // Emits the runtime's request `msg` and resolves the frame the client got for it (under the connection's own id).
 const relayed = (h, msg, label = `the client's copy of ${msg.id}`) => {
   const after = h.client.frames.length;
@@ -246,13 +243,13 @@ test('an app the client accepted or declined is answered from the connection\'s 
   await initialized(h);
   const first = await relayed(h, approvalRequest(1, 'com.apple.TextEdit'));
   h.client.send({jsonrpc: '2.0', id: first.id, result: {action: 'accept', content: {}}});
-  assert.deepEqual((await upstreamAnswer(h, 1)).result, {action: 'accept', content: {}, _meta: {persist: 'session', ...STAMP('client')}}, 'the first answer is the client\'s');
+  assert.deepEqual((await upstreamAnswer(h, 1)).result, {action: 'accept', content: {}, _meta: {persist: 'session'}}, 'the first answer is the client\'s');
   h.upstream.emit(approvalRequest(2, 'com.apple.TextEdit'));
   assert.deepEqual((await upstreamAnswer(h, 2)).result, REMEMBERED('accept'));
 
   const third = await relayed(h, approvalRequest(3, 'com.apple.finder'));
   h.client.send({jsonrpc: '2.0', id: third.id, result: {action: 'decline'}});
-  assert.deepEqual((await upstreamAnswer(h, 3)).result, {action: 'decline', _meta: STAMP('client')});
+  assert.deepEqual((await upstreamAnswer(h, 3)).result, {action: 'decline'});
   h.upstream.emit(approvalRequest(4, 'com.apple.finder'));
   assert.deepEqual((await upstreamAnswer(h, 4)).result, REMEMBERED('decline'), 'a model retrying a declined app is not re-prompted');
   assert.deepEqual(clientAsked(h), ['com.apple.TextEdit', 'com.apple.finder'], 'the client was asked once per app');
@@ -321,7 +318,7 @@ test('a cancel, an error reply, a malformed answer, an accept without persistenc
   for (const n of [1, 2]) {
     const asked = await relayed(none, approvalRequest(n, 'com.apple.TextEdit'));
     none.client.send({jsonrpc: '2.0', id: asked.id, result: {action: 'accept', content: {}}});
-    assert.deepEqual((await upstreamAnswer(none, n)).result, {action: 'accept', content: {}, _meta: STAMP('client')}, 'CUA_SHIM_PERSIST=none: asked every time');
+    assert.deepEqual((await upstreamAnswer(none, n)).result, {action: 'accept', content: {}}, 'CUA_SHIM_PERSIST=none: asked every time');
   }
 });
 

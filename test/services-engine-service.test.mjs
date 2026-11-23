@@ -890,6 +890,18 @@ test('list_apps: no policy, the tool surface naming no app, the vendor\'s row sh
   assert.deepEqual(engine.executes().map(p => p.method), ['list_apps']);
 });
 
+test('#216: cua/approval is per call: a list_apps after an app-scoped call in the same execution carries null, not the earlier approval', async t => {
+  const {sky, call, meta} = await session(t);
+  let approved;
+  await call(async () => {
+    await sky.get_app_state({app: 'TextEdit', disableDiff: true});
+    approved = meta['cua/approval'];
+    await sky.list_apps();
+  });
+  assert.equal(approved?.action, 'accept', 'the app-scoped call carried its approval');
+  assert.equal(meta['cua/approval'], null, 'list_apps reset it');
+});
+
 test('Chrome: the tool surface carries the vendor\'s Chrome flag, and the approval is high risk with the subtitle', async t => {
   const {getApp, meta, record} = await session(t);
   await getApp('Chrome');

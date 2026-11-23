@@ -130,7 +130,7 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
   'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
-  'cua/overlayClick': null,
+  'cua/overlayClick': null, 'cua/approval': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;

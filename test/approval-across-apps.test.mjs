@@ -81,12 +81,12 @@ function fakeRuntime() {
 // A connection over a lazy runtime (so an idle stop replaces the runtime under it, as in `cua serve`) and a client that
 // answers every app approval with `answers[bundle id]` (a function of the ask's number for that app; it may return a
 // promise, to answer late) and counts asks. `approvals` keeps each bind's `cua/approval` result meta.
-function connection(answers, {sessionId = 'session-under-test'} = {}) {
+function connection(answers, {sessionId = 'session-under-test', replHost = 'cua'} = {}) {
   const runtimes = [];
   const timers = [];
   const upstream = lazyRuntime({start: async () => { const runtime = fakeRuntime(); runtimes.push(runtime); return runtime; },
     records: {read: () => RECORD, write: () => {}}});
-  const h = harness({upstream, server: {sessionId, runtimeIdleMs: 60_000, idleTimer: (fn, ms) => { const entry = {fn, ms, live: true}; timers.push(entry); return () => { entry.live = false; }; }}});
+  const h = harness({upstream, server: {sessionId, replHost, runtimeIdleMs: 60_000, idleTimer: (fn, ms) => { const entry = {fn, ms, live: true}; timers.push(entry); return () => { entry.live = false; }; }}});
   const asked = {};
   const asks = [];   // {app, id}: the client's copy of each ask
   const approvals = [];
@@ -232,4 +232,22 @@ test('#216: a second answer to a request already answered (a hook and a dialog b
   assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'}, 'the stray decline did not touch Electron');
   assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_EARLIER}, 'nor did the stray accept widen ChatGPT');
   assert.deepEqual(c.asked, {'com.github.Electron': 1, 'com.openai.codex': 1});
+});
+
+test('#216: on the vendor\'s node_repl the runtime gets every approval answer exactly as before; the refusal reads the mark', async t => {
+  const c = connection({'com.github.Electron': accept, 'com.openai.codex': decline}, {replHost: 'vendor'});
+  t.after(() => c.close());
+  await c.start();
+  assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_NOW});
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_EARLIER});
+  assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
+  const answers = c.runtimes[0].sent.filter(m => m.method === undefined && m.result?.action).map(m => JSON.stringify(m));
+  assert.deepEqual(answers, [
+    JSON.stringify({jsonrpc: '2.0', id: 1, result: {action: 'accept', content: {}, _meta: {persist: 'session'}}}),
+    JSON.stringify({jsonrpc: '2.0', id: 2, result: {action: 'decline'}}),
+    JSON.stringify({jsonrpc: '2.0', id: 3, result: {action: 'decline', content: {source: 'computer-use-persisted-state'}}}),
+    JSON.stringify({jsonrpc: '2.0', id: 4, result: {action: 'accept', content: {source: 'computer-use-persisted-state'}}}),
+  ], 'byte for byte the pre-#216 answers: no stamp, nothing stripped');
+  assert.deepEqual(c.approvals.at(-1), {action: 'accept', answeredBy: 'memory', connection: null, runtimeGeneration: null, scope: null});
 });

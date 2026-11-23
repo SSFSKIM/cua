@@ -15,3 +15,8 @@ test('run --run-number n runs exactly run n unless --runs says more; the hold id
   assert.match(USAGE, /--run-number n/);
   assert.match(USAGE, /--sitting <hold id>/);
 });
+
+test('hold 3\'s route A/B is gone (ruling 1108, #184): --natural-only is no option of any cell', () => {
+  assert.throws(() => parseCommand(['cell', 'korean', ...LANE, '--natural-only']), /Unknown option '--natural-only'/);
+  assert.doesNotMatch(USAGE, /natural-only|route-ab/);
+});

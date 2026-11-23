@@ -65,12 +65,6 @@
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
-// - A forced click route, for the native matrix's route A/B only: a click's `spikeRoute` is forwarded when the worker's
-//   environment carries CUA_ENGINE_SPIKE_ROUTE=1, read once when the service is made. The product launch never puts it
-//   there (src/runtime/launch.mjs drops it with every other ambient value); only the native matrix's route-ab serve adds
-//   it to its launch, through the harness serve's launch hook (scripts/native-baseline/spike-route.mjs). Without it no
-//   spike switch reaches the engine from model code (bd1136f1), and with it only the click's route can be chosen: the
-//   policy, the forbidden list and the approval run as for any click.
 // - The agent cursor (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): the
 //   session's `cursor` request (cursorParams), made from the three variables the launcher resolved on the trusted side
 //   and put in the worker's environment (src/runtime/cursor-identity.mjs: CUA_CURSOR_LABEL, CUA_CURSOR_COLOR, and
@@ -112,7 +106,8 @@ export const METHODS = ['list_apps', 'get_app_state', 'click', 'drag', 'paste', 
 const APP_SCOPED = new Set(METHODS.filter(method => method !== 'list_apps'));
 // The vendor's input fields per input method beyond `app` and `element_index` (R/sky-behaviour.md §1, R/A-contract.md
 // §1.4), plus `concealed` on the methods the wrapper conceals (src/services/sky.mjs): all a request forwards. Model code
-// can call the raw methods with any keys, and the engine reads its spike switches from the same args.
+// can call the raw methods with any keys, and the engine reads its spike switches from the same args: none is forwarded
+// (bd1136f1; hold 3's route A/B exception was removed with that A/B, ruling 1108).
 const FIELDS = {
   click: ['x', 'y', 'mouse_button', 'click_count'],
   drag: ['from_x', 'from_y', 'to_x', 'to_y'],
@@ -124,9 +119,6 @@ const FIELDS = {
   set_value: ['value', 'concealed'],
   type_text: ['text', 'concealed'],
 };
-// The click routes the engine's spike switch names (native/engine Input.swift, `spikeRoute`), forwarded only under
-// CUA_ENGINE_SPIKE_ROUTE=1.
-const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
@@ -221,7 +213,6 @@ function inputMeta(meta) {
 export function createService({nodeRepl, client = null}) {
   const identities = new Map();   // app string -> Promise of resolve_app's answer, kept for the connection
   const observations = createObservations();
-  const spikeRoutes = nodeRepl?.env?.CUA_ENGINE_SPIKE_ROUTE === '1';
 
   const setMeta = meta => nodeRepl?.setResponseMeta?.(meta);
   const engine = () => {
@@ -303,10 +294,6 @@ export function createService({nodeRepl, client = null}) {
     const index = input.element_index;
     const args = {app: input.app};
     for (const field of FIELDS[method]) if (Object.hasOwn(input, field)) args[field] = input[field];
-    if (spikeRoutes && method === 'click' && Object.hasOwn(input, 'spikeRoute')) {
-      if (!SPIKE_ROUTES.has(input.spikeRoute)) throw new Error(`cua: spikeRoute must be one of 1, 2', 2 or 3 [invalid_spike_route]`);
-      args.spikeRoute = input.spikeRoute;
-    }
     let lineage = observations.lineage(target.appPath);
     if (index !== undefined) {
       const element = observations.element(target.appPath, index);

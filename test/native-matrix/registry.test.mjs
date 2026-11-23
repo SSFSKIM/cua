@@ -31,17 +31,20 @@ test('the matrix\'s own cells resolve to plans, the probe cells and the Korean m
   assert.deepEqual(await resolveCell('non-interference', {load}), {kind: 'matrix', section: 'method', plan: 'background',
     describe: 'the background regime\'s cells under the oracle: --scene <driven> [--user <user window\'s scene>]'});
   for (const [name, section] of [['concurrent-use', 'concurrent'], ['concurrent-use-sheet', 'concurrent'], ['intervention-fires', 'intervention'], ['pre-action-refusal', 'intervention'],
-    ['korean', 'unicode'], ['route-ab', 'route-ab']]) {
+    ['korean', 'unicode']]) {
     const resolved = await resolveCell(name, {load});
     assert.deepEqual([resolved.kind, resolved.section, resolved.plan], ['matrix', section, name]);
     assert.doesNotThrow(() => planOf(resolved.plan), name);
   }
   assert.deepEqual(await resolveCell('settle', {load}).then(c => [c.kind, c.section, c.module]), ['external', 'settle', './settle-cell.mjs']);
-  await assert.rejects(resolveCell('nope', {load}), /no cell nope; the cells: matrix, method, speed, finding, non-interference, launch, concurrent-use, concurrent-use-sheet, intervention-fires, pre-action-refusal, korean, route-ab, route4, minimized-select, enablement, menu, hscroll, settle$/);
+  await assert.rejects(resolveCell('nope', {load}), /no cell nope; the cells: matrix, method, speed, finding, non-interference, launch, concurrent-use, concurrent-use-sheet, intervention-fires, pre-action-refusal, korean, route4, minimized-select, enablement, menu, hscroll, settle$/);
   const listed = await listCells({load});
   assert.deepEqual(listed.filter(c => c.kind === 'external').map(c => [c.name, c.section, c.module]),
     [...EXPECTED_RESIDUE.map(name => [name, 'residue', './live.mjs']), ['settle', 'settle', './settle-cell.mjs']]);
   assert.deepEqual([...new Set(listed.map(c => c.kind))], ['matrix', 'external'], 'nothing is left planned');
+  // Hold 3's route A/B is closed as overtaken (ruling 1108, #184): no cell, no plan.
+  await assert.rejects(resolveCell('route-ab', {load}), /no cell route-ab/);
+  assert.throws(() => planOf('route-ab'), /no plan route-ab/);
 });
 
 test('the probe cells and the Korean matrix narrow as M5\'s steps name them', () => {

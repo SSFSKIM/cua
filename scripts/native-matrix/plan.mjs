@@ -434,7 +434,7 @@ return {ok: applied, outcome: {applied}};`},
 // body's 16-pixel margin (fixtures/electron/fixture.css), for the drag case and #188's positional click
 // (scripts/cursor-sitting/item-188.mjs).
 export const ELECTRON_FIELD_LAYOUT = Object.freeze({window: Object.freeze([720, 560]), from: Object.freeze([30, 69]), to: Object.freeze([300, 99])});
-// The fixture status's press count, or null (the route A/B cell polls it too: ./route-ab.mjs).
+// The fixture status's press count, or null.
 export const pressed = `(() => { const status = ${statusText(named('Fixture status'), '/Pressed \\d+ times?/')}; const m = /Pressed (\\d+) times?/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
 const electron = [
   tree(`ax => ({ok: ${named('Fixture text')} !== null, outcome: {fixture: ${named('Fixture text')} !== null}})`),

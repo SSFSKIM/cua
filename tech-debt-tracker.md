@@ -469,16 +469,14 @@
   is resolved. Make the individual attach error equally accurate at the next relevant prototype/production edit;
   do not treat this text as evidence of successful release.
 
-- **2026-10-22 — An env-gated spike route in the product engine service (#117 M2b, hold 3's route A/B).**
-  `src/services/engine/service.mjs` forwards a click's `spikeRoute` when the worker's environment carries
-  `CUA_ENGINE_SPIKE_ROUTE=1`. The product launch drops an ambient value (`src/runtime/launch.mjs`); only the harness
-  serve's launch hook adds it, for cua's engine, when the route-ab lane asks (`scripts/native-baseline/spike-route.mjs`).
-  So bd1136f1's guarantee holds in every user and model session, but the forwarding is a test switch living in product
-  code. Decide after #117's hold 3: keep it as a documented test hook (and let `cua doctor`
-  show it when set), or remove it with the route-ab cell once the A/B's question is settled. Spec Decision Log,
-  2026-10-22 "hold 3's route A/B".
-
 ## Resolved
+
+- **2026-10-22 — An env-gated spike route in the product engine service (#117 M2b, hold 3's route A/B; resolved 2026-11-23, #117 M5 T8b, ruling 1108).**
+  `src/services/engine/service.mjs` forwarded a click's `spikeRoute` when the worker's environment carried
+  `CUA_ENGINE_SPIKE_ROUTE=1`, which only the harness serve's launch hook added for the route-ab lane. Ruling 1108 closed
+  the A/B as overtaken, so the switch, its launch hook (`scripts/native-baseline/spike-route.mjs`) and the `route-ab`
+  cell are removed: no environment lets model code choose a click's route. Disposition:
+  `docs/evidence/2026-11-23-own-native-engine/gates/184-route-ab.md`.
 
 - **2026-11-19 — `live_device` failed in about half its full runs, each time in a different test (flake, the live suite and the engine-linux gate; resolved 2026-11-19, #171 M5 task 115, ruling 888.4).** Xvfb, as `xvfb-run` starts it (no `-noreset`), resets once its last client disconnects: it closes every connection, drops the root's properties, recentres the pointer and compiles its keymap again, about 100 times in a full run of the binary (Xvfb's `-audit 4` log). A test whose first X connect came while the server reset had the connection closed (`ConnectionReset` at `Probe::open`): 4 of 4 runs of task 113's prototype failed so, and 2 of 4 runs of the base `origin/feat/171-m5` with no new test. Whether a test started on a reset display, or on the previous test's root state (a stacking list naming a dead window whose id the server hands out again), also depended on timing. Fixed in the tests: `support::fresh_display` holds one connection for the binary's whole run, opened through a reset under way, and each `live_device` test calls it first, clearing what a reset cleared that the tests change (their root properties, the focus, the pointer's place); the helper windows' loops also end when a panicking test drops their sender. With it a run has one server generation and 12 of 12 full runs passed (task 115's report). The other live binaries keep the reset between tests and its race; they have not shown it. Check: every `live_device` test on the default display calls `support::fresh_display()` first (the three two-screen tests run on private Xorg servers of their own, `tests/two-screens.sh`, and do not).
 - **2026-11-19 — The M5 sitting launcher (`task109/sitting.sh`, and T7's before it) exits 0 after a step that fails (minor, #171 M5; resolved 2026-11-19, task 115 on `m5-engine-042`).** A chain that gates on the launcher's exit runs on past a FAIL. That is how F2's development runs started after V5's counted FAIL at H⁵. Nothing was lost, since F2 is unjudged and the FAIL was reported at once. Fix: exit with the step's own status, or gate chains on the verdict row. **Resolved (ruling 888.6):** the launchers the 0.4.2 reruns use (`m5/arm64/h5/scripts/sitting.sh`, `m5/x64/h4/scripts/sitting.sh`, and x64's working copy `task105/sitting.sh`) run every step and then exit with the first failing step's status; their own stops keep their codes. `m5/engine-042/scripts/sitting-test.sh` runs each in a scratch root with a failing step: 3 of 3 checks pass per copy, and the same checks fail on the copies before the fix (exit 0). The arm64 VM's working copy (`task109/sitting.sh`) still needs the same change, which task 114's run there kept out of reach. Check: `bash m5/engine-042/scripts/sitting-test.sh <checkout>`.

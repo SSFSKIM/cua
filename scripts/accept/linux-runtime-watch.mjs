@@ -54,7 +54,12 @@ export function foldSample(state, entries) {
       keep(state.sky, {pid: entry.pid, exe: entry.exe ?? null, parent, service: entry.parent?.env?.CUA_SKY_SERVICE ?? null, bin: entry.parent?.env?.OAI_SKY_LINUX_BIN ?? null});
     }
     const role = replRole(entry);
-    if (role && !state.replHost.has(entry.pid)) state.replHost.set(entry.pid, {pid: entry.pid, role, exe: entry.exe ?? null});
+    // Every executable a REPL host pid was seen running, not only the first (fix wave 2, #4).
+    if (role) {
+      if (!state.replHost.has(entry.pid)) state.replHost.set(entry.pid, {pid: entry.pid, role, exes: []});
+      const seen = state.replHost.get(entry.pid);
+      if (!seen.exes.includes(entry.exe ?? null)) seen.exes.push(entry.exe ?? null);
+    }
   }
   state.maxSkyLinux = Math.max(state.maxSkyLinux, skyNow);
   return state;
@@ -66,7 +71,9 @@ export const watchRecord = state => ({samples: state.samples, maxSkyLinux: state
 
 const sampled = watch => (watch.samples > 0 ? [] : ['the sampler took no samples']);
 const skySeen = watch => (watch.maxSkyLinux > 0 ? [`sky_linux was seen (${watch.maxSkyLinux} at once at most)`] : []);
-const enginesRan = watch => watch.engines.map(e => `cua-engine ${e.pid} ran (${e.exe ?? 'its executable unread'})`);
+// For absence, every cua-engine sighting counts, one skipped as vanished included (fix wave 2, #5): skipping an unread
+// executable is for proving which engine answered, never that none ran.
+const enginesRan = watch => (watch.engineProcesses ?? watch.engines).map(e => `cua-engine ${e.pid} ran (${e.exe ?? (e.skipped ? `seen as it went: ${e.skipped}` : 'its executable unread')})`);
 
 /** cua's engine answered (M5's judge, engine-watch.mjs): the home's `engine` under the trusted worker, no sky_linux. */
 export const cuaEngineProblems = (watch, {engine}) => watchVerdict(watch, {engine}).problems;
@@ -95,7 +102,7 @@ export function ownNodeProblems(watch, {node}) {
   for (const role of ['trusted-worker', 'kernel']) {
     const seen = watch.replHost.filter(p => p.role === role);
     if (!seen.length) problems.push(`no ${role} was seen at any sample`);
-    for (const p of seen) if (p.exe !== node) problems.push(`the ${role} ${p.pid} ran ${p.exe ?? 'an unread executable'}, not the home's managed Node ${node}`);
+    for (const p of seen) for (const exe of p.exes ?? [p.exe]) if (exe !== node) problems.push(`the ${role} ${p.pid} ran ${exe ?? 'an unread executable'}, not the home's managed Node ${node}`);
   }
   return problems;
 }

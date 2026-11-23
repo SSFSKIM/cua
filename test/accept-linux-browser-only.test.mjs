@@ -3,7 +3,7 @@
 // files mapped. Each judge has its negative control here; the cells themselves are checked to parse.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {BY_NAME, COMPARED, ENTRIES, SPECIFIERS, cellJson, importComparison, nativesProblems, playwrightProblems, selectionCell, selectionProblems, toolsProblems, useCell, useProblems} from '../scripts/accept/linux-browser-only.mjs';
+import {BY_NAME, COMPARED, ENTRIES, SPECIFIERS, baselineOf, cellJson, importComparison, nativesProblems, playwrightProblems, selectionCell, selectionProblems, toolsProblems, useCell, useProblems} from '../scripts/accept/linux-browser-only.mjs';
 
 const ROOT = '/run/user/.local/share/cua/modules/b71dc1f8185d';
 const MODULES = `${ROOT}/node_modules`;
@@ -93,7 +93,7 @@ test('the comparison names each compared package\'s outcome here and under the o
 });
 
 // Playwright through require (ruling 1162; fix wave 1, #4): the entry it resolved, loaded, and the graph that require loaded.
-const graph = (o = {}) => ({resolved: `${MODULES}/playwright/index.js`, entry: `${MODULES}/playwright/index.js`, complete: true,
+const graph = (o = {}) => ({resolved: `${MODULES}/playwright/index.js`, entry: `${MODULES}/playwright/index.js`, complete: true, api: true,
   files: [`${MODULES}/playwright/index.js`, `${MODULES}/playwright-core/index.js`, `${MODULES}/playwright-core/lib/inprocess.js`], ...o});
 
 test('playwright passes when the entry require resolved is the one loaded, its graph is whole and every file is in the module tree', () => {
@@ -144,4 +144,38 @@ test('a cell\'s own line of JSON is read by its key, and nothing else is taken f
 test('the cells parse as the kernel would run them: async bodies', () => {
   const AsyncFunction = (async () => {}).constructor;
   for (const source of [selectionCell(SPECIFIERS), useCell()]) assert.doesNotThrow(() => new AsyncFunction('nodeRepl', 'cua', source));
+});
+
+// Fix wave 2 (#2, #6): the baseline's reply and root, roots at path boundaries, full messages, playwright's API.
+test('negative control (fix wave 2, #2): an older reply marked isError, timed out, or with another base is no baseline', () => {
+  const use = {base: OLDER_BASE, imported};
+  assert.deepEqual(baselineOf({use}, {expectedBase: OLDER_BASE}), {base: OLDER_BASE, imported});
+  assert.match(baselineOf({isError: true, use}, {expectedBase: OLDER_BASE}).failed, /the older cua's cell failed/);
+  assert.match(baselineOf({timedOut: true, use}, {expectedBase: OLDER_BASE}).failed, /the older cua's cell did not answer/);
+  assert.match(baselineOf({use: {...use, base: '/somewhere/else'}}, {expectedBase: OLDER_BASE}).failed, /base \/somewhere\/else is not the older cua's module base/);
+  assert.match(baselineOf({use: {...use, imported: {...imported, pngjs: 3}}}, {expectedBase: OLDER_BASE}).failed, /malformed/);
+  assert.match(baselineOf({use: null}, {expectedBase: OLDER_BASE}).failed, /no reply/);
+});
+
+test('negative control (fix wave 2, #2): this cua\'s base must be its module root', () => {
+  assert.deepEqual(useProblems(use(), {older, base: ROOT}), []);
+  assert.match(useProblems(use({base: '/elsewhere'}), {older, base: ROOT}).join('; '), /this cua's cell reports the base \/elsewhere, not its module root/);
+});
+
+test('negative control (fix wave 2, #2): a root is set aside only at a path boundary, so a sibling directory stays itself', () => {
+  const at = path => ({code: null, message: `Cannot read ${path}/x.json`});
+  assert.match(useProblems(use({imported: {...imported, sharp: at(`${ROOT}-sibling`)}}), {older: {...older, imported: {...imported, sharp: at(`${OLDER_BASE}-sibling`)}}}).join('; '),
+    /sharp's import by name differs/);
+  assert.deepEqual(useProblems(use({imported: {...imported, sharp: at(ROOT)}}), {older: {...older, imported: {...imported, sharp: at(OLDER_BASE)}}}), []);
+});
+
+test('negative control (fix wave 2, #2): messages are compared whole, past any length the display keeps', () => {
+  const long = tail => ({code: null, message: `${'x'.repeat(600)}${tail}`});
+  assert.match(useProblems(use({imported: {...imported, sharp: long('a')}}), {older: {...older, imported: {...imported, sharp: long('b')}}}).join('; '), /sharp's import by name differs/);
+  assert.doesNotMatch(useCell(), /message: String\(e\?\.message \?\? e\)\.slice/, 'the cell records each message whole');
+});
+
+test('negative control (fix wave 2, #6): a valid require graph whose playwright exposes no chromium.launch fails', () => {
+  assert.match(playwrightProblems(graph({api: false}), {root: ROOT}).join('; '), /does not expose chromium\.launch/);
+  assert.match(playwrightProblems(graph({api: undefined}), {root: ROOT}).join('; '), /does not expose chromium\.launch/);
 });

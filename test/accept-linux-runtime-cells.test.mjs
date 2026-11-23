@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {APPROVED_OLDER, CELLS, FIXTURE_STEPS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal,
+import {APPROVED_OLDER, CELLS, FIXTURE_STEPS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, initializeAnswered, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal,
   pinsChanged, refusalProblems, reinstallProblems, runVerdict, traceProblems, upgradeProblems, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
 import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, vendorEngineProblems, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
 
@@ -27,7 +27,7 @@ test('the watch folds each sample: the most sky_linux at once, every engine with
   assert.equal(record.samples, 2);
   assert.equal(record.maxSkyLinux, 0);
   assert.deepEqual(record.engines, [{pid: 21, exe: ENGINE, parent: WORKER_ARGV.join(' ')}]);
-  assert.deepEqual(record.replHost, [{pid: 20, role: 'trusted-worker', exe: '/n/bin/node'}, {pid: 30, role: 'kernel', exe: '/n/bin/node'}]);
+  assert.deepEqual(record.replHost, [{pid: 20, role: 'trusted-worker', exes: ['/n/bin/node']}, {pid: 30, role: 'kernel', exes: ['/n/bin/node']}]);
 });
 
 test('the REPL host ran on the home\'s managed Node: every worker and kernel sampled, at least one of each', () => {
@@ -355,4 +355,38 @@ test('negative control: a cua-engine still alive whose executable cannot be read
 test('a cua-engine read alive is recorded with its pid, start time and executable, and judged', () => {
   const entries = sampleTree(10, tree({'/proc/11/stat': statLine(11, 'cua-engine', 'S', 10, {start: 77}), '/proc/11/exe': ENGINE}));
   assert.deepEqual(watched(entries).engineProcesses, [{pid: 11, starttime: '77', exe: ENGINE, skipped: null}]);
+});
+
+// Fix wave 2 (#3, #4, #5).
+test('negative control (fix wave 2, #4): a kernel or worker pid that ever exec\'d another Node fails, whatever it ran last', () => {
+  assert.match(traceProblems(summary({kernel: {exe: NODE, nodeExes: ['/usr/bin/node', NODE]}}), {node: [NODE]}).join('; '), /the kernel 106 ran \/usr\/bin\/node/);
+  // The sampler keeps every executable it saw at a pid.
+  const record = watched([WORKER, KERNEL], [WORKER, {...KERNEL, exe: '/usr/bin/node'}]);
+  assert.deepEqual(record.replHost.find(p => p.role === 'kernel').exes, ['/n/bin/node', '/usr/bin/node']);
+  assert.match(ownNodeProblems(record, {node: '/n/bin/node'}).join('; '), /kernel 30 ran \/usr\/bin\/node/);
+});
+
+test('negative control (fix wave 2, #5): an engine sighted only as it vanished still fails a no-engine run, the vendor\'s and nothing-launched', () => {
+  const entries = sampleTree(10, tree({'/proc/11/stat': [statLine(11, 'cua-engine', 'S', 10), null], '/proc/11/exe': null}));
+  const record = watched(entries);
+  assert.match(noEngineProblems(record).join('; '), /cua-engine 11 ran/);
+  assert.match(nothingLaunchedProblems(record).join('; '), /cua-engine 11 ran/);
+  assert.match(vendorEngineProblems(watched([WORKER, sky()], entries), {bin: SKY, service: SERVICE}).join('; '), /cua-engine 11 ran/);
+});
+
+test('negative control (fix wave 2, #3): an exec under runtimes/ in a refused open\'s trace, attempted or done, is a launch', () => {
+  const ok = {serve: 101, launched: [], runtimes: {complete: true, pending: 0, unended: 0, unresolved: 0, calls: 2}};
+  // The vendor selection stats its own tree to find it absent (E4, U4): a call there is no launch.
+  assert.deepEqual(launchedProblems(ok), []);
+  assert.match(launchedProblems({...ok, launched: [{pid: 102, kind: 'runtimes', program: '/h/runtimes/26/x'}]}).join('; '), /runtimes 102 was launched/);
+  assert.match(launchedProblems({...ok, launched: [{pid: 102, kind: 'runtimes', program: '/h/runtimes/26/x', attempted: true}]}).join('; '), /runtimes 102 was attempted/);
+});
+
+test('negative control (fix wave 2, #3): an initialize reply delivered while stdout drained is a reply', () => {
+  const sent = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {}});
+  assert.equal(initializeAnswered([sent]), false);
+  assert.equal(initializeAnswered([sent, 'not json', JSON.stringify({jsonrpc: '2.0', id: 1, result: {}})]), true);
+  assert.equal(initializeAnswered([sent, JSON.stringify({jsonrpc: '2.0', id: 1, error: {code: -32603, message: 'refused'}})]), true);
+  // A notification or another id is not the answer.
+  assert.equal(initializeAnswered([sent, JSON.stringify({jsonrpc: '2.0', method: 'notifications/message', params: {}}), JSON.stringify({jsonrpc: '2.0', id: 2, result: {}})]), false);
 });

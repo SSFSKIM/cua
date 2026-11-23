@@ -76,21 +76,21 @@ test('a trace that follows the helper\'s children: the serve, the worker, the he
   const summary = summarizeTrace(traced(), {helper: HELPER, home: HOME});
   assert.equal(summary.processes, 7);
   assert.equal(summary.serve, 101);
-  assert.deepEqual(summary.workers, [{pid: 102, underServe: true, exe: MNODE}]);
+  assert.deepEqual(summary.workers, [{pid: 102, underServe: true, exe: MNODE, nodeExes: [MNODE]}]);
   assert.deepEqual(summary.helpers, [104, 106]);
   assert.deepEqual(summary.bwrap, [105]);
-  assert.deepEqual(summary.kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE}]);
+  assert.deepEqual(summary.kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE, nodeExes: [MNODE]}]);
   // Measured, not judged by the pilot: the calls of the serve's tree that name a path under the home's runtimes/.
   // The serve's own first calls come before any decoded working directory, but they name no relative path.
   assert.deepEqual(summary.runtimes, {calls: 1, unresolved: 0, pending: 0, unended: 0, complete: true});
   assert.deepEqual(traceVerdict(summary), {pass: true, problems: []});
-  assert.deepEqual(summarizeTrace(traced({splitExec: true}), {helper: HELPER, home: HOME}).kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE}]);
+  assert.deepEqual(summarizeTrace(traced({splitExec: true}), {helper: HELPER, home: HOME}).kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE, nodeExes: [MNODE]}]);
   assert.deepEqual(summarizeTrace(traced({runtimesRead: false}), {helper: HELPER, home: HOME}).runtimes, {calls: 0, unresolved: 0, pending: 0, unended: 0, complete: true});
 });
 
 test('negative control: a worker and a kernel that do not descend from the serve being judged do not pass, however complete they look', () => {
   const summary = summarizeTrace(traced({disconnected: true}), {helper: HELPER, home: HOME});
-  assert.deepEqual(summary.workers, [{pid: 102, underServe: false, exe: MNODE}]);
+  assert.deepEqual(summary.workers, [{pid: 102, underServe: false, exe: MNODE, nodeExes: [MNODE]}]);
   assert.equal(summary.kernels[0].underServe, false);
   const verdict = traceVerdict(summary);
   assert.equal(verdict.pass, false);
@@ -175,7 +175,7 @@ test('negative control: a relative path whose base is unknown leaves the count i
 
 test('a kernel is under the helper by its parents too, when the helper did not exec it in place', () => {
   const summary = summarizeTrace(traced({kernelUnderHelper: false}), {helper: HELPER, home: HOME});
-  assert.deepEqual(summary.kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE}]);
+  assert.deepEqual(summary.kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE, nodeExes: [MNODE]}]);
 });
 
 test('a fork inside bubblewrap\'s PID namespace is placed by the pid strace translated, not the namespace\'s own', () => {
@@ -183,7 +183,7 @@ test('a fork inside bubblewrap\'s PID namespace is placed by the pid strace tran
   const lines = traced({kernelUnderHelper: false}).split('\n').map(line => line.replace(/^105   clone\(.*$/, '105   clone(child_stack=NULL, flags=SIGCHLD) = 107'))
     .flatMap(line => (line.startsWith('105   clone') ? [line, `107   execve("${HELPER}", ["codex-linux-sandbox", "--apply-seccomp-then-exec"], 0x7ffd /* 9 vars */) = 0`, '107   fork()                          = 2 /* 106 in strace\'s PID NS */'] : [line]));
   const summary = summarizeTrace(lines.join('\n'), {helper: HELPER, home: HOME});
-  assert.deepEqual(summary.kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE}]);
+  assert.deepEqual(summary.kernels, [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 2, exe: MNODE, nodeExes: [MNODE]}]);
   assert.equal(summarizeTrace(lines.join('\n'), {helper: HELPER, home: HOME}).helpers.includes(107), true);
 });
 
@@ -388,4 +388,44 @@ test('a thread ends with its group: an exit_group of the process ends the thread
   // A forked child (no CLONE_THREAD) with no end of its own is not ended by its parent's.
   const child = [traced({runtimesRead: false}), '102   clone(child_stack=NULL, flags=SIGCHLD) = 111'];
   assert.equal(summarizeTrace(child.join('\n'), {helper: HELPER, home: HOME}).runtimes.unended, 1);
+});
+
+// Fix wave 2 (#1, #3, #4): unfinished execs, individual exits, launches under runtimes/, every Node exec of a pid.
+const THREAD_110 = '102   clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM, exit_signal=0, stack=0x7f, stack_size=0x7ff}, 88) = 110';
+// The traced fixture's 102 ends by exit_group; here its leader exits alone instead.
+const leaderAlone = () => traced({runtimesRead: false}).replace('102   exit_group(0)                   = ?', '102   exit(0)                         = ?');
+
+test('negative control (fix wave 2, #1): an unfinished vendor exec from a thread whose leader alone exited is counted and leaves the trace incomplete', () => {
+  const text = [leaderAlone(), THREAD_110, `110   execve("${HOME}/runtimes/26/cua_node/bin/node", ["node"], 0x7ffd /* 1 vars */ <unfinished ...>`].join('\n');
+  const summary = summarizeTrace(text, {helper: HELPER, home: HOME});
+  assert.equal(summary.runtimes.calls, 1);
+  assert.equal(summary.runtimes.pending, 1);
+  assert.ok(summary.runtimes.unended >= 1, 'the thread did not end with its leader\'s individual exit');
+  assert.equal(summary.runtimes.complete, false);
+});
+
+test('a thread group ends by exit_group from any member, or when its last thread exits', () => {
+  assert.equal(summarizeTrace([leaderAlone(), THREAD_110, '110   exit_group(0) = ?'].join('\n'), {helper: HELPER, home: HOME}).runtimes.complete, true);
+  assert.equal(summarizeTrace([leaderAlone(), THREAD_110, '110   exit(0) = ?'].join('\n'), {helper: HELPER, home: HOME}).runtimes.complete, true);
+  assert.equal(summarizeTrace([leaderAlone(), THREAD_110].join('\n'), {helper: HELPER, home: HOME}).runtimes.complete, false);
+});
+
+test('negative control (fix wave 2, #3): any exec under runtimes/ is a launch, whatever its basename', () => {
+  const summary = summarizeTrace([`101   execve("/usr/bin/node", ["/usr/bin/node", "${REPO}/bin/cua.mjs", "serve"], 0x7ffd /* 41 vars */) = 0`, '101   vfork() = 102',
+    `102   execve("${HOME}/runtimes/26/cua_node/bin/whatever", ["whatever", "--version"], 0x7ffd /* 1 vars */) = 0`, '102   exit_group(0) = ?', '101   exit_group(1) = ?'].join('\n'), {helper: HELPER, home: HOME});
+  assert.deepEqual(summary.launched.map(l => [l.pid, l.kind]), [[102, 'runtimes']]);
+});
+
+test('negative control (fix wave 2, #3): an exec attempted under runtimes/ that failed is listed too, as attempted', () => {
+  const summary = summarizeTrace([`101   execve("/usr/bin/node", ["/usr/bin/node", "${REPO}/bin/cua.mjs", "serve"], 0x7ffd /* 41 vars */) = 0`, '101   vfork() = 102',
+    `102   execve("${HOME}/runtimes/26/sky/sky_linux_x64", ["sky"], 0x7ffd /* 1 vars */) = -1 ENOENT (No such file or directory)`, '102   exit_group(127) = ?', '101   exit_group(1) = ?'].join('\n'), {helper: HELPER, home: HOME});
+  assert.deepEqual(summary.launched, [{pid: 102, kind: 'runtimes', program: `${HOME}/runtimes/26/sky/sky_linux_x64`, attempted: true}]);
+});
+
+test('negative control (fix wave 2, #4): every Node a worker or kernel pid exec\'d is kept, not only the last', () => {
+  const lines = traced().split('\n');
+  const at = lines.findIndex(line => line.startsWith('106') && line.includes(MNODE) && line.includes('kernel.mjs'));
+  lines.splice(at, 0, `106   execve("/usr/bin/node", ["node", "${REPO}/src/repl-host/kernel.mjs"], 0x7ffd /* 9 vars */) = 0`);
+  const summary = summarizeTrace(lines.join('\n'), {helper: HELPER, home: HOME});
+  assert.deepEqual(summary.kernels[0].nodeExes, ['/usr/bin/node', MNODE]);
 });

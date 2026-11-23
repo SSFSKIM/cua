@@ -38,12 +38,12 @@ import {loadNodePins, managedNode, selectNodePin} from '../../src/runtime/manage
 import {HELPER_PIN_FILE, helperFor} from '../../src/sandbox/linux.mjs';
 import {loadClassicLevel} from '../../src/profiles/directory-map.mjs';
 import {APPROVED_OLDER, CELLS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal, pinsChanged,
-  refusalProblems, reinstallProblems, rowProblems, runVerdict, traceProblems, upgradeProblems, witnessOf} from './linux-runtime-cells.mjs';
+  refusalProblems, reinstallProblems, rowProblems, runVerdict, traceProblems, upgradeProblems, witnessOf, initializeAnswered} from './linux-runtime-cells.mjs';
 import {cuaEngineProblems, noEngineProblems, ownNodeProblems, startWatch, vendorEngineProblems} from './linux-runtime-watch.mjs';
 import {environmentVerdict} from './linux-runtime-pilot.mjs';
 import {summarizeTraceFile, TRACE_ARGS} from './linux-trace.mjs';
 import {readDoctor} from './linux-selection.mjs';
-import {SPECIFIERS, cellJson, useCell} from './linux-browser-only.mjs';
+import {baselineOf, cellJson, useCell} from './linux-browser-only.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -150,12 +150,13 @@ function createRun({out, scratch}) {
     const id = label(name);
     const traceFile = join(scratch, `${id}.strace`);
     const session = openSession({command: 'strace', args: [...TRACE_ARGS, '-o', traceFile, '--', process.execPath, CLI, 'serve'], env, clientName: 'cua-m6a-refusal'});
-    const answer = session.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'cua-m6a-refusal', version: '0'}}, 60_000);
-    const first = await Promise.race([answer.then(reply => ({reply})), session.exited.then(exit => ({exit}))]);
-    const replied = !!first.reply && !first.reply.timedOut;
+    session.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'cua-m6a-refusal', version: '0'}}, 60_000);
     const spontaneous = await Promise.race([session.exited.then(() => true), sleep(60_000).then(() => false)]);
     const exited = await session.terminate();
     const drained = await session.drainStreams({budgetMs: 5000});
+    // Whether initialize was answered is read from the whole transcript once stdout has drained, so a reply buffered at
+    // the exit is still a reply (fix wave 2, #3).
+    const replied = initializeAnswered(session.transcript);
     writeFileSync(join(scratch, `${id}.err`), session.stderr);
     const trace = existsSync(traceFile) ? await summarizeTraceFile(traceFile, {helper, home: homes, cwd: REPO}) : null;
     return {exit: exited.code, signal: exited.signal, replied, spontaneous, drained, stderr: session.stderr, trace, err: join(scratch, `${id}.err`), traceFile};
@@ -176,18 +177,18 @@ function createRun({out, scratch}) {
     }
     return {samples: samples.map(ms => Math.round(ms)), median: Math.round(median(samples)), min: Math.round(Math.min(...samples)), max: Math.round(Math.max(...samples))};
   }
-  /** The six imports by name, and the native uses, in a browser-only session of `cli`'s serve (useCell): its `use`. */
-  async function imports(cli, {env}) {
+  /**
+   * The six imports by name, and the native uses, in a browser-only session of `cli`'s serve (useCell): its `use`, taken
+   * only from a successful reply whose base is `expectedBase` and whose outcomes are well formed (baselineOf).
+   */
+  async function imports(cli, {env, expectedBase}) {
     const session = openSession({args: [cli, 'serve'], env: {...env, CUA_SHIM_SURFACES: 'browser'}, clientName: 'cua-m6a-imports'});
     try {
       await session.initialize();
       const used = await session.js(useCell(), 180_000);
       const use = cellJson(resultText(used), 'use');
-      const valid = o => o === 'ok' || (!!o && typeof o === 'object' && typeof o.message === 'string' && (o.code === null || typeof o.code === 'string'));
-      // A reply is a baseline only when it is whole: its root, and a well-formed outcome for each of the six.
-      if (!use || typeof use.base !== 'string' || !use.imported || !SPECIFIERS.every(spec => valid(use.imported[spec])))
-        return {failed: use ? `the reply is malformed: ${JSON.stringify({base: use.base ?? null, imported: use.imported ?? null}).slice(0, 300)}` : resultText(used).slice(0, 300)};
-      return {base: use.base, imported: use.imported, used: use.used, via: use.via, natives: use.natives?.length ?? null};
+      const baseline = baselineOf({isError: used.result?.isError === true || !!used.error, timedOut: !!used.timedOut, use}, {expectedBase});
+      return baseline.failed ? baseline : {...baseline, used: use.used, via: use.via, natives: use.natives?.length ?? null};
     } catch (error) { return {failed: error.message}; } finally { await session.terminate(); }
   }
   return {exec, fixture, attemptOpen, firstAnswers, imports, out, scratch};
@@ -369,7 +370,11 @@ async function main() {
     const vendorRow = readDoctor({cli: CLI, env: uEnv}).report?.checks?.find(c => c.name === 'runtime.vendor') ?? null;
     const setupProblems = olderProblems({commit: report.older.commit, clean: report.older.clean, exit: setup.code, vendorRelease, pinnedRelease, vendorRow, record: vendorRecord});
     report.upgradedHome = {home: uHome, olderInstall: {exit: setup.code, seconds: setup.seconds, out: setup.out}, vendorRelease, pinnedRelease, vendorRow: vendorRow?.status ?? null, problems: setupProblems};
-    report.measured.importsOlder = setup.code === 0 ? await r.imports(olderCli, {env: uEnv}) : {failed: `the older cua's install exited ${setup.code}`};
+    // The older cua's kernel resolves from its vendor tree's module directory, the base being that directory's parent.
+    let olderBase = null;
+    try { olderBase = real(dirname(vendorLinuxRuntime({home: uHome}).paths.moduleDir)); } catch {}
+    report.measured.importsOlder = setup.code === 0 && olderBase ? await r.imports(olderCli, {env: uEnv, expectedBase: olderBase})
+      : {failed: `the older cua's install exited ${setup.code}${olderBase ? '' : ', and its vendor tree does not resolve'}`};
     baselineFile = join(scratch, 'imports-older.json');
     writeFileSync(baselineFile, `${JSON.stringify(report.measured.importsOlder.failed ? null : {base: report.measured.importsOlder.base, imported: report.measured.importsOlder.imported})}\n`);
 
@@ -402,7 +407,7 @@ async function main() {
         cell = cellOf('E2');
         boundary(cell, home, 'present', 'start');
         await browserRuns(cell, {env, home, traced: true});
-        report.measured.importsHere = await r.imports(CLI, {env});
+        report.measured.importsHere = await r.imports(CLI, {env, expectedBase: real(resolveRuntime({home}).root)});
         await loaderRun(cell, {env, home});
         boundary(cell, home, 'present', 'end');
         finish(cell);

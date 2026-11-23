@@ -248,17 +248,34 @@ export function traceProblems(summary, {opened, node} = {}) {
   }
   if (node) {
     for (const [what, list] of [['worker', summary.workers], ['kernel', summary.kernels]])
-      for (const p of (list ?? []).filter(x => x.underServe)) if (!node.includes(p.exe)) problems.push(`the ${what} ${p.pid} ran ${p.exe}, not the home's managed Node ${node[0]}`);
+      // Every Node the pid exec'd, not only its last (fix wave 2, #4).
+      for (const p of (list ?? []).filter(x => x.underServe)) for (const exe of new Set(p.nodeExes ?? [p.exe])) if (!node.includes(exe)) problems.push(`the ${what} ${p.pid} ran ${exe}, not the home's managed Node ${node[0]}`);
   }
   return problems;
 }
 
-/** Nothing launched, by exec evidence: a trace of the serve, whole, in which its tree exec'd no helper, bubblewrap, REPL host or engine. */
+/**
+ * Whether serve answered initialize (the transcript's first request, its id 1), a result or an error, read from the whole
+ * transcript once stdout has drained (fix wave 2, #3): a reply buffered at the exit is a reply.
+ */
+export function initializeAnswered(transcript, id = 1) {
+  return transcript.some(line => {
+    let msg;
+    try { msg = JSON.parse(line); } catch { return false; }
+    return msg?.id === id && msg.method === undefined && ('result' in msg || 'error' in msg);
+  });
+}
+
+/**
+ * Nothing launched, by exec evidence: a trace of the serve, whole, in which its tree exec'd no helper, bubblewrap, REPL
+ * host or engine, and exec'd or attempted nothing under runtimes/, whatever its name. Other calls there are not launches:
+ * the vendor selection looks for its own tree before it refuses (E4, U4).
+ */
 export function launchedProblems(summary) {
   if (!summary) return ['no trace of the open'];
   const problems = summary.serve === null ? ['the trace holds no cua serve exec'] : [];
   problems.push(...incompleteness(summary.runtimes));
-  for (const l of summary.launched ?? []) problems.push(`${l.kind} ${l.pid} was launched (${l.program})`);
+  for (const l of summary.launched ?? []) problems.push(`${l.kind} ${l.pid} was ${l.attempted ? 'attempted' : 'launched'} (${l.program})`);
   return problems;
 }
 

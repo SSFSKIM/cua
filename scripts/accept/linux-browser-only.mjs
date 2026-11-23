@@ -80,7 +80,8 @@ export const selectionCell = specifiers => `const fs = await import('node:fs'), 
 async function useBody(specifiers) {
   const fs = await import('node:fs'), path = await import('node:path'), {createRequire} = await import('node:module');
   const env = Object.fromEntries(fs.readFileSync('/proc/self/environ', 'utf8').split('\0').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
-  const outcome = e => ({code: typeof e?.code === 'string' ? e.code : null, message: String(e?.message ?? e).slice(0, 500)});
+  // Each message whole: the comparison reads all of it (fix wave 2, #2); only a displayed diagnostic is cut.
+  const outcome = e => ({code: typeof e?.code === 'string' ? e.code : null, message: String(e?.message ?? e)});
   const why = e => String(e?.message ?? e).slice(0, 300);
   const realOf = f => { try { return fs.realpathSync(f); } catch { return null; } };
   const base = (env.CUA_REPL_NODE_MODULE_DIRS ?? '').split(':').filter(e => path.isAbsolute(e)).map(e => (path.basename(e) === 'node_modules' ? path.dirname(e) : e))[0] ?? null;
@@ -97,7 +98,8 @@ async function useBody(specifiers) {
     const seen = new Set();
     const walk = m => { if (!m || seen.has(m)) return; seen.add(m); for (const child of m.children ?? []) walk(child); };
     walk(top);
-    out.loaded.playwright = {resolved: realOf(resolved), entry: top ? realOf(top.filename) : null, complete: top?.loaded === true, files: [...seen].map(m => realOf(m.filename))};
+    out.loaded.playwright = {resolved: realOf(resolved), entry: top ? realOf(top.filename) : null, complete: top?.loaded === true, api: typeof pw?.chromium?.launch === 'function',
+      files: [...seen].map(m => realOf(m.filename))};
   } catch (e) { out.used.playwright = why(e); }
   out.via.playwright = 'require';
   try {
@@ -158,13 +160,17 @@ export function selectionProblems({selected, moduleDir, specifiers = SPECIFIERS,
 
 // A by-name outcome as the cell records it: 'ok', or `{code: string | null, message: string}`.
 const validOutcome = o => o === 'ok' || (!!o && typeof o === 'object' && typeof o.message === 'string' && (o.code === null || typeof o.code === 'string'));
-const words = o => (o === 'ok' ? 'ok' : `${o.code ? `${o.code}: ` : ''}${o.message}`);
+const words = o => (o === 'ok' ? 'ok' : `${o.code ? `${o.code}: ` : ''}${o.message.length > 300 ? `${o.message.slice(0, 300)}…` : o.message}`);
+const escaped = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // An outcome as compared across the two cuas: 'ok', or its code and its message with that side's own install root (and
 // its real path) set aside, the two trees lying in different places. Nothing else of the message is rewritten.
 function outcomeKey(o, roots) {
   if (o === 'ok') return 'ok';
   let message = o.message;
-  for (const root of [...new Set(roots.filter(r => typeof r === 'string' && r.length > 1))].sort((a, b) => b.length - a.length)) message = message.split(root).join('<root>');
+  // A root only where it is a whole path prefix: followed by a separator, the end, or a character no path name holds
+  // here, so `<root>-sibling/x` stays as it is (fix wave 2, #2).
+  for (const root of [...new Set(roots.filter(r => typeof r === 'string' && r.length > 1))].sort((a, b) => b.length - a.length))
+    message = message.replace(new RegExp(`${escaped(root)}(?=/|$|[\\s"'\`),:;])`, 'g'), '<root>');
   return JSON.stringify([o.code, message]);
 }
 
@@ -182,12 +188,29 @@ export function importComparison(use, older) {
 }
 
 /**
- * The imports' and the native uses' judge, `older` the cua before M6a's `{base, imported}`: BY_NAME import; COMPARED's
- * outcomes equal the older cua's; sharp runs through require; classic-level runs. -> problems.
+ * The older cua's reply to the use cell as a baseline (fix wave 2, #2): `{isError, timedOut, use}`, accepted only from a
+ * successful reply whose base is `expectedBase` (the older cua's module base, by real path) and whose six outcomes are
+ * well formed. -> `{base, imported}`, or `{failed}` naming why.
  */
-export function useProblems(use, {older} = {}) {
+export function baselineOf({isError, timedOut, use}, {expectedBase}) {
+  if (timedOut) return {failed: 'the older cua\'s cell did not answer'};
+  if (isError) return {failed: 'the older cua\'s cell failed'};
+  if (!use || typeof use !== 'object') return {failed: 'no reply from the older cua\'s cell'};
+  if (use.base !== expectedBase) return {failed: `the reply's base ${use.base} is not the older cua's module base ${expectedBase}`};
+  const malformed = SPECIFIERS.filter(spec => !validOutcome(use.imported?.[spec]));
+  if (malformed.length) return {failed: `the reply's outcomes for ${malformed.join(', ')} are malformed`};
+  return {base: use.base, imported: use.imported};
+}
+
+/**
+ * The imports' and the native uses' judge, `older` the cua before M6a's `{base, imported}` and `base` this cua's module
+ * root by real path: BY_NAME import; COMPARED's outcomes equal the older cua's; sharp runs through require; classic-level
+ * runs. -> problems.
+ */
+export function useProblems(use, {older, base} = {}) {
   if (!use || typeof use !== 'object') return ['the cell reported no imports'];
   const problems = [];
+  if (base !== undefined && use.base !== base) problems.push(`this cua's cell reports the base ${use.base}, not its module root ${base}`);
   for (const spec of BY_NAME) if (use.imported?.[spec] !== 'ok') problems.push(`${spec} did not import (${validOutcome(use.imported?.[spec]) ? words(use.imported[spec]) : 'not tried'})`);
   // Criterion (c): the kernel refuses these two by name today (#531); once it lands they import by name, and this
   // comparison becomes a plain by-name pass again.
@@ -216,6 +239,8 @@ export function playwrightProblems(pw, {root, real = realpathSync}) {
   if (!inTree(pw.resolved)) problems.push(`require resolved ${pw.resolved ?? 'nothing'}, outside the module tree ${root}`);
   if (pw.entry !== pw.resolved) problems.push(`the loaded entry ${pw.entry ?? 'none'} is not the one require resolved (${pw.resolved ?? 'none'})`);
   if (pw.complete !== true) problems.push('playwright\'s entry did not finish loading');
+  // The API a session would drive, checked without opening anything (fix wave 2, #6).
+  if (pw.api !== true) problems.push('what require loaded does not expose chromium.launch');
   if (!Array.isArray(pw.files) || !pw.files.length) return [...problems, 'no graph of what require loaded'];
   const outside = pw.files.filter(f => !inTree(f));
   if (outside.length) problems.push(`${outside.length} file${outside.length === 1 ? '' : 's'} of the graph ${outside.length === 1 ? 'is' : 'are'} outside the module tree: ${typeof outside[0] === 'string' ? outside[0] : 'an unread path'}`);
@@ -281,7 +306,7 @@ async function main() {
     report.imports.natives = use?.natives ?? null;
     report.imports.loaded = use?.loaded ?? null;
     report.imports.comparison = importComparison(use, older);
-    const usedProblems = used.result?.isError ? [`the cell failed: ${resultText(used).slice(0, 300)}`] : useProblems(use, {older});
+    const usedProblems = used.result?.isError ? [`the cell failed: ${resultText(used).slice(0, 300)}`] : useProblems(use, {older, base: realpathSync(runtime.root)});
     step('pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox',
       usedProblems.length === 0, {imported: use?.imported ?? null, comparison: report.imports.comparison, used: use?.used ?? null, via: use?.via ?? null, loaded: use?.loaded ?? null, problems: usedProblems});
     const loadProblems = used.result?.isError ? ['the cell failed'] : playwrightProblems(use?.loaded?.playwright ?? null, {root: runtime.root});

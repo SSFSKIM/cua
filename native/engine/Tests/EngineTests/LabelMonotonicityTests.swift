@@ -4,14 +4,14 @@ import Foundation
 import XCTest
 @testable import Engine
 
-// #519 (design ruling 1150): #519 may only turn main's verdict into a refusal. It never changes which element is the
-// target, and it never turns a refusal into a press. Each label consumer is run here on every combination of label slots,
-// recorded and read now, beside a frozen copy of main's (0d19fdfa) own function over main's own encoding of the same
-// slots, and the two verdicts compared: the new one is main's, or a refusal. The oracle is main's code verbatim, renamed
-// (`main…`), with its file-private helpers inlined; main's record held a non-text slot as an absent one, and main's read
-// now took a non-text value for none and a value whatever its classification. The target choices (#433's candidates,
-// #442's named candidate, #296's re-created match) are proven on fixtures (`MonotoneLabelVerdictTests`,
-// `OtherControlOnTopTests`, `MenuItemPointTests`), against main's verdicts recorded at 0d19fdfa.
+// #519 (design rulings 1150, 1151): #519 may only turn main's verdict into a refusal, never changing which element is the
+// target. Narrowed by 1151, it changes only the consumers that refuse a target already chosen (#453's
+// `overlayLabelsAgree` and `overlayDuplicate`, #454's recorded title); every consumer that chooses a target reads labels
+// exactly as main did. Each is run here on every combination of label slots, recorded and read now, beside a frozen copy
+// of main's (0d19fdfa) own function over main's own encoding of the same slots: main recorded a non-text slot as an
+// absent one, read a non-text value now as none, and read a value whatever its element's classification. A kept
+// consumer's verdict is main's or a refusal; a reverted consumer's is main's exactly. The oracle is main's code verbatim
+// but for names and its file-private helpers inlined.
 
 /// One label slot as the app answers it.
 private enum Slot: CaseIterable {
@@ -51,7 +51,7 @@ private typealias Slots = [StalePointLabelPart: Slot]
 private func parts(_ role: String) -> [StalePointLabelPart] { role == "AXStaticText" ? [.title, .description, .value] : [.title, .description] }
 
 /// The record as the head decodes it (`decodedLabels`: the slots through `AttributeRead.decode`), a withheld value added
-/// as #501 records one.
+/// as #501 records one; a non-text slot in `labelsNonText` alone.
 private func headNode(_ element: Elem, _ slots: Slots) -> ScreenshotNode<Elem> {
   func set(_ slot: Slot) -> Set<StalePointLabelPart> { Set(slots.filter { $0.value == slot }.map(\.key)) }
   let labels = decodedLabels(role: element.role, title: slots[.title]?.text, description: slots[.description]?.text,
@@ -78,7 +78,8 @@ private func mainNode(_ element: Elem, _ slots: Slots) -> ScreenshotNode<Elem> {
   return node
 }
 
-/// The reads now as the head makes them: a non-text value `.nonText`, a closed value unread (`stalePointClassifiedValueRead`).
+/// The reads now as the head's live seam makes them: `label` as main's (`stalePointLabelRead`, a raw value), and the
+/// strict read: a non-text value `.nonText`, a value whose element classifies closed unread (`stalePointClassifiedValueRead`).
 private var headReads: StalePointReads<Elem> { StalePointReads<Elem>(
   role: { $0.role }, frame: { $0.frame }, parent: { _ in nil }, children: { _ in nil },
   title: { $0.live[.title]?.text }, description: { $0.live[.description]?.text }, value: { $0.live[.value]?.text },
@@ -87,11 +88,20 @@ private var headReads: StalePointReads<Elem> { StalePointReads<Elem>(
     case .failed: return stalePointLabelRead(nil, .cannotComplete)
     case .null: return stalePointLabelRead(kCFNull, .success)
     case .nonText: return stalePointLabelRead(nonTextLabelSlot, .success)
-    case .secure: return stalePointClassifiedValueRead(.closed)
     case .absent: return stalePointLabelRead(nil, .noValue)
     case let slot: return stalePointLabelRead(slot.text! as CFString, .success)
     }
-  }, same: { $0 === $1 }, gone: { _ in false }) }
+  }, same: { $0 === $1 }, gone: { _ in false },
+  strictLabel: { element, part in
+    switch element.live[part] ?? .absent {
+    case .failed: return stalePointStrictLabelRead(nil, .cannotComplete)
+    case .null: return stalePointStrictLabelRead(kCFNull, .success)
+    case .nonText: return stalePointStrictLabelRead(nonTextLabelSlot, .success)
+    case .secure: return stalePointClassifiedValueRead(.closed)
+    case .absent: return stalePointStrictLabelRead(nil, .noValue)
+    case let slot: return stalePointStrictLabelRead(slot.text! as CFString, .success)
+    }
+  }) }
 
 /// The reads now as main made them: a non-text value none, a value read whatever its element's classification.
 private var mainReads: StalePointReads<Elem> { StalePointReads<Elem>(
@@ -152,6 +162,7 @@ private func mainRelabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ rea
   guard let now, let nowPart else { return nil }
   if wasPart != nowPart, readNow(wasPart) == .null || node.label(nowPart) == .null { return nil }
   guard stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
+  if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
   return now
 }
 
@@ -242,84 +253,67 @@ final class LabelMonotonicityTests: XCTestCase {
     return labels.flatMap { a in labels.map { (a, $0) } }
   }
 
-  /// #298 `relabelledLabel` (#433's candidate too): where main refused, the head refuses; a refusal not `added`, the
-  /// only kind that lets #433 move to the next candidate as main did, is one main made.
-  func testRelabelledOnlyAddsRefusals() {
-    var added = 0
+  // Reverted (ruling 1151): the consumers that choose a target read labels exactly as main did.
+
+  /// #298 `relabelledLabel` (#433's candidate too), #443 `controlDiffers`: the head's verdict is main's.
+  func testTheTargetChoosingReadsNowAreMains() {
     for role in ["AXButton", "AXStaticText"] {
       for (recorded, live) in combinations(role) {
-        let element = Elem(role, live)
-        let main = mainRelabelledLabel(mainNode(element, recorded), mainReads)
-        let head = relabelledLabel(headNode(element, recorded), headReads)
-        if main != nil { XCTAssertNotNil(head, "\(role) \(recorded) → \(live): main refused, the head keeps") }
-        // Only a refusal main made may hand #433's point to the next candidate, as main did.
-        if head?.added == false { XCTAssertNotNil(main, "\(role) \(recorded) → \(live): a refusal main did not make is not added") }
-        if main == nil, head != nil { added += 1 }
-      }
-    }
-    XCTAssertGreaterThan(added, 0)
-  }
-
-  /// #443 `controlDiffers` (another control refuses): where main found another control, so does the head.
-  func testControlDiffersOnlyAddsRefusals() {
-    for role in ["AXButton", "AXStaticText"] {
-      for (recorded, live) in combinations(role) {
-        let element = Elem(role, live)
-        if mainControlDiffers(element, from: mainNode(element, recorded), windowShift: .zero, mainReads) {
-          XCTAssertTrue(controlDiffers(element, from: headNode(element, recorded), windowShift: .zero, headReads),
-                        "\(role) \(recorded) → \(live)")
-        }
-      }
-    }
-  }
-
-  /// #453 `overlayLabelsAgree` (agreeing presses): the head agrees only where main agreed.
-  func testOverlayLabelsAgreeOnlyWhereMainAgreed() {
-    for role in ["AXButton", "AXStaticText"] {
-      for (recorded, live) in combinations(role) {
-        let element = Elem(role, live)
-        if overlayLabelsAgree(headNode(element, recorded), reads: headReads) {
-          XCTAssertTrue(mainOverlayLabelsAgree(mainNode(element, recorded), reads: mainReads), "\(role) \(recorded) → \(live)")
-        }
-      }
-    }
-  }
-
-  /// #453 `overlayDuplicate` (a repeat is excused, so the row may be pressed) and #431 `recreatedLabelsAgree` (a twin
-  /// refuses): the head finds a repeat only where main did, and a twin wherever main did.
-  func testDuplicatesAndTwinsOnlyMoveTowardRefusal() {
-    for role in ["AXButton", "AXStaticText"] {
-      for (a, b) in recordPairs(role) {
-        let (x, y) = (Elem(role, [:]), Elem(role, [:]))
-        let (headA, headB, mainA, mainB) = (headNode(x, a), headNode(y, b), mainNode(x, a), mainNode(y, b))
-        if overlayDuplicate(headA, of: headB) { XCTAssertTrue(mainOverlayDuplicate(mainA, of: mainB), "\(role) \(a) as \(b)") }
-        if mainRecreatedLabelsAgree(mainA, mainB) { XCTAssertTrue(recreatedLabelsAgree(headA, headB), "\(role) \(a) twin \(b)") }
-      }
-    }
-  }
-
-  /// #296's re-created match (`recreatedHandle`'s label rule): the head takes a candidate only where main's lenient
-  /// match took it, and a record read whole exactly as main. Named exception (finding d): main took a candidate whose
-  /// label nothing known on both sides verified; the head refuses it.
-  func testTheRecreatedMatchOnlyAddsRefusals() {
-    var exceptions = 0
-    for role in ["AXButton", "AXStaticText"] {
-      for (recorded, live) in combinations(role) where !live.values.contains(.secure) {
         let element = Elem(role, live)
         let (head, main) = (headNode(element, recorded), mainNode(element, recorded))
-        func agrees(_ node: ScreenshotNode<Elem>, _ reads: StalePointReads<Elem>) -> Bool {
+        let what = "\(role) \(recorded) → \(live)"
+        XCTAssertEqual(relabelledLabel(head, headReads), mainRelabelledLabel(main, mainReads), what)
+        XCTAssertEqual(controlDiffers(element, from: head, windowShift: .zero, headReads),
+                       mainControlDiffers(element, from: main, windowShift: .zero, mainReads), what)
+        let lenient = { (node: ScreenshotNode<Elem>, reads: StalePointReads<Elem>) in
           stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value,
                                 title: reads.title(element), description: reads.description(element),
                                 value: node.value == nil ? nil : reads.value(element))
         }
-        let mainTakes = agrees(main, mainReads)
-        let headTakes = agrees(head, headReads) && recreatedLabelVerified(head, element, headReads)
-        if headTakes { XCTAssertTrue(mainTakes, "\(role) \(recorded) → \(live)") }
-        if head.labelsUnread.isEmpty { XCTAssertEqual(headTakes, mainTakes, "\(role) \(recorded) → \(live): read whole") }
-        if mainTakes, !headTakes { exceptions += 1 }
+        XCTAssertEqual(lenient(head, headReads), lenient(main, mainReads), "\(what): #296's and #305's match")
       }
     }
-    XCTAssertGreaterThan(exceptions, 0, "finding (d)'s exception is exercised")
+  }
+
+  /// #431 `recreatedLabelsAgree` (the twin search): the head's verdict is main's.
+  func testTheTwinSearchIsMains() {
+    for role in ["AXButton", "AXStaticText"] {
+      for (a, b) in recordPairs(role) {
+        let (x, y) = (Elem(role, [:]), Elem(role, [:]))
+        XCTAssertEqual(recreatedLabelsAgree(headNode(x, a), headNode(y, b)), mainRecreatedLabelsAgree(mainNode(x, a), mainNode(y, b)),
+                       "\(role) \(a) twin \(b)")
+      }
+    }
+  }
+
+  // Kept (ruling 1151): the consumers that refuse the target already chosen only add refusals.
+
+  /// #453 `overlayLabelsAgree` (agreeing presses): the head agrees only where main agreed, and refuses some row main
+  /// pressed (a non-text part, a value now closed).
+  func testOverlayLabelsAgreeOnlyWhereMainAgreed() {
+    var refused = 0
+    for role in ["AXButton", "AXStaticText"] {
+      for (recorded, live) in combinations(role) {
+        let element = Elem(role, live)
+        let head = overlayLabelsAgree(headNode(element, recorded), reads: headReads)
+        let main = mainOverlayLabelsAgree(mainNode(element, recorded), reads: mainReads)
+        if head { XCTAssertTrue(main, "\(role) \(recorded) → \(live)") }
+        if main, !head { refused += 1 }
+      }
+    }
+    XCTAssertGreaterThan(refused, 0)
+  }
+
+  /// #453 `overlayDuplicate` (a repeat is excused, so the row may be pressed): the head finds a repeat only where main did.
+  func testOverlayDuplicateOnlyWhereMainFoundOne() {
+    for role in ["AXButton", "AXStaticText"] {
+      for (a, b) in recordPairs(role) {
+        let (x, y) = (Elem(role, [:]), Elem(role, [:]))
+        if overlayDuplicate(headNode(x, a), of: headNode(y, b)) {
+          XCTAssertTrue(mainOverlayDuplicate(mainNode(x, a), of: mainNode(y, b)), "\(role) \(a) as \(b)")
+        }
+      }
+    }
   }
 
   /// #454's menu item: the head delivers only where main delivered. Named exception: a recorded title failed or null

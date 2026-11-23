@@ -455,7 +455,7 @@ final class MenuItemPointTests: XCTestCase {
       node = ScreenshotNode(element: scene.times, role: kAXMenuItemRole, title: labels.title, description: nil, subrole: nil, value: nil,
                             editableAncestor: nil, labelsUnread: labels.unread, frame: node.frame, shown: node.shown, depth: 3,
                             subtreeRecorded: true)
-      node.labelsNull = labels.null
+      (node.labelsNull, node.labelsNonText) = (labels.null, labels.nonText)
       return StalePointVerdict(reason: .sameElement, node: node, current: scene.times)
     }
     for (name, labels) in [("numeric", decodedLabels(role: kAXMenuItemRole, title: nil, description: nil, value: nil, nonText: [.title])),
@@ -469,57 +469,50 @@ final class MenuItemPointTests: XCTestCase {
     guard case .deliver = decide(hit: scene.times, record: recordedMenuItem(verdict(absent))) else { return XCTFail("absent then and now") }
   }
 
-  /// #519 (ruling 1150, the re-review of 34818106..3a8276c6, finding a): Chrome's parentless `<select>` menu over the
-  /// page. The guard's window-scoped hit is nil, the raw hit names item Two, and a deeper inert page group covers the shared
-  /// edge of One and Two, whose recorded frames both hold the point. One ranks first among #433's candidates; its title
-  /// fails to read now and it has no description. Main kept One as the control beneath (its label unknown keeps), and
-  /// #454 refused Two `notRecorded`. One's label unverified must refuse there, never handing the point to Two, which #454
-  /// would then press.
-  func testAnUnverifiedFirstCandidateNeverPromotesTheNextToTheMenusItem() {
-    let chrome = chromeSelect()
-    let two = chrome.menu.children[1]
-    let group = Node("AXGroup")  // the page's inert group
-    let frames: [ObjectIdentifier: CGRect] = [
-      ObjectIdentifier(chrome.one): CGRect(x: 535, y: 90, width: 159, height: 15),
-      ObjectIdentifier(two): CGRect(x: 535, y: 104, width: 159, height: 15),
-      ObjectIdentifier(group): CGRect(x: 400, y: 31, width: 620, height: 679),
-    ]
-    func node(_ element: Node, depth: Int, actionable: Bool) -> ScreenshotNode<Node> {
+  /// #519 (rulings 1150, 1151): an item whose title was no text at the observation, run through the guard's target
+  /// selection and into #454's decision, as the head records it and as main did (the title none, no `labelsNonText`).
+  /// The guard chooses the same node and handle either way (it reads labels as main did); #454 then delivers to main's
+  /// item or refuses it, never another.
+  func testANonTextTitleOnlyRefusesTheItemTheGuardChose() {
+    let scene = textEdit()
+    let frames: [ObjectIdentifier: CGRect] = [ObjectIdentifier(scene.menu): CGRect(x: 535, y: 44, width: 159, height: 660),
+                                              ObjectIdentifier(scene.times): CGRect(x: 535, y: 94, width: 159, height: 20),
+                                              ObjectIdentifier(scene.helvetica): CGRect(x: 535, y: 74, width: 159, height: 20)]
+    func node(_ element: Node, depth: Int, ancestor: Int?, nonText: Bool) -> ScreenshotNode<Node> {
+      let labels = decodedLabels(role: element.role, title: element.title, description: nil, value: nil, nonText: nonText ? [.title] : [])
       let frame = frames[ObjectIdentifier(element)]!
-      var node = ScreenshotNode(element: element, role: element.role, title: element.title, description: nil, subrole: nil, value: nil,
-                                editableAncestor: nil, labelsUnread: [], frame: frame, shown: frame, depth: depth, subtreeRecorded: true)
-      node.actionable = actionable
+      var node = ScreenshotNode(element: element, role: element.role, title: labels.title, description: nil, subrole: nil, value: nil,
+                                editableAncestor: nil, labelsUnread: labels.unread, frame: frame, shown: frame, depth: depth, subtreeRecorded: true)
+      (node.labelsNull, node.labelsNonText, node.ancestor, node.actionable) = (labels.null, labels.nonText, ancestor, element.role == kAXMenuItemRole)
       return node
     }
-    // Both items at one depth, One later in the walk: it ranks first. The group is deeper, inert, and holds the point.
-    let nodes = [node(two, depth: 9, actionable: true), node(chrome.one, depth: 9, actionable: true), node(group, depth: 13, actionable: false)]
-    let shared = CGPoint(x: 615, y: 104.5)
-    let staleReads = StalePointReads<Node>(
-      role: { $0.role }, frame: { frames[ObjectIdentifier($0)] }, parent: { $0.parent }, children: { $0.children },
-      title: { $0 === chrome.one ? nil : $0.title }, description: { _ in nil }, actions: { $0.actions },
-      label: { node, part in
-        if node === chrome.one, part == .title { return .unreadable }  // One's title fails to read now
-        return .text(part == .title ? node.title : nil)
-      }, same: { $0 === $1 }, gone: { _ in false })
-    let verdict = stalePointVerdict(at: shared, nodes: nodes, hit: nil, reads: staleReads)
-    XCTAssertTrue(verdict.underlying?.element === chrome.one, "the first candidate stays the one judged")
-    let decision = verdict.refused ? nil : menuItemPoint(hit: two, recorded: recordedMenuItems(verdict), reads: reads, menuWindow: { 77 })
-    if case .deliver? = decision { XCTFail("Two pressed: \(verdict.reason)") }
-    XCTAssertTrue(verdict.refused, "One's label unverified refuses: \(verdict.reason)")
-    XCTAssertEqual(verdict.reason, .relabelled)
-    // Main's verdict on these inputs, recorded at 0d19fdfa: kept (`noHit`), One the control beneath, #454 not delivering.
-    // The head's is a refusal (ruling 1150).
-    // Main's path, One's title read: One is the control beneath, and #454 refuses the hit on Two as not recorded there.
-    let read = StalePointReads<Node>(
-      role: { $0.role }, frame: { frames[ObjectIdentifier($0)] }, parent: { $0.parent }, children: { $0.children },
-      title: { $0.title }, description: { _ in nil }, actions: { $0.actions },
-      label: { node, part in .text(part == .title ? node.title : nil) }, same: { $0 === $1 }, gone: { _ in false })
-    let kept = stalePointVerdict(at: shared, nodes: nodes, hit: nil, reads: read)
-    XCTAssertFalse(kept.refused, "\(kept.reason)")
-    XCTAssertTrue(kept.underlying?.element === chrome.one)
-    guard case .refuse(.notRecorded, _) = menuItemPoint(hit: two, recorded: recordedMenuItems(kept), reads: reads, menuWindow: { 77 }) else {
-      return XCTFail("notRecorded")
+    let staleReads = StalePointReads<Node>(role: { $0.role }, frame: { frames[ObjectIdentifier($0)] }, parent: { $0.parent },
+                                           children: { $0.children }, title: { $0.title }, description: { _ in nil }, same: { $0 === $1 })
+    var refusedOnly = 0
+    for live in [nil, "Times", "Other"] as [String?] {
+      for timesFails in [false, true] {
+        let head = [node(scene.menu, depth: 2, ancestor: nil, nonText: false), node(scene.helvetica, depth: 3, ancestor: 0, nonText: false),
+                    node(scene.times, depth: 3, ancestor: 0, nonText: true)]
+        let main = head.map { node -> ScreenshotNode<Node> in var node = node; node.labelsNonText = []; return node }
+        scene.times.title = live
+        scene.times.titleFails = timesFails
+        let headVerdict = stalePointVerdict(at: point, nodes: head, hit: scene.times, reads: staleReads)
+        let mainVerdict = stalePointVerdict(at: point, nodes: main, hit: scene.times, reads: staleReads)
+        let what = "now \(live ?? "none"), failing \(timesFails)"
+        XCTAssertEqual(headVerdict.reason, mainVerdict.reason, what)
+        XCTAssertTrue(headVerdict.node?.element === mainVerdict.node?.element && headVerdict.current === mainVerdict.current, what)
+        let headDecision = decide(hit: scene.times, record: recordedMenuItems(headVerdict).identified)
+        let mainDecision = decide(hit: scene.times, record: recordedMenuItems(mainVerdict).identified)
+        if case .deliver(let target) = headDecision {
+          guard case .deliver(let mains) = mainDecision else { return XCTFail("\(what): the head delivers where main did not") }
+          XCTAssertTrue(target.item === mains.item, what)
+        } else if case .deliver = mainDecision {
+          refusedOnly += 1
+        }
+      }
     }
+    scene.times.titleFails = false
+    XCTAssertGreaterThan(refusedOnly, 0, "the numeric recorded title refuses an item main delivered to")
   }
 
   /// Item 6: a page's ARIA menu item, inside a web area, is main's even with a window of the app's at the menu layer over

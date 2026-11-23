@@ -7,6 +7,7 @@
 import {isAbsolute} from 'node:path';
 import {SecretStoreError, STORE_ENV, fileStore, tieredStore} from '../secrets/store.mjs';
 import {LABEL_RULE, RESERVED_PREFIX, isReserved} from '../secrets/label.mjs';
+import {EFFECT_PHRASES, ENTERING_EFFECTS} from './engine/interruption.mjs';
 
 export const NOTHING_ENTERED = 'nothing was entered';
 const LAUNCH_CODE = /^[a-z][a-z_]{0,63}$/;
@@ -109,11 +110,24 @@ export function interventionKind(message) {
   if (message.includes('The user changed \'')) return 'userChanged';
   return null;
 }
-export function userIntervened(what, label, kind, unentered, mayShow = false) {
-  const entered = kind !== 'stillInteracting' && !unentered;
+// #212: with cua's engine's account of the request (`interruption`, ./engine/interruption.mjs readInterruption), what was
+// entered follows it instead: a refusal before the action did nothing; otherwise the account's phase and each step it
+// names, in the engine's fixed phrases, and the secret counts as possibly entered once its write or the action's own
+// input may have gone (or, stopped part-way, when no step is named), never "nothing was entered" beside a step.
+function interruptionOutcome({phase, effects}) {
+  if (phase === 'beforeAction' && effects.length === 0) return {entered: false, outcome: NOTHING_ENTERED};
+  const entered = effects.some(effect => ENTERING_EFFECTS.includes(effect)) || (phase === 'inFlight' && effects.length === 0);
+  const reached = effects.length ? `what may have taken effect: ${effects.map(effect => EFFECT_PHRASES[effect]).join('; ')}` : 'any step it had begun may have taken effect';
+  const opening = phase === 'beforeAction' ? 'it was refused before its first step' : 'it was stopped part-way';
+  return {entered, outcome: `${opening}, and ${reached}; ${entered ? 'the secret may have been partly entered' : 'the secret was not entered'}; nothing was undone`};
+}
+export function userIntervened(what, label, kind, unentered, mayShow = false, interruption = null) {
+  const account = interruption ? interruptionOutcome(interruption) : null;
+  const entered = account ? account.entered : kind !== 'stillInteracting' && !unentered;
   const shows = entered && mayShow;
   const instruction = shows && kind === 'userChanged' ? INTERVENED.userChangedMayShow : INTERVENED[kind];
-  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${instruction}; ${entered ? 'it may have been partly entered' : NOTHING_ENTERED}. ${shows ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);
+  const outcome = account ? account.outcome : entered ? 'it may have been partly entered' : NOTHING_ENTERED;
+  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${instruction}; ${outcome}. ${shows ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);
 }
 
 // cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is

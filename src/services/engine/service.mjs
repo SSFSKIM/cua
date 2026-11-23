@@ -61,7 +61,9 @@
 //   row {role, frame}}, or why #452's refusal stood, {window, by, kind?, refused, row?, refusedBy? {role, reason}}). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
-//   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
+//   delivery's postedAt). cua/interruption rides on a userIntervened error (#212: {phase "beforeAction" | "inFlight",
+//   effects}, where the intervention stopped the request and which of its steps may have taken effect, as the engine's
+//   message also says). cua/serviceMs is the wrapper's (src/services/sky.mjs).
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
@@ -125,7 +127,7 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
   'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
-  'cua/overlayClick': null,
+  'cua/overlayClick': null, 'cua/interruption': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
@@ -145,7 +147,7 @@ const NOTE_CHARS = 500;
 // overlay closed, or why #452's refusal stood, {window, by, kind?, route?, confirmed?, refused?, row? {role, frame},
 // refusedBy? {role, reason}, ...}, #453).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick', 'interruption'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

@@ -260,6 +260,51 @@ test('userIntervened after substitution says which of its two sentences the mode
   assertValueFree(odd);
 });
 
+// #212 (PR #218's concealed case, re-cut): cua's engine names where an intervention stopped the request and what may
+// have taken effect (the meta's `interruption`). The wrapper withholds the engine's text, so it says the same in fixed
+// phrases of its own: a refusal before the action did nothing; a stop part-way, or a refusal that ended a held
+// activation, names each step the engine reached, and "nothing was entered" is never said beside one. The secret counts
+// as possibly entered only once the value was written or the action's own input was posted.
+test('#212: userIntervened after substitution names what may have taken effect from the engine\'s interruption, in fixed phrases', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  const changed = 'Computer Use server error -10016: The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
+  const cases = [
+    {label: 'refused before the action', interruption: {phase: 'beforeAction', effects: []}, nothing: true, entered: false, named: []},
+    {label: 'stopped after the focus', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick', 'focus', 'focusClick']}, nothing: false, entered: false,
+      named: ['the app\'s activation in the background', 'an activation click on its window', 'moving focus to the field', 'a click to focus the field']},
+    {label: 'stopped after the value write', interruption: {phase: 'inFlight', effects: ['focus', 'value']}, nothing: false, entered: true,
+      named: ['moving focus to the field', 'the value written to the field']},
+    {label: 'stopped part-way, no step named', interruption: {phase: 'inFlight', effects: []}, nothing: false, entered: true, named: []},
+    {label: 'refused, a held activation ended', interruption: {phase: 'beforeAction', effects: ['activationRelease']}, nothing: false, entered: false,
+      named: ['the end of a held activation, which sends the app a deactivation']},
+    {label: 'an unknown effect is not repeated', interruption: {phase: 'inFlight', effects: ['focus', `leak ${value}`]}, nothing: false, entered: false,
+      named: ['moving focus to the field']},
+  ];
+  for (const {label, interruption, nothing, entered, named} of cases) {
+    for (const request of [setValue(REF('WORK_PASSWORD')), typeText(REF('WORK_PASSWORD'))]) {
+      const meta = {...NOTHING_POSTED, interruption};
+      const {service} = harness({answer: () => { const error = new EngineError('userIntervened', `${changed} ${value}`, meta); error.code = -10016; throw error; }});
+      const error = await rejection(service.handleRpc(request));
+      const at = `${request.method}, ${label}`;
+      assert.equal(error.code, 'secret_input_failed', at);
+      assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions/, at);
+      assert.equal(/nothing was entered/.test(error.message), nothing, at);
+      assert.equal(/may have been partly entered/.test(error.message), entered, at);
+      if (!nothing) assert.match(error.message, interruption.phase === 'beforeAction' ? /refused before its first step/ : /stopped part-way/, at);
+      if (!nothing && !entered) assert.match(error.message, /the secret was not entered/, at);
+      for (const phrase of named) assert.ok(error.message.includes(phrase), `${at}: names ${phrase}`);
+      if (!nothing && named.length === 0) assert.match(error.message, /any step it had begun may have taken effect/, at);
+      assert.doesNotMatch(error.message, /TextEdit\.app|leak/, `${at}: nothing of the engine's text or an unknown effect`);
+      assertValueFree(error);
+    }
+  }
+  // An interruption the wrapper cannot read keeps the startedAt rule.
+  const {service} = harness({answer: () => { const error = new EngineError('userIntervened', changed, {...NOTHING_POSTED, interruption: {phase: 'sideways', effects: ['focus']}}); error.code = -10016; throw error; }});
+  const unread = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+  assert.match(unread.message, /nothing was entered/);
+  assert.doesNotMatch(unread.message, /moving focus/);
+});
+
 test('cua\'s engine-only error names are admitted value-free; concealedInputUnavailable gets its own sentence, saying nothing was entered', async () => {
   const value = VALUES['WORK_PASSWORD'];
   for (const name of ['inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed', 'windowMinimized']) {

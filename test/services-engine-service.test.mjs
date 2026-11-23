@@ -425,6 +425,20 @@ test('intervention, entered and routeAdvice ride as cua/ meta on results and on 
   for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice', 'cua/delivery']) assert.equal(meta[key], null, key);
 });
 
+test('#212: a userIntervened error\'s interruption (its phase and what may have taken effect) rides as cua/interruption, with the engine\'s sentence; the next call carries none', async t => {
+  const interruption = {phase: 'inFlight', effects: ['focus', 'focusClick']};
+  const sentence = 'The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions. The action was stopped part-way. What may have taken effect: moving focus to the field; a click to focus the field. Nothing was undone.';
+  const {getApp, call, meta} = await session(t, {handlers: {
+    'execute:set_value': () => { throw new EngineFailure(-10016, sentence, 'userIntervened', {meta: {...INPUT_META, startedAt: null, endedAt: null, interruption}}); },
+    'execute:press_key': () => ({meta: INPUT_META}),
+  }});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.setValue(1, 'report.txt')), error => error.message === `Computer Use server error -10016: ${sentence}`);
+  assert.deepEqual(meta['cua/interruption'], interruption);
+  await call(() => app.pressKey('a'));
+  assert.equal(meta['cua/interruption'], null, 'none is left standing');
+});
+
 test('cua/settle rides on the observation whose settle hit its cap, and on no other', async t => {
   const {getApp, call, meta, trees} = await session(t);
   const {app} = await getApp('TextEdit');

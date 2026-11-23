@@ -57,6 +57,7 @@ import {isAbsolute, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {createLinuxPolicy} from './engine/policy.mjs';
+import {readInterruption} from './engine/interruption.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, inputFailedUnentered, concealedInputUnavailable,
   interventionKind, userIntervened, secretMayShow, secretsFromEnv,
@@ -248,8 +249,10 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       // #414: cua's engine typed into a password field that stopped being one, which may now show the secret.
       const mayShow = method === 'type_text' && error?.name === 'SkyComputerUseError' && secretMayShow(error.meta);
       // The user intervened: which of its two sentences, so the model knows whether to wait or to re-query.
+      // #212: cua's engine's account of where it stopped and what may have taken effect, when it gives one.
       const intervened = kind === 'userIntervened' ? interventionKind(error.message) : null;
-      if (intervened) throw userIntervened(method, reference.label, intervened, unentered, mayShow);
+      const interruption = intervened && error?.name === 'SkyComputerUseError' ? readInterruption(error.meta) : null;
+      if (intervened) throw userIntervened(method, reference.label, intervened, unentered, mayShow, interruption);
       if (unentered) throw inputFailedUnentered(method, reference.label, kind);
       throw inputFailed(method, reference.label, kind, mayShow);
     }

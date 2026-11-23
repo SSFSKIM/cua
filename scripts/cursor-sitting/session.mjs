@@ -50,12 +50,23 @@ export function parseCells(text) {
 export const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered',
   'delivery', 'afterActionRepairs', 'observation', 'paste', 'elementClick', 'coordinateClick'];
 
+// Whether no engine ran a reply's call (ruling 1149): it carries no result, or the result is cua's own status error that
+// no runtime answered (no `cua/taskId`: the connection lifecycle's rejection, src/mcp/server.mjs rejectionResult, or a
+// device link's failure, src/mcp/target.mjs failed). Such a reply is exempt from the attestation and never a success.
+const ranOnNoEngine = result => !result || (result.isError === true && result.structuredContent?.status === 'error' && !Object.hasOwn(result._meta ?? {}, 'cua/taskId'));
+
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
 // attested engine and its whole identity (`nativeEngine`: engine, version, build, and a control build's variant, which
 // the isolating slot attests its half by), that call's meta (KEPT_META, the keys it carried), and the images it emitted
 // (base64, SHOT only). -> {ok, value?, error?, inCellMs?, route, engine, nativeEngine, meta, images}.
 export function readReply(reply) {
   if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, nativeEngine: null, meta: {}, images: []};
+  // No engine ran it: unsuccessful whatever its text says, a cell's marker included, so it makes no evidence.
+  if (ranOnNoEngine(reply.result)) {
+    const said = resultText(reply).split('\n').filter(Boolean).at(-1);
+    const error = reply.result ? `cua answered ${reply.result.structuredContent.code ?? 'an error'}: no engine ran the cell${said ? ` (${said})` : ''}` : reply.error?.message ?? 'no result';
+    return {ok: false, error: String(error).slice(0, 300), route: null, engine: null, nativeEngine: null, meta: {}, images: []};
+  }
   const meta = reply.result?._meta ?? {};
   const parsed = parseCells(resultText(reply));
   const images = (reply.result?.content ?? []).filter(c => c.type === 'image').map(c => ({mimeType: c.mimeType, data: c.data}));
@@ -69,11 +80,9 @@ export function readReply(reply) {
 
 // The session's dispatch: every scene a cell acts on checked by `guard` right before it goes (a key cell, its window on
 // top of the frontmost application too), the reply's engine attested; the first refusal, wrong engine or result that
-// attests none (ruling 1149: every result the runtime answered, an error included) stops every later cell. A reply with
-// no result, or cua's own status error that no runtime answered (no `cua/taskId`: the connection lifecycle's rejection,
-// src/mcp/server.mjs rejectionResult, or a device link's failure, src/mcp/target.mjs failed), ran on no engine and has
-// nothing to attest. `send(code)` answers the raw js reply. -> run(code, {keys}).
-const ranOnNoEngine = result => !result || (result.isError === true && result.structuredContent?.status === 'error' && !Object.hasOwn(result._meta ?? {}, 'cua/taskId'));
+// attests none (ruling 1149: every result the runtime answered, an error included) stops every later cell. A reply no
+// engine ran (ranOnNoEngine) has nothing to attest; readReply has already made it unsuccessful. `send(code)` answers the
+// raw js reply. -> run(code, {keys}).
 export function gate({name, engine, scenes, guard, send}) {
   let stopped = null;
   const records = Object.fromEntries(scenes.map(s => [s.id, s]));

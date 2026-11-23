@@ -132,6 +132,9 @@ struct InputMeta {
   var keyWindowRestored: Bool?
   /// Route 3's pointer actions: what the delivery guard after the action's events saw and did (#200); nil when none ran.
   var delivery: DeliveryGuardOutcome?
+  /// #538: a shared pointer refused before its events, no activation standing and another app in front, with the
+  /// readings (`PointerRefusalRecord`), on the refusal and on the element route that carried it instead.
+  var pointerRefusal: PointerRefusalRecord?
   /// The paste route's value-free diagnostics of its last line (#187, Paste.swift `PasteDiagnostics`); nil off it.
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
@@ -227,6 +230,7 @@ struct InputMeta {
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
+    if let pointerRefusal { wire["pointerRefusal"] = pointerRefusal.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
     if let fieldFocus {
@@ -333,6 +337,9 @@ struct PointerTarget {
 
   /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
   static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
+  /// A pointer into a view known to accept first mouse in `app`, named in its sentences: every button's before #282's
+  /// left-pointer reading, so a right or middle click's refusal names the app (#538, ruling 1174).
+  static func acceptingFirstMouse(in app: ResolvedApp) -> PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: app.displayName) }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
@@ -361,6 +368,11 @@ struct PointerTarget {
 /// #296: a pointer whose point the stale-point guard refused (`pointer.staleRefusal`) throws that refusal before anything
 /// is posted, activated, withdrawn or pressed, #282's element route included (the design session's ruling 1ea561bc
 /// ca82a6f4); a kept point's element route checks again what it presses (StalePoint.swift `StalePointGate`).
+///
+/// #538 (ruling 1173): in shared mode, a pointer with no activation standing (the app believed it had focus: key focus
+/// with another app frontmost, or a front lost since) is refused by the delivery guard's front read just before its
+/// events when another app is in front, nothing posted, and answers as #282's refusal does: by `pointer.elementRoute`
+/// when it has one, else as `keyFocusOnlyRefused`; the meta's `pointerRefusal` carries the readings either way.
 ///
 /// #359: `pointerPosted` runs once the action's own events are posted (ClickOrdering.swift: the window in which an
 /// accessibility action on the process's text waits for them to land); never on #282's element route, which posts none.
@@ -413,25 +425,41 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     try beforePosting()
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
-    announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
     func postAll() {
       meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
       pointerPosted()
     }
+    // The agent cursor is told only once the events are sure to go out: inside the delivery guard's `post`, after its
+    // refusal (#538, ruling 1174: a refused pointer moves no cursor, and its element route announces its own action).
     func postEvents() {
+      announce()
       if let standing { if standing.postAction(made, postAll) { reportsArm = true; consumedArm = true } } else { postAll() }
     }
     // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
     if let standing, shared {
-      meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
+      meta.delivery = try standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
     } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too
     try foreground.run(send)
-  } else { try send() }
+  } else {
+    do {
+      try send()
+    } catch let refused as PointerRefused {
+      // #538: refused by the delivery guard, nothing posted. The lease of an activation that never ran is given back
+      // first, so the element route starts from what #282's refusal before the activation leaves.
+      guard let record = refused.keyFocusOnly else { throw refused }
+      meta.pointerRefusal = record
+      _ = release?()
+      release = nil
+      guard let elementRoute = pointer.elementRoute else { throw keyFocusOnlyRefused(pointer.app, noun: pointer.noun, record) }
+      try elementRoute(&meta)
+      return
+    }
+  }
   if consumedArm, pointer.view != .acceptsFirstMouse { throw clickUnconfirmed(pointer.app, noun: pointer.noun) }
 }
 
@@ -661,7 +689,7 @@ extension Engine {
         }
         // What a left click by route 3 points into (#282, #315): in shared mode a Chromium or Gecko web area's plain click
         // takes the hit's own action when it has one, any other is refused, before anything is posted.
-        var pointer = PointerTarget.acceptingFirstMouse
+        var pointer = PointerTarget.acceptingFirstMouse(in: app)
         var pointerHit = hit
         // #452: the hit-test whose hit the guard judges, #288's last re-hit when it ran (the review of 023a3bee, P1).
         let latest = LatestHit(hitOutcome) { hitTestOutcome(window: placed.window, pid: appPid, at: placed.point, now: monotonicMilliseconds) }

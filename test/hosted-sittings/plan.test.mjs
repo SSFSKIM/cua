@@ -83,7 +83,10 @@ test('D: accept-native\'s exact selection with both live flags on a scratch home
   const accept = p.steps[1];
   assert.deepEqual(accept.argv, ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', '1,2,3,4,5,6,7,8,10,11,12,13', '--report', '/w/out/acceptance.json']);
   assert.ok(!accept.argv.includes('--secret-key') && !accept.argv.includes('--secret-home'), 'the live secrets are generated sentinels in a temporary home accept-native makes and removes');
-  assert.deepEqual([p.steps[0].env, accept.env], [{CUA_HOME: '/t/scratch/cua-accept', CUA_NATIVE_ENGINE: 'vendor'}, {CUA_HOME: '/t/scratch/cua-accept'}]);
+  assert.deepEqual([p.steps[0].env, accept.env], [{CUA_HOME: '/t/scratch/cua-accept', CUA_NATIVE_ENGINE: 'vendor'}, {CUA_HOME: '/t/scratch/cua-accept', XDG_CONFIG_HOME: '/t/scratch/accept-config'}],
+    'item 13 needs a scratch XDG_CONFIG_HOME of the run\'s own, never the account\'s ~/.config');
+  assert.deepEqual(p.scratchDirs, ['/t/scratch/accept-config'], 'made before the steps run');
+  assert.deepEqual(plan('a').scratchDirs, []);
   assert.deepEqual(accept.needs, ['scratch-install']);
   assert.deepEqual(p.steps.slice(3, 5).map(s => s.argv), [['node', 'verify.mjs', '--engine', 'cua', '--bind', 'com.apple.TextEdit'], ['node', 'verify.mjs', '--engine', 'vendor', '--bind', 'com.apple.TextEdit']]);
   assert.equal(p.steps[6].kind, 'cleanup');

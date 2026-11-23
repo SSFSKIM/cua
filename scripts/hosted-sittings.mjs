@@ -64,7 +64,7 @@ async function runCommand(sitting, values) {
   assertGithubHosted(process.env, process.platform, `sitting ${sitting}`);
   const plan = planOf(sitting, values);
   const out = resolve(values.out);
-  mkdirSync(join(process.env.RUNNER_TEMP, 'hosted-sittings-scratch'), {recursive: true});
+  for (const dir of [join(process.env.RUNNER_TEMP, 'hosted-sittings-scratch'), ...plan.scratchDirs]) mkdirSync(dir, {recursive: true});
   const report = await runSitting(plan, {out, exec: (step, {logPath}) => execStep(step, {logPath, cwd: REPO}),
     keep: (from, to) => { mkdirSync(dirname(to), {recursive: true}); copyFileSync(resolve(REPO, from), to); }, exists: path => existsSync(resolve(REPO, path))});
   const parts = [renderSitting(report)];

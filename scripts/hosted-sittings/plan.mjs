@@ -79,11 +79,14 @@ function sittingC(ctx) {
   return steps;
 }
 
+// Item 13's XDG_CONFIG_HOME (accept-native.mjs item13: the compat route needs a scratch one): the run's own, made before
+// the steps run (the plan's `scratchDirs`), never the account's ~/.config.
+const acceptConfig = ctx => `${ctx.scratch}/accept-config`;
 function sittingD(ctx) {
   const home = `${ctx.scratch}/cua-accept`, verify = engine => ['node', 'verify.mjs', '--engine', engine, '--bind', 'com.apple.TextEdit'];
   return [
     {id: 'scratch-install', label: 'the pinned runtime in accept-native\'s scratch home', kind: 'run', argv: ['node', 'bin/cua.mjs', 'install', '--json'], env: {CUA_HOME: home, CUA_NATIVE_ENGINE: 'vendor'}},
-    {id: 'accept-native', label: `accept-native --engine cua, items ${ACCEPT_NATIVE_ITEMS.join(', ')}`, kind: 'run', needs: ['scratch-install'], env: {CUA_HOME: home},
+    {id: 'accept-native', label: `accept-native --engine cua, items ${ACCEPT_NATIVE_ITEMS.join(', ')}`, kind: 'run', needs: ['scratch-install'], env: {CUA_HOME: home, XDG_CONFIG_HOME: acceptConfig(ctx)},
       argv: ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', ACCEPT_NATIVE_ITEMS.join(','), '--report', `${ctx.out}/acceptance.json`]},
     {id: 'textedit-up', label: 'a scratch TextEdit document, the window verify --bind and the approval cycles bind', kind: 'fixture', argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`]},
     {id: 'verify-cua', label: 'verify --engine cua --bind TextEdit (Acceptance 2)', kind: 'run', needs: ['textedit-up'], argv: verify('cua')},
@@ -116,13 +119,14 @@ const BUILDERS = {a: sittingA, b: sittingB, c: sittingC, d: sittingD, e: sitting
 // ctx: {commit, out (the sitting's output directory), approvedRuntime, approvedEngine (the run's install), runId (the
 // job's run id and attempt), olderNode (sitting E's Node 22), scratch (a directory outside the checkout), flipped
 // (whether macOS's default engine is cua's on this commit), pilot}. -> {sitting, title, proves, form, setup, counts,
-// pilotReads, steps}.
+// pilotReads, scratchDirs (directories of the run's own the CLI makes first), steps}.
 export function sittingPlan(sitting, ctx) {
   const build = BUILDERS[sitting];
   if (!build) throw new Error(`no sitting ${sitting}: the sittings are ${SITTINGS.join(', ')}`);
   const [title, proves] = TITLES[sitting];
   return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx),
-    counts: sitting === 'c' ? ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`) : [], pilotReads: sitting === 'c' && Boolean(ctx.pilot)};
+    counts: sitting === 'c' ? ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`) : [], pilotReads: sitting === 'c' && Boolean(ctx.pilot),
+    scratchDirs: sitting === 'd' ? [acceptConfig(ctx)] : []};
 }
 
 // A sitting's context on the runner: the job's run and attempt, and the approved paths the runner's record names

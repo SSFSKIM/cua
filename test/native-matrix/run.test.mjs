@@ -97,10 +97,12 @@ test('an activation inside a row fails that row\'s oracle only; one inside a har
 });
 
 test('an activation the run cannot place makes the run incomplete, never clean', async () => {
-  // 1.5 s after a row's check ends: past the margin, before the next step reads its clock.
+  // Half a second before the next row's prepare: past the margin of the row's last read (its front/key read after the
+  // check, which the row's window covers), before the next step reads its clock.
   const check = cellsOf('textedit', 'click', 'control').check;
   const calls = [];
-  const r = await runWith({calls, ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.example.other', at: calls.find(c => c.code.includes(check)).at[1] + 1_500}]}))});
+  const next = () => calls[calls.findIndex(c => c.code.includes(check)) + 1];
+  const r = await runWith({calls, ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.example.other', at: next().at[0] - 500}]}))});
   assert.equal(r.result.complete, false);
   assert.ok(r.result.problems.some(p => /fell in no step/.test(p)));
   assert.equal(r.result.meta.activations.unaccounted.length, 1);

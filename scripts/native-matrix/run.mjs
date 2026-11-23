@@ -64,7 +64,7 @@ import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selec
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {activate, activated, activationOf, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, sendKeys, skippedReadings, step, Stop,
+import {activate, activated, activationOf, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
@@ -539,6 +539,8 @@ async function speedCells(ctx, scene) {
   const reason = !selected.ok ? `the selection failed: ${selected.error}` : !selected.value?.inFront ? 'the scene window was not the app\'s front window' : null;
   // Each sample's front/key readings at its own call's boundaries: the reading after one call is the next call's before,
   // nothing running between them; after the screenshot series' scratch guard (a cell of its own) the next reads afresh.
+  // The sample's measure window runs from its before-read to its after-read (measured), so an activation those reads
+  // saw (an alert's, say) is the measurement's, as it would be during the call.
   let boundary = null;
   for (const [op, code] of SPEED_CELLS) {
     const series = [];
@@ -546,11 +548,10 @@ async function speedCells(ctx, scene) {
       const row = {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene};
       if (reason) { push(ctx, {...row, invalid: reason}); continue; }
       await ctx.checkpoint();
-      const before = boundary ?? readKey(ctx);
-      const r = await js(ctx, 'measure', `${scene}/${op}`, code);
-      boundary = readKey(ctx);
+      const before = boundary ?? readKeyAt(ctx);
+      const r = await measured(ctx, `${scene}/${op}`, code, before, () => (boundary = readKeyAt(ctx)));
       series.push(push(ctx, {...row, ok: r.ok && !r.value?.invalid, inCellMs: r.inCellMs, wallMs: r.wallMs, ...(r.value?.invalid ? {invalid: r.value.invalid} : {}),
-        ...(r.ok ? {} : {error: r.error}), frontKey: measuredReadings(ctx, scene, before, boundary)}));
+        ...(r.ok ? {} : {error: r.error}), frontKey: measuredReadings(ctx, scene, before.reading, boundary.reading)}));
     }
     if (op === 'getScreenshot' && !reason) {
       const guard = await js(ctx, 'measure', `${scene}/scratch-guard`, SCRATCH_GUARD);
@@ -558,6 +559,17 @@ async function speedCells(ctx, scene) {
       if (!guard.ok || !guard.value?.scratchInFront) for (const row of series) row.invalid ??= 'the scene window left the front during the series';
     }
   }
+}
+
+// A measured call (a speed sample, the finding cell) with its front/key reads, one measure window from the before-read's
+// start (`before`, ./steps.mjs readKeyAt) to the after-read's end (`readAfter`, run once the call returned): only the
+// reads beside the call widen it, never anything else the run does. -> the call's result.
+async function measured(ctx, key, code, before, readAfter) {
+  const r = await ctx.lane.js(code);
+  const after = readAfter();
+  const from = before.at?.[0] ?? r.at?.[0], to = after.at?.[1] ?? r.at?.[1];
+  mark(ctx, 'measure', key, [from, to]);
+  return r;
 }
 
 // The front/key readings of a measured call (a speed sample's, the finding cell's; ./front-key.mjs): the scene's own
@@ -570,11 +582,12 @@ function measuredReadings(ctx, scene, before, after) {
 // The finding-elements cell of one scene: one row per target, the line measures and the ID count.
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
-  const before = readKey(ctx);
-  const r = await js(ctx, 'measure', `${scene}/finding`, findingCell(scene));
+  const before = readKeyAt(ctx);
+  let after = null;
+  const r = await measured(ctx, `${scene}/finding`, findingCell(scene), before, () => (after = readKeyAt(ctx)));
   // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
   const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {}),
-    frontKey: measuredReadings(ctx, scene, before, readKey(ctx))};
+    frontKey: measuredReadings(ctx, scene, before.reading, after.reading)};
   if (!r.ok || r.value?.invalid) {
     push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
     return;
@@ -615,13 +628,18 @@ async function launchRow(ctx, {scene, user}) {
     if (!Number.isSafeInteger(intent?.at)) return push(ctx, {...row, invalid: 'the launch\'s intent could not be journaled: nothing was sent'});
     const record = () => ctx.ops.matrix(['launched', 'record', scene, '--run', ctx.run, '--since', String(intent.at)]);
     const act = await ctx.lane.js(launchCell(scene, app)).finally(() => { recorded = record(); });
+    // The row's window runs from its front/key read before the launch to the one after its check: what those reads saw
+    // is the row's.
     [from, to] = act.at ?? [null, null];
+    from = before.at?.[0] ?? from;
     if (!act.ok) return push(ctx, {...row, invalid: 'the launch cell failed', error: act.error});
     Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(act.value.error ? {error: act.value.error} : {})});
     const after = read(ctx, focusOf(userWindow), {windowOrder: true});
     const check = await ctx.lane.js(launchCheckCell(scene, app));
     to = check.at?.[1] ?? to;
-    row.frontKey = {...readings, after: readKey(ctx)};
+    const late = readKeyAt(ctx);
+    to = late.at?.[1] ?? to;
+    row.frontKey = {...readings, after: late.reading};
     const outcome = {...(check.value?.outcome ?? {}), threw: act.value.threw, launched: recorded?.recorded === true};
     Object.assign(row, {ok: check.ok && check.value?.ok === true && !act.value.threw && recorded?.recorded === true, outcome, ...(check.ok ? {} : {error: check.error})});
     if (after.watcher !== true) return push(ctx, {...row, ok: false, invalid: 'the activation watcher was not running after the launch'});

@@ -29,7 +29,9 @@ export async function runWith({engine = 'cua', plan = planOf('background', {scen
       const answer = await request(method, params);
       if (method !== 'tools/call') return answer;
       const value = cell ? cell(params.arguments.code) : null;
-      const text = value ? `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}` : answer.content[0].text;
+      // `{cellError}` is a cell that threw (the envelope's `ok: false`); any other answer is the cell's value.
+      const envelope = value?.cellError ? {ok: false, error: value.cellError, inCellMs: 1} : {ok: true, value, inCellMs: 1};
+      const text = value ? `CUA_NATIVE_BASELINE ${JSON.stringify(envelope)}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}` : answer.content[0].text;
       calls.push({code: params.arguments.code, at: JSON.parse(text.split('\n').find(l => l.startsWith(AT_MARKER)).slice(AT_MARKER.length))});
       return {...answer, content: [{type: 'text', text}], _meta: {...answer._meta, ...(value?._meta ?? {})}};
     };

@@ -109,6 +109,9 @@ export const appsOf = (target, user = null) => [...new Set([...targetsOf(target)
 // A reading's front and key applications, bundle ids (null when unread).
 export const keyReading = r => ({front: r?.frontKey?.front ?? null, key: r?.frontKey?.key ?? null});
 export const readKey = ctx => keyReading(read(ctx, null, {frontKey: true}));
+// The same with the read's device-clock window (`at`, null when the device gave none), for a step whose window must
+// cover the reads beside its call. -> {reading: {front, key}, at}.
+export const readKeyAt = ctx => { const r = read(ctx, null, {frontKey: true}); return {reading: keyReading(r), at: r?.at ?? null}; };
 // The activate step in force for a cell whose activated app is `app`: the last activation's own check when it was that
 // app's, else a check that did not take (nothing activated it since). -> {app, front, key}.
 export const activationOf = (ctx, app) => (ctx.activated?.app === app ? {app, front: ctx.activated.front, key: ctx.activated.key} : {app, front: false, key: false});
@@ -221,15 +224,21 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
   }
   const before = regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target);
-  if (!activated(ctx, app)) return done({frontKey: {...skippedReadings(ctx, apps, app), before: keyReading(before)}});
+  if (!activated(ctx, app)) {
+    // The skipped act's timing is skipped with it, the case's readings its own, so no planned sample goes missing.
+    const skipped = done({frontKey: {...skippedReadings(ctx, apps, app), before: keyReading(before)}});
+    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey: skipped.frontKey});
+    return skipped;
+  }
   if (regime === 'background') {
     if (!before.inFront) return done({invalid: 'the user window was not in front before the action'});
     if (before.watcher !== true) return done({invalid: 'the activation watcher was not running before the action'});
   }
   const readings = {apps, activate: activationOf(ctx, app), before: keyReading(before)};
-  // The reading after the act's check (and the witness), taken once: every row from here on carries it.
+  // The reading after the act's check (and the witness), taken once: every row from here on carries it, and the row's
+  // window runs to its end, so an activation it saw is the row's (the reads before the act are inside the window too).
   let late = null;
-  const after = options => (late ??= read(ctx, null, {frontKey: true, ...options}));
+  const after = options => (late ??= span(read(ctx, null, {frontKey: true, ...options})));
   const finish = extra => done({frontKey: {...readings, after: keyReading(after())}, ...extra});
   if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
   const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
@@ -281,6 +290,12 @@ async function keystrokeWitness(ctx, span, userWindow) {
   const problem = gate ? null : probeProblem(finished?.answer);
   if (problem) return {invalid: `the keystroke witness's probe failed: ${problem}`};
   const checked = span(await ctx.lane.js(witnessCheckCell(file)));
-  if (!checked.ok) return {invalid: `the keystroke witness's read-back failed (${String(checked.error ?? '').slice(0, 160)})`};
+  if (!checked.ok) {
+    const error = String(checked.error ?? '').slice(0, 160);
+    // A proven gate already failed the witness (the front was taken): the read-back is missing, not the verdict, so the
+    // row stays judged, its interference too. Without a gate, a missing read-back says nothing.
+    if (gate) return {keystroke: {posted: false, gate, finderSelected: null, documentUnchanged: null, readBack: {unavailable: true, error}}};
+    return {invalid: `the keystroke witness's read-back failed (${error})`};
+  }
   return {keystroke: {posted: gate === null, ...(gate ? {gate} : {}), finderSelected: checked.value?.finderSelected === true, documentUnchanged: checked.value?.documentUnchanged === true}};
 }

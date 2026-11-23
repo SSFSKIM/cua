@@ -5,11 +5,12 @@
 // order read around every background cell (#485); and Acceptance 3's keystroke witness in TextEdit's background click.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {AX_FULL} from '../../scripts/native-baseline/cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
-import {args, cellsOf, matrixSteps, runWith} from './run-doubles.mjs';
+import {args, cellsOf, matrixSteps, runWith, stopWith} from './run-doubles.mjs';
 
 const TEXTEDIT = SCENES.textedit.bundleId, FINDER = SCENES.finder.bundleId, ELECTRON = SCENES.electron.bundleId, ALERT = 'com.apple.UserNotificationCenter';
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
@@ -99,6 +100,24 @@ test('a scene command that could not bring its app to the front: every sample it
     ? {...answer, answer: {scene: 'finder', ok: false, reason: 'the run\'s Finder is frontmost but its top window is not the run\'s window'}} : answer));
   const finder = (await runWith({env: HOSTED, plan: planOf('method', {scene: 'finder'}), ops: wrongWindow})).result;
   assert.ok(finder.rows.filter(r => r.id.startsWith('finder/frontmost/')).every(r => /did not come to the front/.test(r.invalid ?? '')));
+});
+
+test('a case whose re-activation after its prepare did not take: its timing is skipped with it, the case\'s readings its own', async () => {
+  const calls = [];
+  const prepare = cellsOf('textedit', 'click', 'control').prepare;
+  let armed = false;
+  const {result} = await runWith({env: HOSTED, calls, plan: planOf('matrix', {scene: 'textedit'}), ops: steer((a, answer) => {
+    // After click.control's prepare the alert is front and key, and the activation that follows does not take it back.
+    if (a[0] === 'read' && a.includes('--with') && calls.at(-1)?.code.includes(prepare)) { armed = true; return {...answer, frontKey: {front: ALERT, key: ALERT}}; }
+    if (armed && a[0] === 'step' && a[1] === 'activate') { armed = false; return {...answer, frontKey: {front: ALERT, key: ALERT}}; }
+    return answer;
+  })});
+  const row = result.rows.find(r => r.id === 'textedit/frontmost/click.control' && r.sample === 1);
+  assert.deepEqual([row.ok, row.invalid, row.frontKey.activate.front, row.frontKey.after], [false, undefined, false, null]);
+  const timing = result.rows.filter(r => r.section === 'speed' && r.id === 'textedit/method.click.control');
+  assert.equal(timing.length, 1, 'the timing row is there, once');
+  assert.deepEqual([timing[0].ok, timing[0].frontKey], [false, row.frontKey]);
+  assert.equal(sampleCause({...timing[0], hosted: true}).category, 'activation');
 });
 
 test('the frontmost regime: a scene that is not front and key before its act is activated again, and the row reads the new check', async () => {
@@ -194,6 +213,17 @@ test('Acceptance 3: after TextEdit\'s background click, a probe keystroke into F
     assert.match(failed.outcome.keystroke.gate.reason, /named window/);
     assert.equal(typeof failed.interference?.ok, 'boolean', 'judged by the oracle');
   }
+  // The gate held the keys and the read-back after it failed: the gate's failure stands, the read-back recorded as
+  // unavailable, the row judged; without a gate, the same failed read-back leaves the row invalid.
+  const failingCheck = witness({check: {cellError: 'Finder did not answer'}});
+  const gated = (await runWith({...answering(firstGate), cell: failingCheck})).result.rows.find(r => r.id === row.id);
+  assert.deepEqual([gated.ok, gated.invalid], [false, undefined]);
+  assert.deepEqual({...gated.outcome.keystroke, gate: gated.outcome.keystroke.gate.at, readBack: gated.outcome.keystroke.readBack.unavailable},
+    {posted: false, gate: 'first', finderSelected: null, documentUnchanged: null, readBack: true});
+  assert.match(gated.outcome.keystroke.readBack.error, /Finder did not answer/);
+  assert.equal(typeof gated.interference?.ok, 'boolean', 'judged by the oracle');
+  const ungated = (await runWith({cell: failingCheck})).result.rows.find(r => r.id === row.id);
+  assert.match(ungated.invalid, /read-back failed/);
   // A probe that failed as a probe (no layout, an event it could not make, no answer) says nothing: the row is invalid.
   for (const probe of [{error: 'Unable to get the current keyboard layout.'}, {error: 'a key event could not be created'}, null]) {
     const broken = (await runWith(answering(probe))).result.rows.find(r => r.id === row.id);
@@ -233,6 +263,26 @@ test('each speed sample reads front and key at its own call\'s boundaries, shari
   }
   assert.deepEqual(shot[0].frontKey.before, ax[1].frontKey.after, 'nothing runs between the two series');
   assert.notDeepEqual(apps[0].frontKey.before, shot[1].frontKey.after, 'the scratch guard ran between them: read afresh');
+});
+
+test('an activation the front/key read after a measured call or a row saw is that call\'s or row\'s, never unaccounted', async () => {
+  const ALERT = 'com.apple.UserNotificationCenter';
+  const at = (calls, code, index = 0) => calls.filter(c => c.code.includes(code))[index].at;
+  // A speed sample's after-read: between the first getAXState sample's end and the second's start, past the calls'
+  // margin. The sample's measure window runs to that read's end.
+  const speedCalls = [];
+  const speed = (await runWith({env: HOSTED, calls: speedCalls, plan: planOf('speed', {scene: 'textedit'}),
+    ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: ALERT, at: at(speedCalls, AX_FULL, 1)[0] - 1_500}]}))})).result;
+  assert.equal(speed.complete, true, JSON.stringify(speed.problems));
+  assert.deepEqual(speed.meta.activations.unaccounted, []);
+  assert.deepEqual(speed.meta.activations.accounted.map(a => [a.kind, a.key]), [['measure', 'textedit/getAXState']]);
+  // A case row's read after its check: the row's window runs to that read's end, so the activation is the row's.
+  const check = cellsOf('textedit', 'click', 'control').check;
+  const rowCalls = [];
+  const row = (await runWith({calls: rowCalls, ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: ALERT, at: at(rowCalls, check)[1] + 1_500}]}))})).result;
+  assert.equal(row.complete, true, JSON.stringify(row.problems));
+  assert.deepEqual(row.meta.activations.unaccounted, []);
+  assert.equal(row.rows.find(r => r.id === 'textedit/background/click.control@finder').interference.activations, 1);
 });
 
 test('the probe cells and the Unicode rows of a full plan carry their readings too', async () => {

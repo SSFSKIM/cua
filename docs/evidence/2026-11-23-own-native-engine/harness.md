@@ -404,3 +404,68 @@ left above the user window", or "the window order after the action proved nothin
     it is a small follow-up in `test/repl-parity/scenarios/services.mjs` plus the inventory.
 - **Finder's type-select now fails on cua until a departure is declared.** This is intended, and the pilot shows the
   pair.
+
+## Fix wave 2
+
+The controller's second review asked for three fixes. All three are done, on top of part 2's commits
+(`534fda083..61f121bfa`; the hosted attestation in `run.mjs` is kept as it landed).
+
+### 1. A failed re-activation keeps its method timing (`steps.mjs caseRow`)
+
+When the activate step after a case's prepare did not take, `caseRow` returned the case's skipped row before it pushed
+the method's timing, so `textedit/method.click.control` went missing while the case recorded cause `activation`. The
+skip path now pushes the timing too: `ok: false`, the case's own skipped readings (`after: null`). The manifest reports
+an activation NO VERDICT for it, not a missing row.
+
+### 2. The reads beside a measured call or a row are inside its window (`run.mjs`, `steps.mjs`)
+
+An activation that only a front/key read beside the call saw (an alert's, in an after-read) was unaccounted at run level,
+because only the call itself was marked.
+
+- `steps.mjs readKeyAt(ctx)` returns the front/key reading with its device-clock window `at`.
+- `run.mjs measured(ctx, key, code, before, readAfter)` runs a speed sample or the finding cell, then its after-read, and
+  marks one `measure` window from the before-read's start to the after-read's end. A sample that shares its before-read
+  with the previous sample's after-read lies inside both windows; either accounts the activation.
+- `caseRow`'s after-read (`late`) goes through the row's `span`, so the row's window runs to its end. The reads before
+  the act were already inside it.
+- The launch row's window runs from its before-read's start to the end of the read after its check.
+- Nothing else widens a window: the harness steps, the scene's setup and the gaps between steps account as before, so
+  an unrelated activation is still unaccounted and the run incomplete.
+
+### 3. A proven gate failure survives a failed read-back (`steps.mjs keystrokeWitness`)
+
+When the probe's gate held the keys (at the first gate or between keys) and the witness's read-back cell then failed,
+the row became `invalid`: no witness outcome and no oracle entry. Now the gate's proof stands:
+
+- The outcome is `keystroke: {posted: false, gate, finderSelected: null, documentUnchanged: null, readBack: {unavailable:
+  true, error}}`, with the error bounded at 160 characters.
+- The row finishes `ok: false` and its interference is judged; the front/key rule can still make it NO VERDICT.
+- Without a gate, a failed read-back still leaves the row invalid: nothing else proves what the keystroke did.
+
+### Decisions
+
+- **The windows widen only over their own reads.** A measure window or a row window runs from its first front/key read
+  to its last, and no further. The alternative was a wider margin or an excuse for any read, which would also have
+  excused activations in the harness's own gaps.
+- **`finderSelected` and `documentUnchanged` are null when the read-back is unavailable**, not false. Unread is not
+  observed-false, matching fix wave 1's rule.
+- **Test double (`run-doubles.mjs`):** a cell answer `{cellError}` stands for a cell that threw (envelope `ok: false`).
+  A thrown `lane` call is a lost transport, which ends the run; a cell-level failure needed its own shape.
+- **`run.test.mjs` "an activation the run cannot place":** the stray activation moved from 1.5 s after click.control's
+  check to 0.5 s before the next call. The first spot is now inside the row's window (its after-read), the second is still
+  a true gap past the margin.
+
+### Commands and output
+
+- RED: the three new or widened tests were run against `HEAD`'s `steps.mjs` and `run.mjs` (copied in, then restored):
+  `node --test --test-name-pattern="measured call or a row saw|Acceptance 3|timing is skipped with it"
+  test/native-matrix/run-records.test.mjs` → `# pass 0  # fail 3`.
+  - The timing test: `the timing row is there, once` (`0 !== 1`).
+  - Acceptance 3: the gated row with a failed read-back was `invalid`, not `[false, undefined]`.
+  - The new window test: `["1 activation(s) fell in no step of the run: not accounted for"]` (`false !== true`).
+- GREEN: the same tests on the fixed sources → `# pass 3  # fail 0`.
+- `node --test test/native-matrix/*.test.mjs test/hosted-sittings/*.test.mjs test/cursor-sitting/*.test.mjs
+  test/repl-parity/*.test.mjs` → `# tests 1509  # pass 1509  # fail 0`. The dot reporter prints nothing else.
+- `CUA_NODE=/opt/homebrew/opt/node@26/bin/node node --test test/services-sky*.test.mjs test/services-engine-*.test.mjs
+  test/spike-engine-service.test.mjs test/repl-host/trusted-worker.test.mjs` → `# tests 306  # pass 305  # fail 0
+  # skipped 1` (the pre-existing hosted-only skip).

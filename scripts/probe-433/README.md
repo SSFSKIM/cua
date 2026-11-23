@@ -777,3 +777,191 @@ What the qual adds to the #442 kit:
   Both are judged as main row for row, and the tables show main's and the fix's verdicts side by side.
 - **`popupwait`** (CfT and Electron, link point): the page opens a popup window over the point (`window.open`; CfT runs with `--disable-popup-blocking` on every cell) 0, 20, 40, 60, 90 or 150 ms after the harness's command, which it sends just before the click, by repetition. Rows record `popupDelay` and whether the popup was open by the read. The popup may take the app frontmost, so `presentationHeld` may be false on these rows.
 - **Meta:** every row records the fix's `stalePoint.hitCorrection`, and `tables.mjs` adds it per unit as `{changed n, same n, none n}`. `controlRole` on `otherControlOnTop` is the role of the control on top.
+
+### Counted on c04efb4e (pre-merge): main `5580ac204f1a2a5cd6a36186d658087060690e5f` against fix `c04efb4e57833ae330320a7ff19e0af70bc62407`
+
+Mode qualify, 10 per head per unit, heads interleaved; image 20261117.0516.1 (CfT 157.0.8103.78, Safari 27.2, Electron 44.4.5 / Chromium 152.0.7977.130), presentation background. Every row was valid and no lane aborted. Tables come from `tables.mjs` and the bar from `bar442.mjs`. A fix cell's `[AXButton n]` is the `controlRole` of the control on top, and `{changed n, same n, none n}` is the fix's `hitCorrection`.
+
+| Batch | Run | Kit | Hits | Rows per lane |
+|---|---|---|---|---|
+| QA1: refuse cells, siblingstack, decomove, popupwait, ruling 1080 | [45065060085](https://github.com/SSFSKIM/cua/actions/runs/45065060085) | `2a7d472d` | cold | 260 (Safari 240) |
+| QA2: the review's and ruling 1079's shapes | [45068426516](https://github.com/SSFSKIM/cua/actions/runs/45068426516) | `4fe905a8` | cold | 340 |
+| QAw: refuse cells, siblingstack, shapes | [45072260919](https://github.com/SSFSKIM/cua/actions/runs/45072260919) | `4fe905a8` | warm | 460 |
+| QB: #433's and #443's overlay cells | [45077727351](https://github.com/SSFSKIM/cua/actions/runs/45077727351) | `4fe905a8` | cold | 460 |
+| QBw: the overlay keeps | [45082411152](https://github.com/SSFSKIM/cua/actions/runs/45082411152) | `4fe905a8` | warm | 320 |
+| QC1: keep cells | [45086022030](https://github.com/SSFSKIM/cua/actions/runs/45086022030) | `4fe905a8` | cold | 300 |
+| QC2: #340's cells, #431's twins | [45089459844](https://github.com/SSFSKIM/cua/actions/runs/45089459844) | `4fe905a8` | cold | 400 |
+
+#### The bar (fix c04efb4e against main 5580ac20)
+
+- **slideover refuses on every row, all three lanes, cold and warm.** CfT cold: 20/20 `otherControlOnTop`. Electron cold: 20/20 `otherControlOnTop`. Safari cold: 20/20 `interactiveHit`, as main. Warm: CfT 20/20 and Electron 20/20 (`otherControlOnTop` at the text point, `interactiveHit` at the link point), Safari 20/20 `interactiveHit`. Main reached nothing on CfT cold (kept-missed), landed on B on Electron cold (20/20) and on Electron warm's text point (10/10), and refused everywhere else.
+- **Every keep cell and every reviewer shape answers as main, row for row, reason included.** No fix row of any unit outside the refuse cells and `popupwait` differs from its paired main row, in all seven runs. No fix row was refused `otherControlOnTop` outside the refuse cells, and no fix row reached another control where its main row did not. Where a paired gate fails, it fails on main's own baseline:
+  - `overlayKept` on CfT and Safari (cold) and on all three lanes (warm): its `mustKeep` counts main's own unlanded rows, the same number on the fix (CfT `overcontrol` and `overlaprow/link` reach nothing when cold; Safari refuses `overlapinto` and `overlaprow`).
+  - `noWrongTarget` wherever both heads reach the control on top: `siblingstack` (the declared limit), `deepfront` and `contentsfront` (F is on top in the screenshot), and `veilinto/link` (below).
+- **siblingstack as main:** row for row on every lane, cold and warm (`overlayAsMain` passes).
+- **The first≠second margin.**
+  - The fix's `hitCorrection` on Chromium, cold: CfT changed 283, same 50, none 5; Electron changed 287, same 50, none 1. `same` falls only in `scrim`, `scrimhidden` and `overlaprow/text`, where the first answer is already right (the scrim, or the target's own text). `none` falls only in `popupwait`.
+  - Warm, the kit's sequence had already corrected the cache, so every fix row reads `same` (CfT 160, Electron 150).
+  - The kit's own warm sequences (both heads, 780 rows per Chromium lane) corrected at a median of 29 ms (CfT) and 31 ms (Electron). The latest were 95 ms (CfT, `slideover/text`, main) and 82 ms (CfT, `twincover/text`, fix); Electron's latest was 55 ms. So 2 of 780 CfT rows corrected later than the fix's 80 ms, and none on Electron.
+- **stalePoint.ms, p50 / p95, all seven runs** (main against fix):
+
+  | Lane | main | fix |
+  |---|---|---|
+  | CfT | 5.0 / 20.1 | 13.8 / 269.6 |
+  | Electron | 2.8 / 9.7 | 6.9 / 165.8 |
+  | Safari | 3.5 / 10.0 | 3.6 / 10.4 |
+
+  On the cells where the check runs (QA1), the fix's p50 is 116 ms (CfT) and 137 ms (Electron): the 80 ms wait and the second hit-test. Off those cells it is as main (QC1 and QC2 within 1 ms).
+- **decomove on the fix:** CfT 20/20 and Electron 20/20 `controlGone` (`[AXLink]`), as main. Safari refuses `nodeGone` on both heads.
+
+Beside the bar:
+- **`veilinto` is not refused at its link point on Chromium.** That point is kept on a path the check doesn't run on:
+  - CfT cold: kept `recordedHit`, and CfT's element route presses A (which the page logs on the target), 10/10 on both heads.
+  - Electron cold: kept `recordedHit` and landed on B, 10/10 on both heads.
+  - Warm: kept `hitAboveNode` and landed on B on CfT and Electron, 10/10 on both heads.
+  
+  Its text point is refused `otherControlOnTop` (cold: CfT 10/10 and Electron 10/10; warm: CfT 10/10), except Electron warm, which refuses `newElementOverPoint` on both heads. Safari refuses `nodeGone` on both heads. `otherOnTop` fails on CfT and Electron for this unit alone.
+- **Ruling 1080** (`relabelfront`, `relabelfirst`): the fix answers as main in both orders on every lane. CfT keeps `sameElement` and reaches nothing in both orders. Electron keeps `sameElement` and lands on A in both orders. Safari refuses `newElementOverPoint` (text point) and `interactiveHit` (link point) in both orders. No lane showed `relabelled`: the first survivor's order did not decide the verdict on any lane.
+- **contentsfront:** every browser lists F with a frame of its own at the observation (CfT and Electron 113×56, Safari 53×24), so the unplaced-frame condition (0,0,0,0) could not be built.
+- **popupwait** (CfT and Electron, report-only): at a 20 ms delay the fix refused `appWindowOverPoint` on one row per lane, with the delayed hit's `hitMs` of 1.3 ms on CfT and 4.8 ms on Electron. At 0 ms both heads answered no guard record, or #316's `newWindow`. At 40 ms and later both heads kept. On Electron main landed through the popup at 60–150 ms (4 rows) where the fix reached nothing.
+
+#### QA1 (engine main 5580ac20, fix c04efb4e)
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| decomove/text | refused controlGone 10 [AXLink 10] | refused controlGone 10 [AXLink 10] | refused nodeGone 10 | refused nodeGone 10 | refused controlGone 10 [AXLink 10] | refused controlGone 10 [AXLink 10] |
+| decomove/link | refused controlGone 10 [AXLink 10] | refused controlGone 10 [AXLink 10] | refused nodeGone 10 | refused nodeGone 10 | refused controlGone 10 [AXLink 10] | refused controlGone 10 [AXLink 10] |
+| slideover/text | kept-missed sameElement 10 | refused otherControlOnTop 10 [AXButton 10] {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | wrong-target sameElement 10 | refused otherControlOnTop 10 [AXButton 10] {changed 10} |
+| slideover/link | kept-missed sameElement 10 | refused otherControlOnTop 10 [AXButton 10] {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | wrong-target sameElement 10 | refused otherControlOnTop 10 [AXButton 10] {changed 10} |
+| siblingstack/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target sameElement 10 | wrong-target sameElement 10 {changed 10} |
+| siblingstack/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target sameElement 10 | wrong-target sameElement 10 {changed 10} |
+| veilinto/text | kept-landed recordedHit 10 | refused otherControlOnTop 10 [AXButton 10] {changed 10} | refused nodeGone 10 | refused nodeGone 10 | wrong-target nonInteractiveHit 10 | refused otherControlOnTop 10 [AXButton 10] {changed 10} |
+| veilinto/link | kept-landed recordedHit 10 | kept-landed recordedHit 10 | refused nodeGone 10 | refused nodeGone 10 | wrong-target recordedHit 10 | wrong-target recordedHit 10 |
+| relabelfront/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| relabelfront/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| relabelfirst/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| relabelfirst/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| popupwait/link | kept-missed sameElement 8, misplaced newWindow 1, no-guard - 1 | kept-missed sameElement 7, no-guard - 2, misplaced appWindowOverPoint 1 {none 5, changed 3} | – | – | kept-missed sameElement 5, kept-landed sameElement 4, no-guard - 1 | kept-missed sameElement 7, no-guard - 2, misplaced appWindowOverPoint 1 {changed 7, none 1} |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 1.99 / 11.852 / 15.842 (129) | 1.886 / 11.866 / 15.842 (108) | 3.312 / 4.296 / 4.918 (21) | 2.183 / 11.866 / 15.842 (60) |
+| cft | fix | 116.028 / 175.486 / 266.38 (128) | 132.716 / 200.903 / 266.38 (77) | 101.749 / 169.111 / 233.652 (51) | 114.045 / 169.111 / 232.735 (60) |
+| safari | main | 3.413 / 8.922 / 10.929 (120) | 3.046 / 5.409 / 5.409 (20) | 3.495 / 9.381 / 10.929 (100) | 3.156 / 8.922 / 10.929 (60) |
+| safari | fix | 3.388 / 10.093 / 11.576 (120) | 3.437 / 7.838 / 7.838 (20) | 3.388 / 10.118 / 11.576 (100) | 3.119 / 10.304 / 11.576 (60) |
+| electron | main | 2.154 / 4.767 / 7.288 (129) | 1.931 / 4.109 / 7.288 (109) | 3.355 / 6.325 / 6.325 (20) | 2.066 / 5.131 / 6.325 (60) |
+| electron | fix | 137.417 / 169.131 / 286.427 (128) | 152.504 / 196.879 / 286.427 (77) | 95.211 / 165.681 / 175.035 (51) | 138.013 / 166.943 / 175.035 (60) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| QA1 | cft | 20261117.0516.1 | 157.0.8103.78 | 260/260 | none | otherOnTop |
+| QA1 | safari | 20261117.0516.1 | 27.2 | 240/240 | none | noWrongTarget |
+| QA1 | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 260/260 | none | otherOnTop, noWrongTarget |
+
+| Lane | Head | Popup delay ms | Verdicts | Popup open at the read |
+|---|---|---|---|---|
+| cft | main | 0 | misplaced newWindow 1, no-guard - 1 | 2/2 |
+| cft | fix | 0 | no-guard - 2 | 2/2 |
+| cft | fix | 20 | kept-missed sameElement 1, misplaced appWindowOverPoint 1 | 2/2 |
+| cft | main | 20 | kept-missed sameElement 2 | 2/2 |
+| cft | main | 40 | kept-missed sameElement 2 | 2/2 |
+| cft | fix | 40 | kept-missed sameElement 2 | 2/2 |
+| cft | fix | 60 | kept-missed sameElement 2 | 2/2 |
+| cft | main | 60 | kept-missed sameElement 2 | 2/2 |
+| cft | main | 90 | kept-missed sameElement 1 | 1/1 |
+| cft | fix | 90 | kept-missed sameElement 1 | 1/1 |
+| cft | fix | 150 | kept-missed sameElement 1 | 1/1 |
+| cft | main | 150 | kept-missed sameElement 1 | 1/1 |
+| electron | main | 0 | kept-missed sameElement 1, no-guard - 1 | 2/2 |
+| electron | fix | 0 | no-guard - 2 | 2/2 |
+| electron | fix | 20 | kept-missed sameElement 1, misplaced appWindowOverPoint 1 | 2/2 |
+| electron | main | 20 | kept-missed sameElement 2 | 2/2 |
+| electron | main | 40 | kept-missed sameElement 2 | 2/2 |
+| electron | fix | 40 | kept-missed sameElement 2 | 2/2 |
+| electron | fix | 60 | kept-missed sameElement 2 | 2/2 |
+| electron | main | 60 | kept-landed sameElement 2 | 2/2 |
+| electron | main | 90 | kept-landed sameElement 1 | 1/1 |
+| electron | fix | 90 | kept-missed sameElement 1 | 1/1 |
+| electron | fix | 150 | kept-missed sameElement 1 | 1/1 |
+| electron | main | 150 | kept-landed sameElement 1 | 1/1 |
+
+#### QA2 (engine main 5580ac20, fix c04efb4e)
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| overflowlink/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| overflowlink/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| deepfront/text | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 {changed 10} | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 {changed 10} |
+| deepfront/link | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 {changed 10} | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 {changed 10} |
+| rescrim/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| rescrim/link | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| scrimhidden/text | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} |
+| scrimhidden/link | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} |
+| widen/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| widen/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| shrinkfront/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| shrinkfront/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| textoutside/text | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| textoutside/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 {changed 10} |
+| parentpad/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| contentsfront/text | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 | wrong-target sameElement 10 | wrong-target sameElement 10 {changed 10} |
+| contentsfront/link | kept-missed sameElement 10 | kept-missed sameElement 10 {changed 10} | refused interactiveHit 10 | refused interactiveHit 10 | wrong-target sameElement 10 | wrong-target sameElement 10 {changed 10} |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 2.106 / 10.221 / 12.462 (170) | 2.003 / 5.02 / 7.219 (150) | 9.134 / 12.462 / 12.462 (20) | 2.228 / 10.542 / 12.462 (80) |
+| cft | fix | 176.169 / 265.19 / 275.08 (170) | 195.224 / 265.525 / 275.08 (150) | 9.059 / 14.54 / 14.54 (20) | 171.618 / 267.131 / 275.08 (80) |
+| safari | main | 3.41 / 14.15 / 27.82 (170) | 3.169 / 18.386 / 27.82 (120) | 3.886 / 10.196 / 24.476 (50) | 3.081 / 17.709 / 24.856 (80) |
+| safari | fix | 3.678 / 14.103 / 24.916 (170) | 3.551 / 16.376 / 24.916 (120) | 4.12 / 9.579 / 13.083 (50) | 3.469 / 19.055 / 24.916 (80) |
+| electron | main | 2.016 / 8.579 / 10.738 (170) | 1.943 / 4.253 / 5.45 (150) | 8.322 / 10.738 / 10.738 (20) | 2.079 / 10.225 / 10.738 (80) |
+| electron | fix | 109.286 / 167.79 / 190.22 (170) | 124.347 / 169.162 / 190.22 (150) | 10.051 / 12.232 / 12.232 (20) | 101.872 / 169.162 / 188.791 (80) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| QA2 | cft | 20261117.0516.1 | 157.0.8103.78 | 340/340 | none | none |
+| QA2 | safari | 20261117.0516.1 | 27.2 | 340/340 | none | noWrongTarget |
+| QA2 | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 340/340 | none | noWrongTarget |
+
+#### QAw (engine main 5580ac20, fix c04efb4e)
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| slideover/text | refused pressedOther 10 | refused otherControlOnTop 10 [AXButton 10] {same 10} | refused interactiveHit 10 | refused interactiveHit 10 | wrong-target nonInteractiveHit 10 | refused otherControlOnTop 10 [AXButton 10] {same 10} |
+| slideover/link | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 |
+| siblingstack/text | wrong-target recordedHit 10 | wrong-target recordedHit 10 {same 10} | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 {same 10} |
+| siblingstack/link | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target recordedHit 10 | wrong-target recordedHit 10 |
+| veilinto/text | wrong-target nonInteractiveHit 10 | refused otherControlOnTop 10 [AXButton 10] {same 10} | refused nodeGone 10 | refused nodeGone 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 |
+| veilinto/link | wrong-target hitAboveNode 10 | wrong-target hitAboveNode 10 | refused nodeGone 10 | refused nodeGone 10 | wrong-target hitAboveNode 10 | wrong-target hitAboveNode 10 |
+| overflowlink/text | kept-landed recordedHit 10 | kept-landed recordedHit 10 {same 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 {same 10} |
+| overflowlink/link | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 |
+| deepfront/text | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 {same 10} | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 {same 10} |
+| deepfront/link | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 | wrong-target unrecordedDescendant 10 |
+| rescrim/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| rescrim/link | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| scrimhidden/text | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} |
+| scrimhidden/link | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 {same 10} |
+| widen/text | refused pressedOther 10 | refused pressedOther 10 {same 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 {same 10} |
+| widen/link | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 |
+| shrinkfront/text | refused pressedOther 10 | refused pressedOther 10 {same 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 {same 10} |
+| shrinkfront/link | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused interactiveHit 10 |
+| textoutside/text | kept-landed recordedHit 10 | kept-landed recordedHit 10 {same 10} | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 {same 10} |
+| textoutside/link | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 |
+| parentpad/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| contentsfront/text | wrong-target recordedHit 10 | wrong-target recordedHit 10 {same 10} | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 | wrong-target nonInteractiveHit 10 {same 10} |
+| contentsfront/link | wrong-target recordedHit 10 | wrong-target recordedHit 10 | refused interactiveHit 10 | refused interactiveHit 10 | wrong-target recordedHit 10 | wrong-target recordedHit 10 |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 8.041 / 70.515 / 117.955 (230) | 9.847 / 97.775 / 117.955 (150) | 4.457 / 11.186 / 13.724 (80) | 8.277 / 85.591 / 117.955 (110) |
+| cft | fix | 75.574 / 335.491 / 486.03 (230) | 91.158 / 412.203 / 486.03 (140) | 11.432 / 167.403 / 176.651 (90) | 167.403 / 416.67 / 486.03 (110) |
+| safari | main | 3.759 / 14.124 / 24.018 (230) | 3.151 / 15.345 / 24.018 (140) | 4.156 / 8.883 / 20.713 (90) | 3.151 / 14.181 / 22.586 (110) |
+| safari | fix | 4.047 / 13.626 / 31.034 (230) | 4.031 / 14.835 / 31.034 (140) | 4.318 / 10.298 / 11.391 (90) | 4.031 / 14.001 / 31.034 (110) |
+| electron | main | 2.818 / 11.737 / 18.478 (230) | 2.573 / 13.445 / 18.478 (170) | 4.088 / 10.503 / 11.737 (60) | 2.594 / 11.9 / 18.478 (110) |
+| electron | fix | 10.212 / 165.428 / 206.626 (230) | 96.266 / 166.181 / 206.626 (160) | 4.398 / 157.237 / 164.361 (70) | 129.823 / 168.854 / 206.626 (110) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| QAw | cft | 20261117.0516.1 | 157.0.8103.78 | 460/460 | none | otherOnTop, noWrongTarget |
+| QAw | safari | 20261117.0516.1 | 27.2 | 460/460 | none | noWrongTarget |
+| QAw | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 460/460 | none | otherOnTop, noWrongTarget |
+

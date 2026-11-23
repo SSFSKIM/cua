@@ -22,6 +22,10 @@ for(const arg of process.argv.slice(2)){
     if(s.gates?.otherOnTopElsewhere)console.log(`otherControlOnTop outside the refuse cells: ${s.gates.otherOnTopElsewhere.rows} (main kept-landed ${s.gates.otherOnTopElsewhere.mainKeptLanded}) ${JSON.stringify(s.gates.otherOnTopElsewhere.perUnit)}`);
     // Every unit where a fix row's verdict or reason differs from its paired main row's.
     const differ={};for(const r of fix){const m=mate(r);if(m&&(m.verdict!==r.verdict||m.guard?.reason!==r.guard?.reason))(differ[unitKey(r)]??=[]).push(`${m.verdict} ${m.guard?.reason}>${r.verdict} ${r.guard?.reason}`);}
+    // noWrongTarget counts every fix row that reached another control, the declared limit's included; beside it, the fix
+    // rows that reached another control where their paired main row did not.
+    const newWrong=fix.filter(r=>r.verdict==='wrong-target'&&mate(r)?.verdict!=='wrong-target');
+    console.log(`fix wrong-target ${fix.filter(r=>r.verdict==='wrong-target').length} (${tally(fix.filter(r=>r.verdict==='wrong-target').map(r=>r.cell))}); where main's paired row was not: ${newWrong.length}`);
     for(const [u,l] of Object.entries(differ))console.log(`  differs ${u} [${CELLS[u.split('/')[0]].kind}]: ${tally(l)}`);
     // hitCorrection on the fix, per unit (Chromium lanes).
     if(s.lane!=='safari'){const hc={};for(const r of fix)if(r.guard?.hitCorrection)(hc[unitKey(r)]??=[]).push(r.guard.hitCorrection);

@@ -831,7 +831,10 @@ extension Engine {
       let source = currentInputSource()
       // macOS may hold a source per app; the session's reading then says nothing about a background app.
       let perContextUnknown = perContextInputEnabled() && frontmostPid() != pid
-      switch textRoute(keyboardLayout: source.keyboardLayout, perContextUnknown: perContextUnknown, concealed: concealed, spikeKeyed: spikeKeyed) {
+      // #420: Chromium and Electron drop a character outside the BMP from a key event; such a text is pasted there.
+      let keysDropText = keyedTextDropsCharacters(text, chromiumFamily: webAccessibility.isChromiumFamily(app.appPath))
+      switch textRoute(keyboardLayout: source.keyboardLayout, perContextUnknown: perContextUnknown, concealed: concealed, spikeKeyed: spikeKeyed,
+                       keysDropText: keysDropText) {
       case .refusedConcealed:
         throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
       case .paste:

@@ -930,12 +930,24 @@ enum TextRoute: Equatable {
 }
 
 /// Keyed only under a keyboard-layout source whose reading is reliable (the per-context preference off, or the driven
-/// app frontmost); otherwise the paste route, which a concealed request never takes. The spike's `spikeKeyed` keys
-/// regardless, except a concealed request, which never keys under a reading it cannot trust.
-func textRoute(keyboardLayout: Bool, perContextUnknown: Bool, concealed: Bool, spikeKeyed: Bool) -> TextRoute {
+/// app frontmost), and only when the keys would not drop part of the text in the app (`keysDropText`,
+/// `keyedTextDropsCharacters`); otherwise the paste route, which a concealed request never takes: a secret the keys
+/// would drop is keyed still, and the read-back answers the loss. The spike's `spikeKeyed` keys regardless, except a
+/// concealed request, which never keys under a reading it cannot trust.
+func textRoute(keyboardLayout: Bool, perContextUnknown: Bool, concealed: Bool, spikeKeyed: Bool, keysDropText: Bool = false) -> TextRoute {
   let reliable = keyboardLayout && !perContextUnknown
   if concealed { return reliable ? .keyed : .refusedConcealed }
-  return reliable || spikeKeyed ? .keyed : .paste
+  return (reliable && !keysDropText) || spikeKeyed ? .keyed : .paste
+}
+
+/// Whether the keyed route would drop part of `text` in the app (#420): a Chromium or Electron app (`chromiumFamily`)
+/// dropped a character outside the Basic Multilingual Plane, an emoji's UTF-16 surrogate pair, from the Unicode-string
+/// event that carried it, with nothing in its place (#414's hosted qualification, password fields: Chrome for Testing
+/// 157 and Electron 44, 20 of 20 missing on each lane), where Safari and AppKit took it. Which Chromium fields drop it
+/// is not known before typing (hold 3's plain fields took it on the mini's older Chrome), so every text holding one is
+/// pasted there, the route #361 qualified exact in both.
+func keyedTextDropsCharacters(_ text: String, chromiumFamily: Bool) -> Bool {
+  chromiumFamily && text.unicodeScalars.contains { $0.value > 0xFFFF }
 }
 
 /// The refusal of concealed text that cannot be keyed reliably: it says nothing was entered and why, names the

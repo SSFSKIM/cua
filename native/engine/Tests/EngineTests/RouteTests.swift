@@ -1765,6 +1765,24 @@ final class KeyRouteTests: XCTestCase {
     XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: false, spikeKeyed: true), .keyed, "probe (e)'s override")
   }
 
+  /// #420: Chromium and Electron drop a character outside the BMP from a Unicode-string key event, so a text holding
+  /// one takes the paste route in their apps, under a reliable Latin reading too; BMP text, other apps and a concealed
+  /// request (never pasted) keep their route, and the spike's override still keys.
+  func testATextTheKeysWouldDropTakesThePasteRoute() {
+    XCTAssertTrue(keyedTextDropsCharacters("😀 이모지", chromiumFamily: true))
+    XCTAssertTrue(keyedTextDropsCharacters("a𝐀b", chromiumFamily: true), "any scalar above U+FFFF, not only an emoji")
+    XCTAssertFalse(keyedTextDropsCharacters("😀 이모지", chromiumFamily: false), "Safari and AppKit take it keyed")
+    XCTAssertFalse(keyedTextDropsCharacters("한글 日本語 é ☃", chromiumFamily: true), "BMP text lands keyed in Chromium")
+    XCTAssertFalse(keyedTextDropsCharacters("", chromiumFamily: true))
+
+    XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: false, spikeKeyed: false, keysDropText: true), .paste)
+    XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: false, spikeKeyed: false, keysDropText: true), .paste)
+    XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: true, spikeKeyed: false, keysDropText: true), .keyed,
+                   "a secret is never pasted: the read-back answers the dropped character")
+    XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: false, spikeKeyed: true, keysDropText: true), .keyed,
+                   "probe (e)'s override")
+  }
+
   func testConcealedTextFailsClosedWheneverTheReadingIsUnreliableEvenForASpikeCell() {
     XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: true, spikeKeyed: false), .keyed)
     XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: true, spikeKeyed: false), .refusedConcealed)

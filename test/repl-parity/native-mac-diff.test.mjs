@@ -12,6 +12,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {checkPair, diffNativeMac, isSettled, loadNativeMacRun, summaryLine, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
 import {laneTexts, lanesMeta, settledAfter, writeRun} from './native-mac-fixtures.mjs';
+import {NOTE} from '../../src/services/engine/render.mjs';
 
 const scratches = [];
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -288,4 +289,18 @@ test('#526: validateDeclarations takes a lineBreaks departure for every scene, w
   assert.throws(() => validateDeclarations({declarations: [{...rule, fault: 'vendor'}]}), /lineBreaks/);
   assert.throws(() => validateDeclarations({declarations: [{...rule, count: 2}]}), /lineBreaks/);
   assert.throws(() => validateDeclarations({declarations: [{...rule, scene: 'textedit'}]}), /lineBreaks/);
+});
+
+test('#552 (ruling 1177): cua\'s longer selected-text fence is read as the trailer, settled alike, and declared against the vendor\'s three', () => {
+  const lane = laneTexts('cua'), {later} = lane.chrome;
+  const selected = (text, fence) => `${later.split('\n')[0]}\nSelected text: ${fence}\n${text}\n${fence}\n\n${NOTE}`;
+  assert.equal(isSettled(selected('a ``` b', '````'), selected('a ``` b', '````')), true);
+  assert.equal(isSettled(selected('a ``` b', '````'), selected('a ``` c', '````')), false, 'the selection moved');
+  // The vendor's diff golden and cua's carrying the same selection: only the fence differs, under the departure.
+  const vendorLane = laneTexts('vendor');
+  const withSelection = (texts, fence) => ({...texts, chrome: {...texts.chrome, diff: `${texts.chrome.diff.split('\nThe focused UI element is')[0]}\nSelected text: ${fence}\na \`\`\` b\n${fence}\n\n${NOTE}`}});
+  const report = diffNativeMac(...pair({vendor: {texts: withSelection(vendorLane, '```')}, cua: {texts: withSelection(lane, '````')}}), {declarations});
+  assert.deepEqual(report.differences.filter(d => d.scene === 'chrome' && d.golden === 'diff'), []);
+  const undeclared = diffNativeMac(...pair({vendor: {texts: withSelection(vendorLane, '```')}, cua: {texts: withSelection(lane, '````')}}), {declarations: declarations.filter(rule => rule.kind !== 'lineBreaks')});
+  assert.deepEqual(undeclared.differences.filter(d => d.scene === 'chrome' && d.golden === 'diff').map(d => d.kind), ['trailer']);
 });

@@ -5,7 +5,8 @@
 // the cap. Anything else stays an undeclared difference, and an unused declaration is over-declared.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compare} from './native-goldens/compare.mjs';
+import {compare, parse} from './native-goldens/compare.mjs';
+import {NOTE, escapeLineBreaks} from '../src/services/engine/render.mjs';
 
 const RULE = {scene: 'finder', golden: ['full', 'before'], kind: 'subsetCount', fault: 'vendor', identifier: 'ListView', cap: 100, count: 1, cause: 'test'};
 const text = (line, header = 'Window: "cua-scene-finder", App: Finder.') => `${header}\n0 standard window cua-scene-finder\n\t1 ${line}\n`;
@@ -60,4 +61,57 @@ test('#526: a lineBreaks departure absorbs the vendor\'s raw breaks against cua\
   // A golden with no break: nothing to absorb, and not over-declared.
   assert.deepEqual(compare(cua, cua, {declared: [BREAKS]}).differences, []);
   assert.deepEqual(compare(multi('a\nb'), multi('a\\nb'), {declared: [{...BREAKS, scene: 'textedit'}, BREAKS]}).differences, []);
+});
+
+// The review of da6576e2..8ecf39a79 (#526): the departure keeps the parse's item boundaries, keys the vendor's items by
+// their escaped text, covers the header and every trailer, and holds only on exact equality.
+const tree = (lines, {header = 'Window: "w", App: A.', trailer = ''} = {}) => `${header}\n0 standard window w\n${lines.map(line => `\t${line}`).join('\n')}\n${trailer}`;
+const kinds = (vendor, cua, options = {}) => compare(vendor, cua, {declared: [BREAKS], ...options}).differences.map(d => `${d.kind}${d.index ? ` ${d.index}` : ''}`);
+
+test('#526 review 1: a numbered line holding a CR, LS or PS opens its own item, so a missing element is still reported', () => {
+  for (const nl of ['\r', '\u2028', '\u2029']) {
+    const two = tree(['1 button A', `2 button B${nl}C`]);
+    assert.deepEqual(kinds(two, tree(['1 button A'])), ['missing 2'], JSON.stringify(nl));
+    assert.deepEqual(kinds(two, tree(['1 button A', `2 button B${escapeLineBreaks(nl)}C`])), [], 'the same element, its break escaped');
+    assert.equal(parse(two, {kind: 'full'}).items.length, 3);
+  }
+});
+
+test('#526 review 2: a vendor item is keyed by its escaped text, so a two-line title or bare value is one matched line', () => {
+  assert.deepEqual(kinds(tree(['1 button A\nB', '2 text one\ntwo']), tree(['1 button A\\nB', '2 text one\\ntwo'])), []);
+  assert.deepEqual(kinds(tree(['1 button A\nB']), tree(['1 button A\\nC'])), ['missing 1', 'added 1'], 'another title stays a difference');
+  assert.deepEqual(kinds(tree(['1 button A\nB']), tree(['1 button A\\nB']), {declared: []}), ['missing 1', 'added 1'], 'undeclared without it');
+});
+
+test('#526 review 3: the header and the Selected trailer take the departure too, their boundaries kept', () => {
+  const header = title => `Window: "${title}", App: A.`;
+  for (const nl of ['\n', '\r', '\u2028']) {
+    assert.deepEqual(kinds(tree(['1 button A'], {header: header(`a${nl}b`)}), tree(['1 button A'], {header: header(`a${escapeLineBreaks(nl)}b`)})), [], JSON.stringify(nl));
+  }
+  assert.deepEqual(kinds(tree(['1 button A'], {header: header('a\nb')}), tree(['1 button A'], {header: header('a\\nc')})), ['header', 'unparsed']);
+  const selected = elements => `\nSelected:\n${elements.map(e => `\t${e}`).join('\n')}\n\n${NOTE}`;
+  const vendor = tree(['1 text one\ntwo', '2 button OK'], {trailer: selected(['1 text one\ntwo', '2 button OK'])});
+  assert.deepEqual(kinds(vendor, tree(['1 text one\\ntwo', '2 button OK'], {trailer: selected(['1 text one\\ntwo', '2 button OK'])})), []);
+  // A boundary is not a break: the second element folded into the first's text is a difference.
+  assert.deepEqual(kinds(vendor, tree(['1 text one\\ntwo', '2 button OK'], {trailer: selected(['1 text one\\ntwo\\n\t2 button OK'])})), ['trailer']);
+});
+
+test('#526 review 6: redacted, the departure holds only on exact equality, never by length', () => {
+  const opts = {structural: true};
+  assert.deepEqual(kinds(tree(['1 text a\nb']), tree(['1 text xyz!']), opts), ['text']);
+  assert.deepEqual(kinds(tree(['1 text a\nb']), tree(['1 text a\\nb']), opts), []);
+  const focused = line => `\nThe focused UI element is ${line}`;
+  assert.deepEqual(kinds(tree(['1 text ⟨3⟩'], {trailer: focused('1 text a\nb')}), tree(['1 text ⟨3⟩'], {trailer: focused('1 text xyz!')}), opts), ['trailer']);
+  assert.deepEqual(kinds(tree(['1 text ⟨3⟩'], {trailer: focused('1 text a\nb')}), tree(['1 text ⟨3⟩'], {trailer: focused('1 text a\\nb')}), opts), []);
+});
+
+test('#552 (ruling 1177): the selected-text fence may be longer on cua\'s side; the departure takes the vendor\'s three as cua\'s', () => {
+  const fenced = (text, fence) => `\nSelected text: ${fence}\n${text}\n${fence}\n\n${NOTE}`;
+  const field = ['1 text entry area (settable) v'];
+  const vendor = tree(field, {trailer: fenced('a ``` b', '```')}), cua = tree(field, {trailer: fenced('a ``` b', '````')});
+  assert.deepEqual(kinds(vendor, cua), []);
+  assert.deepEqual(kinds(vendor, cua, {declared: []}), ['trailer'], 'undeclared without it');
+  assert.deepEqual(kinds(vendor, tree(field, {trailer: fenced('a ``` c', '````')})), ['trailer'], 'another text');
+  assert.equal(parse(cua, {kind: 'full'}).trailer.kind, 'selectedText');
+  assert.deepEqual(kinds(tree(field, {trailer: fenced('plain', '```')}), tree(field, {trailer: fenced('plain', '```')}), {declared: []}), []);
 });

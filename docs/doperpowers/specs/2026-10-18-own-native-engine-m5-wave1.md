@@ -114,6 +114,14 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 - 2026-11-23, ruling 1136 (the owner's yes): on GitHub-hosted runners only, kits may pre-record replayd's capture
   approval, or dismiss its alert, through the same single guarded writer as O0 (H0's kit function; reused, never a
   second writer); pre-recording before the first capture is preferred.
+- 2026-11-23, H0 (ii) (run 45156038821, main b1b15484, kit `probe/117-h0` de0fac2e, README 51f79628): replayd's
+  capture alert never closes by itself (10 min up on both copies; the vendor's helper stacks a second alert window);
+  UserNotificationCenter is the front and key app in every sample; a second capture by the same copy raises no new
+  alert; activation under an alert is unreliable. So the alert-frontmost rule below is load-bearing, and a hosted
+  judged pilot gives verdicts only once (i)'s pre-record exists. (i) is on hold for the owner's direct authorization:
+  nothing in this wave builds or depends on pre-record code (ruling 1136's writer is not reused yet). The guard
+  pattern for later is `probe/117-h0` f28ce0db (tccWrite guarded before any store access, an injectable STORE, a spy
+  test).
 - 2026-11-23, new judge rule (the design session): the judge checks that no alert was frontmost during any judged
   cell; a cell with an alert frontmost is NO VERDICT, never a pass. It belongs to T10's oracle, with a test.
 - 2026-11-23, scope change (the design session, ruling 1117 releasing on H0's pass): this wave also takes T10 (with

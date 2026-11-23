@@ -11,10 +11,12 @@ export const windowTitleOf = text => /^Window: "([^"]*)"/m.exec(String(text))?.[
 // localized). A longer name that begins with it ("Scene options") or a window title that only begins with it ("cua scene
 // page - Chrome for Testing") is not it. A longer bare title that ends with it ("My Scene option") can be: the role word
 // before a bare title is localized and multi-word, so its boundary is only a space. The first matching line wins, so
-// targets are names the scene owns.
+// targets are names the scene owns. In cua's rendering a multi-line value's later lines follow on the same line, its
+// breaks escaped (src/services/engine/render.mjs escapeLineBreaks, #526): its first line ends at that escape as the
+// vendor's ends at the line's end.
 export function indexOfTarget(ax, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)');
+  const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$|\\\\(?:n|r|u[0-9a-f]{4}))');
   for (const line of String(ax).split('\n')) {
     const element = /^[~+-]?[\t ]*(\d+) (.*)$/.exec(line);
     if (element && part.test(element[2])) return Number(element[1]);

@@ -1312,3 +1312,11 @@ test('Finder does not reopen a recorded window marked off screen to overcome a b
   assert.equal((await activateScene('finder', {run, io})).ok, false);
   assert.equal(io.calls.filter(c => c[0] === 'show').length, 0);
 }));
+
+test('#526: a target naming a multi-line value\'s first line is found in cua\'s rendering, where the value\'s breaks are escaped', () => {
+  const cua = 'Window: "d", App: TextEdit.\n0 standard window d\n\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\\n**Bold scene line**\\nLine 01\n';
+  const vendor = 'Window: "d", App: TextEdit.\n0 standard window d\n\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\n**Bold scene line**\nLine 01\n';
+  for (const ax of [cua, vendor]) assert.equal(indexOfTarget(ax, 'cua scene document'), 2);
+  assert.equal(indexOfTarget(cua, 'cua scene doc'), null, 'a prefix of the line is not it');
+  assert.equal(indexOfTarget(cua.replace('\\n**Bold', '\\u2028**Bold'), 'cua scene document'), 2);
+});

@@ -316,6 +316,16 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
     Err(DropCancelled.into())
 }
 
+/// The rest an Electron drop's settle takes (`drop_settle::Settle`): its press source's family's, since the drag loop
+/// the settle waits for is the source's wherever the path goes, while the named window's pacing paces the motion (#487:
+/// a zero-rest named window beside an Electron source pinged twice with no rest between). The flags fix it where they
+/// fix a drag's pacing (`Config::pacing`).
+fn settle_rest(fixed: Option<DragPacing>, source: Option<&crate::families::Family>) -> Duration {
+    fixed
+        .or(source.map(|f| f.drag))
+        .map_or(Duration::ZERO, |pacing| pacing.rest)
+}
+
 /// What a drag records for `--stats` alone: the press's and the release's wall clock, and what the release at the
 /// accept decided (`accept.rs`).
 pub(super) struct DragMeasure<'a> {
@@ -329,6 +339,8 @@ pub(super) struct DragMeasure<'a> {
     /// (`Config::drop_settle`): the slot gets the application's two answers, asked before the last rest and after the
     /// last motion of a drag whose source took `XdndSelection`, and whether it rested twice between them.
     pub(super) settle: Option<&'a mut Option<crate::drop_settle::Settle>>,
+    /// The settle's rest, given out of the floor and taken between its two pings ([`settle_rest`]): the source's.
+    pub(super) settle_rest: Duration,
     /// On a route whose input is XTEST's (the desktop and foreground routes): where the real pointer was, read with the
     /// cursor just before the release (None: on another screen, or not read), which is where the release goes and so
     /// the window the drop's confirmation is held to (the third review of task 73, P3).
@@ -742,7 +754,7 @@ fn drag_along(
                         before_last,
                         last,
                         match (&measure.settle, &measure.drop_cursor) {
-                            (Some(_), Some(_)) => (at + after_take).checked_sub(pacing.rest).unwrap_or(at),
+                            (Some(_), Some(_)) => (at + after_take).checked_sub(measure.settle_rest).unwrap_or(at),
                             _ => at + steps_floor,
                         },
                     )?,
@@ -757,7 +769,7 @@ fn drag_along(
             if taken.is_some()
                 && let (Some(slot), Some(cursor)) = (measure.settle, measure.drop_cursor.as_deref_mut())
             {
-                let (before, second_rest) = cursor.sync_and_rest(pacing.rest);
+                let (before, second_rest) = cursor.sync_and_rest(measure.settle_rest);
                 // kept before the revisit, so a revisit that fails still counts as entered, and unsettled
                 let settle = slot.insert(crate::drop_settle::Settle::interrupted(before, second_rest));
                 route.place_again(x, last.0, last.1)?;
@@ -1322,6 +1334,11 @@ impl Engine {
             }
             _ => None,
         };
+        // its settle rests as its family does, not as the window the drag named (#487)
+        let settle_rest = match (&drop_cursor, pressing_into) {
+            (Some(_), Some(source)) => settle_rest(self.cfg.pacing.drag, self.family_of(source)),
+            _ => Duration::ZERO,
+        };
         // whether the window manager takes Chrome's activation request, for a drop nothing else can confirm (as a
         // handle's, `handle::confirming`): read already for a Chrome drop window, else only for a drop that can begin
         let supported = match (confirm, &after) {
@@ -1431,6 +1448,7 @@ impl Engine {
                     drop_cursor: drop_cursor.as_mut().and_then(|c| c.as_mut().ok()),
                     at_release: &mut at_release,
                     settle: drop_settle.then_some(&mut settle),
+                    settle_rest,
                     release_point: xtest_route.then_some(&mut release_point),
                     drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
                     release_sync: syncing.then_some(ReleaseSync {
@@ -1867,6 +1885,36 @@ mod tests {
             "an unlisted family pauses nowhere after it (nor does the desktop path)"
         );
         assert!(DragPacing::NONE.held_rest.is_zero(), "nor rests");
+    }
+
+    /// #487: on the dedicated foreground route the drag's pacing is the named window's, but an Electron drop's settle
+    /// waits for the source's drag loop: a source of Electron's family beside a zero-rest named window (GTK 4's) gets
+    /// Electron's rest between its two pings, and the floor gives that rest out of itself. Fixed pacing fixes it.
+    #[test]
+    fn an_electron_source_s_settle_rests_its_own_family_s_rest_beside_a_zero_rest_named_window() {
+        use crate::families::{BROWSER_REST, FAMILIES, Toolkit, family};
+        let toolkit = |name: &str, version: Option<&str>| Toolkit {
+            name: name.into(),
+            version: version.map(Into::into),
+        };
+        let electron = family(FAMILIES, Some("Electron"), Some(&toolkit("Chromium", None))).expect("Electron");
+        assert!(
+            crate::families::confirms_drop_by_cursor(electron.name),
+            "the source a cursor watch settles"
+        );
+        let named = family(FAMILIES, Some("Gtk4-demo"), Some(&toolkit("GTK", Some("4.14.2")))).expect("GTK 4");
+        assert!(named.drag.rest.is_zero(), "the named window's pacing rests not at all");
+        assert_eq!(settle_rest(None, Some(electron)), BROWSER_REST);
+        assert_eq!(
+            settle_rest(Some(DragPacing::NONE), Some(electron)),
+            Duration::ZERO,
+            "fixed pacing is the flags' everywhere"
+        );
+        assert_eq!(
+            settle_rest(None, None),
+            Duration::ZERO,
+            "an unlisted family rests not at all"
+        );
     }
 
     #[test]

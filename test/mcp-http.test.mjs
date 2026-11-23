@@ -5,7 +5,9 @@
 import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, readdirSync} from 'node:fs';
+import {existsSync, mkdirSync, readdirSync, writeFileSync} from 'node:fs';
+import {infoPlist} from '../src/runtime/engine-bundle.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/client.mjs';
 import {join} from 'node:path';
 import {createMcpHttp} from '../src/mcp/http.mjs';
 import {inProcessConnections as inProcess, tick} from './fixtures/mcp-harness.mjs';
@@ -239,7 +241,8 @@ test('a session that cannot open answers 500 with -32000 cua: <code> and leaves 
   const {res, done} = send({body: INITIALIZE});
   await done;
   assert.equal(res.status, 500);
-  assert.deepEqual(res.json(), {jsonrpc: '2.0', id: 0, error: {code: -32000, message: 'cua: runtime_not_installed'}});
+  // A missing runtime adds the device's one fixed, path-free prerequisite (ruling 1148).
+  assert.deepEqual(res.json(), {jsonrpc: '2.0', id: 0, error: {code: -32000, message: 'cua: runtime_not_installed: the device has no runtime installed: run `cua install` on it first'}});
   assert.equal(res.headers['mcp-session-id'], undefined);
   assert.equal(http.sessions.size, 0);
 });
@@ -255,13 +258,19 @@ test('a refused open carries the engine\'s one-line reason and remedy across, an
   const {res, done} = send({body: INITIALIZE});
   await done;
   assert.equal(res.status, 500);
-  assert.deepEqual(res.json(), {jsonrpc: '2.0', id: 0, error: {code: -32000, message: `cua: runtime_not_installed: ${line}`}});
+  assert.deepEqual(res.json(), {jsonrpc: '2.0', id: 0, error: {code: -32000, message: `cua: runtime_not_installed: the device has no runtime installed: run \`cua install\` on it first; ${line}`}});
   assert.doesNotMatch(res.body, /\/Users\/|open failed/);
   // A notice that is not one plain line is not carried.
   open.failNotice = 'two\nlines';
   const second = send({body: INITIALIZE});
   await second.done;
-  assert.equal(second.res.json().error.message, 'cua: runtime_not_installed');
+  assert.equal(second.res.json().error.message, 'cua: runtime_not_installed: the device has no runtime installed: run `cua install` on it first');
+  // Another code carries neither.
+  open.failWith = 'sandbox_unavailable';
+  open.failNotice = undefined;
+  const third = send({body: INITIALIZE});
+  await third.done;
+  assert.equal(third.res.json().error.message, 'cua: sandbox_unavailable');
 });
 
 test('a request\'s response goes on the POST stream that carried it, with two concurrent POSTs answered out of order', async t => {
@@ -1052,9 +1061,26 @@ test('over real connections, a home with nothing installed fails the open as cua
   assert.equal(res.status, 500);
   // On macOS the computer surface's open also says why cua's engine cannot serve instead (ruling 1148), in one line.
   assert.equal(res.json().error.message, process.platform === 'darwin'
-    ? 'cua: runtime_not_installed: cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console'
-    : 'cua: runtime_not_installed');
+    ? 'cua: runtime_not_installed: the device has no runtime installed: run `cua install` on it first; cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console'
+    : 'cua: runtime_not_installed: the device has no runtime installed: run `cua install` on it first');
   assert.equal(existsSync(join(s.dir, 'run')), false);
+});
+
+// Ruling 1148, state 2 over HTTP with a compatible build already pending: approving it alone would still leave the
+// device without a runtime (runtime resolution comes before either engine), so the runtime's step goes first.
+test('over real connections, a device with no runtime and a compatible build pending is told to install the runtime first, then approve', {skip: process.platform !== 'darwin' && 'the macOS computer surface'}, async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const dir = join(s.dir, 'user', 'Library', 'Application Support', 'cua', 'engine', 'pending', 'cua Engine.app', 'Contents');
+  mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, 'Info.plist'), infoPlist({version: MIN_ENGINE_VERSION, build: 'a'.repeat(64)}));
+  const http = createMcpHttp({home: join(s.dir, 'cua'), env: {CUA_SHIM_SECRETS: 'off', HOME: join(s.dir, 'user'), CUA_SHIM_SURFACES: 'computer'}, clientCredential: CREDENTIAL, diagnostics: () => {}});
+  const res = recorder();
+  await http.handle({method: 'POST', url: '/mcp', signal: new AbortController().signal, headers: {authorization: `Bearer ${CREDENTIAL}`},
+    body: (async function* () { yield Buffer.from(JSON.stringify(INITIALIZE)); })()}, res);
+  assert.equal(res.status, 500);
+  assert.equal(res.json().error.message, 'cua: runtime_not_installed: the device has no runtime installed: run `cua install` on it first; cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (build aaaaaaaaaaaa built, awaiting approve); to use it, run `cua engine approve` with the owner at the console');
+  assert.doesNotMatch(res.body, new RegExp(s.dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'no path of this machine crosses');
 });
 
 // The agent cursor of a remote session (#235's spec, "Remote devices"): the client's `cua/cursor` in the initialize

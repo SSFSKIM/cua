@@ -70,6 +70,10 @@ import {remoteCursor} from '../runtime/cursor-identity.mjs';
 import {credentialMatches} from '../remote/device.mjs';
 import {WORK_TOOLS, statusResult} from './surface.mjs';
 
+// A device open that finds no runtime: the step on the device, in fixed words with no path (ruling 1148).
+const RUNTIME_MISSING = new Set(['runtime_not_installed', 'release_not_installed']);
+const INSTALL_RUNTIME = 'the device has no runtime installed: run `cua install` on it first';
+
 // MCP-Protocol-Version values accepted on any request; a session also accepts the version its runtime negotiated.
 const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18', '2025-11-25']);
 // no-transform: a CDN or tunnel in front (the relay's TLS proxy) neither buffers nor compresses the stream.
@@ -373,10 +377,12 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     let connection;
     try { connection = await opened; } catch (error) {
       diagnostics(`session ${sessionId}: could not open: ${error.message}${error.code ? ` [${error.code}]` : ''}`);
-      // Only the code crosses, and a refusal's engine notice (ruling 1148: the reason and remedy, one line with no path,
-      // src/mcp/connection.mjs withEngineFallback); never the error's message or hint, which name this machine's paths.
-      const notice = typeof error.engineNotice === 'string' && /^[^\n\r]{1,500}$/.test(error.engineNotice) ? `: ${error.engineNotice}` : '';
-      return rpcError(res, 500, -32000, `cua: ${error.code ?? 'open_failed'}${notice}`, message.id);
+      // Only the code crosses, with a missing runtime's fixed prerequisite and a refusal's engine notice (ruling 1148: the
+      // reason and remedy, one line with no path, src/mcp/connection.mjs withEngineFallback); never the error's message
+      // or hint, which name this machine's paths. The runtime comes first: it is resolved before either engine.
+      const said = [RUNTIME_MISSING.has(error.code) ? INSTALL_RUNTIME : null,
+        typeof error.engineNotice === 'string' && /^[^\n\r]{1,500}$/.test(error.engineNotice) ? error.engineNotice : null].filter(Boolean);
+      return rpcError(res, 500, -32000, `cua: ${error.code ?? 'open_failed'}${said.length ? `: ${said.join('; ')}` : ''}`, message.id);
     } finally { opening.delete(opened); }
     session = createSession(sessionId, connection, input, output);
     if (shutdown) {

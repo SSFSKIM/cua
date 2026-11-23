@@ -59,8 +59,10 @@ test('the kernel cell is one cell that names every target and reports each outco
   for (const t of TARGETS) assert.match(cell, new RegExp(`"${t}"`));
   assert.match(cell, /\\u0000\/tmp\/dbus-1/);
   assert.doesNotThrow(() => new Function(`return (async () => {${cell}})`));
-  // The cell names itself: its pid in its own namespace and its start time, which bind it to one host process.
+  // The cell names itself: its pid in its own namespace and its start time, which bind it to one host process. A kernel
+  // cell has no `process` global (the first live run reported no identity for it), so both come from /proc/self/stat.
   assert.match(cell, /\/proc\/self\/stat/);
+  assert.doesNotMatch(cell, /\bprocess\b/);
   assert.deepEqual(kernelReport('noise\n{"confinement":{"x11":"EACCES","bus":"EPERM","tcp":"ECONNREFUSED","unix":"ENOENT"},"identity":{"pid":2,"starttime":"881234"}}'),
     {outcomes: {x11: 'EACCES', bus: 'EPERM', tcp: 'ECONNREFUSED', unix: 'ENOENT'}, identity: {pid: 2, starttime: '881234'}});
   assert.deepEqual(kernelReport('no report'), {outcomes: null, identity: null});

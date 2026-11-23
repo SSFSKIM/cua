@@ -92,7 +92,8 @@ export async function controlOutcomes(targets) {
 
 /**
  * The kernel's cell: the same connects from inside the sandbox, and the kernel's own identity (its pid in its PID
- * namespace and its start time in clock ticks since boot, which the host's /proc shows too), one line of JSON.
+ * namespace and its start time in clock ticks since boot, which the host's /proc shows too), one line of JSON. A cell
+ * has no `process` global, so both are read from the sandbox's own /proc/self/stat.
  */
 export function kernelCell(targets) {
   return `const net = await import('node:net'), fs = await import('node:fs');
@@ -103,7 +104,7 @@ export function kernelCell(targets) {
     const outcomes = {};
     for (const [name, target] of Object.entries(targets)) outcomes[name] = await connect(target);
     let identity = null;
-    try { const stat = fs.readFileSync('/proc/self/stat', 'utf8'); identity = {pid: process.pid, starttime: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]}; } catch {}
+    try { const stat = fs.readFileSync('/proc/self/stat', 'utf8'); identity = {pid: Number(stat.slice(0, stat.indexOf(' '))), starttime: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]}; } catch {}
     nodeRepl.write(JSON.stringify({confinement: outcomes, identity}));`;
 }
 

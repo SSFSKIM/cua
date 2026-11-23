@@ -120,6 +120,12 @@ test('the vendor-tree counter counts attempted execs and a resolved descriptor, 
   assert.deepEqual(counted([`200   readlink("/tmp/link", "${R}/26/real", 4096) = 30`]), {calls: 0, unresolved: 0, complete: true});
 });
 
+test('a descriptor -y decodes to something other than a path (a pipe, a socket, an anonymous inode) is neither a path nor unresolved', () => {
+  // As the live trace showed it: the trusted worker opening its inherited pipe through /proc/self/fd.
+  assert.deepEqual(counted([`200   openat(AT_FDCWD<${HOME}/run/x>, "/proc/self/fd/5", O_WRONLY|O_NONBLOCK|O_CLOEXEC) = 20<pipe:[278631620]>`]), {calls: 0, unresolved: 0, complete: true});
+  assert.deepEqual(counted(['200   newfstatat(4<socket:[91]>, "", 0x7ffd, AT_EMPTY_PATH) = 0', '200   fchdir(9<anon_inode:[eventfd]>) = -1 ENOTDIR (Not a directory)']), {calls: 0, unresolved: 0, complete: true});
+});
+
 test('negative control: a relative path whose base is unknown leaves the count incomplete, never a clean zero', () => {
   assert.deepEqual(counted(['200   access("runtimes/26", R_OK) = 0']), {calls: 0, unresolved: 1, complete: false});
   assert.deepEqual(counted(['200   openat(5, "lib/x.js", O_RDONLY) = 3']), {calls: 0, unresolved: 1, complete: false});

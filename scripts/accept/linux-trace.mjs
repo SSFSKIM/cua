@@ -58,12 +58,17 @@ function callPaths(call, cwd) {
     else if (typeof base === 'string' && base.startsWith('/')) paths.push(posix.resolve(base, path));
     else unresolved += 1;
   };
+  // -y decodes a descriptor that is not a file to its kind (`pipe:[…]`, `socket:[…]`, `anon_inode:[…]`): no path.
+  const isPath = decoded => decoded.startsWith('/');
   const first = FIRST_STRING.exec(args);
   if (first) take(first[1], cwd);
-  for (const [, fd, decoded, path] of args.matchAll(DIRFD_PATH)) take(path, decoded ?? (fd === 'AT_FDCWD' ? cwd : undefined));
-  for (const [, , decoded] of args.matchAll(OPERAND_FD)) take(decoded, undefined);
+  for (const [, fd, decoded, path] of args.matchAll(DIRFD_PATH)) {
+    if (decoded === undefined) take(path, fd === 'AT_FDCWD' ? cwd : undefined);
+    else if (isPath(decoded)) take(path, decoded);
+  }
+  for (const [, , decoded] of args.matchAll(OPERAND_FD)) if (isPath(decoded)) take(decoded, undefined);
   const returned = close < 0 ? null : RETURN_FD.exec(call.slice(close));
-  if (returned) take(returned[1], undefined);
+  if (returned && isPath(returned[1])) take(returned[1], undefined);
   return {paths, unresolved};
 }
 

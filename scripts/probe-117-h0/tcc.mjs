@@ -19,6 +19,13 @@ export const SERVICES = Object.freeze({
   postEvent: 'kTCCServicePostEvent',
 });
 const DECISION = '2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only';
+// O0a (docs/117-progress ccb46e28, right after O0): replayd's screen-capture approval may be pre-recorded by kits on
+// GitHub-hosted runners only, for cua's engine bundle and the vendor's helper, before their first capture, through
+// this same writer. Never on any of the owner's Macs.
+const DECISION_O0A = '(O0a; extends O0)';
+// replayd's store of capture approvals (the "bypass the system private window picker" confirmation's answers).
+export const REPLAYD_DIR = join(homedir(), 'Library/Group Containers/group.com.apple.replayd');
+export const REPLAYD_APPROVALS = join(REPLAYD_DIR, 'ScreenCaptureApprovals.plist');
 const SPEC = 'docs/doperpowers/specs/2026-10-18-own-native-engine-design.md';
 
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000, ...opts});
@@ -68,13 +75,13 @@ export function writability() {
 // macOS runner, and the owner's yes must be in the spec's Decision Log as fetched from docs/117-progress (or HEAD).
 // Anything else exits the process non-zero. `deps` are the test's seams (scripts/probe-117-h0/tcc.test.mjs): env,
 // platform, readSpec (the spec's text at a ref, or null), exit.
-export function guard({env = process.env, platform = process.platform, readSpec = specAt, exit = code => process.exit(code), stderr = process.stderr} = {}) {
+export function guard({env = process.env, platform = process.platform, readSpec = specAt, exit = code => process.exit(code), stderr = process.stderr, decisions = [DECISION]} = {}) {
   if (env.RUNNER_ENVIRONMENT !== 'github-hosted' || platform !== 'darwin') {
     stderr.write('probe-117-h0: refused: TCC rows are written only on a GitHub-hosted macOS runner (RUNNER_ENVIRONMENT=github-hosted; O0, ruling 1111)\n');
     return exit(3);
   }
-  if (!['origin/docs/117-progress', 'HEAD'].some(ref => readSpec(ref)?.includes(DECISION))) {
-    stderr.write(`probe-117-h0: refused: the owner's yes (O0) is not in ${SPEC}'s Decision Log on docs/117-progress or HEAD\n`);
+  if (!['origin/docs/117-progress', 'HEAD'].some(ref => { const text = readSpec(ref); return typeof text === 'string' && decisions.every(d => text.includes(d)); })) {
+    stderr.write(`probe-117-h0: refused: the owner's yes (${decisions.length > 1 ? 'O0 and O0a' : 'O0'}) is not in ${SPEC}'s Decision Log on docs/117-progress or HEAD\n`);
     return exit(3);
   }
   return true;
@@ -87,6 +94,15 @@ const STORE = {
   csreq: bundle => csreqHex(bundle).hex,
   sql: (db, statement) => sql(db, statement),
   restart: () => run('/usr/bin/sudo', ['-n', '/usr/bin/killall', 'tccd']),
+  // replayd's store: its directory listing and the approvals as plutil prints them (dates included), or null.
+  replaydRead: () => ({
+    dir: existsSync(REPLAYD_DIR) ? run('/bin/ls', ['-la', REPLAYD_DIR]).trim().split('\n') : null,
+    approvals: existsSync(REPLAYD_APPROVALS) ? run('/usr/bin/plutil', ['-p', REPLAYD_APPROVALS]).trim() : null,
+  }),
+  // One approval, through cfprefsd (defaults takes the plist's path without its extension).
+  replaydWrite: (key, date) => run('/usr/bin/defaults', ['write', REPLAYD_APPROVALS.replace(/\.plist$/, ''), key, '-date', date]),
+  // replayd started afresh (launchd relaunches it on demand), so it reads the store again.
+  replaydRestart: () => { try { return run('/usr/bin/killall', ['replayd']); } catch { return run('/usr/bin/sudo', ['-n', '/usr/bin/killall', 'replayd']); } },
 };
 
 // The one function that writes: the guard first, then the action against the store. Every public writer below is a
@@ -137,4 +153,22 @@ export function restartTccd(deps = {}) {
   return tccWrite(store => {
     try { store.restart(); return {restarted: true}; } catch (error) { return {restarted: false, error: String(error.stderr || error.message).trim().slice(0, 300)}; }
   }, deps);
+}
+
+// O0a: pre-records replayd's capture approval for each key (a copy's executable path and its bundle id) with `until`,
+// before the copy's first capture, then restarts replayd. Guarded by O0 and O0a both. -> what the store held before,
+// what was written, and what it holds after.
+export function preRecordReplayd({keys, until = '2100-01-01 00:00:00 +0000'}, deps = {}) {
+  return tccWrite(store => {
+    const before = store.replaydRead();
+    const written = keys.map(key => { store.replaydWrite(key, until); return {key, date: until}; });
+    let restarted;
+    try { store.replaydRestart(); restarted = true; } catch (error) { restarted = String(error.stderr || error.message).trim().slice(0, 200); }
+    return {store: REPLAYD_APPROVALS, before, written, restarted, after: store.replaydRead()};
+  }, {...deps, decisions: [DECISION, DECISION_O0A]});
+}
+
+// replayd's store read under the same guard (it is a store access too).
+export function readReplayd(deps = {}) {
+  return tccWrite(store => store.replaydRead(), {...deps, decisions: [DECISION, DECISION_O0A]});
 }

@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: full (the kit), alert (ruling 1135 (ii), the capture confirmation observed only) or label (sw_vers on the runner label only)
+        description: full (the kit), alert (ruling 1135 (ii), the capture confirmation observed only), prerecord (O0a, replayd's approval pre-recorded) or label (sw_vers on the runner label only)
         type: choice
-        options: [full, alert, label]
+        options: [full, alert, prerecord, label]
         default: full
       runner:
         description: Runner label (macos-latest, macos-26, macos-27, xcode-27, ...)

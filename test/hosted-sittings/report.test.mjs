@@ -82,15 +82,15 @@ test('the guard tally per step and cell: refusals by cause beside the key cells 
     {step: 'cc-1', record: null},
   ]);
   assert.deepEqual(tally, [
-    {step: 'vv-1', cell: 'task.act', alert: 1, unread: 0, keyWindow: 0, keyUnread: 2, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
-    {step: 'vv-1', cell: 'quit', alert: 0, unread: 0, keyWindow: 0, keyUnread: 1, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
-    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 1, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
-    {step: 'accept-native', cell: 'connection A: type and observe the marker', alert: 0, unread: 1, keyWindow: 0, keyUnread: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'vv-1', cell: 'task.act', alert: 1, unread: 0, keyWindow: 0, keyUnread: 2, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'vv-1', cell: 'quit', alert: 0, unread: 0, keyWindow: 0, keyUnread: 1, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 1, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'accept-native', cell: 'connection A: type and observe the marker', alert: 0, unread: 1, keyWindow: 0, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
   ]);
   const text = renderGuardTally(tally);
-  assert.match(text, /^\| step \| cell \| NO VERDICT alert \| NO VERDICT unread \| NO VERDICT keyWindow \| key cells guarded unread \| cells key window unread \|$/m);
-  assert.match(text, /^\| vv-1 \| task\.act \| 1 \| 0 \| 0 \| 2 \| 0 \|$/m);
-  assert.match(renderGuardTally([]), /No refusal and no key cell guarded unread/);
+  assert.match(text, /^\| step \| cell \| NO VERDICT alert \| NO VERDICT unread \| NO VERDICT keyWindow \| key cells guarded unread \| cells key window read \| cells key window unread \|$/m);
+  assert.match(text, /^\| vv-1 \| task\.act \| 1 \| 0 \| 0 \| 2 \| 0 \| 0 \|$/m);
+  assert.match(renderGuardTally([]), /No refusal, no key cell guarded unread and no key-window reading/);
 });
 
 // The key-window requirement (ruling 1169's addition): a click or key cell whose scene app held another key window is
@@ -117,34 +117,56 @@ test('per cell and side, and per step: the cells NO VERDICT keyWindow and those 
     {step: 'matrix-cua-1', record: {meta: {keyWindowUnread: {'row:3': 2}}}},
   ]);
   assert.deepEqual(tally, [
-    {step: 'vc-1', cell: 'task.act', alert: 0, unread: 0, keyWindow: 1, keyUnread: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
-    {step: 'vc-1', cell: 'quit', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowUnread: 1, keyWindowUnreadReasons: {'the reader is not trusted for Accessibility': 1}},
-    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowUnread: 2, keyWindowUnreadReasons: {}},
+    {step: 'vc-1', cell: 'task.act', alert: 0, unread: 0, keyWindow: 1, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
+    {step: 'vc-1', cell: 'quit', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 1, keyWindowUnreadReasons: {'the reader is not trusted for Accessibility': 1}},
+    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowRead: 0, keyWindowUnread: 2, keyWindowUnreadReasons: {}},
   ]);
-  assert.match(renderGuardTally(tally), /^\| vc-1 \| quit \| 0 \| 0 \| 0 \| 0 \| 1 \(the reader is not trusted for Accessibility 1\) \|$/m);
+  assert.match(renderGuardTally(tally), /^\| vc-1 \| quit \| 0 \| 0 \| 0 \| 0 \| 0 \| 1 \(the reader is not trusted for Accessibility 1\) \|$/m);
 });
 
-// Recorded check (3) of ruling 1169: whether the key-window requirement was observed or vacuous, at a glance, from setup's
-// reading of the reader's grant over the loopback ssh and the sitting's unread readings by reason.
-test('the key-window requirement at a glance: observed, unobserved where readings went unread, or vacuous with no grant', () => {
+// Recorded check (3) of ruling 1169: whether the key-window requirement was observed, at a glance, judged on the sitting's
+// own readings (taken, refused, unread by reason); setup's reading of the grant over the loopback ssh is context only.
+test('the key-window requirement at a glance: judged on the sitting\'s own readings, setup\'s grant reading context only', () => {
   const NOT = 'the reader is not trusted for Accessibility';
-  const tally = (reasons, refused = 1) => [{step: 'vc-1', cell: 'task.act', alert: 0, unread: 0, keyWindow: refused, keyUnread: 0, keyWindowUnread: 0, keyWindowUnreadReasons: {}},
-    {step: 'matrix-cua-1', cell: 'row:3', alert: 0, unread: 0, keyWindow: 0, keyUnread: 0, keyWindowUnread: Object.values(reasons).reduce((a, b) => a + b, 0), keyWindowUnreadReasons: reasons}];
-  const observed = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, tally({}));
+  const row = (step, cell, {read = 0, refused = 0, reasons = {}} = {}) => ({step, cell, alert: 0, unread: 0, keyWindow: refused, keyUnread: 0,
+    keyWindowRead: read, keyWindowUnread: Object.values(reasons).reduce((a, b) => a + b, 0), keyWindowUnreadReasons: reasons});
+  const observed = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, [row('vc-1', 'task.act', {read: 3, refused: 1})]);
   assert.match(observed, /^## The key-window requirement/);
-  assert.match(observed, /Setup's reading of the reader's grant over the loopback ssh: trusted\./);
-  assert.match(observed, /1 click or key cell refused NO VERDICT keyWindow; 0 sent with the key window unread\./);
+  assert.match(observed, /^In this sitting's records: 3 click or key cells sent with the key window read; 1 refused NO VERDICT keyWindow; 0 sent with the key window unread\.$/m);
+  assert.match(observed, /^Setup's reading of the reader's grant over the loopback ssh: trusted\. Context only/m);
   assert.match(observed, /^Observed\.$/m);
-  const part = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, tally({'the scene window is not on screen': 2}));
+  const part = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, [row('vc-1', 'task.act', {read: 1}), row('matrix-cua-1', 'row:3', {reasons: {'the scene window is not on screen': 2}})]);
   assert.match(part, /2 sent with the key window unread \(the scene window is not on screen 2\)/);
   assert.match(part, /^Observed, except for the 2 cells sent unread\.$/m);
-  const vacuous = renderKeyWindowObserved({trusted: false, reason: NOT, via: 'loopback ssh'}, tally({[NOT]: 5}, 0));
-  assert.match(vacuous, /not trusted \(the reader is not trusted for Accessibility\)/);
-  assert.match(vacuous, /^Vacuous: the reader held no Accessibility grant, so no cell was checked\.$/m);
-  assert.match(renderKeyWindowObserved(null, tally({[NOT]: 1}, 0)), /Setup recorded no reading of the reader's grant/);
-  assert.match(renderKeyWindowObserved(null, tally({[NOT]: 1}, 0)), /^Vacuous: the reader held no Accessibility grant, so no cell was checked\.$/m);
+  // Every reading unread checked nothing, whatever setup read of the grant.
+  for (const trust of [{trusted: false, reason: NOT, via: 'loopback ssh'}, {trusted: true, via: 'loopback ssh'}, null]) {
+    assert.match(renderKeyWindowObserved(trust, [row('matrix-cua-1', 'row:3', {reasons: {[NOT]: 5}})]), /^Vacuous: every key-window reading went unread, so no cell was checked\.$/m);
+  }
+  assert.match(renderKeyWindowObserved({trusted: false, reason: NOT, via: 'loopback ssh'}, []), /not trusted \(the reader is not trusted for Accessibility\)/);
+  assert.match(renderKeyWindowObserved(null, []), /Setup recorded no reading of the reader's grant/);
   // A refusal is a reading taken: the requirement held somewhere, whatever else went unread.
-  assert.match(renderKeyWindowObserved(null, tally({[NOT]: 1})), /^Observed, except for the 1 cell sent unread\.$/m);
+  assert.match(renderKeyWindowObserved(null, [row('vc-1', 'task.act', {refused: 1, reasons: {[NOT]: 1}})]), /^Observed, except for the 1 cell sent unread\.$/m);
+});
+
+// A sitting with no key-window reading (E, F, or a run that stopped before its first click or key cell) observed nothing,
+// not the requirement; even a cell of the guard tally refused for an alert is no key-window reading.
+test('the key-window requirement with no reading in the sitting: not observed, never "Observed"', () => {
+  for (const tally of [[], guardTally([{step: 'cc-1', record: {alertGuardCounts: {'task.act': {alert: 1, unread: 0}}}}, {step: 'ee-1', record: null}])]) {
+    const text = renderKeyWindowObserved({trusted: true, via: 'loopback ssh'}, tally);
+    assert.match(text, /^No key-window reading was taken: the requirement was not observed in this sitting\.$/m);
+    assert.doesNotMatch(text, /^Observed/m);
+  }
+});
+
+// D reads in the job's own process chain (accept-native's guard, not over the loopback ssh): its acceptance record's own
+// readings judge it, so an ssh grant reading of not trusted does not make D's checked cells vacuous.
+test('sitting D is judged on its own reads: acceptance.json\'s key-window readings, beside an untrusted ssh grant reading', () => {
+  const STEP = 'connection A: type and observe the marker';
+  const tally = guardTally([{step: 'accept-native', record: {keyWindowRead: {[STEP]: 4}, keyWindowUnread: {[STEP]: 1}, keyWindowUnreadReasons: {[STEP]: {'the scene window is not on screen': 1}}}}]);
+  assert.deepEqual(tally.map(t => [t.cell, t.keyWindowRead, t.keyWindowUnread]), [[STEP, 4, 1]]);
+  const text = renderKeyWindowObserved({trusted: false, reason: 'the reader is not trusted for Accessibility', via: 'loopback ssh'}, tally);
+  assert.match(text, /4 click or key cells sent with the key window read/);
+  assert.match(text, /^Observed, except for the 1 cell sent unread\.$/m);
 });
 
 test('without any full run the judge is not asked', () => {

@@ -29,7 +29,7 @@
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {quote} from '../browser-parity/topology.mjs';
-import {captureCause, guardCause, keyCause, keyWindowCause, placeWindows, recordKeyUnread, recordKeyWindowUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
+import {captureCause, guardCause, keyCause, keyWindowCause, placeWindows, recordKeyUnread, recordKeyWindowReading, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
@@ -93,14 +93,14 @@ function reading(ctx, {key = false, keyWindow = false} = {}) {
 }
 // The key-window requirement (../hosted-sittings/alert-guard.mjs keyWindowCause): the run's TextEdit holds the window
 // the cell acts in, its frontmost (the scratch document, a task's document), as its own key window, or the cell is
-// refused unsent; a reading not taken is counted (meta.keyWindowUnread). The scratch document's own cells are exempt: a
+// refused unsent; otherwise its reading is counted, taken (meta.keyWindowRead) or not (meta.keyWindowUnread). The scratch document's own cells are exempt: a
 // fresh TextEdit shows only its Open panel, served by another process, and no document of its own yet.
 const KEY_WINDOW_EXEMPT = new Set(['setup.newDocument']);
 function keyWindowGuard(ctx, op, sample, r) {
   if (KEY_WINDOW_EXEMPT.has(op)) return;
   const cause = keyWindowCause(r?.ownKey);
   if (cause) refuse(ctx, op, sample, cause);
-  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, op, r?.ownKey ?? null);
+  recordKeyWindowReading(ctx.meta, op, r?.ownKey ?? null);
 }
 // A refused sample: its row with the cause, the per-cell record, the run's stop (recordRefusal). Nothing of the cell
 // was sent. `held`: a held series' samples already taken (measure's hold), written first, each invalid since the

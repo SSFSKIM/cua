@@ -3,7 +3,7 @@
 // replayd's alerts. The matrix's own tests (test/native-matrix/alert-guard.test.mjs) cover the rules it shares.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, keyWindowCause, overlaps, PANEL_SERVICE, placeWindows, recordKeyUnread, recordKeyWindowUnread, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
+import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, keyWindowCause, overlaps, PANEL_SERVICE, placeWindows, recordKeyUnread, recordKeyWindowReading, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import * as matrixGuard from '../../scripts/native-matrix/alert-guard.mjs';
 
 const UNC = 'com.apple.UserNotificationCenter';
@@ -134,10 +134,14 @@ test('the key-window rule: the scene window is its app\'s focused window; an app
   // Not read (an untrusted reader, a failed read, the scene window not on screen): nothing refused; the sitting counts it.
   for (const unread of [null, {trusted: false}, {...own('none'), ok: false}]) assert.equal(keyWindowCause(unread), null);
   const record = {};
-  recordKeyWindowUnread(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
-  recordKeyWindowUnread(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
-  recordKeyWindowUnread(record, 'chrome/action', null);
+  recordKeyWindowReading(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
+  recordKeyWindowReading(record, 'chrome/action', {trusted: false, ok: false, reason: 'the reader is not trusted for Accessibility'});
+  recordKeyWindowReading(record, 'chrome/action', null);
   assert.deepEqual(record.keyWindowUnread, {'chrome/action': 3});
+  // A reading taken is counted too: the sitting judges the requirement on its own readings.
+  recordKeyWindowReading(record, 'chrome/action', own('run'));
+  recordKeyWindowReading(record, 'chrome/action', own('run', 'run', false));
+  assert.deepEqual([record.keyWindowRead, record.keyWindowUnread], [{'chrome/action': 2}, {'chrome/action': 3}]);
   // Each kept with why, so a sitting tells an untrusted reader (the requirement vacuous) from a window not there.
   assert.deepEqual(record.keyWindowUnreadReasons, {'chrome/action': {'the reader is not trusted for Accessibility': 2, 'the guard reading was not taken': 1}});
   // A refusal of this kind is counted beside the alert's, in the same record.

@@ -184,11 +184,22 @@ function pairProblems(n, list) {
     shared('hosted runner', 'meta.runner', list.map(({result}) => hostedRunnerKey(result.meta)), {measured: 'in one job\'s run'});
   // Ruling 1169: both sides of a pair stand on one frame (the venue each launched on, every window each read back); a
   // pair that did not is no pair, its samples unpaired and so no verdict, whatever either side's rows say.
-  const side = engine => list.find(({result}) => result.lanes[0]?.engine === engine)?.result;
-  const apart = frameAsymmetry(side('cua'), side('vendor'));
+  const apart = frameSplit(list);
   if (apart) out.push(`run ${n}'s vendor and cua runs did not stand on one frame (${apart}): a pair is measured on one frame (ruling 1169)`);
   return out;
 }
+// Ruling 1169: how run `list`'s vendor and cua runs stood on different frames (../hosted-sittings/venue.mjs
+// frameAsymmetry), or null when they stood on one.
+function frameSplit(list) {
+  const side = engine => list.find(({result}) => result.lanes[0]?.engine === engine)?.result;
+  return frameAsymmetry(side('cua'), side('vendor'));
+}
+// The run numbers whose vendor and cua runs stood on different frames, with how. Every row of such a run, on either
+// side, is NO VERDICT `venue` (./front-key.mjs sampleCause): not only unpaired, so no rule that judges a cua sample on
+// its own (a proven change of the user's value, an `own` or acceptance row, the oracle's interference reading) and no
+// vendor sample (pressKey's `differs`) can fail the matrix from a pair that was no pair. -> Map(run -> asymmetry).
+export const splitFrameRuns = full => new Map(runsByNumber(full).map(([n, list]) => [n, frameSplit(list)]).filter(([, apart]) => apart));
+
 // The run a hosted result's runner names, or null when it records none that is whole.
 const hostedRunnerKey = meta => (meta?.runner && !runnerProblems(meta.runner).length ? runnerKey(meta.runner) : null);
 
@@ -271,8 +282,11 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // missing proof names it (unmeasuredSide).
   const unmeasured = fullRuns.map(entry => [entry, unmeasuredSide(entry.result)]).filter(([, problem]) => problem);
   const full = fullRuns.filter(entry => !unmeasured.some(([u]) => u === entry));
-  // Each row tagged with its run's number (the pairing key) and whether that run is hosted (./front-key.mjs).
-  const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true})));
+  // Each row tagged with its run's number (the pairing key), whether that run is hosted, and how its pair stood on two
+  // frames when it did (`frameSplit`, ruling 1169; ./front-key.mjs).
+  const split = splitFrameRuns(full);
+  const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true,
+    ...(split.has(result.meta?.run) ? {frameSplit: split.get(result.meta.run)} : {})})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
   const rows = all.filter(r => !exclusionOf(r));
   const notJudged = full.length ? notJudgedOf(all.filter(r => exclusionOf(r))) : [];
@@ -434,10 +448,11 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // under NO VERDICT by cell.
   const unproven = judgedCells.filter(c => c.verdict === 'no-verdict' && c.cua.valid === 0).map(c => {
     const causes = Object.keys(c.account.cua.noVerdict);
-    const unpaired = (c.account.cua.noVerdict.unpaired ?? 0) > 0, unreferenced = causes.length > 0 && causes.every(k => k === 'reference');
+    const unpaired = (c.account.cua.noVerdict.unpaired ?? 0) > 0, only = k => causes.length > 0 && causes.every(x => x === k);
     // Ruling 1168: where every sample's vendor pair could not be the reference, the missing proof is the vendor's.
     return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
-      : unreferenced ? 'has no vendor sample that registered the pointerdown (ruling 1168)' : 'has no valid cua sample'}`;
+      : only('reference') ? 'has no vendor sample that registered the pointerdown (ruling 1168)'
+      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169)' : 'has no valid cua sample'}`;
   });
   const unqualified = cells.filter(c => !c.qualifies);
   const missing = [

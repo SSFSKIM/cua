@@ -5,7 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
-import {keyWindowCause, recordKeyWindowUnread} from '../hosted-sittings/alert-guard.mjs';
+import {keyWindowCause, recordKeyWindowReading} from '../hosted-sittings/alert-guard.mjs';
 import {guardCause, PANEL_SERVICE, recordKeyUnread, sceneOfCell, sendsPointer} from './alert-guard.mjs';
 import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
@@ -135,12 +135,12 @@ function refuse(ctx, cause, reading) {
 // closePanel): the panel is then TextEdit's focused window, as it must be for the panel's cells. -> the scene to read
 // for, or null.
 export const keyWindowScene = (ctx, scene) => (scene && !ctx.panelOpen && ctx.records?.[scene] ? scene : null);
-// Refused (AlertGuarded, NO VERDICT keyWindow) when the reading shows another key window; counted under `key`
-// (meta.keyWindowUnread) when it was not taken, the cell then sent unchecked.
+// Refused (AlertGuarded, NO VERDICT keyWindow) when the reading shows another key window; otherwise counted under
+// `key`, read (meta.keyWindowRead) or not taken (meta.keyWindowUnread, the cell then sent unchecked).
 function keyWindowGuard(ctx, r, key) {
   const cause = keyWindowCause(r?.ownKey);
   if (cause) refuse(ctx, cause, keyReading(r));
-  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, key, r?.ownKey ?? null);
+  recordKeyWindowReading(ctx.meta, key, r?.ownKey ?? null);
 }
 // The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
 // sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over its target's

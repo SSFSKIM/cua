@@ -25,7 +25,7 @@ const MODE = (width, height, modeId) => ({width, height, modeId, pixelWidth: wid
 const SWITCHED = {ok: true, detail: '1024x768 (mode 3) -> 1920x1080 (mode 10), read back 1920x1080; 0 alert windows, none moved; no prompt',
   record: {before: {mode: MODE(1024, 768, 3), alerts: [], front: null}, set: MODE(1920, 1080, 10), readBack: {bounds: {x: 0, y: 0, width: 1920, height: 1080}, mode: MODE(1920, 1080, 10)},
     after: {alerts: [], front: null}, promptSeen: [], recentred: [], watchedMs: 3000}};
-function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}} = {}) {
+function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}, trustFailed = null} = {}) {
   const calls = [], defaults = new Map();
   const exec = (command, args, options = {}) => {
     const line = [command, ...args].join(' ');
@@ -35,7 +35,7 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     if (command === '/usr/bin/defaults' && args[0] === 'write') { defaults.set(`${args[1]} ${args[2]}`, args[4]); return {status: 0, stdout: '', stderr: ''}; }
     if (command === '/usr/bin/defaults' && args[0] === 'read') { const v = defaults.get(`${args[1]} ${args[2]}`); return v === undefined ? {status: 1, stdout: '', stderr: 'does not exist'} : {status: 0, stdout: `${v.trimEnd()}\n`, stderr: ''}; }
     // The key-window reader's grant over the loopback ssh (guard-device.mjs trust), as its last line prints it.
-    if (command === 'ssh' && line.includes('guard-device.mjs trust')) return trust === null ? {status: 255, stdout: '', stderr: 'Connection refused'} : {status: 0, stdout: `${JSON.stringify(trust)}\n`, stderr: ''};
+    if (command === 'ssh' && line.includes('guard-device.mjs trust')) return trustFailed ? {status: 1, stdout: `${JSON.stringify({error: trustFailed})}\n`, stderr: ''} : trust === null ? {status: 255, stdout: '', stderr: 'Connection refused'} : {status: 0, stdout: `${JSON.stringify(trust)}\n`, stderr: ''};
     if (command === 'ssh') return {status: 0, stdout: `${process.version}\n`, stderr: ''};
     if (line.includes('install --json')) return {status: 0, stdout: JSON.stringify({ok: true, release: 'r1'}), stderr: ''};
     return {status: 0, stdout: '', stderr: ''};
@@ -104,7 +104,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.ok(calls.some(c => c.kind === 'exec' && c.line.startsWith(`ssh -F ${HOME}/.local/share/cua-hosted/ssh/config hosted-macos cd `) && c.line.endsWith('&& node scripts/hosted-sittings/guard-device.mjs trust')));
   assert.ok(at('ssh -F') < at('engine-stop'));
   assert.deepEqual(report.venue.keyWindowTrust, {trusted: true, via: 'loopback ssh'});
-  assert.equal(report.steps.find(s => s.step === 'key-window trust').detail, 'trusted over the loopback ssh: the key-window requirement is observed');
+  assert.equal(report.steps.find(s => s.step === 'key-window trust').detail, 'trusted over the loopback ssh: the runs over it can read key windows');
   assert.deepEqual(report.venue.frames.chrome, {x: 80, y: 60, width: 800, height: 760}, 'no alert: the hosted size at the mini\'s origin');
   assert.deepEqual(calls.at(-1).record.venue, report.venue);
   assert.deepEqual(report.engineStop, {wasRunning: true, pid: 2142, stopped: true});
@@ -125,10 +125,15 @@ test('the key-window reader not trusted, or not reached, over the loopback ssh: 
   const untrusted = await hostedSetup({...spies({trust: {trusted: false, reason: 'the reader is not trusted for Accessibility'}}).deps, engineArchive: '/t/engine.tgz'});
   assert.equal(untrusted.ok, true);
   assert.deepEqual(untrusted.venue.keyWindowTrust, {trusted: false, reason: 'the reader is not trusted for Accessibility', via: 'loopback ssh'});
-  assert.match(untrusted.steps.find(s => s.step === 'key-window trust').detail, /^not trusted over the loopback ssh \(the reader is not trusted for Accessibility\): every key-window reading will be unread/);
+  assert.match(untrusted.steps.find(s => s.step === 'key-window trust').detail, /^not trusted over the loopback ssh \(the reader is not trusted for Accessibility\): the runs over it will leave their key-window readings unread$/);
   const unreached = await hostedSetup({...spies({trust: null}).deps, engineArchive: '/t/engine.tgz'});
   assert.equal(unreached.ok, true);
   assert.deepEqual(unreached.venue.keyWindowTrust, {trusted: null, reason: 'the loopback reading failed (exit 255: Connection refused)', via: 'loopback ssh'});
+  // guard-device.mjs itself failing on the device (exit 1, {error} on its stdout) is its error, not the ssh's.
+  const failed = await hostedSetup({...spies({trustFailed: 'spawnSync /usr/bin/swift ENOENT'}).deps, engineArchive: '/t/engine.tgz'});
+  assert.equal(failed.ok, true);
+  assert.deepEqual(failed.venue.keyWindowTrust, {trusted: null, reason: 'guard-device.mjs trust failed on the device (exit 1: spawnSync /usr/bin/swift ENOENT)', via: 'loopback ssh'});
+  assert.match(failed.steps.find(s => s.step === 'key-window trust').detail, /^not read over the loopback ssh \(guard-device\.mjs trust failed on the device \(exit 1: spawnSync \/usr\/bin\/swift ENOENT\)\)/);
 });
 
 test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts read after the switch, TextEdit\'s preferences, kept in setup.json and the record', async () => {

@@ -1664,7 +1664,11 @@ VERDICT, `venue: <record> and its pair <pair> did not stand on one frame (<the d
 In sitting C the judge applies the same rule. `compare` judges every pair, and FAIL outranks NO VERDICT, so the
 record check alone would not stop a worse cua sample on a split pair from failing the sitting. The matrix judge
 (`summary.mjs` `pairProblems`) now names such a run pair, `run <n>'s vendor and cua runs did not stand on one frame
-(...)`, and leaves it out of the pairable runs. Its samples are unpaired, so they are NO VERDICT, never a FAIL.
+(...)`, and leaves it out of the pairable runs. Leaving it out is not enough: a cua sample is also judged on its own,
+with no pair, where it proves the user's value changed, on an `own` row (background, launch), on an acceptance row and
+by the interference oracle, and pressKey's vendor composing otherwise fails its row. So the judge tags every row of
+such a run, on both sides, and `sampleCause` makes it NO VERDICT `venue` before any of those rules runs
+(`splitFrameRuns`, review round 2). A split-frame run can never fail C.
 
 ### The key-window requirement
 
@@ -1689,11 +1693,13 @@ window. That is not the same as being frontmost: a background cell still runs in
   `/bin/bash` holds it and its children inherit it (#282's evidence). Whether that survives the loopback `sshd` chain
   the runs use is unverified, so setup now asks. Its `key-window trust` step runs `guard-device.mjs trust` over the
   loopback ssh, in the harness checkout, and keeps the answer in `venue.keyWindowTrust` (`{trusted, reason?, via}`).
-  A reader not trusted, or not reached, is recorded with why, and setup goes on.
+  A reader not trusted, or not reached, is recorded with why, and setup goes on. The script's own failure on the
+  device (exit 1 with `{error}`) is recorded with its error, apart from the ssh's.
 - **Each reading keeps why** it was not taken (`reason`): the reader not trusted, the reader failed, Accessibility
   listing no window at the bounds, a read that failed, the window not on screen, or the window list unread. It also
-  keeps `trusted` (null when the reader itself failed), `found` and `failed`. `recordKeyWindowUnread` counts the
-  reasons per cell (`keyWindowUnreadReasons`).
+  keeps `trusted` (null when the reader itself failed), `found` and `failed`. `recordKeyWindowReading` counts each
+  sent cell's reading per cell: taken (`keyWindowRead`) or not, with why (`keyWindowUnread`,
+  `keyWindowUnreadReasons`).
 - **The rule** (`alert-guard.mjs` `keyWindowCause`). The cell passes when the scene window is the app's focused
   window. A background app may hold no focused window and keep the scene window as its main window, the one it makes
   key when activated, so that passes too. Anything else refuses the cell unsent, NO VERDICT `keyWindow`, naming
@@ -1710,9 +1716,11 @@ window. That is not the same as being frontmost: a background cell still runs in
   - D: `accept/textedit.mjs` `fixtureRefusal`.
 - **The counts.** `counts.md` gains, per cell and side, NO VERDICT `keyWindow` and the cells sent with their key window
   unread, with the reasons. `sitting.md`'s guard tally gains the same per step and cell. A new `sitting.md` section,
-  "The key-window requirement", puts setup's grant reading beside the sitting's refusals and unread readings. It says
-  whether the requirement was observed, observed except for the cells sent unread, or vacuous (no grant, so no cell
-  was checked). The `observation` check counts `keyWindow` among the causes that leave proof missing, and the matrix
+  "The key-window requirement", judges the requirement on the sitting's own readings: those taken (cells sent with
+  their key window read, and the refusals) and those not, by reason. It says observed, observed except for the cells
+  sent unread, vacuous (every reading unread) or, with no reading at all (E, F, or a run that stopped first), that no
+  key-window reading was taken. Setup's grant reading over the ssh is printed as context only: D reads in the job's
+  own process chain, not over ssh, and is judged on its own reads. The `observation` check counts `keyWindow` among the causes that leave proof missing, and the matrix
   summary's legend defines it.
 - **Off a hosted runner** the rule runs where the alert guard runs. A, B and C read and apply it on the mini too, where
   the owner's terminal holds the grant. D's fixture guard exists only on a hosted runner, so D's check does too.
@@ -1774,12 +1782,15 @@ Added in review round 1:
   Reading the recorded window instead fails this test.
 - **A timed probe's key cell** reads its key window in the user-window read, never in a read of its own.
 - **The judge** leaves out a run pair on two frames: its worse cua sample is no verdict, not a FAIL. On one frame the
-  same sample fails.
-- **Setup's `key-window trust`** step over the loopback ssh, for a trusted, an untrusted and an unreached reader, and
-  `guard-device.mjs trust`.
+  same sample fails. In review round 2: the same holds for the user's value changed, an `own` row, a launch row, an
+  acceptance row, an interfering background row and pressKey's vendor composing otherwise, each of which fails on one
+  frame.
+- **Setup's `key-window trust`** step over the loopback ssh, for a trusted, an untrusted and an unreached reader and
+  one whose script failed on the device, and `guard-device.mjs trust`.
 - **The reasons** behind unread readings, per cell and side in `counts.md` and per step in the guard tally. The
-  key-window section of `sitting.md` reports the requirement as observed, observed except for the cells sent unread,
-  or vacuous.
+  key-window section of `sitting.md` reports the requirement from the sitting's own readings, setup's grant reading
+  context only: a sitting with no reading says so, never "Observed", and D's readings judge D beside an untrusted ssh
+  reading.
 - **The read-back of TextEdit and the Open panel** per step: planned against actual, with whether an alert overlaps.
 - **The fixture** focuses its window only under `--cua-fixture-focus`, tested by running `main.js` itself under a
   stubbed `electron`.

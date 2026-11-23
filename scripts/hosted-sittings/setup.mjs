@@ -66,11 +66,13 @@ import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './
 import {CLIENTS, grantRows} from './tcc.mjs';
 
 export const PARITY_CLONE_IN_HOME = 'Developer/GitHub/cua-parity';
-// The device's answer to guard-device.mjs trust, as the ssh that carried it left it. -> {trusted, reason?}.
+// The device's answer to guard-device.mjs trust, as the ssh that carried it left it: the script's own failure (exit 1
+// with {error} on its stdout) told apart from the ssh's or the shell's. -> {trusted, reason?}.
 function trustOf(result) {
-  if (result.status !== 0) return {trusted: null, reason: `the loopback reading failed (exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''})`};
   let answer = null;
-  try { answer = JSON.parse(String(result.stdout).trim().split('\n').at(-1)); } catch { answer = null; }
+  try { answer = JSON.parse(String(result.stdout ?? '').trim().split('\n').at(-1)); } catch { answer = null; }
+  if (result.status !== 0 && typeof answer?.error === 'string') return {trusted: null, reason: `guard-device.mjs trust failed on the device (exit ${result.status}: ${answer.error.split('\n')[0].slice(0, 200)})`};
+  if (result.status !== 0) return {trusted: null, reason: `the loopback reading failed (exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''})`};
   if (typeof answer?.trusted !== 'boolean' && answer?.trusted !== null) return {trusted: null, reason: 'the loopback reading printed no answer'};
   return {trusted: answer.trusted, ...(answer.reason ? {reason: answer.reason} : {})};
 }
@@ -206,8 +208,8 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       const asked = exec('ssh', [...loopbackSshArgs(DEVICE, home), DEVICE, `cd ${quote(clone)} && node scripts/hosted-sittings/guard-device.mjs trust`], {env});
       report.venue.keyWindowTrust = {...trustOf(asked), via: 'loopback ssh'};
       const {trusted, reason} = report.venue.keyWindowTrust;
-      if (trusted === true) return 'trusted over the loopback ssh: the key-window requirement is observed';
-      return `${trusted === false ? 'not trusted' : 'not read'} over the loopback ssh (${reason}): every key-window reading will be unread, the requirement unobserved`;
+      if (trusted === true) return 'trusted over the loopback ssh: the runs over it can read key windows';
+      return `${trusted === false ? 'not trusted' : 'not read'} over the loopback ssh (${reason}): the runs over it will leave their key-window readings unread`;
     }],
     ['engine stop', async () => {
       const stopped = await stopEngine();

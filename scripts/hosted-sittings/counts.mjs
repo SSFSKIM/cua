@@ -85,32 +85,32 @@ export function cellCounts(results, {judgeFull = full => judge(full)} = {}) {
 }
 
 // The alert guard's tally of a sitting, from every step's record whatever its producer (A's meta.json, the matrix's
-// result.json `meta`, D's acceptance.json; ./alert-guard.mjs recordRefusal, recordKeyUnread and recordKeyWindowUnread):
+// result.json `meta`, D's acceptance.json; ./alert-guard.mjs recordRefusal, recordKeyUnread and recordKeyWindowReading):
 // per step and cell, the refusals by cause (the key-window requirement's among them), the key cells guarded with their
-// key reading not taken and the click or key cells sent with their key window unread, with why. `records`: [{step,
-// record}] (null when unread). -> [{step, cell, alert, unread, keyWindow, keyUnread, keyWindowUnread,
-// keyWindowUnreadReasons}], steps in order, cells as their record lists them.
+// key reading not taken, the click or key cells sent with their key window read, and those sent with it unread, with
+// why. `records`: [{step, record}] (null when unread). -> [{step, cell, alert, unread, keyWindow, keyUnread,
+// keyWindowRead, keyWindowUnread, keyWindowUnreadReasons}], steps in order, cells as their record lists them.
 export function guardTally(records) {
   const out = [];
   for (const {step, record} of records) {
     const meta = record?.meta;
-    const kept = meta?.alertGuardCounts || meta?.keyUnread || meta?.keyWindowUnread ? meta : record;
-    const refused = kept?.alertGuardCounts ?? {}, unread = kept?.keyUnread ?? {}, windowUnread = kept?.keyWindowUnread ?? {}, why = kept?.keyWindowUnreadReasons ?? {};
-    for (const cell of new Set([...Object.keys(refused), ...Object.keys(unread), ...Object.keys(windowUnread)])) {
+    const kept = meta?.alertGuardCounts || meta?.keyUnread || meta?.keyWindowRead || meta?.keyWindowUnread ? meta : record;
+    const refused = kept?.alertGuardCounts ?? {}, unread = kept?.keyUnread ?? {}, windowRead = kept?.keyWindowRead ?? {}, windowUnread = kept?.keyWindowUnread ?? {}, why = kept?.keyWindowUnreadReasons ?? {};
+    for (const cell of new Set([...Object.keys(refused), ...Object.keys(unread), ...Object.keys(windowRead), ...Object.keys(windowUnread)])) {
       out.push({step, cell, alert: refused[cell]?.alert ?? 0, unread: refused[cell]?.unread ?? 0, keyWindow: refused[cell]?.keyWindow ?? 0,
-        keyUnread: unread[cell] ?? 0, keyWindowUnread: windowUnread[cell] ?? 0, keyWindowUnreadReasons: why[cell] ?? {}});
+        keyUnread: unread[cell] ?? 0, keyWindowRead: windowRead[cell] ?? 0, keyWindowUnread: windowUnread[cell] ?? 0, keyWindowUnreadReasons: why[cell] ?? {}});
     }
   }
   return out;
 }
 export function renderGuardTally(tally) {
-  if (!tally.length) return 'No refusal and no key cell guarded unread in this sitting\'s records.\n';
+  if (!tally.length) return 'No refusal, no key cell guarded unread and no key-window reading in this sitting\'s records.\n';
   return [
-    'Per step and cell: the cells the alert guard refused unsent (NO VERDICT `alert` or `unread`) and those the key-window requirement refused (NO VERDICT `keyWindow`: the scene\'s app held another key window, or none), the key cells guarded with their key reading not taken (`key cells guarded unread`: unguarded against the alert holding the key, which the key guard\'s front check cannot see), and the click or key cells sent with their key window unread (`cells key window unread`, with why: an untrusted reader means the key-window requirement went unobserved).',
+    'Per step and cell: the cells the alert guard refused unsent (NO VERDICT `alert` or `unread`) and those the key-window requirement refused (NO VERDICT `keyWindow`: the scene\'s app held another key window, or none), the key cells guarded with their key reading not taken (`key cells guarded unread`: unguarded against the alert holding the key, which the key guard\'s front check cannot see), the click or key cells sent with their key window read (`cells key window read`), and those sent with it unread (`cells key window unread`, with why: an untrusted reader means the key-window requirement went unobserved).',
     '',
-    '| step | cell | NO VERDICT alert | NO VERDICT unread | NO VERDICT keyWindow | key cells guarded unread | cells key window unread |',
-    '|---|---|---|---|---|---|---|',
-    ...tally.map(t => `| ${t.step} | ${t.cell} | ${t.alert} | ${t.unread} | ${t.keyWindow} | ${t.keyUnread} | ${withReasons(t.keyWindowUnread, t.keyWindowUnreadReasons)} |`),
+    '| step | cell | NO VERDICT alert | NO VERDICT unread | NO VERDICT keyWindow | key cells guarded unread | cells key window read | cells key window unread |',
+    '|---|---|---|---|---|---|---|---|',
+    ...tally.map(t => `| ${t.step} | ${t.cell} | ${t.alert} | ${t.unread} | ${t.keyWindow} | ${t.keyUnread} | ${t.keyWindowRead ?? 0} | ${withReasons(t.keyWindowUnread, t.keyWindowUnreadReasons)} |`),
   ].join('\n') + '\n';
 }
 
@@ -129,21 +129,23 @@ export function renderCounts(counts) {
   ].join('\n') + '\n';
 }
 
-// Recorded check (3) of ruling 1169: whether the key-window requirement was observed or vacuous in a sitting, from
-// setup's reading of the reader's grant over the loopback ssh (venue.keyWindowTrust, ./setup.mjs) and the guard tally's
-// refusals and unread readings by reason. A sitting whose every reading went unread for want of the grant checked
-// nothing: vacuous, never a pass of the requirement.
-const NOT_TRUSTED = 'the reader is not trusted for Accessibility';
+// Recorded check (3) of ruling 1169: whether the key-window requirement was observed in a sitting, judged on the
+// sitting's own readings in the guard tally: those taken (the cells sent with their key window read, and those refused
+// for it, a refusal being a reading), and those not taken, by reason. Setup's reading of the reader's grant over the
+// loopback ssh (venue.keyWindowTrust, ./setup.mjs) is context only: D reads in the job's own process chain, not over
+// ssh, and a sitting whose every reading went unread checked nothing whatever setup read. A sitting with no reading at
+// all (E, F, or a run that stopped first) observed nothing, and says so.
 export function renderKeyWindowObserved(trust, tally) {
-  const refused = tally.reduce((n, t) => n + (t.keyWindow ?? 0), 0), unread = tally.reduce((n, t) => n + (t.keyWindowUnread ?? 0), 0);
+  const sum = field => tally.reduce((n, t) => n + (t[field] ?? 0), 0);
+  const refused = sum('keyWindow'), read = sum('keyWindowRead'), unread = sum('keyWindowUnread'), taken = read + refused;
   const reasons = {};
   for (const t of tally) for (const [why, k] of Object.entries(t.keyWindowUnreadReasons ?? {})) reasons[why] = (reasons[why] ?? 0) + k;
   const grant = !trust ? 'Setup recorded no reading of the reader\'s grant.'
     : `Setup's reading of the reader's grant over the ${trust.via ?? 'loopback ssh'}: ${trust.trusted === true ? 'trusted' : `${trust.trusted === false ? 'not trusted' : 'not read'} (${trust.reason ?? 'no reason recorded'})`}.`;
   const plural = n => (n === 1 ? '' : 's');
-  const counted = `In this sitting's records: ${refused} click or key cell${plural(refused)} refused NO VERDICT keyWindow; ${unread} sent with the key window unread${unread ? ` (${Object.entries(reasons).map(([why, k]) => `${why} ${k}`).join('; ')})` : ''}.`;
-  const vacuous = refused === 0 && (trust?.trusted === false || (unread > 0 && (reasons[NOT_TRUSTED] ?? 0) === unread));
-  const verdict = vacuous ? 'Vacuous: the reader held no Accessibility grant, so no cell was checked.'
+  const counted = `In this sitting's records: ${read} click or key cell${plural(read)} sent with the key window read; ${refused} refused NO VERDICT keyWindow; ${unread} sent with the key window unread${unread ? ` (${Object.entries(reasons).map(([why, k]) => `${why} ${k}`).join('; ')})` : ''}.`;
+  const verdict = taken + unread === 0 ? 'No key-window reading was taken: the requirement was not observed in this sitting.'
+    : taken === 0 ? 'Vacuous: every key-window reading went unread, so no cell was checked.'
     : unread === 0 ? 'Observed.' : `Observed, except for the ${unread} cell${plural(unread)} sent unread.`;
-  return ['## The key-window requirement', '', grant, counted, '', verdict, ''].join('\n');
+  return ['## The key-window requirement', '', counted, `${grant} Context only: the verdict below is the sitting's own readings.`, '', verdict, ''].join('\n');
 }

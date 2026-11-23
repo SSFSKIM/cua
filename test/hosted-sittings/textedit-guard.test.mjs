@@ -60,7 +60,8 @@ test('sitting D: a fixture key cell whose TextEdit holds no key window of its ow
   assert.deepEqual([none.out.sent, none.out.refused.category, none.sent], [false, 'keyWindow', []]);
   assert.deepEqual(none.observations.alertGuardCounts, {[STEP.type]: {alert: 0, unread: 0, keyWindow: 1}});
   const own = await keyCellWith(textEditGuard({pids: () => [600], io: axIo('run')}));
-  assert.deepEqual([own.out.sent, own.observations.keyWindowUnread], [true, undefined]);
+  assert.deepEqual([own.out.sent, own.observations.keyWindowRead, own.observations.keyWindowUnread], [true, {[STEP.type]: 1}, undefined]);
+  assert.deepEqual(fixtureGuardRecord(own.observations), {keyWindowRead: {[STEP.type]: 1}});
   const unread = await keyCellWith(textEditGuard({pids: () => [600], io: {...io(CLEAR), axState: () => ({trusted: false})}}));
   assert.deepEqual([unread.out.sent, unread.observations.keyWindowUnread], [true, {[STEP.type]: 1}]);
   assert.deepEqual(fixtureGuardRecord(unread.observations),

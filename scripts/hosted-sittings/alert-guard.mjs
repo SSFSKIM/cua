@@ -110,7 +110,7 @@ export function recordKeyUnread(record, cell) {
 // AXFrontmost. The scene window must be the app's focused window; an app that is not frontmost may hold no focused
 // window while keeping its main one, which is then the window it makes key when it is activated, so there the scene
 // window as its main window, with no other focused, holds too. A reading not taken (an untrusted reader, a failed read,
-// the scene window not on screen) refuses nothing: the cell goes unchecked and is counted (recordKeyWindowUnread), as a
+// the scene window not on screen) refuses nothing: the cell goes unchecked and is counted (recordKeyWindowReading), as a
 // key cell's unread key is. -> {category: 'keyWindow', detail} | null.
 const ownWindowText = w => (w === 'run' ? 'the scene window' : w === 'other' ? 'another of its windows' : 'none');
 export function keyWindowCause(ownKey) {
@@ -121,10 +121,17 @@ export function keyWindowCause(ownKey) {
   if (focusedWindow === 'other') return {category: 'keyWindow', detail: `the ${scene} app's key window is another of its windows, not ${which}`};
   return {category: 'keyWindow', detail: `the ${scene} app holds no key window (its focused window ${ownWindowText(focusedWindow)}, its main window ${mainWindow === 'run' ? which : ownWindowText(mainWindow)}) while ${frontmost === false ? 'in the background' : 'frontmost'}`};
 }
-// A click or key cell whose key-window reading (`ownKey`, ./key-window.mjs; null when the guard's reading itself was not
-// taken) was not taken, counted per cell in the record its side keeps, with why: `keyWindowUnread: {cell: n}` and
-// `keyWindowUnreadReasons: {cell: {reason: n}}`.
-export function recordKeyWindowUnread(record, cell, ownKey) {
+// The key-window reading of a click or key cell that is sent (`ownKey`, ./key-window.mjs; null when the guard's reading
+// itself was not taken), counted per cell in the record its side keeps: taken (`keyWindowRead: {cell: n}`), or not
+// taken, with why (`keyWindowUnread: {cell: n}`, `keyWindowUnreadReasons: {cell: {reason: n}}`). A cell refused for its
+// key window is counted as a refusal instead (recordRefusal). The sitting's own readings judge whether the requirement
+// was observed (./counts.mjs renderKeyWindowObserved).
+export function recordKeyWindowReading(record, cell, ownKey) {
+  if (ownKey?.trusted === true && ownKey.ok === true) {
+    const read = record.keyWindowRead ??= {};
+    read[cell] = (read[cell] ?? 0) + 1;
+    return;
+  }
   const counts = record.keyWindowUnread ??= {};
   counts[cell] = (counts[cell] ?? 0) + 1;
   const reason = ownKey?.reason ?? (ownKey ? 'unread' : 'the guard reading was not taken');

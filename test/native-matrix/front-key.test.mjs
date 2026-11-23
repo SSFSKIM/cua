@@ -53,7 +53,7 @@ test('sampleCause: the readings first, then the harness\'s own invalid reason, t
   assert.equal(sampleCause({...row, hosted: true}).category, 'unread', 'the judge tags a hosted run\'s rows');
   assert.equal(sampleCause({...row, section: 'speed', id: 'textedit/getAXState', ok: false}).category, 'unmeasured');
   assert.equal(sampleCause({...row, ok: false}), null, 'a method sample that failed has a verdict: it failed');
-  for (const category of ['unread', 'activation', 'alert', 'keyWindow', 'invalid', 'unmeasured', 'unpaired']) assert.ok(NO_VERDICT_CAUSES[category], category);
+  for (const category of ['unread', 'activation', 'alert', 'keyWindow', 'venue', 'invalid', 'unmeasured', 'unpaired']) assert.ok(NO_VERDICT_CAUSES[category], category);
 });
 
 test('the shape: what does not conform is named, field by field', () => {

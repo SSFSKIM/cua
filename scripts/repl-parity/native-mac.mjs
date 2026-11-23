@@ -53,7 +53,7 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseline/engine.mjs';
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
-import {guardCause, keyWindowCause, placeWindows, recordKeyWindowUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
+import {guardCause, keyWindowCause, placeWindows, recordKeyWindowReading, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
 import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval, settleRecordingProbes} from '../native-matrix/goldens.mjs';
@@ -415,8 +415,8 @@ async function placeScene(ctx, id, record) {
 }
 // Before the action's click: the scene's windows clear of every alert, the alert holding neither front nor key, the
 // screen read; and the scene's app holding the scene window as its own key window (the key-window requirement,
-// ../hosted-sittings/alert-guard.mjs keyWindowCause; a reading not taken is counted in meta.keyWindowUnread and the
-// click goes on). A refusal sends nothing: the action's row carries its cause (NO VERDICT `alert`, `unread` or `keyWindow`), the lane's
+// ../hosted-sittings/alert-guard.mjs keyWindowCause; its reading is counted, taken in meta.keyWindowRead, not taken in
+// meta.keyWindowUnread and the click going on). A refusal sends nothing: the action's row carries its cause (NO VERDICT `alert`, `unread` or `keyWindow`), the lane's
 // meta keeps it per cell (alertGuards, alertGuardCounts) and its first (alertGuardStop, which the hosted record check
 // reads as NO VERDICT), and the scene ends there (GuardRefused: the lane goes on to its next scene, deciding again from
 // its own reading). Nothing is retried. -> {reading, activate}, the click's surroundings.
@@ -426,7 +426,7 @@ function actionGuard(ctx, id, record, activated) {
   const cell = `${id}/action`;
   const cause = guardCause(reading?.bounds ?? null, {front: reading?.front ?? null, key: reading?.key ?? null}, {scenes: [id]}) ?? keyWindowCause(reading?.ownKey);
   if (!cause) {
-    if (reading?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, cell, reading?.ownKey ?? null);
+    recordKeyWindowReading(ctx.meta, cell, reading?.ownKey ?? null);
     return before;
   }
   ctx.emit({scene: id, cell: 'action', ok: false, ...recordRefusal(ctx.meta, cell, cause), diagnostics: actionDiagnostics(before, null)});

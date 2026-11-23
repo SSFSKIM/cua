@@ -13,7 +13,7 @@
 // The reader needs the Accessibility grant of the process that runs it: the owner's terminal on the mini; on a
 // GitHub-hosted runner the image grants it to /bin/bash, whose children inherit it (#282's evidence), which setup
 // checks over the loopback ssh the runs use (./guard-device.mjs trust). A reading not taken refuses nothing: the cell
-// is counted unchecked with its `reason` (recordKeyWindowUnread). Used by ./guard-device.mjs (sittings A, B, D) and
+// is counted unchecked with its `reason` (recordKeyWindowReading). Used by ./guard-device.mjs (sittings A, B, D) and
 // ../native-matrix/matrix-device.mjs (C). Value-free: booleans, window numbers and run/other/none.
 import {fileURLToPath} from 'node:url';
 

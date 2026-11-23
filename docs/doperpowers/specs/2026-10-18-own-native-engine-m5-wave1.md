@@ -45,7 +45,8 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   converged after round 2: the save-sheet cell ships observation-only (`SAVE_PANEL_CONTROLS` null, no Return, no act)
   until the pilot reads the Save panel's controls, and its identification logic is reviewed when they are filled in.
 - [ ] T8d
-- [ ] T10
+- [ ] T10a (the judge)
+- [ ] T10b′ (the harness on a runner, built; its pilot after M4 merges)
 - [ ] T3b
 - [ ] T8e
 - [ ] T11a
@@ -148,6 +149,13 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `feat/117-m4-recut`. T10's judge and oracle work builds now with unit tests; T10's hosted pilot and T3b run after M4
   (#505) merges to main and origin/main is merged into `feat/117-m5` (a merge, no rebase). The moving M4 branch is not
   merged directly. T8e and T11 may come before T3b.
+- 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
+  its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
+  and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a
+  runner (the loopback device with the run's own install, hosted attestation fields, acceptance 3's keystroke
+  witness, the window-order oracle for #485, front and key sampled around each judged cell, the activate check, H0's
+  row order and the two-pass approve, a workflow per sitting). T10b′ is so named to keep it apart from the parked
+  MacBook transport T10b. The hosted pilot runs after M4 merges.
 - 2026-11-23: M5 is ticket #506 (a child of #117); M4 is #505.
 - 2026-11-23, the design session clears #420's kit: built on `probe/420-qual` from `probe/414-qual` b7aebd311,
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,

@@ -44,7 +44,8 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 - [x] T8c — reviewed 2026-11-23 (d7e8ddbf3..69392a7b6, fixes b0e488cb2..16143e579 and 730dda11d..cd9e08265);
   converged after round 2: the save-sheet cell ships observation-only (`SAVE_PANEL_CONTROLS` null, no Return, no act)
   until the pilot reads the Save panel's controls, and its identification logic is reviewed when they are filled in.
-- [ ] T8d
+- [x] T8d — reviewed 2026-11-23 (a6ef751ea..643a4dd33, fixes 430fe9bf4..8cbe919b0, four rounds); #216 stays open
+  until the twenty-cycle witness runs in T10's pilot or O10.
 - [ ] T10a (the judge)
 - [ ] T10b′ (the harness on a runner, built; its pilot after M4 merges)
 - [ ] T3b
@@ -187,6 +188,12 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   with the same read-back, listed as a shared limit); until ruled, the absolute expected string stands. The pilot
   reports, per cell, how many runs have every sample with a verdict and how many verdict samples each run got, for the
   design session's decision on a looser qualification rule.
+- 2026-11-23, T8d's review rounds: the connection owns an answer's provenance on cua's own host only (detected by
+  `CUA_REPL_TRUSTED_SERVICES` in the worker env); the vendor host's replies stay byte for byte, and there a marked
+  answer's provenance is unavailable (neutral clause "the approval request was declined"). `cua/approval` is per call.
+  The witness's judge needs positive evidence (a completed bind, or a stamp showing accept), takes freshness from the
+  ask history, requires the complete stamp, fails any second ask per app per connection, and makes blocked or
+  unexecuted steps NO VERDICT.
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

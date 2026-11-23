@@ -534,13 +534,16 @@ test('#526: on a cua lane the runner\'s bind records cua\'s rendering, and its a
     try { await new (async () => {}).constructor(code)(); } finally { Object.assign(globalThis, {cua: saved.cua, nodeRepl: saved.repl}); }
     return parseCell(writes.join('\n'));
   };
-  try {
-    assert.equal((await runCell(bind)).ok, true);
-    assert.equal(globalThis.__axRendering, 'cua');
-    const acted = await runCell(action);
-    assert.equal(acted.ok, true, JSON.stringify(acted));
-    assert.equal(acted.value.index, 2);
-    assert.deepEqual(clicked, [2]);
-    for (const f of acted.value.files) fs.rmSync(f.path, {force: true});
-  } finally { delete globalThis.__axRendering; delete globalThis.__apps; }
+  // The action writes its texts into the run's temp directory: a scratch one here (withTemp), never the shared one.
+  await withTemp(async temp => {
+    try {
+      assert.equal((await runCell(bind)).ok, true);
+      assert.equal(globalThis.__axRendering, 'cua');
+      const acted = await runCell(action);
+      assert.equal(acted.ok, true, JSON.stringify(acted));
+      assert.equal(acted.value.index, 2);
+      assert.deepEqual(clicked, [2]);
+      assert.ok(acted.value.files.every(f => f.path.startsWith(`${temp}/`)), JSON.stringify(acted.value.files.map(f => f.path)));
+    } finally { delete globalThis.__axRendering; }
+  });
 });

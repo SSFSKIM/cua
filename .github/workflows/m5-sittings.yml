@@ -1,0 +1,127 @@
+name: m5-sittings
+# #117 M5's hosted sittings (T10b′; docs/evidence/2026-11-23-own-native-engine/hosted.md): one job per sitting, A to F,
+# each on one GitHub-hosted macOS runner with both engines, lanes alternating (scripts/hosted-sittings.mjs). Dispatch
+# only: a push of this file just registers it on its branch. `pilot` runs every sitting once in its smallest form, the
+# first hosted run after M4 merges. The engine is built on macos-latest and copied to each sitting's runner until #504
+# lets the xcode-27 image build it; sitting E builds and approves its own (macos-default-selection-hosted.sh), so it
+# always runs on macos-latest. TCC rows are written only by the kit's one guarded writer (scripts/hosted-sittings/tcc.mjs),
+# which refuses unless RUNNER_ENVIRONMENT=github-hosted (the design spec's Decision Log, O0, ruling 1111). No repository
+# secret is used; replayd's store is never written (ruling 1141). Each job uploads its output, whatever its result.
+on:
+  push:
+    branches: ['feat/117-m5']
+    paths: ['.github/workflows/m5-sittings.yml']
+  workflow_dispatch:
+    inputs:
+      sitting:
+        description: The sitting (a to f), or all for one job each
+        type: choice
+        options: [all, a, b, c, d, e, f]
+        default: all
+      form:
+        description: full, or pilot (every sitting once, its smallest form, with the pilot's readings)
+        type: choice
+        options: [full, pilot]
+        default: full
+      image:
+        description: The sittings' runner (E always takes macos-latest)
+        type: choice
+        options: [macos-latest, xcode-27]
+        default: macos-latest
+      flipped:
+        description: This commit selects cua's engine by default on macOS (sitting E's lanes are then expected to pass)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: m5-sittings-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; dispatch with sitting, form, image and flipped.'
+  engine:
+    if: github.event_name == 'workflow_dispatch' && inputs.sitting != 'e' && inputs.sitting != 'f'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Build the run's engine (ad hoc, CI only) and pack its directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers; xcrun swift --version
+          node bin/cua.mjs engine build --sign adhoc --json
+          tar -C "$HOME/Library/Application Support/cua" -czf "$RUNNER_TEMP/m5-engine.tgz" engine
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: m5-sittings-engine
+          path: ${{ runner.temp }}/m5-engine.tgz
+          retention-days: 7
+  sitting:
+    needs: engine
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && (needs.engine.result == 'success' || needs.engine.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        sitting: ${{ fromJSON(inputs.sitting == 'all' && '["a","b","c","d","e","f"]' || format('["{0}"]', inputs.sitting)) }}
+    runs-on: ${{ matrix.sitting == 'e' && 'macos-latest' || inputs.image }}
+    timeout-minutes: 360
+    env:
+      SITTING: ${{ matrix.sitting }}
+      FORM: ${{ inputs.form }}
+      FLIPPED: ${{ inputs.flipped }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          git log -1 --format='sitting %H %s'
+          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) sitting=$SITTING form=$FORM flipped=$FLIPPED"
+          npm ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/m5-out"
+      - if: contains(fromJSON('["a","b","c","d"]'), matrix.sitting)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m5-sittings-engine
+          path: ${{ runner.temp }}/m5-engine
+      - name: The runner's setup (loopback device, install, engine, TCC rows, relaunch, two-pass approve, record)
+        if: contains(fromJSON('["a","b","c","d"]'), matrix.sitting)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs setup --engine-archive "$RUNNER_TEMP/m5-engine/m5-engine.tgz" --report "$RUNNER_TEMP/m5-out/setup.json"
+      - name: The sitting
+        shell: bash
+        run: |
+          set -uo pipefail
+          flags=()
+          [ "$FORM" = pilot ] && flags+=(--pilot)
+          [ "$FLIPPED" = true ] && flags+=(--flipped)
+          code=0
+          node scripts/hosted-sittings.mjs run "$SITTING" --out "$RUNNER_TEMP/m5-out/sitting" ${flags[@]+"${flags[@]}"} || code=$?
+          [ -f "$RUNNER_TEMP/m5-out/sitting/summary.md" ] && cat "$RUNNER_TEMP/m5-out/sitting/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: m5-sitting-${{ matrix.sitting }}-${{ inputs.form }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/m5-out
+          retention-days: 14
+          if-no-files-found: warn

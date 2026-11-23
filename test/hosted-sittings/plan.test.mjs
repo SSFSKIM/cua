@@ -3,7 +3,7 @@
 // alternating, and the pilot's smallest form of each. Pure: nothing runs.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ACCEPT_NATIVE_ITEMS, DEVICE, SITTINGS, sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
+import {ACCEPT_NATIVE_ITEMS, DEVICE, SITTINGS, sittingContext, sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
 
 const CTX = {commit: 'c'.repeat(40), out: '/w/out', approvedRuntime: '/Users/runner/Library/Application Support/cua',
   approvedEngine: '/Users/runner/Library/Application Support/cua/engine/cua Engine.app', runId: '45144483807-1', olderNode: '/t/node/22.14.0/arm64/bin/node', scratch: '/t/scratch', flipped: false};
@@ -78,7 +78,7 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
 
 test('D: accept-native\'s exact selection with both live flags on a scratch home and its own sentinel store; verify --bind on each engine; #216\'s twenty cycles; T3b last, pending', () => {
   const p = plan('d');
-  assert.deepEqual(ids(p), ['scratch-install', 'accept-native', 'textedit-up', 'verify-cua', 'verify-vendor', 'textedit-down', 'approval-cycles', 'onboarding']);
+  assert.deepEqual(ids(p), ['scratch-install', 'accept-native', 'textedit-up', 'verify-cua', 'verify-vendor', 'approval-cycles', 'textedit-down', 'onboarding']);
   assert.deepEqual(ACCEPT_NATIVE_ITEMS, [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13], 'never item 9, the release gates');
   const accept = p.steps[1];
   assert.deepEqual(accept.argv, ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', '1,2,3,4,5,6,7,8,10,11,12,13', '--report', '/w/out/acceptance.json']);
@@ -86,9 +86,10 @@ test('D: accept-native\'s exact selection with both live flags on a scratch home
   assert.deepEqual([p.steps[0].env, accept.env], [{CUA_HOME: '/t/scratch/cua-accept', CUA_NATIVE_ENGINE: 'vendor'}, {CUA_HOME: '/t/scratch/cua-accept'}]);
   assert.deepEqual(accept.needs, ['scratch-install']);
   assert.deepEqual(p.steps.slice(3, 5).map(s => s.argv), [['node', 'verify.mjs', '--engine', 'cua', '--bind', 'com.apple.TextEdit'], ['node', 'verify.mjs', '--engine', 'vendor', '--bind', 'com.apple.TextEdit']]);
-  assert.equal(p.steps[5].kind, 'cleanup');
-  const cycles = p.steps[6];
+  assert.equal(p.steps[6].kind, 'cleanup');
+  const cycles = p.steps[5];
   assert.deepEqual(cycles.argv, ['node', 'scripts/approval-cycles.mjs', '--engine', 'cua', '--approve', 'com.apple.TextEdit', '--decline', 'com.apple.calculator', '--cycles', '20']);
+  assert.deepEqual(cycles.needs, ['textedit-up'], 'the approved app\'s window is the kit\'s scratch document (approval-cycles.mjs waits for it)');
   assert.deepEqual(cycles.env, {CUA_SHIM_SURFACES: 'computer,browser'});
   assert.equal(p.steps[7].kind, 'pending');
   assert.match(p.steps[7].pending, /T3b/);
@@ -102,6 +103,8 @@ test('E: the default-selection mode\'s two lanes, each expected to fail before t
   assert.deepEqual(before.steps[1].argv, ['sh', 'scripts/accept/macos-default-selection-hosted.sh']);
   assert.deepEqual(before.steps[1].env, {CUA_HOSTED_APPROVE: 'node scripts/hosted-sittings.mjs approve'});
   assert.deepEqual(before.steps[1].keep, ['default-selection-approved-out/report.json']);
+  assert.deepEqual(before.steps.map(s => s.report), ['/w/out/fixture.json', 'default-selection-approved-out/report.json'],
+    'an expected FAIL counts only as the judge\'s: a build or approve that exits 1 before the judge ran is no witness of the flip');
   assert.deepEqual(before.steps.map(s => [s.kind, s.expect]), [['expect', 1], ['expect', 1]]);
   assert.deepEqual(flip.steps.map(s => [s.kind, s.expect]), [['expect', 0], ['expect', 0]]);
   assert.match(plan('e', {olderNode: null}).steps[0].missing, /no Node 22/);
@@ -112,4 +115,13 @@ test('F: the MAWS sitting waits on T12, a placeholder', () => {
   const p = plan('f');
   assert.deepEqual(p.steps.map(s => [s.id, s.kind]), [['maws', 'pending']]);
   assert.match(p.steps[0].pending, /T12/);
+});
+
+test('a sitting\'s context: the job\'s run and attempt, and the approved paths the runner\'s record names, which a sitting with setup cannot run without', () => {
+  const record = {install: {home: CTX.approvedRuntime}, engine: {bundle: CTX.approvedEngine}};
+  const env = {GITHUB_RUN_ID: '45144483807', GITHUB_RUN_ATTEMPT: '1'};
+  const ctx = sittingContext('c', {env, record, commit: CTX.commit, out: '/w/out', scratch: '/t/scratch', olderNode: null, pilot: true, flipped: false});
+  assert.deepEqual(ctx, {commit: CTX.commit, out: '/w/out', approvedRuntime: CTX.approvedRuntime, approvedEngine: CTX.approvedEngine, runId: '45144483807-1', olderNode: null, scratch: '/t/scratch', flipped: false, pilot: true});
+  assert.throws(() => sittingContext('a', {env, record: null, commit: CTX.commit, out: '/w/out'}), /no runner record.*setup/);
+  assert.equal(sittingContext('e', {env, record: null, commit: CTX.commit, out: '/w/out'}).approvedEngine, null, 'E approves its own engine in a disposable home');
 });

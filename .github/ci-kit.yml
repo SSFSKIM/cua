@@ -251,12 +251,16 @@ gates:
   # #117 M5, T11a: sitting E's approved lane, the hosted+ witness of the cua row
   # (scripts/accept/macos-default-selection-hosted.sh): the run's own engine built and approved in a disposable home
   # under the runner's temp directory, then the mode with --approved-home, doctor's inspection of that bundle judged
-  # too, by its facts, the ad-hoc signature's warning expected (doctor launches and stops it). Prepared, not run: it refuses until CUA_HOSTED_APPROVE names the hosted
-  # approval, which needs M4's hosted bundle build and T10b′'s approve (TCC rows, the relaunch, two passes). Dispatch
-  # only: `ci-gate <sha> --gates default-selection-approved`.
+  # too, by its facts, the ad-hoc signature's warning expected (doctor launches and stops it). CUA_HOSTED_APPROVE is
+  # T10b′'s hosted approval (scripts/hosted-sittings.mjs approve: the engine's TCC rows, the relaunch, two passes; exit 3
+  # when it could not approve, never the judge's FAIL), which needs M4's hosted bundle build: run after M4 merges. The
+  # same lane runs in sitting E's job of .github/workflows/m5-sittings.yml. Dispatch only:
+  # `ci-gate <sha> --gates default-selection-approved`.
   - name: default-selection-approved
     on: [dispatch]
     lane: hosted-macos
     timeout: 30
+    env:
+      CUA_HOSTED_APPROVE: node scripts/hosted-sittings.mjs approve
     run: sh scripts/accept/macos-default-selection-hosted.sh
     artifacts: ["default-selection-approved-out/**"]

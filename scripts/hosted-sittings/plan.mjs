@@ -5,7 +5,7 @@
 // attests (./runner.mjs). `pilot` is the pilot's smallest form of each sitting (one run a lane; the sittings that are
 // already one pass run whole).
 //
-// A step: {id, label, kind, argv, env?, needs?, expect?, keep?, missing?, pending?}. Kinds, as ./run.mjs reads them:
+// A step: {id, label, kind, argv, env?, needs?, expect?, report?, keep?, missing?, pending?}. Kinds, as ./run.mjs reads them:
 //   run       a measurement or a witness: it passes on exit 0
 //   verdict   a judge (compare, summary, diff): it passes on exit 0; in the pilot it is recorded, never a failure,
 //             since one run a lane has no verdict to give
@@ -15,13 +15,17 @@
 //   pilot     the pilot's own reading, run only in the pilot form
 //   pending   a step whose code is not built yet: named, never run
 // `needs`: the steps that must have passed first (else this one is skipped). `keep`: files a step writes elsewhere,
-// copied into the sitting's output after it. `missing`: why a step cannot run here (recorded as a failure, not run).
+// copied into the sitting's output after it. `report`: the file its judge writes, without which its exit is not the
+// judge's (a build that exits 1 is no expected FAIL). `missing`: why a step cannot run here (a failure, not run).
 export const DEVICE = 'hosted-macos';
 export const SITTINGS = Object.freeze(['a', 'b', 'c', 'd', 'e', 'f']);
 // accept-native's exact selection for sitting D: every item but 9, the release gates (PF §9: "accept-native item 9" is
 // the release gates, never selected), each item's dependencies among them (item 2 reads item 1's suite).
 export const ACCEPT_NATIVE_ITEMS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]);
 export const APPROVAL_CYCLES = 20;
+// The sittings that run on the setup's install (./setup.mjs). E builds and approves its own engine in a disposable home;
+// F has nothing to run until T12 builds it (T12 decides its setup).
+const SETUP = new Set(['a', 'b', 'c', 'd']);
 
 const TITLES = {
   a: ['native-baseline: three runs each of vendor on vendor, cua on vendor, cua on cua; comparisons A, B and C', 'Acceptance 5'],
@@ -81,12 +85,12 @@ function sittingD(ctx) {
     {id: 'scratch-install', label: 'the pinned runtime in accept-native\'s scratch home', kind: 'run', argv: ['node', 'bin/cua.mjs', 'install', '--json'], env: {CUA_HOME: home, CUA_NATIVE_ENGINE: 'vendor'}},
     {id: 'accept-native', label: `accept-native --engine cua, items ${ACCEPT_NATIVE_ITEMS.join(', ')}`, kind: 'run', needs: ['scratch-install'], env: {CUA_HOME: home},
       argv: ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', ACCEPT_NATIVE_ITEMS.join(','), '--report', `${ctx.out}/acceptance.json`]},
-    {id: 'textedit-up', label: 'a scratch TextEdit document for verify --bind', kind: 'fixture', argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`]},
+    {id: 'textedit-up', label: 'a scratch TextEdit document, the window verify --bind and the approval cycles bind', kind: 'fixture', argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`]},
     {id: 'verify-cua', label: 'verify --engine cua --bind TextEdit (Acceptance 2)', kind: 'run', needs: ['textedit-up'], argv: verify('cua')},
     {id: 'verify-vendor', label: 'verify --engine vendor --bind TextEdit (Acceptance 9, attested)', kind: 'run', needs: ['textedit-up'], argv: verify('vendor')},
-    {id: 'textedit-down', label: 'the scratch TextEdit quit', kind: 'cleanup', needs: ['textedit-up'], argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'down']},
-    {id: 'approval-cycles', label: `#216's approval cycles (${APPROVAL_CYCLES}) on cua's engine and host`, kind: 'run', env: {CUA_SHIM_SURFACES: 'computer,browser'},
+    {id: 'approval-cycles', label: `#216's approval cycles (${APPROVAL_CYCLES}) on cua's engine and host`, kind: 'run', needs: ['textedit-up'], env: {CUA_SHIM_SURFACES: 'computer,browser'},
       argv: ['node', 'scripts/approval-cycles.mjs', '--engine', 'cua', '--approve', 'com.apple.TextEdit', '--decline', 'com.apple.calculator', '--cycles', String(APPROVAL_CYCLES)]},
+    {id: 'textedit-down', label: 'the scratch TextEdit quit', kind: 'cleanup', needs: ['textedit-up'], argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'down']},
     {id: 'onboarding', label: 'T3b\'s staged onboarding, a relaunch at every stage', kind: 'pending',
       pending: 'T3b: the hosted staged-onboarding driver (stages set by TCC rows, a relaunch at every stage) is not built yet; it runs here, as sitting D\'s last step, once it is'},
   ];
@@ -96,11 +100,11 @@ function sittingE(ctx) {
   const expect = ctx.flipped ? 0 : 1;
   return [
     {id: 'fixture', label: `the fixture lane: a selection check (expected ${expect ? 'FAIL before the flip' : 'PASS on the flip'})`, kind: 'expect', expect,
-      argv: ['node', 'scripts/accept/macos-default-selection.mjs', '--older-node', ctx.olderNode ?? '', '--out', `${ctx.out}/fixture.json`],
+      argv: ['node', 'scripts/accept/macos-default-selection.mjs', '--older-node', ctx.olderNode ?? '', '--out', `${ctx.out}/fixture.json`], report: `${ctx.out}/fixture.json`,
       ...(ctx.olderNode ? {} : {missing: 'no Node 22 in the runner\'s tool cache ($RUNNER_TOOL_CACHE/node/22.*)'})},
     {id: 'approved', label: `the approved lane: the run's own engine approved in a disposable home (expected ${expect ? 'FAIL before the flip' : 'PASS on the flip'})`, kind: 'expect', expect,
       argv: ['sh', 'scripts/accept/macos-default-selection-hosted.sh'], env: {CUA_HOSTED_APPROVE: 'node scripts/hosted-sittings.mjs approve'},
-      keep: ['default-selection-approved-out/report.json']},
+      report: 'default-selection-approved-out/report.json', keep: ['default-selection-approved-out/report.json']},
   ];
 }
 
@@ -117,6 +121,15 @@ export function sittingPlan(sitting, ctx) {
   const build = BUILDERS[sitting];
   if (!build) throw new Error(`no sitting ${sitting}: the sittings are ${SITTINGS.join(', ')}`);
   const [title, proves] = TITLES[sitting];
-  return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: sitting !== 'e', steps: build(ctx),
+  return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx),
     counts: sitting === 'c' ? ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`) : [], pilotReads: sitting === 'c' && Boolean(ctx.pilot)};
+}
+
+// A sitting's context on the runner: the job's run and attempt, and the approved paths the runner's record names
+// (./runner.mjs; the setup wrote it), so every harness is handed the run's own install. `record`: the device's record
+// or null. -> sittingPlan's ctx; throws for a sitting that needs the setup when it has not run.
+export function sittingContext(sitting, {env = process.env, record, commit, out, scratch = null, olderNode = null, pilot = false, flipped = false}) {
+  if (SETUP.has(sitting) && !record) throw new Error(`sitting ${sitting}: no runner record on this runner: run \`node scripts/hosted-sittings.mjs setup\` first`);
+  return {commit, out, approvedRuntime: record?.install?.home ?? null, approvedEngine: record?.engine?.bundle ?? null,
+    runId: `${env.GITHUB_RUN_ID ?? 'local'}-${env.GITHUB_RUN_ATTEMPT ?? '1'}`, olderNode, scratch, flipped: Boolean(flipped), pilot: Boolean(pilot)};
 }

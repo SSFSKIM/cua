@@ -6,8 +6,9 @@
 // entry DECISION_LOG_ENTRY (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, recorded on docs/117-progress
 // db775127; ruling 1111, O0), which amends "TCC is never edited by automation" for GitHub-hosted runners alone. Every
 // write goes through tccWrite, whose guard throws before any access to a store or its directory unless
-// RUNNER_ENVIRONMENT=github-hosted on macOS (proven by test/hosted-sittings/tcc.test.mjs with a spy store), and every
-// write cites that entry in the log.
+// RUNNER_ENVIRONMENT=github-hosted on macOS and that entry is in the spec's Decision Log as git holds it (docs/117-progress,
+// else HEAD, else a shallow fetch of docs/117-progress; fail closed when none reads), as ruling 1137 asks and H0's kit did
+// (proven by test/hosted-sittings/tcc.test.mjs with a spy store), and every write cites that entry in the log.
 //
 // What H0 found (#175; scripts/probe-117-h0/README.md on probe/117-h0 56c08949), and so what this writes: the system
 // database's rows are honoured, at the client's next launch only (so the caller relaunches the engines after it,
@@ -17,7 +18,8 @@
 import {execFileSync} from 'node:child_process';
 import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {assertGithubHosted} from './runner.mjs';
 
 export const SYSTEM_DB = '/Library/Application Support/com.apple.TCC/TCC.db';
@@ -29,6 +31,22 @@ export const SERVICES = Object.freeze({
 });
 export const CLIENTS = Object.freeze({engine: 'io.github.ssfskim.cua.engine', vendor: 'com.openai.sky.CUAService'});
 export const DECISION_LOG_ENTRY = 'Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the owner\'s Macs (O0; ruling 1111)), docs/doperpowers/specs/2026-10-18-own-native-engine-design.md';
+
+// The entry as the spec words it (whitespace aside: the spec wraps it), which must be in its Decision Log.
+export const DECISION_MARKER = 'Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the owner\'s Macs (O0; ruling 1111))';
+export const DECISION_SPEC = 'docs/doperpowers/specs/2026-10-18-own-native-engine-design.md';
+export const hasDecision = text => typeof text === 'string' && text.replace(/\s+/g, ' ').includes(DECISION_MARKER);
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// The spec's text holding the entry, from docs/117-progress (where the Decision Log is kept), this checkout's HEAD, or a
+// shallow fetch of docs/117-progress (a ci-kit gate's checkout is one commit deep); null when none holds it.
+export function readDecisionLog({cwd = REPO} = {}) {
+  const git = args => { try { return execFileSync('/usr/bin/git', ['-C', cwd, ...args], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, timeout: 60_000}); } catch { return null; } };
+  for (const ref of ['origin/docs/117-progress', 'HEAD']) { const text = git(['show', `${ref}:${DECISION_SPEC}`]); if (hasDecision(text)) return text; }
+  if (git(['fetch', '-q', '--depth', '1', 'origin', 'docs/117-progress']) === null) return null;
+  const fetched = git(['show', `FETCH_HEAD:${DECISION_SPEC}`]);
+  return hasDecision(fetched) ? fetched : null;
+}
 
 const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000});
 const quote = value => `'${String(value).replace(/'/g, "''")}'`;
@@ -54,15 +72,16 @@ const STORE = {
 };
 
 // The one function that writes: the guard first, then the action against the store.
-function tccWrite(action, {env = process.env, platform = process.platform, store = STORE, log = line => process.stderr.write(`${line}\n`)} = {}) {
+function tccWrite(action, {env = process.env, platform = process.platform, decisionLog = readDecisionLog, store = STORE, log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the TCC writer');
+  if (!hasDecision(decisionLog())) throw new Error(`the TCC writer: refused: the owner's yes (O0; ruling 1111) is not in ${DECISION_SPEC}'s Decision Log on docs/117-progress or HEAD`);
   log(`hosted-sittings: writing TCC rows on a GitHub-hosted runner under the design spec's Decision Log entry: ${DECISION_LOG_ENTRY}`);
   return action(store);
 }
 
 // Grants every service of SERVICES to each `{client, bundle}` (client one of CLIENTS, bundle the app whose designated
-// requirement the rows carry) in the system database, then reads the rows back. `deps`: {env, platform, store, log,
-// now}. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
+// requirement the rows carry) in the system database, then reads the rows back. `deps`: {env, platform, decisionLog
+// (() -> the spec's text, or null), store, log, now}. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
 export function grantRows(grants, {now = Date.now, ...deps} = {}) {
   if (!grants.length || grants.some(g => !Object.values(CLIENTS).includes(g.client) || typeof g.bundle !== 'string'))
     throw new Error('the TCC writer grants only cua\'s engine and the vendor\'s helper, each with its bundle');

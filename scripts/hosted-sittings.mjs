@@ -107,7 +107,12 @@ async function runCommand(sitting, values) {
 
 // The scratch document up, its windows then placed clear of replayd's alerts from a fresh reading (rulings 1160, 1164;
 // scripts/hosted-sittings/textedit-guard.mjs), the placement printed and kept at --record. A placement that could not
-// be read or made is recorded; the guard of each later step decides what it refuses.
+// be read or made is recorded, and nothing here refuses. What guards each later step that binds this document: verify
+// --bind, only its own checks (the app running with a window on screen, the approvals asked; no alert reading);
+// #216's approval cycles, TextEdit activated and front and key before each bind and a system prompt in front or key
+// around it NO VERDICT (rulings 1136, 1141; scripts/approval-cycles.mjs); T3b's onboarding, the same around each cell
+// and its capture cell under the shared capture rule (scripts/hosted-sittings/onboarding.mjs captureRefusal).
+// accept-native's own fixture document is placed and guarded by accept-native (scripts/accept/textedit.mjs).
 async function textedit(action, values) {
   assertGithubHosted(process.env, process.platform, 'the scratch TextEdit document');
   if (action === 'down') { spawnSync('pkill', ['-x', 'TextEdit']); return 0; }

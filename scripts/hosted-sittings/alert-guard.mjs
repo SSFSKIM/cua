@@ -85,6 +85,12 @@ function overlapCause(bounds, scenes) {
 
 // Why a key must not be sent: the alert holds the key, where the keys would go. The front is the key guard's own
 // (scripts/accept/key-guard.mjs sendIfFrontmost). -> {category: 'alert', detail} | null.
+// The key-cell premise every sitting shares (A, C and D): a key cell sends no pointer event of the harness's, and the
+// activation click cua's route 3 may synthesize around a keyed typeText, a paste or an element action is posted to the
+// target's pid and window only (native/engine/Sources/Engine/Activation.swift: "Only the target's pid and window are
+// posted to"; activate()), never to whatever is under the point. So a key cell is checked for the alert holding the key
+// (here) or the front (the key guard), not for an alert overlapping the target's windows. A reading that could not be
+// taken is no refusal of its own here: the key guard's front check still stands before the cell.
 export const keyCause = ({key = null} = {}) => (key === CAPTURE_ALERT ? {category: 'alert', detail: `${CAPTURE_ALERT} holds the key`} : null);
 
 // Why a capture is NO VERDICT, from the fresh reading: `kind` 'window' (the target `scenes`' windows: one under an alert
@@ -155,4 +161,12 @@ export function countGuards(entries) {
     if (cause in n) n[cause]++;
   }
   return counts;
+}
+// A refusal as every sitting records it, in the record it keeps (A's and B's meta, D's observations): the per-cell entry
+// (`extra`: the sample, say), the counts, the first refusal as the stop the hosted checks read. -> the row's mark.
+export function recordRefusal(record, cell, cause, extra = {}) {
+  (record.alertGuards ??= []).push({cell, ...extra, cause: cause.category, detail: cause.detail});
+  record.alertGuardCounts = countGuards(record.alertGuards);
+  record.alertGuardStop ??= {cause: cause.category, detail: cause.detail, at: cell};
+  return guardMark(cause);
 }

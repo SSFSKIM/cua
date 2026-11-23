@@ -5,8 +5,8 @@
 // (CGCompleteDisplayConfiguration .forSession, which outlives this process; app-only would revert when it exits), through
 // ./display-modes.swift `set`. Around the switch:
 //   - before: the display's mode and the alert windows (UserNotificationCenter's: number, layer, bounds) and the front;
-//   - the switch, its mode and the display read back (CGDisplayBounds and the current mode): anything but 1920x1080
-//     fails the setup;
+//   - the switch, its mode and the display read back (CGDisplayBounds and the current mode): anything but the mode
+//     chosen (1920x1080 in points and in pixels, its id the listing's, the same the switch answered) fails the setup;
 //   - for MODE_WATCH_MS after it, the window list and the front watched: a UserNotificationCenter or System Settings
 //     window that was not there before, or System Settings in front, is a prompt. It is recorded and fails the setup;
 //     nothing here answers, clicks or closes it;
@@ -91,6 +91,15 @@ export async function switchDisplayMode({env = process.env, platform = process.p
   const read = record.readBack;
   if (!read?.mode || read.mode.width !== TARGET_MODE.width || read.mode.height !== TARGET_MODE.height || read.bounds?.width !== TARGET_MODE.width || read.bounds?.height !== TARGET_MODE.height) {
     return fail(`the display read back ${sizeText(read?.mode)} (bounds ${sizeText(read?.bounds)}), not ${sizeText(TARGET_MODE)}`);
+  }
+  // The very mode chosen: at 1x (a 2x mode of the same size would halve every point the harness places by), by the id the
+  // listing gave it, which the switch must have set too.
+  if (read.mode.pixelWidth !== TARGET_MODE.width || read.mode.pixelHeight !== TARGET_MODE.height) {
+    return fail(`the display read back ${read.mode.pixelWidth}x${read.mode.pixelHeight} pixels, not ${sizeText(TARGET_MODE)} at 1x`);
+  }
+  if (read.mode.modeId !== target.modeId || record.set?.modeId !== target.modeId) {
+    const wrong = read.mode.modeId !== target.modeId ? read.mode.modeId : record.set?.modeId;
+    return fail(`the display holds mode ${wrong ?? '?'}, not the mode set (${target.modeId}): the switch answered mode ${record.set?.modeId ?? '?'}, the read-back mode ${read.mode.modeId ?? '?'}`);
   }
   if (record.promptSeen.length) {
     return fail(`a prompt appeared across the switch (${record.promptSeen.map(p => (p.front ? `${p.front} in front` : `${p.owner} window ${p.number}`)).join(', ')}): recorded, never answered`);

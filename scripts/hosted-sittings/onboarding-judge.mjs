@@ -77,6 +77,7 @@ function readBack(stage, want) {
 // Why a cell has no proof of the product's answer, or null when it has: not sent, a wait, no result, no attestation, or
 // the screen around it (rulings 1136 and 1141).
 function cellUnproved(call, attestation) {
+  if (!call.sent && call.alertGuard) return `${call.alertGuard.cause}: the alert guard refused the capture (${call.alertGuard.detail})`;
   if (!call.sent) return call.skipped === 'activation' ? 'activation: TextEdit did not take front and key' : `not sent (${call.skipped ?? 'no reason recorded'})`;
   if (call.waited || call.completion === 'timeout') return `no answer within its bound (${call.waitedBy ?? 'a wait'}): the product waited, and nothing answered it`;
   if (call.transportError || !call.resultPresent || call.completion === 'missing-result') return `no result (${call.errorText ?? 'transport'})`;

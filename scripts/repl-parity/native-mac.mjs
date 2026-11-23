@@ -28,8 +28,9 @@
 //     ../hosted-sittings/alert-guard.mjs placeWindows, meta.scenes[id].placement); bind; prime; cua's settled read of
 //     the fixed state (goldens-device.mjs observe); the fixed text; cua's strict read (verify); the action's texts, its
 //     click sent only when a fresh reading shows no alert over the scene's windows and none holding front or key (else
-//     NO VERDICT `alert` or `unread`, the scene ended, meta.alertGuardStop for the hosted check; never retried), its
-//     row carrying #528's diagnostics; verify again; the texts copied off the device; teardown and down. A text whose state cua's read refused is removed on the device unread: the fixed text is taken again (three
+//     NO VERDICT `alert` or `unread`, the scene ended and named in meta.guardRefused, apart from the run's problems,
+//     meta.alertGuardStop for the hosted check; never retried; the lane goes on to the next scene), its row carrying
+//     #528's diagnostics; verify again; the texts copied off the device; teardown and down. A text whose state cua's read refused is removed on the device unread: the fixed text is taken again (three
 //     attempts), the action's end the scene. A lane cell that fails is the lane's outcome, recorded for the diff.
 //   - Always ends with every scene down, the lane closed, the approved home given back with the engine stopped
 //     (prepare.mjs cleanupRun), and the owner's front app back in front. A scene's down is tried even when its teardown
@@ -52,7 +53,7 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseline/engine.mjs';
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
-import {countGuards, guardCause, guardMark, placeWindows} from '../hosted-sittings/alert-guard.mjs';
+import {guardCause, placeWindows, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
 import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval, settleRecordingProbes} from '../native-matrix/goldens.mjs';
@@ -75,6 +76,10 @@ const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 
 // A scene that cannot go on: recorded as the run's problem, the scene taken down, the next one run.
 class SceneProblem extends Error {}
+// A scene the alert guard ended (actionGuard): its proof missing, not a problem of the run's; `cell` names it.
+class GuardRefused extends SceneProblem {
+  constructor(message, cell) { super(message); this.cell = cell; }
+}
 // A signal the caller recorded (io.interrupt.signal): the run stops at its next step, then puts everything back.
 class Interrupted extends Error {}
 const SIGNAL_CODES = {SIGINT: 130, SIGTERM: 143};
@@ -185,7 +190,6 @@ export async function runNativeMac(options, io) {
     await client.request('tools/list');
     ctx.js = async (code, timeoutMs = CELL_MS) => {
       const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
-      ctx.lastMeta = result?._meta ?? null;
       attestEngine(meta.engineAttestation, result);
       meta.hostAttestation ??= hostAttestationOf(serverInfo, result);
       // The engine first (ruling 1149): a cua lane fallen back to the vendor's engine runs on the vendor's host too,
@@ -207,7 +211,10 @@ export async function runNativeMac(options, io) {
         meta.scenes[id].recorded = true;
       } catch (error) {
         if (!(error instanceof SceneProblem)) throw error;
-        meta.problems.push(`${id}: ${error.message}`);
+        // A refusal is kept apart from the problems, so the hosted check can tell a run the guard alone left incomplete
+        // (NO VERDICT) from one with a failure of its own as well (checks.mjs `record`).
+        if (error instanceof GuardRefused) (meta.guardRefused ??= []).push(error.cell);
+        else meta.problems.push(`${id}: ${error.message}`);
         log(`${id}: ${error.message}`);
       } finally {
         if (ctx.up.has(id)) takeDown(ctx, id);
@@ -273,7 +280,7 @@ export async function runNativeMac(options, io) {
       else fs.rmSync(dirname(ctx.serveStderr), {recursive: true, force: true});
     }
   }
-  log(`native-mac ${host}/${engine}: ${meta.complete ? 'complete' : `INCOMPLETE: ${meta.error ?? meta.problems.join('; ')}`}`);
+  log(`native-mac ${host}/${engine}: ${meta.complete ? 'complete' : `INCOMPLETE: ${meta.error ?? [...meta.problems, ...(meta.guardRefused ?? []).map(cell => `${cell} refused by the alert guard`)].join('; ')}`}`);
   return meta.interrupted ? SIGNAL_CODES[meta.interrupted] ?? 1 : meta.complete ? 0 : 1;
 }
 
@@ -294,10 +301,11 @@ async function runScene(ctx, id) {
   const record = bringUp(ctx, id);
   await placeScene(ctx, id, record);
   activate(ctx, id);
-  const lane = async (cell, code, timeoutMs, extra = {}) => {
+  // `extra(answer)`: what a failed cell's row carries besides its error, taken once the lane answered.
+  const lane = async (cell, code, timeoutMs, extra = () => ({})) => {
     ctx.checkpoint();
     const answer = await ctx.js(code, timeoutMs);
-    if (!answer.ok) { emit({scene: id, cell, ok: false, error: answer.error, ...extra}); account.outcome = `${cell} failed on the lane`; }
+    if (!answer.ok) { emit({scene: id, cell, ok: false, error: answer.error, ...extra(answer)}); account.outcome = `${cell} failed on the lane`; }
     return answer;
   };
   if (!(await lane('bind', BIND(id, record.app), BIND_MS)).ok) return;
@@ -325,9 +333,9 @@ async function runScene(ctx, id) {
   const activated = activate(ctx, id);
   // The click under the alert guard, read fresh right before it; the same reading is #528's front and key before it.
   const before = actionGuard(ctx, id, record, activated);
-  const action = await lane('action', ACTION(id, scene.window.title, scene.action), undefined, {diagnostics: actionDiagnostics(before, ctx.lastMeta, null)});
+  const action = await lane('action', ACTION(id, scene.window.title, scene.action), undefined, answer => ({diagnostics: actionDiagnostics(before, answer.value)}));
   if (!action.ok) return;
-  const diagnostics = actionDiagnostics(before, ctx.lastMeta, action.value);
+  const diagnostics = actionDiagnostics(before, action.value);
   const files = filesOf(ctx, action.value, TEXT_KINDS.action);
   const after = read('verify', 'action');
   if (after.problems.length) {
@@ -408,19 +416,17 @@ async function placeScene(ctx, id, record) {
 // Before the action's click: the scene's windows clear of every alert, the alert holding neither front nor key, the
 // screen read. A refusal sends nothing: the action's row carries its cause (NO VERDICT `alert` or `unread`), the lane's
 // meta keeps it per cell (alertGuards, alertGuardCounts) and its first (alertGuardStop, which the hosted record check
-// reads as NO VERDICT), and the scene ends there. Nothing is retried. -> {reading, activate}, the click's surroundings.
+// reads as NO VERDICT), and the scene ends there (GuardRefused: the lane goes on to its next scene, deciding again from
+// its own reading). Nothing is retried. -> {reading, activate}, the click's surroundings.
 function actionGuard(ctx, id, record, activated) {
   const reading = guardRead(ctx, id, record, {key: true});
   const before = {reading, activate: activationFacts(activated)};
   const cause = guardCause(reading?.bounds ?? null, {front: reading?.front ?? null, key: reading?.key ?? null}, {scenes: [id]});
   if (!cause) return before;
-  const {meta} = ctx, cell = `${id}/action`;
-  (meta.alertGuards ??= []).push({cell, cause: cause.category, detail: cause.detail});
-  meta.alertGuardCounts = countGuards(meta.alertGuards);
-  meta.alertGuardStop ??= {cause: cause.category, detail: cause.detail, at: cell};
-  ctx.emit({scene: id, cell: 'action', ok: false, ...guardMark(cause), diagnostics: actionDiagnostics(before, null, null)});
-  meta.scenes[id].outcome = 'action refused by the alert guard';
-  throw new SceneProblem(`the action was not sent: ${cause.detail} (the alert guard, ruling 1154)`);
+  const cell = `${id}/action`;
+  ctx.emit({scene: id, cell: 'action', ok: false, ...recordRefusal(ctx.meta, cell, cause), diagnostics: actionDiagnostics(before, null)});
+  ctx.meta.scenes[id].outcome = 'action refused by the alert guard';
+  throw new GuardRefused(`the action was not sent: ${cause.detail} (the alert guard, ruling 1154)`, cell);
 }
 // scenes-mac.mjs activate's answer, value-free: whether it took, the front's bundle id, Finder's raise and its window's
 // place, the reason; never another process's pid or name.
@@ -428,21 +434,15 @@ const activationFacts = answer => (answer ? {ok: answer.ok === true, front: answ
   ...(answer.topWindow ? {topWindow: {number: answer.topWindow.number ?? null, bounds: answer.topWindow.bounds ?? null}} : {}),
   ...(answer.windowOrder ? {runWindowFound: answer.windowOrder.runWindowFound === true, windowsAbove: Math.max(0, (answer.windowOrder.windows?.length ?? 1) - 1)} : {}),
   ...(answer.reason ? {reason: answer.reason} : {})} : null);
-// The result meta keys #528 reads of a click (src/services/engine/service.mjs: numbers, roles and routes only, never a
-// value): cua's route and the engine's account of the click, as they stand at the cell's end. Every key the answer
-// carried is listed, the vendor's included.
-const ROUTE_META = Object.freeze(['cua/inputRoute', 'cua/elementClick', 'cua/coordinateClick', 'cua/activationClick', 'cua/activationClickKind', 'cua/activationJoin',
-  'cua/pointUnconfirmed', 'cua/delivery', 'cua/observation', 'cua/engineMs', 'cua/nativeEngine']);
 // #528's diagnostics on the action's row, never judged (no verdict reads them): before the click, the front and key
 // applications and the key window (whether it is the scene's, and its bounds when it is) and the activate step's
-// answer; the click's route as the answer's _meta carries it (`meta`: every key, and ROUTE_META's values) and what the
-// click returned to the cell (its type and keys); the focused element right after the click as the diff named it (its
-// index, never its text). Inside one cell the observations after the click reset its per-call keys (service.mjs
-// PER_CALL), so a null route here is that reset, not a missing route.
-function actionDiagnostics(before, meta, value) {
+// answer; what the click returned to the cell (its type and keys); the focused element right after the click as the
+// diff named it (its index, never its text). The click's own route is not among them: it cannot be read from the cell,
+// since the service resets its per-call result meta at every call (src/services/engine/service.mjs PER_CALL), so the
+// cell's _meta is the last observation's.
+function actionDiagnostics(before, value) {
   const r = before?.reading;
   return {before: {front: r?.front ?? null, key: r?.key ?? null, keyWindow: r?.keyWindow ?? null, activate: before?.activate ?? null},
-    meta: meta && typeof meta === 'object' ? {keys: Object.keys(meta).sort(), route: Object.fromEntries(ROUTE_META.filter(k => k in meta).map(k => [k, meta[k]]))} : null,
     click: value?.click ?? null, focusAfterClick: value?.focusAfterClick ?? null};
 }
 

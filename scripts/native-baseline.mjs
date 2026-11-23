@@ -337,13 +337,13 @@ async function runPrepared({device, out, host, engine, approvedEngine, approvedR
     if (r.timedOut) stop(`${what} timed out; no further input was sent (a prompt may be waiting on the device, never answered by the harness)`);
     return r;
   };
-  // `hold`: the rows are returned, not written, for a caller that validates the series afterwards. `before(sample)`: run
-  // before each sample's cell, outside its time (the alert guard's check, scripts/native-baseline/macos.mjs), which may
-  // refuse it by throwing.
+  // `hold`: the rows are returned, not written, for a caller that validates the series afterwards. `before(sample,
+  // held)`: run before each sample's cell, outside its time (the alert guard's check, scripts/native-baseline/macos.mjs),
+  // which may refuse it by throwing; `held` is the series' rows taken and not yet written (none without `hold`).
   const measure = async (op, n, code, {hold = false, before = null} = {}) => {
     const rows = [];
     for (let sample = 1; sample <= n; sample++) {
-      if (before) await before(sample);
+      if (before) await before(sample, hold ? rows : []);
       const r = record(op, sample, guard(await js(warm, code), `${op} sample ${sample}`));
       rows.push(hold ? r : emit(r));
     }

@@ -11,16 +11,23 @@
 // both engines alike: before each cell that may click (the scratch document's New Document button, a task's close and
 // its sheet's Delete button) a fresh reading of the screen (../hosted-sittings/guard-device.mjs read on the device)
 // refuses it when an alert window overlaps one of the run's TextEdit's windows or the Open panel's, or the alert holds
-// the front or the key; before each key cell, when the alert holds the key; before each screenshot sample, when the
-// alert overlaps TextEdit's windows (the vendor may crop a display capture to the window). A refusal sends nothing,
-// writes the sample's row with its cause (NO VERDICT `alert` or `unread`), keeps it in meta.alertGuards (per cell) and
-// stops the run (meta.alertGuardStop), which the hosted record check reads as NO VERDICT; nothing is retried. The run's
-// windows are placed clear of the alerts from fresh readings, once TextEdit is up (the Open panel) and once its scratch
-// document is (meta.placement: from, to and the read-back), and never again mid-run.
+// the front or the key; before each key cell, when the alert holds the key (the key-cell premise: route 3's activation
+// click goes to TextEdit's pid only, and the key guard checks the front); before each screenshot sample, when the alert
+// overlaps TextEdit's windows (the vendor may crop a display capture to the window). A refusal sends nothing, writes
+// the sample's row with its cause (NO VERDICT `alert` or `unread`; a held screenshot series' samples already taken are
+// written first, invalid), keeps it in meta.alertGuards (per cell, with meta.alertGuardCounts) and stops the run
+// (meta.alertGuardStop, the first), which the hosted record check reads as NO VERDICT; nothing is retried. The cleanup
+// after it still quits TextEdit as after any failure: from its scratch document by ⌘Q, under the key guard (refused
+// too while the alert holds the key), only with TextEdit in front and its scratch document in front of it; or, with no
+// scratch document made, by SIGTERM to the pid the run launched. A TextEdit it cannot quit is left running, and the
+// sitting's next run would refuse it, so the hosted plan chains A's runs (../hosted-sittings/plan.mjs): that run is
+// SKIP, never a FAIL of its own. The run's windows are placed clear of the alerts from fresh readings, once TextEdit is
+// up (the Open panel) and once its scratch document is (meta.placement: from, to and the read-back), and never again
+// mid-run.
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {quote} from '../browser-parity/topology.mjs';
-import {captureCause, countGuards, guardCause, guardMark, keyCause, placeWindows} from '../hosted-sittings/alert-guard.mjs';
+import {captureCause, guardCause, keyCause, placeWindows, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
@@ -75,17 +82,19 @@ const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 
 // ---- the alert guard (see the header) ----------------------------------------------------------------------------------
 
-// The device's fresh reading, or null when it could not be read (the guard reads null as unread, never as clear).
+// The device's fresh reading, or null when it could not be read. The pointer and capture guards read null as unread,
+// never as clear; the key guard reads it as no refusal of its own (the key-cell premise,
+// ../hosted-sittings/alert-guard.mjs keyCause), the key guard's front check still standing before the cell.
 function reading(ctx, {key = false} = {}) {
   try { return ctx.device.guard({pid: ctx.meta.textEdit?.pid, key}) ?? null; } catch { return null; }
 }
-// A refused sample: its row with the cause, the per-cell record, the run's stop. Nothing of the cell was sent.
-function refuse(ctx, op, sample, cause) {
-  const {meta} = ctx;
-  (meta.alertGuards ??= []).push({cell: op, sample, cause: cause.category, detail: cause.detail});
-  meta.alertGuardCounts = countGuards(meta.alertGuards);
-  meta.alertGuardStop ??= {cause: cause.category, detail: cause.detail, at: op};
-  ctx.emit({op, sample, ok: false, ...guardMark(cause)});
+// A refused sample: its row with the cause, the per-cell record, the run's stop (recordRefusal). Nothing of the cell
+// was sent. `held`: a held series' samples already taken (measure's hold), written first, each invalid since the
+// scratch guard after the series, which vouches for them, never runs.
+const SERIES_STOPPED = 'the alert guard stopped the series before the scratch guard after it could confirm this sample';
+function refuse(ctx, op, sample, cause, held = []) {
+  for (const row of held) ctx.emit(row.ok ? {...row, ok: false, invalid: SERIES_STOPPED} : row);
+  ctx.emit({op, sample, ok: false, ...recordRefusal(ctx.meta, op, cause, {sample})});
   throw new Error(`${op} sample ${sample}: nothing sent: ${cause.detail} (the alert guard, ruling 1154)`);
 }
 // Before a cell that may click: the run's TextEdit's windows and the Open panel's clear of every alert, the alert
@@ -102,10 +111,10 @@ function keyGuard(ctx, op, sample) {
   const cause = r ? keyCause({key: r.key}) : null;
   if (cause) refuse(ctx, op, sample, cause);
 }
-// Before a screenshot sample: the window it captures clear of every alert.
-function captureGuard(ctx, op, sample) {
+// Before a screenshot sample: the window it captures clear of every alert. `held`: the series' samples taken so far.
+function captureGuard(ctx, op, sample, held) {
   const cause = captureCause(reading(ctx)?.bounds ?? null, {scenes: ['textedit']});
-  if (cause) refuse(ctx, op, sample, cause);
+  if (cause) refuse(ctx, op, sample, cause, held);
 }
 // The run's windows placed clear of the alerts from a fresh reading (../hosted-sittings/alert-guard.mjs placeWindows),
 // kept in meta.placement with the step it followed (`at`).
@@ -287,7 +296,7 @@ export const macosAdapter = {
     // invalidated when it is no longer in front afterwards.
     await measure('warm.getAXState', ctx.samples, cells.AX_FULL);
     if (!await scratchGuard(1)) throw new Error('the scratch document is not in front before the screenshot series');
-    const shots = await measure('warm.getScreenshot', ctx.samples, cells.SCREENSHOT, {hold: true, before: sample => captureGuard(ctx, 'warm.getScreenshot', sample)});
+    const shots = await measure('warm.getScreenshot', ctx.samples, cells.SCREENSHOT, {hold: true, before: (sample, held) => captureGuard(ctx, 'warm.getScreenshot', sample, held)});
     const stillInFront = await scratchGuard(2);
     for (const shot of shots) emit(stillInFront || !shot.ok ? shot : {...shot, ok: false, invalid: 'the scratch document was not in front after the screenshot series'});
     if (!stillInFront) throw new Error('the scratch document is not in front after the screenshot series');

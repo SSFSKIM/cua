@@ -5,7 +5,9 @@
 //                meta.json or result.json) complete passes whatever the exit, which is the run's own outcome and the
 //                judge's to read; a missing or incomplete record is a runtime error, except a run the capture alert
 //                stopped (its producer's incompleteCause 'alert', a reset the alert held, or a harness cell the alert
-//                guard refused, ruling 1154), which is NO VERDICT. Ruling 1149: the record's engine
+//                guard refused, ruling 1154), which is NO VERDICT; a native-mac lane, whose refusal ends only its scene,
+//                is NO VERDICT only when every problem it holds is a refusal (guardRefused), its other problems
+//                failing it, named. Ruling 1149: the record's engine
 //                attestations must be the side's (`engine`, sideAttestation): a side answered on another engine, the cua
 //                side on the vendor's above all (state 1), is NO VERDICT naming it, complete or not; a complete record
 //                that shows no engine is NO VERDICT too. The reader compares the engine's name only: the version and
@@ -28,13 +30,15 @@
 //                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
 //                on the flip cua's engine on cua's host in the default home and each fallback's own reason elsewhere
 //   acceptance   accept-native in sitting D: exit 0 passes; otherwise its report (`record`) is read: a run in which the
-//                shared alert guard refused a cell of the TextEdit fixture (`alertGuardStop`, rulings 1154, 1160) and
-//                no item outside the fixture's (5, 6, 8) failed is NO VERDICT; anything else fails as `exit` does
+//                shared alert guard refused a cell of the TextEdit fixture (`alertGuardStop`, rulings 1154, 1160) is NO
+//                VERDICT only when every check not passed is one the fixture itself produces (items 5, 6 and 8:
+//                ../accept/textedit.mjs isFixtureCheck) and every other item passed; anything else fails, named
 //   onboarding   T3b's staged onboarding (sitting D): its record (`record`) judged stage by stage against M4's behaviour
 //                (./onboarding-judge.mjs), in ruling 1149's order: a result answered on another engine than the side
 //                (`engine`) is NO VERDICT before any FAIL; a missing or incomplete record is NO VERDICT, never a pass
 // deps: {exit, logText() (the step's log), readJson(path) (null when unreadable), exists(path)}. -> [status, reason].
 import {HOMES} from '../accept/macos-selection.mjs';
+import {isFixtureCheck} from '../accept/textedit.mjs';
 import {sampleCause} from '../native-matrix/front-key.mjs';
 import {classifyAttestedRecord} from '../probe/lib.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
@@ -43,6 +47,7 @@ const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert']);
 // accept-native's items its live TextEdit fixture proves (scripts/accept-native.mjs: 5, 6 and 8), the ones the alert
 // guard's refusal there leaves unproven.
 const FIXTURE_ITEMS = Object.freeze([5, 6, 8]);
+const SOUND = new Set(['PASS', 'INFO']);
 const VERDICT_LINE = /^VERDICT: (PASS|FAIL|NO VERDICT|OWNER)\b/gm;
 const firstProblem = record => record.error ?? record.problems?.[0] ?? record.refused?.[0] ?? 'no reason recorded';
 
@@ -86,6 +91,9 @@ const guardStopped = (path, record) => {
   const stop = record.meta?.alertGuardStop ?? record.alertGuardStop;
   return stop ? `${stop.cause}: ${path} stopped: the alert guard refused ${stop.at ? `${stop.at}` : 'a harness cell'} (${stop.detail})` : null;
 };
+// A run whose refusal ended only its scene and went on (the native-mac lane: its refusals kept apart in guardRefused)
+// may hold failures of its own beside it: its error and problems. -> those, which the refusal does not excuse.
+const besideRefusal = record => (Array.isArray(record.guardRefused) ? [record.error, ...(record.problems ?? [])].filter(Boolean) : []);
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 // One of #212's records against the step (`run` {path, record}), by the step's precedence (`rank`): another engine
@@ -113,6 +121,8 @@ export const CHECKS = Object.freeze({
     if (answeredElsewhere(side)) return ['NO VERDICT', side.reason];
     if (record.complete !== true) {
       const held = resetBlocked(step.record, record) ?? alertStopped(step.record, record) ?? guardStopped(step.record, record);
+      const beside = besideRefusal(record);
+      if (held && beside.length) return ['FAIL', `runtime error: the run is incomplete (${beside.join('; ')}); the alert guard also refused ${(record.guardRefused ?? []).join(', ')}`];
       return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`];
     }
     if (side) return ['NO VERDICT', side.reason];
@@ -150,9 +160,13 @@ export const CHECKS = Object.freeze({
     if (exit === 0) return ['PASS', null];
     const report = readJson(step.record), stop = report?.alertGuardStop;
     if (!stop) return ['FAIL', null];
-    const others = (report.items ?? []).filter(item => !FIXTURE_ITEMS.includes(item.id) && !['PASS', 'INFO'].includes(item.status));
-    if (others.length) return ['FAIL', `item${others.length > 1 ? 's' : ''} ${others.map(item => `${item.id} ${item.status}`).join(', ')}; the alert guard also refused ${stop.at}`];
-    return ['NO VERDICT', `${stop.cause}: the alert guard refused ${stop.at} in the TextEdit fixture (${stop.detail}); items ${FIXTURE_ITEMS.join(', ')} unproven`];
+    // Check by check: in the fixture's items only the checks the fixture itself produces may go unproven by its stop;
+    // anything else not passed (a secrets CLI check, a lifecycle observation, another item) is a failure of its own.
+    const failures = (report.items ?? []).flatMap(item => (FIXTURE_ITEMS.includes(item.id) && Array.isArray(item.checks)
+      ? item.checks.filter(c => !SOUND.has(c.status) && !isFixtureCheck(item.id, c.name)).map(c => `item ${item.id}: ${c.name} ${c.status}`)
+      : SOUND.has(item.status) ? [] : [`item ${item.id} ${item.status}`]));
+    if (failures.length) return ['FAIL', `${failures.join('; ')}; the alert guard also refused ${stop.at}`];
+    return ['NO VERDICT', `${stop.cause}: the alert guard refused ${stop.at} in the TextEdit fixture (${stop.detail}); the fixture's checks in items ${FIXTURE_ITEMS.join(', ')} unproven`];
   },
   selection(step, {exit, readJson}) {
     if (exit !== step.expect) return ['FAIL', `exit ${exit}, expected ${step.expect}`];

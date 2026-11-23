@@ -42,10 +42,15 @@ const TITLES = {
 const approvedArgs = ctx => ['--approved-runtime', ctx.approvedRuntime, '--approved-engine', ctx.approvedEngine];
 const LANES = {vv: ['vendor', 'vendor'], vc: ['vendor', 'cua'], cc: ['cua', 'cua']};
 
+// Each A run needs the one before it to have passed: a run that stopped (the alert guard's refusal above all) may leave
+// its TextEdit running, its cleanup's ⌘Q refused while the alert holds the key (../native-baseline/macos.mjs), and the
+// next run refuses a running TextEdit at its preflight. The runs after it are SKIP, never failures of their own; the
+// stopped run's own status is the sitting's.
 function sittingA(ctx) {
   const runs = ctx.pilot ? 1 : 3, exp = `hosted-${ctx.runId}-a`, steps = [];
   for (let i = 1; i <= runs; i++) for (const [lane, [host, engine]] of Object.entries(LANES)) {
     steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${lane}/run-${i}/meta.json`, engine,
+      ...(steps.length ? {needs: [steps.at(-1).id]} : {}),
       argv: ['node', 'scripts/native-baseline.mjs', 'run', '--device', DEVICE, '--experiment', exp, '--host', host, '--engine', engine, ...approvedArgs(ctx), '--out', `${ctx.out}/${lane}/run-${i}`]});
   }
   const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true,

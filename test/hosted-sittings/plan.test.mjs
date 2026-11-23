@@ -4,6 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ACCEPT_NATIVE_ITEMS, DEVICE, SITTINGS, sittingContext, sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
+import {runSitting} from '../../scripts/hosted-sittings/run.mjs';
 
 const CTX = {commit: 'c'.repeat(40), out: '/w/out', approvedRuntime: '/Users/runner/Library/Application Support/cua',
   approvedEngine: '/Users/runner/Library/Application Support/cua/engine/cua Engine.app', runId: '45144483807-1', olderNode: '/t/node/22.14.0/arm64/bin/node', scratch: '/t/scratch', flipped: false};
@@ -53,6 +54,25 @@ test('A: three runs of each lane, alternating vendor on vendor, cua on vendor, c
   // Each run is read by its record (a runtime error apart from what it measured), each comparison by the verdict it printed.
   assert.deepEqual(['vc-2'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record]), [['record', '/w/out/vc/run-2/meta.json']]);
   assert.ok(full.steps.filter(s => s.kind === 'verdict').every(s => s.check === 'verdict' && s.pilotNoVerdict === true));
+});
+
+// A run the alert guard stopped may leave its TextEdit running (its cleanup's ⌘Q refused while the alert holds the
+// key), and the next run refuses a running TextEdit at its preflight: so each A run needs the one before it to have
+// passed. The runs after a stop are SKIP, never FAILs of their own, and the stop's NO VERDICT is the sitting's.
+test('A: each run needs the one before it; after a run the guard stopped the rest are SKIP and the sitting is NO VERDICT, not PASS', async () => {
+  for (const pilot of [false, true]) {
+    const runs = plan('a', {pilot}).steps.filter(s => s.kind === 'run');
+    assert.deepEqual(runs.map(s => s.needs ?? []), runs.map((s, i) => (i ? [runs[i - 1].id] : [])), `pilot ${pilot}`);
+  }
+  const p = plan('a', {pilot: true});
+  const stopped = {complete: false, error: 'task.act sample 1: nothing sent', alertGuardStop: {cause: 'alert', detail: 'd', at: 'task.act'}, nativeEngine: {attested: [{engine: 'vendor'}]}};
+  const ran = [];
+  const report = await runSitting(p, {out: '/w/out', exec: async s => { ran.push(s.id); return {exit: s.id === 'vv-1' ? 1 : 0}; }, keep: () => {}, readText: () => 'VERDICT: NO VERDICT',
+    readJson: path => (path === '/w/out/vv/run-1/meta.json' ? stopped : null), exists: () => false, remove: () => {}, now: () => 0, log: () => {}});
+  const status = Object.fromEntries(report.steps.map(s => [s.id, s.status]));
+  assert.deepEqual(ran.filter(id => /^(vv|vc|cc)-/.test(id)), ['vv-1'], 'no run after the stop');
+  assert.deepEqual([status['vv-1'], status['vc-1'], status['cc-1']], ['NO VERDICT', 'SKIP', 'SKIP']);
+  assert.deepEqual([report.verdict, report.exit], ['NO VERDICT', 4]);
 });
 
 test('B: the native-mac pair on the run\'s install, its diff against the declared differences, and the preparation given back', () => {

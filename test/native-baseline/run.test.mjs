@@ -831,3 +831,36 @@ test('sitting A: the alert holding the key refuses a key cell; a window under an
   assert.ok(!shot.rows.some(row => row.op === 'warm.getScreenshot' && row.ok), 'no capture was taken');
   assert.equal(recordCheck(shot.meta, 'vendor')[0], 'NO VERDICT');
 });
+
+test('sitting A: a capture refusal mid-series keeps the samples already taken, unconfirmed, and marks only the refused one', async t => {
+  // Readings: the two placements, the scratch document's click, screenshot sample 1 clear; sample 2 under the alert.
+  const r = await macRun(t, {screen: (n, withKey) => (n <= 4 ? CLEAR_SCREEN : UNDER)(n, withKey)});
+  const shots = r.rows.filter(row => row.op === 'warm.getScreenshot');
+  assert.deepEqual(shots.map(row => [row.sample, Boolean(row.alertGuard)]), [[1, false], [2, true]], 'sample 1 kept, sample 2 refused, nothing after');
+  assert.equal(shots[0].ok, false);
+  assert.match(shots[0].invalid, /the alert guard stopped the series before the scratch guard after it/);
+  assert.ok(Number.isFinite(shots[0].inCellMs), 'its measurement is kept');
+  assert.deepEqual(r.meta.alertGuardCounts, {'warm.getScreenshot': {alert: 1, unread: 0}});
+});
+
+// After a refusal the run's cleanup still quits TextEdit only from its scratch document, by ⌘Q under the key guard (the
+// alert holding the key refuses it too) and only with TextEdit in front; a TextEdit it cannot quit is left running, which
+// the sitting's next run would refuse: the plan chains A's runs, so that run is SKIP, never FAIL (plan.test.mjs).
+test('sitting A: after a refusal the cleanup quits from the scratch document under the key guard, or leaves TextEdit running when the alert holds the key', async t => {
+  let keyed = 0;
+  // The alert takes the key at the first task's new document and keeps it: the quit is refused as well.
+  const held = await macRun(t, {screen: (n, withKey) => ({...CLEAR_SCREEN(n, withKey), key: withKey ? (++keyed >= 2 ? UNC : 'com.apple.TextEdit') : null})});
+  assert.deepEqual(held.meta.alertGuards.map(g => g.cell), ['task.act', 'quit']);
+  assert.equal(held.meta.alertGuardStop.at, 'task.act', 'the first refusal is the stop');
+  assert.ok(!held.app.keys.includes('super+q'), 'no quit was sent');
+  assert.equal(held.meta.textEdit.quitByRun, undefined);
+  assert.match(held.meta.textEdit.quitError, /quit sample 1: nothing sent/);
+  assert.equal(held.meta.leftovers.textEditRunning, true);
+  // The alert gone by the quit: ⌘Q from the scratch document, TextEdit quit.
+  keyed = 0;
+  const gone = await macRun(t, {screen: (n, withKey) => ({...CLEAR_SCREEN(n, withKey), key: withKey ? (++keyed === 2 ? UNC : 'com.apple.TextEdit') : null})});
+  assert.deepEqual(gone.meta.alertGuards.map(g => g.cell), ['task.act']);
+  assert.ok(gone.app.keys.includes('super+q'));
+  assert.equal(gone.meta.textEdit.quitByRun, true);
+  assert.equal(gone.meta.leftovers.textEditRunning, false);
+});

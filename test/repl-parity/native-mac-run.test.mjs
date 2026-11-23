@@ -583,8 +583,39 @@ test('sitting B: an unread screen refuses the click NO VERDICT unread; a clear o
   assert.ok(targets.includes('finder:101:7:only') && targets.includes('textedit:100:7'), targets.join(' '));
   const action = results(clear.out).find(row => row.scene === 'electron' && row.cell === 'action');
   assert.deepEqual(action.diagnostics.before, {front: SCENES.electron.bundleId, key: SCENES.electron.bundleId, keyWindow: {owned: true, bounds: rect(700, 60, 600, 500)}, activate: {ok: true, front: null}});
-  assert.ok(action.diagnostics.meta.keys.includes('cua/nativeEngine'));
-  assert.deepEqual(action.diagnostics.meta.route['cua/nativeEngine'], ATTEST.cua);
+  // The click's own route cannot be read from the cell: the service resets its per-call keys at every later call in it
+  // (src/services/engine/service.mjs PER_CALL), so the cell's _meta is the last observation's, and none is kept.
+  assert.deepEqual(Object.keys(action.diagnostics).sort(), ['before', 'click', 'focusAfterClick']);
+});
+
+test('sitting B: a refusal ends only its scene, so another scene\'s real failure in the same lane stays FAIL, named; refusals alone stay NO VERDICT', async () => {
+  const under = rect(80, 60, 1000, 760);
+  const guard = (target, n) => (target.scene === 'chrome' ? guardWith(under) : clearGuard)(target, n);
+  // TextEdit's fixed state never holds: a SceneProblem of the harness's, not the guard's.
+  const wrong = (scene, n, command) => (scene === 'textedit' && command === 'verify' ? {scene, build: BUILD, skyshot: {nodes: []}, timings: null, frame: null, problems: [{code: 'not-the-scene'}]} : null);
+  const both = await runLane({engine: 'cua', device: fakeDevice({guard, verify: wrong})});
+  assert.equal(both.meta.alertGuardStop.at, 'chrome/action');
+  assert.ok(both.meta.problems.some(p => p.startsWith('textedit: the fixed state did not hold')), both.meta.problems.join('; '));
+  assert.ok(!both.meta.problems.some(p => p.startsWith('chrome:')), 'the refusal is kept apart from the problems');
+  assert.deepEqual(both.meta.guardRefused, ['chrome/action']);
+  const [status, reason] = recordCheck(both.meta, 'cua');
+  assert.equal(status, 'FAIL');
+  assert.match(reason, /textedit: the fixed state did not hold/);
+  assert.match(reason, /the alert guard also refused chrome\/action/);
+
+  const alone = await runLane({engine: 'cua', device: fakeDevice({guard})});
+  assert.deepEqual([alone.meta.problems, alone.meta.guardRefused], [[], ['chrome/action']]);
+  assert.equal(recordCheck(alone.meta, 'cua')[0], 'NO VERDICT');
+});
+
+test('#528: a failed action\'s row carries its diagnostics too, taken once the lane answered', async () => {
+  const device = fakeDevice();
+  const lane = fakeLane(device, {engine: 'cua', fail: (kind, scene) => (kind === 'action' && scene === 'electron' ? 'activationFailed' : null)});
+  const run = await runLane({engine: 'cua', device, lane});
+  const action = results(run.out).find(row => row.scene === 'electron' && row.cell === 'action');
+  assert.equal(action.ok, false);
+  assert.deepEqual(action.diagnostics, {before: {front: SCENES.electron.bundleId, key: SCENES.electron.bundleId, keyWindow: {owned: true, bounds: rect(700, 60, 600, 500)}, activate: {ok: true, front: null}},
+    click: null, focusAfterClick: null});
 });
 
 test('native-mac holds per-scene and final restoration behind probe settlement after setup or controller abort', async () => {

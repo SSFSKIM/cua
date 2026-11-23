@@ -3,7 +3,7 @@
 // replayd's alerts. The matrix's own tests (test/native-matrix/alert-guard.test.mjs) cover the rules it shares.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, overlaps, PANEL_SERVICE, placeWindows} from '../../scripts/hosted-sittings/alert-guard.mjs';
+import {captureCause, clearFrame, countGuards, guardCause, guardMark, guardReading, keyCause, overlaps, PANEL_SERVICE, placeWindows, recordRefusal} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import * as matrixGuard from '../../scripts/native-matrix/alert-guard.mjs';
 
 const UNC = 'com.apple.UserNotificationCenter';
@@ -97,4 +97,14 @@ test('the refusal\'s mark and the counts: per cell, by cause', () => {
   assert.deepEqual(guardMark({category: 'alert', detail: 'd'}), {alertGuard: {cause: 'alert', detail: 'd'}, invalid: 'the alert guard refused the cell: nothing of it was sent'});
   assert.deepEqual(countGuards([{cell: 'chrome/action', cause: 'alert'}, {cell: 'chrome/action', cause: 'alert'}, {cell: 'textedit/action', cause: 'unread'}]),
     {'chrome/action': {alert: 2, unread: 0}, 'textedit/action': {alert: 0, unread: 1}});
+});
+
+test('a refusal recorded once, alike in every sitting: the per-cell entry, the counts, the first stop, and the row\'s mark', () => {
+  const record = {};
+  const mark = recordRefusal(record, 'task.close', {category: 'alert', detail: 'd1'}, {sample: 2});
+  assert.deepEqual(mark, guardMark({category: 'alert', detail: 'd1'}));
+  recordRefusal(record, 'quit', {category: 'unread', detail: 'd2'});
+  assert.deepEqual(record.alertGuards, [{cell: 'task.close', sample: 2, cause: 'alert', detail: 'd1'}, {cell: 'quit', cause: 'unread', detail: 'd2'}]);
+  assert.deepEqual(record.alertGuardCounts, {'task.close': {alert: 1, unread: 0}, quit: {alert: 0, unread: 1}});
+  assert.deepEqual(record.alertGuardStop, {cause: 'alert', detail: 'd1', at: 'task.close'}, 'the first refusal is the stop');
 });

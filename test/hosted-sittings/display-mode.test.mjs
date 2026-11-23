@@ -117,6 +117,30 @@ test('a read-back that is not 1920x1080, a switch that failed, or no such mode f
     assert.equal(out.ok, false);
     assert.match(out.detail, /not read/);
   }
+  {
+    // Nor after it: the switch made and read back, but the window list unread at the watch's end.
+    const {calls, deps: d} = deps({lists: [[CUA_ALERT, VENDOR_ALERT], null]});
+    const out = await switchDisplayMode(d);
+    assert.equal(out.ok, false);
+    assert.match(out.detail, /the window list was not read after the switch/);
+    assert.ok(calls.some(Array.isArray), 'the switch was made');
+    assert.equal(out.record.after.alerts, null);
+  }
+});
+
+test('the read-back must be the very mode set: 1920x1080 at 1x, by the id the listing gave it', async () => {
+  const readBackOf = current => ({set: mode(1920, 1080, 10), readBack: {bounds: rect(0, 0, 1920, 1080), current}});
+  for (const [current, why] of [[mode(1920, 1080, 12, 2), /3840x2160 pixels/], [mode(1920, 1080, 14), /mode 14, not the mode set \(10\)/]]) {
+    const {deps: d} = deps({set: readBackOf(current)});
+    const out = await switchDisplayMode(d);
+    assert.equal(out.ok, false, JSON.stringify(current));
+    assert.match(out.detail, why);
+  }
+  // The switch answering another mode than the one chosen from the listing.
+  const {deps: d} = deps({set: {set: mode(1920, 1080, 14), readBack: {bounds: rect(0, 0, 1920, 1080), current: mode(1920, 1080, 14)}}});
+  const out = await switchDisplayMode(d);
+  assert.equal(out.ok, false);
+  assert.match(out.detail, /mode 14, not the mode set \(10\)/);
 });
 
 test('the screen at a sitting\'s end: the alert windows (number, bounds, layer) and the display\'s mode', () => {

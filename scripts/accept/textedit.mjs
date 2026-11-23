@@ -58,6 +58,7 @@ import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
 import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
+import {recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -89,6 +90,14 @@ export const STEP = {
 export const OWN_STEPS = [STEP.preconditions, STEP.open, STEP.bindA, STEP.rebindA, STEP.type, STEP.closeA, STEP.bindB, STEP.closeDoc, STEP.closeB, STEP.teardown, STEP.quitApp,
   STEP.removeDoc, STEP.front, STEP.attest];
 export const SECRET_STEPS = [STEP.secretCreate, STEP.secretType, STEP.secretReadback, STEP.secretCleanup];
+// The checks accept-native draws from this fixture (scripts/accept-native.mjs items 5, 6 and 8): item 5's verdict and
+// one per own step, item 6's UI delivery one per secret step, item 8's approvals observation. Only these are left
+// unproven when the alert guard stops the fixture (scripts/hosted-sittings/checks.mjs `acceptance`).
+export const FIXTURE_VERDICT_CHECK = 'live TextEdit fixture verdict (own document)';
+export const uiDeliveryCheck = step => `UI delivery (optional, combined): ${step.slice('secret: '.length)}`;
+export const APPROVALS_CHECK = 'per-connection app approvals observed by behaviour';
+export const isFixtureCheck = (item, name) => (item === 5 ? name === FIXTURE_VERDICT_CHECK || OWN_STEPS.includes(name)
+  : item === 6 ? SECRET_STEPS.some(step => uiDeliveryCheck(step) === name) : item === 8 ? name === APPROVALS_CHECK : false);
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const sh = (command, args) => { try { return execFileSync(command, args, {encoding: 'utf8'}); } catch (error) { return error.stdout ?? ''; } };
@@ -172,21 +181,38 @@ export function createFixtureDocument(home) {
 // driven. `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored
 // key). `pauseFile` (CUA_PAUSE_FILE, scripts/mini-pause.mjs): every cell waits at its boundary while the mini's CI runner
 // is busy, and never aborts, the owner standing by; each pause is in the observations.
-// The alert guard's answer before a key cell (`guard.check()`): its cause, or null to send; a reading that throws is
-// unread, never clear.
+// The alert guard's answer before a key cell (`guard.check()`, the key-cell premise A and C share:
+// scripts/hosted-sittings/alert-guard.mjs keyCause): its cause, or null to send. A reading that throws refuses nothing
+// of its own, as A's keyGuard: the key guard's front check still stands before the cell.
 export function alertGuardRefusal(guard) {
-  try { return guard.check() ?? null; } catch (error) { return {category: 'unread', detail: `the alert guard could not read the screen (${error.message})`}; }
+  try { return guard.check() ?? null; } catch { return null; }
 }
+
+// One key cell of the fixture: the pause wait first (a paused session's), then the alert guard's fresh reading (a
+// hosted runner's `guard`; none elsewhere), then the frontmost check and the cell with no pause between them
+// (./key-guard.mjs sendToPausedSession). A refusal sends nothing and is recorded in `observations` as every sitting
+// records it (recordRefusal: alertGuards, alertGuardCounts, alertGuardStop). -> {sent: true, result} | {sent: false,
+// refused, mark} | {sent: false, skipped} (the key guard's).
+export async function fixtureKeyCell({session, step, keys, code, stepMs, frontmost, guard = null, observations}) {
+  let refused = null;
+  const out = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs],
+    refuse: guard ? () => (refused = alertGuardRefusal(guard)) : undefined});
+  return refused ? {sent: false, refused, mark: recordRefusal(observations, step, refused)} : out;
+}
+// What accept-native's report carries of the fixture's refusals, for the hosted check (scripts/hosted-sittings/checks.mjs
+// `acceptance`): the stop and the counts, or nothing when the guard refused nothing.
+export const fixtureGuardRecord = observations => (observations?.alertGuardStop
+  ? {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts ?? null} : {});
 
 // `guard` (a GitHub-hosted runner's only, scripts/hosted-sittings/textedit-guard.mjs; rulings 1154, 1160, 1164): the
 // document's TextEdit windows placed clear of replayd's alerts once it is open (observations.placement), and every cell
-// that types or presses a key refused when an alert overlaps them or holds the front or key, or the screen is unread,
-// since cua's engine may click around a keyed typeText: the step BLOCKED with its NO VERDICT cause, nothing sent and no
-// further input (observations.alertGuards, alertGuardStop, which accept-native's report carries to the hosted check).
+// that types or presses a key refused when the alert holds the key (fixtureKeyCell; the front is the key guard's): the
+// step BLOCKED with its NO VERDICT cause and the refusal's mark, nothing sent and no further input
+// (observations.alertGuards, alertGuardCounts, alertGuardStop, which accept-native's report carries to the hosted check).
 export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost, guard = null}) {
   const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
-  const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
+  const record = (name, status, detail, extra = {}) => { steps.push({name, status, detail, ...extra}); return status === 'PASS'; };
   const ledger = approvalLedger({app: TEXTEDIT_BUNDLE});
   const observations = {elicitations: [], connections: ledger.connections(), pauses: [],
     ...(engine ? {engine: {engine: engine.engine, pinnedBy: engine.pinnedBy, expected: null, attested: 0}} : {})};
@@ -254,16 +280,13 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   // ./key-guard.mjs); otherwise nothing is sent, the skip is recorded (observations.keySkipped) and the step fails, and
   // the fixture sends no further input. -> the cell's reply, or null when it was skipped.
   const keyCell = async (session, step, keys, code) => {
-    const refused = guard ? alertGuardRefusal(guard) : null;
-    if (refused) {
-      (observations.alertGuards ??= []).push({step, cause: refused.category, detail: refused.detail});
-      observations.alertGuardStop ??= {cause: refused.category, detail: refused.detail, at: step};
-      guiStopped = `the alert guard refused ${step}: ${refused.detail} (ruling 1154)`;
-      record(step, 'BLOCKED', `NO VERDICT ${refused.category}: ${guiStopped}; nothing was sent and the fixture sent no further input`);
+    // The pause wait (pausing()) comes first, then the alert guard and the check, then the cell with no pause between.
+    const sent = await fixtureKeyCell({session, step, keys, code, stepMs, frontmost, guard, observations});
+    if (sent.refused) {
+      guiStopped = `the alert guard refused ${step}: ${sent.refused.detail} (ruling 1154)`;
+      record(step, 'BLOCKED', `NO VERDICT ${sent.refused.category}: ${guiStopped}; nothing was sent and the fixture sent no further input`, sent.mark);
       return null;
     }
-    // The pause wait (pausing()) comes first, then the check, then the cell with no pause between them.
-    const sent = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs]});
     if (sent.sent) return sent.result;
     (observations.keySkipped ??= []).push(sent.skipped);
     guiStopped = `${sent.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${sent.skipped.frontmost}, not TextEdit (#162)`;

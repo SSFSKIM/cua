@@ -93,8 +93,12 @@ export async function sendIfFrontmost({target, keys, frontmost, send, userWindow
 
 // For a session wrapped by scripts/mini-pause.mjs pausing(): the pause wait first, then the frontmost check, then the
 // cell through `dispatch`, which does not wait again, so no pause can fall between the check and the key. `args` are
-// the js call's (code, timeout). A session that is not paused (no pauseWait) is checked and sent as it is.
-export async function sendToPausedSession({session, target, keys, frontmost, args}) {
+// the js call's (code, timeout). A session that is not paused (no pauseWait) is checked and sent as it is. `refuse()`,
+// when given, is read right after the pause wait, before the frontmost check (an alert guard's fresh reading): a truthy
+// answer sends nothing and checks nothing more. -> sendIfFrontmost's answer, or {sent: false, refused}.
+export async function sendToPausedSession({session, target, keys, frontmost, args, refuse}) {
   await session.pauseWait?.();
+  const refused = refuse?.();
+  if (refused) return {sent: false, refused};
   return sendIfFrontmost({target, keys, frontmost, send: () => (session.dispatch ?? session.js.bind(session))(...args)});
 }

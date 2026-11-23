@@ -40,6 +40,14 @@ function fakeProduct(fault = {}) {
       if (fault.alertAfterJs === jsCount && !alertShown) { alertShown = true; return {front: ALERT, keyOwnerPid: 900, appPid: 500, alertPids: [900]}; }
       return {front: TEXTEDIT, keyOwnerPid: 500, appPid: 500, alertPids: []};
     },
+    // The shared guard's reading of TextEdit's windows before a capture (scripts/hosted-sittings/textedit-guard.mjs
+    // read): clear of the alert, unless a fault puts the document under it or leaves the screen unread.
+    capture: () => {
+      log.push(['capture']);
+      if (fault.captureUnread) return {bounds: null};
+      const doc = fault.captureUnder ? {x: 79, y: 31, width: 627, height: 677} : {x: 700, y: 31, width: 627, height: 677};
+      return {bounds: {alerts: [{number: 90, layer: 8, bounds: {x: 382, y: 118, width: 260, height: 348}}], windows: [{scene: 'textedit', number: 7, recorded: false, bounds: doc}]}};
+    },
   };
   const saves = [];
   const grant = (grants, deps) => {
@@ -131,7 +139,8 @@ test('the stages: none, Accessibility, Screen Recording added, then Input Monito
     ['screenRecording', 'accessibility+screenRecording', 'product'], ['full', 'accessibility+screenRecording+inputMonitoring+postEvent', 'engine stop']]);
   assert.deepEqual(Object.keys(EXPECTED), STAGES.map(s => s.id), 'every stage has its expected behaviour');
   const {product, record} = await run();
-  const calls = ['activate', 'js accessibility', 'cli engine status', 'activate', 'js screenRecording', 'cli engine status', 'cli doctor'];
+  // The capture cell reads the shared guard's capture rule after its activation, before it is sent.
+  const calls = ['activate', 'js accessibility', 'cli engine status', 'activate', 'capture', 'js screenRecording', 'cli engine status', 'cli doctor'];
   assert.deepEqual(product.log.map(e => e.join(' ')), [
     'revoke accessibility+screenRecording+inputMonitoring+postEvent', 'cli engine stop', 'connect', ...calls,
     'close', 'grant accessibility', 'cli engine stop', 'connect', ...calls,
@@ -238,6 +247,29 @@ test('an otherwise successful capture with the capture alert frontmost is NO VER
   const [status, reason] = judgeOnboarding(record);
   assert.equal(status, 'NO VERDICT');
   assert.match(reason, /screenRecording: screenRecording call: alert: com\.apple\.UserNotificationCenter front or key/);
+});
+
+// The shared alert guard's capture rule (scripts/hosted-sittings/alert-guard.mjs captureCause): a window capture of a
+// document under an alert may come back as the display's crop showing it, so the capture is not sent and the cell is
+// NO VERDICT alert; an unread screen is NO VERDICT unread. The bind-only call is no capture and is sent as before.
+test('the capture cell under the shared guard: TextEdit\'s window under an alert, or the screen unread, sends no capture; NO VERDICT, never a pass', async () => {
+  const {product, record} = await run({captureUnder: true});
+  const capture = record.stages[3].calls[1];
+  assert.deepEqual([capture.id, capture.sent, capture.skipped], ['screenRecording', false, 'alert']);
+  assert.match(capture.alertGuard.detail, /alert window 90 \(382,118 260x348\) overlaps the textedit window 7/);
+  assert.equal(record.stages[3].calls[0].sent, true, 'the bind-only call is no capture');
+  assert.equal(product.log.filter(e => e[0] === 'js' && e[1] === 'screenRecording').length, 0, 'no capture was ever sent');
+  assert.deepEqual(record.alertGuardStop, {cause: 'alert', detail: capture.alertGuard.detail, at: 'none/screenRecording'});
+  assert.deepEqual(record.alertGuardCounts['full/screenRecording'], {alert: 1, unread: 0});
+  const [status, reason] = judgeOnboarding(record);
+  assert.equal(status, 'NO VERDICT');
+  assert.match(reason, /screenRecording call: alert: the alert guard refused the capture/);
+  const unread = (await run({captureUnread: true})).record;
+  assert.equal(unread.stages[3].calls[1].skipped, 'unread');
+  assert.equal(judgeOnboarding(unread)[0], 'NO VERDICT');
+  // The capture read fresh before each capture cell, after the activation; never before the bind-only one.
+  const clear = await run();
+  assert.equal(clear.product.log.filter(e => e[0] === 'capture').length, STAGES.length);
 });
 
 test('the record is saved before cleanup, and a cleanup that never ends is bounded and recorded', async () => {

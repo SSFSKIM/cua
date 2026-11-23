@@ -69,3 +69,49 @@ display: `--plan t17-fix3 --trials 1`, one drag in each of the 14 cells.
 - **Each handle's two copies of the settle agree.** Every row is labelled electron.
 - **The verdict's only settle fail is the missing `rest_ms`**, 14 of 14. This build predates the fix wave that adds it,
   so the check fails it by design.
+
+## Fix wave 3: the named lane's real origin, and the 0.4.4 PR review's harness fixes (`wave3/`, `pilot/w3-pilot-*`)
+
+**The earlier pilots' cause was the harness, not Electron.** `xdotool getwindowgeometry` counts Openbox's decoration
+offset twice: the GTK 4 client at (961, 262) read as (962, 284). The named path was given from that origin, and the
+engine translates from the real one, so every press for (530, 128) went to (529, 106). That point is above the plain
+source, whose top edge is at y 110. The page saw the press, and nothing started a drag. The "inactive window" reading
+above is withdrawn.
+
+The named lane now takes its origin from xwininfo's absolute upper-left corner. Each drop records:
+- `named.aim.root`: the press's root point;
+- `named.aim.park`: the real pointer parked there, with the window chain under it;
+- `named.aim.source`: the plain source's root rectangle, from the page's tree.
+
+**The pilot** ran on x64, on a private display, with 5 drops on each pinned home (`wave3/pilot-table.md`). On
+`home-x64-043` (0.4.3) and on `home-x64-044` (0.4.4, eff8befc…, `cua-engine 0.4.4 (23f342178d94)`) alike:
+- every press was at (530, 128), inside the plain source at (505, 110), 50x36;
+- the pointer was parked there over the Electron window (the chain is its frame, then the window itself);
+- the route was foreground, paced as GTK 4 with rest 0;
+- the page's press counter moved, the source started, and the hold took;
+- `settle_count` read 1 with its provenance;
+- all 5 drops are exercised and landed, with 0 false ok, 0 stale and 0 honest unconfirmed.
+
+The settle's `rest_ms` is absent on 0.4.3, which predates it, and 30 on all 5 drops on 0.4.4.
+
+**Constructed rows** (`wave3/constructed-rows.txt`, `red-wave3.mjs`): each of the six findings judged by 4e0ba0a9's
+code and by this branch's. Every one passed at 4e0ba0a9 and fails now.
+
+**Offline rejudge** (`wave3/rejudge-vs-4e0ba0a9.jsonl`, `rejudge-vs-main.jsonl`, `rejudge-summary.txt`): every stored
+drop-signals run under m4/ and m5/ plus H9's (`engine-044/reach/`), 216 runs and 153 judged.
+- Against 4e0ba0a9's judge, no fail list moved (0 runs, 0 rows).
+- H9's six t17-fix3 runs each hold 560 of 560 settled at 30 ms with every lane and cell observed. They stored a pass
+  and still pass; H9's L4d runs keep their stored verdicts.
+- Against main's judge, only this task's own development check (`pilot/fix3-count-044`) moves.
+
+**The offset's reach** (`wave3/offset-reach.jsonl`, `offset-reach.mjs`; ruling 1143 (a)): the counted cells whose target
+came from xdotool's geometry are t17-fix3's off-window ends.
+- The cells: `xterm` (from `frontPoint`), and `other` and `slow` (from `clientOrigin`), on the `cua:desktop` and
+  `cua:handle` lanes, in H8's H1 and in H9's H1, H2 and L4a, on both arches.
+- At an offset of (1, 22) the release falls inside its window with room to spare: the xterm's at (101, 97) of 200x150,
+  the other window's at (151, 172) of 340x360, the sink's at (81, 97) of 160x150.
+- The row's own read of the pointer (`end_park`) verified the window under every end: 30 of 30 in each lane and cell of
+  every run.
+- No cell's outcome could have moved, and none is rerun.
+- Task 132's cells and #512's (t14-floor `left`) take their coordinates from the engine's window geometry or the
+  window-relative path, never from xdotool.

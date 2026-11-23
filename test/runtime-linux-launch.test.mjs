@@ -6,11 +6,11 @@
 import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, realpathSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, realpathSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {buildLaunch, createLaunchDirs, removeLaunchDirs, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE, ENGINE_SERVICE_DIR, LINUX_ENGINE_SERVICE,
   REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, BIN_DIR, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {parsePin, resolveRuntime, runtimeFor, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {CUA_ENTRY, parsePin, resolveRuntime, runtimeFor, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {scratch, fixturePin, forgeActiveRuntime} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
@@ -208,6 +208,7 @@ test('buildLaunch takes the vendor engine from the bound selection and never loo
 // ---- the Node (#171 M6a; the pre-flight's §3.3, F2, F2a) ----
 
 const LINUX_X64 = {platform: 'linux', arch: 'x64'};
+const INSTALLER = `node ${CUA_ENTRY} install`;
 // ownHostNode on a Linux host with a counted version probe: every path it is asked to run.
 function probed() {
   const ran = [];
@@ -232,6 +233,11 @@ test('the Linux Node: the managed one cua installed, at its pinned version or be
   writeFileSync(behind, '#!/bin/sh\necho v24.0.1\n');
   assert.throws(() => linuxNode(home, ambient, versionOf), error => error.code === 'runtime_not_installed' && error.message.includes('is not the binary its install record names'),
     'bytes that are not its record\'s');
+  // the recorded bytes, but no longer executable: it would fail at spawn, so the open refuses it, still without a probe
+  const unrunnable = fakeManagedNode(home, LINUX_X64);
+  chmodSync(unrunnable, 0o644);
+  if (process.getuid?.() !== 0)
+    assert.throws(() => linuxNode(home, ambient, versionOf), error => error.code === 'runtime_not_installed' && /is not executable/.test(error.message));
   assert.deepEqual(ran, [], 'nothing is run: the managed Node\'s version is its record\'s, its bytes checked');
 });
 
@@ -252,11 +258,13 @@ test('CUA_NODE on Linux: a good Node is used; one under the vendor\'s tree, by i
   symlinkSync(join(vendorNode, '..'), dirLink);
   for (const path of [vendorNode, link, join(dirLink, 'node'), join(home, 'x', '..', 'runtimes', 'r', 'node')]) {
     ran.length = 0;
-    assert.throws(() => linuxNode(home, {CUA_NODE: path}, versionOf), error => error.code === 'invalid_setting' && error.message.includes(path) && /vendor's tree/.test(error.message), path);
+    assert.throws(() => linuxNode(home, {CUA_NODE: path}, versionOf), error => error.code === 'invalid_setting' && error.message.includes(path) && /vendor's tree/.test(error.message)
+      && error.message.includes(INSTALLER), path);
     assert.deepEqual(ran, [], `${path}: no probe run`);
   }
-  assert.throws(() => linuxNode(home, {CUA_NODE: join(home, 'absent')}, versionOf), {code: 'repl_host_node'});
-  assert.throws(() => linuxNode(home, {CUA_NODE: good}, () => 'v22.12.0'), error => error.code === 'repl_host_node' && error.message.includes('v22.12.0'));
+  // each refusal gives the override's own fix, then the installer that restores the managed Node
+  assert.throws(() => linuxNode(home, {CUA_NODE: join(home, 'absent')}, versionOf), error => error.code === 'repl_host_node' && error.message.includes(INSTALLER));
+  assert.throws(() => linuxNode(home, {CUA_NODE: good}, () => 'v22.12.0'), error => error.code === 'repl_host_node' && error.message.includes('v22.12.0') && error.message.includes(INSTALLER));
   assert.throws(() => linuxNode(home, {CUA_NODE: 'node'}, versionOf), {code: 'invalid_setting'});
 });
 

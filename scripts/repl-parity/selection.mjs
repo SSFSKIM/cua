@@ -30,12 +30,14 @@ export function expectedSelection(row){
  // the profile listing and doctor resolve the selection itself (invalid_repl_host). Both carry the one sentence.
  if(!['unset','cua','vendor'].includes(override))return {error:lane==='profiles'?'invalid_repl_host':'invalid_setting',doctorError:'invalid_repl_host',sentence:INVALID_REPL_HOST};
  if(macosComputer)return engineTable(row,availableNode);
- // Linux has no vendor host (#115 M3): an explicit one is refused and a missing Node refuses, never falling back.
+ // Linux has no vendor host (#115 M3): an explicit one is refused and a missing Node refuses, never falling back. Its
+ // Node (#171 M6a, F2a) is the managed one or a named override (`cuaNode`: CUA_NODE names a Node 24 or later); a Node 24
+ // running cua or on PATH counts for nothing, and without either the runtime is not installed.
  if(platform==='linux'){
   if(override==='vendor')return {error:'repl_host_refused'};
   const engine=surfaces.includes('computer')?linuxEngineTable(row):{status:'pass'};
   if(engine.error)return engine;
-  if(!availableNode)return {error:'repl_host_node'};
+  if(row.managedNode!==true&&row.cuaNode!==true)return {error:'runtime_not_installed'};
   return {host:'cua',reason:override==='cua'?'explicit':'linux',status:engine.status};
  }
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};

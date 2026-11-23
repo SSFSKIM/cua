@@ -380,22 +380,23 @@ function fakeNode(dir, name, version) {
 }
 const thisHost = {platform: process.platform, arch: process.arch};
 
-test('the own host\'s Node: CUA_NODE, then the cua-installed Node, then the node running cua, then node on PATH', async t => {
+// The macOS lookup, on any host (#171 M6a: Linux has two candidates only; test/runtime-linux-launch.test.mjs).
+test('the own host\'s Node on macOS: CUA_NODE, then the cua-installed Node, then the node running cua, then node on PATH', async t => {
   const ctx = setup(t, {host: thisHost});
   const dir = realpathSync(ctx.dir);
   const v26 = fakeNode(dir, 'a/node', '26.0.0'), v22 = fakeNode(dir, 'c/node', '22.23.2'), path22 = fakeNode(dir, 'p/node', '22.23.2');
   const ambient = {PATH: dirname(path22)};
-  const none = outcome(() => ownHostNode({ambient, home: ctx.home, execPath: v22}));
+  const none = outcome(() => ownHostNode({platform: 'darwin', ambient, home: ctx.home, execPath: v22}));
   assert.equal(none.code, 'repl_host_node');
   assert.match(none.message, /the cua-installed Node \(not installed\)/);
   assert.match(none.message, /run `cua install`/, 'the remedy names cua install first');
   await install(ctx, {verifySignature: acceptSignature});
   const managed = join(nodeDir(ctx.home), VERSION, 'bin/node');
-  assert.equal(ownHostNode({ambient: {...ambient, CUA_NODE: v26}, home: ctx.home, execPath: v22}), v26, 'an explicit CUA_NODE comes first');
-  assert.equal(ownHostNode({ambient: {...ambient, CUA_NODE: v22}, home: ctx.home, execPath: v26}), managed, 'then the cua-installed Node, before the node running cua');
-  assert.equal(ownHostNode({ambient, home: ctx.home, execPath: v22}), managed);
+  assert.equal(ownHostNode({platform: 'darwin', ambient: {...ambient, CUA_NODE: v26}, home: ctx.home, execPath: v22}), v26, 'an explicit CUA_NODE comes first');
+  assert.equal(ownHostNode({platform: 'darwin', ambient: {...ambient, CUA_NODE: v22}, home: ctx.home, execPath: v26}), managed, 'then the cua-installed Node, before the node running cua');
+  assert.equal(ownHostNode({platform: 'darwin', ambient, home: ctx.home, execPath: v22}), managed);
   // A caller that names no home (a test harness) has no cua-installed Node to try.
-  const homeless = outcome(() => ownHostNode({ambient, execPath: v22}));
+  const homeless = outcome(() => ownHostNode({platform: 'darwin', ambient, execPath: v22}));
   assert.equal(homeless.code, 'repl_host_node');
   assert.doesNotMatch(homeless.message, /cua-installed/);
 });

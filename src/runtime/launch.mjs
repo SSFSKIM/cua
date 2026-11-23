@@ -191,7 +191,8 @@ import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {defaultHome, homeLayout, realHome} from './layout.mjs';
-import {executableFile, installedLinuxEngine, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
+import {spawnSync} from 'node:child_process';
+import {ENGINE_RECORD, executableFile, installedLinuxEngine, linuxEnginePath, parseEngineVersion, verifiedLinuxEngineVersion} from './linux-engine.mjs';
 import {MIN_ENGINE_VERSION, isOlder} from '../services/engine/linux/client.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
@@ -199,7 +200,7 @@ import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs'
 import {assertTrustedServicesContained} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
-import {NODE_FLOOR, managedNode, nodeVersion} from './managed-node.mjs';
+import {NODE_FLOOR, NODE_RECORD_FILE, managedNode, nodeLayout, nodeVersion, readNodePointer} from './managed-node.mjs';
 import {ownInstaller, vendorLinuxRuntime} from './manifest.mjs';
 import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
@@ -509,15 +510,19 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 //   warns. Otherwise the open is refused, naming this cua's installer and --engine: engine_not_installed (none),
 //   engine_outdated (older) or engine_unrecorded (no record of the file says what it is). M5's fallback to the vendor's
 //   engine is gone (F3). CUA_LINUX_ENGINE_BIN in `env`, read only for cua's engine, names an engine to run in place of
-//   the installed one (an absolute path to an executable file, else refused: invalid_setting, engine_not_installed); the
-//   service checks its version at each start, as it does every engine's.
+//   the installed one (an absolute path to an executable file, else refused: invalid_setting, engine_not_installed). Its
+//   version is read once at the open, by running the approved path's --version, and held to the same minimum
+//   (engine_outdated, engine_unrecorded; ruling 1110); the service checks it again at each start, as it does every
+//   engine's, which holds for a replacement at the path. Each override refusal gives the override's own fix, then the
+//   installer that restores the installed engine.
 //   The vendor's engine carries `vendor` {release, bin, service, moduleDir}: its tree, found once here by `vendor`
 //   (manifest.mjs vendorLinuxRuntime, for `home` and the host's `arch`), so that every launch of the connection takes it
 //   from the selection and none looks for it again. Its tree absent or damaged: engine_not_installed, naming the
 //   installer.
 //   No lookup of either engine is led into the vendor's tree (<home>/runtimes/): a CUA_LINUX_ENGINE_BIN that is, or
-//   leads, under it is invalid_setting, and an installed engine whose path leads there engine_not_installed, each
-//   refused before anything there is stat-ed, read or run (vendorTreeLead).
+//   leads, under it is invalid_setting, and an installed engine whose path, or whose install record's, leads there
+//   engine_not_installed, each refused before anything there is stat-ed, read or run (outsideVendorTree); what follows
+//   uses only the path the guard resolved.
 export function nativeEngineFor({env, platform = 'darwin', arch = process.arch, home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, vendor}) {
   if (platform === 'linux') return linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor});
   installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
@@ -543,20 +548,31 @@ function linuxEngineFor({env, arch, home, defaultEngine, config, installed, inst
   const cuaHome = () => realHome(home ?? defaultHome(env, {platform: 'linux'}));
   if (setting.engine === 'vendor') return {engine: 'vendor', reason: setting.reason, status: 'pass', vendor: vendorEngineTree(setting, vendor, cuaHome(), arch)};
   const source = engineSource(setting.reason, 'cua');
+  const installer = ownInstaller();
   const override = env.CUA_LINUX_ENGINE_BIN;
   if (override !== undefined && override !== '') {
     if (!isAbsolute(override)) fail('invalid_setting', 'CUA_LINUX_ENGINE_BIN must be an absolute path');
-    const lead = vendorTreeLead(override, cuaHome());
-    if (lead) fail('invalid_setting', `CUA_LINUX_ENGINE_BIN names ${override}, which ${lead === override ? 'lies' : `leads to ${lead}`} under the vendor's tree: no engine of cua's runs from the vendor's release; name an engine outside ${homeLayout(cuaHome()).runtimes}, or unset CUA_LINUX_ENGINE_BIN for the installed one`);
-    if (!executableFile(override))
-      fail('engine_not_installed', `${source} selects cua's own engine, and CUA_LINUX_ENGINE_BIN names ${override}, which is not an executable file: build it (cargo build --release in native/linux-engine) or unset CUA_LINUX_ENGINE_BIN for the installed engine`);
-    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: canonicalEngine(override, 'override')};
+    // The override's own fix first, then the installer that restores the engine it stands in for (§3.4).
+    const restore = `, or unset CUA_LINUX_ENGINE_BIN for the installed engine, which \`${installer.command} --engine\` places`;
+    const refuse = (code, why, fix) => fail(code, `${code === 'invalid_setting' ? '' : `${source} selects cua's own engine, and `}CUA_LINUX_ENGINE_BIN names ${override}, which ${why}: ${fix}${restore}`, {hint: installer.hint});
+    const resolved = outsideVendorTree(override, cuaHome());
+    if (resolved.lead) refuse('invalid_setting', `${intoTree(override, resolved.lead)}, and no engine of cua's runs from the vendor's release`, `name an engine outside ${homeLayout(cuaHome()).runtimes}`);
+    const build = 'build it (cargo build --release in native/linux-engine)';
+    if (resolved.missing || !executableFile(resolved.real)) refuse('engine_not_installed', 'is not an executable file', build);
+    // Ruling 1110: below the minimum is refused at the open, the override's too; its version is read once, here, from
+    // the approved path. The service still checks whatever it starts (a replacement at the path).
+    const version = overrideVersion(resolved.real);
+    if (version === null) refuse('engine_unrecorded', 'answers --version with no version this cua recognizes', build);
+    if (isOlder(version, MIN_ENGINE_VERSION)) refuse('engine_outdated', `is ${version}, older than ${MIN_ENGINE_VERSION}, which this cua needs`, `${build} from this checkout`);
+    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: resolved.real, lookup: override, source: 'override'}};
   }
   const lookup = linuxEnginePath(cuaHome());
-  const installer = ownInstaller();
   const refuse = (code, why) => fail(code, `${source} selects cua's own engine, and ${why}: install this cua's engine with \`${installer.command} --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`, {hint: installer.hint});
-  const lead = vendorTreeLead(lookup, cuaHome());
-  if (lead) refuse('engine_not_installed', `the engine installed in this cua home (${lookup}) leads to ${lead}, under the vendor's tree, which is no engine of cua's`);
+  // Every path the installed engine's lookup reads, the engine and its install record, kept out of the tree first.
+  for (const path of [lookup, join(dirname(lookup), ENGINE_RECORD)]) {
+    const {lead} = outsideVendorTree(path, cuaHome());
+    if (lead) refuse('engine_not_installed', `${path === lookup ? 'the engine' : 'the install record of the engine'} installed in this cua home (${path}) ${intoTree(path, lead)}, which is no part of cua's`);
+  }
   const found = (installed ?? (() => installedLinuxEngine({home: cuaHome()})))();
   if (!found) refuse('engine_not_installed', `none is installed in this cua home (${lookup})`);
   const version = (installedVersion ?? (() => verifiedLinuxEngineVersion({home: cuaHome()})))();
@@ -579,38 +595,45 @@ function vendorEngineTree(setting, vendor, home, arch) {
   return {release: tree.release, bin: tree.paths.skyLinuxBin, service: tree.paths.skyVendorService, moduleDir: tree.paths.moduleDir};
 }
 
-// Where the absolute `path` leads into the vendor's tree, <home>/runtimes/ of the cua home `home`, or null when it never
-// does: by its spelling, or at any symbolic link on the way, each followed one component at a time, so the answer is
-// known before anything under runtimes/ is stat-ed, read or run (#171 M6a; the pre-flight's §3.3, §3.5). The Node
-// lookup and the engine lookup ask it before they touch a path. A component that does not exist ends the walk: there is
-// nothing more to follow, and the caller's own check refuses the path.
-export function vendorTreeLead(path, home) {
-  const roots = [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
+// The absolute `path` resolved as the kernel resolves it, kept out of the vendor's tree, <home>/runtimes/ of the cua home
+// `home` (#171 M6a; the pre-flight's §3.3, §3.5) -> {real} its real path, every component of which exists; {lead} where
+// it enters the tree; or {missing} the first component that does not exist (or a loop of links). The walk takes the
+// path's own components as spelled, `..` included, one at a time: a `..` climbs from the real directory reached so far,
+// and a link's target, absolute or relative, is walked the same way in its place. It refuses a component that lies in
+// the tree before it lstat-s or reads it, so nothing there is touched to find out. Every caller then uses `real`, and
+// only `real`, for whatever it does next (its metadata, a version probe, the launch): the guard and the use resolve
+// the same path. A spelling that lies in the tree as written is refused too. `home` undefined guards nothing (there is
+// no tree to keep out of) but still resolves.
+export function outsideVendorTree(path, home) {
+  const roots = home === undefined ? [] : [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
   const inTree = candidate => roots.some(root => candidate === root || candidate.startsWith(`${root}/`));
-  if (inTree(resolve(path))) return resolve(path);
-  let pending = resolve(path).split('/').filter(Boolean);
+  if (inTree(resolve(path))) return {lead: resolve(path)};
+  let pending = path.split('/').filter(part => part !== '' && part !== '.');
   let current = '/';
   for (let links = 0; pending.length;) {
-    const next = join(current, pending.shift());
-    if (inTree(next)) return join(next, ...pending);
+    const part = pending.shift();
+    if (part === '..') { current = dirname(current); continue; }
+    const next = join(current, part);
+    if (inTree(next)) return {lead: next};
     let target;
-    try { target = lstatSync(next).isSymbolicLink() ? readlinkSync(next) : null; } catch { return null; }
+    try { target = lstatSync(next).isSymbolicLink() ? readlinkSync(next) : null; } catch { return {missing: next}; }
     if (target === null) { current = next; continue; }
-    if (++links > 40) return null;
-    pending = [...target.split('/').filter(Boolean), ...pending];
+    if (++links > 40) return {missing: next};
+    pending = [...target.split('/').filter(piece => piece !== '' && piece !== '.'), ...pending];
     if (isAbsolute(target)) current = '/';
   }
-  return null;
+  return {real: current};
 }
+// Where `path` enters the vendor's tree, or null (outsideVendorTree's `lead`).
+export const vendorTreeLead = (path, home) => outsideVendorTree(path, home).lead ?? null;
+// The sentence half that says where a path that entered the tree went.
+const intoTree = (path, lead) => (lead === resolve(path) ? 'lies under the vendor\'s tree' : `leads to ${lead}, under the vendor's tree`);
 
-// The engine as a launch names it -> {path, lookup, source}: `path` its canonical path, resolved once at selection
-// (installedLinuxEngine resolves the installed one), so every launch of the connection runs the file the scoped
-// preflight checked, never a link a cell could re-point; `lookup` the path it was found by, whose links the preflight
-// checks too (src/runtime/sandbox.mjs).
-function canonicalEngine(lookup, source) {
-  let path;
-  try { path = realpathSync(lookup); } catch (error) { fail('engine_not_installed', `cua's engine at ${lookup} cannot be resolved (${error.code ?? error.message})`); }
-  return {path, lookup, source};
+// The version an engine override at its approved real path `path` answers to --version, or null. It is run with a fixed
+// PATH and nothing else of the caller's environment, as the service runs it, and bounded in time.
+function overrideVersion(path) {
+  const run = spawnSync(path, ['--version'], {encoding: 'utf8', timeout: 5000, env: {PATH: FIXED_PATH}, stdio: ['ignore', 'pipe', 'ignore']});
+  return run.status === 0 ? parseEngineVersion(run.stdout.split('\n')[0])?.version ?? null : null;
 }
 
 // The device mode cua's engine runs in, on Linux (#171, Design "Device mode") and on macOS (#282) -> {mode: 'shared' |
@@ -688,28 +711,54 @@ export function ownHostNode({ambient, home, platform = process.platform, arch = 
 }
 
 // The Linux host's Node: two candidates, each asked for only when its turn comes. CUA_NODE, the named override: never a
-// path that is, or leads, under the vendor's tree (invalid_setting, before anything there is touched, vendorTreeLead),
-// and else run once for its --version, refused below NODE_FLOOR or absent (repl_host_node). Else the managed Node `cua
-// install` placed in `home` for this `arch`, offered only while its bytes are the ones its install record names
-// (managedNode), at or above NODE_FLOOR by that record: at the pinned version or behind it (doctor warns), and not run
-// to find out. Neither: the runtime is not installed (runtime_not_installed), naming this cua's own installer, which
-// places it. The node running cua and `node` on PATH are no candidates here: nobody asked for them (F2a).
+// path that is, or leads, under the vendor's tree (invalid_setting, before anything there is touched, outsideVendorTree),
+// and else its resolved path, and only that, run once for its --version and returned, refused below NODE_FLOOR or absent
+// (repl_host_node). Else the managed Node `cua install` placed in `home` for this `arch`: every path its lookup reads
+// (the pointer, the version's install record, the binary) kept out of the tree before it is read, offered only while
+// its bytes are the ones its install record names (managedNode) and it can be executed, at or above NODE_FLOOR by that
+// record: at the pinned version or behind it (doctor warns), and not run to find out. Neither: the runtime is not
+// installed (runtime_not_installed), naming this cua's own installer, which places it. Each override refusal gives the
+// override's own fix, then that installer. The node running cua and `node` on PATH are no candidates here: nobody asked
+// for them (F2a).
 function linuxHostNode({ambient, home, arch, versionOf}) {
+  const real = home === undefined ? undefined : realHome(home);
+  const installer = ownInstaller();
   const explicit = cuaNodeFrom(ambient);
   if (explicit) {
-    const lead = home === undefined ? null : vendorTreeLead(explicit, realHome(home));
-    if (lead) fail('invalid_setting', `CUA_NODE names ${explicit}, which ${lead === explicit ? 'lies' : `leads to ${lead}`} under the vendor's tree: cua's own host never runs the vendor's Node; name a Node ${NODE_FLOOR} or later outside ${homeLayout(realHome(home)).runtimes}, or unset CUA_NODE for the Node cua installed`);
-    const refuse = why => { throw Object.assign(new CuaError('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and CUA_NODE names ${explicit}, which ${why}: set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later, or unset it for the Node cua installed`), {tried: [`CUA_NODE ${explicit} (${why})`]}); };
-    let real;
-    try { real = realpathSync(explicit); } catch { refuse('is not found'); }
-    const version = versionOf(real);
+    // The override's own fix first, then the installer that restores the managed Node it stands in for (§3.4).
+    const restore = `, or unset CUA_NODE for the Node \`${installer.command}\` installs`;
+    const resolved = outsideVendorTree(explicit, real);
+    if (resolved.lead) fail('invalid_setting', `CUA_NODE names ${explicit}, which ${intoTree(explicit, resolved.lead)}, and cua's own host never runs the vendor's Node: name a Node ${NODE_FLOOR} or later outside ${homeLayout(real).runtimes}${restore}`, {hint: installer.hint});
+    const refuse = why => { throw Object.assign(new CuaError('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and CUA_NODE names ${explicit}, which ${why}: set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later${restore}`, {hint: installer.hint}), {tried: [`CUA_NODE ${explicit} (${why})`]}); };
+    if (resolved.missing) refuse('is not found');
+    // the approved path, and only it, is probed and run
+    const version = versionOf(resolved.real);
     if (!version || Number(version.slice(1).split('.')[0]) < NODE_FLOOR) refuse(`answers ${version ?? 'no readable version'}`);
-    return real;
+    return resolved.real;
   }
-  const managed = home === undefined ? {missing: 'no cua home was named'} : managedNode(home, {host: {platform: 'linux', arch}});
-  if (managed.path && Number(managed.version.split('.')[0]) >= NODE_FLOOR) return realpathSync(managed.path);
-  const why = managed.missing ?? `its version ${managed.version} is below ${NODE_FLOOR}`;
-  fail('runtime_not_installed', `cua's Linux runtime is not installed${home === undefined ? '' : ` in ${realHome(home)}`}: its Node is not installed (${why})`, {hint: `${ownInstaller().hint}; or set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later`});
+  const missing = why => fail('runtime_not_installed', `cua's Linux runtime is not installed${real === undefined ? '' : ` in ${real}`}: its Node is not installed (${why})`, {hint: `${installer.hint}; or set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later`});
+  if (real === undefined) missing('no cua home was named');
+  // Every path the managed lookup reads, kept out of the tree before it is read: the pointer first, then, for the version
+  // it names, the install record and the binary (managedNode checks the directories on the way are no links).
+  const guard = path => {
+    const resolved = outsideVendorTree(path, real);
+    if (resolved.lead) missing(`${path} ${intoTree(path, resolved.lead)}, which is no part of cua's`);
+    return resolved;
+  };
+  const layout = nodeLayout(real);
+  guard(layout.pointer);
+  let pinned;
+  try { pinned = readNodePointer(real); } catch (error) { missing(error.message); }
+  if (!pinned) missing('not installed');
+  for (const path of [join(layout.version(pinned), NODE_RECORD_FILE), join(layout.version(pinned), 'bin', 'node')]) guard(path);
+  const managed = managedNode(real, {host: {platform: 'linux', arch}});
+  if (!managed.path) missing(managed.missing);
+  if (Number(managed.version.split('.')[0]) < NODE_FLOOR) missing(`its version ${managed.version} is below ${NODE_FLOOR}`);
+  const binary = guard(managed.path);
+  if (binary.missing) missing(`${managed.path} is not found`);
+  // its recorded bytes, and runnable: one that lost its execute bit would fail at spawn (no version probe)
+  try { accessSync(binary.real, constants.X_OK); } catch { missing(`${managed.path} is not executable`); }
+  return binary.real;
 }
 
 // The `node` a shell would run from `PATH`: the first executable file of that name in an absolute entry.

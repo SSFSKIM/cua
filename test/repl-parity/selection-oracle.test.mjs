@@ -24,7 +24,10 @@ import {doctorReplHost} from './fixtures/doctor-repl-host.mjs';
 test('independent M5 table preserves explicit refusals and Node fallback, whatever the registration',()=>{
  const base={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:true};
  assert.deepEqual(expectedSelection(base),{host:'cua',reason:'browser_only',status:'pass'});
- assert.deepEqual(expectedSelection({...base,platform:'linux'}),{host:'cua',reason:'linux',status:'pass'});
+ // On Linux the Node is the managed one or a named override (CUA_NODE), never the node running cua (#171 M6a, F2a)
+ assert.deepEqual(expectedSelection({...base,platform:'linux',managedNode:true}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(expectedSelection({...base,platform:'linux'}),{error:'runtime_not_installed'},'a Node 24 running cua is no candidate on Linux');
+ assert.deepEqual(expectedSelection({...base,platform:'linux',cuaNode:true}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(expectedSelection({...base,node24:false}),{host:'vendor',reason:'own_host_node_unavailable',status:'warn'});
  assert.equal(expectedSelection({...base,override:'cua',node24:false}).error,'repl_host_node');
  for(const registration of ['none','chatgpt','cua-then-chatgpt'])assert.deepEqual(expectedSelection({...base,registration}),expectedSelection(base),registration);
@@ -35,7 +38,7 @@ test('independent M5 table preserves explicit refusals and Node fallback, whatev
  assert.equal(expectedSelection({...base,registration:'chatgpt',surfaces:['computer','browser'],override:'cua'}).error,'repl_host_refused');
  assert.equal(expectedSelection({...base,override:'invalid'}).error,'invalid_setting');
  assert.equal(expectedSelection({...base,override:'invalid',lane:'profiles'}).error,'invalid_repl_host');
- assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none',installed:true}).reason,'linux');
+ assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none',installed:true,managedNode:true}).reason,'linux');
 });
 test('selection matrix covers both launch consumers, registration orderings, surfaces and all overrides',()=>{
  const rows=selectionCases('darwin');
@@ -162,7 +165,7 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
  assert.deepEqual(row({defaultEngine:'cua',override:'cua'}),{error:'engine_not_installed'});
  // Browser-only rows ignore the setting.
  assert.deepEqual(expectedSelection({platform:'darwin',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'cua'}),{host:'cua',reason:'browser_only',status:'pass'});
- assert.deepEqual(expectedSelection({platform:'linux',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'invalid'}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(expectedSelection({platform:'linux',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,managedNode:true,engine:'invalid'}),{host:'cua',reason:'linux',status:'pass'});
  const rows=selectionCases('darwin').filter(r=>r.engine);
  for(const engine of ['unset','vendor','cua','invalid'])for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])for(const installed of [false,true])
   assert.ok(rows.some(r=>r.engine===engine&&r.override===override&&r.node24===node24&&r.installed===installed),`${engine} ${override} ${node24} ${installed}`);
@@ -170,7 +173,7 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
 });
 // #171: on Linux the engine never changes the host, so the table's rows are the host's with the engine's refusals.
 test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host always cua\'s, and the vendor host refused',()=>{
- const row=fields=>expectedSelection({platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'unset',installed:false,...fields});
+ const row=fields=>expectedSelection({platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true,engine:'unset',installed:false,...fields});
  // the default is cua's engine (#171 M5); since M6a (F3) one this cua cannot drive refuses the open, the default as an
  // explicit setting, and nothing falls back to the vendor's engine
  assert.deepEqual(row({}),{error:'engine_not_installed'});
@@ -192,7 +195,13 @@ test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host alw
  assert.deepEqual(row({engine:'vendor',engineFrom:'settings',vendorTree:false}),{error:'engine_not_installed'});
  assert.deepEqual(row({engine:'cua',installed:true,vendorTree:false}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({engine:'vendor',vendorTree:false,lane:'profiles'}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({node24:false,installed:true}),{error:'repl_host_node'},'Linux has no vendor host to fall back to');
+ // the Node (#171 M6a, F2a): the managed one or CUA_NODE; a Node 24 running cua or on PATH counts for nothing, and
+ // without either the runtime is not installed. Linux has no vendor host to fall back to.
+ assert.deepEqual(row({node24:false,installed:true}),{host:'cua',reason:'linux',status:'pass'},'the managed Node, whatever runs cua');
+ assert.deepEqual(row({managedNode:false,installed:true}),{error:'runtime_not_installed'});
+ assert.deepEqual(row({managedNode:false,node24:false,installed:true}),{error:'runtime_not_installed'});
+ assert.deepEqual(row({managedNode:false,cuaNode:true,installed:true}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({managedNode:false,lane:'profiles'}),{error:'runtime_not_installed'},'a browser-only session needs its Node too');
  assert.deepEqual(row({override:'vendor'}),{error:'repl_host_refused'});
  assert.deepEqual(row({override:'vendor',lane:'profiles'}),{error:'repl_host_refused'});
 });

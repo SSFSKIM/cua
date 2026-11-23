@@ -6,7 +6,8 @@
 // launchctl and replayd's log are fakes: nothing is built, signed, launched or prompted here.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync} from 'node:fs';
+import fs, {existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync} from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import {PassThrough} from 'node:stream';
@@ -15,7 +16,7 @@ import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
 import {CERT_SHA1, CODESIGN_TIMED_OUT, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 const CODESIGN_TIMED_OUT_READ = () => CODESIGN_TIMED_OUT;
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
-import {approveEngine, buildEngine, buildFailureDetail, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
+import {approveEngine, buildEngine, buildFailureDetail, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, rpc, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
 import {installMacosEngine} from '../src/runtime/install.mjs';
 
@@ -890,15 +891,22 @@ test('approve with a pending build refuses while another connection is open, bef
   assert.deepEqual(opened(w), []);
 });
 
-test('approve refuses a pending build whose signature cannot be read, or that is unsigned, before touching anything', async t => {
+// Approve reads the pending build's signature where it has claimed it (out of the slot), so every read but the approved
+// bundle's is the pending build's here.
+test('approve refuses a pending build whose signature cannot be read, or that is unsigned, before stopping or launching anything, and gives it back to the slot', async t => {
   for (const kind of [null, 'unreadable']) {
     const w = world(t);
     w.placeBundle({approved: true});
     w.placePending({kind: kind === 'unreadable' ? 'identity' : null});
-    const runSync = (file, args) => (kind === 'unreadable' && args.at(-1) === w.pendingBundle ? CODESIGN_TIMED_OUT : fakeCodesignRead(file, args));
+    const serving = await w.startEngine();
+    const runSync = (file, args) => (kind === 'unreadable' && args.at(-1) !== w.bundle ? CODESIGN_TIMED_OUT : fakeCodesignRead(file, args));
     await assert.rejects(approveEngine({...w.deps, runSync}), {code: kind ? 'engine_signature_unreadable' : 'engine_not_built'});
     assert.equal(w.plistBuild(), OLD_BUILD);
     assert.equal(w.pendingBuild(), NEW_BUILD);
+    assert.equal(w.json('pending.json').build, NEW_BUILD);
+    assert.equal(serving.stopped, false);
+    assert.deepEqual(opened(w), []);
+    assert.ok(!existsSync(join(w.dir, 'claimed')), 'nothing is left claimed');
   }
 });
 
@@ -945,6 +953,51 @@ test('a build published while a promoted approve waits, then a successful approv
   assert.ok(!existsSync(join(w.dir, 'promoting.json')));
   assert.equal(w.pendingBuild(), w.checkoutBuild(), 'never the slot\'s new occupant');
   assert.equal(w.json('pending.json').build, w.checkoutBuild());
+});
+
+// Approve inspects the pending build B, then waits for the running engine to stop; an install publishing C in that wait
+// must not have C promoted and approved in B's place: B is claimed before the wait, and C stays pending for its own approve.
+test('a build published while approve waits for the running engine to stop is not promoted: the build approve inspected is the one approved, and the newer stays pending', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending();
+  const serving = await w.startEngine();
+  let published = null;
+  const request = async (socket, method, params) => {
+    const answer = await rpc(socket, method, params);
+    if (method === 'shutdown' && !published) published = await buildEngine(w.deps);
+    return answer;
+  };
+  const result = await approveEngine({...w.deps, request});
+  assert.equal(published?.pending, true, 'the build published during the stop\'s wait');
+  assert.equal(serving.stopped, true);
+  assert.equal(result.approved, true);
+  assert.equal(result.build, NEW_BUILD, 'the inspected build is the approved one');
+  assert.equal(w.plistBuild(), NEW_BUILD);
+  assert.equal(w.json('approved.json').build, NEW_BUILD);
+  assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, NEW_BUILD);
+  assert.equal(w.pendingBuild(), w.checkoutBuild(), 'the build published meanwhile waits for its own approval');
+  assert.equal(w.json('pending.json').build, w.checkoutBuild());
+  assert.ok(!existsSync(join(w.dir, 'promoting.json')));
+});
+
+// The same source built ad hoc while approve waits for the owner with the identity-signed build of that source promoted
+// lands in the slot the promote vacated: a pending build of the approved build, with a record of its own, which
+// approve's success must not delete.
+test('a same-build publication made during a successful approve keeps its pending.json: only the claimed publication\'s record is removed', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending({build: w.checkoutBuild()});
+  const claimed = w.json('pending.json');
+  w.watcher.alerts = [1];
+  w.operator.next = async () => { await buildEngine({...w.deps, identity: 'adhoc'}); return ''; };
+  const result = await approveEngine(w.deps);
+  assert.equal(result.approved, true);
+  assert.equal(result.build, w.checkoutBuild());
+  assert.equal(w.pendingBuild(), w.checkoutBuild(), 'the same-source build published meanwhile stays in the slot');
+  const record = w.json('pending.json');
+  assert.equal(record.build, w.checkoutBuild(), 'its record is kept');
+  assert.notEqual(record.builtAt, claimed.builtAt, 'it is the new publication\'s record, not the claimed one\'s');
 });
 
 test('approve interrupted at the owner\'s prompt rolls the promote back: the previous bundle serves again, approved.json unchanged', async t => {
@@ -1034,6 +1087,44 @@ test('the next build also recovers a promote that was killed (its promoting.json
   }
 });
 
+// An approve killed after it claimed the pending build (out of the slot) and before the claimed build reached the
+// approved path: while the running engine stopped, or between its two renames.
+test('a build an approve claimed before it was killed goes back to the slot at the next approve or build, unless a newer build holds it', async t => {
+  for (const next of ['approve', 'build']) {
+    for (const between of [false, true]) {
+      for (const newer of [false, true]) {
+        const w = world(t);
+        w.placeBundle({approved: true});
+        w.placePending();
+        mkdirSync(join(w.dir, 'claimed'));
+        renameSync(w.pendingBundle, join(w.dir, 'claimed', BUNDLE_NAME));
+        if (between) renameSync(w.bundle, join(w.dir, 'previous'));
+        if (newer) w.placePending({build: 'd'.repeat(64)});
+        writeFileSync(join(w.dir, 'promoting.json'), JSON.stringify({pid: 99_999_999}));
+        const label = JSON.stringify({next, between, newer});
+        if (next === 'approve') await approveEngine({...w.deps, promote: false}).catch(error => assert.equal(error.code, 'engine_pending_build', label));
+        else await buildEngine(w.deps);
+        assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead})?.build, OLD_BUILD, label);
+        assert.ok(!existsSync(join(w.dir, 'claimed')), label);
+        if (next === 'approve') assert.equal(w.pendingBuild(), newer ? 'd'.repeat(64) : NEW_BUILD, label);
+        assert.match(w.logs.join('\n'), newer ? /build cccccccccccc was dropped/ : /build cccccccccccc is pending again/, label);
+      }
+    }
+  }
+});
+
+test('a claimed build of an approve that is still alive is left alone by a build', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending();
+  mkdirSync(join(w.dir, 'claimed'));
+  renameSync(w.pendingBundle, join(w.dir, 'claimed', BUNDLE_NAME));
+  writeFileSync(join(w.dir, 'promoting.json'), JSON.stringify({pid: process.pid}));
+  await buildEngine(w.deps);
+  assert.ok(existsSync(join(w.dir, 'claimed', BUNDLE_NAME)), 'the live approve keeps its claim');
+  assert.equal(w.pendingBuild(), w.checkoutBuild());
+});
+
 test('a promote whose process is still alive (an approve waiting for the owner) is not mistaken for an interrupted one', async t => {
   const w = world(t);
   placeInterruptedPromote(w);
@@ -1089,6 +1180,34 @@ test('approve takes its lock even with no pending build, and releases it on succ
   assert.ok(!existsSync(join(w.home, 'empty', 'promoting.json')));
 });
 
+// A second approve that starts the instant promoting.json appears: the marker must already name its holder, or the
+// second reads an empty file as an approve that is gone and takes the live lock over. The name's appearance is caught
+// as the kernel makes it (open for a write, link for a hard link), with the write after an open held until the second ran.
+test('the approve lock appears with its holder in it: a second approve at that instant is refused, never takes it over', async t => {
+  const w = world(t);
+  const lock = join(w.dir, 'promoting.json');
+  let second = null;
+  let raced = false;
+  const race = () => { if (raced) return; raced = true; second = approveEngine(w.deps).then(() => 'approved', error => error); };
+  const real = {writeFileSync: fs.writeFileSync, linkSync: fs.linkSync};
+  t.after(() => { Object.assign(fs, real); syncBuiltinESMExports(); });
+  fs.writeFileSync = (path, data, options) => {
+    if (path !== lock) return real.writeFileSync(path, data, options);
+    const fd = fs.openSync(path, options?.flag ?? 'w', options?.mode);
+    try { race(); fs.writeSync(fd, data); } finally { fs.closeSync(fd); }
+  };
+  fs.linkSync = (from, to) => { real.linkSync(from, to); if (to === lock) race(); };
+  syncBuiltinESMExports();
+  await assert.rejects(approveEngine(w.deps), {code: 'engine_not_built'});
+  Object.assign(fs, real);
+  syncBuiltinESMExports();
+  assert.ok(raced, 'the second approve ran as the lock appeared');
+  const refused = await second;
+  assert.equal(refused?.code, 'engine_approve_in_progress');
+  assert.match(refused.message, new RegExp(`pid ${process.pid}\\b`));
+  assert.ok(!existsSync(lock), 'released by its holder');
+});
+
 test('a promoted engine that refuses the rollback\'s stop: the bundles go back, and the owner is told it still holds the socket', async t => {
   const w = world(t);
   w.placeBundle({approved: true});
@@ -1104,6 +1223,48 @@ test('a promoted engine that refuses the rollback\'s stop: the bundles go back, 
   assert.equal(candidate.stopped, false);
   assert.doesNotMatch(err + out, /keeps serving/);
   assert.match(out, new RegExp(`pid ${candidate.pid}\\b.*socket.*cua engine stop`));
+});
+
+// The same build re-signed under another identity, busy at the rollback: the client's ping compares version and build
+// only, so it keeps serving new sessions until it stops, and the owner is told so; the next build or approve stops it
+// once it is idle.
+test('a re-signed promoted engine of the same build that refuses the rollback\'s stop: the owner is told it keeps serving new sessions until cua engine stop', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending({build: OLD_BUILD, kind: 'adhoc'});
+  w.state.captured = false;
+  let approvesSeen = 0;
+  w.state.onApprove = state => { if (++approvesSeen === 2) state.connections = 1; };
+  const {status, out} = await approveThroughCli(t, w);
+  assert.equal(status, 1);
+  assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead})?.build, OLD_BUILD, 'the approved bundle, signature and all, is back on disk');
+  const candidate = w.engines.at(-1);
+  assert.equal(candidate.stopped, false);
+  assert.match(out, new RegExp(`pid ${candidate.pid}\\b.*keeps serving new sessions.*cua engine stop`));
+  assert.doesNotMatch(out, /sessions refuse/);
+});
+
+test('the next build or approve stops a promoted engine a rollback left running, once it is idle, and leaves it while it is busy', async t => {
+  for (const next of ['build', 'approve']) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    w.placePending({build: OLD_BUILD, kind: 'adhoc'});
+    w.state.captured = false;
+    let approvesSeen = 0;
+    w.state.onApprove = state => { if (++approvesSeen === 2) state.connections = 1; };
+    const result = await approveEngine(w.deps);
+    const candidate = w.engines.at(-1);
+    assert.equal(result.rollback.candidateRunning.pid, candidate.pid);
+    // Busy still: left running, whatever the next command does.
+    const again = () => (next === 'build' ? buildEngine(w.deps) : approveEngine({...w.deps, promote: false}).catch(error => error));
+    await again();
+    assert.equal(candidate.stopped, false, `${next}: a busy candidate is left running`);
+    w.state.connections = 0;
+    w.state.onApprove = null;
+    await again();
+    assert.equal(candidate.stopped, true, `${next}: the idle candidate is stopped`);
+    assert.match(w.logs.join('\n'), new RegExp(`stopped the promoted build's engine \\(pid ${candidate.pid}\\)`));
+  }
 });
 
 test('a failed first approve says the build is pending again and claims no previous build came back', async t => {

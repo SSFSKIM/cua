@@ -46,6 +46,10 @@ or the owner is prepared and named in its gate's disposition file under
   main, and M4's re-cut `installMacosEngine`, still replace the approved bundle. Until M4's T1 changes the layout, a
   session after `cua install` meets `engine_not_installed`, not `engine_outdated`; T9's "pending newer, no fallback"
   row is proven by unit test only.
+- 2026-11-23, T9, merging with M4's re-cut (trial merge-tree against fda61df9a): `doctor-engine.mjs` conflicts once in
+  `notInUseRow` (M4's `pendingBeside` against T9's `buildWords`; keep T9's, which also carries the source check and
+  the minimum), and `installedRow` and `vendorRow` merge clean but would show the pending build twice (drop M4's
+  clause). The design spec's Decision Log end conflicts too, both branches appending there.
 - 2026-11-23, T9: `test/serve-lazy.test.mjs` "the record is the runtime's raw answers…" fails on the untouched base as
   well; not this wave's.
 
@@ -58,6 +62,17 @@ or the owner is prepared and named in its gate's disposition file under
   unreadable version counts as below; a `+metadata` suffix is ignored. "A pending build exists" means `pending.json`
   names a build other than `approved.json`'s (`newerPendingBuild`, `src/runtime/engine.mjs`), whatever bundle layout
   M4 settles.
+- 2026-11-23, T9's review (b709b776a): the client checks the bundle's version again at every connect, before any ping
+  or launch, and refuses an older one ("cua engine too old … nothing was launched"), so a bundle swapped after
+  selection is not driven. Every macOS doctor row names the approved build against this plugin's engine source and any
+  pending build; a stale approved build warns where cua's engine is in use, and the vendor row states the builds and
+  stays `skip` (no session uses that engine). `src/runtime/engine-minimum.mjs` (`pendingEngine`, `pendingMeetsMinimum`,
+  `outdatedRemedy`) reads M4's `pending/cua Engine.app` slot first, then the bundle pending.json names; the
+  approve-only remedy appears only when the pending bundle meets the minimum. The gate lists paths with
+  `--no-renames -z`, so a file moved out of `native/engine/` counts; `Tests/` stays exempt (the version names shipped
+  builds, and `Tests/` is outside the build hash). `nativeEngineFor` and `createEngineClient` take a `minimumVersion`
+  seam for the below-minimum tests. The fixture engine's version is `${MIN}+fixture`, since `0.0.0-fixture` does not
+  parse and would be refused at any minimum.
 - 2026-11-23, T9: the remedy names `cua install --engine` (the form that builds whatever is selected, and M4's re-cut
   sentence word for word) where ruling 1118 wrote `cua install`; with a newer pending build, `cua engine approve` alone.
 - 2026-11-23, T9: the version-move check is `scripts/engine-version-check.mjs`, run by a new ci-kit gate

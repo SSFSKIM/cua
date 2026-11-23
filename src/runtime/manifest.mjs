@@ -27,6 +27,7 @@ import {readFileSync, readdirSync, lstatSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
+import {ownInstaller} from './installer.mjs';
 import {homeLayout, readPointer, realHome} from './layout.mjs';
 import {checkLayout} from './checks.mjs';
 import {MODULES_PIN_DIR, checkModuleTree, loadModuleLock, moduleHost, readModuleTree} from './module-tree.mjs';
@@ -37,8 +38,8 @@ import {HELPER_PIN_FILE, loadHelperPin} from '../sandbox/linux.mjs';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const RELEASES_DIR = join(REPO_ROOT, 'runtime', 'releases');
 export const LINUX_RUNTIME_FILE = join(REPO_ROOT, 'runtime', 'linux-runtime.json');
-// This cua's own entry point: the checkout's, or the plugin copy's, whichever this module was loaded from.
-export const CUA_ENTRY = join(REPO_ROOT, 'bin', 'cua.mjs');
+// This cua's own entry point and installer (installer.mjs), re-exported here, where every remedy has named them.
+export {CUA_ENTRY, ownInstaller} from './installer.mjs';
 export const RECORD_FILE = 'install.json';
 // `browserVendorService` names the vendor's @oai/browser-desktop service module, which no launch selects since #79; only
 // the parity harnesses' vendor oracle loads it (test/browser-parity/vendor-oracle.mjs).
@@ -50,15 +51,6 @@ export const RECORD_FILE = 'install.json';
 // `codex` file, which this cua never launches, until the same prune removes it.
 export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
 export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
-// A word a POSIX shell reads as one argument, quoted only where it needs to be.
-const shellWord = word => /^[A-Za-z0-9_./:=@%+,-]+$/.test(word) ? word : `'${word.replaceAll('\'', '\'\\\'\'')}'`;
-
-// The installer every Linux remedy names: this cua's own bin/cua.mjs by its absolute path, and the release it installs
-// where the caller knows it -> {command, hint}.
-export function ownInstaller({release, entry = CUA_ENTRY} = {}) {
-  const command = `node ${shellWord(entry)} install`;
-  return {command, hint: `run \`${command}\`; a \`cua\` from another checkout installs that checkout's runtime${release ? `, which may not be ${release}` : ', not this one\'s'}`};
-}
 
 // The remedy for the vendor's release: on macOS the plain `cua install` (unchanged), on Linux this cua's own
 // installer; each also with `--archive` and the platform's pinned archive.

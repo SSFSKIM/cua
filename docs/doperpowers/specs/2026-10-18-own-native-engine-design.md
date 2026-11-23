@@ -88,7 +88,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-11-23) T1 — Install on macOS, pending-only; builds beside the approved engine and `cua engine approve` promotes (ruling 1118) (bdf3f424, 058bb0e0, review fixes c021e44a, 06864a1f, 768dd996; reviewed clean after four rounds).
   - [x] (2026-11-23) T2 — The permission flow (2865f597, 16a27627, review fixes fda61df9, bcef401d; reviewed clean after three rounds).
   - [ ] T3 — `accept-native`.
-  - [ ] T4 — The hosted gate builds the bundle.
+  - [x] (2026-11-23) T4 — The hosted gate builds the bundle (94f405ee, ceb45873, review fix 6237d0e2; reviewed clean after two rounds; the hosted run on the pull request is still owed).
   - [ ] T5 — The window-frame probe and PR #199.
   - [ ] T6 — Docs.
   - [x] (2026-11-23) T7 — Records: M4's entries, report and evidence; hold 10's evidence (dd9e3729, 357cff86, c4971d18, 7cd333f8, de0feaeb; all 47 and 103 files in after the owner-content check and the design session's ruling on the account path; reviewed clean).

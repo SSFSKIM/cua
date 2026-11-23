@@ -19,6 +19,8 @@ const named = ({ i = 0, rest, ...o } = {}) => ({
   route: 'foreground',
   drag_pacing: { family: 'GTK 4', rest_ms: 0, step_us: 0 },
   drop_cursor: { accepted: true, settle: settle(rest) },
+  // the engine's count of the settles the drag's request entered (drop-signals.mjs `settleCount`)
+  settle_count: { before: 0, after: 1, entered: 1 },
 });
 
 test('the plan is a development plan of the named lane alone: no gate judge holds it', () => {
@@ -64,7 +66,16 @@ test('a drop that proves the case is exercised; each missing proof is named', ()
     ['press', { drop_cursor: { accepted: null, error: 'connection refused', settle: settle() } }],
     ...[false, true, 0, 'settled', [], null].map((v) => ['settle', { drop_cursor: { accepted: true, settle: v } }]),
     ['settle', { drop_cursor: { accepted: true }, handle: { drop_cursor: { settle: settle() } } }],
+    // the re-review of 1be3760e: the engine's own count is the evidence a settle ran, and copies must agree
+    ['settle', { settle_count: { before: 0, after: 0, entered: 0 } }],
+    ['settle', { settle_count: { before: 0, after: 2, entered: 2 } }],
+    ['settle', { settle_count: undefined }],
+    ['settle', { handle: { drop_cursor: { settle: false } } }],
+    // a watch that failed to start is no press on Electron; a release read's own error is a watch that ran
+    ['press', { drop_cursor: { accepted: null, error: 'connection refused', settle: settle() } }],
   ];
+  const readError = { ...named(), drop_cursor: { steps: [], accepted: null, error: 'the read timed out', settle: settle() } };
+  assert.equal(namedSourceUnproven(readError).includes('press'), false);
   for (const [why, edit] of cases) assert.ok(namedSourceUnproven({ ...named(), ...edit }).includes(why), `${why}: ${JSON.stringify(edit)}`);
 });
 

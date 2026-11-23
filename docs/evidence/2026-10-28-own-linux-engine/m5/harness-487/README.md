@@ -55,3 +55,17 @@ activation" counts drops where Electron sent `_NET_ACTIVE_WINDOW` on the press.
 Neither the motion's pacing nor when the named window was activated decides the take. On every foreground-route drop
 Electron asked for activation at the press and never started its drag (25 of 25). On every desktop-route drop it did
 not ask, and it started every drag (5 of 5).
+
+## Fix wave 2: the engine's settle count on every row (`pilot/fix3-count-044/`)
+
+Each drop-signals row now carries `settle_count`: the engine's own `drop_settles.entered` after the drop's requests,
+less the count before them. For a handle, that spans every one of its requests. `t17-fix3`'s settle-rest check holds
+each drop to that count, not to the settle's own record.
+
+One live check of the count ran on the 0.4.4 candidate (sha256
+9bd2e5844b52c8b877b59ffa8fba1f0dac9e9efd94ded5190471d9daf75d078b, `cua-engine 0.4.4 (d8e03a5cb7d4)`), on a private
+display: `--plan t17-fix3 --trials 1`, one drag in each of the 14 cells.
+- **Every row carries `settle_count.entered: 1`**, matched by a settle record.
+- **Each handle's two copies of the settle agree.** Every row is labelled electron.
+- **The verdict's only settle fail is the missing `rest_ms`**, 14 of 14. This build predates the fix wave that adds it,
+  so the check fails it by design.

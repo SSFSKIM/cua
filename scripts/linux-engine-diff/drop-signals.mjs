@@ -308,6 +308,25 @@ function frameOn(id) {
   return { x: c.x - left, y: c.y - top, w: c.width + left + right, h: c.height + top + bottom };
 }
 
+/**
+ * The engine's settle counter as it stands before a drop (`--stats` `drop_settles`, its last line's, engine.mjs
+ * `dropSettles`): an engine that has printed no line yet has entered none since it started; one whose lines carry no
+ * counter (a vendor build, an engine without `--stats`) has none to give.
+ */
+export const settlesBefore = (engine) => engine.dropSettles ?? (engine.lines === 0 ? { entered: 0 } : null);
+
+/**
+ * How many settles a drop's requests entered (task 142's fix wave 2): the engine's own counter after them (`after`, the
+ * last `drop_settles` it printed, the drop's last request's) less before (`settlesBefore`), with both kept; null where
+ * either is missing or the counter went back (another engine's line). The judge holds a settle to it, never to the
+ * settle's own record (drop-signals-judge.mjs `settlesEntered`).
+ */
+export function settleCount(before, after) {
+  const [b, a] = [before?.entered, after?.entered];
+  if (!Number.isInteger(b) || !Number.isInteger(a) || a < b) return null;
+  return { before: b, after: a, entered: a - b };
+}
+
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
 export async function desktopDrag(engine, scene, path) {
   return engine.request('drag', { path: path.map((p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y })) });
@@ -826,9 +845,13 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const namedLane = Boolean(LANES[lane].named);
   const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };
   const offWindow = OFF_WINDOW.includes(base);
+  const countedBefore = settlesBefore(engine);
   const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : namedLane ? engine.request('drag', { window: { id: ctx.named.id }, path: namedPath(scene, ctx.named, path) }) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
+  // the settles the drop's requests entered, by the engine's own counter: taken before the read and the preflight after
+  // it, which print their own lines
+  const settle_count = settleCount(countedBefore, engine.dropSettles);
   // an off-window cell's end read where the drag left the real pointer, once the drag image is gone: the window it is
   // for under it (the bare root, the xterm, the other browser window, the sink), or the row says what was there instead
   // and the tables leave the drag out. Read, not parked: a park on the bare root is a pointer warp on a window the run did
@@ -906,6 +929,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     after_release: stats.after_release,
     // Electron's drop: the drag loop's cursor read at the release (a drag's `drop_cursor`, a handle's in its record)
     drop_cursor: stats.drop_cursor ?? stats.handle?.drop_cursor,
+    // how many settles the drop's requests entered, the engine's count (`settleCount`): the judge's evidence that one ran
+    settle_count,
     handle: handled ? { ...stats.handle, end: value.end } : undefined,
     escaped,
     freeze,

@@ -1,0 +1,2 @@
+step.sh 2026-11-23T10:11:26Z start H1 after 51 s quiet wait: load=0.84 1.42 1.27 stress-ng=none df=51G
+step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/m5/home-x64-044 --out /Users/new/.local/share/cua-171/m5/out-x64-h9

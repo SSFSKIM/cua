@@ -455,3 +455,19 @@ test('js and js_reset results carry the connection\'s engine attestation; the se
   none.upstream.reply(await none.upstream.nextCall('js'), {content: [{type: 'text', text: 'c'}], isError: false});
   assert.equal(Object.hasOwn((await call.response).result._meta, 'cua/nativeEngine'), false);
 });
+
+test('the browser keys\' metadata is never the client\'s: the server drops it, and the connection stamps it as the call reaches the runtime (#493)', async () => {
+  const {BROWSER_KEYS_META, BROWSER_KEYS_UNREACHED_META} = await import('../src/mcp/server.mjs');
+  const service = await import('../src/browser-service/browsers.mjs');
+  assert.equal(BROWSER_KEYS_META, service.BROWSER_KEYS_META, 'the proxy and the service name one key');
+  assert.equal(BROWSER_KEYS_UNREACHED_META, service.BROWSER_KEYS_UNREACHED_META);
+  const h = harness({server: {surfaces: ['computer', 'browser']}});
+  await initialized(h);
+  const call = h.client.call('js', {code: 'c'}, {meta: {[BROWSER_KEYS_META]: {work: 'forged'}, [BROWSER_KEYS_UNREACHED_META]: ['work'], progressToken: 'p'}});
+  const up = await h.upstream.nextCall('js');
+  h.upstream.text(up, 'c');
+  await call.response;
+  assert.equal(Object.hasOwn(up.params._meta, BROWSER_KEYS_META), false);
+  assert.equal(Object.hasOwn(up.params._meta, BROWSER_KEYS_UNREACHED_META), false);
+  assert.equal(up.params._meta.progressToken, 'p', 'the rest of the client\'s metadata is kept');
+});

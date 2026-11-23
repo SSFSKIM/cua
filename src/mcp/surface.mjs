@@ -134,7 +134,9 @@ export const PROFILES_LIST_TOOL = {
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
 // The same rule in js's own rules, which an agent reads without ever loading profiles_list (#368). The no-call
 // exemption names the in-app browser and comes before the Chrome sentence, so it cannot be read as covering Chrome.
-const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws), the pane the user watches; use it for any page, and it needs no profiles_list call. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
+// It also names the browsers cua serves here (#493): profiles_list's keys select a browser as its ids do, and the
+// vendor host's own text (below, not cua's to edit) offers an "iab" browser and its visible option, which MAWS lacks.
+const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws); its tabs show in the session\'s Browser panel, which the user watches. Use it for any page; it needs no profiles_list call. Where a browser id goes, "maws" or another profiles_list key works too; there is no "iab" browser, and visible does not apply: leave it out. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
 function profilesListTool(inAppBrowser) {
   const [select, ...rest] = BROWSER_RULES;
   const rules = inAppBrowser ? [select.replace(' Never pick or bind a profile for the user.', ''), MAWS_RULE, ...rest] : [select, ...rest];

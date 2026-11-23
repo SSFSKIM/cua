@@ -97,10 +97,16 @@ export function create_browser_api(browsers, emitter) {
         if (typeof browser.nameSession != 'function') throw new Error(`Browser ${browser.browserId} does not support sessionName.`);
         await browser.nameSession(options.sessionName);
       }
+      // `visible` on a browser without the visibility capability (a Chrome profile, MAWS's in-app browser, whose tabs
+      // show in the session's Browser panel) is ignored, and the tab result says so (#493): the vendor's text for its
+      // own in-app browser recommends it, and the agent must not raise the person's windows to honour it.
+      // Capabilities.get throws only for a capability the browser does not announce.
+      let ignoredVisible = false;
       if ((options == null ? undefined : options.visible) !== undefined) {
-        if (browser.capabilities === undefined) throw new Error(`Browser ${browser.browserId} does not support visibility control.`);
-        const visibility = await browser.capabilities.get('visibility');
-        await visibility.set(options.visible);
+        let visibility;
+        try { visibility = await browser.capabilities?.get('visibility'); } catch {}
+        if (visibility === undefined) ignoredVisible = true;
+        else await visibility.set(options.visible);
       }
       const tab = await browser.tabs.new();
       if (tab.goto !== undefined) {
@@ -109,7 +115,9 @@ export function create_browser_api(browsers, emitter) {
         await tab.close?.call(tab);
         throw new Error(`Tab ${tab.id} does not support navigation.`);
       }
-      return observed(tab, browser);
+      await observed(tab, browser);
+      if (ignoredVisible) await emitter.emit(`createBrowserTab ignored visible: ${JSON.stringify(options.visible)}: browser ${browser.browserId} has no visibility capability, so its visibility is unchanged.`);
+      return tab;
     },
     async getTab(reference, options) {
       let browser;

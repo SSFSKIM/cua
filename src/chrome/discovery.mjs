@@ -13,8 +13,8 @@
 import {readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {realHome} from '../runtime/layout.mjs';
-import {readRegistry} from '../profiles/registry.mjs';
-import {backendDir, socketNameFor, socketPathFor} from './extension.mjs';
+import {RESERVED_KEY, readRegistry} from '../profiles/registry.mjs';
+import {backendDir, isMawsInstance, socketNameFor, socketPathFor} from './extension.mjs';
 
 // -> the absolute socket paths, sorted.
 export function backendPaths(home) {
@@ -39,4 +39,27 @@ export const MAWS_INSTANCE_MARKER = 'maws:';
 // without MAWS backends).
 export function launchBackendPaths(home, {clientHosts = null} = {}) {
   return [...new Set([...(clientHosts ?? []), ...backendPaths(home)])];
+}
+
+// -> the profiles_list keys as browser ids, now (#493; the proxy puts them on each call it relays, src/mcp/server.mjs,
+// for src/browser-service/browsers.mjs): {<key>: <instance id>} for the process's MAWS backends (`mawsKeys`,
+// src/chrome/client-mode.mjs `keys()`; null without them) and every profile bound on the cua route. With MAWS backends
+// configured a reserved MAWS key (maws, maws-2, …) is never a Chrome profile's, even one registered under it before
+// the keys were reserved, nor for a backend that has not said hello yet. A registry that does not parse contributes
+// no keys, as it contributes no sockets above.
+export function currentBrowserKeys(home, {mawsKeys = null} = {}) {
+  let profiles = {};
+  try { ({profiles} = readRegistry(realHome(home))); } catch {}
+  const bound = Object.entries(profiles).flatMap(([key, {extensionInstanceId, route}]) =>
+    (extensionInstanceId && route === 'cua' && !(mawsKeys && RESERVED_KEY.test(key)) ? [[key, extensionInstanceId]] : []));
+  return {...Object.fromEntries(bound), ...mawsKeys};
+}
+
+// -> the keys of `keys` whose Chrome host socket is not among `launchPaths` (the launch's BROWSER_USE_BACKEND_PATHS,
+// ':'-separated): a profile bound after the runtime launched, whose browser its service cannot dial (the list is fixed
+// at launch). MAWS backends' keys are their process's client-mode hosts, always listed.
+export function keysBeyondLaunch(home, keys, launchPaths) {
+  const listed = new Set(launchPaths.split(':').filter(Boolean));
+  const root = realHome(home);
+  return Object.keys(keys).filter(key => !isMawsInstance(keys[key]) && !listed.has(socketPathFor(root, socketNameFor(keys[key]))));
 }

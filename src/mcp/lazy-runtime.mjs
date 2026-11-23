@@ -89,7 +89,10 @@ export function runtimeIdleFrom(env) {
   return Number(value);
 }
 
-export function lazyRuntime({start, records, stopped = () => {}, diagnostics = () => {}}) {
+// `outgoing(msg)` -> the message as it leaves for the runtime: called when it is sent, and for a message held during a
+// launch when the launch releases it, so what it adds is read once the runtime is up (src/mcp/connection.mjs stamps the
+// browser keys this way: a first call waits for the MAWS backends' hellos with the launch).
+export function lazyRuntime({start, records, stopped = () => {}, diagnostics = () => {}, outgoing = msg => msg}) {
   let onMessage = () => {};
   let onExit = () => {};
   let state = 'idle';          // idle | starting | running | stopping | failed | stopped
@@ -146,7 +149,7 @@ export function lazyRuntime({start, records, stopped = () => {}, diagnostics = (
     }
     runtime.send({jsonrpc: '2.0', method: 'notifications/initialized'});
     state = 'running';
-    for (const msg of held.splice(0)) runtime.send(msg);
+    for (const msg of held.splice(0)) runtime.send(outgoing(msg));
   }
 
   function fromRuntime(msg) {
@@ -206,7 +209,7 @@ export function lazyRuntime({start, records, stopped = () => {}, diagnostics = (
         liveToolsLists.add(msg.id);
       }
       if (state === 'starting' || state === 'stopping') { held.push(msg); return true; }
-      return runtime.send(msg);
+      return runtime.send(outgoing(msg));
     },
     // True while a runtime is up and answering: what `stop` would end.
     get running() { return state === 'running'; },

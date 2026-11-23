@@ -14,10 +14,11 @@
 //   observation (src/services/engine/client.mjs relaunchForPermissions: shutdown, launch, observe once on the fresh
 //   engine): the recovery once granted. It is judged as accept-native item 14 judges it (scripts/accept/onboarding.mjs,
 //   'service relaunch recovery'): the engine just before the retry is the one that refused, with only the test's
-//   connection, no other engine process as the retry is sent, and the engine after it is another. The FAIL that it did
-//   not relaunch needs a proven retry (sent, answered, attested, TextEdit front and key around it) with only the test's
-//   connection after it; anything less is the cell's NO VERDICT. Accessibility's refusal arms none; on a runner its row
-//   is honoured only at a launch (H0), so the driver relaunches by `cua engine stop` there.
+//   connection, no other engine process as the retry is sent, and the engine after it is another. No relaunch is NO
+//   VERDICT, never FAIL: the engine refuses the relaunch's shutdown as busy while another client is connected
+//   (Methods.swift), and the client then replays the attested Screen Recording refusal (client.mjs), so a client that
+//   came and went inside the retry leaves the record a relaunch never attempted leaves. Accessibility's refusal arms
+//   none; on a runner its row is honoured only at a launch (H0), so the driver relaunches by `cua engine stop` there.
 // - doctor's engine row: fail while Accessibility or Screen Recording is not granted, Input Monitoring's absence a warn
 //   naming "intervention detection off", its permissions the running engine's status (src/runtime/doctor-engine.mjs
 //   GRANT_EFFECT, grantWords).
@@ -135,14 +136,8 @@ function judgeStage(stage, {attest, prior}) {
     if (before.connections !== 1) return notSet(`${before.connections ?? 'unread'} connections at the engine before the retry, where only the test's may be`);
     const at = stage.relaunch.atDispatch?.pids;
     if (!Array.isArray(at) || at.length !== 1 || at[0] !== before.pid) return notSet(`the engine at the retry (pids ${Array.isArray(at) && at.length ? at.join(', ') : 'unread'}) is not the baseline's (pid ${before.pid})`);
-    if (stage.relaunched === false) {
-      // Not relaunched is the product's FAIL only on a proven retry that no other client could have kept from it (the
-      // engine refuses the relaunch's shutdown while another client is connected); else the cell's own NO VERDICT.
-      const after = stage.calls[0].statusAfter?.connections;
-      if (proven[0] && after !== 1) { out.missing.push(`${after ?? 'unread'} connections at the engine after the retry: another client may have kept the relaunch from happening`); return out; }
-      if (!proven[0]) return notSet('the relaunch is not shown: the retry is not proven');
-      return {...out, missing: [], fail: [`the product did not relaunch the engine for the Screen Recording grant (pid ${before.pid} throughout)`]};
-    }
+    // A busy-refused relaunch and one never attempted answer alike (the header): no relaunch is unproven, never a FAIL.
+    if (stage.relaunched === false) { out.missing.push(`the relaunch did not happen (pid ${before.pid} throughout); a relaunch the engine refused as busy and one never attempted answer alike (the client replays the Screen Recording refusal), so this is unproven`); return out; }
     if (stage.relaunched !== true) return notSet('the relaunch was not read');
   }
   if (!status.read || !status.running) { out.missing.push(`capabilities unread (${status.problem ?? 'no engine running'})`); return out; }

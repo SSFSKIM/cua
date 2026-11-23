@@ -1073,8 +1073,8 @@ The citations:
 | Verdict | When |
 |---|---|
 | **PASS** | All four stages are recorded, and each shows positive evidence: rows read back, the relaunch shown, every cell sent and answered with TextEdit front and key and no alert around it, the expected answers, and every result attesting the run's cua build. |
-| **FAIL** | Any of: a refusal names the wrong grant; a refusal lacks the steps or the bundle's path; a call answers without its grant; a call is refused with its grants present; the product does not relaunch for the Screen Recording grant, on a proven retry (sent, answered, attested, TextEdit front and key around it) with only the test's connection after it; doctor's row or permissions are wrong. |
-| **NO VERDICT** | Any of: no record, or a malformed or ambiguous one (the judge never throws on a record); fewer than four stages, or a run that did not finish; rows not read back; a relaunch not shown; a cell not sent, or with TextEdit not front and key, or an alert front or key around it (ruling 1141); a result answered on another engine (the vendor's on the cua side, state 1, or any build but the run's); a result with no attestation; rows not written or not honoured (a capability that does not match the stage's rows); a relaunch that could not be made; before the product's relaunch, an engine other than the one that refused, another connection, or another engine process as the retry is sent; no relaunch after a retry that is not proven, or with another connection after it; the retry's status unread; a call with no answer; unread status or doctor; no Screen Recording refusal seen before the recovery stage. |
+| **FAIL** | Any of: a refusal names the wrong grant; a refusal lacks the steps or the bundle's path; a call answers without its grant; a call is refused with its grants present; doctor's row or permissions are wrong. |
+| **NO VERDICT** | Any of: no record, or a malformed or ambiguous one (the judge never throws on a record); fewer than four stages, or a run that did not finish; rows not read back; a relaunch not shown; a cell not sent, or with TextEdit not front and key, or an alert front or key around it (ruling 1141); a result answered on another engine (the vendor's on the cua side, state 1, or any build but the run's); a result with no attestation; rows not written or not honoured (a capability that does not match the stage's rows); a relaunch that could not be made; before the product's relaunch, an engine other than the one that refused, another connection, or another engine process as the retry is sent; no relaunch for the Screen Recording grant, the pid unchanged through the retry (never a FAIL: see below); the retry's status unread; a call with no answer; unread status or doctor; no Screen Recording refusal seen before the recovery stage. |
 
 The order follows ruling 1149, as the `record` check does:
 
@@ -1088,6 +1088,16 @@ The order follows ruling 1149, as the `record` check does:
 Each cell is judged on its own. A cell without proof is NO VERDICT for itself, and its sibling in the same stage is
 still judged.
 
+No relaunch at the Screen Recording retry cannot FAIL. While another client is connected the engine refuses the
+relaunch's shutdown as busy (`Methods.swift`), and the client then replays the attested Screen Recording refusal
+(`client.mjs`). A client that connects after the baseline and leaves before the status read therefore leaves the same
+record as a relaunch never attempted. So it is NO VERDICT, never a PASS: a product that does not relaunch cannot reach
+acceptance. The record keeps the connection counts and the processes listed at the retry as evidence.
+
+Residue: a product-side marker for a busy-refused relaunch would let the sitting tell the two cases apart and FAIL a
+relaunch never attempted; for example, `_meta` naming the busy refusal and its holders. That marker is product scope,
+and it is not built here.
+
 The driver exits 0 when every stage ran, 1 when it stopped, and 2 when refused (off a GitHub-hosted macOS runner, before
 anything is touched). The sitting's verdict is the check's, not the driver's exit.
 
@@ -1097,12 +1107,14 @@ anything is touched). The sitting's verdict is the check's, not the driver's exi
   sequence, a relaunch at every stage, what is recorded, the refusal of any operator confirmation, both forms of wait
   (the host's deadline reply and a transport timeout, after which the session is not used again), a stage that cannot
   be set, the front and key readings, an otherwise successful capture with the alert frontmost, a cleanup that never
-  ends, and the refusal off a runner. It also covers the judge: PASS, five FAIL cases, the NO VERDICT cases, malformed
+  ends, and the refusal off a runner. It also covers the judge: PASS, four FAIL cases, the NO VERDICT cases, malformed
   and empty records, an unattested cell beside a failing sibling, and a moved or busy baseline before the product's
   relaunch. Review round 2 added: an alert around the retry, or an unattested retry, with the pid unchanged (NO VERDICT,
   not "did not relaunch"); another engine's answer in a stage missing its read-back, beside a FAIL; the retry's bracket
   (activation before the baseline, a replacement engine or another client arriving before the retry, the retry's status
-  unread); and a real child process that ignores SIGTERM, killed and disposed within the bound.
+  unread); and a real child process that ignores SIGTERM, killed and disposed within the bound. Review round 3 added:
+  no relaunch with the pid unchanged is NO VERDICT, never FAIL, including a client that blocks the shutdown and leaves
+  before the status read (one connection after the retry).
 - `tcc.test.mjs`: every guard refusal applies to `revokeRows` too, with zero store calls. Removal touches only the named
   rows of cua's engine, in the system database. It refuses the vendor's helper, any other app and any unknown service.
   A grant can name its services.

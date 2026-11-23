@@ -102,9 +102,12 @@ function fakeProduct(fault = {}) {
         if (fault.productTimeoutAtJs === jsCount) return {result: {isError: true, content: [{type: 'text', text: TIMEOUT_SENTENCE}]}};
         if (!approved) { assert.equal(onServerRequest(CONFIRMATION).action, 'decline'); approved = onServerRequest(APPROVAL).action === 'accept'; }
         if (!engine) launch();
-        // A client arriving before the retry makes the engine refuse the relaunch's shutdown (busy): no relaunch.
+        // A client arriving before the retry makes the engine refuse the relaunch's shutdown (busy): no relaunch, and the
+        // client replays the refusal (client.mjs). clientInWindow stays connected past the status read; clientCameAndWent
+        // has left by then, so the record shows one connection, as for a relaunch never attempted.
+        const busy = (fault.clientInWindow || fault.clientCameAndWent) && jsCount === 5;
         if (fault.clientInWindow && jsCount === 5) clientAfter = true;
-        if (owed === engine.pid && !fault.noRelaunch && !clientAfter) { launch(); owed = null; }   // client.mjs relaunchForPermissions
+        if (owed === engine.pid && !fault.noRelaunch && !busy) { launch(); owed = null; }   // client.mjs relaunchForPermissions
         const g = engine.grants;
         if (fault.screenRecordingFirst && !g.screenRecording) { owed = engine.pid; return refusal('screenRecording'); }
         if (!g.accessibility && !fault.answersWithoutGrant) return refusal('accessibility');
@@ -276,12 +279,11 @@ test('the product as M4 built it: every stage as expected, PASS', async () => {
 });
 
 const verdictOf = async fault => judgeOnboarding((await run(fault)).record);
-test('a wrong behaviour FAILs: a refusal naming the wrong grant, one without the steps, an answer without the grant, no relaunch, a wrong doctor row', async () => {
+test('a wrong behaviour FAILs: a refusal naming the wrong grant, one without the steps, an answer without the grant, a wrong doctor row', async () => {
   for (const [fault, why] of [
     [{screenRecordingFirst: true}, /none: accessibility call: cua\/permission screenRecording, expected accessibility/],
     [{noGuidance: true}, /none: accessibility call: the refusal lacks the Accessibility grant's steps or the approved bundle's path/],
     [{answersWithoutGrant: true}, /none: accessibility call: answered where Accessibility is missing/],
-    [{noRelaunch: true}, /screenRecording: the product did not relaunch the engine for the Screen Recording grant \(pid 102 throughout\)/],
     [{doctorPass: true}, /none: doctor's engine row is pass, expected fail/],
   ]) {
     const [status, reason] = await verdictOf(fault);
@@ -415,9 +417,11 @@ test('stage (c): TextEdit activated before the baseline, then only the socket\'s
   const replaced = judgeOnboarding((await run({replacedInWindow: true})).record);
   assert.equal(replaced[0], 'NO VERDICT', replaced[1]);
   assert.match(replaced[1], /screenRecording: not set: the engine at the retry \(pids 999\) is not the baseline's \(pid 103\)/);
-  const client = judgeOnboarding((await run({clientInWindow: true})).record);
+  const clientRecord = (await run({clientInWindow: true})).record;
+  assert.equal(clientRecord.stages[2].calls[0].statusAfter.connections, 2, 'the connection count stays in the record as evidence');
+  const client = judgeOnboarding(clientRecord);
   assert.equal(client[0], 'NO VERDICT', client[1]);
-  assert.match(client[1], /screenRecording: 2 connections at the engine after the retry: another client may have kept the relaunch from happening/);
+  assert.match(client[1], /screenRecording: the relaunch did not happen \(pid 103 throughout\); a relaunch the engine refused as busy and one never attempted answer alike \(the client replays the Screen Recording refusal\), so this is unproven/);
   const unread = (await run({firstStatusUnreadInC: true})).record;
   assert.equal(unread.stages[2].relaunched, null, 'the second cell\'s pid never stands in for the first\'s');
   assert.equal(judgeOnboarding(unread)[0], 'NO VERDICT');
@@ -442,4 +446,21 @@ test('teardown owns its deadline through the escalation: a child that ignores SI
   assert.equal(closed.stuck, true);
   assert.equal(closed.exited, true);
   assert.throws(() => process.kill(session.pid, 0), {code: 'ESRCH'}, 'the child is gone');
+});
+
+// ---- review round 3 ----
+
+test('no relaunch with the pid unchanged is NO VERDICT, never FAIL: a busy refusal and a relaunch never attempted leave the same record', async () => {
+  const never = await verdictOf({noRelaunch: true});
+  assert.equal(never[0], 'NO VERDICT', never[1]);
+  assert.match(never[1], /screenRecording: the relaunch did not happen \(pid 102 throughout\); a relaunch the engine refused as busy and one never attempted answer alike \(the client replays the Screen Recording refusal\), so this is unproven/);
+  // The reviewer's case: a client connects after the baseline, blocks the shutdown, and leaves before the status read.
+  const {record} = await run({clientCameAndWent: true});
+  const retry = record.stages[2];
+  assert.deepEqual([retry.relaunch.before.pid, retry.relaunch.atDispatch.pids, retry.calls[0].statusAfter.pid, retry.calls[0].statusAfter.connections], [103, [103], 103, 1]);
+  assert.equal(retry.relaunched, false);
+  const [status, reason] = judgeOnboarding(record);
+  assert.equal(status, 'NO VERDICT', reason);
+  assert.match(reason, /screenRecording: the relaunch did not happen \(pid 103 throughout\); a relaunch the engine refused as busy and one never attempted answer alike \(the client replays the Screen Recording refusal\), so this is unproven/);
+  assert.doesNotMatch(reason, /FAIL|did not relaunch the engine/);
 });

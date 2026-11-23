@@ -91,8 +91,14 @@ export function fixtureProblems({exit, signal, report}, {fixture}) {
   return problems;
 }
 
-/** The runtime overrides a counted run may not inherit: every CUA_* but CUA_HOME, every OAI_*, NODE_OPTIONS, NODE_PATH. */
-export const inheritedOverrides = env => Object.keys(env).filter(name => (/^(CUA|OAI)_/.test(name) && name !== 'CUA_HOME') || name === 'NODE_OPTIONS' || name === 'NODE_PATH').sort();
+// The variables that name a part of the runtime or how it launches (src/runtime/launch.mjs, the REPL host, the engine
+// service): a counted run inherits none of them, so what it runs is what the home holds (fix wave 1, #8).
+const OVERRIDES = ['CUA_NODE', 'CUA_LINUX_ENGINE_BIN', 'CUA_NATIVE_ENGINE', 'CUA_REPL_HOST', 'CUA_DESKTOP_MODE', 'CUA_SKY_SERVICE', 'CUA_ENGINE_BIN', 'CUA_ENGINE_APP', 'CUA_ENGINE_SCREENSHOTS',
+  'CUA_SHIM_SANDBOX', 'CUA_SHIM_SURFACES', 'CUA_SHIM_PERSIST', 'CUA_SHIM_SECRETS', 'CUA_BROWSER_DEFAULT_INSTANCE', 'CUA_RUNTIME_IDLE_MS', 'NODE_OPTIONS', 'NODE_PATH'];
+const OVERRIDE_PREFIXES = ['CUA_REPL_', 'CUA_SANDBOX_', 'OAI_', 'SKY_'];
+
+/** The runtime overrides in `env` a counted run may not inherit, by name. */
+export const inheritedOverrides = env => Object.keys(env).filter(name => OVERRIDES.includes(name) || OVERRIDE_PREFIXES.some(prefix => name.startsWith(prefix))).sort();
 
 /** The vendor tree at a cell's boundary: `expected` present (there, and resolving as the pinned release) or absent. */
 export function boundaryProblems({expected, exists, resolves, why}) {

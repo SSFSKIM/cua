@@ -242,8 +242,12 @@ test('nothing launched, by exec evidence: the serve\'s trace complete and no hel
   assert.match(launchedProblems(null).join('; '), /no trace/);
 });
 
-test('counted runs inherit no runtime override: CUA_* (but CUA_HOME), OAI_*, NODE_OPTIONS and NODE_PATH are named', () => {
+test('counted runs inherit no runtime override: a variable that names a part of the runtime or how it launches is named', () => {
   assert.deepEqual(inheritedOverrides({CUA_HOME: '/h', HOME: '/u', PATH: '/bin'}), []);
+  // The host lock's marker and the feedback directory name no part of the runtime.
+  assert.deepEqual(inheritedOverrides({CUA_LOCK_HELD: '1', CUA_FEEDBACK_DIR: '/f'}), []);
+  assert.deepEqual(inheritedOverrides({CUA_SKY_SERVICE: '/s', CUA_ENGINE_BIN: '/e', CUA_SANDBOX_DENY_READ: '/x', SKY_CUA_SERVICE_PATH: '/y', CUA_SHIM_SURFACES: 'browser'}),
+    ['CUA_ENGINE_BIN', 'CUA_SANDBOX_DENY_READ', 'CUA_SHIM_SURFACES', 'CUA_SKY_SERVICE', 'SKY_CUA_SERVICE_PATH']);
   assert.deepEqual(inheritedOverrides({CUA_NODE: '/usr/bin/node', OAI_SKY_LINUX_BIN: '/x', NODE_OPTIONS: '--x', CUA_REPL_NODE_MODULE_DIRS: '/m', CUA_HOME: '/h'}),
     ['CUA_NODE', 'CUA_REPL_NODE_MODULE_DIRS', 'NODE_OPTIONS', 'OAI_SKY_LINUX_BIN']);
 });

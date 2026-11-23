@@ -42,7 +42,7 @@ const runEntries = () => (existsSync(join(home, 'run')) ? readdirSync(join(home,
 const steps = [];
 const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
 const mode = selectionMode(process.argv.slice(2));
-const report = {home, sandbox: process.env.CUA_SHIM_SANDBOX ?? '(unset: the platform default)', selection: {mode}, steps};
+const report = {fixture: 'linux-native', home, sandbox: process.env.CUA_SHIM_SANDBOX ?? '(unset: the platform default)', selection: {mode}, steps};
 
 const marker = `cua-f2-${randomBytes(4).toString('hex')}`;
 const dir = mkdtempSync('/tmp/cua-linux-native-');

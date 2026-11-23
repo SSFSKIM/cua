@@ -32,17 +32,18 @@ import {fileURLToPath} from 'node:url';
 import {engineSettingsPath} from '../../src/runtime/engine-sign.mjs';
 import {readPointer, writePointer} from '../../src/runtime/layout.mjs';
 import {linuxEnginePath, loadEnginePin} from '../../src/runtime/linux-engine.mjs';
-import {linuxRelease, loadLinuxRuntime, ownInstaller, resolveRuntime, vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
+import {linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, resolveRuntime, selectPin, vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
 import {loadModuleProvenance, moduleHost} from '../../src/runtime/module-tree.mjs';
-import {loadNodePins, selectNodePin} from '../../src/runtime/managed-node.mjs';
+import {loadNodePins, managedNode, selectNodePin} from '../../src/runtime/managed-node.mjs';
 import {HELPER_PIN_FILE, helperFor} from '../../src/sandbox/linux.mjs';
 import {loadClassicLevel} from '../../src/profiles/directory-map.mjs';
-import {CELLS, engineRowProblems, fixtureProblems, installProblems, parseRefusal, pinsChanged, refusalProblems, rowProblems, traceProblems, upgradeProblems} from './linux-runtime-cells.mjs';
-import {cuaEngineProblems, noEngineProblems, nothingLaunchedProblems, startWatch, vendorEngineProblems} from './linux-runtime-watch.mjs';
+import {APPROVED_OLDER, CELLS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal, pinsChanged,
+  refusalProblems, reinstallProblems, rowProblems, runVerdict, traceProblems, upgradeProblems, witnessOf} from './linux-runtime-cells.mjs';
+import {cuaEngineProblems, noEngineProblems, ownNodeProblems, startWatch, vendorEngineProblems} from './linux-runtime-watch.mjs';
 import {environmentVerdict} from './linux-runtime-pilot.mjs';
 import {summarizeTraceFile, TRACE_ARGS} from './linux-trace.mjs';
 import {readDoctor} from './linux-selection.mjs';
-import {cellJson, useCell} from './linux-browser-only.mjs';
+import {SPECIFIERS, cellJson, useCell} from './linux-browser-only.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -53,6 +54,8 @@ const FIXTURES = {
   rollback: [join(REPO, 'scripts', 'accept', 'linux-text.mjs'), '--read-only'],
   browser: [join(REPO, 'scripts', 'accept', 'linux-browser-only.mjs')],
 };
+// The identity each fixture's report must carry (linux-runtime-cells.mjs FIXTURE_STEPS).
+const FIXTURE_ID = {smoke: 'linux-native', witness: 'linux-text', rollback: 'linux-text --read-only', browser: 'linux-browser-only'};
 const MINUTES = {plain: 12, traced: 25};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const readJson = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
@@ -129,7 +132,7 @@ function createRun({out, scratch}) {
     const watch = watching.stop();
     closeSync(sinks.out); closeSync(sinks.err);
     const report = readJson(files.out);
-    const result = {label: id, exit: code, signal, seconds: Math.round((Date.now() - started) / 100) / 10, report, watch, out: files.out};
+    const result = {label: id, kind, exit: code, signal, seconds: Math.round((Date.now() - started) / 100) / 10, report, watch, out: files.out};
     if (traced) {
       const watch = watchPaths?.(report) ?? null;
       result.trace = {file: files.trace, summary: existsSync(files.trace) ? await summarizeTraceFile(files.trace, {helper, home: homes, cwd: REPO, ...(watch ? {watch} : {})}) : null};
@@ -137,17 +140,25 @@ function createRun({out, scratch}) {
     return result;
   }
 
-  /** An open of a computer session at this cua that is expected to be refused, under the watch: {exit, initialized, stderr, watch}. */
-  async function attemptOpen(name, {env}) {
+  /**
+   * An open of a computer session at this cua that is expected to be refused, its serve under `strace -f` so that
+   * "nothing launched" rests on exec evidence (fix wave 1, #7): {exit, signal, replied, spontaneous, drained, stderr,
+   * trace, err}. `replied` is any answer to initialize, an error included; `spontaneous` that serve exited on its own
+   * within 60 s, before the driver ended it.
+   */
+  async function attemptOpen(name, {env, helper, homes}) {
     const id = label(name);
-    const session = openSession({args: [CLI, 'serve'], env, clientName: 'cua-m6a-refusal'});
-    const watching = startWatch(session.pid);
-    const initialized = await Promise.race([session.initialize().then(() => true, () => false), session.exited.then(() => false)]);
+    const traceFile = join(scratch, `${id}.strace`);
+    const session = openSession({command: 'strace', args: [...TRACE_ARGS, '-o', traceFile, '--', process.execPath, CLI, 'serve'], env, clientName: 'cua-m6a-refusal'});
+    const answer = session.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'cua-m6a-refusal', version: '0'}}, 60_000);
+    const first = await Promise.race([answer.then(reply => ({reply})), session.exited.then(exit => ({exit}))]);
+    const replied = !!first.reply && !first.reply.timedOut;
+    const spontaneous = await Promise.race([session.exited.then(() => true), sleep(60_000).then(() => false)]);
     const exited = await session.terminate();
-    await sleep(100);
-    const watch = watching.stop();
+    const drained = await session.drainStreams({budgetMs: 5000});
     writeFileSync(join(scratch, `${id}.err`), session.stderr);
-    return {exit: exited.code, signal: exited.signal, initialized, stderr: session.stderr, watch, err: join(scratch, `${id}.err`)};
+    const trace = existsSync(traceFile) ? await summarizeTraceFile(traceFile, {helper, home: homes, cwd: REPO}) : null;
+    return {exit: exited.code, signal: exited.signal, replied, spontaneous, drained, stderr: session.stderr, trace, err: join(scratch, `${id}.err`), traceFile};
   }
 
   /** The time from `cua serve`'s start (`cli`) to a first cell's answer, `n` times. -> ms per sample, or the failure. */
@@ -172,7 +183,11 @@ function createRun({out, scratch}) {
       await session.initialize();
       const used = await session.js(useCell(), 180_000);
       const use = cellJson(resultText(used), 'use');
-      return use ? {imported: use.imported, used: use.used, via: use.via, natives: use.natives?.length ?? null} : {failed: resultText(used).slice(0, 300)};
+      const valid = o => o === 'ok' || (!!o && typeof o === 'object' && typeof o.message === 'string' && (o.code === null || typeof o.code === 'string'));
+      // A reply is a baseline only when it is whole: its root, and a well-formed outcome for each of the six.
+      if (!use || typeof use.base !== 'string' || !use.imported || !SPECIFIERS.every(spec => valid(use.imported[spec])))
+        return {failed: use ? `the reply is malformed: ${JSON.stringify({base: use.base ?? null, imported: use.imported ?? null}).slice(0, 300)}` : resultText(used).slice(0, 300)};
+      return {base: use.base, imported: use.imported, used: use.used, via: use.via, natives: use.natives?.length ?? null};
     } catch (error) { return {failed: error.message}; } finally { await session.terminate(); }
   }
   return {exec, fixture, attemptOpen, firstAnswers, imports, out, scratch};
@@ -180,19 +195,22 @@ function createRun({out, scratch}) {
 
 // A fixture run as the artifact carries it: its label, outcome, timing, each step's name and status, and its raw report's
 // scratch path; the watch's counts; a trace's summary without paths beyond the scratch file.
-const projectRun = run => run && ({label: run.label, exit: run.exit, signal: run.signal, seconds: run.seconds, status: run.report?.status ?? null,
+const projectRun = run => run && ({label: run.label, exit: run.exit, signal: run.signal, seconds: run.seconds, fixture: run.report?.fixture ?? null, status: run.report?.status ?? null,
   steps: (run.report?.steps ?? []).map(s => ({name: s.name, status: s.status})), report: run.out,
-  ...(run.report?.imports?.comparison ? {imports: {comparison: run.report.imports.comparison, playwright: run.report.imports.loaded?.playwright ?? null}} : {}),
+  ...(run.report?.imports?.comparison ? {imports: {comparison: run.report.imports.comparison}} : {}),
+  ...(run.kind === 'browser' && run.report?.moduleRoot ? {witness: witnessOf(run.report, {root: real(run.report.moduleRoot),
+    kernels: (run.trace?.summary?.kernels ?? []).filter(k => k.underServe && k.underHelper)})} : {}),
   watch: run.watch && {samples: run.watch.samples, maxSkyLinux: run.watch.maxSkyLinux, engines: run.watch.engines.length, skyLinux: run.watch.skyLinux.length, replHost: run.watch.replHost.map(p => p.role)},
   ...(run.trace ? {trace: {file: run.trace.file, processes: run.trace.summary?.processes ?? null, serve: run.trace.summary?.serve ?? null, workers: run.trace.summary?.workers ?? null,
-    helpers: run.trace.summary?.helpers ?? null, kernels: run.trace.summary?.kernels?.map(k => ({...k, opened: k.opened?.length})) ?? null, runtimes: run.trace.summary?.runtimes ?? null}} : {})});
+    helpers: run.trace.summary?.helpers ?? null, kernels: run.trace.summary?.kernels?.map(k => ({...k, opened: k.opened?.length})) ?? null, runtimes: run.trace.summary?.runtimes ?? null,
+    launched: run.trace.summary?.launched?.map(l => l.kind) ?? null}} : {})});
 
 async function main() {
   const option = name => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
   if (process.argv.includes('--loader')) return loader(option('--loader'));
   const out = option('--out');
   if (!out) throw new Error('usage: linux-runtime.mjs --out <dir> --older <checkout> [--phases E,U] [--leg <label>] [--samples <n>]');
-  const phases = (option('--phases') ?? 'E,U').split(',');
+  const phases = parsePhases(option('--phases'));
   const older = option('--older') ? resolve(option('--older')) : null;
   const sampleCount = Number(option('--samples') ?? 20);
   if (!older) throw new Error('--older <checkout of the cua before M6a> is needed: it installs the upgraded home, and its by-name imports are the browser-only runs\' baseline');
@@ -217,7 +235,13 @@ async function main() {
   const notRun = (id, why) => { const cell = cellOf(id); cell.checks.push({name: 'not run', pass: false, problems: [why]}); finish(cell); };
 
   // The judged fixture runs every session cell shares.
-  const homeFacts = home => ({engine: real(linuxEnginePath(home)), helper: real(helperFor({home, arch}).path), homes: [...new Set([home, real(home)])]});
+  const homeFacts = home => {
+    const node = managedNode(home).path ?? null;
+    return {engine: real(linuxEnginePath(home)), helper: real(helperFor({home, arch}).path), homes: [...new Set([home, real(home)])], node: node && real(node), nodes: node ? [...new Set([node, real(node)])] : []};
+  };
+  // Every session run: the REPL host on the home's managed Node at every sample (fix wave 1, #8).
+  const ownNode = (cell, what, run, facts) => check(cell, `${what}: the worker and the kernel ran on the home's managed Node at every sample`,
+    facts.node ? ownNodeProblems(run.watch, {node: facts.node}) : ['the home has no managed Node']);
   async function computerRuns(cell, {env, home, traced}) {
     const facts = homeFacts(home);
     for (const kind of ['smoke', 'witness']) {
@@ -225,16 +249,21 @@ async function main() {
         const run = await r.fixture(kind, {env, traced: mode, helper: facts.helper, homes: facts.homes});
         cell.runs.push(projectRun(run));
         const what = `${kind === 'smoke' ? 'the item 1 smoke' : 'the item 6 witness'}${mode ? ' under strace -f' : ''}`;
-        check(cell, `${what}: every step passes`, fixtureProblems(run));
+        check(cell, `${what}: every step passes`, fixtureProblems(run, {fixture: FIXTURE_ID[kind]}));
         check(cell, `${what}: no sky_linux at any sample, the engine child the home's cua-engine`, cuaEngineProblems(run.watch, {engine: facts.engine}));
-        if (mode) check(cell, `${what}: the trace holds the kernel and the worker, and the serve's tree named nothing under runtimes/`,
-          run.trace.summary ? traceProblems(run.trace.summary) : ['strace wrote no trace']);
+        ownNode(cell, what, run, facts);
+        if (mode) check(cell, `${what}: the trace is whole, holds the kernel and the worker on the managed Node, and the serve's tree named nothing under runtimes/`,
+          run.trace.summary ? traceProblems(run.trace.summary, {node: facts.nodes}) : ['strace wrote no trace']);
       }
     }
   }
   // The paths a browser-only run's trace must show opened: the six selected entries, and playwright's entry and
   // playwright-core's as require loaded them (ruling 1162).
-  const openedPaths = rep => [...Object.values(rep?.imports?.selected ?? {}), rep?.imports?.loaded?.playwright?.entry, rep?.imports?.loaded?.playwright?.core].filter(p => typeof p === 'string');
+  const openedPaths = rep => {
+    const files = rep?.imports?.loaded?.playwright?.files;
+    const core = Array.isArray(files) ? files.find(f => typeof f === 'string' && /\/node_modules\/playwright-core\/index\.js$/.test(f)) : null;
+    return [...Object.values(rep?.imports?.selected ?? {}), rep?.imports?.loaded?.playwright?.entry, core].filter(p => typeof p === 'string');
+  };
   const selectedPaths = rep => { const s = openedPaths(rep); return [...new Set([...s, ...s.map(real)])]; };
   let baselineFile = null;
   async function browserRuns(cell, {env, home, traced, label = 'the browser-only session'}) {
@@ -243,13 +272,14 @@ async function main() {
       const run = await r.fixture('browser', {env, traced: mode, helper: facts.helper, homes: facts.homes, watchPaths: selectedPaths, extra: ['--baseline', baselineFile]});
       cell.runs.push(projectRun(run));
       const what = `${label}${mode ? ' under strace -f' : ''}`;
-      check(cell, `${what}: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)`, fixtureProblems(run),
+      check(cell, `${what}: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)`, fixtureProblems(run, {fixture: FIXTURE_ID.browser}),
         {imports: run.report?.imports?.comparison ?? null});
       check(cell, `${what}: no engine process at any sample`, noEngineProblems(run.watch));
+      ownNode(cell, what, run, facts);
       if (mode) {
-        const opened = openedPaths(run.report).map(real);
-        check(cell, `${what}: the kernel opened each selected entry and playwright's loaded ones, and the serve's tree named nothing under runtimes/`,
-          !run.trace.summary ? ['strace wrote no trace'] : opened.length !== 8 ? [`the fixture reported ${opened.length} entries to open, not 6 selected and playwright's 2 loaded`] : traceProblems(run.trace.summary, {opened}));
+        const opened = [...new Set(openedPaths(run.report).map(real))];
+        check(cell, `${what}: the trace is whole, and one kernel of the serve's, on the managed Node, opened each selected entry and playwright's loaded ones after its exec; nothing under runtimes/`,
+          !run.trace.summary ? ['strace wrote no trace'] : opened.length !== 8 ? [`the fixture reported ${opened.length} entries to open, not 6 selected and playwright's 2 loaded`] : traceProblems(run.trace.summary, {opened, node: facts.nodes}));
       }
     }
   }
@@ -271,10 +301,11 @@ async function main() {
     for (const [by, sessionEnv] of [['CUA_NATIVE_ENGINE=vendor', {...env, CUA_NATIVE_ENGINE: 'vendor'}], ['"engine": "vendor" in engine.json', env]]) {
       if (sessionEnv === env) { mkdirSync(dirname(settings), {recursive: true}); writeFileSync(settings, `${JSON.stringify({...(kept ? JSON.parse(kept) : {}), engine: 'vendor'})}\n`); }
       try {
-        const attempt = await r.attemptOpen(`open-vendor-${sessionEnv === env ? 'settings' : 'env'}`, {env: sessionEnv});
-        cell.runs.push({label: `open with ${by}`, exit: attempt.exit, initialized: attempt.initialized, err: attempt.err, watch: {samples: attempt.watch.samples, replHost: attempt.watch.replHost.length}});
+        const facts = homeFacts(home);
+        const attempt = await r.attemptOpen(`open-vendor-${sessionEnv === env ? 'settings' : 'env'}`, {env: sessionEnv, helper: facts.helper, homes: facts.homes});
+        cell.runs.push(attemptRecord(`open with ${by}`, attempt));
         check(cell, `with ${by}: the open is refused engine_not_installed, naming the installer`, refusalProblems(attempt, {code: 'engine_not_installed', installer}));
-        check(cell, `with ${by}: nothing is launched`, nothingLaunchedProblems(attempt.watch));
+        check(cell, `with ${by}: nothing is launched, by the serve's trace`, launchedProblems(attempt.trace));
         const {report: doctor} = readDoctor({cli: CLI, env: sessionEnv});
         const row = doctor?.checks?.find(c => c.name === 'engine');
         const refusal = parseRefusal(attempt.stderr);
@@ -286,6 +317,15 @@ async function main() {
     }
     await browserRuns(cell, {env: {...env, CUA_NATIVE_ENGINE: 'vendor'}, home, traced: false, label: 'a browser-only session with CUA_NATIVE_ENGINE=vendor'});
   }
+  // A refused open as the artifact carries it.
+  const attemptRecord = (label, a) => ({label, exit: a.exit, signal: a.signal, replied: a.replied, spontaneous: a.spontaneous, drained: a.drained, err: a.err, trace: a.traceFile,
+    launched: a.trace?.launched?.map(l => l.kind) ?? null, runtimes: a.trace?.runtimes ?? null});
+  // The vendor tree at a cell's boundary, read rather than taken from the cell's label (fix wave 1, #5).
+  const boundary = (cell, home, expected, when) => {
+    let resolves = false, why = null;
+    try { vendorLinuxRuntime({home}); resolves = true; } catch (error) { why = error.code ?? error.message; }
+    return check(cell, `the vendor tree is ${expected} at the cell's ${when}`, boundaryProblems({expected, exists: existsSync(join(home, 'runtimes')), resolves, why}));
+  };
   const launcherPasses = (env, cell) => {
     const {report: doctor} = readDoctor({cli: CLI, env});
     return check(cell, 'sandbox.launcher passes after the install', rowProblems(doctor, ['sandbox.launcher']));
@@ -296,10 +336,16 @@ async function main() {
     report.preconditions = {display, sandbox: process.env.CUA_SHIM_SANDBOX ?? '(unset: scoped)', engine: process.env.CUA_NATIVE_ENGINE ?? null};
     const problems = [];
     if (process.platform !== 'linux') problems.push(`this is ${process.platform}, not Linux`);
+    const inherited = inheritedOverrides(process.env).filter(name => name !== 'CUA_SHIM_SANDBOX' && name !== 'CUA_NATIVE_ENGINE');
+    if (inherited.length) problems.push(`runtime overrides are inherited (${inherited.join(', ')}): a counted run sets none`);
     if (process.env.CUA_SHIM_SANDBOX !== undefined) problems.push('CUA_SHIM_SANDBOX is set: these runs are scoped');
     if (!/^:\d+/.test(display) || /^:0(\.\d+)?$/.test(display)) problems.push(`the display ${JSON.stringify(display)} is not a private one`);
     if (process.env.CUA_NATIVE_ENGINE !== undefined) problems.push('CUA_NATIVE_ENGINE is set: the cells set it where they need it');
     if (!process.env.CUA_HOME) problems.push('CUA_HOME is unset: the empty home is the one linux-runtime-env.sh makes');
+    const olderClean = spawnSync('git', ['-C', older, 'status', '--porcelain'], {encoding: 'utf8'});
+    report.older.clean = olderClean.status === 0 && olderClean.stdout.trim() === '';
+    if (report.older.commit !== APPROVED_OLDER) problems.push(`the older checkout is at ${report.older.commit ?? 'an unread commit'}, not the approved ${APPROVED_OLDER}`);
+    if (!report.older.clean) problems.push(`the older checkout ${older} has local changes`);
     report.preconditions.problems = problems;
     if (problems.length) throw new Error(`preconditions: ${problems.join('; ')}`);
     const environment = environmentVerdict(readDoctor({cli: CLI, env: process.env}).report);
@@ -317,10 +363,13 @@ async function main() {
     const vendorRelease = readPointer(uHome);
     const vendorRecordPath = vendorRelease ? join(uHome, 'runtimes', vendorRelease, 'install.json') : null;
     const vendorRecord = vendorRecordPath && fileIdentity(vendorRecordPath);
-    report.upgradedHome = {home: uHome, olderInstall: {exit: setup.code, seconds: setup.seconds, out: setup.out}, vendorRelease};
+    const pinnedRelease = selectPin(loadPins(), {platform: 'linux', arch}).release;
+    const vendorRow = readDoctor({cli: CLI, env: uEnv}).report?.checks?.find(c => c.name === 'runtime.vendor') ?? null;
+    const setupProblems = olderProblems({commit: report.older.commit, clean: report.older.clean, exit: setup.code, vendorRelease, pinnedRelease, vendorRow, record: vendorRecord});
+    report.upgradedHome = {home: uHome, olderInstall: {exit: setup.code, seconds: setup.seconds, out: setup.out}, vendorRelease, pinnedRelease, vendorRow: vendorRow?.status ?? null, problems: setupProblems};
     report.measured.importsOlder = setup.code === 0 ? await r.imports(olderCli, {env: uEnv}) : {failed: `the older cua's install exited ${setup.code}`};
     baselineFile = join(scratch, 'imports-older.json');
-    writeFileSync(baselineFile, `${JSON.stringify(report.measured.importsOlder.imported ?? null)}\n`);
+    writeFileSync(baselineFile, `${JSON.stringify(report.measured.importsOlder.failed ? null : {base: report.measured.importsOlder.base, imported: report.measured.importsOlder.imported})}\n`);
 
     if (phases.includes('E')) {
       const home = process.env.CUA_HOME;
@@ -344,30 +393,41 @@ async function main() {
       if (!launcher) for (const id of ['E1', 'E2', 'E3', 'E4', 'E5']) notRun(id, 'sandbox.launcher does not pass in the empty home after E0');
       else {
         cell = cellOf('E1');
+        boundary(cell, home, 'present', 'start');
         await computerRuns(cell, {env, home, traced: true});
+        boundary(cell, home, 'present', 'end');
         finish(cell);
         cell = cellOf('E2');
+        boundary(cell, home, 'present', 'start');
         await browserRuns(cell, {env, home, traced: true});
         report.measured.importsHere = await r.imports(CLI, {env});
         await loaderRun(cell, {env, home});
+        boundary(cell, home, 'present', 'end');
         finish(cell);
         cell = cellOf('E3');
         renameSync(runtimes, moved);
-        check(cell, 'runtimes/ is moved out of the home', existsSync(runtimes) ? ['runtimes/ is still there'] : []);
+        boundary(cell, home, 'absent', 'start');
         await computerRuns(cell, {env, home, traced: false});
         await browserRuns(cell, {env, home, traced: false});
+        await loaderRun(cell, {env, home});
+        boundary(cell, home, 'absent', 'end');
         finish(cell);
         cell = cellOf('E4');
+        boundary(cell, home, 'absent', 'start');
         await vendorRefused(cell, {env, home});
+        boundary(cell, home, 'absent', 'end');
         finish(cell);
         cell = cellOf('E5');
         renameSync(moved, runtimes);
+        boundary(cell, home, 'present', 'start');
         const vendor = vendorLinuxRuntime({home});
         const run = await r.fixture('rollback', {env: {...env, CUA_NATIVE_ENGINE: 'vendor'}});
         cell.runs.push(projectRun(run));
-        check(cell, 'the vendor selection lists the apps, binds the harness gedit and reads its tree; a cell\'s import loads from the module tree', fixtureProblems(run));
+        check(cell, 'the vendor selection lists the apps, binds the harness gedit and reads its tree; a cell\'s import loads from the module tree', fixtureProblems(run, {fixture: FIXTURE_ID.rollback}));
         check(cell, 'the engine child is this home\'s sky_linux behind the vendor service, and no cua-engine runs',
           vendorEngineProblems(run.watch, {bin: real(vendor.paths.skyLinuxBin), service: vendor.paths.skyVendorService}));
+        ownNode(cell, 'the rollback', run, homeFacts(home));
+        boundary(cell, home, 'present', 'end');
         finish(cell);
         if (sampleCount > 0) report.measured.firstAnswerHere = await r.firstAnswers(CLI, {env, n: sampleCount});
       }
@@ -376,35 +436,45 @@ async function main() {
     if (phases.includes('U')) {
       const home = uHome;
       const env = uEnv;
-      if (setup.code !== 0 || !vendorRecord) {
-        for (const id of ['U0', 'U1', 'U2', 'U3', 'U4', 'U5']) notRun(id, `the older cua's install did not place a vendor release (exit ${setup.code}, pointer ${vendorRelease ?? 'none'})`);
+      if (setupProblems.length) {
+        for (const id of ['U0', 'U1', 'U2', 'U3', 'U4', 'U5']) notRun(id, `the upgraded home's setup: ${setupProblems.join('; ')}`);
       } else {
+        const facts = homeFacts(home);
         let cell = cellOf('U0');
-        const u0 = await r.attemptOpen('open-upgraded', {env});
-        cell.runs.push({label: 'open at the head', exit: u0.exit, initialized: u0.initialized, err: u0.err});
+        boundary(cell, home, 'present', 'start');
+        const u0 = await r.attemptOpen('open-upgraded', {env, helper: facts.helper, homes: facts.homes});
+        cell.runs.push(attemptRecord('open at the head', u0));
         check(cell, 'the session at the head is refused runtime_not_installed, naming this cua\'s installer by absolute path and the derived release', refusalProblems(u0, {code: 'runtime_not_installed', installer, release}));
-        check(cell, 'nothing is launched', nothingLaunchedProblems(u0.watch));
+        check(cell, 'nothing is launched, by the serve\'s trace', launchedProblems(u0.trace));
         const same = fileIdentity(vendorRecordPath);
-        check(cell, 'the vendor tree is intact', same && same.sha256 === vendorRecord.sha256 && same.ino === vendorRecord.ino && same.mtimeMs === vendorRecord.mtimeMs ? [] : ['the vendor tree\'s install.json changed']);
+        const vendorNow = readDoctor({cli: CLI, env}).report?.checks?.find(c => c.name === 'runtime.vendor') ?? null;
+        check(cell, 'the vendor tree is intact: its install.json the same file, the release resolving, and doctor\'s runtime.vendor passing',
+          [...(same && same.sha256 === vendorRecord.sha256 && same.ino === vendorRecord.ino && same.mtimeMs === vendorRecord.mtimeMs ? [] : ['the vendor tree\'s install.json changed']),
+            ...(vendorNow?.status === 'pass' ? [] : [`runtime.vendor is ${vendorNow?.status ?? 'missing'}`])]);
         const {report: doctorU0} = readDoctor({cli: CLI, env});
         const installed = doctorU0?.checks?.find(c => c.name === 'runtime.installed');
         check(cell, 'doctor says the same: runtime.installed fails naming the installer and the release',
           installed?.status !== 'fail' ? [`runtime.installed is ${installed?.status ?? 'missing'}`] : [installer, release].filter(word => !installed.detail.includes(word)).map(word => `runtime.installed does not name ${word}`));
+        boundary(cell, home, 'present', 'end');
         finish(cell);
 
         cell = cellOf('U1');
-        const again = await r.exec('older-install-again', process.execPath, [olderCli, 'install'], {env, minutes: 25});
-        check(cell, 'the older cua\'s install exits 0 and builds nothing', [...(again.code === 0 ? [] : [`it exited ${again.code}`]), ...(existsSync(join(home, 'modules')) ? ['a modules/ directory is there'] : [])]);
-        const u1 = await r.attemptOpen('open-upgraded-again', {env});
-        cell.runs.push({label: 'open at the head', exit: u1.exit, initialized: u1.initialized, err: u1.err});
+        boundary(cell, home, 'present', 'start');
+        const again = await r.exec('older-install-again', process.execPath, [olderCli, 'install', '--json'], {env, minutes: 25});
+        check(cell, 'the older cua\'s install exits 0 with all four of its parts changed: false, builds no module tree and keeps the vendor record',
+          reinstallProblems({exit: again.code, report: readJson(again.out), modules: existsSync(join(home, 'modules')), vendorRecord: {before: vendorRecord, after: fileIdentity(vendorRecordPath)}}), {report: again.out});
+        const u1 = await r.attemptOpen('open-upgraded-again', {env, helper: facts.helper, homes: facts.homes});
+        cell.runs.push(attemptRecord('open at the head', u1));
         const [a, b] = [parseRefusal(u0.stderr), parseRefusal(u1.stderr)];
         check(cell, 'the session at the head is refused as in U0, word for word', [...refusalProblems(u1, {code: 'runtime_not_installed', installer, release}),
           ...(a && b && a.message === b.message && a.code === b.code && a.hint === b.hint ? [] : ['its sentence is not U0\'s'])]);
-        check(cell, 'nothing is launched from the vendor tree', nothingLaunchedProblems(u1.watch));
+        check(cell, 'nothing is launched, by the serve\'s trace', launchedProblems(u1.trace));
+        boundary(cell, home, 'present', 'end');
         finish(cell);
         if (sampleCount > 0) report.measured.firstAnswerOlder = await r.firstAnswers(olderCli, {env, n: sampleCount});
 
         cell = cellOf('U2');
+        boundary(cell, home, 'present', 'start');
         const printed = /`node (.+) install`/.exec(a?.hint ?? '')?.[1];
         const entry = printed?.startsWith('\'') ? printed.slice(1, -1).replaceAll('\'\\\'\'', '\'') : printed;
         const headPins = {helper: readFileSync(HELPER_PIN_FILE, 'utf8'), node: readFileSync(join(REPO, 'runtime', 'releases', 'node', `${selectNodePin(loadNodePins()).version}-linux-${arch}.json`), 'utf8'), engine: pin};
@@ -418,24 +488,32 @@ async function main() {
           !upgraded ? ['U0 printed no command'] : entry !== CLI ? [`U0 printed ${entry}, not this cua's ${CLI}`]
             : upgradeProblems({exit: upgraded.code, report: readJson(upgraded.out), pointer: readPointer(home), vendorRelease, release, expectChanged, vendorRecord: {before: vendorRecord, after: fileIdentity(vendorRecordPath)}}));
         const launcher = launcherPasses(env, cell);
+        boundary(cell, home, 'present', 'end');
         finish(cell);
 
         if (!launcher) for (const id of ['U3', 'U4', 'U5']) notRun(id, 'sandbox.launcher does not pass in the upgraded home after U2');
         else {
           cell = cellOf('U3');
           rmSync(join(home, 'runtimes'), {recursive: true, force: true});
-          check(cell, 'runtimes/ is removed', existsSync(join(home, 'runtimes')) ? ['runtimes/ is still there'] : []);
+          boundary(cell, home, 'absent', 'start');
           await computerRuns(cell, {env, home, traced: false});
           await browserRuns(cell, {env, home, traced: false});
+          await loaderRun(cell, {env, home});
+          boundary(cell, home, 'absent', 'end');
           finish(cell);
           cell = cellOf('U4');
+          boundary(cell, home, 'absent', 'start');
           await vendorRefused(cell, {env, home});
+          boundary(cell, home, 'absent', 'end');
           finish(cell);
           cell = cellOf('U5');
+          boundary(cell, home, 'absent', 'start');
           writePointer(home, vendorRelease);
           check(cell, 'the pointer is set back to the vendor name', readPointer(home) === vendorRelease ? [] : [`the pointer names ${readPointer(home)}`]);
           await computerRuns(cell, {env, home, traced: false});
           await browserRuns(cell, {env, home, traced: false});
+          await loaderRun(cell, {env, home});
+          boundary(cell, home, 'absent', 'end');
           finish(cell);
         }
       }
@@ -445,14 +523,12 @@ async function main() {
     say(`stopped: ${error.message}`);
   } finally {
     report.finishedAt = new Date().toISOString();
-    const expected = CELLS.filter(c => phases.includes(c.cell[0])).map(c => c.cell);
-    const missing = expected.filter(id => !report.cells.some(c => c.cell === id));
-    report.verdict = {pass: !report.error && missing.length === 0 && report.cells.every(c => c.verdict?.pass),
-      cells: Object.fromEntries(report.cells.map(c => [c.cell, c.verdict?.pass ? 'PASS' : 'FAIL'])), missing, ...(report.error ? {error: report.error} : {})};
+    report.verdict = runVerdict({phases, cells: report.cells, error: report.error});
     writeFileSync(join(out, 'runtime.json'), `${JSON.stringify(report, null, 1)}\n`);
     for (const c of report.cells) say(`${c.cell} ${c.verdict?.pass ? 'PASS' : 'FAIL'}${c.verdict?.pass ? '' : `: ${c.verdict?.problems.join('; ')}`}`);
-    say(`verdict: ${report.verdict.pass ? 'PASS' : 'FAIL'}`);
-    process.exitCode = report.verdict.pass ? 0 : 1;
+    say(`verdict: ${report.verdict.pass ? 'PASS' : 'FAIL'}${report.verdict.pass && !report.verdict.acceptance ? ' (a partial run: not acceptance 12)' : ''}`);
+    // 0 only for acceptance 12 whole; a partial run that passed exits 3, so it is never read as acceptance.
+    process.exitCode = report.verdict.acceptance ? 0 : report.verdict.pass ? 3 : 1;
   }
 }
 

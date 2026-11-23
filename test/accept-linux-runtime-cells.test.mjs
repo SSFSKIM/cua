@@ -3,8 +3,10 @@
 // traced runs, and U2's upgrade. Each judge has its negative control here.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {CELLS, engineRowProblems, fixtureProblems, installProblems, parseRefusal, pinsChanged, refusalProblems, traceProblems, upgradeProblems} from '../scripts/accept/linux-runtime-cells.mjs';
-import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, vendorEngineProblems, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
+import {readFileSync} from 'node:fs';
+import {APPROVED_OLDER, CELLS, FIXTURE_STEPS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal,
+  pinsChanged, refusalProblems, reinstallProblems, runVerdict, traceProblems, upgradeProblems, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
+import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, vendorEngineProblems, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
 
 const HOME = '/run/user/.local/share/cua';
 const ENGINE = `${HOME}/engine/linux/cua-engine`;
@@ -25,7 +27,17 @@ test('the watch folds each sample: the most sky_linux at once, every engine with
   assert.equal(record.samples, 2);
   assert.equal(record.maxSkyLinux, 0);
   assert.deepEqual(record.engines, [{pid: 21, exe: ENGINE, parent: WORKER_ARGV.join(' ')}]);
-  assert.deepEqual(record.replHost, [{pid: 20, role: 'trusted-worker'}, {pid: 30, role: 'kernel'}]);
+  assert.deepEqual(record.replHost, [{pid: 20, role: 'trusted-worker', exe: '/n/bin/node'}, {pid: 30, role: 'kernel', exe: '/n/bin/node'}]);
+});
+
+test('the REPL host ran on the home\'s managed Node: every worker and kernel sampled, at least one of each', () => {
+  assert.deepEqual(ownNodeProblems(watched([WORKER, KERNEL]), {node: '/n/bin/node'}), []);
+});
+
+test('negative control (fix wave 1, #8): a worker or kernel on another Node, or none seen, fails the managed-Node check', () => {
+  assert.match(ownNodeProblems(watched([WORKER, {...KERNEL, exe: '/usr/bin/node'}]), {node: '/n/bin/node'}).join('; '), /kernel 30 ran \/usr\/bin\/node, not the home's managed Node/);
+  assert.match(ownNodeProblems(watched([KERNEL]), {node: '/n/bin/node'}).join('; '), /no trusted-worker was seen/);
+  assert.match(ownNodeProblems(watched([WORKER]), {node: '/n/bin/node'}).join('; '), /no kernel was seen/);
 });
 
 test('cua\'s engine answered: the home\'s cua-engine under the trusted worker and no sky_linux at any sample', () => {
@@ -89,11 +101,49 @@ test('the cell table is the pre-flight\'s, in its order, with the empty home\'s 
   assert.deepEqual([...new Set(CELLS.map(c => c.home))], ['empty', 'upgraded']);
 });
 
-test('a fixture passes only with exit 0 and its own status PASS; each failed step is named', () => {
-  assert.deepEqual(fixtureProblems({exit: 0, report: {status: 'PASS', steps: [{name: 'a', status: 'PASS'}]}}), []);
-  assert.match(fixtureProblems({exit: 1, report: {status: 'FAIL', steps: [{name: 'bind', status: 'FAIL'}]}}).join('; '), /exited 1.*bind failed/);
-  assert.match(fixtureProblems({exit: 0, report: {status: 'FAIL', steps: []}}).join('; '), /its status is FAIL/);
-  assert.match(fixtureProblems({exit: null, signal: 'SIGTERM', report: null}).join('; '), /SIGTERM.*no report/);
+const passed = fixture => ({fixture, status: 'PASS', steps: FIXTURE_STEPS[fixture].map(name => ({name, status: 'PASS'}))});
+
+test('a fixture passes only with exit 0, its own identity, every one of its mandatory steps passed, and its status PASS', () => {
+  for (const fixture of Object.keys(FIXTURE_STEPS)) assert.deepEqual(fixtureProblems({exit: 0, report: passed(fixture)}, {fixture}), []);
+  assert.match(fixtureProblems({exit: 1, report: {...passed('linux-text'), status: 'FAIL', steps: [{name: 'bind', status: 'FAIL'}]}}, {fixture: 'linux-text'}).join('; '), /exited 1.*bind failed/);
+  assert.match(fixtureProblems({exit: null, signal: 'SIGTERM', report: null}, {fixture: 'linux-text'}).join('; '), /SIGTERM.*no report/);
+});
+
+test('negative control (fix wave 1, #1): a PASS with no steps, a PASS from another fixture, or one missing a mandatory step fails', () => {
+  assert.match(fixtureProblems({exit: 0, report: {fixture: 'linux-text', status: 'PASS'}}, {fixture: 'linux-text'}).join('; '), /did not run: preconditions/);
+  assert.match(fixtureProblems({exit: 0, report: {status: 'PASS', steps: []}}, {fixture: 'linux-browser-only'}).join('; '), /is unnamed, not linux-browser-only/);
+  assert.match(fixtureProblems({exit: 0, report: passed('linux-text')}, {fixture: 'linux-browser-only'}).join('; '), /is linux-text, not linux-browser-only/);
+  const missing = passed('linux-native');
+  missing.steps = missing.steps.filter(s => !/launch_app/.test(s.name));
+  assert.match(fixtureProblems({exit: 0, report: missing}, {fixture: 'linux-native'}).join('; '), /did not run: launch_app/);
+});
+
+test('each fixture\'s mandatory steps are named in its own source, so the list cannot drift from it', () => {
+  const sources = {'linux-native': ['linux-native.mjs', 'linux-selection.mjs'], 'linux-text': ['linux-text.mjs'], 'linux-text --read-only': ['linux-text.mjs'], 'linux-browser-only': ['linux-browser-only.mjs']};
+  for (const [fixture, files] of Object.entries(sources)) {
+    const text = files.map(f => readFileSync(new URL(`../scripts/accept/${f}`, import.meta.url), 'utf8')).join('\n');
+    for (const name of FIXTURE_STEPS[fixture]) assert.ok(text.includes(JSON.stringify(name).slice(1, -1)) || text.includes(name.replaceAll("'", "\\'")), `${fixture}: ${name}`);
+  }
+});
+
+test('the phases: E, U or both, named once each; anything else is refused rather than selecting nothing', () => {
+  assert.deepEqual(parsePhases(undefined), ['E', 'U']);
+  assert.deepEqual(parsePhases('U'), ['U']);
+  for (const bad of ['', 'X', 'e', 'E,E', 'E,X', ',']) assert.throws(() => parsePhases(bad), /--phases/);
+});
+
+test('negative control (fix wave 1, #1): a partial run that passes is not acceptance, and a missing cell fails it', () => {
+  const cell = (id, pass = true) => ({cell: id, verdict: {pass}});
+  const all = CELLS.map(c => cell(c.cell));
+  assert.deepEqual(runVerdict({phases: ['E', 'U'], cells: all}).acceptance, true);
+  const partial = runVerdict({phases: ['E'], cells: all.filter(c => c.cell[0] === 'E')});
+  assert.equal(partial.pass, true);
+  assert.equal(partial.acceptance, false);
+  assert.equal(partial.scope, 'partial');
+  assert.deepEqual(runVerdict({phases: ['E', 'U'], cells: all.slice(1)}).missing, ['E0']);
+  assert.equal(runVerdict({phases: ['E', 'U'], cells: all.slice(1)}).pass, false);
+  assert.equal(runVerdict({phases: ['E', 'U'], cells: all, error: 'stopped'}).pass, false);
+  assert.equal(runVerdict({phases: ['E', 'U'], cells: []}).pass, false);
 });
 
 const PIN = {version: '0.4.4', assets: {x64: {sha256: 'e'.repeat(64)}}};
@@ -125,20 +175,32 @@ test('a refusal is read from serve\'s standard error: its message, code and reme
   assert.equal(parseRefusal('cua serve: listening\n'), null);
 });
 
+const attempt = (o = {}) => ({exit: 1, signal: null, replied: false, spontaneous: true, drained: true, stderr: refused(), ...o});
+
 test('an open refused with its code, naming this cua\'s installer and the release, passes', () => {
-  assert.deepEqual(refusalProblems({exit: 1, initialized: false, stderr: refused()}, {code: 'runtime_not_installed', installer: INSTALLER, release: RELEASE}), []);
+  assert.deepEqual(refusalProblems(attempt(), {code: 'runtime_not_installed', installer: INSTALLER, release: RELEASE}), []);
 });
 
 test('negative control: an open that was answered, another code, another installer or no release named fails the refusal', () => {
-  assert.match(refusalProblems({exit: 0, initialized: true, stderr: ''}, {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /the open was answered/);
-  assert.match(refusalProblems({exit: 1, initialized: false, stderr: refused('engine_not_installed')}, {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /refused engine_not_installed, not runtime_not_installed/);
-  assert.match(refusalProblems({exit: 1, initialized: false, stderr: refused().replaceAll(INSTALLER, 'cua install')}, {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /does not name .*node \/repo\/bin\/cua\.mjs install/);
-  assert.match(refusalProblems({exit: 1, initialized: false, stderr: refused().replaceAll(RELEASE, 'r')}, {code: 'runtime_not_installed', installer: INSTALLER, release: RELEASE}).join('; '), /does not name the release/);
-  assert.match(refusalProblems({exit: 1, initialized: false, stderr: 'killed\n'}, {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /no refusal sentence/);
+  assert.match(refusalProblems(attempt({exit: 0, replied: true, stderr: ''}), {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /initialize was answered/);
+  assert.match(refusalProblems(attempt({stderr: refused('engine_not_installed')}), {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /refused engine_not_installed, not runtime_not_installed/);
+  assert.match(refusalProblems(attempt({stderr: refused().replaceAll(INSTALLER, 'cua install')}), {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /does not name .*node \/repo\/bin\/cua\.mjs install/);
+  assert.match(refusalProblems(attempt({stderr: refused().replaceAll(RELEASE, 'r')}), {code: 'runtime_not_installed', installer: INSTALLER, release: RELEASE}).join('; '), /does not name the release/);
+  assert.match(refusalProblems(attempt({stderr: 'killed\n'}), {code: 'runtime_not_installed', installer: INSTALLER}).join('; '), /no refusal sentence/);
 });
 
-const summary = (o = {}) => ({serve: 101, workers: [{pid: 102, underServe: true}], helpers: [104], kernels: [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 300, ...o.kernel}],
-  runtimes: {calls: 0, unresolved: 0, complete: true, ...o.runtimes}, processes: 40});
+test('negative control (fix wave 1, #7): a JSON-RPC error reply, a signalled exit, an exit the driver forced, or undrained stderr fails the refusal', () => {
+  const judged = o => refusalProblems(attempt(o), {code: 'runtime_not_installed', installer: INSTALLER, release: RELEASE}).join('; ');
+  assert.match(judged({replied: true}), /initialize was answered/);
+  assert.match(judged({exit: null, signal: 'SIGKILL'}), /ended by SIGKILL, not a nonzero exit of its own/);
+  assert.match(judged({exit: 0}), /exited 0/);
+  assert.match(judged({spontaneous: false}), /did not exit on its own/);
+  assert.match(judged({drained: false}), /standard error was not drained/);
+});
+
+const NODE = '/run/user/.local/share/cua/node/v24.22.0/bin/node';
+const summary = (o = {}) => ({serve: 101, workers: [{pid: 102, underServe: true, exe: NODE, ...o.worker}], helpers: [104], kernels: [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 300, exe: NODE, ...o.kernel}],
+  runtimes: {calls: 0, unresolved: 0, pending: 0, unended: 0, complete: true, ...o.runtimes}, processes: 40, launched: [], ...o.top});
 
 test('a traced run passes when the trace followed the kernel and the serve\'s tree named nothing under runtimes/', () => {
   assert.deepEqual(traceProblems(summary()), []);
@@ -153,6 +215,75 @@ test('negative control: a path under runtimes/ in the trace, a trace incomplete 
   assert.match(traceProblems(summary({kernel: {opened: ['/m/a']}}), {opened: ['/m/a', '/m/b']}).join('; '), /did not open \/m\/b/);
   // Opened by a kernel that is not the serve's, under the helper, does not count.
   assert.match(traceProblems(summary({kernel: {opened: ['/m/a'], underHelper: false}}), {opened: ['/m/a']}).join('; '), /did not open \/m\/a/);
+});
+
+test('negative control (fix wave 1, #2): an unfinished file call or a process with no end leaves the trace incomplete; opens pooled across kernels do not count', () => {
+  assert.match(traceProblems(summary({runtimes: {pending: 1, complete: false}})).join('; '), /1 file call unfinished/);
+  assert.match(traceProblems(summary({runtimes: {unended: 2, complete: false}})).join('; '), /2 processes of the serve's tree with no end/);
+  // complete: false alone fails, whatever the counts say.
+  assert.match(traceProblems(summary({runtimes: {complete: false}})).join('; '), /incomplete/);
+  const pooled = {...summary(), kernels: [{pid: 106, underHelper: true, underServe: true, callsAfterExec: 9, exe: NODE, opened: ['/m/a']}, {pid: 107, underHelper: true, underServe: true, callsAfterExec: 9, exe: NODE, opened: ['/m/b']}]};
+  assert.match(traceProblems(pooled, {opened: ['/m/a', '/m/b']}).join('; '), /no one kernel of the serve's opened all 2/);
+});
+
+test('negative control (fix wave 1, #8): a worker or kernel that exec\'d another Node than the home\'s managed one fails', () => {
+  assert.deepEqual(traceProblems(summary(), {node: [NODE]}), []);
+  assert.match(traceProblems(summary({kernel: {exe: '/usr/bin/node'}}), {node: [NODE]}).join('; '), /the kernel 106 ran \/usr\/bin\/node, not the home's managed Node/);
+  assert.match(traceProblems(summary({worker: {exe: '/opt/hostedtoolcache/node/24/bin/node'}}), {node: [NODE]}).join('; '), /the worker 102 ran .*hostedtoolcache/);
+});
+
+test('nothing launched, by exec evidence: the serve\'s trace complete and no helper, bubblewrap, REPL host or engine exec in it', () => {
+  const ok = {serve: 101, launched: [], runtimes: {complete: true, pending: 0, unended: 0, unresolved: 0, calls: 0}};
+  assert.deepEqual(launchedProblems(ok), []);
+  assert.match(launchedProblems({...ok, launched: [{pid: 104, kind: 'helper', program: '/h/codex-linux-sandbox'}]}).join('; '), /helper 104 was launched/);
+  assert.match(launchedProblems({...ok, launched: [{pid: 105, kind: 'bwrap', program: '/usr/bin/bwrap'}]}).join('; '), /bwrap 105 was launched/);
+  assert.match(launchedProblems({...ok, serve: null}).join('; '), /no cua serve exec/);
+  assert.match(launchedProblems({...ok, runtimes: {...ok.runtimes, complete: false, unended: 1}}).join('; '), /incomplete/);
+  assert.match(launchedProblems(null).join('; '), /no trace/);
+});
+
+test('counted runs inherit no runtime override: CUA_* (but CUA_HOME), OAI_*, NODE_OPTIONS and NODE_PATH are named', () => {
+  assert.deepEqual(inheritedOverrides({CUA_HOME: '/h', HOME: '/u', PATH: '/bin'}), []);
+  assert.deepEqual(inheritedOverrides({CUA_NODE: '/usr/bin/node', OAI_SKY_LINUX_BIN: '/x', NODE_OPTIONS: '--x', CUA_REPL_NODE_MODULE_DIRS: '/m', CUA_HOME: '/h'}),
+    ['CUA_NODE', 'CUA_REPL_NODE_MODULE_DIRS', 'NODE_OPTIONS', 'OAI_SKY_LINUX_BIN']);
+});
+
+test('negative control (fix wave 1, #5): the vendor tree must be in the state the cell names at its boundary, not taken from the label', () => {
+  assert.deepEqual(boundaryProblems({expected: 'present', exists: true, resolves: true}), []);
+  assert.deepEqual(boundaryProblems({expected: 'absent', exists: false, resolves: false}), []);
+  assert.match(boundaryProblems({expected: 'absent', exists: true, resolves: true}).join('; '), /runtimes\/ is there/);
+  assert.match(boundaryProblems({expected: 'present', exists: true, resolves: false, why: 'release_damaged'}).join('; '), /does not resolve \(release_damaged\)/);
+});
+
+test('negative control (fix wave 1, #6): another older commit, a dirty checkout, a vendor release not the arch\'s pin, or one doctor does not verify fails the setup', () => {
+  const good = {commit: APPROVED_OLDER, clean: true, exit: 0, vendorRelease: '26.928.40906-linux-x64', pinnedRelease: '26.928.40906-linux-x64', vendorRow: {status: 'pass'}, record: {sha256: 'a'}};
+  assert.equal(APPROVED_OLDER, '0d19fdfadce47fc6ba88db180fb4845346c9be26');
+  assert.deepEqual(olderProblems(good), []);
+  assert.match(olderProblems({...good, commit: 'da7585c3'.padEnd(40, '0')}).join('; '), /is not the approved/);
+  assert.match(olderProblems({...good, clean: false}).join('; '), /has local changes/);
+  assert.match(olderProblems({...good, vendorRelease: 'cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d'}).join('; '), /not the arch's pinned vendor release/);
+  assert.match(olderProblems({...good, vendorRow: {status: 'fail', detail: 'signature'}}).join('; '), /runtime\.vendor is fail/);
+  assert.match(olderProblems({...good, record: null}).join('; '), /no install\.json/);
+});
+
+test('negative control (fix wave 1, #6): U1\'s reinstall is a no-op only by all four explicit changed: false, the vendor record kept and no module tree', () => {
+  const report = {ok: true, changed: false, sandboxHelper: {changed: false}, engine: {changed: false}, node: {changed: false}};
+  const same = {before: {sha256: 'a', ino: 1, mtimeMs: 5}, after: {sha256: 'a', ino: 1, mtimeMs: 5}};
+  assert.deepEqual(reinstallProblems({exit: 0, report, modules: false, vendorRecord: same}), []);
+  assert.match(reinstallProblems({exit: 0, report: {...report, engine: {}}, modules: false, vendorRecord: same}).join('; '), /engine changed: undefined, not false/);
+  assert.match(reinstallProblems({exit: 0, report: {...report, changed: true}, modules: false, vendorRecord: same}).join('; '), /the vendor release changed: true/);
+  assert.match(reinstallProblems({exit: 0, report: null, modules: false, vendorRecord: same}).join('; '), /printed no report/);
+  assert.match(reinstallProblems({exit: 0, report, modules: true, vendorRecord: same}).join('; '), /a modules\/ directory is there/);
+  assert.match(reinstallProblems({exit: 0, report, modules: false, vendorRecord: {...same, after: {sha256: 'b', ino: 1, mtimeMs: 5}}}).join('; '), /install\.json is not the same file/);
+});
+
+test('Minor (a): a browser-only run\'s witnesses are kept relative to the module root, and anything outside it stays absolute', () => {
+  const root = '/r/modules/b71d';
+  const report = {imports: {selected: {pngjs: `${root}/node_modules/pngjs/lib/png.js`}, natives: [`${root}/node_modules/x.node`, '/elsewhere/y.node'],
+    loaded: {playwright: {entry: `${root}/node_modules/playwright/index.js`, files: [`${root}/node_modules/playwright/index.js`, `${root}/node_modules/playwright-core/index.js`]}}}};
+  const kernels = [{pid: 6, underServe: true, underHelper: true, opened: [`${root}/node_modules/pngjs/lib/png.js`]}];
+  assert.deepEqual(witnessOf(report, {root, kernels}), {root, selected: {pngjs: 'node_modules/pngjs/lib/png.js'}, natives: ['node_modules/x.node', '/elsewhere/y.node'],
+    playwright: {entry: 'node_modules/playwright/index.js', files: 2, outside: []}, opened: [{pid: 6, paths: ['node_modules/pngjs/lib/png.js']}]});
 });
 
 const upgrade = ({report, ...o} = {}) => ({exit: 0, report: {ok: true, release: RELEASE, pointer: {previous: '26.928.40906-linux-x64', current: RELEASE, changed: true}, modules: {changed: true},

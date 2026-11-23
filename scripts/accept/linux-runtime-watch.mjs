@@ -46,7 +46,7 @@ export function foldSample(state, entries) {
       keep(state.sky, {pid: entry.pid, exe: entry.exe ?? null, parent, service: entry.parent?.env?.CUA_SKY_SERVICE ?? null, bin: entry.parent?.env?.OAI_SKY_LINUX_BIN ?? null});
     }
     const role = replRole(entry);
-    if (role && !state.replHost.has(entry.pid)) state.replHost.set(entry.pid, {pid: entry.pid, role});
+    if (role && !state.replHost.has(entry.pid)) state.replHost.set(entry.pid, {pid: entry.pid, role, exe: entry.exe ?? null});
   }
   state.maxSkyLinux = Math.max(state.maxSkyLinux, skyNow);
   return state;
@@ -77,7 +77,21 @@ export function vendorEngineProblems(watch, {bin, service}) {
   return problems;
 }
 
-/** Nothing launched: no REPL host process and no engine at any sample (a refused open). */
+/**
+ * The REPL host ran on the home's managed Node (`node`, its real path): every trusted worker and kernel sampled ran it, by
+ * the executable /proc shows, and at least one of each was sampled (fix wave 1, #8).
+ */
+export function ownNodeProblems(watch, {node}) {
+  const problems = [...sampled(watch)];
+  for (const role of ['trusted-worker', 'kernel']) {
+    const seen = watch.replHost.filter(p => p.role === role);
+    if (!seen.length) problems.push(`no ${role} was seen at any sample`);
+    for (const p of seen) if (p.exe !== node) problems.push(`the ${role} ${p.pid} ran ${p.exe ?? 'an unread executable'}, not the home's managed Node ${node}`);
+  }
+  return problems;
+}
+
+/** Nothing launched, as far as the samples saw: no REPL host process and no engine at any sample. */
 export const nothingLaunchedProblems = watch => [...sampled(watch), ...watch.replHost.map(p => `${p.role} ${p.pid} ran`), ...enginesRan(watch), ...skySeen(watch)];
 
 // ---- the sampler -------------------------------------------------------------------------------------------------------

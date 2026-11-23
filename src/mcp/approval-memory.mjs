@@ -25,7 +25,7 @@
 // which are remembered are decided before the stamp, and a reply whose content or `_meta` is malformed is passed on
 // unchanged, so it still fails. Only cua's own REPL host gets the stamp (`stamped`): the vendor's node_repl, unmodified,
 // gets every answer exactly as before #216 (a client's reply as sent, a remembered one as {action, content: {source}}),
-// and the policy then reads the mark (src/services/engine/policy.mjs).
+// and the policy tells who answered there only where it can (src/services/engine/policy.mjs).
 import {createHash} from 'node:crypto';
 import {elicitationOutcome} from '../repl-host/elicitation.mjs';
 

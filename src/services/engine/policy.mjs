@@ -79,30 +79,43 @@ export function approvalRequest({toolName, target, callId, risk = riskOf(target.
   };
 }
 
-// Where an approval's answer came from (#216). cua's MCP connection stamps every computer-use answer it passes on with
-// `_meta["cua/approval"]` (src/mcp/approval-memory.mjs): its opaque id, the runtime generation, the scope and who
-// answered, "memory" (the connection's memory; the client was not asked) or "client". A client cannot claim the
-// memory's answer: the connection overwrites that key and removes the persisted-state mark from a client's content. An
-// answer with no stamp did not pass through cua's connection as a client's reply (the vendor host's own store answers
-// below it), so its persisted-state mark (`content.source`) is the vendor host's and is read as "memory".
+// Where an approval's answer came from (#216), told only where it can be told reliably. On cua's own REPL host, cua's
+// MCP connection stamps every computer-use answer it passes on with `_meta["cua/approval"]` (src/mcp/approval-memory.mjs):
+// its opaque id, the runtime generation, the scope and who answered, "memory" (the connection's memory; the client was
+// not asked) or "client"; a client cannot claim the memory's answer, since the connection overwrites that key and removes
+// the persisted-state mark from a client's content. The stamp is read there and nowhere else. On the vendor's node_repl
+// nothing stamps (it gets every answer as before #216) and a client's reply passes through as sent, so neither a stamp
+// nor the persisted-state mark (`content.source`) is the connection's word: an answer with the mark may be a remembered
+// one or a client's copy, and its provenance is unavailable (null). Without the mark it is the client's: every
+// remembered answer carries the mark, the connection's and the vendor host's own store's alike. The mark keeps the
+// meaning it had before #216 for the vendor's own code, which reads it from the unaltered reply.
 const PERSISTED_STATE_SOURCE = 'computer-use-persisted-state';
 const APPROVAL_META = 'cua/approval';
 const ANSWERED_BY = ['memory', 'client'];
 const plainRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value);
-function stampOf(answer) {
-  const stamp = plainRecord(answer?._meta) ? answer._meta[APPROVAL_META] : undefined;
+// Whether the policy runs under cua's own host: its trusted worker is configured by cua's own setting
+// (CUA_REPL_TRUSTED_SERVICES, which src/repl-host/trusted-worker.mjs cannot start without and src/runtime/launch.mjs
+// names only for the own host; the vendor's worker reads NODE_REPL_TRUSTED_SERVICES). A cell cannot set the worker's env.
+export const onCuaHost = nodeRepl => typeof nodeRepl?.env?.CUA_REPL_TRUSTED_SERVICES === 'string';
+// -> the stamp cua's connection put on `answer` (on cua's host only), or null.
+function stampOf(answer, cuaHost) {
+  const stamp = cuaHost && plainRecord(answer?._meta) ? answer._meta[APPROVAL_META] : undefined;
   return plainRecord(stamp) && ANSWERED_BY.includes(stamp.answeredBy) ? stamp : null;
 }
-const answeredBy = answer => stampOf(answer)?.answeredBy ?? (plainRecord(answer?.content) && answer.content.source === PERSISTED_STATE_SOURCE ? 'memory' : 'client');
+// -> 'memory', 'client', or null when it cannot be told.
+function answeredBy(answer, cuaHost) {
+  if (cuaHost) return stampOf(answer, true)?.answeredBy ?? null;
+  return plainRecord(answer?.content) && answer.content.source === PERSISTED_STATE_SOURCE ? null : 'client';
+}
 
 // The approval's result meta, `cua/approval`, on every app-scoped call that asked (null when none did): the answer's
-// action and who gave it, and the connection's id, runtime generation and scope when its connection stamped them. Only
-// these fields, each checked; never the answer's content or any other part of the client's reply.
-export function approvalMeta(answer) {
-  const stamp = stampOf(answer);
+// action and who gave it (null: unavailable), and on cua's host the connection's id, runtime generation and scope from
+// its stamp. Only these fields, each checked; never the answer's content or any other part of the client's reply.
+export function approvalMeta(answer, cuaHost = false) {
+  const stamp = stampOf(answer, cuaHost);
   const action = ['accept', 'decline', 'cancel'].includes(answer?.action) ? answer.action : null;
   return {
-    action, answeredBy: answeredBy(answer),
+    action, answeredBy: answeredBy(answer, cuaHost),
     connection: typeof stamp?.connection === 'string' && /^[0-9a-f]{1,32}$/.test(stamp.connection) ? stamp.connection : null,
     runtimeGeneration: Number.isSafeInteger(stamp?.runtimeGeneration) && stamp.runtimeGeneration >= 0 ? stamp.runtimeGeneration : null,
     scope: stamp?.scope === 'connection' ? 'connection' : null,
@@ -115,13 +128,16 @@ export function approvalMeta(answer) {
 // this request; the client may be a person, a hook answering for them, or the client itself (Claude Code 2.1.330 answers
 // decline when an Elicitation hook blocks, and cancel when the request is aborted, refused by its own limits or its
 // handler fails; docs/evidence/2026-11-23-own-native-engine/gates/216.md). A declined app is remembered for the connection
-// and a cancelled one is asked again, as the memory does; neither sentence suggests a way around the answer.
-export function notApproved(displayName, answer) {
+// and a cancelled one is asked again, as the memory does; neither sentence suggests a way around the answer. A decline
+// whose provenance cannot be told (approvalMeta) says only that it was declined. A cancel is always the client's: the
+// memory never answers one.
+export function notApproved(displayName, answer, cuaHost = false) {
   const refused = `Computer Use was not approved to use ${displayName}`;
   if (answer?.action === 'decline') {
-    return answeredBy(answer) === 'memory'
-      ? `${refused}: it was declined earlier on this connection, so it was not asked again.`
-      : `${refused}: the client declined the approval request; it is not asked again on this connection.`;
+    const by = answeredBy(answer, cuaHost);
+    if (by === 'memory') return `${refused}: it was declined earlier on this connection, so it was not asked again.`;
+    if (by === 'client') return `${refused}: the client declined the approval request; it is not asked again on this connection.`;
+    return `${refused}: the approval request was declined.`;
   }
   if (answer?.action === 'cancel') return `${refused}: the client cancelled the approval request without an answer.`;
   return refused;
@@ -191,8 +207,8 @@ export function createPolicy({nodeRepl, resolve}) {
     const refused = refusal(target.bundleIdentifier);
     if (refused) throw new Error(refused);
     const answer = await createElicitation(approvalRequest({toolName, target, callId: toolCallId(nodeRepl)}));
-    setMeta({[APPROVAL_META]: approvalMeta(answer)});
-    if (answer?.action !== 'accept') throw new Error(notApproved(target.displayName, answer));
+    setMeta({[APPROVAL_META]: approvalMeta(answer, onCuaHost(nodeRepl))});
+    if (answer?.action !== 'accept') throw new Error(notApproved(target.displayName, answer, onCuaHost(nodeRepl)));
     return fn(checkedInput(checked, target.appPath), target);
   }
 
@@ -269,8 +285,8 @@ export function createLinuxPolicy({nodeRepl, listWindows}) {
     if (!scope) return;
     const createElicitation = required(nodeRepl, 'createElicitation');
     const answer = await createElicitation(linuxApprovalRequest({...scope, callId: toolCallId(nodeRepl)}));
-    nodeRepl?.setResponseMeta?.({[APPROVAL_META]: approvalMeta(answer)});
-    if (answer?.action !== 'accept') throw new Error(notApproved(scope.display, answer));
+    nodeRepl?.setResponseMeta?.({[APPROVAL_META]: approvalMeta(answer, onCuaHost(nodeRepl))});
+    if (answer?.action !== 'accept') throw new Error(notApproved(scope.display, answer, onCuaHost(nodeRepl)));
   }
 
   return {approve};

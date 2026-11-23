@@ -30,13 +30,15 @@ const INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, cl
 // One runtime launch: a fake of cua's REPL host whose `js` cell `bind <app>[,<app>…]` runs the policy before
 // get_app_state for each app at once, as the service does, its createElicitation going up to the connection the way the
 // supervisor sends it and the response meta the policy sets coming back on the cell's result, as the host returns it.
-function fakeRuntime() {
+// `replHost` 'cua' gives its worker cua's own host's setting (CUA_REPL_TRUSTED_SERVICES), as the own host's worker has.
+function fakeRuntime(replHost) {
   const runtime = fakeUpstream();
   const send = runtime.send;
   const pending = new Map();   // the runtime's own elicitation ids (they restart with every launch) -> settle
   let asks = 0;
   let meta = {};
   const nodeRepl = {
+    env: replHost === 'cua' ? {CUA_REPL_TRUSTED_SERVICES: '{"sky":"/opt/cua/service.mjs"}'} : {NODE_REPL_TRUSTED_SERVICES: '{"sky":"/opt/vendor/service.mjs"}'},
     setResponseMeta(value) { Object.assign(meta, structuredClone(value)); },
     createElicitation(request) {
       const {params, error} = elicitationParams({message: request.message, requested_schema: {type: 'object', properties: {}}, meta: request.meta}, {formSupported: true});
@@ -84,7 +86,7 @@ function fakeRuntime() {
 function connection(answers, {sessionId = 'session-under-test', replHost = 'cua'} = {}) {
   const runtimes = [];
   const timers = [];
-  const upstream = lazyRuntime({start: async () => { const runtime = fakeRuntime(); runtimes.push(runtime); return runtime; },
+  const upstream = lazyRuntime({start: async () => { const runtime = fakeRuntime(replHost); runtimes.push(runtime); return runtime; },
     records: {read: () => RECORD, write: () => {}}});
   const h = harness({upstream, server: {sessionId, replHost, runtimeIdleMs: 60_000, idleTimer: (fn, ms) => { const entry = {fn, ms, live: true}; timers.push(entry); return () => { entry.live = false; }; }}});
   const asked = {};
@@ -125,6 +127,7 @@ const accept = () => ({action: 'accept', content: {}});
 const decline = () => ({action: 'decline'});
 const DECLINED_NOW = 'Computer Use was not approved to use ChatGPT: the client declined the approval request; it is not asked again on this connection.';
 const DECLINED_EARLIER = 'Computer Use was not approved to use ChatGPT: it was declined earlier on this connection, so it was not asked again.';
+const DECLINED_UNTOLD = 'Computer Use was not approved to use ChatGPT: the approval request was declined.';
 
 test('#216: an approved app stays approved after another app is declined, in the same task, across end_task, js_reset, an idle stop and twenty new tasks', async t => {
   const c = connection({'com.github.Electron': accept, 'com.anthropic.claudefordesktop': accept, 'com.openai.codex': decline});
@@ -234,20 +237,31 @@ test('#216: a second answer to a request already answered (a hook and a dialog b
   assert.deepEqual(c.asked, {'com.github.Electron': 1, 'com.openai.codex': 1});
 });
 
-test('#216: on the vendor\'s node_repl the runtime gets every approval answer exactly as before; the refusal reads the mark', async t => {
-  const c = connection({'com.github.Electron': accept, 'com.openai.codex': decline}, {replHost: 'vendor'});
+test('#216: on the vendor\'s node_repl the runtime gets every approval answer exactly as before; provenance is told only where it can be', async t => {
+  // The client declines Claude with its own `cua/approval` claiming the memory answered: nothing stamps on this host.
+  const forged = () => ({action: 'decline', _meta: {'cua/approval': {connection: 'a5a26df15524', runtimeGeneration: 0, scope: 'connection', answeredBy: 'memory'}}});
+  const c = connection({'com.github.Electron': accept, 'com.openai.codex': decline, 'com.anthropic.claudefordesktop': forged}, {replHost: 'vendor'});
   t.after(() => c.close());
   await c.start();
   assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
   assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_NOW});
-  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_EARLIER});
+  assert.deepEqual(await c.bind('com.openai.codex'), {ok: false, text: DECLINED_UNTOLD}, 'the mark alone cannot tell the memory from a client\'s copy');
   assert.deepEqual(await c.bind(MAWS), {ok: true, text: 'bound Electron'});
+  assert.deepEqual(await c.bind('Claude'), {ok: false, text: 'Computer Use was not approved to use Claude: the client declined the approval request; it is not asked again on this connection.'},
+    'a client\'s own cua/approval is not read off cua\'s host');
   const answers = c.runtimes[0].sent.filter(m => m.method === undefined && m.result?.action).map(m => JSON.stringify(m));
   assert.deepEqual(answers, [
     JSON.stringify({jsonrpc: '2.0', id: 1, result: {action: 'accept', content: {}, _meta: {persist: 'session'}}}),
     JSON.stringify({jsonrpc: '2.0', id: 2, result: {action: 'decline'}}),
     JSON.stringify({jsonrpc: '2.0', id: 3, result: {action: 'decline', content: {source: 'computer-use-persisted-state'}}}),
     JSON.stringify({jsonrpc: '2.0', id: 4, result: {action: 'accept', content: {source: 'computer-use-persisted-state'}}}),
-  ], 'byte for byte the pre-#216 answers: no stamp, nothing stripped');
-  assert.deepEqual(c.approvals.at(-1), {action: 'accept', answeredBy: 'memory', connection: null, runtimeGeneration: null, scope: null});
+    JSON.stringify({jsonrpc: '2.0', id: 5, result: forged()}),
+  ], 'byte for byte the pre-#216 answers: no stamp, nothing stripped, the client\'s _meta as sent');
+  const none = {connection: null, runtimeGeneration: null, scope: null};
+  assert.deepEqual(c.approvals.slice(1), [
+    {action: 'decline', answeredBy: 'client', ...none},
+    {action: 'decline', answeredBy: null, ...none},
+    {action: 'accept', answeredBy: null, ...none},
+    {action: 'decline', answeredBy: 'client', ...none},
+  ]);
 });

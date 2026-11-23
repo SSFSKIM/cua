@@ -25,8 +25,10 @@ const TARGETS = {
 const byString = {...TARGETS, [TARGETS.TextEdit.appPath]: TARGETS.TextEdit, 'com.apple.TextEdit': TARGETS.TextEdit};
 
 // A trusted worker's nodeRepl as the policy uses it, with the client's answers from `answer(request)`; `memory` puts the
-// connection's approval memory (cua's proxy, src/mcp/approval-memory.mjs) in front of the client, as a cua session does.
-function worker({answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), memory = false, requestMeta = {'x-codex-turn-metadata': {call_id: 'call-7'}}} = {}) {
+// connection's approval memory (cua's proxy, src/mcp/approval-memory.mjs) in front of the client, as a cua session does;
+// `env` the worker's environment (cua's own host's worker carries CUA_REPL_TRUSTED_SERVICES; none: the vendor's).
+const CUA_HOST_ENV = Object.freeze({CUA_REPL_TRUSTED_SERVICES: '{"sky":"/opt/cua/service.mjs"}'});
+function worker({answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), memory = false, requestMeta = {'x-codex-turn-metadata': {call_id: 'call-7'}}, env} = {}) {
   const asked = [];
   const meta = [];
   const remembered = approvalMemory();
@@ -43,6 +45,7 @@ function worker({answer = () => ({action: 'accept', content: null, _meta: {persi
   };
   const nodeRepl = {
     requestMeta,
+    ...(env ? {env} : {}),
     setResponseMeta: value => meta.push(structuredClone(value)),
     createElicitation: async request => {
       const {ok, ...fields} = toWorker({message: request.message, meta: request.meta ?? null});
@@ -126,42 +129,58 @@ test('withPolicy: the tool surface reset then named, the approval asked on every
 
 test('withPolicy: anything but accept fails "Computer Use was not approved to use <app>", saying where the answer came from (#216), and runs nothing', async () => {
   const remembered = {source: 'computer-use-persisted-state'};
-  for (const [answer, why] of [
-    [{action: 'decline', content: null}, ': the client declined the approval request; it is not asked again on this connection.'],
-    [{action: 'decline', content: remembered}, ': it was declined earlier on this connection, so it was not asked again.'],
-    [{action: 'cancel', content: null}, ': the client cancelled the approval request without an answer.'],
-    [{action: 'cancel', content: remembered}, ': the client cancelled the approval request without an answer.'],
-    [{action: 'reject', content: null}, ''],
+  const stamp = answeredBy => ({'cua/approval': {connection: 'a5a26df15524', runtimeGeneration: 0, scope: 'connection', answeredBy}});
+  for (const [answer, why, env] of [
+    // cua's own host: the connection's stamp says who answered.
+    [{action: 'decline', content: null, _meta: stamp('client')}, ': the client declined the approval request; it is not asked again on this connection.', CUA_HOST_ENV],
+    [{action: 'decline', content: remembered, _meta: stamp('memory')}, ': it was declined earlier on this connection, so it was not asked again.', CUA_HOST_ENV],
+    [{action: 'cancel', content: null, _meta: stamp('client')}, ': the client cancelled the approval request without an answer.', CUA_HOST_ENV],
+    // The vendor's host: no mark is the client's; the mark cannot be told from a client's copy of it.
+    [{action: 'decline', content: null, _meta: null}, ': the client declined the approval request; it is not asked again on this connection.'],
+    [{action: 'decline', content: remembered, _meta: null}, ': the approval request was declined.'],
+    [{action: 'cancel', content: null, _meta: null}, ': the client cancelled the approval request without an answer.'],
+    [{action: 'cancel', content: remembered, _meta: null}, ': the client cancelled the approval request without an answer.'],
+    [{action: 'reject', content: null, _meta: null}, ''],
     [undefined, ''],
   ]) {
-    const {policy} = policyFor({answer: () => (answer ? {...answer, _meta: null} : answer)});
+    const {policy} = policyFor({answer: () => answer, env});
     let ran = false;
     await assert.rejects(policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => { ran = true; }), {message: `Computer Use was not approved to use TextEdit${why}`}, JSON.stringify(answer));
     assert.equal(ran, false);
   }
 });
 
-test('#216: the connection\'s stamp decides who answered, over any mark in the content; cua/approval carries only checked fields', async () => {
+test('#216: the connection\'s stamp decides who answered only on cua\'s own host; on the vendor\'s, a stamp is ignored and a mark leaves it unavailable', async () => {
   const MARK = {source: 'computer-use-persisted-state'};
   const stamp = (answeredBy, extra = {}) => ({'cua/approval': {connection: 'a5a26df15524', runtimeGeneration: 2, scope: 'connection', answeredBy, ...extra}});
+  const CLIENT = ': the client declined the approval request; it is not asked again on this connection.';
+  const MEMORY = ': it was declined earlier on this connection, so it was not asked again.';
+  const UNTOLD = ': the approval request was declined.';
   const cases = [
-    // A fresh client decline that copied the mark: the stamp says the client answered.
-    [{action: 'decline', content: MARK, _meta: stamp('client')}, ': the client declined the approval request; it is not asked again on this connection.', 'client'],
-    [{action: 'decline', content: MARK, _meta: stamp('memory')}, ': it was declined earlier on this connection, so it was not asked again.', 'memory'],
-    // No stamp: the vendor host's own store answered below cua's connection, and its mark is read.
-    [{action: 'decline', content: MARK, _meta: null}, ': it was declined earlier on this connection, so it was not asked again.', 'memory'],
-    // A stamp that is not the connection's shape is no stamp.
-    [{action: 'decline', content: null, _meta: stamp('someone')}, ': the client declined the approval request; it is not asked again on this connection.', 'client'],
+    // cua's host: a fresh client decline that copied the mark is the client's by the stamp.
+    [CUA_HOST_ENV, {action: 'decline', content: MARK, _meta: stamp('client')}, CLIENT, 'client'],
+    [CUA_HOST_ENV, {action: 'decline', content: MARK, _meta: stamp('memory')}, MEMORY, 'memory'],
+    // No stamp, or one not of the connection's shape, on cua's host: the connection did not pass it on; untold.
+    [CUA_HOST_ENV, {action: 'decline', content: MARK, _meta: null}, UNTOLD, null],
+    [CUA_HOST_ENV, {action: 'decline', content: null, _meta: stamp('someone')}, UNTOLD, null],
+    // The vendor's host: nothing stamps there, so a stamp is a client's own _meta and is not read.
+    [undefined, {action: 'decline', content: null, _meta: stamp('memory')}, CLIENT, 'client'],
+    [undefined, {action: 'decline', content: MARK, _meta: stamp('client')}, UNTOLD, null],
+    [undefined, {action: 'decline', content: MARK, _meta: null}, UNTOLD, null],
+    [{NODE_REPL_TRUSTED_SERVICES: '{}'}, {action: 'decline', content: MARK, _meta: stamp('memory')}, UNTOLD, null],
   ];
-  for (const [answer, why, answeredBy] of cases) {
-    const {policy, meta} = policyFor({answer: () => answer});
+  for (const [env, answer, why, answeredBy] of cases) {
+    const {policy, meta} = policyFor({answer: () => answer, env});
     await assert.rejects(policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => {}), {message: `Computer Use was not approved to use TextEdit${why}`}, JSON.stringify(answer));
     assert.equal(meta.at(-1)['cua/approval'].answeredBy, answeredBy, JSON.stringify(answer));
+    if (!env?.CUA_REPL_TRUSTED_SERVICES) assert.deepEqual(meta.at(-1)['cua/approval'], {action: 'decline', answeredBy, connection: null, runtimeGeneration: null, scope: null}, 'no stamp field off cua\'s host');
   }
-  assert.deepEqual(approvalMeta({action: 'accept', content: {secret: 'x'}, _meta: stamp('client', {note: 'dropped', app: 'com.apple.TextEdit'})}),
+  assert.deepEqual(approvalMeta({action: 'accept', content: {secret: 'x'}, _meta: stamp('client', {note: 'dropped', app: 'com.apple.TextEdit'})}, true),
     {action: 'accept', answeredBy: 'client', connection: 'a5a26df15524', runtimeGeneration: 2, scope: 'connection'}, 'only the checked fields; never content');
-  assert.deepEqual(approvalMeta({action: 'decline', _meta: stamp('client', {connection: 'Not Hex!', runtimeGeneration: -1, scope: 'global'})}),
+  assert.deepEqual(approvalMeta({action: 'decline', _meta: stamp('client', {connection: 'Not Hex!', runtimeGeneration: -1, scope: 'global'})}, true),
     {action: 'decline', answeredBy: 'client', connection: null, runtimeGeneration: null, scope: null}, 'a field out of shape reads null');
+  assert.deepEqual(approvalMeta({action: 'accept', _meta: stamp('memory')}),
+    {action: 'accept', answeredBy: 'client', connection: null, runtimeGeneration: null, scope: null}, 'off cua\'s host the stamp is not read');
 });
 
 test('withPolicy: the supervisor\'s memory answers a repeat for the same resolved bundle, whatever string named it, and asks for another app', async () => {

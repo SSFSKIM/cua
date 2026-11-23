@@ -77,10 +77,11 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: "2'"}}),
     ...handlers,
   }});
-  const memory = approvalMemory();
+  // cua's own host: its worker's setting, and the connection's memory stamping every answer it passes on.
+  const memory = approvalMemory({connection: 'a5a26df15524', stamped: true});
   const meta = {};
   const nodeRepl = {
-    env: {CUA_ENGINE_APP: join(s.dir, 'cua Engine.app'), TMPDIR: join(s.dir, 'tmp'), CUA_ENGINE_SCREENSHOTS: join(s.dir, 'screenshots'), ...env},
+    env: {CUA_REPL_TRUSTED_SERVICES: '{}', CUA_ENGINE_APP: join(s.dir, 'cua Engine.app'), TMPDIR: join(s.dir, 'tmp'), CUA_ENGINE_SCREENSHOTS: join(s.dir, 'screenshots'), ...env},
     requestMeta: {'x-codex-turn-metadata': {call_id: 'call-7'}},
     nativePipe: nativePipe(),
     launchServices: {openApplication: async () => assert.fail('the engine is running; nothing launches it')},
@@ -89,13 +90,11 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
       record.elicitations.push(structuredClone(request));
       const message = {message: request.message, _meta: request.meta};
       const recalled = memory.recall(message);
-      if (recalled) return {...recalled, _meta: null};
+      if (recalled) return recalled;
       record.asked.push(structuredClone(request));
       const reply = answer(request);
-      const outcome = {ok: true, ...reply};
       memory.record(message, {result: reply});
-      const {ok, ...fields} = outcome;
-      return fields;
+      return memory.fromClient(message, {result: reply}).result;
     },
     setResponseMeta: value => { record.meta.push(structuredClone(value)); Object.assign(meta, structuredClone(value)); },
     emitContentItem: item => { record.items.push(item); },

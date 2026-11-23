@@ -85,7 +85,7 @@ import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
-import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint} from './manifest.mjs';
+import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint, vendorPinsOf} from './manifest.mjs';
 import {linuxRuntimeChecks} from './doctor-linux-runtime.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
@@ -131,12 +131,13 @@ function launcherCheck({sandboxExec, compat, node}) {
 
 export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
-  // On Linux the vendor's pins describe only the vendor's tree: one this checkout cannot load fails that row alone
-  // (runtime.vendor), and the leftovers scan goes on without the release trees they name.
+  // On Linux the vendor's pins describe only the vendor's tree: pins this checkout cannot parse or read (manifest.mjs
+  // vendorPinsOf) fail that row alone (runtime.vendor), and a vendor selection with that error; the leftovers scan goes
+  // on without the release trees they name.
   let pinsError = null;
   if (pins === undefined) {
     if (host.platform !== 'linux') pins = loadVendorPins();
-    else try { pins = loadVendorPins(); } catch (error) { if (!(error instanceof CuaError)) throw error; pinsError = error; pins = []; }
+    else try { pins = vendorPinsOf(loadVendorPins); } catch (error) { if (!(error instanceof CuaError)) throw error; pinsError = error; pins = []; }
   }
   const checks = [];
   let pin, runtime;
@@ -210,7 +211,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  const engineInputs = host.platform === 'linux' ? engine ?? {} : sharedEngineInputs(engine, env);
+  const engineInputs = host.platform === 'linux' ? {...(pinsError ? {vendor: () => { throw pinsError; }} : {}), ...engine} : sharedEngineInputs(engine, env);
   const replHost = replHostCheck(home, env, host, resolveNode, engineInputs);
   checks.push(replHost.row);
   const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,

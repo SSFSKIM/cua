@@ -21,31 +21,37 @@
 // setting names it or `--archive` or `--release` is given. A lane nobody asked for that fails is said in one line and in
 // the report, and the command succeeds.
 //
-// Apart from that accounting, the install ends by resolving what opens now as a session resolves it (`sessions`): the
-// runtime (manifest.mjs resolveRuntime), the Node (launch.mjs ownHostNode: CUA_NODE, else the managed Node) and, unless
-// CUA_SHIM_SANDBOX=disabled, the sandbox helper, for any session; then each engine's selection (launch.mjs
-// nativeEngineFor, CUA_LINUX_ENGINE_BIN honoured) for a computer session on it; and which engine the home's setting
-// selects. Each refusal is reported with its own words; the last line says it.
+// Apart from that accounting, the install ends by resolving which sessions open as `cua serve` would open them
+// (`sessions`), by what is installed and set: `cua serve`'s settings (server.mjs settingsFrom), the runtime (manifest.mjs
+// resolveRuntime), the REPL host's selection (launch.mjs replHostFor: CUA_REPL_HOST, the Node, and for a computer session
+// the engine, CUA_LINUX_ENGINE_BIN honoured), the device mode cua's engine runs in (desktopModeFor) and, unless
+// CUA_SHIM_SANDBOX=disabled, the sandbox helper. A computer session is resolved on the engine the setting selects, and
+// on the other engine under its override (CUA_NATIVE_ENGINE), which is said as an override, never as what opens. What a
+// session needs of the machine (the desktop, bubblewrap's user namespaces) is doctor's to say. Each refusal is reported
+// in its own words, with this cua's remedies; the last line says it.
 //
 // The report (`--json`): {ok, release, changed, modules, sandboxHelper, node, pointer: {previous, current, changed},
-// engine, vendor: {release, root, changed, source}, sessions: {browser, cua, vendor, selected, why}, codexLeftovers?,
-// error?}, where a step that failed is {failed: {code, message, hint?}}, `changed` is whether any step changed anything,
-// `why` holds the refusal of each session that does not open (and of the setting, `setting`), and `error` is the first
+// engine, vendor: {release, root, changed, source}, sessions: {browser, computer, engine, alternate: {engine, override,
+// opens} | null, why: {browser?, computer?, alternate?}}, codexLeftovers?, error?}, where a step that failed is {failed:
+// {code, message, hint?}}, `changed` is whether any step changed anything, `sessions.engine` the engine the setting
+// selects (null when it cannot be read), `why` the refusal of each session that does not open, and `error` the first
 // failure that fails the command, its remedy naming this cua's own installer by its absolute path (manifest.mjs
-// ownInstaller, F9). The vendor's pins are read inside the vendor's lane only: pins this checkout cannot parse fail that
-// lane, and the leftovers scan goes on without the release trees they name.
-import {lstatSync} from 'node:fs';
+// ownInstaller, F9). The vendor's pins are read inside the vendor's lane and selection only (manifest.mjs vendorPinsOf):
+// pins this checkout cannot parse or read fail those, naming the pins to restore, and the leftovers scan goes on without
+// the release trees they name.
+import {readFileSync} from 'node:fs';
+import {dirname} from 'node:path';
 import {CuaError, fail} from './errors.mjs';
-import {homeLayout, readPointer, realHome, writePointer} from './layout.mjs';
-import {findPin, linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, resolveRuntime, selectPin} from './manifest.mjs';
+import {readPointer, realHome, writePointer} from './layout.mjs';
+import {RESTORE_PINS, findPin, linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, pointerObstruction, resolveRuntime, selectPin, vendorLinuxRuntime, vendorPinsOf} from './manifest.mjs';
 import {installModuleTree} from './module-tree.mjs';
 import {installLinuxEngine, installRuntime, installSandboxHelper} from './install.mjs';
 import {installNode} from './node-install.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './managed-node.mjs';
 import {loadEnginePin} from './linux-engine.mjs';
-import {nativeEngineFor, nativeEngineSetting, ownHostNode} from './launch.mjs';
-import {sandboxModeFrom} from './sandbox.mjs';
-import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
+import {desktopModeFor, nativeEngineSetting, ownHostNode, replHostFor} from './launch.mjs';
+import {settingsFrom} from '../mcp/server.mjs';
+import {helperFor, sha256Of, linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './codex-leftovers.mjs';
 
 const failure = (error, code) => (error instanceof CuaError
@@ -64,11 +70,13 @@ function requestedLanes(values, env) {
 }
 
 // -> {ok, report, error}. `say` prints a line of the human output, `progress` a progress line (stderr). The installers,
-// the pins, the record and the host are seams for tests (cli.mjs passes its own `deps`).
+// the pins, the record and the host are seams for tests (cli.mjs passes its own `deps`), as are the session's Node
+// lookup, the helper's check and the engine selection's inputs (`engine`, launch.mjs nativeEngineFor's).
 export async function installLinux({values, home, env = process.env, host = {platform: 'linux', arch: process.arch}, say = () => {}, progress = () => {}, onProgress,
   linuxRuntime = () => loadLinuxRuntime({host}), installModules = installModuleTree, installHelper = installSandboxHelper, installNode: nodeInstaller = installNode,
-  installEngine = installLinuxEngine, installRuntime: vendorInstaller = installRuntime, enginePin = loadEnginePin, pins: pinsOf = loadPins, nodePins = loadNodePins,
-  resolveOwnNode = () => ownHostNode({ambient: env, home, platform: 'linux', arch: host.arch}), linuxHelper = verifiedLinuxHelper, engineFor = nativeEngineFor}) {
+  installEngine = installLinuxEngine, installRuntime: vendorInstaller = installRuntime, enginePin = loadEnginePin, pins: loadVendorPins = loadPins, nodePins = loadNodePins,
+  resolveOwnNode = () => ownHostNode({ambient: env, home, platform: 'linux', arch: host.arch}), linuxHelper = verifiedLinuxHelper, engine: engineInputs}) {
+  const pinsOf = () => vendorPinsOf(loadVendorPins);
   const release = linuxRelease(linuxRuntime(), host.arch);
   const installer = ownInstaller({release});
   const again = `run \`${installer.command}\` again`;
@@ -140,14 +148,17 @@ export async function installLinux({values, home, env = process.env, host = {pla
     for (const line of describeLeftovers(findCodexLeftovers({home, pins}))) say(line);
   }
 
-  const sessions = readiness({home, env, host, resolveOwnNode, linuxHelper, engineFor});
+  // A vendor selection finds the vendor's tree by the same pins, read as the lane reads them.
+  const selection = {vendor: ({home: at, host: on}) => vendorLinuxRuntime({home: at, host: on, pins: pinsOf()}), ...engineInputs};
+  const sessions = readiness({home, env, host, installer, resolveOwnNode, linuxHelper, engine: selection});
   say(opensNow(sessions, env));
 
   const fatal = [
     ...commonFailed.map(([what, outcome, remedy]) => [`${what} was not installed`, outcome.failed, remedy]),
     ...(pointer.failed ? [['current.json could not be written', pointer.failed, pointer.failed.hint ? null : again]] : []),
     ...(requested.cua && engine.failed ? [['cua\'s Linux engine was not installed', engine.failed, `run \`${installer.command} --engine\` again`]] : []),
-    ...(requested.vendor && vendor.failed ? [[`${vendorName} was not installed`, vendor.failed, `${again} with its server reachable, or pass --archive <ChatGPT deb> with the pinned deb`]] : []),
+    ...(requested.vendor && vendor.failed ? [[`${vendorName} was not installed`, vendor.failed, PIN_ERRORS.includes(vendor.failed.code) ? `${RESTORE_PINS}, then ${again}`
+      : `${again} with its server reachable, or pass --archive <ChatGPT deb> with the pinned deb`]] : []),
     ...(codexLeftovers?.failed ? [['the Codex CLI\'s leftovers were not removed', codexLeftovers.failed, again]] : []),
   ];
   const error = fatal.length ? errorOf(fatal[0]) : undefined;
@@ -157,49 +168,85 @@ export async function installLinux({values, home, env = process.env, host = {pla
   return {ok: !error, report, error};
 }
 
+const PIN_ERRORS = ['invalid_pin', 'pins_unavailable'];
 const errorOf = ([what, failed, remedy]) => ({code: failed.code, message: `${what}: ${failed.message}`, hint: [failed.hint, remedy].filter(Boolean).join('; ')});
 
 // Writes the pointer to `release` when the common parts are in place (`complete`) and it names something else ->
-// {previous, current, changed}. A pointer file that cannot be parsed is replaced like any other; anything at its path
-// that is not a file (a directory, a link) is left as it is, and named to be moved aside.
+// {previous, current, changed}. A pointer file that cannot be parsed or read is replaced like any other; anything else at
+// its path is refused as doctor names it (manifest.mjs pointerObstruction).
 function movePointer(home, release, complete) {
   const real = realHome(home, {create: true});
-  const {pointer: path} = homeLayout(real);
-  let stat = null;
-  try { stat = lstatSync(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  if (stat && !stat.isFile()) fail('target_occupied', `${path} is not a file cua wrote; it is left untouched`, {hint: `move ${path} aside, then run \`${ownInstaller({release}).command}\` again`});
+  const blocked = pointerObstruction({home: real, release});
+  if (blocked) fail(blocked.code, blocked.message, {hint: blocked.hint});
   let previous;
-  try { previous = readPointer(real); } catch (error) { if (!(error instanceof CuaError)) throw error; previous = 'unreadable'; }
+  try { previous = readPointer(real); } catch (error) { if (!(error instanceof CuaError) && typeof error?.code !== 'string') throw error; previous = 'unreadable'; }
   if (!complete || previous === release) return {previous, current: previous, changed: false};
   writePointer(real, release);
   return {previous, current: release, changed: true};
 }
 
-// What opens now, resolved as a session resolves it (the header) -> {browser, cua, vendor, selected, why}. A computer
-// session on an engine needs what any session needs first; `selected` is the engine the home's setting selects, null
-// when the setting cannot be read (`why.setting`).
-function readiness({home, env, host, resolveOwnNode, linuxHelper, engineFor}) {
+// Which sessions open, resolved as `cua serve` resolves them (the header) -> {browser, computer, engine, alternate, why}.
+// A computer session needs what a browser-only one needs first.
+function readiness({home, env, host, installer, resolveOwnNode, linuxHelper, engine}) {
   const why = {};
   const opens = (name, run) => {
     try { run(); return true; } catch (error) { if (!(error instanceof CuaError)) throw error; why[name] = refusal(error); return false; }
   };
-  const browser = opens('browser', () => {
-    resolveRuntime({home, host});
-    resolveOwnNode();
-    if (sandboxModeFrom(env) !== 'disabled') linuxHelper({home: realHome(home), arch: host.arch});
-  });
-  const lane = engine => browser && opens(engine, () => engineFor({env: {...env, CUA_NATIVE_ENGINE: engine}, platform: 'linux', arch: host.arch, home}));
+  const node = once(resolveOwnNode);   // a connection resolves its Node once
+  const select = (ambient, surfaces) => replHostFor({platform: 'linux', arch: host.arch, surfaces, ambient, home, resolveOwnNode: node, engine});
   let selected = null;
-  try { selected = nativeEngineSetting({env, platform: 'linux'}).engine; } catch (error) { if (!(error instanceof CuaError)) throw error; why.setting = refusal(error); }
-  return {browser, cua: lane('cua'), vendor: lane('vendor'), selected, why};
+  try { selected = nativeEngineSetting({env, platform: 'linux'}).engine; } catch (error) { if (!(error instanceof CuaError)) throw error; }
+  const browser = opens('browser', () => {
+    const {sandbox} = settingsFrom(env, {platform: 'linux'});
+    resolveRuntime({home, host});
+    select(env, ['browser']);
+    if (sandbox !== 'disabled') checkedHelper({home, host, linuxHelper, installer});
+  });
+  if (!browser) return {browser, computer: false, engine: selected, alternate: null, why};
+  const computerOn = ambient => () => {
+    const chosen = select(ambient, ['computer']).engine;
+    if (chosen.engine === 'cua') desktopModeFor({env: ambient});
+  };
+  const computer = opens('computer', computerOn(env));
+  const other = selected && (selected === 'cua' ? 'vendor' : 'cua');
+  const alternate = other ? {engine: other, override: `CUA_NATIVE_ENGINE=${other}`, opens: opens('alternate', computerOn({...env, CUA_NATIVE_ENGINE: other}))} : null;
+  return {browser, computer, engine: selected, alternate, why};
 }
 
-// The last line: which sessions open now, each refusal in its own words.
-function opensNow({browser, cua, vendor, selected, why}, env) {
+const once = resolve => {
+  let outcome;
+  return () => {
+    outcome ??= (() => { try { return {value: resolve()}; } catch (error) { return {error}; } })();
+    if (outcome.error) throw outcome.error;
+    return outcome.value;
+  };
+};
+
+// The helper's check, its refusal remedied by this cua's installer with its release (the check's own remedy names a bare
+// `cua install`). What is at the helper's path and is not the pinned helper is never replaced by the install, so it is
+// named to be moved aside first; an absent helper, or the pinned one without its mode, the install places or restores.
+function checkedHelper({home, host, linuxHelper, installer}) {
+  try { linuxHelper({home: realHome(home), arch: host.arch}); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    const {path, sha256} = helperFor({home: realHome(home), arch: host.arch});
+    let foreign;
+    try { foreign = sha256Of(readFileSync(path)) !== sha256; } catch (cause) { foreign = cause.code !== 'ENOENT'; }
+    throw new CuaError(error.code, error.message, {hint: foreign ? `stop any \`cua serve\` using it, move ${dirname(path)} aside, then ${installer.hint}`
+      : `${installer.hint}, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`});
+  }
+}
+
+// The last line: which sessions open, each refusal in its own words, the other engine's under its override.
+const SAID = 'sessions here, by what is installed and set: ';
+function opensNow({browser, computer, engine, alternate, why}, env) {
   const words = ({code, message, hint}) => `${message} (${code})${hint ? `; ${hint}` : ''}`;
-  if (!browser) return `opens now: nothing: ${words(why.browser)}`;
-  const engine = (name, label, opened) => (opened ? `computer sessions on ${label}${selected === name ? ', which this home selects' : ''}` : `not computer sessions on ${label}: ${why[name] ? words(why[name]) : 'see above'}`);
-  return ['opens now: browser-only sessions' + (env.CUA_NODE ? `, on CUA_NODE=${env.CUA_NODE}` : ''),
-    engine('cua', 'cua\'s engine', cua), engine('vendor', 'the vendor\'s engine (CUA_NATIVE_ENGINE=vendor)', vendor),
-    ...(why.setting ? [`no computer session opens: ${words(why.setting)}`] : [])].join('; ');
+  const label = name => (name === 'cua' ? 'cua\'s engine' : 'the vendor\'s engine');
+  if (!browser) return `${SAID}no session opens: ${words(why.browser)}`;
+  const parts = [`browser-only sessions open${env.CUA_NODE ? ` on CUA_NODE=${env.CUA_NODE}` : ''}`,
+    !engine ? `no computer session opens: ${words(why.computer)}`
+      : computer ? `computer sessions open on ${label(engine)}, which this home selects`
+        : `computer sessions on ${label(engine)}, which this home selects, do not open: ${words(why.computer)}`];
+  if (alternate) parts.push(alternate.opens ? `with ${alternate.override} they would open on ${label(alternate.engine)}`
+    : `${alternate.override} would not open them on ${label(alternate.engine)}: ${words(why.alternate)}`);
+  return SAID + parts.join('; ');
 }

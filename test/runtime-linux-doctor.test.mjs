@@ -15,7 +15,7 @@ import {join} from 'node:path';
 import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
-import {linuxRelease, loadLinuxRuntime, ownInstaller, parsePin} from '../src/runtime/manifest.mjs';
+import {RELEASES_DIR, linuxRelease, loadLinuxRuntime, ownInstaller, parsePin} from '../src/runtime/manifest.mjs';
 import {linuxDesktopChecks, sessionBusAddress} from '../src/runtime/linux-desktop.mjs';
 import {browsersFor, registerCuaHost} from '../src/chrome/registration.mjs';
 import {CUA_HOST_NAME, launcherPath} from '../src/chrome/extension.mjs';
@@ -168,14 +168,38 @@ test('runtime.installed: a module tree cua did not install, at the lock\'s path,
   assert.ok(row.detail.endsWith(`; stop any \`cua serve\` using it, move ${TREE(home)} aside, then ${RELEASE_HINT}`), row.detail);
 });
 
-test('runtime.installed: a current.json that cannot be read is named to be moved aside, and doctor goes on', async t => {
-  const {home, pin} = await linuxHome(t, {pointer: null});
-  mkdirSync(join(home, 'current.json'));
-  const report = await doctor(home, pin);
-  const row = byName(report)['runtime.installed'];
-  assert.equal(row.status, 'warn');
-  assert.ok(row.detail.endsWith(`but current.json at ${join(home, 'current.json')} cannot be read (EISDIR): move it aside; ${INSTALLER} then writes it`), row.detail);
-  assert.ok(byName(report).engine, 'the rows after it are there');
+// Fix wave 2: one classification of the pointer's path for doctor and install (manifest.mjs pointerObstruction): only a
+// file cua wrote, or nothing, is current.json; a directory or a link there, to a pointer or to nothing, is named to be
+// moved aside, in the words install refuses it with.
+test('runtime.installed: a current.json that is a directory or a link is named to be moved aside, as install names it, and doctor goes on', async t => {
+  const cases = {
+    'a directory': home => mkdirSync(join(home, 'current.json')),
+    'a link': home => { writeFileSync(join(home, 'pointer.json'), JSON.stringify({schema: 1, release: RELEASE})); symlinkSync(join(home, 'pointer.json'), join(home, 'current.json')); },
+    'a link to nothing': home => symlinkSync(join(home, 'gone.json'), join(home, 'current.json')),
+  };
+  for (const [name, lay] of Object.entries(cases)) {
+    const {home, pin} = await linuxHome(t, {pointer: null});
+    lay(home);
+    const report = await doctor(home, pin);
+    const row = byName(report)['runtime.installed'];
+    assert.equal(row.status, 'warn', name);
+    const kind = name === 'a directory' ? 'a directory' : 'a link';
+    assert.ok(row.detail.endsWith(`, but ${join(home, 'current.json')} is ${kind}, not a file cua wrote, and no install replaces it: move ${join(home, 'current.json')} aside, then ${RELEASE_HINT}`), `${name}: ${row.detail}`);
+    assert.ok(byName(report).engine, 'the rows after it are there');
+  }
+});
+
+// Fix wave 2: runtime.installed asks what a session asks of the tree (manifest.mjs resolveRuntime's check), so a
+// recorded tree missing a native file is not whole there either.
+test('runtime.installed: a recorded tree that sessions refuse (a native file gone) fails, as the session refuses it', async t => {
+  const {home, pin} = await linuxHome(t);
+  const root = addToPackage(home, 'node_modules/classic-level', {'prebuilds/linux-x64/classic-level.node': 'ELF-native-code'});
+  rmSync(join(root, 'node_modules/classic-level/prebuilds/linux-x64/classic-level.node'));
+  const rows = byName(await doctor(home, pin));
+  assert.equal(rows['runtime.installed'].status, 'fail');
+  assert.match(rows['runtime.installed'].detail, /classic-level\.node/);
+  assert.ok(rows['runtime.installed'].detail.includes(RELEASE_HINT), rows['runtime.installed'].detail);
+  assert.equal(rows['runtime.modules'].status, 'fail', 'the full check still names what differs');
 });
 
 test('runtime.modules: a file altered inside the tree fails, naming it and the installer with the release', async t => {
@@ -241,6 +265,25 @@ test('runtime.node: the pinned Node passes; one behind the pin warns naming both
   assert.ok(altered.detail.endsWith(`; it is never repaired in place: stop any \`cua serve\` using it, move ${join(home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), altered.detail);
 });
 
+// Fix wave 2: whatever node-install refuses to replace is named, before the installer: a Node pointer that is not a file,
+// a pinned version's path that is not its recorded install.
+test('runtime.node: a Node pointer that is not a file, or a pinned path that is not its recorded install, is named to be moved aside', async t => {
+  const pointed = await linuxHome(t);
+  const nodePointer = join(pointed.home, 'node', 'current.json');
+  rmSync(nodePointer);
+  mkdirSync(nodePointer);
+  const row = byName(await doctor(pointed.home, pointed.pin))['runtime.node'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.endsWith(`; it is never repaired in place: stop any \`cua serve\` using it, move ${nodePointer} aside, then ${RELEASE_HINT}`), row.detail);
+
+  const occupied = await linuxHome(t, {node: null});
+  mkdirSync(join(occupied.home, 'node'));
+  writeFileSync(join(occupied.home, 'node', RECORD.node.version), 'not a Node install');
+  const blocked = byName(await doctor(occupied.home, occupied.pin))['runtime.node'];
+  assert.equal(blocked.status, 'fail');
+  assert.ok(blocked.detail.endsWith(`move ${join(occupied.home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), blocked.detail);
+});
+
 test('runtime.vendor: a damaged tree fails with its recovery; a runtimes/ that is a file, or a link to nothing, fails naming it', async t => {
   const {home, pin} = await linuxHome(t);
   rmSync(join(home, 'runtimes', pin.release, 'install.json'));
@@ -273,8 +316,23 @@ test('runtime.vendor: vendor pins that cannot be loaded fail that row alone', as
   const report = await doctor(home, null, {pins: undefined, loadPins: () => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); }});
   const rows = byName(report);
   assert.equal(rows['runtime.vendor'].status, 'fail');
-  assert.equal(rows['runtime.vendor'].detail, 'release pin x.json: unknown field "y"; only CUA_NATIVE_ENGINE=vendor needs the vendor\'s tree');
+  assert.equal(rows['runtime.vendor'].detail, `release pin x.json: unknown field "y"; restore ${RELEASES_DIR} as this cua's checkout ships it, then run ${INSTALLER}; only CUA_NATIVE_ENGINE=vendor needs the vendor's tree`);
   for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.leftovers', 'engine']) assert.notEqual(rows[name]?.status, 'fail', `${name}: ${rows[name]?.detail}`);
+});
+
+// Fix wave 2: a pins directory the filesystem refuses is a pin error like any other, kept in the vendor's row, and in the
+// selection of a session that asks for the vendor's engine.
+test('runtime.vendor: a pins directory that cannot be read fails that row alone, naming the pins to restore; a vendor selection refuses with it', async t => {
+  const {home} = await linuxHome(t);
+  const unreadable = () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); };
+  const rows = byName(await doctor(home, null, {pins: undefined, loadPins: unreadable}));
+  assert.equal(rows['runtime.vendor'].status, 'fail');
+  assert.ok(rows['runtime.vendor'].detail.startsWith(`the vendor's release pins at ${RELEASES_DIR} cannot be read (ENOENT); restore ${RELEASES_DIR} as this cua's checkout ships it, then run ${INSTALLER}`), rows['runtime.vendor'].detail);
+  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.leftovers', 'repl.host', 'engine']) assert.notEqual(rows[name]?.status, 'fail', `${name}: ${rows[name]?.detail}`);
+
+  const vendor = byName(await doctor(home, null, {pins: undefined, loadPins: unreadable, env: {DISPLAY: ':9', CUA_NATIVE_ENGINE: 'vendor'}}));
+  assert.equal(vendor['runtime.vendor'].status, 'fail');
+  assert.ok(vendor.engine, 'doctor reaches the engine row');
 });
 
 test('sandbox.launcher: a helper not placed fails, naming the installer', async t => {

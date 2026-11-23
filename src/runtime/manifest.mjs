@@ -26,7 +26,7 @@
 import {readFileSync, readdirSync, lstatSync, statSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {fail} from './errors.mjs';
+import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, realHome} from './layout.mjs';
 import {checkLayout} from './checks.mjs';
 import {MODULES_PIN_DIR, checkModuleTree, loadModuleLock, moduleHost, readModuleTree} from './module-tree.mjs';
@@ -174,6 +174,31 @@ export function loadPins(dir = RELEASES_DIR) {
     if (name !== `${pin.release}.json`) invalid(file, `file name must be ${pin.release}.json`);
     return pin;
   });
+}
+
+// The vendor's pins where they describe only the vendor's tree (Linux, #171 M6a): a pins directory the filesystem refuses
+// is a pin error like a pin that does not parse (pins_unavailable), never thrown raw, so the caller keeps it in the
+// vendor's lane or row. `load` is loadPins, or a test's.
+export function vendorPinsOf(load = loadPins) {
+  try { return load(); } catch (error) {
+    if (error instanceof CuaError || typeof error?.code !== 'string') throw error;
+    fail('pins_unavailable', `the vendor's release pins at ${error.path ?? RELEASES_DIR} cannot be read (${error.code})`, {cause: error});
+  }
+}
+// The remedy for either pin error: the pins as this checkout ships them.
+export const RESTORE_PINS = `restore ${RELEASES_DIR} as this cua's checkout ships it`;
+
+// current.json in the real home `home` as install and doctor both classify it on Linux -> null when it is a file or
+// absent (a file that does not parse is the install's to replace), else {code, message, hint}: anything else there (a
+// directory, a link, to a pointer or to nothing) is no pointer cua wrote, and is never replaced, since writing the
+// pointer renames a file over that path; it is named to be moved aside, then this cua's installer for `release`.
+export function pointerObstruction({home, release}) {
+  const {pointer: path} = homeLayout(home);
+  let stat;
+  try { stat = lstatSync(path); } catch { return null; }   // absent, or unreadable: the read that follows says which
+  if (stat.isFile()) return null;
+  const kind = stat.isSymbolicLink() ? 'a link' : stat.isDirectory() ? 'a directory' : 'a special file';
+  return {code: 'target_occupied', message: `${path} is ${kind}, not a file cua wrote, and no install replaces it`, hint: `move ${path} aside, then ${ownInstaller({release}).hint}`};
 }
 
 const versionParts = v => v.split('.').map(Number);

@@ -106,7 +106,7 @@ test('an engine replaced at its path between starts: the next start runs the fil
   assert.equal(newer.spawns().length, 1, 'the next start ran the file now at the path');
   renameSync(older.path, first.path);
   await assert.rejects(made.request('move', {}), {message: 'the X connection broke'});
-  await assert.rejects(made.request('list_windows', {}), {message: 'cua-engine 0.4.2 is older than 0.4.3, which this cua needs; run cua install --engine'});
+  await assert.rejects(made.request('list_windows', {}), {message: 'cua-engine 0.4.2 is older than 0.4.4, which this cua needs; run cua install --engine'});
   assert.deepEqual([older.spawns().length, older.requests().length], [0, 0], 'the older one is never started, and nothing is sent to it');
   assert.equal(newer.spawns().length, 1);
 });

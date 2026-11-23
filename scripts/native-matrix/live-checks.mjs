@@ -396,20 +396,16 @@ export function finderCheck(baseline, now, {runWindow}) {
 // The run's journal (in its run directory): one row per device process the run started, `kind\tpid\tstart\tlabel`,
 // where start is ps's lstart (C locale): the device CLIs and the vendor serve (each journaled by the remote shell that
 // execs it, live.mjs journaledScript), each probe the CLIs launch and each put-back step's process (live-device.mjs).
-// A probe launch is journaled `pending:<launcher pid>` with the launcher's lstart before its open (a bare `pending`, from
-// an older journal, names no launcher), then its pid, or `-` when it could not be resolved.
+// A probe launch is journaled `pending` before its open, then its pid, or `-` when it could not be resolved.
 export const JOURNAL_FILE = 'live-journal.tsv';
 const startOf = text => String(text).trim().split(/\s+/).join(' ');
-const PENDING = /^pending(?::(\d+))?$/;
 export const parseJournal = text => String(text).split('\n').map(line => line.split('\t')).filter(f => f.length === 4 && ['cli', 'probe'].includes(f[0]))
-  .map(([kind, pid, start, label]) => {
-    const pending = PENDING.exec(pid);
-    if (pending) return {kind, pid: null, start: null, label, pending: true, launcher: pending[1] && start !== '-' ? {pid: Number(pending[1]), start: startOf(start)} : null};
-    return {kind, pid: pid === '-' ? null : Number(pid), start: start === '-' ? null : startOf(start), label};
-  });
-// The probe launches journaled pending and not resolved since (no later row of their label). -> [{label, launcher}].
+  .map(([kind, pid, start, label]) => (pid === 'pending' ? {kind, pid: null, start: null, label, pending: true}
+    : {kind, pid: pid === '-' ? null : Number(pid), start: start === '-' ? null : startOf(start), label}));
+// The probe launches journaled pending with no outcome row since (a later row of their label, its pid or `-`): the only
+// evidence that a launch is over is the journal's own. -> [label].
 export const pendingLaunches = journal => journal.filter(e => e.kind === 'probe' && e.pending
-  && !journal.some(other => other.kind === 'probe' && other.label === e.label && !other.pending)).map(e => ({label: e.label, launcher: e.launcher ?? null}));
+  && !journal.some(other => other.kind === 'probe' && other.label === e.label && !other.pending)).map(e => e.label);
 // `ps -axo pid=,ppid=,uid=,lstart=,command=` under the C locale. -> [{pid, ppid, uid, start, command}].
 export const parseProcessTable = text => String(text).split('\n')
   .map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line)).filter(Boolean)

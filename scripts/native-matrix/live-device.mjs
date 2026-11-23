@@ -52,7 +52,7 @@ import {CHROME_FOR_TESTING_BUNDLE_ID} from './fixtures/chrome-for-testing.mjs';
 import {FIXTURE_BUNDLE_ID} from './fixtures/electron-fixture.mjs';
 import {FINDER_BUNDLE_ID, SCENE_BUNDLE_IDS, TEXTEDIT_BUNDLE_ID, activateScene, main as scenesMain, preflight as scenesPreflight, reactivateApp, readState} from '../repl-parity/scenes-mac.mjs';
 import {appWindows, frontWindow, frontmostProcess, readFinderPreferences, runningApps} from '../repl-parity/scenes-mac-device.mjs';
-import {readSavedPreferences} from '../repl-parity/scenes-mac-finder.mjs';
+import {FINDER_KEYS, readSavedPreferences} from '../repl-parity/scenes-mac-finder.mjs';
 import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProblems} from './goldens-device.mjs';
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
@@ -623,15 +623,21 @@ const BUNDLES = Object.freeze({textedit: TEXTEDIT_BUNDLE_ID, chromeForTesting: C
 // JSON, or not its shape). An unusable one is kept and named, never read as absent, since begin refuses on its presence.
 // -> {value: <record> | null, unusable: boolean}.
 function readRecovery(file, usable) {
+  // Presence as begin tests it (lstat): a dangling symlink is present, and blocks begin, so it is never absent here.
+  let present = true;
+  try { present = Boolean(fs.lstatSync(file, {throwIfNoEntry: false})); } catch { /* cannot establish absence */ }
+  if (!present) return {value: null, unusable: false};
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (error) { return {value: null, unusable: error.code !== 'ENOENT'}; }
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return {value: null, unusable: true}; }
   let value;
   try { value = JSON.parse(text); } catch { return {value: null, unusable: true}; }
   return usable(value) ? {value, unusable: false} : {value: null, unusable: true};
 }
 const RECORD_SHAPES = {
   [FRONTMOST_FILE]: {usable: v => Number.isSafeInteger(v?.pid) && v.pid > 0 && typeof v.bundleId === 'string' && v.bundleId !== '', restore: 'bring the owner\'s front app back by hand'},
-  [FINDER_FILE]: {usable: v => v !== null && typeof v === 'object' && Array.isArray(v.windows), restore: 'check Finder\'s windows and its sidebar, status bar and path bar by hand'},
+  // The fields finderCheck verifies: Finder's window numbers, and each of the three chrome keys (null when unset).
+  [FINDER_FILE]: {usable: v => Array.isArray(v?.windows) && v.windows.every(Number.isSafeInteger) && v.keys !== null && typeof v.keys === 'object'
+    && FINDER_KEYS.every(key => Object.hasOwn(v.keys, key) && (v.keys[key] === null || typeof v.keys[key] === 'boolean')), restore: 'check Finder\'s windows and its sidebar, status bar and path bar by hand'},
 };
 
 // The put-back (./live-checks.mjs putBackPlan): each step tried whatever the one before answered, each bounded. The
@@ -763,24 +769,21 @@ async function awaitUnresolvedProbes(run, io, bounds) {
   await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
   return {unresolved, waited, remaining: probes().length};
 }
-// The launches whose outcome is not yet established, waited for (bounded by probeWaitMs) before anything trusts an empty
-// process table: a probe launch journaled pending is under way while its launcher (its journaled pid and start time)
-// runs or an `open` of a bundle probe runs (an orphaned open may still start one), and established once it is resolved
-// in the journal or neither runs; one with no launcher named never is. This run's goldens-device setup steps, which
+// The launches whose outcome is not yet in the journal, waited for (bounded by probeWaitMs) before anything stops or
+// trusts the process table. A probe launch journaled pending is over only once the journal holds its outcome row (its pid,
+// or `-`): a launcher that died after its open handed the request to LaunchServices leaves no process that says so, so
+// an empty table is no evidence and such a launch stays open, for a person. This run's goldens-device setup steps, which
 // launch the frame probe and which the recording's transport does not journal, are named by their `--run` and waited
 // for too: never signaled, since nothing journaled their identity. -> {pending, waited, open: [label]}, or null with
 // nothing to wait for.
 async function awaitLaunches(run, io, bounds) {
-  const {bundle, uid, self, ancestors = []} = io.identity();
+  const {uid, self, ancestors = []} = io.identity();
   const runs = [...new Set([run, (() => { try { return fs.realpathSync(run); } catch { return run; } })()])];
   const open = () => {
-    const table = io.processes().filter(p => p.uid === uid && p.pid !== self && !ancestors.includes(p.pid));
-    const opening = table.some(p => p.command.startsWith('/usr/bin/open ') && p.command.includes(` -a ${bundle} --args --probe `));
-    const launches = pendingLaunches(io.journal()).filter(({launcher}) =>
-      !launcher || opening || table.some(p => p.pid === launcher.pid && p.start === launcher.start)).map(l => l.label);
-    const setup = table.some(p => /^node \S*scripts\/native-matrix\/goldens-device\.mjs steps /.test(p.command)
+    const setup = io.processes().some(p => p.uid === uid && p.pid !== self && !ancestors.includes(p.pid)
+      && /^node \S*scripts\/native-matrix\/goldens-device\.mjs steps /.test(p.command)
       && runs.some(r => p.command.includes(` --run ${r} `) || p.command.endsWith(` --run ${r}`)));
-    return [...launches, ...(setup ? [SETUP_STEPS] : [])];
+    return [...pendingLaunches(io.journal()), ...(setup ? [SETUP_STEPS] : [])];
   };
   const pending = pendingLaunches(io.journal()).length;
   const waited = open().length > 0;
@@ -789,9 +792,10 @@ async function awaitLaunches(run, io, bounds) {
   return {pending, waited, open: open()};
 }
 const SETUP_STEPS = 'goldens-device.mjs steps';
-const launchLine = open => [
+const launchLine = (run, open) => [
   ...(open.includes(SETUP_STEPS) ? ['this run\'s Finder setup steps (goldens-device.mjs steps) are still running and may launch a probe'] : []),
-  ...(open.some(l => l !== SETUP_STEPS) ? [`a probe launch (${open.filter(l => l !== SETUP_STEPS).join(', ')}) was never established: its launcher may still start a probe`] : []),
+  ...(open.some(l => l !== SETUP_STEPS) ? [`a probe launch (${open.filter(l => l !== SETUP_STEPS).join(', ')}) has no outcome in the journal and may still start a probe: `
+    + `once no cua-engine --probe of the bundle runs, record that by hand with a line probe<TAB>-<TAB>-<TAB><label> in ${join(run, JOURNAL_FILE)}`] : []),
 ].join('; ');
 
 // The barrier before anything restores or switches the input source from a later command: a probe this run journaled
@@ -825,7 +829,7 @@ export async function settleProbes({run, io, bounds = RECOVERY_BOUNDS}) {
   const launchWait = await awaitLaunches(run, io, bounds);
   if (launchWait?.open.length) {
     return {ok: false, survivors: [], launchWait,
-      manual: `${launchLine(launchWait.open)}. Keep the run and preparation records, check the Mac for a cua-engine --probe or an open of one, then run cleanup again`};
+      manual: `${launchLine(run, launchWait.open)}. Keep the run and preparation records, then run cleanup again`};
   }
   const owned = () => ownedNow(run, io).stop.filter(p => p.kind === 'probe');
   const stillOwned = pid => owned().some(p => p.pid === pid);
@@ -848,6 +852,8 @@ export async function settleProbes({run, io, bounds = RECOVERY_BOUNDS}) {
 // looks like the harness's but is not journaled is listed, never touched.
 // -> {killed, survivors, awaited, probeWait, untouched, putBack, ok, manual?}.
 export async function recover({run, io, bounds = RECOVERY_BOUNDS}) {
+  // Launches first, as settleProbes does: a probe that gets its pid while they are awaited is in the snapshot below.
+  const launchWait = await awaitLaunches(run, io, bounds);
   const first = ownedNow(run, io);
   const survivors = await stopProcesses(first.stop, io, bounds);
   const awaited = [];
@@ -855,12 +861,13 @@ export async function recover({run, io, bounds = RECOVERY_BOUNDS}) {
   const second = ownedNow(run, io), handled = new Set(first.stop.map(p => p.pid));
   const late = second.stop.filter(p => !handled.has(p.pid));
   survivors.push(...await stopProcesses(late, io, bounds));
-  const launchWait = await awaitLaunches(run, io, bounds);
+  // A CLI stopped above in the middle of a launch leaves it pending: nothing restores behind it.
+  const orphaned = pendingLaunches(io.journal());
   const probeWait = await awaitUnresolvedProbes(run, io, bounds);
   const result = {killed: [...first.stop, ...late].map(p => p.label), survivors: survivors.map(p => p.label), awaited, probeWait, ...(launchWait ? {launchWait} : {}), untouched: second.untouched};
   const blocking = [
     ...result.survivors.map(label => `${label} outlived SIGKILL`),
-    ...(launchWait?.open.length ? [launchLine(launchWait.open)] : []),
+    ...(launchWait?.open.length || orphaned.length ? [launchLine(run, [...new Set([...(launchWait?.open ?? []), ...orphaned])])] : []),
     ...awaited.filter(a => !a.exited).map(a => `${a.label} is still running after ${bounds.sceneUpWaitMs / 1000} s`),
     ...(probeWait?.remaining ? [`${probeWait.remaining} probe of the engine bundle still running after ${bounds.probeWaitMs / 1000} s`] : []),
   ];
@@ -878,12 +885,9 @@ const processStart = pid => {
   try { return execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: DEVICE_READ_MS}).trim() || null; }
   catch { return null; }
 };
-// A pending launch names its launcher (this process), so a later settlement can tell a launch still under way from one
-// whose launcher is gone.
 export function journalProcess(run, {kind, pid, start, label, pending = false}) {
-  const owner = pending ? process.pid : pid;
-  const at = owner ? (start ?? processStart(owner)) : null;
-  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pending ? `pending:${owner}` : (pid ?? '-')}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
+  const at = pid ? (start ?? processStart(pid)) : null;
+  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pending ? 'pending' : (pid ?? '-')}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
 }
 const readJournal = run => { try { return parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 

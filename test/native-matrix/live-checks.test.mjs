@@ -382,14 +382,12 @@ test('parseProcessTable and parseJournal: ps\'s lstart and the journal\'s rows r
     {pid: 100, ppid: 1, uid: 501, start: 'Tue Oct 21 10:00:00 2026', command: 'node scripts/native-matrix/live-device.mjs paste --run /r'},
     {pid: 101, ppid: 100, uid: 501, start: 'Wed Oct 1 09:05:07 2026', command: '/usr/bin/swift x.swift'}]);
   assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\nprobe\tpending\t-\tinput-source#a1\n'
-    + 'probe\tpending:4321\tTue Oct 21  9:59:58 2026\twindow-frame#b2\n'), [
+), [
     {kind: 'cli', pid: 100, start: 'Tue Oct 21 10:00:00 2026', label: 'live-device.mjs paste'},
     {kind: 'probe', pid: null, start: null, label: 'keystroke'},
-    {kind: 'probe', pid: null, start: null, label: 'input-source#a1', pending: true, launcher: null},
-    {kind: 'probe', pid: null, start: null, label: 'window-frame#b2', pending: true, launcher: {pid: 4321, start: 'Tue Oct 21 9:59:58 2026'}}]);
-  // Pending until a later row of its label resolves it, to a pid or to `-`.
-  assert.deepEqual(pendingLaunches(parseJournal('probe\tpending:1\tT\ta#1\nprobe\tpending:1\tT\tb#2\nprobe\t-\t-\ta#1\nprobe\tpending\t-\tc#3\n')),
-    [{label: 'b#2', launcher: {pid: 1, start: 'T'}}, {label: 'c#3', launcher: null}]);
+    {kind: 'probe', pid: null, start: null, label: 'input-source#a1', pending: true}]);
+  // Pending until a later row of its label gives its outcome, a pid or `-`; nothing else resolves it.
+  assert.deepEqual(pendingLaunches(parseJournal('probe\tpending\t-\ta#1\nprobe\tpending\t-\tb#2\nprobe\t-\t-\ta#1\nprobe\tpending\t-\tc#3\nprobe\t900\tT\tc#3\n')), ['b#2']);
 });
 
 test('recoveryPlan: only journaled pids whose start time still matches are stopped; an in-flight scene up is awaited; anything else is listed, untouched', () => {

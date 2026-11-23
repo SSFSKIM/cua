@@ -6,7 +6,7 @@ import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {reactivateApp} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
@@ -397,7 +397,7 @@ function beginIo(extra = {}) {
   return {calls, preflight: () => ({refusals: []}), gitState: () => ({commit: 'c1', dirty: false}),
     engineCheck: () => ({ok: true, engine: {build: 'b'}, problems: []}),
     frontmost: () => { calls.push('frontmost'); return {pid: 77, bundleId: 'com.apple.Terminal'}; },
-    finderWindows: () => { calls.push('finder'); return []; }, finderPreferences: () => ({ShowSidebar: true}), finderSavedPreferences: () => null,
+    finderWindows: () => { calls.push('finder'); return []; }, finderPreferences: () => ({ShowSidebar: true, ShowStatusBar: false, ShowPathbar: false}), finderSavedPreferences: () => null,
     stop: async () => { calls.push('stop'); return {wasRunning: false}; }, ...extra};
 }
 
@@ -452,6 +452,10 @@ for (const [file, kind, make] of [
   ['live-frontmost.json', 'a directory', path => fs.mkdirSync(path)],
   ['live-finder.json', 'null', path => fs.writeFileSync(path, 'null')],
   ['live-finder.json', 'unreadable JSON', path => fs.writeFileSync(path, '{unreadable JSON')],
+  ['live-frontmost.json', 'a dangling symlink', path => fs.symlinkSync(join(dirname(path), 'gone.json'), path)],
+  ['live-finder.json', 'a dangling symlink', path => fs.symlinkSync(join(dirname(path), 'gone.json'), path)],
+  ['live-finder.json', 'windows without keys', path => fs.writeFileSync(path, JSON.stringify({windows: []}))],
+  ['live-finder.json', 'one key of three', path => fs.writeFileSync(path, JSON.stringify({windows: [], keys: {ShowSidebar: true}}))],
 ]) {
   test(`recover: an unusable ${file} (${kind}) is kept and the recovery is not ok, as begin refuses on it`, async () => {
     const run = scratch(), path = join(run, file);
@@ -461,7 +465,7 @@ for (const [file, kind, make] of [
     assert.equal(out.ok, false, JSON.stringify(out));
     assert.ok(out.manual?.includes(path), out.manual);
     assert.match(out.manual, /kept/);
-    assert.ok(fs.existsSync(path), 'the unusable record is kept');
+    assert.ok(fs.lstatSync(path, {throwIfNoEntry: false}), 'the unusable record is kept');
     assert.ok(io.order.includes('engine-stop'), 'the rest of the put-back still ran');
     assertRecoveryRefusal(await begin({run, commit: 'c1', io: beginIo()}), file);
   });
@@ -849,8 +853,7 @@ test('runProbe: journaled pending before its open, launched without -W, resolved
   assert.deepEqual(runProbe(BUNDLE, ['input-source', 'current'], {...device.options, run}), {id: 'com.apple.keylayout.ABC'});
   assert.ok(!device.launched[0].includes('-W'));
   assert.deepEqual(device.launched[0].slice(0, 2), ['-n', '-g']);
-  assert.match(device.atLaunch[0], new RegExp(`^probe\tpending:${process.pid}\t\\w{3} \\w{3} [ \\d]\\d [\\d:]+ \\d{4}\tinput-source#[0-9a-f]+\n$`),
-    'the launch is in the journal before open runs, naming its launcher (this process) and its start time');
+  assert.match(device.atLaunch[0], /^probe\tpending\t-\tinput-source#[0-9a-f]+\n$/, 'the launch is in the journal before open runs');
   const [pending, resolved] = journalOf(run);
   assert.equal(resolved.label, pending.label, 'one launch, one label');
   assert.deepEqual({pid: resolved.pid, start: resolved.start}, {pid: 900, start: T}, 'the older probe is not this one');
@@ -1304,12 +1307,12 @@ test('an unidentified frame probe is waited for, never signaled; failure can rec
   assert.deepEqual(device.signals, []);
 });
 
-// A launch is journaled pending, with its launcher's pid and start time, before LaunchServices runs; the probe may become
-// visible only later. Settlement establishes the launch's outcome (resolved in the journal, or its launcher gone with no
-// `open` of a bundle probe left) before it trusts an empty process table, and reports a launch it cannot establish
-// within the bound as not settled, with the manual step.
+// A launch is journaled pending before LaunchServices runs; the probe may become visible only later, and a launcher that
+// died after its open handed the request off leaves nothing running that says so. Only the journal's own outcome row
+// resolves a pending launch: an empty process table is no evidence. One still pending at the bound is not settled, with
+// the manual step.
 const LAUNCHER = 700;
-const pendingLaunch = (label, launcher = {pid: LAUNCHER, start: T}) => ({kind: 'probe', pid: null, start: null, label, pending: true, launcher});
+const pendingLaunch = label => ({kind: 'probe', pid: null, start: null, label, pending: true});
 const setupCli = run => row(LAUNCHER, `node scripts/native-matrix/goldens-device.mjs steps finder --run ${run} --phase setup`);
 
 test('settleProbes: a pending launch whose probe becomes visible late is waited for, then stopped', async () => {
@@ -1330,27 +1333,19 @@ test('settleProbes: a pending launch whose probe becomes visible late is waited 
   assert.deepEqual(out.launchWait.open, []);
 });
 
-test('settleProbes: a pending launch whose launcher never finishes, or whose launcher is unknown, is not settled at the bound', async () => {
+test('settleProbes: a pending launch is never settled by an empty process table, whether its launcher runs, has gone, or its open is gone too', async () => {
   const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
-  for (const [journal, rows] of [[[pendingLaunch('window-frame#a')], () => [row(LAUNCHER, 'node scripts/native-matrix/live-device.mjs paste --run /r')]], [[pendingLaunch('window-frame#b', null)], () => []]]) {
-    const run = scratch();
-    const device = recoveryIo(run, {rows: rows(run), journal});
+  const open = row(701, `/usr/bin/open -n -g --stdout /tmp/x/out.json --stderr /tmp/x/err.txt -a ${BUNDLE} --args --probe window-frame --pid 402`);
+  for (const processes of [() => [row(LAUNCHER, 'node scripts/native-matrix/live-device.mjs paste --run /r')], () => [], (() => { let polls = 0; return () => (++polls < 5 ? [open] : []); })()]) {
+    const run = scratch(), journal = [pendingLaunch('window-frame#a')];
+    const device = recoveryIo(run, {rows: [], journal, extra: {processes}});
     const out = await settleProbes({run, io: device.io, bounds: SCALED});
     assert.equal(out.ok, false, JSON.stringify(out));
-    assert.deepEqual(out.launchWait.open, [journal[0].label]);
-    assert.match(out.manual, /probe launch .* was never established/);
+    assert.deepEqual(out.launchWait.open, ['window-frame#a']);
+    assert.match(out.manual, /probe launch \(window-frame#a\) has no outcome in the journal/);
+    assert.ok(out.manual.includes(join(run, JOURNAL_FILE)), 'the manual step names the journal a person resolves it in');
     assert.deepEqual(device.signals, [], 'nothing unidentified is signaled');
   }
-});
-
-test('settleProbes: a pending launch is established once its launcher is gone and no open of a bundle probe runs', async () => {
-  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
-  const run = scratch(), open = row(701, `/usr/bin/open -n -g --stdout /tmp/x/out.json --stderr /tmp/x/err.txt -a ${BUNDLE} --args --probe window-frame --pid 402`);
-  let polls = 0;
-  const device = recoveryIo(run, {rows: [], journal: [pendingLaunch('window-frame#c')], extra: {processes: () => (++polls < 5 ? [open] : [])}});
-  const out = await settleProbes({run, io: device.io, bounds: SCALED});
-  assert.equal(out.ok, true, JSON.stringify(out));
-  assert.equal(out.launchWait.waited, true, 'the orphaned open was waited out');
 });
 
 test('settleProbes: this run\'s setup CLI still running fences settlement until it exits; another run\'s does not', async () => {
@@ -1368,6 +1363,23 @@ test('settleProbes: this run\'s setup CLI still running fences settlement until 
   assert.deepEqual(stays.signals, [], 'an unjournaled CLI is waited for, never signaled');
   const other = recoveryIo(run, {rows: [setupCli('/another/run')], journal: []});
   assert.equal((await settleProbes({run, io: other.io, bounds: SCALED})).ok, true);
+});
+
+test('recover: a pending launch that resolves during its wait is stopped before the first restoration step', async () => {
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source ${ABC}`);
+  const journal = [pendingLaunch('input-source#late')];
+  let polls = 0, probeUp = false, device;
+  device = recoveryIo(run, {rows: [], journal, onSignal: pid => { device.io.order.push(`stop ${pid}`); if (pid === 900) probeUp = false; }, extra: {
+    processes: () => {
+      if (++polls === 4) { probeUp = true; journal.push({kind: 'probe', pid: 900, start: T, label: 'input-source#late'}); }
+      return probeUp ? [probe] : [];
+    },
+    processRuns: pid => pid === 900 && probeUp}});
+  const out = await recover({run, io: device.io, bounds: SCALED});
+  assert.deepEqual(device.signals, ['SIGTERM 900']);
+  assert.equal(device.io.order[0], 'stop 900', `the probe is stopped before any restoration: ${device.io.order.join(', ')}`);
+  assert.ok(device.io.order.length > 1, 'the put-back ran once the probe had exited');
+  assert.equal(out.launchWait.waited, true);
 });
 
 test('recover: a pending launch it cannot establish restores nothing', async () => {

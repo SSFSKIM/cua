@@ -149,6 +149,18 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `feat/117-m4-recut`. T10's judge and oracle work builds now with unit tests; T10's hosted pilot and T3b run after M4
   (#505) merges to main and origin/main is merged into `feat/117-m5` (a merge, no rebase). The moving M4 branch is not
   merged directly. T8e and T11 may come before T3b.
+- 2026-11-23, T8d (a6ef751ea..643a4dd33, #216): not reproduced from the code. One approval memory per MCP connection
+  (`src/mcp/approval-memory.mjs`), keyed by the resolved app: a decline for one app never touches another's entry; an
+  approval survives end_task, new tasks, js_reset, the idle stop and a worker replacement; a new connection asks
+  again. An approved app is refused again only by a new connection whose client answers no, an accept never
+  remembered, or the client's own later decline (in Claude Code 2.1.330 a hook's blocking error comes back as a
+  decline, aborts and limits as cancel, so a decline need not be a person's). The refusal keeps the vendor's sentence
+  and adds where its answer came from (client declined / declined earlier on this connection / client cancelled), on
+  cua's engine, macOS and Linux alike (`notApproved`, `policy.mjs`); never that a person declined, never a way around.
+  The design session: an accept carrying its own `_meta` without `persist` stays unremembered (MAWS's shim,
+  `cua-shim.mjs:11`, adds `_meta.persist` to every accepted app approval, so remembering more would widen consent for
+  no known client); 216.md names it as a client contract. The hosted witness is `scripts/approval-cycles.mjs`, twenty
+  cycles, run in T10's pilot; Claude Code's own answering and a reconnect are O10's.
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

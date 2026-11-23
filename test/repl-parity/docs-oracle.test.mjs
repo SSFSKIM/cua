@@ -113,17 +113,27 @@ test('Table 3 amendment permits only the two approved grammar repairs and reject
 });
 
 test('Table 3 addition: cua\'s agent cursor paragraph follows the core on a macOS computer lane only, and is the shipped document',async()=>{
- const {AGENT_CURSOR}=await import('../../scripts/repl-parity/docs-oracle.mjs');
+ const {AGENT_CURSOR,AGENT_CURSOR_FIRST_USE}=await import('../../scripts/repl-parity/docs-oracle.mjs');
  const {agentCursorLane}=await import('../../scripts/repl-parity/document-comparison.mjs');
- assert.equal(AGENT_CURSOR,readFileSync(new URL('../../docs/cua-api/agent-cursor.md',import.meta.url),'utf8'));
+ const shipped=name=>readFileSync(new URL(`../../docs/cua-api/${name}.md`,import.meta.url),'utf8');
+ // #503: with the browser surface the shipped agent-cursor.md, its detail looked up; without it the first paragraph and
+ // each lookup's text, the document as it read before.
+ assert.equal(AGENT_CURSOR_FIRST_USE,shipped('agent-cursor'));
+ const lookups=['background-web-pages','click-checks','action-answers','accessibility-tree','typing'].map(name=>shipped(`macos/${name}`));
+ assert.equal(AGENT_CURSOR,[`${shipped('agent-cursor').split('\n\n')[0]}\n`,...lookups].join('\n'));
  const base=fixture('cua-core.md'),policy=fixture('vendor-confirmations.md');
  assert.equal(coreDocument({host:'cua',agentCursor:true}),`${base}\n${AGENT_CURSOR}\n${policy}`);
+ assert.equal(coreDocument({host:'cua',agentCursor:'lookups'}),`${base}\n${AGENT_CURSOR_FIRST_USE}\n${policy}`);
+ assert.equal(coreDocument({host:'vendor',agentCursor:'lookups'}),coreDocument({host:'vendor'}));
+ assert.equal(transformDocumentContent([{type:'text',text:coreDocument({host:'vendor'})}],{host:'vendor',agentCursor:'lookups'})[0].text,coreDocument({host:'cua',agentCursor:'lookups'}));
+ assert.equal(transformDocumentContent([{type:'text',text:fixture('vendor-core.md')+'\nPOLICY'}],{host:'vendor',agentCursor:'lookups'})[0].text,`${base}\n${AGENT_CURSOR_FIRST_USE}\nPOLICY`,'an override policy too');
  assert.equal(coreDocument({host:'vendor',agentCursor:true}),coreDocument({host:'vendor'}),'the vendor\'s document never carries it');
  const vendorText=coreDocument({host:'vendor'})+'tail';
  assert.equal(transformDocumentContent([{type:'text',text:vendorText}],{host:'vendor',agentCursor:true})[0].text,coreDocument({host:'cua',agentCursor:true})+'tail');
  assert.equal(transformDocumentContent([{type:'text',text:vendorText}],{host:'vendor'})[0].text,coreDocument({host:'cua'})+'tail');
  const run=(platform,surfaces)=>({meta:{platform,surfaces,caseConfigurations:{'cells/x':{surfaces}}}});
- assert.equal(agentCursorLane(run('darwin',['computer','browser']),{case:'cells/x'}),true);
+ assert.equal(agentCursorLane(run('darwin',['computer','browser']),{case:'cells/x'}),'lookups');
+ assert.equal(agentCursorLane(run('darwin',['computer']),{case:'cells/x'}),true);
  assert.equal(agentCursorLane(run('darwin',['browser']),{case:'cells/x'}),false);
  assert.equal(agentCursorLane(run('linux',['computer','browser']),{case:'cells/x'}),false);
 });

@@ -301,3 +301,36 @@ test('ruling 1149: a js_reset counts as done only when it attests cua\'s engine;
   const rejected = resetStep({content: [{type: 'text', text: 'ending'}], isError: true, structuredContent: {status: 'error', code: 'task_ending'}}, expected, 5);
   assert.deepEqual([rejected.step.ok, rejected.step.detail, rejected.stop], [false, 'rejected before dispatch (task_ending)', null]);
 });
+
+test('ruling 1149: another request is the call\'s in flight: during an unmeasured bind or js_reset it is diagnostic only; during attested work, or between calls, it fails', () => {
+  const expected = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  const stop = attestationStop({'cua/nativeEngine': {engine: 'vendor', version: null, build: 'r'}}, expected);
+  assert.equal(bindRecord({app: 'approve', cycle: 0, blocked: null}).other, 0, 'a bind starts its own tally');
+
+  // The stopped bind's request: NO VERDICT, the request named beside it, not a problem.
+  const vendorBind = goodConnection();
+  vendorBind.binds = [...vendorBind.binds.slice(0, 3), {...stoppedBind('approve', 1, stop), other: 1}];
+  const judged = judge([vendorBind], {complete: false});
+  assert.deepEqual(judged.problems, []);
+  assert.ok(judged.inconclusive.some(line => line.startsWith('first: bind 4 (approve): not measured') && line.endsWith('1 other request during it, not judged')), judged.inconclusive.join(' | '));
+  assert.equal(stoppedVerdict(judged, {message: stop.message, noVerdict: true}).verdict, 'no verdict');
+
+  // The same for a js_reset the attestation stopped.
+  const vendorReset = goodConnection();
+  vendorReset.steps = [{step: 'end_task', cycle: 1, ok: true}, {...resetStep({content: [], isError: false, _meta: {'cua/nativeEngine': {engine: 'vendor'}}}, expected, 1).step, other: 2}];
+  const reset = judge([vendorReset], {complete: false});
+  assert.deepEqual(reset.problems, []);
+  assert.ok(reset.inconclusive.some(line => line.startsWith('first: js_reset of cycle 1 not measured') && line.endsWith('2 other requests during it, not judged')), reset.inconclusive.join(' | '));
+
+  // A request during an earlier attested bind, an attested step, or between calls still fails the run.
+  for (const place of ['bind', 'step', 'connection']) {
+    const earlier = goodConnection();
+    earlier.binds = [...earlier.binds.slice(0, 3), {...stoppedBind('approve', 1, stop), other: 1}];
+    if (place === 'bind') earlier.binds[1] = {...earlier.binds[1], other: 1};
+    if (place === 'step') earlier.steps = [{step: 'end_task', cycle: 1, ok: true, other: 1}];
+    if (place === 'connection') earlier.other = 1;
+    const failed = judge([earlier], {complete: false});
+    assert.deepEqual(failed.problems, ['first: 1 other request was asked of the client'], place);
+    assert.equal(stoppedVerdict(failed, {message: stop.message, noVerdict: true}).verdict, 'fail', place);
+  }
+});

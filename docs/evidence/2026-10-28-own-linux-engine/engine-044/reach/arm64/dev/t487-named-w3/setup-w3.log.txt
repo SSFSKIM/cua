@@ -1,0 +1,29 @@
+== 2026-11-23T13:02:13Z setup t147-w3 at 5f59e5bcbb94c06c1a0327a76c0642e24a48482d, load 0.00 0.00 0.09
+== HEAD 5f59e5bcbb94c06c1a0327a76c0642e24a48482d (wanted 5f59e5bcbb94c06c1a0327a76c0642e24a48482d)
+changes before: 0
+node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, npm 11.19.1, aarch64
+
+added 25 packages in 521ms
+v44.9.0
+ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/l
+   Compiling autocfg v1.5.1
+   Compiling rustix v1.1.4
+   Compiling bitflags v2.13.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling zune-core v0.5.1
+   Compiling pxfm v0.1.30
+   Compiling bytemuck v1.25.0
+   Compiling x11rb-protocol v0.13.2
+   Compiling zune-jpeg v0.5.15
+   Compiling byteorder-lite v0.1.0
+   Compiling num-traits v0.2.19
+   Compiling moxcms v0.8.1
+   Compiling gethostname v1.1.0
+   Compiling image v0.25.10
+   Compiling x11rb v0.13.2
+   Compiling linux-engine-diff-xprobe v0.0.0 (/Users/new/Developer/GitHub/cua/.claude/worktrees/t147-w3/scripts/linux-engine-diff/xprobe)
+    Finished `release` profile [optimized] target(s) in 23.54s
+-rwxrwxr-x 2 new new 1631976 Nov 23 05:02 /Users/new/Developer/GitHub/cua/.claude/worktrees/t147-w3/scripts/linux-engine-diff/xprobe/target/release/xprobe
+ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/l
+changes after: 0
+== 2026-11-23T13:02:42Z setup done

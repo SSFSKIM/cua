@@ -8067,6 +8067,40 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (#500, rulings 1083 and 1131, 2026-11-23, `fix/500-cfnull-label`): a label slot that answers kCFNull is
+  unknown, never absent, and label comparisons are like with like. Found in #481's final review: `AttributeRead.decode`
+  put a null slot in neither `unreadable` nor `absent`, so the record took a null title for an absent one and fell
+  through to the description. Ruling 1083 already says a null AXChildren slot is unread; 1131 extends that to the label.
+  1. The observation. `nullSlot` (AX.swift) puts the name in `AttributeRead.null`, which `ElementData.null` carries
+     (intersected with the attributes kept, as `unreadable` is). `unreadable` itself is untouched, so #405's
+     classification, `valueFailed` and the length reads do not change. `screenshotLabelsUnknown` records the null parts
+     in `labelsUnread` (so a consumer that ignores nulls still fails as it does for a failed read) and in `labelsNull`.
+     Each recorded node counts its null parts in the observation's timings as `nullLabelSlots`. The count is value-free,
+     so the hosted run can measure how often apps answer null.
+  2. The read now. `stalePointLabelRead` answers `.null` for a single read that succeeds with kCFNull.
+  3. Like with like (1131). Each comparison takes the label parts in their usual priority. A part that is null on both
+     sides passes to the next part (`stalePointLabelPair` `.next`). A part null on one side only is unread, and each
+     rule then keeps or refuses as it does for a failed read. So an element whose title is always null is still judged
+     by its description: #298's relabel check and #453's press survive, and Open to Delete in the description refuses.
+     Applied to #298's `relabelledLabel` (its own #433 candidate test included), #431's `recreatedLabelsAgree`, #443's
+     `controlDiffers`, and #453's `overlayLabelsAgree` and `overlayDuplicate`. #442 reads no label. The lenient
+     `stalePointLabelsAgree` (#296's match, #305's label path) ignores unread parts by design and is unchanged.
+  What main did with a one-sided null:
+  - Wrong keeps or presses. #431's twin search ruled out a twin through a null title (A null, B absent, the descriptions
+    differ). #453 pressed a row whose title was null then and absent now, or the reverse. `overlayDuplicate` excused an
+    acting inner text whose title was null beside the row's absent one.
+  - Wrong refusals. `relabelled` compared a description with a title (null then and "Save" now, against "Save
+    changes"). `controlGone` compared descriptions past a title null on one side.
+  Proven offline (`NullLabelSlotTests`, 3; `OverlayClickTests` and `RecreatedIdentityTests`, 3 more). The nulls enter at
+  decode time: the stale-point and overlay fakes now build their record's labels through `AttributeRead.decode` and
+  `ElementData` (`decodedLabels`), and the walk's fake source answers kCFNull slots (`nullAttributes`).
+  - With the two null sources reverted (main's decoding), 17 assertions fail.
+  - With null treated as plain unread (no like with like), the both-null cases fail in all five consumers.
+  1665 swift tests (1 skipped), 0 failures.
+  Not done here: a null AXRole still records "AXUnknown" as read, and a null AXSubrole reads as none in #405's
+  classification. Both stay outside `unreadable`, as ruled.
+  Date/Author: 2026-11-23, cursor235's builder for #500.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -62,7 +62,8 @@ struct ScreenshotNode<Element> {
   /// role (`stalePointEditableTextRoles`). #298's edited-text exemption (ruling 1ea561bc:553) checks at the click that
   /// the text's AXEditableAncestor, read then, names it. Nil otherwise.
   let editableAncestor: Element?
-  /// Its label's attributes whose read failed at the observation, so the label read then is unknown past them (#298).
+  /// Its label's attributes whose read failed at the observation, or whose slot held kCFNull (#500), so the label read
+  /// then is unknown past them (#298).
   let labelsUnread: Set<StalePointLabelPart>
   /// Its AX frame at the observation, in global screen points (top-left origin), as coordinate clicks are posted.
   let frame: CGRect
@@ -127,6 +128,17 @@ struct ScreenshotNode<Element> {
   /// #453 (ruling 1083): whether its recorded parent is itself framed, so `ancestor` names its direct parent (no
   /// frameless element recorded between them).
   var parentFramed = false
+  /// #500 (ruling 1131): of `labelsUnread`, the parts whose slot held kCFNull, which a comparison passes over where the
+  /// other side's is null too (`label(_:)`, "like with like").
+  var labelsNull: Set<StalePointLabelPart> = []
+
+  /// #500 (ruling 1131): a label part as the observation read it: null (its slot held kCFNull), unreadable (its read
+  /// failed), else its text (nil when absent). An AXStaticText's value only; no other role's value is its label.
+  func label(_ part: StalePointLabelPart) -> StalePointLabelRead {
+    if labelsNull.contains(part) { return .null }
+    if labelsUnread.contains(part) { return .unreadable }
+    return .text(part == .title ? title : part == .description ? description : value)
+  }
 }
 
 /// What the record holds of a node's own children (#453, ruling 1082).
@@ -177,8 +189,10 @@ struct ScreenshotNodeRead<Element> {
   /// Its AXSubrole, and an AXStaticText's value (`screenshotLabelValue`), for #298's rule `relabelled`.
   var subrole: String? = nil
   var value: String? = nil
-  /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence.
+  /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence;
+  /// and (#500) those whose slot held kCFNull, also in `labelsNull`.
   var labelsUnread: Set<StalePointLabelPart> = []
+  var labelsNull: Set<StalePointLabelPart> = []
 }
 
 /// The attributes a node's label (#298's `stalePointLabel`) is taken from, in priority order: the title, the
@@ -196,7 +210,28 @@ enum StalePointLabelPart: CaseIterable, Hashable {
 
 /// One label attribute read now (the review of 7f6eb3dc..b2f00ad5, P2 2): its text, nil when the element lacks it (an
 /// absent attribute, or a value that is no text), or unreadable (any other error), which the label must not fall past.
-enum StalePointLabelRead: Equatable { case text(String?), unreadable }
+/// #500 (rulings 1083, 1131): null, a read that answered kCFNull, is unknown too, but a comparison whose other side is
+/// null at the same part passes to the next one, like with like (`stalePointLabelPair`).
+enum StalePointLabelRead: Equatable { case text(String?), unreadable, null }
+
+/// #500 (ruling 1131): one label part compared between two sides: `next` when both are null (like with like: an
+/// element whose title is always null is compared by its description), `unknown` when either failed or only one is
+/// null (the label is then unread, and each rule keeps or refuses as it does for a failed read), else both texts.
+enum StalePointLabelPair: Equatable { case next, unknown, texts(String?, String?) }
+
+func stalePointLabelPair(_ a: StalePointLabelRead, _ b: StalePointLabelRead) -> StalePointLabelPair {
+  switch (a, b) {
+  case (.null, .null): return .next
+  case let (.text(x), .text(y)): return .texts(x, y)
+  default: return .unknown
+  }
+}
+
+/// The label attributes the record keeps as unknown and, of them, those whose slot held kCFNull (#500), from the walk's
+/// data (`ElementData.unreadable`, `ElementData.null`; `screenshotLabelsUnread`).
+func screenshotLabelsUnknown(role: String, _ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
+  (screenshotLabelsUnread(role: role, data.unreadable.union(data.null)), screenshotLabelsUnread(role: role, data.null))
+}
 
 /// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the
 /// title and the description, and the value of an AXStaticText only (no other role's value is its label).
@@ -206,10 +241,12 @@ func screenshotLabelsUnread(role: String, _ unreadable: Set<String>) -> Set<Stal
 
 /// A label attribute's single read now (`copyAttribute`'s value and error) as `StalePointLabelRead`: a string or an
 /// attributed string's text; nothing for kAXErrorNoValue, kAXErrorAttributeUnsupported or a value that is no text;
-/// unreadable for any other error.
+/// null for kCFNull (#500); unreadable for any other error.
 func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
   switch error {
-  case .success: return .text(value.flatMap(labelText))
+  case .success:
+    if let value, CFGetTypeID(value) == CFNullGetTypeID() { return .null }
+    return .text(value.flatMap(labelText))
   case .noValue, .attributeUnsupported: return .text(nil)
   default: return .unreadable
   }
@@ -352,7 +389,7 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
       ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
                      subrole: read.subrole, value: read.value,
                      editableAncestor: read.role == "AXStaticText" ? regions[read.number] : nil,
-                     labelsUnread: read.labelsUnread,
+                     labelsUnread: read.labelsUnread.union(read.labelsNull),
                      frame: frame, shown: shown, depth: read.depth,
                      subtreeRecorded: !incomplete.contains(read.number),
                      thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
@@ -362,7 +399,7 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
                        : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
                        : read.actionsRead ? false : nil,
                      regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove,
-                     pressRecorded: read.actions.contains("AXPress"))
+                     pressRecorded: read.actions.contains("AXPress"), labelsNull: read.labelsNull)
     }
     let parentFramed = read.parent.map { framedReads.contains($0) } ?? false
     guard let frame = own else {
@@ -730,24 +767,42 @@ let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
 /// only when both are, each cut as the record's was. A label never falls past an attribute whose read failed, at the
 /// observation (`ScreenshotNode.labelsUnread`) or now (`StalePointReads.readLabel`): the label is then unknown, and the
 /// rule keeps the point (the review of 7f6eb3dc..b2f00ad5, P2 2: a button "Save" described "Save changes", its title
-/// read failing on one side, would otherwise compare its description with its title).
+/// read failing on one side, would otherwise compare its description with its title). #500 (ruling 1131): an attribute
+/// null on both sides is passed over, like with like, so an element whose title is always null is judged by its
+/// description; null on one side only is unknown, as a failed read is.
 func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
   guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
   let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
+  let element = node.element
+  var live: [StalePointLabelPart: StalePointLabelRead] = [:]
+  func readNow(_ part: StalePointLabelPart) -> StalePointLabelRead {
+    if let read = live[part] { return read }
+    let read = reads.readLabel(element, part)
+    live[part] = read
+    return read
+  }
   var was: String?
   for part in parts {
-    if node.labelsUnread.contains(part) { return nil }
-    let recorded = part == .title ? node.title : part == .description ? node.description : node.value
-    if let text = nonEmpty(recorded) {
+    let recorded = node.label(part)
+    if recorded == .null {
+      guard readNow(part) == .null else { return nil }
+      continue
+    }
+    guard case .text(let text) = recorded else { return nil }
+    if let text = nonEmpty(text) {
       was = text
       break
     }
   }
   guard let was else { return nil }
-  let element = node.element
   var now: String?
   for part in parts {
-    guard case .text(let text) = reads.readLabel(element, part) else { return nil }
+    let read = readNow(part)
+    if read == .null {
+      guard node.label(part) == .null else { return nil }
+      continue
+    }
+    guard case .text(let text) = read else { return nil }
     if let text = nonEmpty(text.map(bounded)) {
       now = text
       break
@@ -1029,15 +1084,15 @@ func recreatedTwin<Element>(_ other: ScreenshotNode<Element>, of node: Screensho
 /// failed on either side (the review of main..849bcdad, finding 5): the title, then the description, then an
 /// AXStaticText's value by its words; at the first that either side failed to read they agree, at the first both carry
 /// they agree when it is the same, at the first only one carries they agree; carrying none, they agree. `aWords` gives the
-/// words of `a`'s value (`stalePointLabelWords`; a search over many `b` takes them once, `recreatedTwinFound`).
+/// words of `a`'s value (`stalePointLabelWords`; a search over many `b` takes them once, `recreatedTwinFound`). #500
+/// (ruling 1131): a part null on both sides is passed over; null on one side only is unread, so they agree.
 func recreatedLabelsAgree<Element>(_ a: ScreenshotNode<Element>, _ b: ScreenshotNode<Element>,
                                    aWords: (String) -> [String] = stalePointLabelWords) -> Bool {
   for part in StalePointLabelPart.allCases {
-    if a.labelsUnread.contains(part) || b.labelsUnread.contains(part) { return true }
-    func text(_ node: ScreenshotNode<Element>) -> String? {
-      nonEmpty(part == .title ? node.title : part == .description ? node.description : node.value)
-    }
-    switch (text(a), text(b)) {
+    let pair = stalePointLabelPair(a.label(part), b.label(part))
+    if pair == .next { continue }
+    guard case let .texts(x, y) = pair else { return true }
+    switch (nonEmpty(x), nonEmpty(y)) {
     case let (x?, y?): return part == .value ? aWords(x) == stalePointLabelWords(y) : x == y
     case (nil, nil): continue
     default: return true
@@ -1329,13 +1384,18 @@ func firstActing<Element>(from start: Element, _ reads: StalePointReads<Element>
 /// or a frame read now more than 2 pt off the recorded control's (a recorded control without a frame, or a frame unread
 /// now, says nothing). The label is compared as `stalePointLabelsAgree` does, title first, then description, but an
 /// attribute unread on either side, then or now, ends the comparison with no difference, and the next is compared only
-/// where both sides are known to lack it (the re-review of f394677e, item 3). The role is not compared: a control
-/// re-created in place may change it (`rolechange`).
+/// where both sides are known to lack it (the re-review of f394677e, item 3), or (#500, ruling 1131) both read null, like
+/// with like; null on one side only is unread. The role is not compared: a control re-created in place may change it
+/// (`rolechange`).
 func controlDiffers<Element>(_ now: Element, from recorded: ScreenshotNode<Element>, windowShift: CGVector,
                              _ reads: StalePointReads<Element>) -> Bool {
   for part in [StalePointLabelPart.title, .description] {
-    guard !recorded.labelsUnread.contains(part), case .text(let live) = reads.readLabel(now, part) else { break }
-    let old = nonEmpty(part == .title ? recorded.title : recorded.description), fresh = nonEmpty(live.map(bounded))
+    let then = recorded.label(part)
+    if case .unreadable = then { break }
+    let pair = stalePointLabelPair(then, reads.readLabel(now, part))
+    if pair == .next { continue }
+    guard case let .texts(recordedText, live) = pair else { break }
+    let old = nonEmpty(recordedText), fresh = nonEmpty(live.map(bounded))
     if let old, let fresh { if old != fresh { return true } else { break } }
     if old != nil || fresh != nil { break }
   }

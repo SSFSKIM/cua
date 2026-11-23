@@ -66,6 +66,14 @@ func absentSlot(_ value: Any?) -> Bool {
   return error == .noValue || error == .attributeUnsupported
 }
 
+/// #500 (rulings 1083, 1131): whether a batched fetch's slot holds kCFNull: neither a value nor an absence (`absentSlot`)
+/// nor a failed read (`failedSlot`), so the attribute is unknown. Kept apart from a failed read because a label compared
+/// with a slot null on both sides passes to the next one (`StalePointLabelRead.null`).
+func nullSlot(_ value: Any?) -> Bool {
+  guard let value else { return false }
+  return CFGetTypeID(value as CFTypeRef) == CFNullGetTypeID()
+}
+
 /// Whether a batched fetch's slot holds a failed read: an error placeholder whose error is not the attribute's absence
 /// (kAXErrorNoValue, kAXErrorAttributeUnsupported), so the element may carry a value this read could not get.
 func failedSlot(_ value: Any?) -> Bool {

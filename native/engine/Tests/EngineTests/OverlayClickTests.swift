@@ -26,6 +26,8 @@ final class OverlayClickTests: XCTestCase {
     var roleNow: String?
     /// Its label's reads fail now (a messaging timeout).
     var labelFails = false
+    /// #500: label attributes whose read answers kCFNull, in the walk's batched read (when recorded) and in a read now.
+    var null: Set<StalePointLabelPart> = []
     /// Held strongly (no child links, so no cycle): an overlay the record lacks still reads up to its window.
     var parent: Node?
     /// Whether the walk read AXPress among its actions.
@@ -52,6 +54,7 @@ final class OverlayClickTests: XCTestCase {
       label: { node, part in
         during()
         if node.labelFails || node.gone { return .unreadable }
+        if node.null.contains(part) { return stalePointLabelRead(kCFNull, .success) }
         switch part {
         case .title: return .text(node.title)
         case .description: return .text(node.description)
@@ -61,11 +64,13 @@ final class OverlayClickTests: XCTestCase {
     return OverlayReads(stale: stale, enabled: { $0.enabled })
   }
 
-  /// A recorded node, as the walk recorded it then (its labels and frame copied).
+  /// A recorded node, as the walk recorded it then (its frame copied, its labels decoded from their slots: #500).
   private func recorded(_ node: Node, depth: Int, ancestor: Int?) -> ScreenshotNode<Node> {
-    var record = ScreenshotNode(element: node, role: node.role, title: node.title, description: node.description, subrole: node.subrole,
-                                value: node.role == "AXStaticText" ? node.value : nil, editableAncestor: nil, labelsUnread: [],
+    let labels = decodedLabels(role: node.role, title: node.title, description: node.description, value: node.value, null: node.null)
+    var record = ScreenshotNode(element: node, role: node.role, title: labels.title, description: labels.description, subrole: node.subrole,
+                                value: screenshotLabelValue(role: node.role, labels.value), editableAncestor: nil, labelsUnread: labels.unread,
                                 frame: node.frame!, shown: node.frame, depth: depth, subtreeRecorded: true)
+    record.labelsNull = labels.null
     record.ancestor = ancestor
     record.parentFramed = ancestor != nil
     record.actionable = stalePointInteractiveRoles.contains(node.role) || node.press
@@ -562,6 +567,52 @@ final class OverlayClickTests: XCTestCase {
     let gained = permission()
     gained.row.description = "new"
     XCTAssertEqual(refusal(decide(gained, answered: .some(gained.row.parent))), .labelChanged, "a part gained since")
+  }
+
+  /// #500 (rulings 1083, 1131): the row's title slot null (kCFNull at decode time). Like with like: null then and now is
+  /// passed over, so a row whose title is always null is pressed while its description is unchanged and refused once it
+  /// changes; null on one side only (null then and absent or titled now, or absent then and null now) disagrees.
+  func testANullTitleIsComparedLikeWithLike() {
+    func scene(nullThen: Bool, title: String? = nil) -> Scene {
+      var scene = permission()
+      scene.row.title = title
+      scene.row.description = "Allow this time"
+      scene.row.null = nullThen ? [.title] : []
+      let at = scene.nodes.firstIndex { $0.element === scene.row }!
+      scene.nodes[at] = recorded(scene.row, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
+      return scene
+    }
+    let always = scene(nullThen: true)
+    guard case .deliver = decide(always, answered: .some(always.row.parent)) else { return XCTFail("always null, the description unchanged") }
+    always.row.description = "Never allow"
+    XCTAssertEqual(refusal(decide(always, answered: .some(always.row.parent))), .labelChanged, "always null, the description changed")
+    let absentNow = scene(nullThen: true)
+    absentNow.row.null = []
+    XCTAssertEqual(refusal(decide(absentNow, answered: .some(absentNow.row.parent))), .labelChanged, "null then, absent now")
+    let titledNow = scene(nullThen: true)
+    (titledNow.row.null, titledNow.row.title) = ([], "Block")
+    XCTAssertEqual(refusal(decide(titledNow, answered: .some(titledNow.row.parent))), .labelChanged, "null then, a title now")
+    let nullNow = scene(nullThen: false)
+    nullNow.row.null = [.title]
+    XCTAssertEqual(refusal(decide(nullNow, answered: .some(nullNow.row.parent))), .labelChanged, "absent then, null now")
+  }
+
+  /// #500 (rulings 1083, 1131): the datalist's inner text repeats the option only like with like: its title null where
+  /// the option's is absent is a label part unread, so the acting inner text is no repeat (`actionableDescendant`); both
+  /// null still repeat it.
+  func testANullTitleRepeatsTheRowOnlyLikeWithLike() {
+    func scene(innerNull: Bool, rowNull: Bool) -> Scene {
+      var scene = datalist()
+      for (node, null) in [(scene.row, rowNull), (scene.inner!, innerNull)] {
+        node.null = null ? [.title] : []
+        let at = scene.nodes.firstIndex { $0.element === node }!
+        scene.nodes[at] = recorded(node, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
+      }
+      return scene
+    }
+    XCTAssertEqual(refusal(decide(scene(innerNull: true, rowNull: false))), .actionableDescendant, "the inner text's title null alone")
+    XCTAssertEqual(refusal(decide(scene(innerNull: false, rowNull: true))), .actionableDescendant, "the option's title null alone")
+    guard case .deliver = decide(scene(innerNull: true, rowNull: true)) else { return XCTFail("both null: the inner text repeats the option") }
   }
 
   /// Ruling 1072, item 5: the identity is read again just before the press, after the owner's and intervention's

@@ -15,7 +15,7 @@ import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
 import {CERT_SHA1, CODESIGN_TIMED_OUT, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 const CODESIGN_TIMED_OUT_READ = () => CODESIGN_TIMED_OUT;
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
-import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
+import {approveEngine, buildEngine, buildFailureDetail, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
 import {installMacosEngine} from '../src/runtime/install.mjs';
 
@@ -309,6 +309,38 @@ test('a failed swift build, or no swift at all, fails visibly and changes nothin
   w.state.swift = () => ({code: -1, stdout: '', stderr: 'spawn swift ENOENT', error: 'ENOENT'});
   await assert.rejects(buildEngine(w.deps), error => (assert.equal(error.code, 'engine_build_failed'), assert.match(error.hint, /Xcode/), true));
   assert.ok(!existsSync(join(w.dir, 'pending.json')));
+});
+
+test('a failed swift build keeps the first error block as well as the tail, so a compiler crash\'s assertion survives a long stack dump', async t => {
+  const w = world(t);
+  const stack = Array.from({length: 200}, (_, i) => `${i}  swift-frontend  0x${i.toString(16).padStart(8, '0')} frame ${i}`);
+  w.state.swift = () => ({code: 1, stdout: Array.from({length: 40}, (_, i) => `[${i}/40] Compiling Engine File${i}.swift`).join('\n'),
+    stderr: ['Assertion failed: (isa<X>(Val) && "cast<Ty>() argument of incompatible type!"), function cast, file Casting.h, line 578.',
+      'Stack dump:', ...stack, 'error: compile command failed due to signal 6 (use -v to see invocation)'].join('\n')});
+  const error = await buildEngine(w.deps).then(() => assert.fail('the build should fail'), e => e);
+  assert.equal(error.code, 'engine_build_failed');
+  assert.match(error.message, /Assertion failed: \(isa<X>\(Val\)/, 'the first error block');
+  assert.match(error.message, /error: compile command failed due to signal 6/, 'the tail');
+  assert.match(error.message, /lines omitted/, 'the gap is marked');
+  assert.doesNotMatch(error.message, /frame 100\b/, 'the middle of the dump is left out');
+  assert.ok(error.message.split('\n').length <= 40, `bounded: ${error.message.split('\n').length} lines`);
+});
+
+test('the build failure detail: the first error block, a marked gap and the tail, each line bounded, with no line twice', () => {
+  const lines = n => Array.from({length: n}, (_, i) => `line ${i}`);
+  assert.equal(buildFailureDetail(''), 'no detail');
+  assert.equal(buildFailureDetail(lines(30).join('\n')), lines(30).slice(-12).join('\n'), 'no error line: the tail alone');
+  const near = [...lines(20), 'Sources/Engine/A.swift:3:1: error: cannot find type Foo', ...lines(5)].join('\n');
+  assert.equal(buildFailureDetail(near), near.split('\n').slice(-12).join('\n'), 'an error inside the tail: the tail alone');
+  const overlap = [...lines(20), 'fatal error: module map file not found', ...lines(15)].join('\n').split('\n');
+  assert.equal(buildFailureDetail(overlap.join('\n')), overlap.slice(20).join('\n'), 'a block running into the tail: one contiguous run');
+  const far = [...lines(5), 'x.swift:1:1: error: first', ...lines(100), 'error: last'];
+  const detail = buildFailureDetail(far.join('\n')).split('\n');
+  assert.deepEqual(detail.slice(0, 20), far.slice(5, 25));
+  assert.equal(detail[20], '… (70 lines omitted)');
+  assert.deepEqual(detail.slice(21), far.slice(-12));
+  const wide = buildFailureDetail(`error: ${'x'.repeat(5000)}`);
+  assert.ok(wide.length < 400 && wide.endsWith('…'), `one line is bounded: ${wide.length}`);
 });
 
 // ---- stopEngine ----

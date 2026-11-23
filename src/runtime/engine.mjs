@@ -334,6 +334,21 @@ export function engineRecords({dir = engineDirectory()} = {}) {
 
 const tail = text => lastLines(text, {count: 12, separator: '\n'});
 
+// A failed build's detail: the first error block (20 lines from the first line naming an error or a failed assertion)
+// and the last 12 lines, as one run when they meet and with the gap counted when they do not, each line cut at 300
+// characters. A compiler crash prints its assertion before a long stack dump, which the tail alone lost.
+const ERROR_LINE = /\berror:|fatal error|assertion\b.*\bfailed/i;
+export function buildFailureDetail(text) {
+  const lines = String(text ?? '').trim().split('\n').map(line => line.length > 300 ? `${line.slice(0, 299)}…` : line);
+  const tailStart = Math.max(0, lines.length - 12);
+  const first = lines.findIndex(line => ERROR_LINE.test(line));
+  const blockEnd = first + 20;
+  const kept = first === -1 || first >= tailStart ? lines.slice(tailStart)
+    : blockEnd >= tailStart ? lines.slice(first)
+    : [...lines.slice(first, blockEnd), `… (${tailStart - blockEnd} lines omitted)`, ...lines.slice(tailStart)];
+  return kept.join('\n') || 'no detail';
+}
+
 // Builds, assembles and signs the engine in staging, then moves it into the pending slot beside the approved bundle
 // (one rename, replacing an older pending build) and writes pending.json (design ruling 1118). The bundle at the
 // approved path, approved.json and the running engine are never touched: no status, no shutdown, no swap, so a working
@@ -382,7 +397,7 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   const compiled = await ctx.run('swift', ['build', '-c', 'release', '--package-path', sourceRoot, '--scratch-path', scratch], {timeout: BUILD_TIMEOUT_MS});
   if (compiled.code !== 0) {
     if (compiled.error === 'ENOENT') fail('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built', {hint: 'install Xcode (or its command line tools: xcode-select --install), then run cua engine build again'});
-    fail('engine_build_failed', `swift build failed (exit ${compiled.code}):\n${tail(`${compiled.stdout}\n${compiled.stderr}`)}`, {hint: 'the approved bundle is unchanged'});
+    fail('engine_build_failed', `swift build failed (exit ${compiled.code}):\n${buildFailureDetail(`${compiled.stdout}\n${compiled.stderr}`)}`, {hint: 'the approved bundle is unchanged'});
   }
 
   rmSync(paths.staging, {recursive: true, force: true});

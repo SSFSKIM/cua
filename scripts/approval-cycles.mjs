@@ -135,6 +135,7 @@ async function prepareBind(fixture) {
 // One connection running `plan`; resolves its record. A timed-out call, a protocol error or a wrong attestation throws.
 async function runConnection(name, plan, fixture) {
   let bind = null;   // the bind in flight
+  let opened = false;   // whether a call since the last end_task could have opened a task
   const record = {name, pid: null, binds: [], steps: [], other: 0, planned: plan.length, ran: 0};
   const session = openSession({args: [CLI, 'serve'], env: serveEnv, clientName: 'cua-approval-216', onServerRequest: msg => {
     if (bind && isAppApproval(msg, bundles[bind.app])) {
@@ -159,8 +160,12 @@ async function runConnection(name, plan, fixture) {
       if (step.step === 'end_task') {
         const result = await tool(session.call('end_task'), 'end_task');
         const status = result.structuredContent?.status ?? null;
-        record.steps.push({step: 'end_task', cycle: step.cycle, ok: !result.isError && status === 'ended', ...(result.isError || status !== 'ended' ? {detail: `status ${status}${result.isError ? ', isError' : ''}`} : {})});
+        // Every bind of the cycle not sent (blocked) and no js_reset: no task was opened, so a noop proves nothing.
+        const noTask = !opened && !result.isError && status === 'noop';
+        record.steps.push({step: 'end_task', cycle: step.cycle, ok: !result.isError && status === 'ended', ...(result.isError || status !== 'ended' ? {detail: `status ${status}${result.isError ? ', isError' : ''}`} : {}), ...(noTask ? {noTask} : {})});
+        opened = false;
       } else if (step.step === 'js_reset') {
+        opened = true;
         const result = await tool(session.call('js_reset', {}, 60_000), 'js_reset');
         record.steps.push({step: 'js_reset', cycle: step.cycle, ok: !result.isError, ...(result.isError ? {detail: boundedError(resultText({result}))} : {})});
       } else if (step.step === 'idle') await sleep(idleMs + 4000);
@@ -168,6 +173,7 @@ async function runConnection(name, plan, fixture) {
         const blocked = await prepareBind(fixture);
         bind = {app: step.app, cycle: step.cycle, dispatched: !blocked, blocked, after: null, asked: 0, refusal: null, failed: false, restarted: false, taskId: null, approval: null};
         if (blocked) { record.binds.push(bind); bind = null; continue; }
+        opened = true;
         try {
           const code = `await cua.getApp(${JSON.stringify(bundles[step.app])}); nodeRepl.write("bound")`;
           const result = await tool(session.js(code, 120_000), `the bind of ${bundles[step.app]}`);

@@ -69,6 +69,17 @@ test('the judge fails the loss #216 reports, and every other departure, naming e
   ]);
 
   // A fresh ask for the approved app after its persisted accept, even one the client accepts again, is a loss too.
+  // Two asks within the first bind are a second ask too: the count is per connection, whichever bind saw it.
+  const twice = goodConnection();
+  twice.binds[0] = bind('approve', 0, 2);
+  const doubled = judge([twice, second()]);
+  assert.deepEqual(doubled.problems, ['first: the approved app was asked again at bind 1 (2 asks); once per connection is expected']);
+  assert.equal(doubled.verdict, 'fail');
+  assert.match(doubled.detail, /approve asked 2/);
+  const secondTwice = second();
+  secondTwice.binds[1] = {...secondTwice.binds[1], asked: 3};
+  assert.deepEqual(judge([goodConnection(), secondTwice]).problems, ['second: the declined app was asked again at bind 2 (3 asks); once per connection is expected']);
+
   const reasked = goodConnection();
   reasked.binds[3] = bind('approve', 1, 1);
   assert.deepEqual(judge([reasked, second()]).problems, ['first: the approved app was asked again at bind 4 (2 asks); once per connection is expected']);
@@ -205,4 +216,17 @@ test('a run that stopped early leaves its unexecuted steps NO VERDICT; what it d
 
   partial.binds[2] = bind('approve', 0, 0, 'declinedEarlier', {approval: approval('decline', 'memory')});
   assert.equal(judge([partial], {complete: false}).verdict, 'fail');
+});
+
+test('an end_task that found no task because every bind before it was blocked is NO VERDICT; any other end_task failure fails', () => {
+  const blocked = goodConnection();
+  for (const k of [3, 4]) blocked.binds[k] = {...blocked.binds[k], dispatched: false, blocked: 'activation', asked: 0, approval: null, taskId: null, after: null};
+  blocked.steps = blocked.steps.map(step => (step.step === 'end_task' && step.cycle === 2 ? {step: 'end_task', cycle: 2, ok: false, detail: 'status noop', noTask: true} : step));
+  const verdict = judge([blocked, second()]);
+  assert.deepEqual(verdict.problems, []);
+  assert.ok(verdict.inconclusive.includes('first: end_task of cycle 2 found no task (status noop): no call had opened one since the last'), verdict.inconclusive.join(' | '));
+  assert.equal(verdict.verdict, 'no verdict');
+
+  blocked.steps = blocked.steps.map(step => (step.noTask ? {step: 'end_task', cycle: 2, ok: false, detail: 'status noop'} : step));
+  assert.deepEqual(judge([blocked, second()]).problems, ['first: end_task of cycle 2 failed (status noop)']);
 });

@@ -74,7 +74,8 @@ function inconclusive(bind) {
 }
 
 // `connections` [{name, pid, binds: [{app: 'approve'|'decline', cycle, dispatched, blocked, after, asked, refusal,
-// failed, restarted, taskId, approval}], steps: [{step, cycle, ok, detail?}], other}]: the first is the cycles'
+// failed, restarted, taskId, approval}], steps: [{step, cycle, ok, detail?, noTask?}], other}] (`noTask`: an end_task
+// that found no task when no call since the last one had opened any, every bind between them not sent): the first is the cycles'
 // connection, the second a new connection binding each app once. `idleAt`: the cycle whose first bind follows the idle
 // stop. `complete`: whether every planned step ran (false when the run stopped early). -> {verdict: 'pass' | 'fail' |
 // 'no verdict', ok, problems, inconclusive, detail}; ok only for a pass, a fail outranks a no verdict.
@@ -83,7 +84,8 @@ function inconclusive(bind) {
 // match its own ask (asked during the bind: declinedNow; not asked, after an earlier ask: declinedEarlier); an answer
 // from memory before the client was ever asked on the connection; a judged bind's cua/approval incomplete, its action
 // not the result's, or its answeredBy not its ask; two connection ids on one connection, or the first's on the second;
-// another request asked; an end_task or js_reset that failed; a cycle in two tasks or reusing an earlier task; the
+// another request asked; an end_task or js_reset that failed (an end_task with no task to end, because nothing opened
+// one, is NO VERDICT); a cycle in two tasks or reusing an earlier task; the
 // bind after the idle stop without the restart notice or on no later generation; the second connection on the first's
 // process. What could not be shown (an inconclusive bind, a step the run never reached, a comparison with nothing to
 // compare) is NO VERDICT.
@@ -108,7 +110,7 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
       const label = bind.app === 'approve' ? 'approved' : 'declined';
       const before = asks[bind.app];
       if (bind.dispatched) asks[bind.app] += bind.asked;
-      if (bind.dispatched && bind.asked > 0 && before > 0) problem(`the ${label} app was asked again at bind ${bind.n} (${before + bind.asked} asks); once per connection is expected`);
+      if (bind.dispatched && bind.asked > 0 && before + bind.asked > 1) problem(`the ${label} app was asked again at bind ${bind.n} (${before + bind.asked} asks); once per connection is expected`);
       if (bind.why) { unsure(`bind ${bind.n} (${bind.app}): ${bind.why}`); continue; }
       if (bind.asked === 0 && before === 0) problem(`bind ${bind.n} (${label}) was answered without the client ever being asked on this connection`);
       const stamp = stampProblem(bind.approval);
@@ -130,7 +132,11 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
       else unexecuted(`${name}'s ${app === 'approve' ? 'approved' : 'declined'} app was never bound`);
     }
     if (other > 0) problem(`${plural(other, 'other request')} ${other === 1 ? 'was' : 'were'} asked of the client`);
-    for (const step of steps) if (!step.ok) problem(`${step.step} of cycle ${step.cycle} failed${step.detail ? ` (${step.detail})` : ''}`);
+    for (const step of steps) {
+      if (step.ok) continue;
+      if (step.noTask) unsure(`${step.step} of cycle ${step.cycle} found no task (${step.detail}): no call had opened one since the last`);
+      else problem(`${step.step} of cycle ${step.cycle} failed${step.detail ? ` (${step.detail})` : ''}`);
+    }
 
     // One connection id per connection, and the second's not the first's.
     const judged = numbered.filter(bind => !bind.why && !stampProblem(bind.approval));

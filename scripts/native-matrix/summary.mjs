@@ -83,7 +83,7 @@ import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
-import {classifyAttestation} from '../probe/lib.mjs';
+import {classifyAttestation, classifyAttestedRecord} from '../probe/lib.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
 export {manifestOf, SPEED_OPS} from './manifest.mjs';
@@ -129,15 +129,20 @@ function metadataProblems(result) {
   return out;
 }
 
-// Ruling 1149: whether a full run's lane attests the side it measured, the engine its run requested
-// (meta.nativeEngine.requested, ./run.mjs), else the one engine its rows name. -> null, or the problem
-// (scripts/probe/lib.mjs classifyAttestation: the cua side on the vendor's engine is state 1). A run whose lane or side
-// cannot be read is left to metadataProblems.
+// Ruling 1149: whether a full run attests the side it measured, the engine its run requested
+// (meta.nativeEngine.requested, ./run.mjs), else the one engine its rows name. Every answer the run kept
+// (meta.nativeEngine {attested, unattested}) is classed, since the lane names only the first (scripts/probe/lib.mjs
+// classifyAttestedRecord: a vendor answer anywhere on the cua side is state 1, a result left unattested is missing); a run
+// that kept none is classed by its lane. -> null, or the problem. A run whose lane or side cannot be read is left to
+// metadataProblems.
 function unmeasuredSide(result) {
   const engines = [...new Set(result.rows.map(r => r.engine))];
-  const side = result.meta?.nativeEngine?.requested ?? (engines.length === 1 ? engines[0] : null);
+  const kept = result.meta?.nativeEngine;
+  const side = kept?.requested ?? (engines.length === 1 ? engines[0] : null);
   const lane = result.lanes?.[0];
-  return side && lane ? classifyAttestation(lane, {engine: side}).problem : null;
+  if (!side) return null;
+  if (Array.isArray(kept?.attested)) return classifyAttestedRecord(kept, {engine: side}).problem;
+  return lane ? classifyAttestation(lane, {engine: side}).problem : null;
 }
 
 // The full runs by run number, in order. -> [[n, [entry]]].

@@ -8,7 +8,7 @@ import {ALIGN_TOGGLE, BIND, CLICK_AT, KEY_AFTER_INPUT, PRESSED, TYPING_SAMPLE} f
 import {FIRST} from '../../scripts/native-baseline/cells.mjs';
 import {PLANS} from '../../scripts/cursor-sitting/plans.mjs';
 import {timingSteps} from '../../scripts/cursor-sitting/timing.mjs';
-import {gate} from '../../scripts/cursor-sitting/session.mjs';
+import {gate, readReply} from '../../scripts/cursor-sitting/session.mjs';
 
 const RECORD = {id: 'textedit', pid: 500, at: 1_790_000_000_000, window: {number: 77}};
 const win = (number, extra = {}) => ({ownerPid: 500, number, bounds: {x: 0, y: 0, width: 600, height: 400}, onScreen: true, ...extra});
@@ -90,4 +90,25 @@ test('ruling 1149: the gate stops at a result that attests no engine; a reply wi
   assert.equal((await run(async () => linkFailed)(FIRST)).ok, false, 'a device link\'s failure ran on no engine');
   const answeredError = {...rejected, result: {...rejected.result, _meta: {'cua/taskId': 't1'}}};
   await assert.rejects(run(async () => answeredError)(FIRST), /a result attested no engine/, 'a status error the runtime answered (cua/taskId) must attest');
+});
+
+// The exemption is from the attestation only: a reply no engine ran (no result, or cua's own status error) is never a
+// cell's success, whatever text it carries, so it makes no evidence.
+test('ruling 1149: a status error no engine ran is unsuccessful whatever its text, a success marker included; only its attestation is exempt', async () => {
+  const marker = 'CUA_NATIVE_BASELINE {"ok":true,"value":{}}';
+  const run = send => gate({name: 'a', engine: 'cua', scenes: [RECORD], guard: {problem: () => null}, send});
+  for (const [label, reply] of [
+    ['a device link\'s failure', {result: {content: [{type: 'text', text: marker}], isError: true, structuredContent: {status: 'error', code: 'device_failed', device: 'bravo'}, _meta: {'cua/device': 'bravo'}}}],
+    ['the lifecycle\'s rejection', {result: {content: [{type: 'text', text: marker}], isError: true, structuredContent: {status: 'error', code: 'task_ending'}}}],
+    ['a protocol error', {error: {code: -32000, message: marker}, result: undefined}],
+  ]) {
+    const answer = await run(async () => reply)(FIRST);
+    assert.equal(answer.ok, false, label);
+    assert.equal(answer.engine, null, label);
+    assert.equal(answer.value, undefined, label);
+    assert.ok(answer.error, label);
+  }
+  const read = readReply({result: {content: [{type: 'text', text: marker}], isError: true, structuredContent: {status: 'error', code: 'device_failed'}}});
+  assert.equal(read.ok, false);
+  assert.match(read.error, /^cua answered device_failed: no engine ran the cell \(CUA_NATIVE_BASELINE /);
 });

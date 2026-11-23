@@ -125,6 +125,12 @@ test('ruling 1149: an attestation is ok, the vendor on the cua side (state 1), m
   assert.deepEqual(classifyAttestation(cua, {engine: 'cua'}), {status: 'ok', problem: null});
   assert.equal(classifyAttestation(undefined, cua).status, 'missing');
   assert.match(classifyAttestation(null, cua).problem, /no cua\/nativeEngine attestation/);
+  // An attestation that names no engine leaves the engine unknown: missing, never "another engine answered".
+  for (const nameless of [{}, {version: '0.2.0', build: cua.build}, {engine: null}, {engine: ''}]) {
+    const unknown = classifyAttestation(nameless, cua);
+    assert.equal(unknown.status, 'missing', JSON.stringify(nameless));
+    assert.match(unknown.problem, /names no engine/);
+  }
   assert.equal(classifyAttestation({...cua, build: 'b'.repeat(64)}, cua).status, 'mismatched');
   assert.equal(classifyAttestation(cua, vendor).status, 'mismatched', 'cua\'s engine on the vendor side is no fallback, and no measurement of the vendor either');
   assert.equal(attestationProblem({'cua/nativeEngine': vendor}, cua), fellBack.problem, 'attestationProblem is the classifier\'s problem');
@@ -143,6 +149,13 @@ test('ruling 1149: a lane\'s collected attestations ({attested, unattested}) are
   assert.equal(classifyAttestedRecord(null, {engine: 'cua'}).status, 'missing');
   assert.equal(classifyAttestedRecord({attested: [cua], unattested: 0}, {engine: 'vendor'}).status, 'mismatched');
   assert.deepEqual(classifyAttestedRecord({attested: [vendor], unattested: 0}, {engine: 'vendor'}), {status: 'ok', problem: null});
+  // Affirmative wrong-engine evidence outranks missing evidence on either side: an answer from another engine, or the
+  // side's at another build, is named before results left unattested or nameless.
+  assert.equal(classifyAttestedRecord({attested: [cua], unattested: 1}, {engine: 'vendor'}).status, 'mismatched');
+  assert.equal(classifyAttestedRecord({attested: [{engine: ''}, cua], unattested: 0}, {engine: 'vendor'}).status, 'mismatched');
+  assert.equal(classifyAttestedRecord({attested: [{...cua, build: 'e'.repeat(64)}], unattested: 3}, cua).status, 'mismatched');
+  assert.equal(classifyAttestedRecord({attested: [{engine: ''}, vendor], unattested: 1}, {engine: 'cua'}).status, 'vendor-on-cua-side');
+  assert.equal(classifyAttestedRecord({attested: [cua, {engine: ''}], unattested: 0}, {engine: 'cua'}).status, 'missing');
 });
 
 const approval = (app, overrides = {}) => ({

@@ -7,7 +7,9 @@
 //                stopped (its producer's incompleteCause 'alert', or a reset the alert held), which is NO VERDICT. Ruling 1149: the record's engine
 //                attestations must be the side's (`engine`, sideAttestation): a side answered on another engine, the cua
 //                side on the vendor's above all (state 1), is NO VERDICT naming it, complete or not; a complete record
-//                that shows no engine is NO VERDICT too
+//                that shows no engine is NO VERDICT too. The reader compares the engine's name only: the version and
+//                build are each producer's own check (scripts/native-baseline/engine.mjs engineProblem,
+//                scripts/repl-parity/native-mac.mjs laneAttestationProblem), which leaves its record incomplete
 //   verdict      a judge (A's comparisons, C's compare, D's #216 witness): the last `VERDICT:` line it printed, PASS,
 //                FAIL, NO VERDICT (proof is missing) or OWNER (the owner's calls remain); none printed is a runtime error
 //   report       a report-writing step (C's summary): its `report` file written; its exit is the verdict the judge step
@@ -16,7 +18,10 @@
 //                `observe` among them holding the observation (the Save panel's structure, panelObserved) passes;
 //                samples with no verdict (./native-matrix/front-key.mjs: activation, unread, alert) and none observed is
 //                NO VERDICT; a run missing or incomplete is a runtime error whatever it observed (its observations stay in
-//                its record, uncertified), and anything else is a driver failure; each run's attestations as `record`'s
+//                its record, uncertified), and anything else is a driver failure; each run's attestations as `record`'s.
+//                Every record is classed before the step's status (recordFinding), by one precedence whatever their order:
+//                another engine, then a reset the alert held, then a missing or incomplete run, then a complete run that
+//                shows no engine; the other records' findings follow in the reason
 //   selection    sitting E's lane: the expected exit, with the judge's own report (`report`, removed before the step,
 //                so it is this run's) of `lane` holding an observation of every home (macos-selection.mjs HOMES),
 //                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
@@ -63,6 +68,21 @@ const alertStopped = (path, record) => (record.incompleteCause?.cause === 'alert
   ? `alert: ${path} stopped at ${record.incompleteCause.at} with ${record.incompleteCause.front?.bundleId} (pid ${record.incompleteCause.front?.pid}) in front (${firstProblem(record)})` : null);
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
+// One of #212's records against the step (`run` {path, record}), by the step's precedence (`rank`): another engine
+// (sideAttestation: NO VERDICT, state 1 above all), a stop the capture alert held (NO VERDICT), a missing or incomplete
+// record (FAIL), a complete record that shows no engine (NO VERDICT). -> {rank, status, reason}, or null when the record
+// is complete and attests its side.
+function recordFinding(step, {path, record}, exit) {
+  if (!record) return {rank: 2, status: 'FAIL', reason: `runtime error: no record at ${path} (exit ${exit})`};
+  const side = sideAttestation(step, record);
+  if (answeredElsewhere(side)) return {rank: 0, status: 'NO VERDICT', reason: `${path}: ${side.reason}`};
+  if (record.complete !== true) {
+    const held = resetBlocked(path, record);
+    return held ? {rank: 1, status: 'NO VERDICT', reason: held} : {rank: 2, status: 'FAIL', reason: `runtime error: ${path} is incomplete (${firstProblem(record)})`};
+  }
+  return side ? {rank: 3, status: 'NO VERDICT', reason: `${path}: ${side.reason}`} : null;
+}
+
 export const CHECKS = Object.freeze({
   exit: (step, {exit}) => (exit === 0 ? ['PASS', null] : ['FAIL', null]),
   expect: (step, {exit}) => (exit === step.expect ? ['PASS', null] : ['FAIL', `exit ${exit}, expected ${step.expect}`]),
@@ -89,17 +109,12 @@ export const CHECKS = Object.freeze({
     const rows = runs.flatMap(({record}) => (record?.rows ?? []).filter(row => row.id === step.observe).map(row => ({...row, hosted: record.meta?.hosted === true})));
     const seen = rows.filter(row => panelObserved(row.outcome?.observed)).length;
     const kept = seen ? `; ${seen} panel observation${seen > 1 ? 's' : ''} kept in the records` : '';
-    const missing = runs.find(run => !run.record);
-    if (missing) return ['FAIL', `runtime error: no record at ${missing.path} (exit ${exit})${kept}`];
-    const sides = runs.map(run => ({...run, side: sideAttestation(step, run.record)}));
-    const elsewhere = sides.find(run => answeredElsewhere(run.side));
-    if (elsewhere) return ['NO VERDICT', `${elsewhere.path}: ${elsewhere.side.reason}${kept}`];
-    const incomplete = runs.find(run => run.record.complete !== true);
-    const blocked = incomplete && resetBlocked(incomplete.path, incomplete.record);
-    if (blocked) return ['NO VERDICT', `${blocked}${kept}`];
-    if (incomplete) return ['FAIL', `runtime error: ${incomplete.path} is incomplete (${firstProblem(incomplete.record)})${kept}`];
-    const unattested = sides.find(run => run.side);
-    if (unattested) return ['NO VERDICT', `${unattested.path}: ${unattested.side.reason}${kept}`];
+    // Every record classed first, then the step's status by precedence, so the records' order changes nothing.
+    const findings = runs.map(run => recordFinding(step, run, exit)).filter(Boolean).sort((x, y) => x.rank - y.rank);
+    if (findings.length) {
+      const [first, ...others] = findings;
+      return [first.status, `${first.reason}${others.length ? `; also: ${others.map(f => f.reason).join('; ')}` : ''}${kept}`];
+    }
     const empty = runs.find(run => !(run.record.rows ?? []).some(row => row.id === step.observe));
     if (empty) return ['FAIL', `driver failure: no ${step.observe} sample recorded in ${empty.path}`];
     if (seen) return ['PASS', `the Save panel's structure observed in ${seen} of ${rows.length} samples over ${runs.length} run${runs.length > 1 ? 's' : ''}`];

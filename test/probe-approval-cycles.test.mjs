@@ -2,7 +2,7 @@
 // bind's answer, the screen sample, and the judge over what the connections recorded.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {approvalCyclesPlan, attestationStop, judgeApprovalCycles, refusalOf, screenState, stoppedVerdict, verdictLine} from '../scripts/probe/approval-cycles.mjs';
+import {approvalCyclesPlan, attestationStop, bindRecord, judgeApprovalCycles, refusalOf, resetStep, screenState, stoppedVerdict, verdictLine} from '../scripts/probe/approval-cycles.mjs';
 import {STATE_1} from '../scripts/probe/lib.mjs';
 
 test('the plan binds the approved app, the declined one and the approved one again, then each cycle ends the task and binds both; js_reset and the idle stop once each', () => {
@@ -253,4 +253,84 @@ test('ruling 1149: a bind that attests the vendor engine stops the run NO VERDIC
   assert.equal(stoppedVerdict(judge([goodConnection()], {complete: false}), {message: 'first: no answer', noVerdict: false}).verdict, 'fail', 'any other stop fails');
   assert.equal(stoppedVerdict(judge([goodConnection(), second()]), null).verdict, 'pass');
   assert.deepEqual(['pass', 'fail', 'no verdict'].map(verdictLine), ['VERDICT: PASS', 'VERDICT: FAIL', 'VERDICT: NO VERDICT']);
+});
+
+// The bind the script appends when a stop interrupts it (approval-cycles.mjs: bindRecord, sent, asked by whichever engine
+// answered, then the stop marked on it before its finally appends it): no task id, no approval, nothing read after.
+const stoppedBind = (app, cycle, stop) => Object.assign(bindRecord({app, cycle, blocked: null}), {asked: 1, unmeasured: stop.message});
+
+test('ruling 1149: the bind a vendor or missing attestation stopped is unmeasured, outside the task, restart and approval judgement; earlier attested binds are still judged', () => {
+  const expected = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  for (const meta of [{'cua/nativeEngine': {engine: 'vendor', version: null, build: 'r'}}, {}]) {
+    const stop = attestationStop(meta, expected);
+    const partial = goodConnection();
+    partial.binds = [...partial.binds.slice(0, 3), stoppedBind('approve', 1, stop)];
+    const judged = judge([partial], {complete: false});
+    assert.deepEqual(judged.problems, [], JSON.stringify(meta));
+    assert.ok(judged.inconclusive.some(line => line.startsWith(`first: bind 4 (approve): not measured: ${stop.message}`)), judged.inconclusive.join(' | '));
+    assert.equal(stoppedVerdict(judged, {message: stop.message, noVerdict: true}).verdict, 'no verdict');
+
+    // The stopped bind's asks are not the connection's: a later first bind is not "asked again" by it.
+    const second = {name: 'second', pid: 11, binds: [stoppedBind('approve', 0, stop)], steps: [], other: 0};
+    assert.ok(!judge([goodConnection(), second], {complete: false}).problems.some(p => /asked again|task id|cua\/approval/.test(p)));
+
+    // A failure on an earlier, attested bind still fails the run.
+    const lost = goodConnection();
+    lost.binds = [...lost.binds.slice(0, 2), bind('approve', 0, 0, 'declinedEarlier', {approval: approval('decline', 'memory')}), stoppedBind('approve', 1, stop)];
+    assert.equal(stoppedVerdict(judge([lost], {complete: false}), {message: stop.message, noVerdict: true}).verdict, 'fail');
+  }
+});
+
+test('ruling 1149: a js_reset counts as done only when it attests cua\'s engine; a pre-dispatch rejection stays a failure of its own', () => {
+  const expected = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  const answered = (meta, isError = false) => ({content: [{type: 'text', text: isError ? 'Error: x' : 'reset'}], isError, _meta: {'cua/taskId': 't1', ...meta}});
+  assert.deepEqual(resetStep(answered({'cua/nativeEngine': expected}), expected, 5), {step: {step: 'js_reset', cycle: 5, ok: true}, stop: null});
+  for (const meta of [{'cua/nativeEngine': {engine: 'vendor', version: null, build: 'r'}}, {}]) {
+    const {step, stop} = resetStep(answered(meta), expected, 5);
+    assert.equal(step.ok, false);
+    assert.equal(step.unmeasured, stop.message);
+    assert.equal(stop.noVerdict, true);
+    const partial = goodConnection();
+    partial.steps = [{step: 'end_task', cycle: 1, ok: true}, step];
+    const judged = judge([partial], {complete: false});
+    assert.ok(!judged.problems.some(p => /js_reset/.test(p)), judged.problems.join(' | '));
+    assert.ok(judged.inconclusive.some(line => line.startsWith('first: js_reset of cycle 5 not measured')), judged.inconclusive.join(' | '));
+  }
+  const failed = resetStep(answered({'cua/nativeEngine': expected}, true), expected, 5);
+  assert.deepEqual([failed.step.ok, failed.step.detail, failed.stop], [false, 'Error: x', null]);
+  const rejected = resetStep({content: [{type: 'text', text: 'ending'}], isError: true, structuredContent: {status: 'error', code: 'task_ending'}}, expected, 5);
+  assert.deepEqual([rejected.step.ok, rejected.step.detail, rejected.stop], [false, 'rejected before dispatch (task_ending)', null]);
+});
+
+test('ruling 1149: another request is the call\'s in flight: during an unmeasured bind or js_reset it is diagnostic only; during attested work, or between calls, it fails', () => {
+  const expected = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  const stop = attestationStop({'cua/nativeEngine': {engine: 'vendor', version: null, build: 'r'}}, expected);
+  assert.equal(bindRecord({app: 'approve', cycle: 0, blocked: null}).other, 0, 'a bind starts its own tally');
+
+  // The stopped bind's request: NO VERDICT, the request named beside it, not a problem.
+  const vendorBind = goodConnection();
+  vendorBind.binds = [...vendorBind.binds.slice(0, 3), {...stoppedBind('approve', 1, stop), other: 1}];
+  const judged = judge([vendorBind], {complete: false});
+  assert.deepEqual(judged.problems, []);
+  assert.ok(judged.inconclusive.some(line => line.startsWith('first: bind 4 (approve): not measured') && line.endsWith('1 other request during it, not judged')), judged.inconclusive.join(' | '));
+  assert.equal(stoppedVerdict(judged, {message: stop.message, noVerdict: true}).verdict, 'no verdict');
+
+  // The same for a js_reset the attestation stopped.
+  const vendorReset = goodConnection();
+  vendorReset.steps = [{step: 'end_task', cycle: 1, ok: true}, {...resetStep({content: [], isError: false, _meta: {'cua/nativeEngine': {engine: 'vendor'}}}, expected, 1).step, other: 2}];
+  const reset = judge([vendorReset], {complete: false});
+  assert.deepEqual(reset.problems, []);
+  assert.ok(reset.inconclusive.some(line => line.startsWith('first: js_reset of cycle 1 not measured') && line.endsWith('2 other requests during it, not judged')), reset.inconclusive.join(' | '));
+
+  // A request during an earlier attested bind, an attested step, or between calls still fails the run.
+  for (const place of ['bind', 'step', 'connection']) {
+    const earlier = goodConnection();
+    earlier.binds = [...earlier.binds.slice(0, 3), {...stoppedBind('approve', 1, stop), other: 1}];
+    if (place === 'bind') earlier.binds[1] = {...earlier.binds[1], other: 1};
+    if (place === 'step') earlier.steps = [{step: 'end_task', cycle: 1, ok: true, other: 1}];
+    if (place === 'connection') earlier.other = 1;
+    const failed = judge([earlier], {complete: false});
+    assert.deepEqual(failed.problems, ['first: 1 other request was asked of the client'], place);
+    assert.equal(stoppedVerdict(failed, {message: stop.message, noVerdict: true}).verdict, 'fail', place);
+  }
 });

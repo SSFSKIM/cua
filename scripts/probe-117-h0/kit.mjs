@@ -371,11 +371,16 @@ function front(tag) {
 // Step 8: cua's bundle with all its rows: grants after a relaunch; a session through the product's own launch (no engine
 // running: the service launches it), before any approve, so its own first captures show whether they raise replayd's
 // confirmation; the probe modes; then `cua engine approve` with nobody at the console, and once more.
+// The rows and a relaunch first, then (c) the probe modes before any capture by the bundle: its first capture raises
+// replayd's confirmation, which then holds the front and the key focus (run 45142610176).
+await step('step8a-rows', async () => {
+  const rowsWritten = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ENGINE_ALL});
+  await settle();
+  return {rowsWritten, relaunch: await relaunchLS(), before: front('step8a')};
+});
+await step('stepC-probes-rows', async () => ({...probeModes(), after: front('stepC-rows')}));
 await step('step8-bundle-rows', async () => {
   const out = {};
-  out.rowsWritten = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ENGINE_ALL});
-  await settle();
-  out.relaunch = await relaunchLS();
   out.stoppedBeforeSession = stopEngine();
   Object.assign(out, await sessionStep('s8', {CUA_NATIVE_ENGINE: 'cua'}, [
     {label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA},
@@ -388,8 +393,6 @@ await step('step8-bundle-rows', async () => {
   out.afterSession = front('step8-session');
   return out;
 });
-// (c) with the engine's rows: each probe instance is the bundle, so the rows should reach it too.
-await step('stepC-probes-rows', async () => ({...probeModes(), after: front('stepC-rows')}));
 await step('step8b-approve', async () => {
   const out = {};
   const approve = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});

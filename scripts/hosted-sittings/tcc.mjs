@@ -12,7 +12,8 @@
 // the workflow may name a later one) and writes it to a run-owned file, named with its commit by
 // CUA_HOSTED_DECISION_FILE and CUA_HOSTED_DECISION_SHA. The writer runs no git and fetches nothing; a missing or
 // unreadable file refuses (ruling 1137; proven by test/hosted-sittings/tcc.test.mjs with a spy store). Every write cites
-// the entry and the pinned commit in the log and in its report.
+// the entry and the pinned commit in the log and in its report. It grants rows (the setup's and the approval's), and it
+// removes cua's engine's own rows for named services (the hosted staged onboarding's, T3b), through the same guard.
 //
 // What H0 found (#175; scripts/probe-117-h0/README.md on probe/117-h0 56c08949), and so what this writes: the system
 // database's rows are honoured, at the client's next launch only (so the caller relaunches the engines after it,
@@ -115,27 +116,50 @@ function tccWrite(action, {env = process.env, platform = process.platform, decis
   return action(store, {entry: DECISION_LOG_ENTRY, commit: pinned.sha});
 }
 
-// Grants every service of SERVICES to each `{client, bundle}` (client one of CLIENTS, bundle the app whose designated
-// requirement the rows carry) in the system database, then reads the rows back. `deps`: {env, platform, decisionLog
-// (() -> {sha, text} | null, the pinned spec), store, log, now}. `decision`: the entry and the pinned commit. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
+// Whether `services` names a non-empty list of SERVICES' keys.
+const knownServices = services => Array.isArray(services) && services.length > 0 && services.every(key => Object.hasOwn(SERVICES, key));
+// The rows of `clients` for `services` (keys) as the system database reads them: [[service, client, auth_value]].
+const readRows = (store, clients, services) => String(store.sql(SYSTEM_DB, `select service, client, auth_value from access where client in (${clients.map(quote).join(', ')}) and service in (${services.map(key => quote(SERVICES[key])).join(', ')})`) ?? '')
+  .split('\n').filter(Boolean).map(line => line.split('|'));
+
+// Grants each `{client, bundle, services?}` (client one of CLIENTS, bundle the app whose designated requirement the
+// rows carry, services the keys of SERVICES to grant, every one by default) in the system database, then reads the rows
+// back. `deps`: {env, platform, decisionLog (() -> {sha, text} | null, the pinned spec), store, log, now}. `decision`:
+// the entry and the pinned commit. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
 export function grantRows(grants, {now = Date.now, ...deps} = {}) {
   if (!grants.length || grants.some(g => !Object.values(CLIENTS).includes(g.client) || typeof g.bundle !== 'string'))
     throw new Error('the TCC writer grants only cua\'s engine and the vendor\'s helper, each with its bundle');
+  if (grants.some(g => g.services !== undefined && !knownServices(g.services)))
+    throw new Error(`the TCC writer: a grant names services of ${Object.keys(SERVICES).join(', ')}, at least one`);
+  const named = grants.map(g => ({...g, services: g.services ?? Object.keys(SERVICES)}));
   return tccWrite((store, decision) => {
     if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
     const at = Math.floor(now() / 1000);
-    for (const {client, bundle} of grants) {
+    for (const {client, bundle, services} of named) {
       const hex = store.csreq(bundle);
       if (!/^[0-9a-f]+$/.test(hex)) throw new Error(`the designated requirement of ${bundle} did not compile`);
-      for (const service of Object.values(SERVICES))
-        store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(service)}, ${quote(client)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${at});`);
+      for (const key of services)
+        store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(SERVICES[key])}, ${quote(client)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${at});`);
     }
-    const clients = grants.map(g => g.client);
-    const read = String(store.sql(SYSTEM_DB, `select service, client, auth_value from access where client in (${clients.map(quote).join(', ')}) and service in (${Object.values(SERVICES).map(quote).join(', ')})`) ?? '')
-      .split('\n').filter(Boolean).map(line => line.split('|'));
-    const allowed = (client, service) => read.some(([s, c, value]) => s === service && c === client && value === '2');
-    const rows = clients.map(client => ({client, granted: Object.entries(SERVICES).filter(([, service]) => allowed(client, service)).map(([key]) => key)}));
-    const missing = clients.flatMap(client => Object.entries(SERVICES).filter(([, service]) => !allowed(client, service)).map(([key]) => `${client} ${key}`));
+    const read = readRows(store, named.map(g => g.client), [...new Set(named.flatMap(g => g.services))]);
+    const allowed = (client, key) => read.some(([s, c, value]) => s === SERVICES[key] && c === client && value === '2');
+    const rows = named.map(({client, services}) => ({client, granted: services.filter(key => allowed(client, key))}));
+    const missing = named.flatMap(({client, services}) => services.filter(key => !allowed(client, key)).map(key => `${client} ${key}`));
     return {decision, rows, missing};
+  }, deps);
+}
+
+// Removes cua's engine's rows for `services` (keys of SERVICES) from the system database, then reads them back (the
+// hosted staged onboarding's, T3b: ./onboarding.mjs). Only cua's engine's bundle id: the vendor's helper's rows and any
+// other app's are never removed. `deps`: grantRows'. -> {decision, client, removed: [service key], remaining: [service key]}.
+export function revokeRows({client, services} = {}, deps = {}) {
+  if (client !== CLIENTS.engine || !knownServices(services))
+    throw new Error(`the TCC writer removes only cua's engine's rows (${CLIENTS.engine}), for services of ${Object.keys(SERVICES).join(', ')}`);
+  return tccWrite((store, decision) => {
+    if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
+    store.sql(SYSTEM_DB, `delete from access where client = ${quote(client)} and service in (${services.map(key => quote(SERVICES[key])).join(', ')});`);
+    const read = readRows(store, [client], services);
+    const present = key => read.some(([s, c]) => s === SERVICES[key] && c === client);
+    return {decision, client, removed: services.filter(key => !present(key)), remaining: services.filter(present)};
   }, deps);
 }

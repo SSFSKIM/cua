@@ -65,6 +65,10 @@ or the owner is prepared and named in its gate's disposition file under
   the build hash covers (`native/engine/` minus `Tests/` and build products) and fails unless the version rose. Its
   granularity is the pull request: one move covers every engine change a branch carries, so T8's engine changes on this
   branch ride on 0.2.0 and the build hash tells intermediate builds apart.
+- 2026-11-23, the design session on T9: the per-pull-request version move and the `cua install --engine` wording are
+  accepted; the approve-only row stays unit-proven and is re-checked when M4's fix wave lands ruling 1118's layout.
+  The minimum's effect on explicit `cua` sessions before O1 (MAWS's repository sets `CUA_NATIVE_ENGINE=cua`) is with
+  the design session, expected as a merge-order constraint rather than a code change.
 - 2026-11-23, ruling 1119 (#189): pressKey sends physical keys, composed by the active input method. With the source
   and layout observed after refocus, Korean 2-Set expects 가 and Latin expects "rk", in all three scenes. typeText
   keeps its exact-text contract. If the vendor's lane composes differently the row fails and cannot be declared.

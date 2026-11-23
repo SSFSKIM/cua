@@ -316,6 +316,19 @@ final class ActivationEffectsTests: XCTestCase {
     _ = joined(); _ = held()
   }
 
+  func testAnActivationClickWhoseEventsWereNotMadeIsNotNamed() throws {
+    let seam = GuardSeam(frontmost: user)
+    var system = seam.system
+    system.activationClickEvents = { _ in [] }
+    let registry = HeldActivations()
+    var metadata = meta()
+    let held = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {},
+                                    make: { self.activation(seam, point: CGPoint(x: -1, y: 1441), system: system) }, meta: &metadata)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "no click's events were made, so none went")
+    XCTAssertEqual(effects(metadata), ["activation"], "a click that was not dispatched is not named")
+    _ = held()
+  }
+
   func testAnInertClickOutsideTheWindowOnAJoinOrAsAPointerHoldUnwindsIsNamed() throws {
     let seam = GuardSeam(frontmost: user)
     let registry = HeldActivations()

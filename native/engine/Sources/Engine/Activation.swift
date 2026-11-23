@@ -195,6 +195,8 @@ struct ActivationSystem {
     hitTest(application: pid, at: point).map { ActivationHit(role: attribute($0, kAXRoleAttribute) as? String, actions: establishedActionNames(of: $0)) }
   }
   var now: () -> Double = monotonicMilliseconds
+  /// The events of an activation's own click at a target (empty when AppKit made none, `clickEvents`).
+  var activationClickEvents: (ClickTarget) -> [CGEvent] = { clickEvents($0, button: .left, count: 1, flags: []) }
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
   /// Seconds since the last input of any type on the HID system state: a person's input since an action's events stops
   /// the delivery guard's repairs after the hold's release.
@@ -850,8 +852,10 @@ final class FakeActivation {
 
   private func postClick(at point: CGPoint) {
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
-    _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
-    ActivationPosts.current.clicks += 1
+    let events = system.activationClickEvents(target)
+    _ = postToProcess(events, pid: pid, post: system.post)
+    // #212: counted only when its events went; AppKit can make none.
+    if !events.isEmpty { ActivationPosts.current.clicks += 1 }
     clickPostedAt = system.now()
   }
 

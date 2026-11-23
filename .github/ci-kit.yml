@@ -30,23 +30,36 @@ gates:
       done
       claude plugin validate .
       npm run test:mods
-  # #117: cua's own native engine (native/engine/, a Swift package on Apple frameworks only) built in release, as
-  # `cua engine build` builds it, and its unit tests run, the build's scratch under the runner's temp, never in the
-  # checkout. The hosted runner holds no Accessibility or Screen Recording grant: the engine's untrusted paths run here,
-  # its live parts on the Mac mini. No Node, so no shared setup. The #187 control build's branch
+  # #117: cua's own native engine (native/engine/, a Swift package on Apple frameworks only). `cua engine build --sign
+  # adhoc` builds the real release bundle under a scratch HOME, as a Mac's install does: compiled, assembled, signed ad
+  # hoc into the pending slot beside the approved path. scripts/engine-gate/verify-bundle.mjs then checks it: this
+  # checkout's build and version, the bundle id, LSUIElement, a strict signature with hardened runtime and no
+  # entitlements, and nothing approved. Nothing approves, launches or opens the bundle, so no prompt is raised; the
+  # approved launch is H0's and the owner's. The unit tests run on the build's scratch. The #187 control build's branch
   # (`CUA_CONTROL_NO_INERT_CLICK`, which no shipping Package.swift defines) is compiled too, in its own scratch, so it
   # cannot stop compiling unnoticed.
   - name: engine-swift
     lane: hosted-macos
     timeout: 20
-    setup: false
     run: |
+      set -eu
       swift --version
-      swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
-      swift test --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
+      ENGINE_HOME=$(mktemp -d "$RUNNER_TEMP/cua-engine.XXXXXX")
+      HOME="$ENGINE_HOME" node bin/cua.mjs engine build --sign adhoc --json > "$RUNNER_TEMP/engine-build.json"
+      HOME="$ENGINE_HOME" node scripts/engine-gate/verify-bundle.mjs "$RUNNER_TEMP/engine-build.json"
+      swift test --package-path native/engine --scratch-path "$ENGINE_HOME/Library/Application Support/cua/engine/build"
       swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-control" -Xswiftc -DCUA_CONTROL_NO_INERT_CLICK
+    # The engine's source, and the Node that builds, signs and checks its bundle: the engine commands, the CLI around
+    # them and the plist writer the assembler imports.
     paths:
       - "native/engine/**"
+      - "src/runtime/**"
+      - "src/remote/plist.mjs"
+      - "src/cli.mjs"
+      - "bin/cua.mjs"
+      - "scripts/engine-gate/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/ci-kit.yml"
   # #171: cua's own Linux engine (native/linux-engine/, Rust) formatted, built in release for the musl target as the
   # release workflow (.github/workflows/linux-engine.yml) builds it, and its tests run: the unit tests, and under Xvfb

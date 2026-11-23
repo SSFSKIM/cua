@@ -25,7 +25,9 @@ const MODE = (width, height, modeId) => ({width, height, modeId, pixelWidth: wid
 const SWITCHED = {ok: true, detail: '1024x768 (mode 3) -> 1920x1080 (mode 10), read back 1920x1080; 0 alert windows, none moved; no prompt',
   record: {before: {mode: MODE(1024, 768, 3), alerts: [], front: null}, set: MODE(1920, 1080, 10), readBack: {bounds: {x: 0, y: 0, width: 1920, height: 1080}, mode: MODE(1920, 1080, 10)},
     after: {alerts: [], front: null}, promptSeen: [], recentred: [], watchedMs: 3000}};
-function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}, trustFailed = null} = {}) {
+// TextEdit's saved application state the warm-ups left (./venue.mjs textEditSavedStates): the container's by default.
+const SAVED_STATE = `${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Saved Application State/com.apple.TextEdit.savedState`;
+function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}, trustFailed = null, savedStates = [SAVED_STATE]} = {}) {
   const calls = [], defaults = new Map();
   const exec = (command, args, options = {}) => {
     const line = [command, ...args].join(' ');
@@ -55,6 +57,8 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     screen: () => { calls.push({kind: 'screen'}); return screen(); },
     stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; },
     write: (path, record) => calls.push({kind: 'write', path, record}),
+    exists: path => savedStates.includes(path),
+    remove: path => calls.push({kind: 'remove', path}),
     log: () => {},
   };
   return {calls, deps};
@@ -98,7 +102,9 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   // Ruling 1169: TextEdit's preferences written once the venue is chosen, after the warm-ups' TextEdit has ended and
   // before any run launches it; the venue rides in the runner's record, which the device's scenes and every lane read.
   assert.ok(at('/usr/bin/defaults write') > at('screen') && at('/usr/bin/defaults write') < at('engine-stop'));
-  assert.ok(calls.filter(c => c.kind === 'exec' && c.line.startsWith('/usr/bin/defaults ')).every(c => c.line.split(' ')[2] === 'com.apple.TextEdit'), 'TextEdit\'s own domain only');
+  const container = `${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`;
+  assert.ok(calls.filter(c => c.kind === 'exec' && c.line.startsWith('/usr/bin/defaults ')).every(c => [`/usr/bin/defaults ${c.line.split(' ')[1]} com.apple.TextEdit `, `/usr/bin/defaults ${c.line.split(' ')[1]} ${container} `].some(p => c.line.startsWith(p))),
+    'TextEdit\'s own domain, or its container\'s plist, only');
   assert.equal(report.venue.textEdit.ok, true);
   // The key-window reader's grant, read where the runs reach the device: over the loopback ssh, in the harness checkout.
   assert.ok(calls.some(c => c.kind === 'exec' && c.line.startsWith(`ssh -F ${HOME}/.local/share/cua-hosted/ssh/config hosted-macos cd `) && c.line.endsWith('&& node scripts/hosted-sittings/guard-device.mjs trust')));
@@ -159,11 +165,20 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
   assert.match(scenes.textedit.reason, /the scenes' document by its view size \(480x792/);
   assert.deepEqual(report.venue.textEditDocument.view, {width: 480, height: 792});
   // The Open panel's saved frame, in AppKit's coordinates on the 1920x1080 display.
+  // Each key to the domain, then through the container's plist, the file the sandboxed TextEdit reads (this double's
+  // domain write does not reach it), each read back from it.
+  const container = `${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`;
   const writes = calls.filter(c => c.kind === 'exec' && c.line.startsWith('/usr/bin/defaults write')).map(c => c.line);
-  assert.deepEqual(writes, ['/usr/bin/defaults write com.apple.TextEdit WidthInChars -int 60', '/usr/bin/defaults write com.apple.TextEdit NSRequiresOpenUntitledWindowAtLaunch -bool NO',
-    '/usr/bin/defaults write com.apple.TextEdit NSWindow Frame NSNavPanelAutosaveName -string 22 560 720 440 0 0 1920 1055 ',
-    '/usr/bin/defaults write com.apple.TextEdit NSNavPanelExpandedSizeForOpenMode -string {720, 440}']);
-  assert.match(report.steps.find(s => s.step === 'textedit defaults').detail, /^com\.apple\.TextEdit: WidthInChars 60, NSRequiresOpenUntitledWindowAtLaunch NO, NSWindow Frame NSNavPanelAutosaveName 22 560 720 440 0 0 1920 1055, NSNavPanelExpandedSizeForOpenMode \{720, 440\}; each read back$/);
+  const wrote = [['WidthInChars', '-int 60'], ['NSRequiresOpenUntitledWindowAtLaunch', '-bool NO'], ['ApplePersistenceIgnoreState', '-bool YES'],
+    ['NSWindow Frame NSNavPanelAutosaveName', '-string 22 560 720 440 0 0 1920 1055 '], ['NSNavPanelExpandedSizeForOpenMode', '-string {720, 440}']];
+  assert.deepEqual(writes, wrote.flatMap(([key, value]) => [`/usr/bin/defaults write com.apple.TextEdit ${key} ${value}`, `/usr/bin/defaults write ${container} ${key} ${value}`]));
+  assert.ok(report.venue.textEdit.writes.every(w => w.matched && w.container.written === true));
+  assert.match(report.steps.find(s => s.step === 'textedit defaults').detail,
+    /^com\.apple\.TextEdit: WidthInChars 60, NSRequiresOpenUntitledWindowAtLaunch NO, ApplePersistenceIgnoreState YES, NSWindow Frame NSNavPanelAutosaveName 22 560 720 440 0 0 1920 1055, NSNavPanelExpandedSizeForOpenMode \{720, 440\}; each read back from TextEdit's container \(5 written through it\); saved application state removed: .*Containers\/com\.apple\.TextEdit\/Data\/Library\/Saved Application State\/com\.apple\.TextEdit\.savedState$/);
+  // The warm-ups' saved state removed, after them and before the record; the one not there, recorded as absent.
+  assert.deepEqual(calls.filter(c => c.kind === 'remove').map(c => c.path), [SAVED_STATE]);
+  assert.ok(calls.findIndex(c => c.kind === 'remove') > calls.findIndex(c => c.kind === 'warm-up vendor'));
+  assert.deepEqual(report.venue.textEdit.savedState.map(s => [s.existed, s.removed]), [[true, true], [false, false]]);
   assert.deepEqual(calls.at(-1).record.venue, report.venue);
 
   // The screen unread: the hosted sizes at the mini's origins, unplaced; the setup goes on and the guard refuses what overlaps.
@@ -176,11 +191,12 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
 });
 
 test('ruling 1169: a preference that does not read back as written fails the setup before the record: a venue not in force is never declared', async () => {
-  const {calls, deps} = spies({fail: 'defaults read com.apple.TextEdit WidthInChars'});
+  // Not held by TextEdit's container, the file it reads, though the domain reads it back: not in force.
+  const {calls, deps} = spies({fail: 'Preferences/com.apple.TextEdit WidthInChars'});
   const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
   assert.equal(report.ok, false);
   assert.equal(report.steps.at(-1).step, 'textedit defaults');
-  assert.match(report.steps.at(-1).detail, /WidthInChars not read back/);
+  assert.match(report.steps.at(-1).detail, /WidthInChars not read back from TextEdit's container \(unread; the domain read "60"\)/);
   assert.ok(!calls.some(c => ['engine-stop', 'write'].includes(c.kind)));
 });
 

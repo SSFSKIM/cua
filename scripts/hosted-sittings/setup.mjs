@@ -33,9 +33,12 @@
 //   textedit defaults   TextEdit's own preferences on this throwaway runner (./venue.mjs writeTextEditDefaults): its
 //                       width in characters, which sizes its windows (TextEdit places none: its origin stays AppKit's
 //                       cascade, which each run reads back), no untitled document at launch (the documents a run makes
-//                       are its only windows), and the Open panel's saved frame and size; each read back,
-//                       and one that does not read back as written fails the setup. After the warm-ups' TextEdit ended,
-//                       before any run launches one. Kept in `venue.textEdit`
+//                       are its only windows), no window restored (ApplePersistenceIgnoreState), and the Open panel's
+//                       saved frame and size; each read back from the domain and from TextEdit's sandbox container, the
+//                       file it reads, written through the container when the domain's write did not reach it, and one
+//                       the container does not hold as written fails the setup. Then TextEdit's saved application state
+//                       the warm-ups left is removed (clearTextEditSavedState), each path recorded. After the warm-ups'
+//                       TextEdit ended, before any run launches one. Kept in `venue.textEdit`
 //   key-window trust    whether the key-window reader (../cursor-sitting/ax-state.swift, ./key-window.mjs) holds the
 //                       Accessibility grant where the runs reach the device: asked over the loopback ssh, in the harness
 //                       checkout (./guard-device.mjs trust). Kept in `venue.keyWindowTrust`, so every sitting says whether
@@ -49,7 +52,7 @@
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, realpathSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {BUNDLE_NAME} from '../../src/runtime/engine-bundle.mjs';
 import {stopEngine as stopApprovedEngine} from '../../src/runtime/engine.mjs';
@@ -63,7 +66,7 @@ import {DEVICE} from './plan.mjs';
 import {warmUp as warmUpCopy} from './warm-up.mjs';
 import {isAlertWindow} from './alert-guard.mjs';
 import {TARGET_MODE, switchDisplayMode} from './display-mode.mjs';
-import {TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_WIDTH_IN_CHARS, hostedFrames, textEditWrites, venueRecord, writeTextEditDefaults} from './venue.mjs';
+import {TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_WIDTH_IN_CHARS, clearTextEditSavedState, hostedFrames, textEditWrites, venueRecord, writeTextEditDefaults} from './venue.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
@@ -111,13 +114,13 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
 // engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
-// exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
+// exists, remove(path) (a directory tree), vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
 // switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), stopEngine()
 // (src/runtime/engine.mjs stopEngine), write(path, record), log}.
 // -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, venue, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
-  runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync,
+  runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync, remove = path => rmSync(path, {recursive: true, force: true}),
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
   approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}), switchMode = () => switchDisplayMode({env, platform}),
   screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
@@ -200,11 +203,16 @@ export async function hostedSetup({env = process.env, platform = process.platfor
     }],
     ['textedit defaults', () => {
       const display = report.venue.display ?? report.modeSwitch?.readBack?.bounds ?? {x: 0, y: 0, ...TARGET_MODE};
-      const written = writeTextEditDefaults(textEditWrites(report.venue.frames.openPanel, display), {env, platform, exec});
+      const written = writeTextEditDefaults(textEditWrites(report.venue.frames.openPanel, display), {env, platform, home, exec});
       report.venue.textEdit = written;
       const missed = written.writes.filter(w => !w.matched);
-      failIf(missed.length, missed.map(w => `${w.key} not read back as written (${w.readBack === null ? 'unread' : JSON.stringify(w.readBack)})`).join('; '));
-      return `${written.domain}: ${written.writes.map(w => `${w.key} ${w.value.trim()}`).join(', ')}; each read back`;
+      const unread = v => (v === null ? 'unread' : JSON.stringify(v));
+      failIf(missed.length, missed.map(w => `${w.key} not read back from TextEdit's container (${unread(w.container.readBack)}; the domain read ${unread(w.readBack)})`).join('; '));
+      written.savedState = clearTextEditSavedState(home, {env, platform, exists, remove});
+      const through = written.writes.filter(w => w.container.written !== undefined).length;
+      const removed = written.savedState.filter(s => s.removed).map(s => s.path), kept = written.savedState.filter(s => s.existed && !s.removed);
+      return `${written.domain}: ${written.writes.map(w => `${w.key} ${w.value.trim()}`).join(', ')}; each read back from TextEdit's container${through ? ` (${through} written through it)` : ''}; `
+        + `saved application state removed: ${removed.length ? removed.join(', ') : 'none there'}${kept.length ? `; NOT removed: ${kept.map(s => `${s.path} (${s.error})`).join(', ')}` : ''}`;
     }],
     ['key-window trust', () => {
       const asked = exec('ssh', [...loopbackSshArgs(DEVICE, home), DEVICE, `cd ${quote(clone)} && node scripts/hosted-sittings/guard-device.mjs trust`], {env});

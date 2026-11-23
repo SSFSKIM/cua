@@ -7,8 +7,8 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
-  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, readBackRows, renderReadBack, renderVenue, savedFrameString, sceneFrames,
-  textEditDocumentPlan, textEditWrites, UNTITLED_AT_LAUNCH_KEY, venueRecord, writeTextEditDefaults,
+  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, PERSISTENCE_KEY, TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, clearTextEditSavedState, frameAsymmetry, hostedFrames, readBackRows,
+  renderReadBack, renderVenue, savedFrameString, sceneFrames, textEditContainerDomain, textEditDocumentPlan, textEditSavedStates, textEditWrites, UNTITLED_AT_LAUNCH_KEY, venueRecord, writeTextEditDefaults,
 } from '../../scripts/hosted-sittings/venue.mjs';
 import {SCENES, textEditDocument} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
@@ -20,6 +20,7 @@ const DISPLAY = rect(0, 0, 1920, 1080);
 // Pilot A's re-run (run 45252131587): the two capture alerts re-centred by the switch to 1920x1080.
 const ALERTS = [{number: 31, layer: 8, bounds: rect(830, 188, 260, 348)}, {number: 59, layer: 8, bounds: rect(893, 244, 260, 364)}];
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
+const HOME = '/Users/runner';
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 
 test('the mini\'s frames are the scenes\' own; the hosted sizes are the ruling\'s: Chrome 800x760, the fixture unchanged, Finder 800x520', () => {
@@ -84,20 +85,21 @@ test('TextEdit\'s preferences: its own domain only, its width in characters, the
   assert.deepEqual(writes, [
     {key: 'WidthInChars', type: 'int', value: String(TEXTEDIT_WIDTH_IN_CHARS)},
     {key: UNTITLED_AT_LAUNCH_KEY, type: 'bool', value: 'NO', readsAs: '0'},
+    {key: PERSISTENCE_KEY, type: 'bool', value: 'YES', readsAs: '1'},
     {key: PANEL_FRAME_KEY, type: 'string', value: '80 560 720 440 0 0 1920 1055 '},
     {key: PANEL_SIZE_KEY, type: 'string', value: '{720, 440}'},
   ]);
+  assert.equal(PERSISTENCE_KEY, 'ApplePersistenceIgnoreState');
   assert.equal(PANEL_FRAME_KEY, 'NSWindow Frame NSNavPanelAutosaveName');
   assert.equal(PANEL_SIZE_KEY, 'NSNavPanelExpandedSizeForOpenMode');
   // An argument the scenes launch with overrides the domain for that launch, so one naming a key written here must carry
-  // the value written (the parity scenes' -NSRequiresOpenUntitledWindowAtLaunch NO); -ApplePersistenceIgnoreState
-  // touches window restoration only, never a preference.
+  // the value written (the parity scenes' -NSRequiresOpenUntitledWindowAtLaunch NO and -ApplePersistenceIgnoreState YES).
   const args = SCENES.textedit.launchArgs;
   for (const {key, value} of writes) {
     const at = args.indexOf(`-${key}`);
     if (at >= 0) assert.equal(args[at + 1], value, key);
   }
-  assert.ok(args.includes(`-${UNTITLED_AT_LAUNCH_KEY}`));
+  assert.ok(args.includes(`-${UNTITLED_AT_LAUNCH_KEY}`) && args.includes(`-${PERSISTENCE_KEY}`));
 });
 
 test('the writes refuse off a GitHub-hosted runner before touching anything, and each is read back', () => {
@@ -108,28 +110,75 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
     assert.throws(() => writeTextEditDefaults(writes, {env, platform, exec}), /refused/);
   }
   assert.deepEqual(calls, [], 'the owner\'s defaults are never written');
-  const store = new Map();
-  const live = (command, args) => {
-    calls.push([command, ...args]);
-    const [verb, domain, key, , value] = args;
-    assert.equal(domain, TEXTEDIT_DOMAIN, 'TextEdit\'s own domain only');
-    if (verb === 'write') { store.set(key, args[3] === '-bool' ? (/^(YES|true|1)$/i.test(value) ? '1' : '0') : value); return {status: 0, stdout: '', stderr: ''}; }
-    return store.has(key) ? {status: 0, stdout: `${store.get(key).trimEnd()}\n`, stderr: ''} : {status: 1, stdout: '', stderr: 'does not exist'};
+  // TextEdit is sandboxed: it reads its container's plist, which a write to the plain domain need not reach (pilot A's
+  // re-run, run 45277221729: WidthInChars 60 read back from the domain, and TextEdit's new document took 75). Each key is
+  // written to the domain, read back from both, and written through the container's path when the container does not
+  // hold it; only the container's read-back says the key is in force.
+  const container = textEditContainerDomain(HOME);
+  assert.equal(container, `${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`);
+  const fakeDefaults = ({mirror}) => {
+    const stores = new Map([[TEXTEDIT_DOMAIN, new Map()], [container, new Map()]]);
+    return (command, args) => {
+      calls.push([command, ...args]);
+      const [verb, domain, key, , value] = args;
+      assert.ok(stores.has(domain), `TextEdit's own domain or its container only: ${domain}`);
+      if (verb === 'write') {
+        const stored = args[3] === '-bool' ? (/^(YES|true|1)$/i.test(value) ? '1' : '0') : value;
+        for (const d of domain === TEXTEDIT_DOMAIN && mirror ? [TEXTEDIT_DOMAIN, container] : [domain]) stores.get(d).set(key, stored);
+        return {status: 0, stdout: '', stderr: ''};
+      }
+      const store = stores.get(domain);
+      return store.has(key) ? {status: 0, stdout: `${store.get(key).trimEnd()}\n`, stderr: ''} : {status: 1, stdout: '', stderr: 'does not exist'};
+    };
   };
-  const done = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', exec: live});
+  calls.length = 0;
+  const done = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', home: HOME, exec: fakeDefaults({mirror: false})});
   assert.equal(done.ok, true);
+  assert.equal(done.container, container);
   assert.deepEqual(done.writes.map(w => [w.key, w.matched]), writes.map(w => [w.key, true]));
-  assert.deepEqual(calls.slice(0, 2), [['/usr/bin/defaults', 'write', TEXTEDIT_DOMAIN, 'WidthInChars', '-int', '60'], ['/usr/bin/defaults', 'read', TEXTEDIT_DOMAIN, 'WidthInChars']]);
+  assert.deepEqual(calls.slice(0, 5), [['/usr/bin/defaults', 'write', TEXTEDIT_DOMAIN, 'WidthInChars', '-int', '60'], ['/usr/bin/defaults', 'read', TEXTEDIT_DOMAIN, 'WidthInChars'],
+    ['/usr/bin/defaults', 'read', container, 'WidthInChars'], ['/usr/bin/defaults', 'write', container, 'WidthInChars', '-int', '60'], ['/usr/bin/defaults', 'read', container, 'WidthInChars']]);
+  assert.deepEqual(done.writes[0], {key: 'WidthInChars', value: '60', written: true, readBack: '60', container: {readBack: '60', readBackBefore: null, written: true}, matched: true});
+  // Where the domain's write reaches the container, nothing is written through; the record says so.
+  calls.length = 0;
+  const mirrored = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', home: HOME, exec: fakeDefaults({mirror: true})});
+  assert.equal(mirrored.ok, true);
+  assert.deepEqual(mirrored.writes[0].container, {readBack: '60'});
+  assert.ok(!calls.some(c => c[1] === 'write' && c[2] === container));
   // A read-back that is not the value written is not in force: the step fails rather than declare it.
-  const stuck = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: '75\n'} : {status: 0, stdout: ''})});
+  const stuck = writeTextEditDefaults(writes, {env: HOSTED, platform: 'darwin', home: HOME, exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: '75\n'} : {status: 0, stdout: ''})});
   assert.equal(stuck.ok, false);
-  assert.equal(stuck.writes[0].readBack, '75');
+  assert.deepEqual([stuck.writes[0].readBack, stuck.writes[0].container.readBack], ['75', '75']);
+  // The domain read back as written but the container not: not in force.
+  const domainOnly = writeTextEditDefaults(writes.slice(0, 1), {env: HOSTED, platform: 'darwin', home: HOME, exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: args[1] === TEXTEDIT_DOMAIN ? '60\n' : '75\n'} : {status: 0, stdout: ''})});
+  assert.deepEqual([domainOnly.writes[0].readBack, domainOnly.writes[0].container.readBack, domainOnly.ok], ['60', '75', false]);
   // A bool reads back as 0 or 1, never as the word written: NO is in force only when it reads 0.
   const bool = writes.filter(w => w.key === UNTITLED_AT_LAUNCH_KEY);
   for (const [printed, matched] of [['0', true], ['1', false], ['NO', false]]) {
-    const [done] = writeTextEditDefaults(bool, {env: HOSTED, platform: 'darwin', exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: `${printed}\n`} : {status: 0, stdout: ''})}).writes;
+    const [done] = writeTextEditDefaults(bool, {env: HOSTED, platform: 'darwin', home: HOME, exec: (command, args) => (args[0] === 'read' ? {status: 0, stdout: `${printed}\n`} : {status: 0, stdout: ''})}).writes;
     assert.deepEqual([done.readsAs, done.matched], ['0', matched], printed);
   }
+});
+
+// Pilot A's re-run (run 45277221729): vv-1's TextEdit launch window stood at 241,87 586x488, the frame every vv run reads,
+// with NSRequiresOpenUntitledWindowAtLaunch NO in force: the warm-ups end TextEdit by pid, so its saved application
+// state outlives it and the next launch restores that window. Setup removes the state, sandboxed and not, and records
+// what it removed; only on a hosted runner.
+test('TextEdit\'s saved application state removed on a hosted runner only, each path recorded: existed, removed, or why not', () => {
+  assert.deepEqual(textEditSavedStates(HOME), [`${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Saved Application State/com.apple.TextEdit.savedState`,
+    `${HOME}/Library/Saved Application State/com.apple.TextEdit.savedState`]);
+  const removed = [];
+  const remove = path => { removed.push(path); };
+  for (const [env, platform] of [[{}, 'darwin'], [HOSTED, 'linux']]) {
+    assert.throws(() => clearTextEditSavedState(HOME, {env, platform, exists: () => true, remove}), /refused/);
+  }
+  assert.deepEqual(removed, []);
+  const [sandboxed, plain] = textEditSavedStates(HOME);
+  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: path => path === sandboxed, remove}),
+    [{path: sandboxed, existed: true, removed: true}, {path: plain, existed: false, removed: false}]);
+  assert.deepEqual(removed, [sandboxed]);
+  const denied = clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => true, remove: () => { throw new Error('EPERM: operation not permitted'); }});
+  assert.deepEqual(denied.map(d => [d.existed, d.removed, d.error]), [[true, false, 'EPERM: operation not permitted'], [true, false, 'EPERM: operation not permitted']]);
 });
 
 test('the venue record declares each frame that differs from the mini\'s: the frame, the alerts read fresh as the reason, the cells grounded on it', () => {
@@ -153,7 +202,10 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
   const finder = venue.differences.find(d => d.scene === 'finder');
   assert.ok(finder.cells.includes('finder/frontmost/click.row') && finder.cells.includes('finder/frontmost/scroll.down'));
   const textedit = venue.differences.find(d => d.scene === 'textedit');
-  assert.deepEqual([textedit.mini, textedit.hosted], [{WidthInChars: 75, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)'}, {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO'}]);
+  assert.deepEqual([textedit.mini, textedit.hosted], [{WidthInChars: 75, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)', [PERSISTENCE_KEY]: 'NO (AppKit\'s default: windows restored)'},
+    {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO', [PERSISTENCE_KEY]: 'YES', 'saved application state': 'removed after the warm-ups'}]);
+  assert.match(textedit.reason, /pilot A's re-run, run 45277221729/);
+  assert.match(textedit.reason, /read back from TextEdit's container/);
   assert.match(textedit.reason, /242,107 603x505/);
   assert.match(textedit.reason, /241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next/);
   assert.ok(textedit.cells.includes('textedit/frontmost/drag.select'));
@@ -179,7 +231,19 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
 
 test('the venue renders for sitting.md: each difference with its frame, reason and cells; none off a hosted runner', () => {
   const placed = hostedFrames(ALERTS, [DISPLAY]);
-  const md = renderVenue(venueRecord({alerts: ALERTS, displays: [DISPLAY], placed, textEdit: {domain: TEXTEDIT_DOMAIN, writes: [], ok: true}}));
+  const [sandboxed, plain] = textEditSavedStates(HOME);
+  const textEdit = {domain: TEXTEDIT_DOMAIN, container: textEditContainerDomain(HOME), ok: true,
+    writes: [{key: 'WidthInChars', value: '60', written: true, readBack: '60', container: {readBack: '60', readBackBefore: '75', written: true}, matched: true},
+      {key: PERSISTENCE_KEY, value: 'YES', readsAs: '1', written: true, readBack: '1', container: {readBack: '1'}, matched: true}],
+    savedState: [{path: sandboxed, existed: true, removed: true}, {path: plain, existed: false, removed: false}]};
+  const md = renderVenue(venueRecord({alerts: ALERTS, displays: [DISPLAY], placed, textEdit}));
+  assert.match(md, /TextEdit's preferences \(com\.apple\.TextEdit, read back from its container's plist\): WidthInChars read back \(written through the container: the domain's write did not reach it\), ApplePersistenceIgnoreState read back\./);
+  assert.match(md, new RegExp(`TextEdit's saved application state: removed ${sandboxed.replace(/[.]/g, '\\.')}; none at ${plain.replace(/[.]/g, '\\.')}\\.`));
+  const notHeld = renderVenue(venueRecord({alerts: ALERTS, displays: [DISPLAY], placed, textEdit: {...textEdit, ok: false,
+    writes: [{key: 'WidthInChars', value: '60', written: true, readBack: '60', container: {readBack: '75', readBackBefore: '75', written: false}, matched: false}],
+    savedState: [{path: sandboxed, existed: true, removed: false, error: 'EPERM'}]}}));
+  assert.match(notHeld, /WidthInChars NOT read back from the container \(75; the domain read 60\)/);
+  assert.match(notHeld, /NOT removed .*com\.apple\.TextEdit\.savedState \(EPERM\)/);
   assert.match(md, /^## The venue \(ruling 1169\)/);
   assert.match(md, /\| chrome \| 80,60 1000x760 \| 22,60 800x760 \|/);
   assert.match(md, /chrome\/frontmost\/drag\.select/);

@@ -7,7 +7,9 @@
 //   electron    the fixture launched at the venue's frame (its BrowserWindow's bounds, --cua-fixture-bounds), 720x560
 //   finder      the existing probe pins its window at the venue's frame (setup step `finderFrame`), 800x520
 //   textedit    TextEdit sizes its own windows: a new document from its preferences, WidthInChars, written to
-//               com.apple.TextEdit on the throwaway runner before any judged launch (writeTextEditDefaults); the parity
+//               com.apple.TextEdit on the throwaway runner before any judged launch and read back from its sandbox
+//               container's plist, the file TextEdit reads (writeTextEditDefaults), its saved application state removed
+//               and window restoration off (ApplePersistenceIgnoreState), so no launch restores a warm-up's window; the parity
 //               scenes' document, an RTF opened as a file, from the view size the file carries (TEXTEDIT_DOCUMENT_VIEW,
 //               `\vieww`/`\viewh`, written by the device's `up`). Nothing in its preferences places a window (its binary
 //               names no frame autosave and its DocumentWindow nib carries none), so its origin stays AppKit's cascade,
@@ -29,6 +31,8 @@
 // symmetry rule: a pair whose sides stood on different frames is NO VERDICT, naming them (./checks.mjs `record`).
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {existsSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {FINDER_FRAME} from '../repl-parity/scenes-mac-finder.mjs';
 import {SCENES, TEXTEDIT_LAYOUTS, textEditDocument, textEditViewWords} from '../repl-parity/scenes-mac.mjs';
 import {framedCells} from '../native-matrix/plan.mjs';
@@ -81,29 +85,64 @@ export const PANEL_SIZE_KEY = 'NSNavPanelExpandedSizeForOpenMode';
 // the strip is clear top to bottom, so only x must hold, and both widths are the display's.
 export const savedFrameString = (frame, display) =>
   `${frame.x} ${display.height - frame.y - frame.height} ${frame.width} ${frame.height} ${display.x} ${display.y} ${display.width} ${display.height - MENU_BAR} `;
-// The writes to TextEdit's own domain: its width in characters, no untitled document at launch, the Open panel's saved
-// frame and its size. -> [{key, type, value, readsAs?}].
+// The writes to TextEdit's own domain: its width in characters, no untitled document at launch, no window restored at
+// launch, the Open panel's saved frame and its size. -> [{key, type, value, readsAs?}].
 export const UNTITLED_AT_LAUNCH_KEY = 'NSRequiresOpenUntitledWindowAtLaunch';
+// AppKit's user default that turns window restoration off (the parity scenes' launch argument too): pilot A's re-run
+// (run 45277221729) read vv-1's launch window at 241,87 586x488, the frame every vv run reads, with
+// NSRequiresOpenUntitledWindowAtLaunch NO in force, so the window was restored, not opened.
+export const PERSISTENCE_KEY = 'ApplePersistenceIgnoreState';
 export const textEditWrites = (panel, display) => [
   {key: 'WidthInChars', type: 'int', value: String(TEXTEDIT_WIDTH_IN_CHARS)},
   // A bool reads back as 0 or 1.
   {key: UNTITLED_AT_LAUNCH_KEY, type: 'bool', value: 'NO', readsAs: '0'},
+  {key: PERSISTENCE_KEY, type: 'bool', value: 'YES', readsAs: '1'},
   {key: PANEL_FRAME_KEY, type: 'string', value: savedFrameString(panel, display)},
   {key: PANEL_SIZE_KEY, type: 'string', value: `{${panel.width}, ${panel.height}}`},
 ];
-// The writes made, each read back (`defaults read`), only on a GitHub-hosted runner and only in TextEdit's domain: the
-// owner's preferences are never written. exec(command, args) -> {status, stdout}. -> {domain, writes: [{key, value,
-// readBack, matched}], ok}: ok only when every write reads back as written (a venue declared but not in force would be
-// a false record).
-export function writeTextEditDefaults(writes, {env = process.env, platform = process.platform, exec = (command, args) => spawnSync(command, args, {encoding: 'utf8'})} = {}) {
+// TextEdit is sandboxed: it reads its preferences from its container's plist, which `defaults write com.apple.TextEdit`
+// from outside the sandbox need not reach (pilot A's re-run, run 45277221729: WidthInChars 60 read back from the domain
+// while TextEdit's new document took the default 75). The container's plist, as `defaults` names a domain by its path.
+const TEXTEDIT_CONTAINER = join('Library', 'Containers', TEXTEDIT_DOMAIN, 'Data', 'Library');
+export const textEditContainerDomain = home => join(home, TEXTEDIT_CONTAINER, 'Preferences', TEXTEDIT_DOMAIN);
+const readDefault = (exec, domain, key) => {
+  const read = exec('/usr/bin/defaults', ['read', domain, key]);
+  return read?.status === 0 ? String(read.stdout ?? '').trim() : null;
+};
+const writeDefault = (exec, domain, {key, type, value}) => exec('/usr/bin/defaults', ['write', domain, key, `-${type}`, value])?.status === 0;
+// The writes made, only on a GitHub-hosted runner and only in TextEdit's domain (the owner's preferences are never
+// written): each written to the domain and read back from it (`readBack`) and from the container's plist; one the
+// container does not hold as written is written through the container's path and read back again (`container`:
+// {readBack, readBackBefore?, written?}, the last two only when it was written through). exec(command, args) -> {status,
+// stdout}. -> {domain, container, writes: [{key, value, readsAs?, written, readBack, container, matched}], ok}: a write
+// is matched only when the container, the file TextEdit reads, holds it, and ok only when every one is (a venue declared
+// but not in force would be a false record).
+export function writeTextEditDefaults(writes, {env = process.env, platform = process.platform, home = env.HOME, exec = (command, args) => spawnSync(command, args, {encoding: 'utf8'})} = {}) {
   assertGithubHosted(env, platform, 'TextEdit\'s preferences');
-  const done = writes.map(({key, type, value, readsAs = value.trim()}) => {
-    const wrote = exec('/usr/bin/defaults', ['write', TEXTEDIT_DOMAIN, key, `-${type}`, value]);
-    const read = exec('/usr/bin/defaults', ['read', TEXTEDIT_DOMAIN, key]);
-    const readBack = read?.status === 0 ? String(read.stdout ?? '').trim() : null;
-    return {key, value, ...(readsAs !== value.trim() ? {readsAs} : {}), written: wrote?.status === 0, readBack, matched: wrote?.status === 0 && readBack === readsAs};
+  const container = textEditContainerDomain(home);
+  const done = writes.map(write => {
+    const {key, value} = write, readsAs = write.readsAs ?? value.trim();
+    const written = writeDefault(exec, TEXTEDIT_DOMAIN, write), readBack = readDefault(exec, TEXTEDIT_DOMAIN, key);
+    const before = readDefault(exec, container, key);
+    const through = before === readsAs ? null : writeDefault(exec, container, write);
+    const held = through === null ? {readBack: before} : {readBack: readDefault(exec, container, key), readBackBefore: before, written: through};
+    return {key, value, ...(readsAs !== value.trim() ? {readsAs} : {}), written, readBack, container: held, matched: held.readBack === readsAs};
   });
-  return {domain: TEXTEDIT_DOMAIN, writes: done, ok: done.every(w => w.matched)};
+  return {domain: TEXTEDIT_DOMAIN, container, writes: done, ok: done.every(w => w.matched)};
+}
+// TextEdit's saved application state, in its container and outside it: the warm-ups end TextEdit by pid, so its state
+// outlives it, and the next launch would restore the window it saved (pilot A's re-run). -> [path].
+export const textEditSavedStates = home => [join(home, TEXTEDIT_CONTAINER, 'Saved Application State', `${TEXTEDIT_DOMAIN}.savedState`),
+  join(home, 'Library', 'Saved Application State', `${TEXTEDIT_DOMAIN}.savedState`)];
+// Each removed, only on a GitHub-hosted runner, after the warm-ups' TextEdit ended and before any run launches one.
+// -> [{path, existed, removed, error?}]. A removal refused (an app-data protection, say) is recorded, not thrown: the
+// persistence key read back from the container keeps restoration off on its own.
+export function clearTextEditSavedState(home, {env = process.env, platform = process.platform, exists = existsSync, remove = path => rmSync(path, {recursive: true, force: true})} = {}) {
+  assertGithubHosted(env, platform, 'TextEdit\'s saved application state');
+  return textEditSavedStates(home).map(path => {
+    if (!exists(path)) return {path, existed: false, removed: false};
+    try { remove(path); return {path, existed: true, removed: true}; } catch (error) { return {path, existed: true, removed: false, error: String(error?.message ?? error).split('\n')[0]}; }
+  });
 }
 
 // ---- TextEdit's scene document ----------------------------------------------------------------------------------------
@@ -169,8 +208,9 @@ export function venueRecord({alerts, displays, placed, textEdit}) {
     if (['x', 'y', 'width', 'height'].every(k => hosted[k] === mini[k])) continue;
     differences.push({scene, mini, hosted, reason: why(scene), grounding: GROUNDING[scene], cells: cellsOf(scene)});
   }
-  differences.push({scene: 'textedit', mini: {WidthInChars: TEXTEDIT_DEFAULT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)'}, hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO'},
-    reason: `${fresh === null ? 'the alert windows were unread after the mode switch' : `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}`}; at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session)`,
+  differences.push({scene: 'textedit', mini: {WidthInChars: TEXTEDIT_DEFAULT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)', [PERSISTENCE_KEY]: 'NO (AppKit\'s default: windows restored)'},
+    hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO', [PERSISTENCE_KEY]: 'YES', 'saved application state': 'removed after the warm-ups'},
+    reason: `${fresh === null ? 'the alert windows were unread after the mode switch' : `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}`}; at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session); vv-1's launch window again stood at 241,87 586x488 with that key in force and its new document took 603x505, the default width, though the domain read WidthInChars 60 back (pilot A's re-run, run 45277221729): a window the warm-ups' saved state restored, and a domain write the sandboxed TextEdit does not read, so restoration is off, the saved state is removed and every key is read back from TextEdit's container`,
     grounding: GROUNDING.textedit, cells: cellsOf('textedit')});
   const document = textEditDocumentPlan(), hashes = side => Object.fromEntries(Object.entries(document.sha256).map(([layout, h]) => [`sha256 ${layout}`, h[side]]));
   differences.push({scene: 'textedit document', mini: {'view size': 'none: TextEdit takes the paper\'s width', ...hashes('mini')},
@@ -183,12 +223,21 @@ export function venueRecord({alerts, displays, placed, textEdit}) {
 
 const frameCell = f => (f && typeof f === 'object' && 'x' in f ? rectText(f) : f && typeof f === 'object' ? Object.entries(f).map(([k, v]) => `${k} ${v}`).join(', ') : String(f ?? ''));
 const escape = text => String(text).replace(/\|/g, '\\|');
+// One preference as setup wrote it (writeTextEditDefaults): held by TextEdit's container or not, and whether it had to be
+// written through it. A record from before the container was read keeps its one read-back.
+const textEditWriteText = w => {
+  if (!w.container) return `${w.key} ${w.matched ? 'read back' : `NOT read back (${w.readBack ?? 'unread'})`}`;
+  if (!w.matched) return `${w.key} NOT read back from the container (${w.container.readBack ?? 'unread'}; the domain read ${w.readBack ?? 'unread'})`;
+  return `${w.key} read back${w.container.written !== undefined ? ' (written through the container: the domain\'s write did not reach it)' : ''}`;
+};
+const savedStateText = s => (s.removed ? `removed ${s.path}` : s.existed ? `NOT removed ${s.path} (${s.error ?? 'unknown'})` : `none at ${s.path}`);
 // sitting.md's section: the venue's differences, one row each, with the cells resting on them. -> markdown.
 export function renderVenue(venue) {
   const head = ['## The venue (ruling 1169)', ''];
   if (!venue) return [...head, 'no venue recorded: the scenes ran on their own frames (no hosted setup on this machine).', ''].join('\n');
-  const writes = venue.textEdit?.writes?.length ? `TextEdit's preferences (${venue.textEdit.domain}): ${venue.textEdit.writes.map(w => `${w.key} ${w.matched ? 'read back' : `NOT read back (${w.readBack ?? 'unread'})`}`).join(', ')}.` : 'TextEdit\'s preferences: none recorded.';
-  return [...head, `The alert windows after the mode switch: ${venue.alerts === null ? 'unread' : venue.alerts.length ? alertsText(venue.alerts) : 'none'}. ${writes}`, '',
+  const writes = venue.textEdit?.writes?.length ? `TextEdit's preferences (${venue.textEdit.domain}, read back from its container's plist): ${venue.textEdit.writes.map(textEditWriteText).join(', ')}.` : 'TextEdit\'s preferences: none recorded.';
+  const states = venue.textEdit?.savedState ? ` TextEdit's saved application state: ${venue.textEdit.savedState.map(savedStateText).join('; ')}.` : '';
+  return [...head, `The alert windows after the mode switch: ${venue.alerts === null ? 'unread' : venue.alerts.length ? alertsText(venue.alerts) : 'none'}. ${writes}${states}`, '',
     '| scene | the mini | hosted | why | grounding | cells resting on it |', '|---|---|---|---|---|---|',
     ...venue.differences.map(d => `| ${d.scene} | ${escape(frameCell(d.mini))} | ${escape(frameCell(d.hosted))} | ${escape(d.reason)} | ${escape(d.grounding)} | ${escape(d.cells.join(', '))} |`), ''].join('\n');
 }

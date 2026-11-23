@@ -262,6 +262,14 @@ test('CUA_NODE on Linux: a good Node is used; one under the vendor\'s tree, by i
       && error.message.includes(INSTALLER), path);
     assert.deepEqual(ran, [], `${path}: no probe run`);
   }
+  // a path the kernel would refuse (ENOTDIR: through a regular file, or a file with a trailing slash) is refused as
+  // written, with no probe run, never reinterpreted (fix wave 2)
+  ran.length = 0;
+  for (const path of [`${join(home, 'plain')}/../own-node`, `${good}/`, `${good}/.`]) {
+    writeFileSync(join(home, 'plain'), 'not a directory');
+    assert.throws(() => linuxNode(home, {CUA_NODE: path}, versionOf), error => error.code === 'invalid_setting' && /not a directory/.test(error.message) && error.message.includes(INSTALLER), path);
+  }
+  assert.deepEqual(ran, []);
   // each refusal gives the override's own fix, then the installer that restores the managed Node
   assert.throws(() => linuxNode(home, {CUA_NODE: join(home, 'absent')}, versionOf), error => error.code === 'repl_host_node' && error.message.includes(INSTALLER));
   assert.throws(() => linuxNode(home, {CUA_NODE: good}, () => 'v22.12.0'), error => error.code === 'repl_host_node' && error.message.includes('v22.12.0') && error.message.includes(INSTALLER));

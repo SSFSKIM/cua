@@ -150,6 +150,47 @@ test('an override whose `..` follows a link into the tree is refused, nothing th
   assert.deepEqual(probed, [], 'the version probe was never handed a path');
 });
 
+// A link whose relative target climbs out of another link: the kernel climbs from where that link leads, outside the
+// tree, while a lexical reading of the same target lands inside it. Selection, the launch and the scoped preflight
+// must all follow the kernel's resolution, which selection approved, and touch nothing in the tree (fix wave 2).
+function lexicalTrap(h, name) {
+  const outside = join(h.home, 'outside');
+  fs.mkdirSync(join(outside, 'deep', 'x'), {recursive: true});
+  fs.symlinkSync(join(outside, 'deep', 'x'), join(outside, 'd'));
+  const engine = join(outside, 'runtimes', 'r', 'cua-engine');   // outside's own runtimes/, not the home's tree
+  fs.mkdirSync(dirname(engine), {recursive: true});
+  fs.writeFileSync(engine, `#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (0123456789ab)"\n`, {mode: 0o755});
+  // from outside/: d/../.. is outside/ by the kernel (d is outside/deep/x), and the home itself by a lexical reading
+  fs.symlinkSync('d/../../runtimes/r/cua-engine', join(outside, name));
+  // the kernel's answer (realpath(3)); Node's own realpathSync reads `..` in a link target lexically, the trap itself
+  assert.equal(fs.realpathSync.native(join(outside, name)), engine, 'the kernel resolves it outside the tree');
+  return {link: join(outside, name), engine};
+}
+
+test('an accepted CUA_LINUX_ENGINE_BIN through a link a lexical reading would place in the tree: selection, launch and the scoped preflight touch nothing there', t => {
+  const h = homeWithVendorTree(t);
+  const {link, engine} = lexicalTrap(h, 'engine-link');
+  const ambient = {...h.ambient, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: link};
+  let opened;
+  const seen = recorded(() => { opened = session({...h, ambient}, ['computer']); });
+  assert.deepEqual(seen.filter(({path}) => within(path, h.runtimes)), []);
+  assert.equal(opened.launch.env.CUA_ENGINE_BIN, engine, 'the launch runs the file selection approved');
+});
+
+test('an installed engine reached through such a link: its guarded resolution is what is checked, run and protected, and nothing in the tree is touched', t => {
+  const h = homeWithVendorTree(t);
+  const {engine} = lexicalTrap(h, 'unused');
+  // the recorded engine lives outside the tree; the home's engine path is a link with the same climbing target
+  fs.copyFileSync(join(h.home, 'engine', 'linux', 'cua-engine'), engine);
+  fs.rmSync(join(h.home, 'engine', 'linux', 'cua-engine'));
+  fs.symlinkSync('../../outside/d/../../runtimes/r/cua-engine', join(h.home, 'engine', 'linux', 'cua-engine'));   // spelled, not path.join-ed: join would read the `..` lexically
+  assert.equal(fs.realpathSync.native(join(h.home, 'engine', 'linux', 'cua-engine')), engine);
+  let opened;
+  const seen = recorded(() => { opened = session(h, ['computer']); });
+  assert.deepEqual(seen.filter(({path}) => within(path, h.runtimes)), []);
+  assert.equal(opened.launch.env.CUA_ENGINE_BIN, engine);
+});
+
 test('the managed Node\'s pointer or install record linked into the tree: refused, nothing there read', t => {
   for (const file of ['pointer', 'record']) {
     const h = homeWithVendorTree(t);

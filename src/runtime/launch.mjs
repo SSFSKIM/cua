@@ -185,15 +185,15 @@
 // kernel works in that directory instead, with its tmp/ as its TMPDIR (src/repl-host/supervisor.mjs kernelLaunch). It
 // holds nothing but the kernel's lifeline while it runs; createLaunchDirs makes it, and it goes with the session
 // (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
-import {accessSync, chmodSync, constants, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync} from 'node:fs';
+import {accessSync, chmodSync, constants, mkdirSync, readFileSync, realpathSync, rmSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {defaultHome, homeLayout, realHome} from './layout.mjs';
 import {spawnSync} from 'node:child_process';
-import {ENGINE_RECORD, executableFile, installedLinuxEngine, linuxEnginePath, parseEngineVersion, verifiedLinuxEngineVersion} from './linux-engine.mjs';
-import {MIN_ENGINE_VERSION, isOlder} from '../services/engine/linux/client.mjs';
+import {ENGINE_RECORD, executableFile, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
+import {MIN_ENGINE_VERSION, engineVersionOf, isOlder} from '../services/engine/linux/client.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
@@ -202,6 +202,7 @@ import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
 import {NODE_FLOOR, NODE_RECORD_FILE, managedNode, nodeLayout, nodeVersion, readNodePointer} from './managed-node.mjs';
 import {ownInstaller, vendorLinuxRuntime} from './manifest.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {helperFor} from '../sandbox/linux.mjs';
@@ -367,7 +368,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
     replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
-    engineRoot: linux ? owned.engine : null, modulesRoot: linux ? owned.modules : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, lookup: linuxEngine.lookup, source: linuxEngine.source} : null,
+    engineRoot: linux ? owned.engine : null, modulesRoot: linux ? owned.modules : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, lookup: linuxEngine.lookup, source: linuxEngine.source, ...(linuxEngine.links ? {links: linuxEngine.links} : {})} : null,
     nativeEngine: linux || !enabled.includes('computer') ? null : cuaEngine ? {engine: 'cua', version: cuaEngine.engineVersion, build: cuaEngine.build}
       : {engine: 'vendor', version: bundleVersion(p.skyServiceApp), build: runtime.release},
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
@@ -501,8 +502,8 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 //
 // On Linux (`platform` linux; #171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Selection; M6a's
 // pre-flight, §3.3 and §3.4) the same setting, precedence and reasons select between the vendor's sky_linux and cua's own
-// engine, installed in the cua home `home` (src/runtime/linux-engine.mjs installedLinuxEngine, the default `installed`:
-// {path} or null). There is no host to refuse (cua's own host is the only one there).
+// engine, installed in the cua home `home` (src/runtime/linux-engine.mjs linuxEnginePath; `installed`, a seam, stands in
+// for its guarded lookup: {path} or null). There is no host to refuse (cua's own host is the only one there).
 //   cua's engine carries `bin` {path, lookup, source: 'installed' | 'override'}. Either selection, the default as an
 //   explicit setting, takes the installed engine only when it is at least MIN_ENGINE_VERSION, the oldest cua's Linux
 //   service drives, by `installedVersion` (verifiedLinuxEngineVersion: the version its bytes bear out, a pinned release's
@@ -523,8 +524,8 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 //   leads, under it is invalid_setting, and an installed engine whose path, or whose install record's, leads there
 //   engine_not_installed, each refused before anything there is stat-ed, read or run (outsideVendorTree); what follows
 //   uses only the path the guard resolved.
-export function nativeEngineFor({env, platform = 'darwin', arch = process.arch, home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, vendor}) {
-  if (platform === 'linux') return linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor});
+export function nativeEngineFor({env, platform = 'darwin', arch = process.arch, home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, vendor, probeTimeoutMs}) {
+  if (platform === 'linux') return linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor, probeTimeoutMs});
   installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
@@ -543,7 +544,7 @@ export function nativeEngineFor({env, platform = 'darwin', arch = process.arch, 
   return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
 }
 
-function linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor = vendorLinuxRuntime}) {
+function linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor = vendorLinuxRuntime, probeTimeoutMs}) {
   const setting = engineSetting(env, config, defaultEngine);
   const cuaHome = () => realHome(home ?? defaultHome(env, {platform: 'linux'}));
   if (setting.engine === 'vendor') return {engine: 'vendor', reason: setting.reason, status: 'pass', vendor: vendorEngineTree(setting, vendor, cuaHome(), arch)};
@@ -557,29 +558,41 @@ function linuxEngineFor({env, arch, home, defaultEngine, config, installed, inst
     const refuse = (code, why, fix) => fail(code, `${code === 'invalid_setting' ? '' : `${source} selects cua's own engine, and `}CUA_LINUX_ENGINE_BIN names ${override}, which ${why}: ${fix}${restore}`, {hint: installer.hint});
     const resolved = outsideVendorTree(override, cuaHome());
     if (resolved.lead) refuse('invalid_setting', `${intoTree(override, resolved.lead)}, and no engine of cua's runs from the vendor's release`, `name an engine outside ${homeLayout(cuaHome()).runtimes}`);
+    // A path the kernel would refuse as written is refused, never reinterpreted into one that exists.
+    if (resolved.notDirectory) refuse('invalid_setting', unresolved(resolved), 'name the engine by a path that resolves as written');
     const build = 'build it (cargo build --release in native/linux-engine)';
     if (resolved.missing || !executableFile(resolved.real)) refuse('engine_not_installed', 'is not an executable file', build);
     // Ruling 1110: below the minimum is refused at the open, the override's too; its version is read once, here, from
     // the approved path. The service still checks whatever it starts (a replacement at the path).
-    const version = overrideVersion(resolved.real);
+    const version = overrideVersion(resolved.real, probeTimeoutMs);
     if (version === null) refuse('engine_unrecorded', 'answers --version with no version this cua recognizes', build);
     if (isOlder(version, MIN_ENGINE_VERSION)) refuse('engine_outdated', `is ${version}, older than ${MIN_ENGINE_VERSION}, which this cua needs`, `${build} from this checkout`);
-    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: resolved.real, lookup: override, source: 'override'}};
+    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: engineBin(resolved.real, override, 'override', resolved.links)};
   }
   const lookup = linuxEnginePath(cuaHome());
+  const record = join(dirname(lookup), ENGINE_RECORD);
   const refuse = (code, why) => fail(code, `${source} selects cua's own engine, and ${why}: install this cua's engine with \`${installer.command} --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`, {hint: installer.hint});
-  // Every path the installed engine's lookup reads, the engine and its install record, kept out of the tree first.
-  for (const path of [lookup, join(dirname(lookup), ENGINE_RECORD)]) {
-    const {lead} = outsideVendorTree(path, cuaHome());
-    if (lead) refuse('engine_not_installed', `${path === lookup ? 'the engine' : 'the install record of the engine'} installed in this cua home (${path}) ${intoTree(path, lead)}, which is no part of cua's`);
-  }
-  const found = (installed ?? (() => installedLinuxEngine({home: cuaHome()})))();
+  // Every path the installed engine's lookup reads, the engine and its install record, resolved once and kept out of
+  // the tree; what follows (the executable check, the record and digest check, the launch, the preflight) uses only what
+  // these resolved.
+  const [engineAt, recordAt] = [lookup, record].map(path => {
+    const resolved = outsideVendorTree(path, cuaHome());
+    if (resolved.lead) refuse('engine_not_installed', `${path === lookup ? 'the engine' : 'the install record of the engine'} installed in this cua home (${path}) ${intoTree(path, resolved.lead)}, which is no part of cua's`);
+    return resolved;
+  });
+  const found = installed ? installed() : engineAt.real && executableFile(engineAt.real) ? {path: engineAt.real, lookup, links: engineAt.links} : null;
   if (!found) refuse('engine_not_installed', `none is installed in this cua home (${lookup})`);
-  const version = (installedVersion ?? (() => verifiedLinuxEngineVersion({home: cuaHome()})))();
+  const version = installedVersion ? installedVersion() : verifiedLinuxEngineVersion({home: cuaHome(), at: {engine: engineAt.real, record: recordAt.real ?? null}});
   if (version === null) refuse('engine_unrecorded', `no record says what the engine installed in this cua home (${lookup}) is: its install.json is absent, unreadable or another file's`);
   if (isOlder(version, MIN_ENGINE_VERSION)) refuse('engine_outdated', `the engine installed in this cua home (${lookup}) is ${version}, older than ${MIN_ENGINE_VERSION}, which this cua needs`);
-  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: found.path, lookup: found.lookup ?? found.path, source: 'installed'}};
+  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: engineBin(found.path, found.lookup ?? found.path, 'installed', found.links)};
 }
+
+// The engine as a launch names it -> {path, lookup, source, links?}: `path` the executable the selection approved (its
+// resolution, the one that was checked), `lookup` the path it was found by, and `links` where the symbolic links on that
+// lookup lie, when there are any, which the scoped preflight refuses inside a write root without walking the lookup
+// again (src/runtime/sandbox.mjs).
+const engineBin = (path, lookup, source, links) => ({path, lookup, source, ...(links?.length ? {links} : {})});
 
 // The vendor's tree for a vendor selection -> {release, bin, service, moduleDir}, found by `vendor` (vendorLinuxRuntime)
 // for the real cua home `home` and `arch`. Its two refusals become the selection's, engine_not_installed, in the
@@ -595,45 +608,23 @@ function vendorEngineTree(setting, vendor, home, arch) {
   return {release: tree.release, bin: tree.paths.skyLinuxBin, service: tree.paths.skyVendorService, moduleDir: tree.paths.moduleDir};
 }
 
-// The absolute `path` resolved as the kernel resolves it, kept out of the vendor's tree, <home>/runtimes/ of the cua home
-// `home` (#171 M6a; the pre-flight's §3.3, §3.5) -> {real} its real path, every component of which exists; {lead} where
-// it enters the tree; or {missing} the first component that does not exist (or a loop of links). The walk takes the
-// path's own components as spelled, `..` included, one at a time: a `..` climbs from the real directory reached so far,
-// and a link's target, absolute or relative, is walked the same way in its place. It refuses a component that lies in
-// the tree before it lstat-s or reads it, so nothing there is touched to find out. Every caller then uses `real`, and
-// only `real`, for whatever it does next (its metadata, a version probe, the launch): the guard and the use resolve
-// the same path. A spelling that lies in the tree as written is refused too. `home` undefined guards nothing (there is
-// no tree to keep out of) but still resolves.
-export function outsideVendorTree(path, home) {
-  const roots = home === undefined ? [] : [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
-  const inTree = candidate => roots.some(root => candidate === root || candidate.startsWith(`${root}/`));
-  if (inTree(resolve(path))) return {lead: resolve(path)};
-  let pending = path.split('/').filter(part => part !== '' && part !== '.');
-  let current = '/';
-  for (let links = 0; pending.length;) {
-    const part = pending.shift();
-    if (part === '..') { current = dirname(current); continue; }
-    const next = join(current, part);
-    if (inTree(next)) return {lead: next};
-    let target;
-    try { target = lstatSync(next).isSymbolicLink() ? readlinkSync(next) : null; } catch { return {missing: next}; }
-    if (target === null) { current = next; continue; }
-    if (++links > 40) return {missing: next};
-    pending = [...target.split('/').filter(piece => piece !== '' && piece !== '.'), ...pending];
-    if (isAbsolute(target)) current = '/';
-  }
-  return {real: current};
-}
+// The refusal half for a path the walk could not follow as written.
+const unresolved = resolved => (resolved.notDirectory ? `cannot be opened as written: ${resolved.notDirectory} is not a directory` : `is not found (${resolved.missing})`);
 // Where `path` enters the vendor's tree, or null (outsideVendorTree's `lead`).
 export const vendorTreeLead = (path, home) => outsideVendorTree(path, home).lead ?? null;
+export {outsideVendorTree};
 // The sentence half that says where a path that entered the tree went.
 const intoTree = (path, lead) => (lead === resolve(path) ? 'lies under the vendor\'s tree' : `leads to ${lead}, under the vendor's tree`);
 
 // The version an engine override at its approved real path `path` answers to --version, or null. It is run with a fixed
-// PATH and nothing else of the caller's environment, as the service runs it, and bounded in time.
-function overrideVersion(path) {
-  const run = spawnSync(path, ['--version'], {encoding: 'utf8', timeout: 5000, env: {PATH: FIXED_PATH}, stdio: ['ignore', 'pipe', 'ignore']});
-  return run.status === 0 ? parseEngineVersion(run.stdout.split('\n')[0])?.version ?? null : null;
+// PATH and nothing else of the caller's environment, as the service runs it, and killed outright at `timeoutMs`: a
+// child that ignored SIGTERM would otherwise hold the open, and every connection of this process, past the deadline.
+// Its first line is read exactly as the service reads it before each start (src/services/engine/linux/client.mjs
+// engineVersionOf), so no override is compatible at one boundary and unrecognised at the other.
+const VERSION_PROBE_MS = 5000;
+function overrideVersion(path, timeoutMs = VERSION_PROBE_MS) {
+  const run = spawnSync(path, ['--version'], {encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', env: {PATH: FIXED_PATH}, stdio: ['ignore', 'pipe', 'ignore']});
+  return run.status === 0 ? engineVersionOf(run.stdout.split('\n')[0].trim()) : null;
 }
 
 // The device mode cua's engine runs in, on Linux (#171, Design "Device mode") and on macOS (#282) -> {mode: 'shared' |
@@ -730,6 +721,8 @@ function linuxHostNode({ambient, home, arch, versionOf}) {
     const resolved = outsideVendorTree(explicit, real);
     if (resolved.lead) fail('invalid_setting', `CUA_NODE names ${explicit}, which ${intoTree(explicit, resolved.lead)}, and cua's own host never runs the vendor's Node: name a Node ${NODE_FLOOR} or later outside ${homeLayout(real).runtimes}${restore}`, {hint: installer.hint});
     const refuse = why => { throw Object.assign(new CuaError('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and CUA_NODE names ${explicit}, which ${why}: set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later${restore}`, {hint: installer.hint}), {tried: [`CUA_NODE ${explicit} (${why})`]}); };
+    // a path the kernel would refuse as written is refused, never reinterpreted into one that exists
+    if (resolved.notDirectory) fail('invalid_setting', `CUA_NODE names ${explicit}, which ${unresolved(resolved)}: name the Node by a path that resolves as written${restore}`, {hint: installer.hint});
     if (resolved.missing) refuse('is not found');
     // the approved path, and only it, is probed and run
     const version = versionOf(resolved.real);
@@ -755,7 +748,7 @@ function linuxHostNode({ambient, home, arch, versionOf}) {
   if (!managed.path) missing(managed.missing);
   if (Number(managed.version.split('.')[0]) < NODE_FLOOR) missing(`its version ${managed.version} is below ${NODE_FLOOR}`);
   const binary = guard(managed.path);
-  if (binary.missing) missing(`${managed.path} is not found`);
+  if (!binary.real) missing(`${managed.path} ${unresolved(binary)}`);
   // its recorded bytes, and runnable: one that lost its execute bit would fail at spawn (no version probe)
   try { accessSync(binary.real, constants.X_OK); } catch { missing(`${managed.path} is not executable`); }
   return binary.real;

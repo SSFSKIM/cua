@@ -428,8 +428,8 @@ extension Engine {
   /// service's translation of the facade's element_index). An element is first scrolled into view (positionElement,
   /// Positioning.swift). An element click takes route 1 (AXPick, else AXPress) for a plain left click on an element
   /// that advertises the action and whose clickable point does not land on a strict descendant of it (the vendor's
-  /// nested-content gate, applied to every element by cua), nor, for a text-entry role in a web page, on the element
-  /// itself (#258, `elementClickGate`); every other element click is synthesized by route 3 at the
+  /// nested-content gate, applied to every element by cua), nor, for a text-entry role in a web page of the frontmost
+  /// app, on the element itself (#258, `elementClickGate`); every other element click is synthesized by route 3 at the
   /// midpoint of the element's visible frame (`synthesizedClick`), its activation click sparing the element for any
   /// button but the left; its meta records the plan, the ladder's reason and the hit-test's answer (`elementClick`,
   /// ElementClickRecord). Where the ladder chose the action for a text-entry element (#313, `textEntryClickRoute`), the action
@@ -485,11 +485,16 @@ extension Engine {
         }
         let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
-        // #258: a web page's text field whose point hits the field itself is synthesized there, as the vendor's click is.
-        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
-                                        synthesized: synthesizedClickRoute(forced: nil, foreground: foreground), insideWebArea: {
-          elementInsideWebArea(target.element, role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
-        }) {
+        // #258 (ruling 1170): in the frontmost app, a web page's text field whose point hits the field itself is synthesized
+        // there, as the vendor's click is; behind another app it keeps main's route. The field's web-area ancestry is read
+        // at most once for the gate and #313's route together.
+        let (plan, entry) = try elementClickRoutes(
+          forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
+          synthesized: synthesizedClickRoute(forced: nil, foreground: foreground), engine: webAccessibility.pageEngine(app.appPath),
+          frontmost: { frontmostIsTarget(frontmostPid(), pid: target.owner, appPid: appPid) },
+          insideWebArea: {
+            elementInsideWebArea(target.element, role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
+          }) {
           pointing.relation  // no point, or no answer: the action needs no point
         }
         meta.elementClick = elementClickRecord(plan, forced: forced, button: button, count: count, actions: target.entry.actions, hit: pointing.taken)
@@ -503,9 +508,6 @@ extension Engine {
             // #313: a text-entry element's action answers success only once its focus reads back, and on a WebKit page a
             // field still unfocused gets its caret written and is read again. Nothing writes AXFocused.
             let element = target.element
-            let entry: TextEntryClickRoute = forced != nil ? .press : textEntryClickRoute(
-              element, role: target.entry.identity.role, engine: webAccessibility.pageEngine(app.appPath),
-              roleOf: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
             // #359: a text field's action, within the window of a pointer press posted to the app, after its range settles.
             if entry != .press { awaitPendingClick(on: element, pids: [appPid, target.owner], meta: &meta) }
             try carryActionClick(entry, app: app.displayName, press: {

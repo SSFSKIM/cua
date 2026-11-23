@@ -487,8 +487,9 @@ disassembly from the pinned `SkyComputerUseService` (26.924.1001281) with `llvm-
    web view it always takes the action, a strict descendant included. #187's cell 3 (i) fits it: cua recorded the
    hit-test at the Electron text area's point answering the text area itself (`hit: element`), on which the vendor posts
    (the caret landed at 44, line 3, column 10, the area's middle) and cua pressed.
-7. **What cua takes** (#258, the design's Decision Log of 2026-11-23): the element itself as a hit only for a text-entry
-   role (`webAreaEditableRoles`) in a web area. Left as they are: a web button, link or other control hitting itself
+7. **What cua takes** (#258, rulings 1159 and 1170, the design's Decision Log of 2026-11-23): the element itself as a
+   hit only for a text-entry role (`webAreaEditableRoles`) in a web area of the frontmost app; behind another app the
+   field keeps cua's earlier route. Left as they are: a web button, link or other control hitting itself
    keeps its action (cua's #282 and #283 routes are built around those actions); a native element whose point lands on
    a strict descendant is still synthesized (cua's M2a gate, where the vendor presses); the point is the midpoint of the
    visible part (`clickablePoint(frame:visibleIn:)`), where the vendor's is the frame's midpoint when visible; the Atlas

@@ -633,7 +633,7 @@ final class FakeActivation {
     if action === self, let open = takeOpenHold() {
       hold = open
     } else {
-      guard activated, let user = system.frontmost(), user != pid, user != appPid else {
+      guard activated, let user = system.frontmost(), !frontmostIsTarget(user, pid: pid, appPid: appPid) else {
         post()
         return nil
       }

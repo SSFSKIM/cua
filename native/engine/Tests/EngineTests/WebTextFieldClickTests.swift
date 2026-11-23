@@ -4,12 +4,14 @@ import Foundation
 import XCTest
 @testable import Engine
 
-// #258 (Routes.swift `elementClickGate`, `elementInsideWebArea`): an element click on a web page's text field whose clickable
-// point hits the field itself took the field's AXPress, which keeps its selection, where the vendor's click posts a real
-// click there and leaves a caret (#187's slot, cell 3 (i): 20+7 kept on cua, a caret at 44 on the vendor's). The vendor's
-// gate inside a web view (F §18) searches the hit and its ancestors for the clicked element, so the element itself counts:
-// a text-entry role inside a web area now goes to synthesis on that hit, at the same point, by route 3's delivery and its
-// guards; a native field, and every other control, keeps its action. The trees are the Electron fixture's.
+// #258 (Routes.swift `elementClickGate`, `elementClickRoutes`, `elementInsideWebArea`, `frontmostIsTarget`): an element
+// click on a web page's text field whose clickable point hits the field itself took the field's AXPress, which keeps its
+// selection, where the vendor's click posts a real click there and leaves a caret (#187's slot, cell 3 (i): 20+7 kept on
+// cua, a caret at 44 on the vendor's). The vendor's gate inside a web view (F §18) counts the element itself. Ruling 1170
+// takes that only for the frontmost app: there the field's click is synthesized at its point and posted with no
+// activation; behind another app (Chromium, Electron, Gecko, WebKit) it keeps main's route, decided by route 3's own
+// frontmost test, so a target that owns key focus behind the frontmost app keeps it too. A native field, and every other
+// control, keeps its action. The trees are the Electron fixture's.
 
 final class WebTextFieldClickTests: XCTestCase {
   private let target: pid_t = 990_201, user: pid_t = 990_202
@@ -37,24 +39,101 @@ final class WebTextFieldClickTests: XCTestCase {
   /// The non-text controls the matrix clicks, and the containers a click can name.
   private let otherRoles = ["AXButton", "AXCheckBox", "AXRadioButton", "AXLink", "AXPopUpButton", "AXMenuButton", "AXMenuItem",
                             "AXDisclosureTriangle", "AXTab", "AXRow", "AXCell", "AXGroup", "AXStaticText", "AXImage"]
+  private let pressed = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
 
-  private func plan(role: String, actions: [String] = ["AXPress", "AXShowMenu", "AXScrollToVisible"], hit: HitRelation,
-                    web: Bool, synthesized: InputRoute = .activation, webReads: UnsafeMutablePointer<Int>? = nil) throws -> ElementClickPlan {
-    try elementClickPlan(forced: nil, button: .left, count: 1, role: role, actions: actions, synthesized: synthesized,
-                         insideWebArea: { webReads?.pointee += 1; return web }) { hit }
+  private func plan(role: String, actions: [String]? = nil, hit: HitRelation, frontmost: Bool = true, web: Bool,
+                    synthesized: InputRoute = .activation, reads: UnsafeMutablePointer<Int>? = nil) throws -> ElementClickPlan {
+    try elementClickPlan(forced: nil, button: .left, count: 1, role: role, actions: actions ?? pressed, synthesized: synthesized,
+                         frontmost: { reads?.pointee += 1; return frontmost }, insideWebArea: { reads?.pointee += 1; return web }) { hit }
   }
 
-  // MARK: The route choice
+  /// Both of an element click's decisions over a web-area read that counts itself.
+  private func routes(role: String, actions: [String]? = nil, hit: HitRelation, frontmost: Bool, web: Bool, engine: PageEngine,
+                      webReads: UnsafeMutablePointer<Int>? = nil) throws -> (plan: ElementClickPlan, textEntry: TextEntryClickRoute) {
+    try elementClickRoutes(forced: nil, button: .left, count: 1, role: role, actions: actions ?? pressed, engine: engine,
+                           frontmost: { frontmost }, insideWebArea: { webReads?.pointee += 1; return web }) { hit }
+  }
 
-  /// The catching case: a page's text field that advertises AXPress, its point hitting the field itself, is synthesized
-  /// (route 3, or route 4 under the owner's override), as the vendor's click is; AXPick is no exception.
-  func testAWebTextFieldWhosePointHitsItselfIsSynthesized() throws {
+  // MARK: The frontmost app: synthesized
+
+  /// The catching case: the frontmost app's page field that advertises AXPress, its point hitting the field itself, is
+  /// synthesized (route 3, or route 4 under the owner's override), as the vendor's click is; AXPick is no exception.
+  func testAFrontmostWebTextFieldWhosePointHitsItselfIsSynthesized() throws {
     for role in textEntryRoles {
       XCTAssertEqual(try plan(role: role, hit: .element, web: true), .synthesized(.activation), role)
       XCTAssertEqual(try plan(role: role, hit: .element, web: true, synthesized: .foreground), .synthesized(.foreground), role)
       XCTAssertEqual(try plan(role: role, actions: ["AXPick", "AXPress"], hit: .element, web: true), .synthesized(.activation), role)
     }
+    for engine in [PageEngine.chromium, .gecko, .other] {
+      XCTAssertEqual(try routes(role: "AXTextArea", hit: .element, frontmost: true, web: true, engine: engine).plan, .synthesized(.activation),
+                     "\(engine)")
+    }
   }
+
+  /// The frontmost app's plain click goes to the field's center with no activation (the M5 cell), and so does one whose
+  /// key focus another process holds: route 3 reads the frontmost app as believing it has focus, so it activates
+  /// nothing either way.
+  func testAFrontmostPageFieldGetsThePlainClickAtItsCenterWhoeverHoldsKeyFocus() throws {
+    for keyFocus in [target, user] {
+      let seam = GuardSeam(frontmost: target)
+      var system = seam.system
+      system.keyFocus = { keyFocus }
+      let front = frontmostIsTarget(system.frontmost(), pid: target, appPid: target)
+      XCTAssertTrue(front)
+      let plan = try plan(role: "AXTextArea", hit: .element, frontmost: front, web: true)
+      let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: system)
+      var clickMeta = meta()
+      try deliver(plan, activation: activation, post: system.post,
+                  pointer: PointerTarget(view: .webArea, app: "Electron", engine: .chromium), targetActive: true, meta: &clickMeta)
+      XCTAssertEqual(seam.posts.map(\.kind), [.mouse(.leftMouseDown), .mouse(.leftMouseUp)], "key focus \(keyFocus)")
+      XCTAssertEqual(seam.posts.compactMap(\.location), [CGPoint(x: field.midX, y: field.midY), CGPoint(x: field.midX, y: field.midY)])
+      XCTAssertEqual(seam.posts.compactMap(\.flags), [[], []], "no ⌘")
+      XCTAssertEqual(clickMeta.inputRoute, .activation)
+      XCTAssertNil(clickMeta.activationGuardMs, "no guard ran")
+      XCTAssertNil(clickMeta.delivery, "nothing to put back")
+    }
+  }
+
+  // MARK: Behind another app: main's route
+
+  /// The review's P1: another app is frontmost and the target owns key focus. Route 3 would read it as believing it has
+  /// focus, activate nothing, and post the field's mouse down with no hold, order repair or watch; route 3's frontmost
+  /// test says it is not the frontmost app, so the field keeps its action, as on main.
+  func testATargetOwningKeyFocusBehindTheFrontmostAppKeepsItsAction() throws {
+    let seam = GuardSeam(frontmost: user)
+    var system = seam.system
+    system.keyFocus = { self.target }
+    XCTAssertTrue(system.believesItHasFocus(target), "the split: key focus without the front")
+    let front = frontmostIsTarget(system.frontmost(), pid: target, appPid: target)
+    XCTAssertFalse(front)
+    for engine in [PageEngine.chromium, .gecko, .other] {
+      let decided = try routes(role: "AXTextArea", hit: .element, frontmost: front, web: true, engine: engine)
+      XCTAssertEqual(decided.plan, .action("AXPress"), "\(engine)")
+    }
+    XCTAssertFalse(frontmostIsTarget(nil, pid: target, appPid: target), "no frontmost app is not the target's")
+    XCTAssertTrue(frontmostIsTarget(target + 7, pid: target + 7, appPid: target), "a helper process serving the element")
+  }
+
+  /// Every background page field keeps main's plan and #313's route: Chromium and Electron (`selecting` false: the
+  /// press, its focus read back), a Chrome `<input list>` combo box (its held AXPress opens the suggestions, #463),
+  /// Gecko (the press, never #283's focus), WebKit (the press, then its caret where the press does not focus it).
+  func testABackgroundPageFieldKeepsMainsRoute() throws {
+    for (name, role, engine, selecting) in [("Chromium's field", "AXTextField", PageEngine.chromium, false),
+                                            ("Electron's text area", "AXTextArea", .chromium, false),
+                                            ("Chrome's datalist input", "AXComboBox", .chromium, false),
+                                            ("Firefox's field", "AXTextField", .gecko, false),
+                                            ("Safari's text area", "AXTextArea", .other, true)] {
+      var reads = 0
+      let decided = try routes(role: role, hit: .element, frontmost: false, web: true, engine: engine, webReads: &reads)
+      XCTAssertEqual(decided.plan, .action("AXPress"), name)
+      XCTAssertEqual(decided.textEntry, .pressConfirmingFocus(selecting: selecting), name)
+      XCTAssertEqual(reads, engine == .other ? 1 : 0, "\(name): the walk as main reads it")
+      let record = elementClickRecord(decided.plan, forced: nil, button: .left, count: 1, actions: pressed, hit: .element)
+      XCTAssertEqual(record.reason, .advertised, name)
+    }
+  }
+
+  // MARK: What stays as it was
 
   /// The vendor gates only inside a web view: a native field whose point hits itself keeps its action.
   func testANativeTextFieldWhosePointHitsItselfKeepsItsAction() throws {
@@ -63,38 +142,59 @@ final class WebTextFieldClickTests: XCTestCase {
     }
   }
 
-  /// Buttons and the other controls keep their action on a hit of themselves, in a page or not, and the web-area walk
-  /// is never read for them.
-  func testEveryOtherControlKeepsItsActionAndReadsNoWebArea() throws {
+  /// A native field in the frontmost app reads its ancestry once, for the gate and #313's route together.
+  func testANativeFieldReadsItsAncestryOnce() throws {
+    var reads = 0
+    let decided = try routes(role: "AXTextField", hit: .element, frontmost: true, web: false, engine: .other, webReads: &reads)
+    XCTAssertEqual(decided.plan, .action("AXPress"))
+    XCTAssertEqual(decided.textEntry, .pressConfirmingFocus(selecting: false))
+    XCTAssertEqual(reads, 1)
+  }
+
+  /// Buttons and the other controls keep their action on a hit of themselves, in a page or not, and neither the front
+  /// nor the web area is read for them.
+  func testEveryOtherControlKeepsItsActionAndReadsNothing() throws {
     var reads = 0
     for role in otherRoles {
       for web in [true, false] {
-        XCTAssertEqual(try plan(role: role, hit: .element, web: web, webReads: &reads), .action("AXPress"), "\(role), web \(web)")
+        XCTAssertEqual(try plan(role: role, hit: .element, web: web, reads: &reads), .action("AXPress"), "\(role), web \(web)")
       }
     }
     XCTAssertEqual(reads, 0)
   }
 
   /// A web text field whose point the hit-test does not place in the field (no answer, a container, something else)
-  /// keeps its action, as the vendor's does; a strict descendant still synthesizes every role, as before, reading no web area.
+  /// keeps its action, as the vendor's does; a strict descendant still synthesizes every role, frontmost or not, as
+  /// before, reading neither.
   func testOnlyAHitInsideTheElementSynthesizes() throws {
     var reads = 0
     for role in textEntryRoles + ["AXButton"] {
       for hit in [HitRelation.noAnswer, .ancestor, .other] {
-        XCTAssertEqual(try plan(role: role, hit: hit, web: true, webReads: &reads), .action("AXPress"), "\(role), \(hit)")
+        XCTAssertEqual(try plan(role: role, hit: hit, web: true, reads: &reads), .action("AXPress"), "\(role), \(hit)")
       }
-      XCTAssertEqual(try plan(role: role, hit: .descendant, web: false, webReads: &reads), .synthesized(.activation), role)
+      for frontmost in [true, false] {
+        XCTAssertEqual(try plan(role: role, hit: .descendant, frontmost: frontmost, web: false, reads: &reads), .synthesized(.activation), role)
+      }
     }
-    XCTAssertEqual(reads, 0, "the web area is read only for a text field hitting itself")
+    XCTAssertEqual(reads, 0, "the front and the web area are read only for a text field hitting itself")
   }
 
-  /// A click the ladder already synthesizes (no action, another button or count) takes no hit-test and reads no web area.
-  func testAClickAlreadySynthesizedTakesNoHitTestAndReadsNoWebArea() throws {
+  /// The front is read before the web area, so a background field walks nothing for the gate.
+  func testABackgroundFieldReadsNoWebAreaForTheGate() throws {
+    var order: [String] = []
+    let chosen = try elementClickPlan(forced: nil, button: .left, count: 1, role: "AXTextArea", actions: pressed,
+                                      frontmost: { order.append("front"); return false }, insideWebArea: { order.append("web"); return true }) { .element }
+    XCTAssertEqual(chosen, .action("AXPress"))
+    XCTAssertEqual(order, ["front"])
+  }
+
+  /// A click the ladder already synthesizes (no action, another button or count) takes no hit-test and reads nothing.
+  func testAClickAlreadySynthesizedTakesNoHitTestAndReadsNothing() throws {
     var reads = 0
     var hits = 0
     for (button, count, actions) in [(MouseButton.left, 1, ["AXShowMenu"]), (.right, 1, ["AXPress"]), (.left, 2, ["AXPress"])] {
       let chosen = try elementClickPlan(forced: nil, button: button, count: count, role: "AXTextArea", actions: actions,
-                                        insideWebArea: { reads += 1; return true }) { hits += 1; return .element }
+                                        frontmost: { reads += 1; return true }, insideWebArea: { reads += 1; return true }) { hits += 1; return .element }
       XCTAssertEqual(chosen, .synthesized(.activation))
     }
     XCTAssertEqual(hits, 0)
@@ -119,106 +219,38 @@ final class WebTextFieldClickTests: XCTestCase {
 
   // MARK: The record
 
-  /// The record names the new rung: synthesized for a web text field hitting itself (`webTextEntry`), the gate's
-  /// `descendant` otherwise, and the hit-test's answer beside it.
+  /// The record names the new rung: synthesized for a frontmost web text field hitting itself (`webTextEntry`), the
+  /// gate's `descendant` otherwise, and the hit-test's answer beside it.
   func testTheRecordNamesAWebTextFieldsSynthesis() throws {
-    let actions = ["AXPress", "AXShowMenu"]
-    let web = try plan(role: "AXTextArea", actions: actions, hit: .element, web: true)
-    let record = elementClickRecord(web, forced: nil, button: .left, count: 1, actions: actions, hit: .element)
+    let web = try plan(role: "AXTextArea", hit: .element, web: true)
+    let record = elementClickRecord(web, forced: nil, button: .left, count: 1, actions: pressed, hit: .element)
     XCTAssertEqual(record.reason, .webTextEntry)
     XCTAssertEqual(record.wire["plan"] as? String, "synthesized")
     XCTAssertEqual(record.wire["reason"] as? String, "webTextEntry")
     XCTAssertEqual(record.wire["hit"] as? String, "element")
-    let gate = try plan(role: "AXTextArea", actions: actions, hit: .descendant, web: true)
-    XCTAssertEqual(elementClickRecord(gate, forced: nil, button: .left, count: 1, actions: actions, hit: .descendant).reason, .descendant)
-    let native = try plan(role: "AXTextArea", actions: actions, hit: .element, web: false)
-    XCTAssertEqual(elementClickRecord(native, forced: nil, button: .left, count: 1, actions: actions, hit: .element).reason, .advertised)
+    let gate = try plan(role: "AXTextArea", hit: .descendant, web: true)
+    XCTAssertEqual(elementClickRecord(gate, forced: nil, button: .left, count: 1, actions: pressed, hit: .descendant).reason, .descendant)
+    let native = try plan(role: "AXTextArea", hit: .element, web: false)
+    XCTAssertEqual(elementClickRecord(native, forced: nil, button: .left, count: 1, actions: pressed, hit: .element).reason, .advertised)
   }
 
-  // MARK: Route 3's delivery and its guards, unchanged
+  // MARK: Delivery
 
   private func meta() -> InputMeta {
     InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
   }
 
-  private func activation(_ seam: GuardSeam) -> FakeActivation {
-    FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
-  }
-
   /// The field's frame, wholly visible in its window: its clickable point is the frame's midpoint, the vendor's point.
   private let field = CGRect(x: 200, y: 300, width: 400, height: 120)
 
-  private func deliver(_ plan: ElementClickPlan, seam: GuardSeam, pointer: PointerTarget = .acceptingFirstMouse, targetActive: Bool,
-                       meta: inout InputMeta) throws {
+  private func deliver(_ plan: ElementClickPlan, activation: FakeActivation, post: @escaping (CGEvent, pid_t) -> Void,
+                       pointer: PointerTarget = .acceptingFirstMouse, targetActive: Bool, meta: inout InputMeta) throws {
     guard case .synthesized(let route) = plan, let point = clickablePoint(frame: field, visibleIn: window) else {
-      return XCTFail("a web text field hitting itself is synthesized at a point")
+      return XCTFail("a frontmost web text field hitting itself is synthesized at a point")
     }
     XCTAssertEqual(point, CGPoint(x: field.midX, y: field.midY))
     try deliverClick(ClickTarget(point: point, windowFrame: window, windowID: 41, pid: target), route: route, button: .left, count: 1,
-                     activation: activation(seam), activations: activations, pointer: pointer, targetActive: { targetActive },
-                     post: seam.system.post, meta: &meta)
-  }
-
-  private func webField() throws -> ElementClickPlan { try plan(role: "AXTextArea", hit: .element, web: true) }
-
-  /// The M5 cell's case: the Electron app frontmost, so no activation runs and the plain click goes to the field's
-  /// center, which places the caret there.
-  func testAFrontmostPageFieldGetsThePlainClickAtItsCenter() throws {
-    let seam = GuardSeam(frontmost: target)
-    var clickMeta = meta()
-    try deliver(try webField(), seam: seam, pointer: PointerTarget(view: .webArea, app: "Electron", engine: .chromium), targetActive: true,
-                meta: &clickMeta)
-    XCTAssertEqual(seam.posts.map(\.kind), [.mouse(.leftMouseDown), .mouse(.leftMouseUp)])
-    XCTAssertEqual(seam.posts.compactMap(\.location), [CGPoint(x: field.midX, y: field.midY), CGPoint(x: field.midX, y: field.midY)])
-    XCTAssertEqual(seam.posts.compactMap(\.flags), [[], []], "no ⌘")
-    XCTAssertEqual(clickMeta.inputRoute, .activation)
-    XCTAssertNil(clickMeta.activationGuardMs, "no guard ran")
-  }
-
-  /// In the background, a failed activation guard refuses the click as before, its events never posted.
-  func testABackgroundFieldsFailedGuardIsRefusedWithNothingPosted() throws {
-    let seam = GuardSeam(frontmost: user, frontmostAfterPost: target)
-    var clickMeta = meta()
-    XCTAssertThrowsError(try deliver(try webField(), seam: seam, targetActive: false, meta: &clickMeta)) { error in
-      XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
-    }
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "the click's own events never go out")
-  }
-
-  /// #282 in shared mode: a background Chromium page whose activation clicks no activation point takes no pointer, so
-  /// the field's click goes by the element route (#283's focus, a stand-in here), nothing posted; with none it is
-  /// refused, nothing posted.
-  func testABackgroundChromiumFieldTakesTheElementRouteOrIsRefusedWithNothingPosted() throws {
-    let routed = GuardSeam(frontmost: user)
-    routed.activationPoint = CGPoint(x: -1, y: 1441)  // Chrome's, outside its frame (U13)
-    var routedMeta = meta()
-    var focused = 0
-    try deliver(try webField(), seam: routed, pointer: PointerTarget(view: .webArea, app: "Electron", engine: .chromium,
-                                                                     elementRoute: { _ in focused += 1 }),
-                targetActive: false, meta: &routedMeta)
-    XCTAssertEqual(focused, 1)
-    XCTAssertEqual(routed.posts.count, 0, "no activation, no event")
-    let refused = GuardSeam(frontmost: user)
-    refused.activationPoint = CGPoint(x: -1, y: 1441)
-    var refusedMeta = meta()
-    XCTAssertThrowsError(try deliver(try webField(), seam: refused, pointer: PointerTarget(view: .webArea, app: "Electron", engine: .chromium),
-                                     targetActive: false, meta: &refusedMeta)) { error in
-      XCTAssertEqual((error as? EngineError)?.errorName, "backgroundClickRefused")
-    }
-    XCTAssertEqual(refused.posts.count, 0)
-  }
-
-  /// #200: a background field's click that raises the target's window at its mouse down is put back inside the
-  /// activation's hold, as every route-3 click's is.
-  func testABackgroundFieldsRaiseIsUndoneByTheDeliveryGuard() throws {
-    let seam = GuardSeam(frontmost: user)
-    seam.targetAbove = false
-    seam.onMouseDown = { seam.targetAbove = true }
-    var clickMeta = meta()
-    try deliver(try webField(), seam: seam, targetActive: false, meta: &clickMeta)
-    XCTAssertEqual(seam.targetAbove, false, "the user's window is back on top")
-    XCTAssertEqual(seam.raises, 1)
-    XCTAssertEqual(try XCTUnwrap(clickMeta.delivery).restores, 1)
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+                     activation: activation, activations: activations, pointer: pointer, targetActive: { targetActive },
+                     post: post, meta: &meta)
   }
 }

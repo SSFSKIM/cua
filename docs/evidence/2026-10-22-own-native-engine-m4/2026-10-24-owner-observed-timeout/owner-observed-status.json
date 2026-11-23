@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-24T19:45:18.769Z",
+  "stopped": {
+    "wasRunning": false
+  },
+  "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "approved": true,
+  "approvedBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "identityMatches": true,
+  "permissions": {
+    "accessibility": false,
+    "screenRecording": false,
+    "inputMonitoring": false
+  },
+  "canPostHid": false,
+  "connections": 0,
+  "readPid": 17617,
+  "readInstanceStopped": true,
+  "finalRunning": false
+}

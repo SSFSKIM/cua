@@ -38,6 +38,7 @@ function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321,
     goldens(args) {
       calls.push(['goldens', ...args]);
       const [command, scene] = args;
+      if (command === 'settle-probes') return {ok: true, survivors: [], probeWait: null};
       if (command === 'steps') {
         const failure = args.at(-1) === 'teardown' && teardown(scene, calls.filter(c => c[1] === 'steps' && c[2] === scene && c.at(-1) === 'teardown').length);
         if (failure) throw new Error(failure);
@@ -468,4 +469,43 @@ test('ACTION clicks the scene\'s target, keeps the diff right after and the obse
     assert.match(refused.error, /not of the scene window/);
     assert.deepEqual(fs.readdirSync(temp), []);
   });
+});
+
+test('native-mac holds per-scene and final restoration behind probe settlement after setup or controller abort', async () => {
+  for (const abort of [false, true]) {
+    const interrupt = {signal: null}, device = fakeDevice(), goldens = device.ops.goldens;
+    device.ops.goldens = args => {
+      if (args[0] === 'settle-probes') { device.calls.push(['goldens', ...args]); return {ok: false, manual: 'unidentified frame probe remains'}; }
+      const out = goldens(args);
+      if (abort && args[0] === 'steps' && args.at(-1) === 'setup') interrupt.signal = 'SIGTERM';
+      return out;
+    };
+    const out = await runLane({engine: 'cua', device, interrupt});
+    assert.equal(out.meta.complete, false);
+    assert.equal(device.calls.some(c => c[0] === 'cleanup' || c[1] === 'down' || c[1] === 'reactivate' || (c[1] === 'steps' && c.at(-1) === 'teardown')), false);
+    assert.equal(device.calls.filter(c => c[1] === 'up').length, 1, 'no next scene may act behind the probe');
+    assert.equal(device.calls.filter(c => c[1] === 'settle-probes').length, 1, 'a failed bounded wait is not repeated by final cleanup');
+    assert.equal(fs.existsSync(join(out.out, 'preparation.json')), true);
+    assert.equal(out.lane.closed, true);
+  }
+});
+
+test('native-mac barriers precede every teardown and failed final settlement holds the home even with no scenes up', async () => {
+  const device = fakeDevice(), goldens = device.ops.goldens;
+  device.ops.goldens = args => {
+    if (args[0] === 'settle-probes' && device.calls.filter(c => c[1] === 'down').length === SCENE_IDS.length) {
+      device.calls.push(['goldens', ...args]);
+      throw new Error('SSH lost during final settlement');
+    }
+    return goldens(args);
+  };
+  const out = await runLane({engine: 'cua', device});
+  for (const [index, call] of device.calls.entries()) {
+    if (call[1] === 'steps' && call.at(-1) === 'teardown') assert.equal(device.calls[index - 1][1], 'settle-probes');
+  }
+  assert.equal(device.calls.filter(c => c[1] === 'down').length, SCENE_IDS.length);
+  assert.equal(device.calls.some(c => c[0] === 'cleanup' || c[1] === 'reactivate'), false);
+  assert.equal(out.meta.complete, false);
+  assert.equal(fs.existsSync(join(out.out, 'preparation.json')), true);
+  assert.match(out.meta.probeSettlement.error, /SSH/);
 });

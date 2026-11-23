@@ -21,7 +21,13 @@
 //   CUA_ENGINE_SCREENSHOTS, under the session's run directory, which the kernel may read; the engine creates it, outside
 //   every sandbox and never through a symbolic link, since the worker writes nothing in the default mode. The Skyshot
 //   becomes the model's text through ./observations.mjs: the numbering over the engine's tokens, the renderer, and the
-//   diff per (connection, app).
+//   diff per (connection, app). There is no text-only observation without Screen Recording (the Decision Log's M4
+//   ruling of 2026-10-22): such an observation fails permissionsPending like a screenshot.
+// - Permissions (the Decision Log's M4 contracts refresh): the engine's permissionsPending reaches the model with the
+//   engine's sentence (the grant's by-hand steps and the bundle's path), and its `meta.permission` ("accessibility" |
+//   "screenRecording") rides as cua/permission on that error, reset on every other call: result metadata, never model
+//   text. Screen Recording's arms the client's relaunch on the next observation (./client.mjs); Accessibility's does
+//   not, and neither relaunches on the failure itself.
 // - Index translation: an element_index becomes `element`, the token the app's latest observation numbered so, and every
 //   execute carries the lineage of that observation (coordinates and keys too), which the engine checks.
 // - Result meta, per call (response meta merges by key across an execution's calls, so each call resets its keys and
@@ -133,8 +139,10 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
   'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
-  'cua/overlayClick': null,
+  'cua/overlayClick': null, 'cua/permission': null,
 };
+// The grants a permissionsPending names in `meta.permission`, carried as cua/permission.
+const PERMISSIONS = new Set(['accessibility', 'screenRecording']);
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
 // a keyed type_text into a password field confirmed by its length alone, #414), and its bound.
@@ -250,7 +258,10 @@ export function createService({nodeRepl, client = null}) {
       return result;
     } catch (error) {
       setMeta({...(c.identity ? {'cua/nativeEngine': nativeEngine(c.identity)} : {}), ...(own ? {'cua/engineMs': null} : {})});
-      if (error?.name === 'SkyComputerUseError' && error.meta) setMeta(inputMeta(error.meta));
+      if (error?.name === 'SkyComputerUseError' && error.meta) {
+        if (Object.hasOwn(FIELDS, method)) setMeta(inputMeta(error.meta));
+        if (error.errorName === 'permissionsPending' && PERMISSIONS.has(error.meta.permission)) setMeta({'cua/permission': error.meta.permission});
+      }
       throw error;
     }
   }

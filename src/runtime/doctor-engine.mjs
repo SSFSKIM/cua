@@ -158,10 +158,12 @@ function notApplicable(reason) {
 function vendorRow(selection, records) {
   const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : SOURCE_WORDS[selection.preferred.reason]('vendor');
   const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so macOS computer sessions use the vendor\'s Codex Computer Use helper (helper.live)';
-  const holds = records.approved && records.exists ? `approved.json approves build ${shortBuild(records.approved.build)} at ${records.bundlePath}`
-    : records.pending && records.exists ? `a bundle at ${records.bundlePath} is pending approval (build ${shortBuild(records.pending.build)}; cua engine approve)`
+  const pending = records.pending ? `build ${shortBuild(records.pending.build)} is pending` : null;
+  const putInPlace = '(cua engine approve, with the owner at the console, puts it in place)';
+  const holds = records.approved && records.exists ? `approved.json approves build ${shortBuild(records.approved.build)} at ${records.bundlePath}${pending ? `, and ${pending} beside it ${putInPlace}` : ''}`
+    : pending ? `${pending} at ${records.pending.bundlePath} ${putInPlace}`
     : records.exists ? `a bundle at ${records.bundlePath} is not approved (cua engine approve)`
-    : 'none is installed on this Mac (cua engine build, then cua engine approve with the owner at the console)';
+    : 'none is installed on this Mac (cua install --engine, then cua engine approve with the owner at the console)';
   return {
     row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. `
       + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own, which runs an approved engine: ${holds}`),
@@ -312,17 +314,22 @@ function notInUseRow(selection, facts, settings) {
   const parts = [facts.approved === true
     ? `the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)}) is installed, and doctor does not launch it while no session would use it`
     : installState(facts)];
+  if (facts.approved === true && facts.pending) parts.push(pendingBeside(facts.pending));
   if (settings.problem) parts.push(settings.problem);
   return {row: result('engine', selection.refused || settings.problem ? 'fail' : 'warn', `cua's engine is preferred (${source}), but ${cause}, ${consequence}: ${parts.join('; ')}`),
     report: factsReport(selection, facts, settings)};
 }
 
-// Why the bundle at the approved location is not the approved engine, and what to run.
+// A build pending beside the approved bundle (design ruling 1118), which keeps serving until approve puts it in place.
+const pendingBeside = pending => `a new build ${shortBuild(pending.build)} is pending beside it (${pending.bundlePath}): cua engine approve, with the owner at the console, puts it in place; this one serves until then`;
+
+// Why the bundle at the approved location is not the approved engine, and what to run. A build pending beside it is
+// what approve takes first.
 function installState(facts) {
   const at = facts.bundlePath;
-  if (!facts.exists) return `no bundle at ${at}: build it with cua engine build, then approve it with cua engine approve (the owner at the console)`;
+  if (facts.pending) return `${facts.exists ? `the bundle at ${at} is not approved` : `no bundle at ${at}`}, and build ${shortBuild(facts.pending.build)} is pending beside it (${facts.pending.bundlePath}): cua engine approve, with the owner at the console, puts it in place and approves it`;
+  if (!facts.exists) return `no bundle at ${at}: build it with cua install --engine, then approve it with cua engine approve (the owner at the console)`;
   if (facts.approved === null) return `the signature of the bundle at ${at} could not be read (${facts.signature?.reason ?? 'unknown'}), so it is not taken as approved; codesign may be waiting behind a prompt at the console`;
-  if (facts.pending && facts.pending.build === facts.build) return `the bundle at ${at} (build ${shortBuild(facts.build)}) is pending approval: run cua engine approve with the owner at the console`;
   if (facts.approvedBuild && facts.approvedBuild !== facts.build) return `the bundle at ${at} is build ${shortBuild(facts.build)}, but approved.json approves build ${shortBuild(facts.approvedBuild)}: run cua engine approve with the owner at the console`;
   if (facts.approvedBuild) return `the bundle at ${at} is not signed as approved.json records: rebuild it with cua engine build, then cua engine approve`;
   return `the bundle at ${at} (build ${shortBuild(facts.build)}) is not approved: run cua engine approve with the owner at the console`;
@@ -343,6 +350,7 @@ function installedRow(selection, facts, settings, device) {
   parts.push(...routeWords(report, settings, facts.status, say));
   parts.push(...cursorWords(report, settings, facts.status));
   parts.push(device.verdict ? say(device.verdict, device.words) : device.words);
+  if (facts.pending) parts.push(pendingBeside(facts.pending));
   return {row: result('engine', worst(verdicts),`cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
 }
 

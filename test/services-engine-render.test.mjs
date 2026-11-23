@@ -432,6 +432,18 @@ test('#405: an element whose value the engine left unread prints `value unread`,
   assert.deepEqual(lines(bare), ['0 standard window W, Secondary Actions: Raise', '\t1 container value unread']);
 });
 
+test('#525: Finder\'s toolbar group around Search, read open, is replaced by its button as the vendor does', () => {
+  // M5 pilot B's Finder scene: the engine closed this AXGroup on a null or failed subrole, so it said `value unread`, was
+  // descriptive and kept its line. Read open (ruling 1156), it says nothing and gives way to its only child (4).
+  const toolbar = valueUnread => skyshot(win([node('t', 1, 'AXToolbar', {roleDescription: 'toolbar'}),
+    group('g', 2, {subrole: null, actions: ['Name:Move previous\nTarget:0x1\nSelector:(null)', 'Name:Remove from toolbar\nTarget:0x1\nSelector:(null)'],
+      ...(valueUnread ? {valueUnread: true, value: null} : {})}),
+    button('s', 3, 'Search')]));
+  assert.deepEqual(lines(toolbar(false)), ['0 standard window W, Secondary Actions: Raise', '\t1 toolbar', '\t\t2 button Search']);
+  assert.deepEqual(lines(toolbar(true)), ['0 standard window W, Secondary Actions: Raise', '\t1 toolbar',
+    '\t\t2 container Value: value unread, Secondary Actions: Move previous, Remove from toolbar', '\t\t\t3 button Search']);
+});
+
 test('#405: a plain field and its selected text print as before', () => {
   const shot = skyshot(win([node('f', 1, 'AXTextField', {roleDescription: 'text field', value: 'abc', valueType: 'string', flags: {settable: true}})]),
     {focused: 'f', selectedText: 'b'});

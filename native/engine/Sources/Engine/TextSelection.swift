@@ -169,8 +169,10 @@ func selectionSearchText(_ element: AXUIElement, observedRole: String, ax: AXOps
   case .read(let read): plain = plainText(read.values[kAXValueAttribute])
   }
   let length = plain?.utf16.count ?? 0
-  guard [kAXTextAreaRole, kAXTextFieldRole].contains(observedRole), length > 0, length <= markdownMaxLength else { return (plain, nil) }
+  guard markdownRoles.contains(observedRole), length > 0, length <= markdownMaxLength else { return (plain, nil) }
   guard let classification = ax.batch(element, classifyingAttributes), !valueReadClosed(classification) else { throw selectTextSecure }
+  // #525: open, but no longer a text role in this reply (a group's subrole does not close it): no attributed read.
+  guard markdownEligible(classification) else { return (plain, nil) }
   return (plain, attributed(element, length).flatMap(markdownMapped))
 }
 

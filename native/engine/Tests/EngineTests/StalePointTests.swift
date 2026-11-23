@@ -16,7 +16,7 @@ private final class Node {
   /// Its AXValue and AXSubrole (#298: an AXStaticText's words are its value; Chrome's tab is a radio button whose
   /// subrole is AXTabButton).
   var value: String?
-  let subrole: String?
+  var subrole: String?
   var frame: CGRect?
   var actions: [String] = []
   /// What its AXEditableAncestor answers (#298's edited-text exemption, ruling 1ea561bc:553): the contenteditable region
@@ -115,7 +115,7 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
     let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
     // The label's slots decoded as the walk decodes a batched read (#500: a null slot at decode time).
     let labels = decodedLabels(role: node.role, title: node.title, description: node.description, value: node.value, null: node.null,
-                               failed: node.unreadable)
+                               failed: node.unreadable, subrole: node.subrole)
     // A failed AXRole read decodes as AXUnknown (ElementData).
     reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.roleUnread ? "AXUnknown" : node.role,
                                     title: labels.title, description: labels.description,
@@ -123,7 +123,7 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
                                     children: children, actionsRead: !node.actionsUnread, roleRead: !node.roleUnread,
                                     childrenRead: !node.childrenUnread, subrole: node.subrole,
                                     value: screenshotLabelValue(role: node.role, labels.value),
-                                    labelsUnread: labels.unread, labelsNull: labels.null))
+                                    labelsUnread: labels.unread, labelsNull: labels.null, valueOpen: labels.valueOpen))
     // The width rule's visible subset, where the element offers one (#431's review: it may hold elements AXChildren
     // does not, and lack some it does).
     for child in node.visibleChildren ?? children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
@@ -2561,12 +2561,13 @@ final class RelabelledGuardTests: XCTestCase {
                    "The screen changed since the screenshot: the AXButton \"Save\" it showed at this point now reads \"Delete\". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
     XCTAssertEqual(outcome.record.wire as NSDictionary, ["verdict": "refused", "reason": "relabelled", "identity": "handle",
                                                          "recordedRole": "AXButton", "hitRole": "AXButton", "ms": 0.4] as NSDictionary)
-    // A text names its value; a long label is cut at 60 characters, as the recorded one is.
-    let text = Node("AXStaticText", nil, value: "Save")
+    // A text names its recorded value, a long one cut at 60 characters; the value it reads now is never quoted (#520,
+    // ruling 1165), only said to differ.
+    let text = Node("AXStaticText", nil, value: String(repeating: "Save ", count: 15))
     let textNodes = recorded(windowHolding(text))
-    text.value = String(repeating: "Delete ", count: 12)
+    text.value = "Delete"
     XCTAssertEqual(stalePointOutcome(verdict(textNodes, at: point, hit: text), ms: 0, reads: reads).refusal?.message,
-                   "The screen changed since the screenshot: the AXStaticText \"Save\" it showed at this point now reads \"\(String(repeating: "Delete ", count: 9).prefix(60))…\". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+                   "The screen changed since the screenshot: the AXStaticText \"\(String(repeating: "Save ", count: 15).prefix(60))…\" it showed at this point now reads another label. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
     // After an element route's wait, the recheck refuses with the label read then.
     let item = Node("AXButton", nil, title: "Follow")
     let itemNodes = recorded(windowHolding(item))
@@ -5472,5 +5473,287 @@ final class OtherControlOnTopTests: XCTestCase {
     XCTAssertEqual(decomove.reason, .controlGone)
     XCTAssertEqual(sleeps, [])
     XCTAssertEqual(rehits, 0)
+  }
+}
+
+// MARK: #520: a refusal quotes no value but one recorded open, and no value read now (rulings 1163, 1165)
+
+/// #520: every refusal sentence that can name an element by its value quotes only the value the record kept, where #405's
+/// classification at the observation found it open (ruling 1163), and never a value read now, which is unclassified
+/// (ruling 1165): the label read now is then said to differ. Each scene's element is an AXStaticText that is a password
+/// field (subrole AXSecureTextField) holding a secret now, answered by the fake to every read, as an app that does not
+/// mask it would. It was one at the observation too (`closed`: the record drops its value, as `classifiedData` does), or
+/// it was a plain text reading "Open" then (`turned`). One test per output site, then every site with the turned element.
+/// The verdicts are unchanged (`LabelMonotonicityTests`).
+final class SecureValueQuoteTests: XCTestCase {
+  private let secret = "hunter2-SECRET-520"
+  private let secure = "AXSecureTextField"
+
+  /// How a scene's element was at the observation: a password field already, or a plain text reading "Open".
+  enum Then { case closed, turned }
+
+  /// An AXStaticText as it was at the observation, `pressable` with AXPress (a control).
+  private func field(_ frame: CGRect, title: String? = nil, pressable: Bool = false, _ then: Then) -> Node {
+    let node = then == .closed ? Node("AXStaticText", frame, title: title, value: secret, subrole: secure)
+      : Node("AXStaticText", frame, title: title, value: "Open")
+    if pressable { node.actions = ["AXPress"] }
+    return node
+  }
+
+  /// After the observation: each a password field holding the secret now.
+  private func turn(_ nodes: Node...) {
+    for node in nodes { (node.subrole, node.value) = (secure, secret) }
+  }
+
+  private func message(_ verdict: StalePointVerdict<Node>) -> String {
+    stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message ?? ""
+  }
+
+  /// The record holds no value of a password field, and says it was not read open.
+  func testTheRecordWithholdsAndMarksAPasswordFieldsValue() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
+    let secret = field(CGRect(x: 10, y: 10, width: 200, height: 20), .closed)
+    let plain = field(CGRect(x: 10, y: 40, width: 200, height: 20), .turned)
+    window.add(secret)
+    window.add(plain)
+    let nodes = recorded(window)
+    let recordedField = nodes.first { $0.element === secret }
+    XCTAssertNil(recordedField?.value)
+    XCTAssertEqual(recordedField?.valueOpen, false)
+    XCTAssertEqual(recordedField?.labelsUnread.contains(.value), true)
+    XCTAssertEqual(nodes.first { $0.element === plain }?.valueOpen, true)
+  }
+
+  // The scenes, each answering its verdict.
+
+  /// #298 on the node itself: its title "Show" gone now, so the label it reads now is its value.
+  private func relabelledText(_ then: Then) -> StalePointVerdict<Node> {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
+    let text = field(CGRect(x: 10, y: 10, width: 200, height: 20), title: "Show", then)
+    window.add(text)
+    let nodes = recorded(window)
+    text.title = nil
+    turn(text)
+    return verdict(nodes, at: CGPoint(x: 20, y: 20), hit: text)
+  }
+
+  /// The element the screenshot showed at the point, with no title, now under a sheet's Delete.
+  private func coveredText(_ then: Then) -> StalePointVerdict<Node> {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
+    let text = field(CGRect(x: 10, y: 10, width: 200, height: 20), then)
+    window.add(text)
+    let nodes = recorded(window)
+    let sheet = Node("AXSheet", CGRect(x: 0, y: 0, width: 400, height: 120))
+    let delete = Node("AXButton", CGRect(x: 0, y: 0, width: 300, height: 40), title: "Delete")
+    sheet.add(delete)
+    window.add(sheet)
+    turn(text)
+    return verdict(nodes, at: CGPoint(x: 20, y: 20), hit: delete)
+  }
+
+  /// A page whose list holds `control` at (20, 100) and an inert layer over it (`overlay`, the later sibling at its depth).
+  private func layered(control: Node, overlay: Node) -> Node {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 200))
+    window.add(page)
+    page.add(list)
+    list.add(control)
+    list.add(overlay)
+    return window
+  }
+  private let atControl = CGPoint(x: 150, y: 115)
+
+  /// #433: the control beneath an inert group, its title "Open" gone now, so the label it reads now is its value.
+  private func relabelledBeneath(_ then: Then) -> StalePointVerdict<Node> {
+    let control = field(CGRect(x: 20, y: 100, width: 200, height: 30), title: "Open", pressable: true, then)
+    let overlay = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+    let (nodes, frameless, members) = walkRecord(layered(control: control, overlay: overlay))
+    control.title = nil
+    turn(control)
+    return stalePointVerdict(at: atControl, nodes: nodes, frameless: frameless, recorded: members, hit: overlay, reads: reads)
+  }
+
+  /// #433: an inert text over a control text, neither titled, the control moved off the point.
+  private func movedBeneath(_ then: Then) -> StalePointVerdict<Node> {
+    let control = field(CGRect(x: 20, y: 100, width: 200, height: 30), pressable: true, then)
+    let overlay = field(CGRect(x: 20, y: 100, width: 200, height: 30), then)
+    let (nodes, frameless, members) = walkRecord(layered(control: control, overlay: overlay))
+    move(control, by: CGVector(dx: 0, dy: 80))
+    turn(control, overlay)
+    return stalePointVerdict(at: atControl, nodes: nodes, frameless: frameless, recorded: members, hit: overlay, reads: reads)
+  }
+
+  /// #443: an untitled text inside a link that is replaced, the text moved into the replacement.
+  private func outlivedControl(_ then: Then) -> StalePointVerdict<Node> {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 200))
+    let a = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Open")
+    let b = Node("AXLink", CGRect(x: 20, y: 140, width: 200, height: 30), title: "Next")
+    let text = field(CGRect(x: 100, y: 100, width: 120, height: 30), then)
+    window.add(page)
+    page.add(list)
+    list.add(a)
+    a.add(text)
+    list.add(b)
+    let (nodes, frameless, members) = walkRecord(window)
+    list.children.removeAll { $0 === a }
+    a.destroy()
+    move(b, by: CGVector(dx: 0, dy: -40))
+    text.reparent(to: b)
+    turn(text)
+    return stalePointVerdict(at: atControl, nodes: nodes, frameless: frameless, recorded: members, hit: text, reads: reads)
+  }
+
+  /// #442's `slideover`: A under a veil, B slid over it (the corrected hit, Chromium); `textA` or `textB` an untitled text
+  /// acting by AXPress in place of the link A or the button B.
+  private func slideover(textA: Then? = nil, textB: Then? = nil) -> StalePointVerdict<Node> {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let web = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 200))
+    let aFrame = CGRect(x: 20, y: 100, width: 200, height: 30), bFrame = CGRect(x: 20, y: 140, width: 200, height: 30)
+    let a = textA.map { field(aFrame, pressable: true, $0) } ?? Node("AXLink", aFrame, title: "Open")
+    let b = textB.map { field(bFrame, pressable: true, $0) } ?? Node("AXButton", bFrame, title: "Compose")
+    let veil = Node("AXGroup", aFrame)
+    window.add(web)
+    web.add(list)
+    list.add(a)
+    list.add(b)
+    let outer = Node("AXGroup", CGRect(x: 0, y: 80, width: 600, height: 200))
+    let inner = Node("AXGroup", aFrame)
+    list.add(outer)
+    outer.add(inner)
+    inner.add(veil)
+    let (nodes, frameless, members) = walkRecord(window)
+    move(b, by: CGVector(dx: 0, dy: -40))
+    if textA != nil { turn(a) }
+    if textB != nil { turn(b) }
+    return stalePointVerdict(at: atControl, nodes: nodes, frameless: frameless, recorded: members, hit: veil,
+                             correctedHit: { WindowHit(element: b, place: .observedWindow(inPopover: false), ms: nil) }, reads: reads)
+  }
+
+  // One test per output site, the element a password field then and now.
+
+  /// Site 1, #298's `relabelled` (`screenChangedSinceScreenshot`, `labelNow`): a value read now is never quoted, only
+  /// said to differ.
+  func testRelabelledNeverQuotesAValueReadNow() {
+    let refused = relabelledText(.closed)
+    XCTAssertEqual(refused.reason, .relabelled)
+    XCTAssertEqual(refused.labelNow?.part, .value)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertEqual(said, "The screen changed since the screenshot: the AXStaticText \"Show\" it showed at this point now reads another label. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+  }
+
+  /// Site 2, the generic refusal's recorded element (`was`): its value was never recorded, and it is said to be withheld.
+  func testTheRecordedElementNeverQuotesAWithheldValue() {
+    let refused = coveredText(.closed)
+    XCTAssertEqual(refused.reason, .interactiveHit)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("the AXStaticText (value withheld) it showed at this point is no longer what it reaches"), said)
+  }
+
+  /// Site 3, #433's relabelled control beneath an inert layer (`controlUnderInertChanged`, `labelNow`).
+  func testTheControlBeneathRelabelledNeverQuotesAValueReadNow() {
+    let refused = relabelledBeneath(.closed)
+    XCTAssertEqual(refused.reason, .relabelled)
+    XCTAssertTrue(refused.underlyingRefused)
+    XCTAssertEqual(refused.labelNow?.part, .value)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("over the AXStaticText \"Open\" the screenshot showed there, which a click passes through to; that control now reads another label."), said)
+  }
+
+  /// Site 4, #433's inert layer and its control by name (`controlUnderInertChanged`'s `over` and `control`).
+  func testTheLayerAndTheControlBeneathNeverQuoteAWithheldValue() {
+    let refused = movedBeneath(.closed)
+    XCTAssertEqual(refused.reason, .frameMoved)
+    XCTAssertTrue(refused.underlyingRefused)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("the point lies on an AXStaticText (value withheld) that does not act on its own, over the AXStaticText (value withheld) the screenshot showed there"), said)
+  }
+
+  /// Site 5, #443's inert node that outlived its control (`inertOutlivedControl`'s `node`).
+  func testTheNodeThatOutlivedItsControlNeverQuotesAWithheldValue() {
+    let refused = outlivedControl(.closed)
+    XCTAssertEqual(refused.reason, .controlGone)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("the point lies on an AXStaticText (value withheld) that does not act on its own, inside the AXLink \"Open\""), said)
+  }
+
+  /// Site 5, #443's control the node outlived (`inertOutlivedControl`'s `control`): an untitled password field acting by
+  /// AXPress around an inert image, destroyed; the image moved into a link that slid over the point 5 pt off the field's
+  /// recorded frame, so the frame tells the two apart. The field's value was never recorded; it is said to be withheld.
+  func testTheControlTheNodeOutlivedNeverQuotesAWithheldValue() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 200))
+    let control = field(CGRect(x: 20, y: 100, width: 200, height: 30), pressable: true, .closed)
+    let b = Node("AXLink", CGRect(x: 20, y: 140, width: 200, height: 30), title: "Next")
+    let image = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
+    window.add(page)
+    page.add(list)
+    list.add(control)
+    control.add(image)
+    list.add(b)
+    let (nodes, frameless, members) = walkRecord(window)
+    list.children.removeAll { $0 === control }
+    control.destroy()
+    move(b, by: CGVector(dx: 0, dy: -45))
+    image.reparent(to: b)
+    let refused = stalePointVerdict(at: atControl, nodes: nodes, frameless: frameless, recorded: members, hit: image, reads: reads)
+    XCTAssertEqual(refused.reason, .controlGone)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("the point lies on an AXImage that does not act on its own, inside the AXStaticText (value withheld) the screenshot showed there; that control is gone"), said)
+  }
+
+  /// Site 6, #442's control on top (`otherControlOnTopRefusal`'s `top`): its value, read now, is never quoted; a control
+  /// with no title or description is named by its role.
+  func testTheControlOnTopNeverQuotesAValueReadNow() {
+    let refused = slideover(textB: .closed)
+    XCTAssertEqual(refused.reason, .otherControlOnTop)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertEqual(said, "The screen changed since the screenshot: the AXStaticText now lies on top at this point, over the AXLink \"Open\" the screenshot showed there, and a click would reach it. Nothing was sent. Call getScreenshot for a new screenshot and aim again from what it shows.")
+  }
+
+  /// Site 7, #442's control the screenshot showed (`otherControlOnTopRefusal`'s `shown`, #433's control beneath).
+  func testTheControlShownNeverQuotesAWithheldValue() {
+    let refused = slideover(textA: .closed)
+    XCTAssertEqual(refused.reason, .otherControlOnTop)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("the AXButton \"Compose\" now lies on top at this point, over the AXStaticText (value withheld) the screenshot showed there"), said)
+  }
+
+  /// Ruling 1165: the element read "Open" at the observation, classified open, and is a password field holding the secret
+  /// now. No sentence at any site quotes the secret; each quotes "Open" only as the record kept it. Where the change of
+  /// value is itself what the guard refuses (#298 on the element, or on #433's control beneath), the scene's verdict is
+  /// that refusal, which says only that the label differs.
+  func testNoSiteQuotesTheValueOfAnElementRecordedOpenThatTurnedSecure() {
+    let scenes: [(String, StalePointVerdict<Node>, StalePointReason, String)] = [
+      ("relabelled", relabelledText(.turned), .relabelled,
+       "the AXStaticText \"Show\" it showed at this point now reads another label."),
+      ("was", coveredText(.turned), .relabelled, "the AXStaticText \"Open\" it showed at this point now reads another label."),
+      ("beneath relabelled", relabelledBeneath(.turned), .relabelled,
+       "over the AXStaticText \"Open\" the screenshot showed there, which a click passes through to; that control now reads another label."),
+      ("beneath moved", movedBeneath(.turned), .relabelled, "the AXStaticText \"Open\" it showed at this point now reads another label."),
+      ("outlived control", outlivedControl(.turned), .relabelled, "the AXStaticText \"Open\" it showed at this point now reads another label."),
+      ("top", slideover(textB: .turned), .otherControlOnTop, "the AXStaticText now lies on top at this point, over the AXLink \"Open\""),
+      ("shown", slideover(textA: .turned), .relabelled,
+       "over the AXStaticText \"Open\" the screenshot showed there, which a click passes through to; that control now reads another label."),
+    ]
+    for (site, verdict, reason, words) in scenes {
+      XCTAssertEqual(verdict.reason, reason, site)
+      let said = message(verdict)
+      XCTAssertFalse(said.isEmpty, site)
+      XCTAssertFalse(said.contains(secret), "\(site): \(said)")
+      XCTAssertTrue(said.contains(words), "\(site): \(said)")
+    }
   }
 }

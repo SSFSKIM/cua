@@ -67,7 +67,9 @@ let widthThreshold = 100
 let widthOmitAbove = 499
 /// `valueMarkdown` is fetched only for text elements whose plain value is at most this long.
 let markdownMaxLength = 2_000
-private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
+/// The roles whose value's Markdown is read (the attributed-string read), at the walk and by select_text; #525: checked
+/// again in the batch that classifies the element just before that read (`markdownEligible`).
+let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
 /// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
 /// FUN_10074cb90 runs only for a value it holds; a password field, whose value is never read, counts as holding one, as
@@ -920,7 +922,8 @@ final class TreeWalk {
 
   /// A recorded node's unknown label parts (`screenshotLabelsUnknown`), its null ones counted in the observation's timings
   /// as `nullLabelSlots` (#500, ruling 1131: value-free, so a measuring run sees how often an app answers kCFNull).
-  private func recordLabels(_ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
+  private func recordLabels(_ data: ElementData)
+    -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>, nonText: Set<StalePointLabelPart>, valueOpen: Bool) {
     let labels = screenshotLabelsUnknown(role: data.role, data)
     source.costs.count("nullLabelSlots", labels.null.count)
     return labels
@@ -942,7 +945,8 @@ final class TreeWalk {
                                                 actionsRead: item.read.actionsRead, roleRead: data.roleRead,
                                                 childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
-                                                labelsUnread: labels.unread, labelsNull: labels.null))
+                                                labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText,
+                                                valueOpen: labels.valueOpen))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
   }
@@ -1139,7 +1143,8 @@ final class TreeWalk {
                                                 actionsRead: read.actionsRead, roleRead: read.data.roleRead,
                                                 childrenRead: read.data.childrenRead, childrenLeaf: read.data.childrenLeaf,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
-                                                labelsUnread: labels.unread, labelsNull: labels.null))
+                                                labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText,
+                                                valueOpen: labels.valueOpen))
     }
     attach(number, parent: parent, inMenu: inMenu)
     return number

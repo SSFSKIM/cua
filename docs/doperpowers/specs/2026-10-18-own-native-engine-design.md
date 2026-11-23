@@ -8521,6 +8521,246 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   1714 swift tests (1 skipped), 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #501.
 
+- Decision (#519, rulings 1146, 1150, 1151 and 1152, 2026-11-23, `fix/519-nontext-label`): a label slot that holds a value
+  that is no text (a CFNumber AXTitle, for example) is recorded apart, and only the checks that refuse a target already
+  chosen read it as unknown. Every consumer that chooses a target reads it as main (0d19fdfa) did, as absent.
+  Found by the reviewer of #481's second attempt (finding 2). `ElementData.init` decoded such a slot as nil and put it in
+  neither `unreadable` nor `null`, so the record held the part as known absent. A numeric title then and an absent one
+  now compared nil with nil and agreed, and #453 pressed the row on its description.
+  - The invariant (ruling 1150): #519 may only turn main's verdict into a refusal. It never changes which element is the
+    target, and it never turns a refusal into a press.
+  - The convergence stop (ruling 1151). Two rounds that widened the fix to the consumers that choose a target (#298's
+    relabel, #443, #431's twin search, #296's and #305's re-created match, #433's candidate loop, #442's named
+    candidate) each introduced a target reversal. The re-review of 3a8276c6..3fd27fe6 found two P1s in #433's loop:
+    - #431's veto in `recreatedHandle` marked main's: a re-created A with a numeric title and the description "Archive"
+      and a surviving B with no title and "Delete" were taken for twins, and #433 moved on to B.
+    - #298's carried label: a value classified closed now where main read null, so #433 moved on.
+    So #519 narrowed to what is below, and those consumers are back to main's code exactly.
+  - Ruling 1152 (the scoped re-review of the narrowed head): the classified live value read
+    (`stalePointClassifiedValueRead`) mapped a batch's kCFNull for an unsupported AXValue to `.null`. AXUIElement.h
+    (line 228) allows a batch to answer that, where main's single read answered `.text(nil)`, so #453 could press where
+    main refused. The classified read and its closed-value refusal moved to #520, and #519 adds no read of its own.
+  Kept:
+  1. The decoder. `ElementData.nonText` names the label attributes (AXTitle, AXDescription, AXValue) whose slot held a
+     value of another type than CFString or CFAttributedString, judged by `CFGetTypeID` alone, so a text area's whole
+     AXValue is never decoded to classify it. `screenshotLabelsUnknown` records it as `labelsNonText` (an AXStaticText's
+     value only), never in `labelsUnread` or `labelsNull`. `unreadable`, #405's classification and the identity do not
+     change.
+  2. The strict reads. `ScreenshotNode.strictLabel` and `StalePointReads.readStrictLabel` read a non-text part as
+     `.nonText`, which is unknown. Live, the strict read is main's single raw `copyAttribute` of each part, AXValue
+     included; `stalePointStrictLabelRead` differs from main's `stalePointLabelRead` only in answering `.nonText` for a
+     value that is no text. `label(_:)` and `readLabel` are main's.
+  3. The consumers that refuse the target already chosen and choose none read strictly:
+     - #453's `overlayLabelsAgree`: a non-text part then or now refuses the row `labelChanged`.
+     - #453's `overlayDuplicate`: an acting inner node with a non-text part on either side is no repeat, so
+       `actionableDescendant`.
+     - #454's `RecordedMenuItem.titleUnread`: an item whose recorded title was failed, null or non-text refuses
+       `relabelled`. Main took the recorded nil for no title and delivered to an item with none.
+  Reverted to main 0d19fdfa, encoding and semantics: #298's `relabelledLabel`, #443's `controlDiffers`, #431's
+  `recreatedLabelsAgree`, `recreatedHandle` and #296's and #305's re-created match, #433's candidate loop, #442's named
+  candidate, and the refusal sentences.
+  - Gone: ruling 1147's refinements, the `added` provenance, `recreatedLabelVerified` and `stalePointLabelCarried`.
+  - The older assertions those rounds flipped (`NullLabelSlotTests`, `UnreadableLabelTests`, `OverlayTargetTests`) are
+    main's again: `StalePointTests.swift` equals main's.
+  - The unverified-label rule for those consumers, including #305's and #296's re-created-match wrong press, which
+    predates #519, moves to follow-up tickets folded into #481's design note:
+    - #521: #305's and #296's re-created match wrong press.
+    - #522: three-valued labels on the candidate-selection consumers, with no target reversal.
+  - #520 comes next: the raw `reads.value` accessor, the first walk's read gate and the classified live value read
+    (with #453's closed-value refusal and its test), routed through #405's classification. #519 leaves every live read
+    as main's single raw read.
+  Named exceptions, where main's own verdict was a wrong press and #519 refuses: #453's row whose title was numeric
+  then and absent now (#519's own finding), and #454's item whose recorded title was failed, null or non-text.
+  How it is proven:
+  - The oracle (`LabelMonotonicityTests`) holds a frozen copy of main's functions at 0d19fdfa. They are verbatim apart
+    from names and inlined file-private helpers, and the relabel copy keeps its `editedInPlace` exemption. The copies
+    run over main's own encoding of the same inputs: a non-text slot recorded as absent, and a non-text value read now
+    as none.
+    - The inputs, every combination of:
+      - A button: title and description each absent, empty, "Open", "Delete", failed, null or non-text, at the
+        screenshot and now (7^4 combinations).
+      - An AXStaticText: title and description each absent, "Open", failed, null or non-text (`Slot.few`, which leaves
+        out empty text and the second text "Delete"), at the screenshot and now; and the value absent, empty, "Open",
+        "Delete", failed, null or non-text, plus withheld at the screenshot only.
+      - The record-to-record checks (the twin search and `overlayDuplicate`) pair recorded labels from the same sets.
+        The menu check pairs each of the button's seven slots, as a recorded title, with a live title that is absent,
+        empty, "Open", "Delete" or failed.
+    - It compares logical slots: each slot reaches both sides through the same seam. It does not test whether a single
+      read and a batched read of an attribute answer alike. AXUIElement.h allows a batch to answer kCFNull where a single
+      read answers kAXErrorNoValue, which is the gap behind ruling 1152.
+    - The reverted consumers' verdicts equal main's exactly: relabel, `controlDiffers`, the lenient match and the twin
+      search.
+    - The kept consumers' verdicts are main's or a refusal: `overlayLabelsAgree`, `overlayDuplicate` and the menu
+      decision.
+  - Through target selection, comparing the head's record with main's encoding of it:
+    - #453 (`OverlayClickTests.testANonTextPartNeverChangesTheChosenRow`): every scene, with a non-text value in each
+      part of the row or of the node beside it, then, now or both. The decision is main's, or a refusal naming the row
+      main chose.
+    - #454 (`MenuItemPointTests.testANonTextTitleOnlyRefusesTheItemTheGuardChose`): the guard's verdict is identical,
+      and #454 delivers to main's item or refuses it.
+  - Function by function against 0d19fdfa: every Swift source function outside the kept set is byte-identical. The
+    kept set is the decoder, the record's non-text set and its plumbing, the strict read for non-text,
+    `overlayLabelsAgree`, `overlayDuplicate` and `titleUnread`. The reverted consumers were hash-checked whole.
+  - Red on main: the kept tests were run with main's behaviour behind the new names (the decoder's `nonText` empty, the
+    strict reads main's, no `titleUnread` guard). Eight tests fail with 16 assertions. They cannot compile on 0d19fdfa
+    itself, because they name the new API.
+  - 1726 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  No hosted live-rate measurement is needed: each kept change only refuses a target already chosen.
+  Date/Author: 2026-11-23, cursor235's builder for #519.
+
+- Decision (#520, rulings 1163 and 1165, 2026-11-23, `fix/520-output-quote` from 82ac93f3): a refusal quotes only a value
+  the record kept, where #405's classification of the recorded node, taken at the observation, found it open; a withheld
+  one is said to be "value withheld". It never quotes a value read now (ruling 1165): that is unclassified, whatever the
+  record says, so the sentence says only that the label differs. No read, comparison or verdict changes; only sentence
+  wording does. The two read-side
+  attempts (`fix/520-classified-value`, fe593148) each introduced presses main refused, so the leak is closed where
+  values are output.
+  - The record (`ScreenshotNode.valueOpen`, from `screenshotLabelsUnknown`): true when the walk's `classifiedData`
+    found the element open and read its value (`ElementData.valueUnread` false). A password field, an unclassifiable
+    element and a valueless source (#390) are not open. Nothing is classified again for a sentence.
+  - `relabelledLabel` answers the part its label came from (`StalePointLabelNow`), so a sentence can tell a value from a
+    title or description (`stalePointQuotable`: never a value). Its reads and comparisons are main's.
+  The inventory: every path from a live or recorded AXValue on the stale-point path (StalePoint.swift, OverlayClick.swift,
+  and what they feed: MenuItemPoint.swift, PopUpPoint.swift, the field and element routes in ElementInput.swift and
+  Input.swift) to what the model sees. Each value reaches the model only by being quoted into a refusal sentence
+  (`stalePointOutcome`), so output gating closes it (the brief's stop condition did not apply).
+  1. #298's `relabelled` sentence (`screenChangedSinceScreenshot`, `labelNow`): the node's label read now, which for an
+     AXStaticText with no title or description now is its AXValue read raw (`StalePointReads.label`). It leaked: a text
+     recorded as a password field (its value withheld) whose title went quoted its value, and so did a text recorded open
+     that is a password field now. A title or description read now is still quoted; a value is not: "the AXStaticText
+     "Show" it showed at this point now reads another label."
+  2. #433's relabelled control beneath an inert layer (`controlUnderInertChanged`'s `label`): the same read on the control.
+     It leaked the same ways. Now "...; that control now reads another label."
+  3. #442's control on top (`otherControlOnTopRefusal`'s `top`): its AXValue read raw (`reads.value`) when its live role
+     is AXStaticText, as the label of a control with no title or description. It leaked. Now it is named by its title or
+     description read now, else its role alone ("the AXStaticText now lies on top at this point"). The value is still
+     read, in main's order, and dropped.
+  4. The recorded names: the generic refusal's `was`, #433's `over` and `control`, #443's `node` and `control`
+     (`inertOutlivedControl`), and #442's `shown`. These quote `ScreenshotNode.value`, which the walk already drops for a
+     closed element, so none leaked. They now go through `stalePointName(_:)`, gated by the same record, and a withheld
+     value is said to be withheld, where main printed the bare role.
+  Not value outputs:
+  - The hit named "is there now" quotes the hit's title or description only, never its value.
+  - The meta (`StalePointRecord.wire`) carries roles, reasons, identities, counts and times. #453's meta
+    (`OverlayDecision.wire`) carries roles, frames and reasons, and its sentences name the app only. #454's
+    `MenuItemReads.value` is compared, recorded as an enum (`MenuItemValue`) and never quoted. #458's sentences name the
+    app and the control's kind.
+  - Logs: StalePoint.swift, OverlayClick.swift and MenuItemPoint.swift write nothing to stderr, and the signposts take
+    static names.
+  - The tree render is #405's, and the stale-point path writes nothing back into it.
+  Ruling 1165 closed the limit ruling 1163 left: an element recorded open that turned into a password field since was
+  still quoted from its value read now (the first cut's sites 1 to 3 gated a value read now by the record). Now no value
+  read now is quoted at all; recorded values are unchanged.
+  How it is proven:
+  - One test per output site (`SecureValueQuoteTests`, 9 with the record's own check and ruling 1165's). Each scene's
+    element is an AXStaticText with the subrole AXSecureTextField whose value is a secret, answered by the fake to every
+    read now. The test helper's walk now classifies by #405's rule (`decodedLabels`' `subrole`, as `classifiedData` drops
+    a closed value). Each asserts the secret is absent and the site's wording present.
+  - Ruling 1165's test: each of the seven scenes again, with its element recorded open as "Open" and a password field
+    holding the secret now. The secret is in no sentence, and "Open" is quoted only as recorded. Where the value's change
+    is itself what the guard refuses (#298 on the element, or #433 on the control beneath), that refusal is the scene's
+    verdict on main as here: five scenes answer `relabelled`, the control on top `otherControlOnTop`.
+  - Red on 82ac93f3 (the first cut): the tests run there with only the new names removed. The three live sites quote the
+    secret (sites 1, 2 and 3 above). The four recorded sites lack "value withheld" (main printed the bare role). Seven
+    tests fail with 10 assertions; every verdict assertion passes there.
+  - Red on 7a74be08 (the first cut's head) for ruling 1165: ruling 1165's test fails at all seven scenes, each sentence
+    quoting the secret read now (14 assertions); the three live sites' wording tests and #298's sentence test fail on
+    wording only. 4 tests, 18 assertions; every verdict assertion passes there.
+  - Differential, in `LabelMonotonicityTests`:
+    - `underlyingRefusal` against a frozen copy of 82ac93f3's, on every combination of the oracle's label slots (2,401 for
+      a button, 35,000 for a static text): the same refusal, identity and label read now.
+    - Whole verdicts through `stalePointVerdict` in two scenes (#298's own node; #433's control beneath an inert layer)
+      over the same 37,401 worlds each, a recorded value withheld standing for a closed classification. Each verdict,
+      sentence stripped, is written as its meta, its refusal, its target (current and control beneath) and its label
+      read now. The 74,802 lines' SHA-256 was taken from the same enumeration run on 82ac93f3 and is frozen; the head
+      matches it (656 `relabelled` refusals in each scene, every other world `sameElement`).
+    - Not covered by the differential: #442's verdict reads no label, so the label worlds do not reach it; its scenes'
+      verdicts are asserted in `SecureValueQuoteTests` and passed on 82ac93f3.
+  - The only source changes outside sentence wording are type plumbing (`labelNow`'s type, `valueOpen`'s field), checked
+    by reading the diff against 82ac93f3.
+  - `RelabelledGuardTests.testTheReasonAndTheSentence`, which quoted a value read now, now quotes the recorded value (its
+    60-character cut) and says the label read now differs.
+  - The differential's digest is unchanged: the head still matches the frozen 82ac93f3 value.
+  - 1737 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  Date/Author: 2026-11-23, cursor235's builder for #520.
+
+- Decision (#525, rulings 1156 and 1166, 2026-11-23, `fix/525-null-subrole-group` from 893e19d7; reverses part of
+  ruling 813 and of the #501 entry): a null or failed subrole on a role that is never secure text entry is no reason to
+  close the element. Such a role is listed (`neverSecureRoles`); on it the element classifies open, as #501 had it for
+  a null subrole before, and its value is read as the vendor reads it. The list holds AXGroup alone, the only role the
+  evidence needs. Ruling 1166 made it an allowlist: a role off it (a custom role string, AXUnknown, AXButton,
+  AXStaticText) keeps ruling 813, closed and "value unread", so the next custom role that hosts a password field fails
+  closed. The text-entry roles (`presumedSecureRoles`) stay closed, secure and unread; an unreadable role and the
+  AXSecureTextField role or subrole stay closed and secure.
+  - What is reversed: ruling 813 closed every readable role with a failed subrole, and #501 added the null one. For
+    AXGroup only, both now classify open.
+  - The cause (M5 pilot B, run 45226949355, engine c83131f0, which contains #501): Finder's full and before texts
+    print `container Value: value unread, Secondary Actions: Move previous, Remove from toolbar` around `button
+    Search`, where the vendor prints only the button; the 13 lines after it shift by one. The artifacts carry no raw
+    subrole. The code admits one source for that line: `container` is AXGroup's word alone (render.mjs `roleWord`), and
+    `value unread` prints only for a node whose `valueUnread` the walk set (Walk.swift, `classificationFailed` and not
+    `secure`). That pair comes only from `valueClassification` on a readable role off the text-entry roles whose
+    subrole decoded `.failed`: a null slot, a failed slot or a value that is no string. A request that fails, and an
+    unreadable role, close it `secure` instead (`secure text`), and a source that reads no values (#390) sets no
+    `classificationFailed`. Which of the three slots Finder answered is not recorded; the fix covers all three.
+    `descriptive` counts `valueUnread`, so render rule (4) kept the one-child group that the vendor replaces by its
+    button.
+  - The consumers, for an AXGroup with a null or failed subrole (every other role reads as on 893e19d7):
+    - The walk's `classifiedData` and the node: open, its value read; the node has no `valueUnread`, and the render
+      replaces Finder's group by its button.
+    - The Markdown's re-classification (`ElementSource.markdown`): unchanged; only AXTextArea and AXTextField reach it.
+    - The Lineage identity: `valueUnread` and `classificationFailed` false, so the value counts and the identity
+      matches across handles, not only for the same one.
+    - StalePoint: `screenshotLabelsUnknown` withholds nothing and #520's `valueOpen` is true. That bit is all that
+      changes: the record keeps a value only for an AXStaticText (`screenshotLabelValue`), so a group's record holds
+      none, and no refusal sentence or verdict changes.
+    - `classifiedRead`: select_text reads the group's value instead of refusing it secure, and the focused group's
+      selected text prints in the trailer.
+    - `valueReadClosed`: paste's `focusedEffectReading` is not secure. select_text's Markdown guard is unchanged, since
+      only text roles reach it.
+    - type_text: `readbackClass` answers `.open("AXGroup")`, so the marker route climbs past the group as past any
+      ancestor that is no field, where it used to stop `.closed(.secure)`. `readbackSecure` now follows the same rule (its
+      test holds it equal to the classification's `closed`), so a focused group is refused `notTextField`, not `secure`,
+      with nothing read either way. `readbackPasswordField` and `readbackLength` are unchanged, since their role gate
+      excludes AXGroup.
+    - `writtenValueFieldClosed` and `setValueClosed` do not read the classification. They use `secureTextField`
+      (#283), which still fails closed for any role with an unreadable subrole, so set_value on such a group still
+      reads no value back. This is left as it was: it costs only a value read on a write to a group.
+    - The label-slot helper (`LabelSlots.swift`, tests only) follows the classification.
+  - The proof:
+    - `NeverSecureRoleTests` (2): the classification and its direct readers, and the walk with its identity and record,
+      for each role with a null and a failed subrole. A group is open; AXTextField, AXComboBox and AXTextArea are
+      secure; AXMyCustomRole, AXUnknown, AXButton and AXStaticText are closed and unread; an unreadable role and
+      AXSecureTextField are unchanged.
+    - `NullClassifyingSlotTests` and `TypeReadbackTests` change only their AXGroup case. The latter's failed-subrole
+      `secure` refusal now uses a custom role.
+    - The render test (`services-engine-render.test.mjs`) runs Finder's toolbar shape: with `valueUnread` the group
+      keeps its line, and without it the line is `button Search` at the group's depth.
+    - Red on 893e19d7's sources: 4 tests fail with 22 assertions, every one an AXGroup case. Every text-entry,
+      custom-role and unreadable-role assertion passes there.
+    - 1740 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+    - No Finder golden is checked in. Pilot B is the only check, and it is judged again on the fixed engine.
+  Date/Author: 2026-11-23, cursor235's builder for #525.
+
+- Decision (#525, the review of 893e19d7..271aa18a, 2026-11-23; amends the entry above): the attributed-string read
+  needs a text role in the batch that classifies the element just before it, not only in the observed role.
+  (P2) An element observed as an AXTextField can answer AXGroup with a null or failed subrole in that batch. On main
+  the batch closed it, and nothing more was read. Under the entry above it is open. The walk's
+  `ElementSource.markdown` and select_text's `selectionSearchText` checked the text role against the observed role
+  alone and took the fresh batch only for closed or open, so both went on to request `AXAttributedStringForRange` of
+  the group. The walk then rendered the group's text as the old field's Markdown, and select_text used it to choose a
+  range.
+  - The fix: `markdownEligible` requires the fresh batch's role (`readbackBatchRole`) to be in `markdownRoles`, now
+    shared by the walk and select_text. Otherwise nothing more is read: the walk returns no Markdown and keeps the
+    open data, and select_text searches the plain value alone. Ordinary group values stay open.
+  - The proof: `NeverSecureRoleTests.testAFieldThatTurnsIntoAGroupBeforeTheMarkdownReadIsNotReadAsText` runs two
+    batches, field then group, for a null and a failed subrole, through both readers. On 271aa18a's sources it fails
+    with 4 assertions: one attributed read each in the walk and in select_text, for both slots. A field still a field
+    is read as before.
+  - (P3) The StalePoint line of the consumer list above is corrected: only `valueOpen` changes, and no refusal text.
+  - 1741 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  Date/Author: 2026-11-23, cursor235's builder for #525.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

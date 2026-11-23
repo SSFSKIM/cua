@@ -298,7 +298,7 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(field.calls, ["focused", "role", "subrole", "batch"] + Array(repeating: "batch", count: 1 + Int(typeReadbackLengthDwellMs / typeReadbackPollIntervalMs)) + ["focused"],
                      "\(name): no value or range read; the match, then the quiet window's reads")
     }
-    for (name, role, subrole) in [("a group's unreadable subrole", "AXGroup", ReadbackSubrole.failed),
+    for (name, role, subrole) in [("a custom role's unreadable subrole", "AXMyCustomRole", ReadbackSubrole.failed),
                                   ("a static text marked secure", "AXStaticText", .value("AXSecureTextField"))] {
       let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
       field.role = role
@@ -310,6 +310,14 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(field.calls, ["focused", "role", "subrole"], "\(name): nothing read")
       XCTAssertTrue(error?.message.contains("a secure element that is not a text field, which is never read back") ?? false, name)
     }
+    // #525: a group, never secure text entry (`neverSecureRoles`), is open with an unreadable subrole: no text field.
+    let group = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+    group.role = "AXGroup"
+    group.subrole = .failed
+    let (groupError, groupMeta) = type("pass", into: FakeApp(group))
+    XCTAssertEqual(groupError?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(groupMeta)["reason"] as? String, "notTextField")
+    XCTAssertEqual(group.calls, ["focused", "role", "subrole"], "a group: nothing read")
     // A plain field's success carries no note and no strength: the exact read-back.
     let plain = FakeField(value: "user", range: NSRange(location: 4, length: 0))
     let (error, meta) = type("name", into: FakeApp(plain))

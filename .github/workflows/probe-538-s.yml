@@ -2,7 +2,7 @@ name: probe-538-s
 # #538's hosted qualification probe of S, the key-focus-only state (scripts/probe-538/probe.mjs; not a sitting of record,
 # no M5 verdict). One job per lane on a GitHub-hosted macos-latest runner: `fix` is this branch (fix/538-key-focus-refuse
 # merged into feat/117-m5); `base` is this branch with native/, src/ and .claude-plugin/ put back to feat/117-m5's
-# ccfad042d, which carries main 6baf3e36's delivery path. Each lane runs M5's hosted setup (its one guarded TCC writer,
+# 0b41c823c (native/ and src/ as at ccfad042d), which carries main 6baf3e36's delivery path. Each lane runs M5's hosted setup (its one guarded TCC writer,
 # RUNNER_ENVIRONMENT=github-hosted, ruling 1111; replayd's store never written, no alert answered, ruling 1141), building
 # its own engine, then the probe. Dispatch only: a push of this file just registers it on its branch.
 on:
@@ -53,7 +53,7 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           git log -1 --format='probe %H %s'
           if [ "$LANE" = base ]; then
-            git checkout ccfad042d431f4d7a40c50629de7a24501e03539 -- native src .claude-plugin
+            git checkout 0b41c823c -- native src .claude-plugin
             git status --short -- native src .claude-plugin | head -40
           fi
           sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion lane=$LANE"

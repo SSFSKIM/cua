@@ -1,0 +1,58 @@
+name: m5-display-probe
+# #117 M5, ruling 1154: reads the hosted macOS runners' displays and the modes each offers, configuring nothing and
+# writing nothing (scripts/hosted-sittings/display-modes.swift, system_profiler). The two images the sittings use, one
+# after the other. Dispatch only: a push of this file just registers it on its branch.
+on:
+  push:
+    branches: ['feat/117-m5']
+    paths: ['.github/workflows/m5-display-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; dispatch it.'
+  macos-latest:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Displays and their modes (read-only)
+        shell: bash
+        run: |
+          mkdir -p out
+          sw_vers | tee out/sw_vers.txt
+          system_profiler SPDisplaysDataType | tee out/displays.txt
+          swift scripts/hosted-sittings/display-modes.swift | tee out/modes.json
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        if: always()
+        with:
+          name: display-probe-macos-latest
+          path: out
+  xcode-27:
+    needs: macos-latest
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Displays and their modes (read-only)
+        shell: bash
+        run: |
+          mkdir -p out
+          sw_vers | tee out/sw_vers.txt
+          system_profiler SPDisplaysDataType | tee out/displays.txt
+          swift scripts/hosted-sittings/display-modes.swift | tee out/modes.json
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        if: always()
+        with:
+          name: display-probe-xcode-27
+          path: out

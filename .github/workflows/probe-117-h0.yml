@@ -1,0 +1,116 @@
+name: probe-117-h0
+# Disposable #117 H0 spike (#175; scripts/probe-117-h0/README.md). A push of this file only registers the workflow on its
+# branch. `full` runs the kit on a hosted macOS runner: main's engine bundle, the vendor's helper and the scenes, then
+# TCC rows written by the kit's one guarded writer (O0, ruling 1111: GitHub-hosted runners only). `label` only reports
+# what a runner label gives (step 5). Policy: the TCC writer refuses unless RUNNER_ENVIRONMENT=github-hosted and the
+# owner's yes is in the spec's Decision Log; no secret is used.
+on:
+  push:
+    branches: ['probe/117-h0']
+    paths: ['.github/workflows/probe-117-h0.yml']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: full (the kit) or label (sw_vers on the runner label only)
+        type: choice
+        options: [full, label]
+        default: full
+      runner:
+        description: Runner label (macos-latest, macos-26, macos-27, xcode-27, ...)
+        type: string
+        default: macos-latest
+permissions:
+  contents: read
+concurrency:
+  group: probe-117-h0-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; dispatch with mode and runner.'
+  label:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'label'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 10
+    steps:
+      - run: |
+          echo "label=${{ inputs.runner }} ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) env=$RUNNER_ENVIRONMENT"
+          sw_vers
+          system_profiler SPDisplaysDataType | sed -n '/Displays:/,$p' | head -20
+  full:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'full'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 75
+    env:
+      H0_LABEL: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prerequisites (npm ci, the display tool)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          git log -1 --format='kit %H %s'
+          echo "main $(git merge-base HEAD origin/main)"
+          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m)"
+          npm ci --no-audit --no-fund
+          swiftc -O scripts/probe-117-h0/display.swift -o "$RUNNER_TEMP/h0-display"
+      - name: The loopback device (a user-mode sshd, as scripts/repl-parity/hosted/hosted.sh sets it up)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          SSHD="$RUNNER_TEMP/h0-sshd"; mkdir -p "$SSHD" "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+          ssh-keygen -q -t ed25519 -N '' -f "$SSHD/hostkey"
+          ssh-keygen -q -t ed25519 -N '' -f "$HOME/.ssh/h0"
+          cat "$HOME/.ssh/h0.pub" >> "$HOME/.ssh/authorized_keys"; chmod 600 "$HOME/.ssh/authorized_keys"
+          echo "PATH=$PATH" > "$HOME/.ssh/environment"
+          printf "export PATH='%s'\n" "$PATH" >> "$HOME/.bashrc"
+          cat > "$SSHD/sshd_config" <<EOF
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey $SSHD/hostkey
+          PidFile $SSHD/sshd.pid
+          AuthorizedKeysFile $HOME/.ssh/authorized_keys
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          UsePAM no
+          StrictModes no
+          PermitUserEnvironment yes
+          EOF
+          cat >> "$HOME/.ssh/config" <<EOF
+          Host hosted-macos
+            HostName 127.0.0.1
+            Port 2222
+            User $USER
+            IdentityFile $HOME/.ssh/h0
+            IdentitiesOnly yes
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            LogLevel ERROR
+          EOF
+          /usr/sbin/sshd -f "$SSHD/sshd_config" -E "$SSHD/sshd.log"
+          sleep 1
+          test "$(ssh -o BatchMode=yes hosted-macos 'node -v')" = "$(node -v)"
+      - name: The kit (steps 1 to 4 and 6 without TCC writes, then 7 to 10 with them)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/h0"
+          node scripts/probe-117-h0/kit.mjs "$RUNNER_TEMP/h0" "$RUNNER_TEMP/h0-cua-home" "$RUNNER_TEMP/h0-scenes" "$RUNNER_TEMP/h0-display"
+      - name: Upload the evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-117-h0-${{ inputs.runner }}
+          path: ${{ runner.temp }}/h0/
+          if-no-files-found: error
+          retention-days: 30

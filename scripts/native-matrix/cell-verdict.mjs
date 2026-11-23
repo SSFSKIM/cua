@@ -10,10 +10,11 @@
 //   is `unpaired`: it has no verdict, never equal and never worse.
 // - Two failures are equal only as the same failure (./answers.mjs): the same answer, and on a frontmost method row
 //   every effect field its case recorded alike (`equal`). A caret row (#258, #259) asks the same of two passes: its
-//   reading is the field's range on the device, and the same reading is what "equal to the vendor's" means there. On a fixed-string row (ruling 1144: a Unicode row judged by
-//   its absolute expected string, the pressKey row) the same read-back with the user's value kept on both: such a
-//   sample is `shared` (a shared limit, the vendor has it too), listed apart; the vendor passing a sample whose cua pair
-//   failed fails the row; cua refusing or answering unconfirmed (its recorded engine name of that kind, its recorded
+//   reading is the field's range on the device, and the same reading is what "equal to the vendor's" means there.
+//   On a fixed-string row (ruling 1144: a Unicode row judged by its absolute expected string, the pressKey row) the
+//   same read-back with the user's value kept on both: such a sample is `shared` (a shared limit, the vendor has it
+//   too), listed apart; the vendor passing a sample whose cua pair failed fails the row; cua refusing or answering
+//   unconfirmed (its recorded engine name of that kind, its recorded
 //   effect allowing it) where the vendor answered ok and read back other text (a false ok) is better, listed with the
 //   departures. A cua sample that proved the user's value changed (`outcome.userKept` false) fails before any of this:
 //   no departure, pair or shared failure answers for it. Anywhere else cua answering conservatively where the vendor answered ok needs a declared departure. An
@@ -79,9 +80,10 @@ const VERDICTS = ['worse', 'equal', 'better', 'honest', 'declared', 'shared'];
 // 'absolute' (a fixed-string Unicode row, ruling 1144), 'pressKey' (a fixed-string row, and ruling 1119: the engines
 // must compose alike) or 'reading' (a frontmost row judged by the device's reading of what the act did, the caret rows of
 // #258 and #259, ./caret.mjs: as 'reference', except that two passes are equal only with the same reading, every effect
-// field alike, since a caret elsewhere is a difference a model meets whether or not each side met its own check). `departure`: the row's declared departure, if any; `oracle(row)`: whether the non-interference
-// oracle judges the row; `pairable(run)`: whether the run's pair is one proof; `planned(run)`: the row's planned samples
-// in a run; `acceptance`: the row is an acceptance item's.
+// field alike, since a caret elsewhere is a difference a model meets whether or not each side met its own check).
+// `departure`: the row's declared departure, if any; `oracle(row)`: whether the non-interference oracle judges the row;
+// `pairable(run)`: whether the run's pair is one proof; `planned(run)`: the row's planned samples in a run;
+// `acceptance`: the row is an acceptance item's.
 // -> {verdict, vendor: {ok, valid, invalid}, cua: {…}, declared, shared: [sample], honest: [sample], routes, account,
 // differs?}.
 export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false} = {}) {

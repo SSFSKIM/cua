@@ -364,18 +364,19 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
 }
 
 // `cua install`'s macOS engine step (#117 M4; the native engine's spec, "Install, signing and permissions"): cua's engine
-// built, signed and put at its one approved location under HOME (buildEngine, as `cua engine build` does; no CUA_HOME
+// built and signed beside its one approved location under HOME (buildEngine, as `cua engine build` does; no CUA_HOME
 // moves it) when the setting names it (CUA_NATIVE_ENGINE, else engine.json's `engine`, else the default: the preference,
 // not the effective selection, since a missing approved engine is what install is for) or when `explicit` (--engine)
-// asks, whatever the setting says. The build is left pending: approving it is `cua engine approve`'s, with the owner at
-// the console (its grant requests and its capture may raise prompts), never install's, so an ordinary or CI install
+// asks, whatever the setting says. The build goes beside the approved engine, which keeps serving (design ruling
+// 1118), and is left pending: approving it, which puts it in place, is `cua engine approve`'s, with the owner at the
+// console (its grant requests and its capture may raise prompts), never install's, so an ordinary or CI install
 // raises no permission or capture prompt. A failure to build (or to read the setting) fails the step only when
 // `explicit`; otherwise it is reported (status `warn`) and the rest of the install stands. `sign` 'adhoc' signs ad hoc
 // (CI only); `signWait` is --sign-wait, else CUA_SIGN_WAIT_MS, as engine build reads it. `selection` reaches the
 // setting's read (`config`, `defaultEngine`); `build`, `installed` (the approved engine, read from the files and the
 // signature only) and `engine` (the engine module's own deps) are test seams.
 // -> {skipped: 'not_selected'} | {status: 'warn', code, message, hint?} | {status: 'pass', ...buildEngine's answer,
-// approved: whether the bundle now at the location is the approved one}.
+// approved: whether this build is the approved engine}.
 export async function installMacosEngine({explicit = false, sign, signWait, env = process.env, selection = {}, build = buildEngine, installed = installedEngine,
   engine = {}, log = () => {}} = {}) {
   const reported = error => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {})});
@@ -394,7 +395,7 @@ export async function installMacosEngine({explicit = false, sign, signWait, env 
     if (explicit) throw failed;
     return reported(failed);
   }
-  return {status: 'pass', ...built, approved: installed({dir, runSync: engine.runSync})?.build === built.build};
+  return {status: 'pass', ...built, approved: !built.pending && installed({dir, runSync: engine.runSync})?.build === built.build};
 }
 
 // A step's failure as a CuaError: a raw one (a filesystem error, a bug) under `code`, its own code kept in the message.

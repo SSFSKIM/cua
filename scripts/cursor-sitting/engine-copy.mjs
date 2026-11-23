@@ -1,7 +1,7 @@
 // M3's save and restore of the Mac's approved engine around the attended sitting (docs/doperpowers/specs/2026-10-30-
 // macos-agent-cursor-design.md, M3 Decisions): before the sitting the whole engine directory
 // (<home>/Library/Application Support/cua/engine/: the bundle, approved.json, pending.json, usage.json and the
-// installer's previous bundle) is copied outside the installer's own `previous`, which the next build replaces
+// installer's previous bundle) is copied outside the installer's own `previous`, which the next approve replaces
 // (src/runtime/engine.mjs), with ~/.config/cua/engine.json and the engine's status beside it; after the sitting the
 // engine is stopped, the current directory moved aside whole (the branch's build is kept, not deleted: the owner may
 // still keep it) and the saved one put in its place, then the status is checked for the saved build, approved.

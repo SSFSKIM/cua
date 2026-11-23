@@ -1,7 +1,8 @@
 // `cua install`'s macOS engine step (#117 M4; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "Install,
 // signing and permissions" and M4 in the Plan of Work): the engine is built and signed when it is selected
 // (CUA_NATIVE_ENGINE, else ~/.config/cua/engine.json, else the default) or asked for with --engine, which on macOS as on
-// Linux makes the engine required: only then does its failure fail the install. The build is left pending: approval is
+// Linux makes the engine required: only then does its failure fail the install. The build goes beside the approved
+// engine, which keeps serving (design ruling 1118), and is left pending: approval is
 // `cua engine approve`'s, with the owner at the console, never install's. Through the CLI with the installers and the
 // engine step's build and approval read doubled: no compiler, signing identity, GUI process or owner's engine is
 // touched. That install never approves, over the real build, is test/runtime-engine.test.mjs's.
@@ -15,7 +16,7 @@ import {CuaError} from '../src/runtime/errors.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 
 const BUILD = 'a'.repeat(64);
-const built = {bundlePath: '/fixture/cua Engine.app', engineVersion: '0.1.0', build: BUILD, signature: {kind: 'identity', identityMatches: true}, changed: true, stopped: null};
+const built = {bundlePath: '/fixture/pending/cua Engine.app', engineVersion: '0.1.0', build: BUILD, signature: {kind: 'identity', identityMatches: true}, changed: true, pending: true};
 const manifest = {release: 'fixture', platform: process.platform, arch: process.arch, archive: {url: 'https://invalid.example/runtime'}};
 
 // A darwin (or `platform`) install with every installer stubbed. The engine step is the real installMacosEngine with
@@ -202,16 +203,18 @@ test('bad engine flags fail before anything is installed', async t => {
 
 // ---- what install says of approval ----
 
-test('a build is pending: install names cua engine approve with the owner at the console', async t => {
+test('a build beside the approved engine is pending: install names cua engine approve with the owner at the console', async t => {
   const r = await invoke(fixture(t).deps, ['--engine']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^built cua's engine aaaaaaaaaaaa at \/fixture\/cua Engine\.app, signed with the configured identity; pending until cua engine approve, with the owner at the console$/m);
-  const unapproved = await invoke(fixture(t, {build: async () => ({...built, changed: false})}).deps, ['--engine']);
-  assert.match(unapproved.stdout, /^cua's engine aaaaaaaaaaaa at \/fixture\/cua Engine\.app is already this build, signed with the configured identity; pending until cua engine approve, with the owner at the console$/m);
+  assert.match(r.stdout, /^built cua's engine aaaaaaaaaaaa at \/fixture\/pending\/cua Engine\.app, signed with the configured identity; a new build is pending; cua engine approve to use it \(the owner at the console\)$/m);
+  const again = await invoke(fixture(t, {build: async () => ({...built, changed: false})}).deps, ['--engine']);
+  assert.match(again.stdout, /^cua's engine aaaaaaaaaaaa at \/fixture\/pending\/cua Engine\.app is already this build, signed with the configured identity; a new build is pending; cua engine approve to use it \(the owner at the console\)$/m);
+  const unapproved = await invoke(fixture(t, {build: async () => ({...built, bundlePath: '/fixture/cua Engine.app', changed: false, pending: false})}).deps, ['--engine']);
+  assert.match(unapproved.stdout, /^cua's engine aaaaaaaaaaaa at \/fixture\/cua Engine\.app is already this build, signed with the configured identity; not approved yet: cua engine approve \(the owner at the console\)$/m);
 });
 
 test('an engine already approved at this build is reported approved', async t => {
-  const f = fixture(t, {build: async () => ({...built, changed: false}), installed: () => ({build: BUILD})});
+  const f = fixture(t, {build: async () => ({...built, bundlePath: '/fixture/cua Engine.app', changed: false, pending: false}), installed: () => ({build: BUILD})});
   const r = await invoke(f.deps, ['--engine']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^cua's engine aaaaaaaaaaaa at \/fixture\/cua Engine\.app is already this build, signed with the configured identity, and approved$/m);

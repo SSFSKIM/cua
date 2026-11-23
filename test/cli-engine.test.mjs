@@ -96,6 +96,18 @@ test('the status lines say whether the signature is the configured identity with
   ]);
 });
 
+// Design ruling 1118: a build pending beside the approved bundle gets its own line, after the approval's.
+test('the status lines show a build pending beside the approved one', () => {
+  const lines = engineStatusLines({bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64),
+    signature: {kind: 'identity', identityMatches: true}, approved: true, approvedAt: 'when', approvedBuild: 'f'.repeat(64),
+    pending: {build: 'c'.repeat(64), builtAt: 'then', bundlePath: '/e/pending/cua Engine.app'}, running: false, status: null, cursor: 'on'});
+  assert.deepEqual(lines.slice(0, 3), [
+    'engine: /e/cua Engine.app (version 0.1.0, build ffffffffffff), signed with the configured identity',
+    'approved: yes, at when',
+    'pending: build cccccccccccc at /e/pending/cua Engine.app, built then; cua engine approve puts it in place (the owner at the console)',
+  ]);
+});
+
 test('the running line names the other connections\' holders when the engine gives them (#237)', () => {
   const base = {bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64), signature: {kind: 'identity', identityMatches: true},
     approved: true, approvedAt: 'when', pending: null, running: true, cursor: 'on'};

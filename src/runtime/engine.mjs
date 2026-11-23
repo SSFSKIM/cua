@@ -4,10 +4,12 @@
 //
 // The approved location is fixed, inside the default home and moved by no CUA_HOME: ~/Library/Application Support/cua/
 // engine/, holding `cua Engine.app` with engine.sock, engine.lock, usage.json, pending.json and approved.json beside it,
-// and the build's scratch, staging and previous bundle. Every session and harness serves the approved bundle in place;
-// only buildEngine replaces it, and only approveEngine (with the owner at the console when a grant or a capture
-// confirmation needs answering) writes approved.json. A bundle whose build or signature differs from approved.json's
-// is pending, not installed.
+// the pending slot `pending/cua Engine.app`, and the build's scratch, staging and previous bundle. Every session and
+// harness serves the bundle at the approved path in place. A build never takes away a working engine (design ruling
+// 1118): buildEngine puts its bundle in the pending slot, leaving the approved bundle, approved.json and the running
+// engine alone, and only approveEngine (with the owner at the console when a grant or a capture confirmation needs
+// answering) promotes it into the approved path, puts the previous bundle back if the approval does not complete, and
+// writes approved.json. A bundle whose build or signature differs from approved.json's is not installed.
 //
 // Nothing here ever signals the engine: it is stopped only by the `shutdown` request, which it refuses while another
 // connection is open. The signing identity is never printed (pre-flight item 2): pending.json and approved.json hold
@@ -43,6 +45,9 @@ export function enginePaths(dir = engineDirectory()) {
     bundle: join(dir, BUNDLE_NAME),
     socket: join(dir, 'engine.sock'),
     pending: join(dir, 'pending.json'),
+    // The pending slot (design ruling 1118): a build waiting beside the approved bundle for `cua engine approve`.
+    pendingDir: join(dir, 'pending'),
+    pendingBundle: join(dir, 'pending', BUNDLE_NAME),
     approved: join(dir, 'approved.json'),
     staging: join(dir, 'staging'),
     previous: join(dir, 'previous'),
@@ -181,12 +186,21 @@ export function installedEngine({dir = engineDirectory(), runSync} = {}) {
   return installedFrom({dir, onDisk, approved});
 }
 
+// The build in the pending slot, from its Info.plist alone (no codesign): {build, builtAt, bundlePath}, builtAt
+// pending.json's when it names this build, else null; null when the slot holds no bundle.
+function pendingSlot(paths) {
+  let identity;
+  try { identity = bundleIdentity(paths.pendingBundle); } catch { return null; }
+  const record = readRecord(paths.pending);
+  return {build: identity.build ?? null, builtAt: record?.build === identity.build ? record.builtAt ?? null : null, bundlePath: paths.pendingBundle};
+}
+
 // The approved location read once (the bundle on disk with its signature, which carries the SHA-1 and the subject and
-// is never printed; approved.json's and pending.json's records), for a caller that needs both installedFrom's answer and
-// inspectEngine's read with one codesign (doctor).
+// is never printed; approved.json's record; the pending slot's build), for a caller that needs both installedFrom's
+// answer and inspectEngine's read with one codesign (doctor).
 export function readApprovedLocation({dir = engineDirectory(), runSync} = {}) {
   const paths = enginePaths(dir);
-  return {dir, onDisk: bundleOnDisk(paths.bundle, runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+  return {dir, onDisk: bundleOnDisk(paths.bundle, runSync), approved: readRecord(paths.approved), pending: pendingSlot(paths)};
 }
 
 // installedEngine's answer from a location already read.
@@ -195,15 +209,16 @@ export function installedFrom({dir, onDisk, approved}) {
   return {bundlePath: enginePaths(dir).bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
 }
 
-// The bundle on disk with its signature, and approved.json's and pending.json's records: `ctx.location` when the caller
-// read it already (readApprovedLocation, for this same directory), else read here.
+// The bundle on disk with its signature, approved.json's record and the pending slot's build: `ctx.location` when the
+// caller read it already (readApprovedLocation, for this same directory), else read here.
 function bundleFacts(ctx) {
   if (ctx.location) return ctx.location;
   const {paths} = ctx;
-  return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+  return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: pendingSlot(paths)};
 }
 
-// The bundle, approved.json's and pending.json's state, and the running engine's status answer (null when none runs).
+// The bundle, approved.json's state, the build pending beside it, and the running engine's status answer (null when
+// none runs).
 export async function engineStatus(deps) {
   const ctx = context(deps);
   return statusReport(ctx, bundleFacts(ctx), await statusOf(ctx));
@@ -220,7 +235,7 @@ function statusReport(ctx, {onDisk, approved, pending}, status) {
     approved: approval(onDisk, approved),
     approvedBuild: approved?.build ?? null,
     approvedAt: approved?.approvedAt ?? null,
-    pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
+    pending,
     running: Boolean(status),
     status,
     cursor: cursorSwitch(ctx, status),
@@ -298,18 +313,17 @@ function bundleIdOf(bundle) {
   try { return plistString(readFileSync(join(bundle, 'Contents', 'Info.plist'), 'utf8'), 'CFBundleIdentifier'); } catch { return null; }
 }
 
-// The approved location's records as files only, with no codesign and no connection: whether a bundle is there, and
-// approved.json's and pending.json's builds and times (never their identity). What doctor says about an engine that is
-// not selected.
+// The approved location's records as files only, with no codesign and no connection: whether a bundle is there,
+// approved.json's build and time (never its identity), and the build pending beside it. What doctor says about an
+// engine that is not selected.
 export function engineRecords({dir = engineDirectory()} = {}) {
   const paths = enginePaths(dir);
   const approved = readRecord(paths.approved);
-  const pending = readRecord(paths.pending);
   return {
     bundlePath: paths.bundle,
     exists: existsSync(paths.bundle),
     approved: approved ? {build: approved.build ?? null, approvedAt: approved.approvedAt ?? null} : null,
-    pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
+    pending: pendingSlot(paths),
   };
 }
 
@@ -317,14 +331,16 @@ export function engineRecords({dir = engineDirectory()} = {}) {
 
 const tail = text => lastLines(text, {count: 12, separator: '\n'});
 
-// Builds, assembles and signs the engine in staging, then replaces the approved bundle; an engine already busy refuses
-// before the build starts. The running engine is stopped
-// with `shutdown` first (a `busy` answer fails the build with the bundle, approved.json and the engine untouched and the
-// staged bundle discarded), then the old bundle is moved aside and the staged one into place (two renames), and
-// pending.json is written. A bundle whose build already matches and whose signature is the one asked for is left as it
-// is. `identity`: 'adhoc', or undefined for the configured identity (an identity string is taken as given);
-// `signOptions` reaches signBundle (its GUI-session job's uid, node, temp directory and bound).
-// -> {bundlePath, engineVersion, build, signature: {kind, identityMatches}, changed, stopped: {pid} | null}.
+// Builds, assembles and signs the engine in staging, then moves it into the pending slot beside the approved bundle
+// (one rename, replacing an older pending build) and writes pending.json (design ruling 1118). The bundle at the
+// approved path, approved.json and the running engine are never touched: no status, no shutdown, no swap, so a working
+// engine keeps serving, a busy one does not block a build, and `cua engine approve` promotes the build when the owner
+// is at the console. Nothing to do when the bundle at the approved path already is this build signed as asked (a build
+// still pending beside it is then stale, and is discarded), or the pending slot already holds it. `identity`: 'adhoc',
+// or undefined for the configured identity (an identity string is taken as given); `signOptions` reaches signBundle
+// (its GUI-session job's uid, node, temp directory and bound).
+// -> {bundlePath (where the build is), engineVersion, build, signature: {kind, identityMatches}, changed, pending}:
+// `pending` true when the build waits in the slot for `cua engine approve`.
 export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SOURCE, signOptions = {}, ...deps} = {}) {
   const ctx = context(deps);
   const {paths, log} = ctx;
@@ -334,16 +350,21 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   const build = engineBuild({sourceRoot});
   const version = engineVersion(sourceRoot);
 
-  const current = bundleOnDisk(paths.bundle, ctx.runSync);
   const signedAsAsked = signature => (adhoc ? signature?.kind === 'adhoc' : identityMatches(signature, wanted) === true);
+  const current = bundleOnDisk(paths.bundle, ctx.runSync);
   if (current.exists && current.build === build && signedAsAsked(current.signature)) {
+    if (pendingSlot(paths)) {
+      discardPending(paths);
+      log('discarded the build pending beside it: the bundle at the approved path already is this build');
+    }
     log(`cua's engine build ${shortBuild(build)} is already at ${paths.bundle}; nothing to do`);
-    return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: signatureReport(current.signature, configured), changed: false, stopped: null};
+    return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: signatureReport(current.signature, configured), changed: false, pending: false};
   }
-  // A busy engine refuses now, before the build, the staging and the signing cost anything (#237); an engine that is not
-  // running is not busy. The swap's own check (stop, below) stays the authority against a client that connects meanwhile.
-  const running = await statusOf(ctx);
-  if (running?.connections > 0) busy(running.pid, running.connections, running.holders);
+  const waiting = bundleOnDisk(paths.pendingBundle, ctx.runSync);
+  if (waiting.exists && waiting.build === build && signedAsAsked(waiting.signature)) {
+    log(`cua's engine build ${shortBuild(build)} is already pending at ${paths.pendingBundle}; nothing to do (cua engine approve to use it)`);
+    return {bundlePath: paths.pendingBundle, engineVersion: waiting.engineVersion, build, signature: signatureReport(waiting.signature, configured), changed: false, pending: true};
+  }
 
   mkdirSync(paths.dir, {recursive: true, mode: 0o700});
   chmodSync(paths.dir, 0o700);
@@ -359,31 +380,27 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   mkdirSync(paths.staging, {recursive: true, mode: 0o700});
   const staged = assembleBundle({executable: join(scratch, 'release', EXECUTABLE), out: paths.staging, version, build});
   let signature;
-  let stopped;
   try {
     log(adhoc ? 'signing ad hoc' : 'signing with the configured identity');
     await signBundle(staged, {identity: adhoc ? 'adhoc' : identity, env: ctx.env, run: ctx.run, sleep: ctx.sleep, now: ctx.now, ...signOptions});
     signature = readSignature(staged, ctx.runSync ? {runSync: ctx.runSync} : {});
     if (!recordedIdentity(signature))
       fail('engine_sign_failed', signature ? `the staged bundle's signature could not be read after signing (${signature.reason})` : 'the staged bundle reads as unsigned after signing');
-    stopped = await stop(ctx);
-    if (stopped.wasRunning) log(`stopped the running engine (pid ${stopped.pid})`);
-  } catch (error) {
+    discardPending(paths);
+    mkdirSync(paths.pendingDir, {recursive: true, mode: 0o700});
+    renameSync(staged, paths.pendingBundle);
+  } finally {
     rmSync(paths.staging, {recursive: true, force: true});
-    throw error;
   }
-
-  rmSync(paths.previous, {recursive: true, force: true});
-  const hadBundle = existsSync(paths.bundle);
-  if (hadBundle) renameSync(paths.bundle, paths.previous);
-  try { renameSync(staged, paths.bundle); } catch (error) {
-    if (hadBundle) renameSync(paths.previous, paths.bundle);
-    throw error;
-  }
-  rmSync(paths.staging, {recursive: true, force: true});
   writeRecord(paths.pending, {build, identity: recordedIdentity(signature), builtAt: new Date(ctx.now()).toISOString()});
-  log(`installed cua's engine ${shortBuild(build)} at ${paths.bundle}, pending approval (cua engine approve)`);
-  return {bundlePath: paths.bundle, engineVersion: version, build, signature: signatureReport(signature, configured), changed: true, stopped: stopped.wasRunning ? {pid: stopped.pid} : null};
+  log(`built cua's engine ${shortBuild(build)} at ${paths.pendingBundle}, beside the approved bundle, which is unchanged: a new build is pending; cua engine approve to use it`);
+  return {bundlePath: paths.pendingBundle, engineVersion: version, build, signature: signatureReport(signature, configured), changed: true, pending: true};
+}
+
+// The pending slot emptied: its bundle and pending.json.
+function discardPending(paths) {
+  rmSync(paths.pendingDir, {recursive: true, force: true});
+  rmSync(paths.pending, {force: true});
 }
 
 // ---- approveEngine ----
@@ -466,17 +483,84 @@ async function watchedApprove(ctx) {
 // engine launched in the foreground (`open -n -a`), replacing an idle matching engine already running, since a
 // background LSUIElement launch has no window the prompt can attach to (the Design's U7). It promises no prompt, so the
 // by-hand steps still lead; the post-grant relaunch and every other launch stay background.
-// -> {approved, reason?, grants, build, approvedAt?, captureConfirmation}.
+// With a build pending beside the approved bundle (design ruling 1118), approve first promotes it: the running engine
+// is stopped (refused while another connection is open), the approved bundle moved aside to `previous` and the pending
+// one into the approved path; then the loop above runs on it. If that approval does not complete (it fails, the
+// operator aborts, or the relaunched engine captures nothing), the promoted engine is stopped and both bundles are put
+// back, so the previous approved engine keeps serving with approved.json unchanged and the build is pending again for
+// the next approve. Once approved, the pending slot and pending.json are removed. With no pending build, the loop runs
+// on the bundle at the approved path, as before.
+// -> {approved, reason?, grants, build, approvedAt?, captureConfirmation, restored?}.
 export async function approveEngine({foreground = false, ...deps} = {}) {
   const ctx = context({operator: {next: () => Promise.resolve(null)}, watchCaptureAlerts, ...deps});
+  const {paths} = ctx;
+  const waiting = bundleOnDisk(paths.pendingBundle, ctx.runSync);
+  if (!waiting.exists) return approveAtPath(ctx, {foreground});
+  signedIdentity(waiting, paths.pendingBundle);
+  const promoted = await promote(ctx, waiting);
+  let result;
+  try { result = await approveAtPath(ctx, {foreground}); } catch (error) {
+    await restore(ctx, promoted);
+    throw error;
+  }
+  if (!result.approved) {
+    await restore(ctx, promoted);
+    return {...result, restored: true};
+  }
+  discardPending(paths);
+  return result;
+}
+
+// The identity a bundle's signature records; refuses one whose signature cannot be read, or that is unsigned.
+function signedIdentity(onDisk, bundle) {
+  if (onDisk.signature?.kind === 'unreadable')
+    fail('engine_signature_unreadable', `the signature of the bundle at ${bundle} could not be read (${onDisk.signature.reason}), so approve cannot tell which build and identity it would approve`,
+      {hint: 'codesign may be blocked behind a prompt at the console: see to it there, then run cua engine approve again'});
+  const identity = recordedIdentity(onDisk.signature);
+  if (!identity) fail('engine_not_built', `the bundle at ${bundle} is not signed`, {hint: 'rebuild it: cua install --engine (or cua engine build)'});
+  return identity;
+}
+
+// The pending build into the approved path: the running engine stopped first (busy refuses, nothing moved), the
+// approved bundle to `previous`, the pending one into its place. -> {hadBundle, previousBuild}.
+async function promote(ctx, waiting) {
+  const {paths, log} = ctx;
+  const stopped = await stop(ctx);
+  if (stopped.wasRunning) log(`stopped the running engine (pid ${stopped.pid}) to put the pending build in place`);
+  let previousBuild = null;
+  try { previousBuild = bundleIdentity(paths.bundle).build ?? null; } catch { /* no bundle at the approved path */ }
+  rmSync(paths.previous, {recursive: true, force: true});
+  const hadBundle = existsSync(paths.bundle);
+  if (hadBundle) renameSync(paths.bundle, paths.previous);
+  try { renameSync(paths.pendingBundle, paths.bundle); } catch (error) {
+    if (hadBundle) renameSync(paths.previous, paths.bundle);
+    throw error;
+  }
+  log(`promoted the pending build ${shortBuild(waiting.build)} into ${paths.bundle}${hadBundle ? ` (build ${shortBuild(previousBuild)} kept aside until this approval completes)` : ''}`);
+  return {hadBundle, previousBuild};
+}
+
+// promote undone: the promoted engine stopped if it runs (best effort: a failure is logged, and the bundles go back
+// regardless), the promoted bundle back into the pending slot and the previous one into the approved path.
+async function restore(ctx, {hadBundle, previousBuild}) {
+  const {paths, log} = ctx;
+  try { await stop(ctx); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    log(`could not stop the promoted engine before putting the previous build back: ${error.message}`);
+  }
+  mkdirSync(paths.pendingDir, {recursive: true, mode: 0o700});
+  if (existsSync(paths.bundle)) renameSync(paths.bundle, paths.pendingBundle);
+  if (hadBundle) renameSync(paths.previous, paths.bundle);
+  log(hadBundle ? `restored the approved build ${shortBuild(previousBuild)} at ${paths.bundle}: it keeps serving; the new build is pending again (cua engine approve to retry)`
+    : `restored the pending slot: the new build is pending again at ${paths.pendingBundle} (cua engine approve to retry)`);
+}
+
+// The approve loop on the bundle at the approved path.
+async function approveAtPath(ctx, {foreground}) {
   const {paths, log} = ctx;
   const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
-  if (!onDisk.exists) fail('engine_not_built', `no engine bundle at ${paths.bundle}`, {hint: 'build it first: cua engine build'});
-  const identity = recordedIdentity(onDisk.signature);
-  if (onDisk.signature?.kind === 'unreadable')
-    fail('engine_signature_unreadable', `the signature of the bundle at ${paths.bundle} could not be read (${onDisk.signature.reason}), so approve cannot tell which build and identity it would approve`,
-      {hint: 'codesign may be blocked behind a prompt at the console: see to it there, then run cua engine approve again'});
-  if (!identity) fail('engine_not_built', `the bundle at ${paths.bundle} is not signed`, {hint: 'rebuild it: cua engine build'});
+  if (!onDisk.exists) fail('engine_not_built', `no engine bundle at ${paths.bundle}`, {hint: 'build it first: cua install --engine (or cua engine build)'});
+  const identity = signedIdentity(onDisk, paths.bundle);
 
   let status = await statusOf(ctx);
   if (status && foreground) {

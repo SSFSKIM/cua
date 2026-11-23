@@ -67,8 +67,9 @@ export const usageFor = platform => {
                                                                nodejs.org tarball, or none: the host uses your Node)
 ${darwin ? `          [--engine] [--engine-sign adhoc] [--sign-wait <ms>]  and last cua's engine, built and signed as engine build
                                                                does when CUA_NATIVE_ENGINE or ~/.config/cua/engine.json
-                                                               selects it, pending until engine approve (the owner at
-                                                               the console): --engine builds it whatever selects, and
+                                                               selects it, beside the approved one, which keeps serving
+                                                               until engine approve (the owner at the console) puts the
+                                                               new build in place: --engine builds it whatever selects, and
                                                                makes it required (without it a failed build is only
                                                                reported); --engine-sign adhoc and --sign-wait are
                                                                engine build's --sign and --sign-wait
@@ -82,15 +83,19 @@ ${darwin ? `          [--engine] [--engine-sign adhoc] [--sign-wait <ms>]  and l
                                                                only once every cua using this home is updated, since
                                                                an older cua sharing the home may still need it
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
-${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build, sign and install cua's native engine at its one place
-                                                               on this Mac (~/Library/Application Support/cua/engine), pending
-                                                               until approved; signed with signingIdentity in
+${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build and sign cua's native engine beside its one approved
+                                                               place on this Mac (~/Library/Application Support/cua/engine/
+                                                               pending), leaving the approved engine serving until engine
+                                                               approve puts the build in place; signed with signingIdentity in
                                                                ~/.config/cua/engine.json or CUA_SIGNING_IDENTITY (ad hoc: CI only);
                                                                over SSH the sign waits 45 s for the console's keychain prompt
                                                                (--sign-wait or CUA_SIGN_WAIT_MS, up to 1800000: the attended
                                                                first sign on a Mac, e.g. 600000)
-  engine approve [--foreground] [--json]                       approve the built engine: its grants (the owner at the console
-                                                               when one is missing), a relaunch and one capture, then approved;
+  engine approve [--foreground] [--json]                       put the pending build in place (stopping the engine; refused
+                                                               while a session uses it) and approve it: its grants (the owner
+                                                               at the console when one is missing), a relaunch and one
+                                                               capture, then approved; if approval does not complete, the
+                                                               approved build is put back and keeps serving;
                                                                --foreground makes the grant requests from a foreground launch,
                                                                which may let macOS show their prompts (the steps still lead)
   engine status [--json]                                       the engine's bundle, signature, approval and running grants,
@@ -282,7 +287,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     if (!values.json) print(macosEngine.skipped
       ? 'cua\'s engine is not selected, so install left it alone: cua install --engine builds it (CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects it)'
       : macosEngine.status === 'warn' ? `cua's engine was not installed: ${macosEngine.message} (${macosEngine.code}); ${macosEngine.hint}`
-        : `${engineBuildText(macosEngine)}${macosEngine.approved ? ', and approved' : '; pending until cua engine approve, with the owner at the console'}`);
+        : `${engineBuildText(macosEngine)}${afterBuildText(macosEngine)}`);
   }
   if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(codexLeftovers ? {codexLeftovers} : {}), ...(sandboxHelper ? {sandboxHelper} : {}),
     ...(linuxEngine ? {engine: linuxEngine} : {}), ...(macosEngine ? {engine: macosEngine} : {}), node});
@@ -864,6 +869,9 @@ const signatureText = ({kind, identityMatches, reason}) => (kind === null ? 'uns
 // A build's outcome, as engine build and install say it.
 const engineBuildText = built => (built.changed ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, ${signatureText(built.signature)}`
   : `cua's engine ${shortBuild(built.build)} at ${built.bundlePath} is already this build, ${signatureText(built.signature)}`);
+// What follows a build: pending beside the approved engine (design ruling 1118), or at the approved path.
+const PENDING_BUILD = 'a new build is pending; cua engine approve to use it (the owner at the console)';
+const afterBuildText = built => (built.pending ? `; ${PENDING_BUILD}` : built.approved ? ', and approved' : '; not approved yet: cua engine approve (the owner at the console)');
 
 export function engineStatusLines(status) {
   const lines = [status.exists ? `engine: ${status.bundlePath} (version ${status.engineVersion}, build ${shortBuild(status.build)}), ${signatureText(status.signature)}`
@@ -871,6 +879,7 @@ export function engineStatusLines(status) {
   if (status.exists) lines.push(status.approved ? `approved: yes, at ${status.approvedAt}`
     : status.approved === null ? `approved: unknown (the signature could not be read; approved.json names build ${shortBuild(status.approvedBuild)})`
       : `approved: no${status.approvedBuild ? ` (approved.json names build ${shortBuild(status.approvedBuild)})` : ''}; run cua engine approve with the owner at the console`);
+  if (status.pending) lines.push(`pending: build ${shortBuild(status.pending.build)} at ${status.pending.bundlePath}${status.pending.builtAt ? `, built ${status.pending.builtAt}` : ''}; cua engine approve puts it in place (the owner at the console)`);
   const s = status.status;
   const holders = s ? holdersText(s.holders) : '';
   lines.push(s ? `running: pid ${s.pid}, accessibility ${s.accessibility}, screen recording ${s.screenRecording}, input monitoring ${s.inputMonitoring}, ${s.connections} other connection(s)${holders ? `: ${holders}` : ''}`
@@ -938,7 +947,7 @@ async function engine(args, deps = {}) {
   if (command === 'build') {
     const timeoutMs = signWaitMs({flag: values['sign-wait'], env: deps.env ?? process.env});
     const built = await buildEngine({...deps, ...(values.sign ? {identity: 'adhoc'} : {}), signOptions: {...deps.signOptions, timeoutMs}, log});
-    print(values.json ? {ok: true, ...built} : `${engineBuildText(built)}${built.changed ? '; pending until cua engine approve' : ''}`);
+    print(values.json ? {ok: true, ...built} : `${engineBuildText(built)}${built.pending ? `; ${PENDING_BUILD}` : ''}`);
     return 0;
   }
   const operator = deps.operator ?? lineReader(process.stdin);
@@ -946,7 +955,7 @@ async function engine(args, deps = {}) {
     const approved = await approveEngine({...deps, operator, log, foreground: values.foreground === true});
     print(values.json ? {ok: approved.approved, ...approved} : approved.approved
       ? `approved cua's engine ${shortBuild(approved.build)} at ${approved.approvedAt}`
-      : `not approved: ${approved.reason}`);
+      : `not approved: ${approved.reason}${approved.restored ? '; the previous build is back in place, and the new one is pending again' : ''}`);
     return approved.approved ? 0 : 1;
   } finally { operator.close?.(); }
 }

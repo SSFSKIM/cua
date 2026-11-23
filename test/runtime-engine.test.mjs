@@ -20,6 +20,7 @@ import {main} from '../src/cli.mjs';
 import {installMacosEngine} from '../src/runtime/install.mjs';
 
 const OLD_BUILD = 'b'.repeat(64);
+const NEW_BUILD = 'c'.repeat(64);
 
 // A fake native/engine tree (so `build` is computed from it) and a home whose engine.json names the identity.
 function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
@@ -109,10 +110,21 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     if (kind) markSigned(bundle, kind);
     if (approved) writeFileSync(join(dir, 'approved.json'), JSON.stringify({build, identity: kind === 'adhoc' ? 'adhoc' : CERT_SHA1, approvedAt: '2026-10-20T00:00:00.000Z'}));
   }
+  // A build in the pending slot beside the approved path (design ruling 1118), with pending.json naming it.
+  const pendingBundle = join(dir, 'pending', BUNDLE_NAME);
+  function placePending({build = NEW_BUILD, kind = 'identity'} = {}) {
+    mkdirSync(join(pendingBundle, 'Contents', 'MacOS'), {recursive: true});
+    writeFileSync(join(pendingBundle, 'Contents', 'Info.plist'), infoPlist({version: '9.9.9', build}));
+    if (kind) markSigned(pendingBundle, kind);
+    writeFileSync(join(dir, 'pending.json'), JSON.stringify({build, identity: kind === 'adhoc' ? 'adhoc' : CERT_SHA1, builtAt: '2026-11-23T00:00:00.000Z'}));
+  }
   const checkoutBuild = () => engineBuild({sourceRoot: source});
   const json = name => JSON.parse(readFileSync(join(dir, name), 'utf8'));
-  const plistBuild = () => /<key>CUAEngineBuild<\/key>\s*<string>([^<]*)</.exec(readFileSync(join(bundle, 'Contents', 'Info.plist'), 'utf8'))[1];
-  return {home, dir, bundle, socket, deps, state, calls, logs, engines, operator, watcher, order, startEngine, placeBundle, checkoutBuild, json, plistBuild};
+  const text = name => readFileSync(join(dir, name), 'utf8');
+  const buildAt = path => /<key>CUAEngineBuild<\/key>\s*<string>([^<]*)</.exec(readFileSync(join(path, 'Contents', 'Info.plist'), 'utf8'))[1];
+  const plistBuild = () => buildAt(bundle);
+  const pendingBuild = () => (existsSync(pendingBundle) ? buildAt(pendingBundle) : null);
+  return {home, dir, bundle, pendingBundle, socket, deps, state, calls, logs, engines, operator, watcher, order, startEngine, placeBundle, placePending, checkoutBuild, json, text, plistBuild, pendingBuild};
 }
 
 const noIdentity = (value, label) => {
@@ -129,14 +141,15 @@ test('buildEngine refuses without a configured identity before building anything
   assert.ok(!existsSync(w.bundle));
 });
 
-test('a first build compiles into the engine directory\'s scratch, assembles and signs in staging, moves the bundle into place and writes pending.json', async t => {
+test('a first build compiles into the engine directory\'s scratch, assembles and signs in staging, moves the bundle into the pending slot and writes pending.json', async t => {
   const w = world(t);
   const result = await buildEngine(w.deps);
   const build = w.checkoutBuild();
   assert.deepEqual(w.calls[0], ['swift', 'build', '-c', 'release', '--package-path', join(w.home, 'src'), '--scratch-path', join(w.dir, 'build')]);
   const sign = w.calls.find(c => c[0] === '/usr/bin/codesign' && c[1] === '--force');
   assert.equal(sign.at(-1), join(w.dir, 'staging', BUNDLE_NAME), 'signed in staging, before the move');
-  assert.equal(w.plistBuild(), build);
+  assert.equal(w.pendingBuild(), build);
+  assert.ok(!existsSync(w.bundle), 'nothing at the approved path until cua engine approve promotes it');
   assert.ok(!existsSync(join(w.dir, 'staging', BUNDLE_NAME)));
   assert.equal(statSync(w.dir).mode & 0o777, 0o700);
   const pending = w.json('pending.json');
@@ -145,96 +158,87 @@ test('a first build compiles into the engine directory\'s scratch, assembles and
   assert.equal(pending.identity, CERT_SHA1, 'the device state records the leaf\'s SHA-1');
   assert.equal(statSync(join(w.dir, 'pending.json')).mode & 0o777, 0o600);
   assert.ok(!existsSync(join(w.dir, 'approved.json')));
-  assert.deepEqual(result, {bundlePath: w.bundle, engineVersion: '9.9.9', build, signature: {kind: 'identity', identityMatches: true}, changed: true, stopped: null});
+  assert.deepEqual(result, {bundlePath: w.pendingBundle, engineVersion: '9.9.9', build, signature: {kind: 'identity', identityMatches: true}, changed: true, pending: true});
+  assert.match(w.logs.join('\n'), /a new build is pending; cua engine approve to use it/);
   noIdentity(result, 'the result');
   noIdentity(w.logs, 'the log');
 });
 
-test('a rebuild stops the running engine with shutdown, moves the old bundle aside and the new one in, and leaves approved.json alone', async t => {
+// Design ruling 1118: a build never takes away a working engine.
+test('a build with an approved engine present leaves it serving: the same bundle, the same approved.json, the engine not stopped or even asked, and a pending build beside it', async t => {
   const w = world(t);
   w.placeBundle({approved: true});
+  const approved = w.text('approved.json');
   const engine = await w.startEngine();
   const result = await buildEngine(w.deps);
-  assert.ok(engine.received.some(r => r.method === 'shutdown'));
-  assert.equal(engine.stopped, true);
-  assert.deepEqual(result.stopped, {pid: engine.pid});
-  assert.equal(w.plistBuild(), w.checkoutBuild());
-  assert.match(readFileSync(join(w.dir, 'previous', 'Contents', 'Info.plist'), 'utf8'), new RegExp(OLD_BUILD));
-  assert.equal(w.json('approved.json').build, OLD_BUILD, 'approval is the approve step\'s alone');
+  assert.equal(result.changed, true);
+  assert.equal(result.pending, true);
+  assert.equal(engine.stopped, false);
+  assert.deepEqual(engine.received, [], 'no status, no shutdown');
+  assert.equal(w.plistBuild(), OLD_BUILD, 'the approved bundle is untouched');
+  assert.equal(w.text('approved.json'), approved, 'approved.json byte for byte');
+  assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, OLD_BUILD, 'the approved engine is still the installed one');
+  assert.equal(w.pendingBuild(), w.checkoutBuild());
   assert.equal(w.json('pending.json').build, w.checkoutBuild());
-  assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}), null, 'the new build is pending, not installed');
+  assert.ok(!existsSync(join(w.dir, 'previous')), 'nothing moved aside');
 });
 
-for (const [why, answers] of [['status counts another connection', {connections: 1}], ['shutdown itself answers busy', {busyOnShutdown: true}]]) {
-  test(`a busy engine (${why}) fails the build visibly and leaves the bundle, approved.json and the engine untouched, the staged bundle discarded`, async t => {
-    const w = world(t, {engineAnswers: answers});
-    w.placeBundle({approved: true});
-    const engine = await w.startEngine();
-    await assert.rejects(buildEngine(w.deps), error => {
-      assert.equal(error.code, 'engine_busy');
-      assert.match(error.message, /1 other connection/);
-      noIdentity({m: error.message, h: error.hint}, 'the refusal');
-      return true;
-    });
-    assert.equal(engine.stopped, false);
-    assert.equal(w.plistBuild(), OLD_BUILD);
-    assert.equal(w.json('approved.json').build, OLD_BUILD);
-    assert.ok(!existsSync(join(w.dir, 'pending.json')));
-    assert.ok(!existsSync(join(w.dir, 'staging', BUNDLE_NAME)));
-    assert.ok(!existsSync(join(w.dir, 'previous')));
-  });
-}
-
-// #237: a busy engine refuses the build before the build costs anything; the swap's own check stays the authority
-// against a client that connects meanwhile (the case above where only shutdown answers busy).
-test('a busy engine refuses the build before any step: no swift build, no staging, nothing signed, and the error names the holder', async t => {
+test('a busy engine no longer blocks a build, which never stops it', async t => {
   const w = world(t, {engineAnswers: {connections: 1, holders: [{pid: 42091, label: 'MAWS'}]}});
   w.placeBundle({approved: true});
   const engine = await w.startEngine();
-  await assert.rejects(buildEngine(w.deps), error => {
-    assert.equal(error.code, 'engine_busy');
-    assert.equal(error.message, `the engine (pid ${engine.pid}) has 1 other connection open: pid 42091 (MAWS)`);
-    return true;
-  });
-  assert.deepEqual(w.calls, [], 'no swift build and no codesign ran');
-  assert.ok(!existsSync(join(w.dir, 'staging')), 'no staging directory');
-  assert.ok(!existsSync(join(w.dir, 'build')), 'no scratch build');
-  assert.deepEqual(engine.received.map(r => r.method), ['status'], 'one status read, no shutdown');
-  assert.equal(w.plistBuild(), OLD_BUILD);
+  const result = await buildEngine(w.deps);
+  assert.equal(result.changed, true);
+  assert.equal(w.pendingBuild(), w.checkoutBuild());
+  assert.equal(engine.stopped, false);
+  assert.deepEqual(engine.received, []);
 });
 
-test('a bundle already current is reported as such even while the engine is busy: nothing to do comes before the busy check', async t => {
-  const w = world(t, {engineAnswers: {connections: 1}});
-  w.placeBundle({build: w.checkoutBuild(), approved: true});
-  const engine = await w.startEngine();
-  assert.equal((await buildEngine(w.deps)).changed, false);
-  assert.deepEqual(engine.received, [], 'the engine is not even asked');
-});
-
-test('a bundle whose build and signature already match is left as it is: nothing is built or stopped', async t => {
+test('a build that is already the approved bundle is a no-op, and a stale pending build beside it is discarded', async t => {
   const w = world(t);
   w.placeBundle({build: w.checkoutBuild(), approved: true});
+  w.placePending({build: NEW_BUILD});
   const engine = await w.startEngine();
   const result = await buildEngine(w.deps);
   assert.equal(result.changed, false);
+  assert.equal(result.pending, false);
+  assert.equal(result.bundlePath, w.bundle);
   assert.deepEqual(result.signature, {kind: 'identity', identityMatches: true});
   assert.ok(!w.calls.some(c => c[0] === 'swift'));
-  assert.ok(!engine.received.some(r => r.method === 'shutdown'));
+  assert.deepEqual(engine.received, []);
+  assert.equal(w.pendingBuild(), null, 'the stale pending build is gone');
+  assert.ok(!existsSync(join(w.dir, 'pending.json')));
 });
 
-test('the same build under a signature that is not the configured identity is rebuilt (the second reinstall trigger)', async t => {
+test('a build that is already the pending one is a no-op', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  await buildEngine(w.deps);
+  const builtAt = w.json('pending.json').builtAt;
+  const calls = w.calls.length;
+  const again = await buildEngine(w.deps);
+  assert.equal(again.changed, false);
+  assert.equal(again.pending, true);
+  assert.equal(again.bundlePath, w.pendingBundle);
+  assert.equal(w.calls.length, calls, 'nothing built or signed again');
+  assert.equal(w.json('pending.json').builtAt, builtAt);
+});
+
+test('the same build under a signature that is not the configured identity is rebuilt beside it (the second reinstall trigger)', async t => {
   const w = world(t);
   w.placeBundle({build: w.checkoutBuild(), kind: 'adhoc'});
   const result = await buildEngine(w.deps);
   assert.equal(result.changed, true);
+  assert.equal(result.bundlePath, w.pendingBundle);
   assert.deepEqual(result.signature, {kind: 'identity', identityMatches: true});
 });
 
-test('a signature codesign cannot read fails closed in build: the same build is rebuilt, and an unreadable staged signature fails before the move', async t => {
+test('a signature codesign cannot read fails closed in build: the same build is rebuilt beside it, and an unreadable staged signature fails before the move', async t => {
   const w = world(t);
   w.placeBundle({build: w.checkoutBuild(), approved: true});
   const result = await buildEngine({...w.deps, runSync: (file, args) => (args.at(-1) === w.bundle ? CODESIGN_TIMED_OUT : fakeCodesignRead(file, args))});
   assert.equal(result.changed, true, 'an installed bundle whose signature cannot be read is not taken as signed as asked');
+  assert.equal(w.plistBuild(), w.checkoutBuild(), 'the approved bundle is untouched');
 
   const fresh = world(t);
   fresh.placeBundle({approved: true});
@@ -244,6 +248,7 @@ test('a signature codesign cannot read fails closed in build: the same build is 
     return true;
   });
   assert.equal(fresh.plistBuild(), OLD_BUILD, 'the approved bundle is untouched');
+  assert.equal(fresh.pendingBuild(), null);
   assert.ok(!existsSync(join(fresh.dir, 'pending.json')));
   assert.ok(!existsSync(join(fresh.dir, 'staging', BUNDLE_NAME)));
 });
@@ -511,10 +516,10 @@ test('a missing, pending or unapproved bundle, or one whose signature cannot be 
   assert.equal(missing.exists, false);
   assert.equal(missing.launch, null);
   w.placeBundle();
-  writeFileSync(join(w.dir, 'pending.json'), JSON.stringify({build: OLD_BUILD, identity: CERT_SHA1, builtAt: 'then'}));
+  w.placePending();
   const pending = await inspectEngine(w.deps);
   assert.equal(pending.approved, false);
-  assert.deepEqual(pending.pending, {build: OLD_BUILD, builtAt: 'then'});
+  assert.deepEqual(pending.pending, {build: NEW_BUILD, builtAt: '2026-11-23T00:00:00.000Z', bundlePath: w.pendingBundle});
   assert.equal(pending.launch, null);
   writeFileSync(join(w.dir, 'approved.json'), JSON.stringify({build: 'c'.repeat(64), identity: CERT_SHA1, approvedAt: 'when'}));
   assert.equal((await inspectEngine(w.deps)).launch, null, 'another build is approved');
@@ -565,13 +570,16 @@ test('a status read that fails is reported, and nothing is launched or stopped',
   assert.ok(!methods(engine).includes('shutdown'));
 });
 
-test('engineRecords reads the bundle\'s presence, approved.json\'s and pending.json\'s builds, never codesign or the identity', t => {
+test('engineRecords reads the bundle\'s presence, approved.json\'s build and the build pending beside it, never codesign or the identity', t => {
   const w = world(t);
   assert.deepEqual(engineRecords({dir: w.dir}), {bundlePath: w.bundle, exists: false, approved: null, pending: null});
   w.placeBundle({approved: true});
-  writeFileSync(join(w.dir, 'pending.json'), JSON.stringify({build: 'c'.repeat(64), identity: CERT_SHA1, builtAt: 'then'}));
+  writeFileSync(join(w.dir, 'pending.json'), JSON.stringify({build: NEW_BUILD, identity: CERT_SHA1, builtAt: 'then'}));
+  assert.equal(engineRecords({dir: w.dir}).pending, null, 'pending.json alone (an in-place build of before ruling 1118) is no pending build');
+  w.placePending();
   const records = engineRecords({dir: w.dir});
-  assert.deepEqual(records, {bundlePath: w.bundle, exists: true, approved: {build: OLD_BUILD, approvedAt: '2026-10-20T00:00:00.000Z'}, pending: {build: 'c'.repeat(64), builtAt: 'then'}});
+  assert.deepEqual(records, {bundlePath: w.bundle, exists: true, approved: {build: OLD_BUILD, approvedAt: '2026-10-20T00:00:00.000Z'},
+    pending: {build: NEW_BUILD, builtAt: '2026-11-23T00:00:00.000Z', bundlePath: w.pendingBundle}});
   noIdentity(records, 'engineRecords');
 });
 
@@ -739,40 +747,162 @@ for (const [why, set] of [['cannot start', watcher => { watcher.ready = false; }
   });
 }
 
-// ---- cua install's engine step over the real build ----
+// ---- approve promotes a pending build (design ruling 1118) ----
 
-// installMacosEngine as `cua install` (selected by CUA_NATIVE_ENGINE) or `cua install --engine` runs it, this world's
-// fakes as its engine deps. The world's operator stands for a terminal that would confirm anything (`state.lines`).
-const installStep = (w, options = {}) => installMacosEngine({env: {...w.deps.env, CUA_NATIVE_ENGINE: 'cua'}, engine: w.deps, log: w.deps.log, ...options});
+const previousBuild = w => /<key>CUAEngineBuild<\/key>\s*<string>([^<]*)</.exec(readFileSync(join(w.dir, 'previous', 'Contents', 'Info.plist'), 'utf8'))[1];
 
-test('install, plain or --engine, builds and signs into pending and never approves, even where an approval would need no one', async t => {
-  for (const explicit of [false, true]) {
+test('approve promotes the pending build: the engine stopped, the approved bundle moved aside and the pending one in, relaunched and approved; the pending slot and pending.json gone', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending();
+  const serving = await w.startEngine();
+  const result = await approveEngine(w.deps);
+  assert.equal(result.approved, true);
+  assert.equal(result.build, NEW_BUILD);
+  assert.equal(serving.stopped, true, 'the serving engine was stopped for the promote');
+  assert.equal(approves(serving), 0, 'the old engine is not the one approved');
+  assert.equal(w.plistBuild(), NEW_BUILD);
+  assert.equal(previousBuild(w), OLD_BUILD, 'the old approved bundle is kept aside');
+  assert.equal(w.json('approved.json').build, NEW_BUILD);
+  assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, NEW_BUILD);
+  assert.equal(w.pendingBuild(), null);
+  assert.ok(!existsSync(join(w.dir, 'pending.json')));
+  assert.equal(opened(w).length, 2, 'launched after the promote, then relaunched for the capture');
+  assert.match(w.logs.join('\n'), /promoted/);
+});
+
+test('approve with a pending build and no approved bundle promotes it into the empty approved path', async t => {
+  const w = world(t);
+  w.placePending();
+  const result = await approveEngine(w.deps);
+  assert.equal(result.approved, true);
+  assert.equal(w.plistBuild(), NEW_BUILD);
+  assert.ok(!existsSync(join(w.dir, 'previous')));
+});
+
+// A grant that stays false with no one at the terminal (thrown), the operator's "n" (returned), and a capture that
+// reports false after the relaunch (returned): each after the promote.
+for (const [why, setup] of [
+  ['a grant pending with no terminal', w => { w.state.accessibility = false; w.state.lines = [null]; }],
+  ['the operator aborts', w => { w.state.accessibility = false; w.state.lines = ['n']; }],
+  ['no capture after the relaunch', w => { w.state.captured = false; }],
+]) {
+  test(`a failed approve after the promote (${why}) restores the previous bundle: the previous approved engine keeps serving, approved.json unchanged, the build pending again`, async t => {
     const w = world(t);
-    w.placeBundle({approved: true});   // approved under the configured identity: a same-identity rebuild follows
-    const running = await w.startEngine();
-    w.state.lines = [''];
-    const result = await installStep(w, {explicit});
-    assert.equal(result.status, 'pass');
-    assert.equal(result.changed, true);
-    assert.equal(result.approved, false, 'the new build is pending');
-    assert.equal(running.stopped, true, 'the old engine was stopped for the swap');
-    assert.equal(approves(running), 0);
-    assert.deepEqual(opened(w), [], 'nothing launched: no approve request, no capture');
-    assert.equal(w.engines.length, 1);
-    assert.equal(w.operator.asked, 0);
-    assert.equal(w.json('pending.json').build, w.checkoutBuild());
-    assert.equal(w.json('approved.json').build, OLD_BUILD, 'approved.json is cua engine approve\'s alone');
-    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}), null);
-    noIdentity(result, 'the result');
+    w.placeBundle({approved: true});
+    w.placePending();
+    const approved = w.text('approved.json');
+    setup(w);
+    let result = null;
+    try { result = await approveEngine(w.deps); } catch (error) { assert.equal(error.code, 'engine_grant_pending'); }
+    if (result) assert.equal(result.approved, false);
+    assert.equal(w.plistBuild(), OLD_BUILD, 'the previous bundle is back at the approved path');
+    assert.equal(w.text('approved.json'), approved);
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, OLD_BUILD, 'the previous approved engine is the installed one again');
+    assert.equal(w.pendingBuild(), NEW_BUILD, 'the new build is pending again, for the next approve');
+    assert.equal(w.json('pending.json').build, NEW_BUILD);
+    assert.ok(w.engines.every(engine => engine.stopped), 'the promoted engine is not left running from a bundle that moved');
+    assert.match(w.logs.join('\n'), /restored/);
+  });
+}
+
+test('approve with a pending build refuses while another connection is open, before moving anything', async t => {
+  const w = world(t, {engineAnswers: {connections: 1}});
+  w.placeBundle({approved: true});
+  w.placePending();
+  const serving = await w.startEngine();
+  await assert.rejects(approveEngine(w.deps), {code: 'engine_busy'});
+  assert.equal(serving.stopped, false);
+  assert.equal(w.plistBuild(), OLD_BUILD);
+  assert.equal(w.pendingBuild(), NEW_BUILD);
+  assert.deepEqual(opened(w), []);
+});
+
+test('approve refuses a pending build whose signature cannot be read, or that is unsigned, before touching anything', async t => {
+  for (const kind of [null, 'unreadable']) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    w.placePending({kind: kind === 'unreadable' ? 'identity' : null});
+    const runSync = (file, args) => (kind === 'unreadable' && args.at(-1) === w.pendingBundle ? CODESIGN_TIMED_OUT : fakeCodesignRead(file, args));
+    await assert.rejects(approveEngine({...w.deps, runSync}), {code: kind ? 'engine_signature_unreadable' : 'engine_not_built'});
+    assert.equal(w.plistBuild(), OLD_BUILD);
+    assert.equal(w.pendingBuild(), NEW_BUILD);
   }
 });
 
-test('install over the approved bundle already at this build builds, stops and launches nothing, and reports it approved', async t => {
+test('the foreground approve of a pending build launches the promoted engine in the foreground; the relaunch stays background', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.placePending();
+  await w.startEngine();
+  const result = await approveEngine({...w.deps, foreground: true});
+  assert.equal(result.approved, true);
+  assert.equal(result.build, NEW_BUILD, 'the promoted build is the one approved');
+  assert.deepEqual(opened(w), [['/usr/bin/open', '-n', '-a', w.bundle], ['/usr/bin/open', '-n', '-g', '-a', w.bundle]]);
+});
+
+// ---- cua install over the real build: never an approval ----
+
+// `cua install` through the CLI's own handler: the runtime installer stubbed, the macOS engine step real, with this
+// world's fakes as its engine deps; `env` the selection.
+async function installThroughCli(t, w, args, env) {
+  const runtimePin = {release: '0.0.1-fixture', platform: process.platform, arch: process.arch, appVersion: '0.0.1', archive: {url: 'https://example.invalid/runtime'}};
+  const deps = {home: join(w.home, 'cua-home'), platform: 'darwin', env: {...w.deps.env, ...env}, pins: () => [runtimePin], nodePins: () => [], enginePin: () => null,
+    installRuntime: async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, record: {source: 'archive'}}),
+    installMacosEngine: options => installMacosEngine({...options, engine: w.deps})};
+  const out = [];
+  const keep = (stream, into) => { const write = stream.write.bind(stream); t.mock.method(stream, 'write', (chunk, ...rest) => (typeof chunk === 'string' ? (into?.push(chunk), true) : write(chunk, ...rest))); };
+  keep(process.stdout, out);
+  keep(process.stderr);
+  try { return {status: await main(['install', '--no-node', ...args, '--json'], deps), answer: JSON.parse(out.join(''))}; } finally { t.mock.restoreAll(); }
+}
+
+for (const [label, args, env] of [['plain install, selected', [], {CUA_NATIVE_ENGINE: 'cua'}], ['install --engine', ['--engine'], {}]]) {
+  test(`${label}: a fresh Mac gets a pending build and no approved.json; nothing launched, requested or asked`, async t => {
+    const w = world(t);
+    w.state.lines = [''];
+    const {status, answer} = await installThroughCli(t, w, args, env);
+    assert.equal(status, 0);
+    assert.equal(answer.engine.pending, true);
+    assert.equal(answer.engine.approved, false);
+    assert.equal(w.pendingBuild(), w.checkoutBuild());
+    assert.ok(!existsSync(join(w.dir, 'approved.json')), 'approved.json stays absent');
+    assert.ok(!existsSync(w.bundle));
+    assert.deepEqual(opened(w), []);
+    assert.equal(w.engines.length, 0);
+    assert.equal(w.operator.asked, 0);
+  });
+
+  test(`${label}: with an approved engine serving, it keeps serving (same bundle, approved.json unchanged in full, the engine not stopped) beside a pending build, and nothing is approved`, async t => {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    const approved = w.text('approved.json');
+    const serving = await w.startEngine();
+    w.state.lines = [''];
+    const {status, answer} = await installThroughCli(t, w, args, env);
+    assert.equal(status, 0);
+    assert.equal(answer.engine.changed, true);
+    assert.equal(answer.engine.approved, false);
+    assert.equal(w.text('approved.json'), approved, 'approved.json byte for byte');
+    assert.equal(w.plistBuild(), OLD_BUILD);
+    assert.equal(serving.stopped, false);
+    assert.deepEqual(serving.received, [], 'no status, no shutdown, no approve');
+    assert.deepEqual(opened(w), []);
+    assert.equal(w.engines.length, 1);
+    assert.equal(w.operator.asked, 0);
+    assert.equal(w.pendingBuild(), w.checkoutBuild());
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, OLD_BUILD);
+    noIdentity(answer, 'the answer');
+  });
+}
+
+test('install over the approved bundle already at this build builds nothing and reports it approved', async t => {
   const w = world(t);
   w.placeBundle({build: w.checkoutBuild(), approved: true});
-  const result = await installStep(w, {explicit: true});
-  assert.equal(result.changed, false);
-  assert.equal(result.approved, true);
+  const {answer} = await installThroughCli(t, w, ['--engine'], {});
+  assert.equal(answer.engine.changed, false);
+  assert.equal(answer.engine.pending, false);
+  assert.equal(answer.engine.approved, true);
   assert.deepEqual(w.calls, []);
 });
 

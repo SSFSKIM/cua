@@ -8,8 +8,9 @@
 // reconnects for up to 5 s, retrying every 100 ms. A connection that opened gets its own full second for the ping,
 // whatever is left of the window (the vendor's waits min(1000 ms, the remainder)): a ping cut short by a slow open
 // would launch over a healthy engine. The ping speaks `cua-engine-1`, and the answer's engineVersion and
-// build must equal the bundle's (its Info.plist): a mismatch fails at once with a diagnostic naming
-// `cua install --engine`, never retried, launched over or shut down, since a service never replaces an engine it did not
+// build must equal the bundle's (its Info.plist): a mismatch fails at once with a diagnostic naming the remedy
+// (`cua engine stop` for an engine started from another build; `cua install --engine`, then `cua engine approve`, for
+// another release's), never retried, launched over or shut down, since a service never replaces an engine it did not
 // launch (another checkout's session may be using it); only an engine that passed this check may be relaunched for a
 // grant (below). An engine that never answers fails with a diagnostic pointing at the unified log, where the engine
 // records why it stopped (an invalid peerPolicy setting stops it before it listens).
@@ -51,8 +52,8 @@
 // once endTask is answered, or after at most a second (`endTaskWaitMs`), or on an error: the relay closes fully, and
 // the engine stops reading a connection whose answer it could not write, so closing before endTask was read could
 // lose it (the review of d2568c76..96c6f093). An older engine answers methodNotFound, which nothing reads. So
-// end_task frees the engine for other clients (its `status` stops counting the connection, and `cua engine build`
-// and `approve` proceed) within that second. The engine reads the hide before the close, so the cursor fades and its
+// end_task frees the engine for other clients (its `status` stops counting the connection, and `cua engine approve`
+// and `stop` proceed) within that second. The engine reads the hide before the close, so the cursor fades and its
 // panel goes once the fade is over, and an after-action watch still running finishes on the engine's side. Nothing is
 // connected or launched for it, and a connect or request of the ended task still pending never reaches the engine
 // (the client's generation).
@@ -223,10 +224,10 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
 
   function check(answer, want) {
     if (answer?.serverApiVersion !== CLIENT_API_VERSION) {
-      throw new Mismatch(`cua engine API version mismatch: client=${CLIENT_API_VERSION} server=${String(answer?.serverApiVersion)}; the engine answering ${socketPath} is from another release and is left running. Install this release's engine with cua install --engine`);
+      throw new Mismatch(`cua engine API version mismatch: client=${CLIENT_API_VERSION} server=${String(answer?.serverApiVersion)}; the engine answering ${socketPath} is from another release and is left running. Install this release's engine with cua install --engine, which builds it beside the approved one, then put it in place with cua engine approve (the owner at the console)`);
     }
     if (answer.engineVersion !== want.engineVersion || answer.build !== want.build) {
-      throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Install this build with cua install --engine, which stops the old engine once nothing uses it`);
+      throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Once no session uses it, stop it with cua engine stop: the next session launches the bundle at ${appPath}`);
     }
     // `variant`: a non-shipping build's name (#187's control build, `control-no-inert-click`), absent for a release.
     return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build,

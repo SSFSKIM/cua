@@ -1,7 +1,7 @@
 // The engine client of cua's own macOS engine service (src/services/engine/client.mjs; docs/doperpowers/specs/2026-10-18-
 // own-native-engine-design.md, Design "The service", Client; Interfaces, EngineClient): the ping with its version and
-// build check and the `cua install --engine` diagnostic, the launch through LaunchServices on a failed connect and the
-// 5 s reconnect, the diagnostic that points at the unified log when the engine never comes up, one request in flight,
+// build check and its diagnostics (`cua engine stop`; `cua install --engine`, then `cua engine approve`), the launch
+// through LaunchServices on a failed connect and the 5 s reconnect, the diagnostic that points at the unified log when the engine never comes up, one request in flight,
 // the 120 s deadline, the suspended cell budget, and the engine's errors as the vendor's classes. Against a fake engine
 // on a Unix socket (test/helpers/fake-engine.mjs) and, where a Swift toolchain exists, the debug engine run directly under
 // CUA_ENGINE_SOCKET on requests that raise no permission prompt (ping, status, list_apps) and launched by the client
@@ -118,27 +118,27 @@ test('a stall of the event loop past the first window does not make a running en
   assert.deepEqual(engine.received.map(r => r.method), ['ping']);
 });
 
-test('a build or version mismatch fails at once with the diagnostic naming cua install --engine, never launching, retrying or stopping that engine', async t => {
+test('a build or version mismatch fails at once naming cua engine stop and the bundle the next launch takes, never launching, retrying or stopping that engine', async t => {
   for (const identity of [{engineVersion: '0.1.0', build: 'other'}, {engineVersion: '9.9.9', build: 'b1'}]) {
     const socket = join(scratchDir(t), 'engine.sock');
     const engine = await startFakeEngine(t, socket, {identity, handlers: {shutdown: () => assert.fail('a service never stops an engine it did not launch')}});
     const {client, launches} = clientFor(socket);
     t.after(() => client.close());
     await assert.rejects(client.connect(), error => error instanceof SkyComputerUseTransportError
-      && error.message.includes('cua install --engine') && error.message.includes(`version ${identity.engineVersion} build ${identity.build}`)
+      && error.message.includes('cua engine stop') && !error.message.includes('stops the old engine') && error.message.includes(`version ${identity.engineVersion} build ${identity.build}`)
       && error.message.includes('version 0.1.0 build b1') && error.message.includes('left running'));
     assert.deepEqual(engine.received.map(r => r.method), ['ping'], 'one ping, no retry');
     assert.equal(launches.length, 0);
   }
 });
 
-test('an engine speaking another API version, or refusing the client\'s, fails at once naming cua install --engine', async t => {
+test('an engine speaking another API version, or refusing the client\'s, fails at once naming cua install --engine, then cua engine approve', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const engine = await startFakeEngine(t, socket, {handlers: {ping: () => ({serverApiVersion: 'cua-engine-2', ...IDENTITY})}});
   const {client} = clientFor(socket);
   t.after(() => client.close());
   await assert.rejects(client.connect(), error => error instanceof SkyComputerUseTransportError
-    && /API version mismatch: client=cua-engine-1 server=cua-engine-2/.test(error.message) && error.message.includes('cua install --engine'));
+    && /API version mismatch: client=cua-engine-1 server=cua-engine-2/.test(error.message) && error.message.includes('cua install --engine') && error.message.includes('cua engine approve'));
   assert.equal(engine.received.length, 1);
 
   const socket2 = join(scratchDir(t), 'engine.sock');
@@ -668,7 +668,7 @@ test('an owed relaunch never shuts down an engine of another build found on reco
   client.close();
   await first.stop();
   const other = await startFakeEngine(t, socket, {identity: {...IDENTITY, build: 'other'}});
-  await assert.rejects(client.execute('get_app_state', screenshotArgs), /cua install --engine/);
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), /cua engine stop/);
   assert.deepEqual(other.received.map(r => r.method), ['ping']);
   assert.equal(launches.length, 0);
 });
@@ -745,7 +745,7 @@ test('the debug engine: launched by the client through the relay when nothing an
   assert.ok(Array.isArray(result) && result.every(row => typeof row.id === 'string' && typeof row.isRunning === 'boolean'));
   const mismatched = clientFor(socket, {expected: {...SOURCE_IDENTITY(), build: 'some-bundle-build'}}).client;
   t.after(() => mismatched.close());
-  await assert.rejects(mismatched.connect(), error => /build unbundled/.test(error.message) && /cua install --engine/.test(error.message));
+  await assert.rejects(mismatched.connect(), error => /build unbundled/.test(error.message) && /cua engine stop/.test(error.message));
 });
 
 // The review of d2568c76..96c6f093: the real relay closes fully (src/repl-host/native-pipe.mjs: end, then destroy), and

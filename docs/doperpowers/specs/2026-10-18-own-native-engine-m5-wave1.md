@@ -289,7 +289,7 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   session as blocking #506; both +1 closes #534, citing the cell; any vendor count other than +1 is NO VERDICT
   (`reference`: "the reference side did not register the pointerdown"), since the vendor posts a real click and its
   miss means the scene is broken. There is no runtime visibility check: neither engine's observation carries
-  element frames; the inline pair adds no page height, so it is inside 800×600 by construction; and an unreachable
+  element frames; the inline pair adds no page height, so it is inside the hosted Chrome frame by construction; and an unreachable
   button already lands in the named NO VERDICT, so an engine probe would only re-label it, which is not worth an
   engine version move. Detail in `docs/evidence/2026-11-23-own-native-engine/gates/534.md`.
 - 2026-11-23, ruling 1169 (the design session, after pilot A's re-run, run 45252131587): the re-run proved the
@@ -297,8 +297,10 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   capture unsent, and the chained runs and comparisons skipped, NO VERDICT). The alerts re-centred on the switch, to
   about x 830–1153, y 188–608, and the approved engine's `--probe window-frame` moves Finder windows only
   (WindowFrameProbe.swift's header). Placement is therefore: Chrome for Testing and the Electron fixture at launch
-  (`--window-position`/`--window-size`, the BrowserWindow's frame; no Accessibility write), Chrome 800×600 on hosted
-  runners; TextEdit by a hosted-only `defaults write` to its own preferences on the throwaway runner, the frame read
+  (`--window-position`/`--window-size`, the BrowserWindow's frame; no Accessibility write), Chrome on hosted
+  runners at 22,60 800×760 (1169's 800×600 taken as a ceiling on width: every alert lies at x ≥ 830, so the
+  mini's height costs nothing and keeps the scene page inside its window, `NOT_APPLICABLE.chrome.scroll`'s reason; the
+  design session accepted it); TextEdit by a hosted-only `defaults write` to its own preferences on the throwaway runner, the frame read
   back and a target still overlapping NO VERDICT alert; Finder by the existing probe at about 800×520 on hosted
   runners; the Open panel placed only if that needs no Accessibility write, else its cells NO VERDICT alert and
   counted. Extending the probe to other windows the harness launched stays with the design session, brought only if

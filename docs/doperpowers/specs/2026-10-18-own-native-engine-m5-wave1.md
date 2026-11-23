@@ -58,6 +58,10 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `notInUseRow` (M4's `pendingBeside` against T9's `buildWords`; keep T9's, which also carries the source check and
   the minimum), and `installedRow` and `vendorRow` merge clean but would show the pending build twice (drop M4's
   clause). The design spec's Decision Log end conflicts too, both branches appending there.
+- 2026-11-23, T8c, merging with M4's re-cut (trial merge-tree): `withMeta` in `Input.swift` conflicts (take M4's
+  body, which keeps the `permission` marker, end it with `return error.interrupted(adding: meta.reachedEffects)`, keep
+  T8c's `reachedEffects` extension), and `PER_CALL` in `service.mjs` (keep both `cua/permission` and
+  `cua/interruption`).
 - 2026-11-23, T9: `test/serve-lazy.test.mjs` "the record is the runtime's raw answers…" fails on the untouched base as
   well; not this wave's.
 
@@ -137,6 +141,21 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,
   watched at 120 s or more, no ci-gate, no TCC write beyond the kit's guard (ruling 1111). The cua side runs now on
   feat/117-m5's head; the vendor pair waits on T10's lane after H0. Run ids and results go into 420.md.
+- 2026-11-23, T8c (d7e8ddbf3..69392a7b6, #212 with PR #218 re-cut by hand): a `userIntervened` answer keeps the
+  vendor's sentence as its opening and adds one clause, "Nothing was done…" for a refusal or "stopped part-way. What
+  may have taken effect: …" for a stop part-way; the phase comes from which check stopped the request, so a stop
+  part-way never says nothing was done. The engine writes the answer the model sees (#218's second rendering in
+  `protocol.mjs` is dropped; the JS reader serves only the secret wrapper, in fixed phrases, and the service forwards
+  `cua/interruption` per call). Effect names are camelCase, with `scroll` and `activation` added and main's newer focus
+  paths (#324, #390) covered; an ended held activation is counted once all of execute's cleanups have run. Dropped from
+  #218: route 4 skipping its restore after an intervention (the spec restores the user's app whatever happens) and
+  `cua/interruption` surviving a later observation in the same call (every `cua/*` key is per call). A set_value on a
+  save sheet's name field is unit-proven never to commit the sheet. The hosted cell `intervention-save-sheet` is
+  standalone (not in the full matrix), judged by cua's answer ("stopped part-way" makes a sample valid; it retries
+  aiming from the measured receipt; "not committed" is the sheet still open after a 2 s settle). Risk: the window
+  between receipt and the last check before the write is tens of ms, unmeasured, so the cell may end NO VERDICT. The
+  Save sheet's identifiers are unread on a runner; the cell needs cua Engine's Input Monitoring grant there. Who
+  pressed Save in the original report stays unproven.
 - 2026-11-23, T8b (99a2e812b..213b3da02): the engine never read `CUA_ENGINE_SPIKE_ROUTE`; the service and harness
   readers and the `route-ab` cell are removed, the engine's own `spikeRoute` argument stays for the M0 spike harness
   (no product path reaches it), and hold 3's `route-ab` result files no longer validate but stay as record. The

@@ -186,8 +186,8 @@ impl Confirming {
 pub enum EndStep {
     Motion((i16, i16)),
     Rest(Duration),
-    /// The pointer read again before a visit after the first: one no longer at this place (a person moved it, or it is
-    /// on another screen) ends the visits there, and the release's own read reports the move.
+    /// The pointer read again before each visit, the first included (ruling 1034): one no longer at this place (a
+    /// person moved it, or it is on another screen) ends the visits there, and the release's own read reports the move.
     Check((i16, i16)),
 }
 
@@ -970,7 +970,7 @@ impl Engine {
         let settling = matches!(&handle.cursor, Some(Ok(cursor))
             if settles(self.cfg.drop_settle, handle.pressed, pacing.held_rest, hold_take, || cursor.take_seen()));
         let before_rest = match handle.cursor.as_mut() {
-            Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
+            Some(Ok(cursor)) if settling => Some(crate::drop_settle::Settle::begin(cursor, pacing.held_rest)),
             _ => {
                 std::thread::sleep(pacing.held_rest.saturating_sub(still));
                 None
@@ -988,11 +988,10 @@ impl Engine {
         crate::desktop::handle_hooks::during_dwell();
         std::thread::sleep(pacing.release);
         let settle = match (before_rest, handle.cursor.as_mut()) {
-            (Some((before, second_rest)), Some(Ok(cursor))) => Some(crate::drop_settle::Settle {
-                before,
-                second_rest,
-                after: cursor.sync(crate::drop_settle::SYNC_BOUND),
-            }),
+            (Some(mut settle), Some(Ok(cursor))) => {
+                settle.after = cursor.sync(crate::drop_settle::SYNC_BOUND);
+                Some(settle)
+            }
             _ => None,
         };
         // the hold watch's read just before the release, the one take sample (ruling 1030), and the tail at the end of a
@@ -1465,7 +1464,7 @@ mod tests {
             ("Electron, a take", Form::Tail, true, false, true, Some(true)),
             ("the form off", Form::Off, true, true, true, Some(true)),
             ("not the agent's end", Form::Tail, false, true, true, Some(true)),
-            ("no after-release watch", Form::Tail, true, false, false, Some(true)),
+            ("no after-release watch", Form::Tail, true, true, false, Some(true)),
             ("no hold watch", Form::Tail, true, true, true, None),
         ] {
             let mut io = Recorder {

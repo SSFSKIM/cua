@@ -180,7 +180,7 @@ final class GeckoPointerTests: XCTestCase {
     let firefox = Firefox()
     let link = Node("AXLink", actions: ["AXShowMenu", "AXScrollToVisible", "AXPress"], parent: Node("AXGroup", parent: firefox.page))
     let text = Node("AXStaticText", parent: link)
-    let plan = try elementClickPlan(forced: nil, button: .left, count: 1, role: "AXLink", actions: link.actions ?? []) { true }
+    let plan = try elementClickPlan(forced: nil, button: .left, count: 1, role: "AXLink", actions: link.actions ?? []) { .descendant }
     XCTAssertEqual(plan, .synthesized(.activation), "the ladder's gate: the point lands on a strict descendant")
     let resolved = try control(text).get()
     XCTAssertTrue(resolved.control === link)

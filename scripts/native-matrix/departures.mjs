@@ -12,8 +12,9 @@
 //                 so cua refusing otherwise is cua acting differently), a not-judged row (./not-judged.mjs), an
 //                 acceptance row (absolute: Acceptance 4's text lands exactly whatever the vendor does, S L239) or the
 //                 pressKey row (ruling 1119: it composes as the input method composes, and a row that composes
-//                 otherwise fails), or a caret row (#258, #259, ./caret.mjs: the pre-flight's §6, neither difference
-//                 can be declared)
+//                 otherwise fails), a caret row (#258, #259, ./caret.mjs: the pre-flight's §6, neither difference
+//                 can be declared) or a pointerdown row (ruling 1168, #534: a press that reaches no pointer handler
+//                 where the vendor's does is fixed)
 //   vendor        {answer: 'ok'}: the vendor's answer
 //   cua           {answer: 'refused' | 'unconfirmed', errorName, sentence}: cua's answer. `errorName` the engine's name
 //                 for it, which must be one of that kind's (./answers.mjs REFUSAL_NAMES, UNCONFIRMED_NAMES: the kind is
@@ -38,7 +39,7 @@
 import * as fs from 'node:fs';
 import {answerOf, conservativeEffect, kindOfName} from './answers.mjs';
 import {cellsOf} from './manifest.mjs';
-import {isCaretRow} from './plan.mjs';
+import {isCaretRow, isPointerdownRow} from './plan.mjs';
 import {isAcceptanceRow, isPressKeyRow} from './unicode-plan.mjs';
 
 export const DEPARTURES_FILE = new URL('./expected/departures.json', import.meta.url);
@@ -74,6 +75,7 @@ function entryProblems(entry, judged) {
   }
   if (isAcceptanceRow(entry?.id)) out.push(`${name} is an acceptance row: it must pass on cua whatever the vendor does (S L239), so no departure covers it`);
   if (entry?.section === 'method' && isCaretRow(entry?.id)) out.push(`${name} cannot be declared: a caret row (#258, #259) differing from the vendor's is cua acting otherwise than the vendor, which is fixed, never declared (R3; the M4/M5 pre-flight's §6)`);
+  if (entry?.section === 'method' && isPointerdownRow(entry?.id)) out.push(`${name} cannot be declared: the pointerdown cell (ruling 1168, #534) differing from the vendor's is a web control's pointer handler cua's press misses, which is fixed, never declared (R3)`);
   if (entry?.section === 'unicode' && isPressKeyRow(entry?.id)) out.push(`${name}: no pressKey row may be declared (ruling 1119): it composes as the active input method composes, and a row that composes otherwise fails`);
   else if (MEASURED.includes(entry?.section) || !judged.has(name)) out.push(`${name} names no judged row of the matrix (a method, launch, concurrent-use, intervention or judged Unicode row of the full manifest)`);
   else if (judged.get(name).expect === 'refusal') out.push(`${name} is a refusal case: the vendor's ok there is its refusal, and cua refusing otherwise is cua acting differently (R3)`);

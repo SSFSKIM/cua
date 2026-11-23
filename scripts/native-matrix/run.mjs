@@ -64,7 +64,7 @@ import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {CLOSE_PANEL, CLOSE_PANEL_KEY, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
-import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {caseId, casesOf, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
@@ -268,7 +268,9 @@ async function runOnce(options, io) {
     if (scenePreflight?.refusals?.length) throw new Error(`the scenes refuse: ${scenePreflight.refusals.map(r => r.message).join('; ')}`);
     for (const id of scenes) {
       await checkpoint();
-      const extra = id === 'chrome' ? ['--chrome-app', meta.fixtures.chrome.appPath] : id === 'electron' ? ['--electron-app', meta.fixtures.electron.appPath] : [];
+      // The web scenes in the matrix's own variants (ruling 1168: the pointerdown-only button, ./plan.mjs MATRIX_SCENE_ARGS).
+      const extra = id === 'chrome' ? ['--chrome-app', meta.fixtures.chrome.appPath, ...MATRIX_SCENE_ARGS.chrome]
+        : id === 'electron' ? ['--electron-app', meta.fixtures.electron.appPath, ...MATRIX_SCENE_ARGS.electron] : [];
       ctx.records[id] = ops.scenes(['up', id, '--run', run, ...extra]);
       ops.goldens(['steps', id, '--run', run, '--phase', 'setup']);
     }

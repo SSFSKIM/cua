@@ -28,6 +28,8 @@
 // The scenes' methods with no meaningful target are listed in NOT_APPLICABLE with the reason, so the method table says
 // so on both engines rather than leaving the cell out.
 import {BACKGROUND_PAIRINGS, SCENES, textEditDocument} from '../repl-parity/scenes-mac.mjs';
+import {POINTERDOWN_SWITCH} from './fixtures/electron-fixture.mjs';
+import {POINTERDOWN} from './fixtures/scene-page.mjs';
 
 export const METHODS = Object.freeze(['getAXState', 'listApps', 'click', 'drag', 'paste', 'performSecondaryAction', 'pressKey', 'scroll', 'selectText', 'setValue', 'typeText']);
 // The facade's names against the engine's (the summary prints the engine's, the spec's 11).
@@ -364,6 +366,36 @@ return {ok: shown !== null && shown.from > __m.before, outcome: {moved: shown !=
 
 const named = name => `indexOfTarget(ax, ${j(name)})`;
 const statusText = (container, pattern) => `elementLines(ax).filter(l => parentIndexOf(ax, l.index) === ${container}).map(l => l.content).find(c => ${pattern}.test(c)) ?? null`;
+
+// ---- Ruling 1168 (#534): the pointerdown-only cell, on both web scenes ---------------------------------------------------
+//
+// Web UI kits open menus and popovers on `pointerdown` (Radix-style triggers). cua presses a web button through AXPress
+// where the vendor posts a click (#534; F-helper-logic.md §18, the #258 reading that corrects §5.1's gate: inside a web
+// view the vendor posts a real click at the frame's visible midpoint whenever the hit-test there answers "the element
+// itself or a descendant"), so a press that dispatches no pointer event misses those handlers. The cell: a button whose
+// only handler is `pointerdown`, counting into a status line, clicked by element on both engines and judged on the
+// count rising by exactly one, against the vendor's sample of the same run ('reference'): cua's count unchanged (or
+// risen by two) where the vendor's rose by one is worse; a vendor count not risen by exactly one makes the pair NO
+// VERDICT (pointerdownReference: the vendor's real click not counting says the scene is broken); and no departure may
+// name the row (./departures.mjs). Frontmost only, as #258's and #259's
+// cells: behind a user window a background row is judged against ground truth alone, which would ask of cua a pointer
+// into a background page that nobody has measured the vendor delivering.
+//
+// The buttons live in matrix-only variants of the two scenes, so the trees every other consumer reads (the renderer
+// goldens, sitting B's native-mac suite, the cursor sitting's slots) stay the shared page's and fixture's: the run brings
+// the scenes up with these arguments (./run.mjs), and nothing else passes them.
+export const MATRIX_SCENE_ARGS = Object.freeze({chrome: Object.freeze(['--page', POINTERDOWN.variant]), electron: Object.freeze(['--electron-arg', POINTERDOWN_SWITCH])});
+// The variant's pointer downs as its status line reads them, or null (the scene without the variant among them).
+const pointerDowns = `(() => { const status = ${statusText(named(POINTERDOWN.status), '/Pointer downs: \\d+/')}; const m = /Pointer downs: (\\d+)/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
+const pointerdownCase = Object.freeze({method: 'click', case: 'pointerdown', expect: 'outcome', regimes: Object.freeze(['frontmost']),
+  prepare: `${observed}
+const index = ${named(POINTERDOWN.button)}, count = ${pointerDowns};
+if (index === null || count === null) return {ready: false, reason: "the pointerdown button or its count is not in the text: the scene is not the matrix's pointerdown variant"};
+__m.index = index; __m.before = count; return {ready: true};`,
+  act: 'await __app.click(__m.index);',
+  check: `const ax = await observe();
+const after = ${pointerDowns}, rose = after === null ? null : after - __m.before;
+return {ok: rose === 1, outcome: {pointerDownOnce: rose === 1, rose}};`});
 // The text fields' known contents for the replacing and dragging cases: lines whose words occur once each.
 export const FIELD_LINES = Object.freeze(['alpha one', 'bravo two', 'charlie three', 'delta four', 'echo five', 'foxtrot six', 'golf seven', 'hotel eight']);
 const FIELD_VALUE = j(FIELD_LINES.join('\n'));
@@ -441,6 +473,8 @@ return {ok: applied, outcome: {applied}};`},
   // settability check (#190; hold 3, both engines, both runs).
   refusal({method: 'selectText', kase: 'notText', find: named('Scene option'), act: 'await __app.selectText(__m.index, "Scene");', watch: `[valueOfIndex(ax, ${named('Scene option')}), selectedTextOf(ax)]`,
     sentence: REFUSALS.textNotFound}),
+  // Ruling 1168: last, so every row before it starts where it did before the cell was added.
+  pointerdownCase,
 ];
 
 // ---- The Electron fixture -----------------------------------------------------------------------------------------------
@@ -520,6 +554,8 @@ return {ok: moved, outcome: {moved}};`},
   {method: 'click', case: 'selection', expect: 'outcome', regimes: ['frontmost'], caret: CARET.selection,
     prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j(CARET_WORD)})}\nreturn {ready: true};`, act: 'await __app.click(__m.index);', check: valueKept},
   {method: 'click', case: 'point', expect: 'outcome', regimes: ['frontmost'], caret: CARET.point, prepare: caretAtEnd, act: 'await __app.click(__m.point);', check: valueKept, framed: 'window points'},
+  // Ruling 1168: last, so every row before it starts where it did before the cell was added.
+  pointerdownCase,
 ];
 
 // ---- The windowless app (the "app with no window" refusal) ------------------------------------------------------------
@@ -564,8 +600,8 @@ export const WATCHED = Object.freeze({
   textedit: `[selectedTextOf(ax), focusedIndexOf(ax), plain(valueOfIndex(ax, ${TEXT_FIELDS_TEXTEDIT}) ?? ""), scrollBarValueBeside(ax, ${TEXT_FIELDS_TEXTEDIT}), valueOfIndex(ax, indexOfPart(ax, "Description", "align center"))]`,
   openPanel: '[panel(ax), inFront(ax)]',
   finder: `[selectedIndexesOf(ax), focusedIndexOf(ax), showingOf(ax, ${LIST})]`,
-  chrome: `[selectedTextOf(ax), focusedIndexOf(ax), ${['Scene notes', 'Scene name', 'Scene option'].map(SCENE_FIELD).join(', ')}, elementLines(ax).filter(l => parentIndexOf(ax, l.index) === ${named('Scene status')}).map(l => l.content)]`,
-  electron: `[selectedTextOf(ax), focusedIndexOf(ax), selectedIndexesOf(ax), ${SCENE_FIELD('Fixture text')}, ${pressed}]`,
+  chrome: `[selectedTextOf(ax), focusedIndexOf(ax), ${['Scene notes', 'Scene name', 'Scene option'].map(SCENE_FIELD).join(', ')}, elementLines(ax).filter(l => parentIndexOf(ax, l.index) === ${named('Scene status')}).map(l => l.content), ${pointerDowns}]`,
+  electron: `[selectedTextOf(ax), focusedIndexOf(ax), selectedIndexesOf(ax), ${SCENE_FIELD('Fixture text')}, ${pressed}, ${pointerDowns}]`,
   windowless: null,
 });
 // Each text scene's typing field, as an expression over the observation `ax` (the cases above find them so): TextEdit's
@@ -621,3 +657,15 @@ export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${targe
 // The method rows judged by the device's reading of the field's caret beside the vendor's (#258, #259; ./caret.mjs).
 export const CARET_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c.caret).map(c => caseId(target, 'frontmost', c))));
 export const isCaretRow = id => CARET_ROWS.includes(id);
+// Ruling 1168's rows (the pointerdown-only cell on each web scene): judged against the vendor's, never declarable.
+export const POINTERDOWN_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c === pointerdownCase).map(c => caseId(target, 'frontmost', c))));
+export const isPointerdownRow = id => POINTERDOWN_ROWS.includes(id);
+// Whether the vendor's sample can be the reference for a pointerdown row (ruling 1168, the coordinator's of round 1): the
+// vendor posts a real click, so its count rising by anything but one says the scene is broken, not that cua differs,
+// and the pair has no verdict (./cell-verdict.mjs `reference`). -> null, or the reason naming the vendor's count.
+export function pointerdownReference(vendorRow) {
+  const rose = vendorRow?.outcome?.rose;
+  if (rose === 1) return null;
+  const count = Number.isSafeInteger(rose) ? (rose === 0 ? 'its count unchanged' : `its count changed by ${rose}`) : 'its count unread';
+  return `the reference side did not register the pointerdown (the vendor's click: ${count})`;
+}

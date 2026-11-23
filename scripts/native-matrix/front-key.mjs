@@ -44,6 +44,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   invalid: 'the harness\'s own invalid reason',
   unmeasured: 'a speed or finding sample not measured (no numeric duration)',
   unpaired: 'no vendor sample with a verdict from the same eligible run (ruling 1116); for speed and finding, outside the complete run pairs',
+  reference: 'the vendor\'s sample of the run could not be the reference (ruling 1168\'s pointerdown cell: the vendor\'s click did not raise the count by exactly one)',
 });
 
 const isBundle = value => typeof value === 'string' && value.length > 0;

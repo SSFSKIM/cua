@@ -68,7 +68,7 @@ const headersFor = csp => ({'content-type': 'text/html; charset=utf-8', 'cache-c
 // COUNTERS_PATH, at every counted event and every input. Its CSP
 // is the shared one with only this script's hash added. The shared page stays byte-identical: every record so far was
 // taken on it.
-export const PAGE_VARIANTS = Object.freeze(['shared', 'counters', 'popup']);
+export const PAGE_VARIANTS = Object.freeze(['shared', 'counters', 'popup', 'pointerdown']);
 export const COUNTERS_PATH = '/counters';
 export const COUNTER_NAMES = Object.freeze(['windowFocus', 'windowBlur', 'textFocus', 'textBlur', 'mousedown', 'click']);
 export const COUNTERS_SCRIPT = "(() => { const c = {windowFocus: 0, windowBlur: 0, textFocus: 0, textBlur: 0, mousedown: 0, click: 0}; let seq = 0;"
@@ -113,6 +113,36 @@ export const POPUP_HTML = `<!doctype html>
 <body><main><button id="close" type="button">${POPUP_BUTTON}</button></main><script>${POPUP_CLOSE_SCRIPT}</script></body></html>
 `;
 
+// The pointerdown page (ruling 1168, #534; `scenes-mac.mjs up chrome --page pointerdown`, which only the native matrix's
+// run passes, ../plan.mjs MATRIX_SCENE_ARGS): the shared page with, inline after Apply in the name field's line, a
+// button whose only handler is `pointerdown` (no click handler) and a status beside it counting the pointer downs, so an
+// element click is judged by whether a pointer event reached the page (web UI kits open menus on pointerdown). Inline,
+// it adds no height, so it sits near the top of the page whatever the window's height (ruling 1169: at the hosted
+// 800 × 600 frame a line below the controls fell below the fold, where the vendor's click takes the action too), and
+// it follows every field in the Tab order. The Electron fixture carries the same pair under its own flag
+// (./electron/renderer.js). Its CSP is the shared one with this script's hash added. Every other consumer (the renderer
+// goldens, sitting B's native-mac suite, #187's slots) loads the shared page.
+export const POINTERDOWN = Object.freeze({variant: 'pointerdown', button: 'Pointer target', status: 'Pointer status', text: n => `Pointer downs: ${n}`});
+export const POINTERDOWN_INLINE = ` <button id="pointer" type="button">${POINTERDOWN.button}</button> <span id="pointer-status" role="status" aria-label="${POINTERDOWN.status}">${POINTERDOWN.text(0)}</span>`;
+export const POINTERDOWN_SCRIPT = "(() => { let downs = 0; const status = document.getElementById('pointer-status');"
+  + " document.getElementById('pointer').addEventListener('pointerdown', () => { downs += 1; status.textContent = 'Pointer downs: ' + downs; }); })();";
+const POINTERDOWN_HASH = createHash('sha256').update(POINTERDOWN_SCRIPT).digest('base64');
+// The variant is built by replacing parts of the shared page, and only when it is asked for (startScenePage's
+// 'pointerdown'), so a part that is not there (the shared page changed) stops the matrix's page loudly and never the
+// shared page's other consumers; it is never a variant silently equal to the shared page. `html` and `csp`: the page it
+// is built from (the shared one). -> {html, csp}.
+const inserted = (text, part, replacement) => {
+  if (!text.includes(part)) throw new Error(`the scene page has no ${JSON.stringify(part.slice(0, 60))} to build its pointerdown variant from`);
+  return text.replace(part, replacement);
+};
+const APPLY = '<button id="apply" type="button">Apply</button>';
+export function pointerdownPage({html = PAGE_HTML, csp = CSP} = {}) {
+  return {
+    html: inserted(inserted(html, APPLY, `${APPLY}${POINTERDOWN_INLINE}`), `<script>${SCRIPT}</script>`, `<script>${SCRIPT}</script><script>${POINTERDOWN_SCRIPT}</script>`),
+    csp: inserted(csp, `script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${POINTERDOWN_HASH}'`),
+  };
+}
+
 // What the server keeps of a counters beacon: its sequence, the textarea's length and each count, every one a
 // non-negative whole number, and whether the document had the focus (a boolean); anything else in the body is dropped.
 // -> {seq, length, counts, focused} or null.
@@ -132,8 +162,10 @@ export function countersRecord(text) {
 // there to answer, else 409), and serves the popup's document at POPUP_PATH. -> {url, port, close()}.
 export async function startScenePage({port = 0, onReady = null, page = 'shared', onCounters = null} = {}) {
   if (!PAGE_VARIANTS.includes(page)) throw new Error(`the page variant is ${PAGE_VARIANTS.join(' or ')}, not ${page}`);
-  const popup = page === 'popup', counters = page === 'counters' || popup;
-  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : PAGE_HTML, headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : CSP);
+  const popup = page === 'popup', counters = page === 'counters' || popup, pointerdown = page === 'pointerdown';
+  const variant = pointerdown ? pointerdownPage() : null;
+  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : pointerdown ? variant.html : PAGE_HTML;
+  const headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : pointerdown ? variant.csp : CSP);
   let expectedHost, reported = false;
   const waiting = [];
   const server = createServer((req, res) => {

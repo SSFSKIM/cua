@@ -281,6 +281,17 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1168 (#534; the design session): sitting C gains `chrome/frontmost/click.pointerdown` and
+  `electron/frontmost/click.pointerdown`. Each is a button whose only handler is `pointerdown`, sitting inline after
+  Apply or "Fixture button" in matrix-only page variants (the shared page and fixture are unchanged, so sitting B and
+  the goldens are untouched), clicked by element on both sides and judged on its counter rising by exactly one.
+  Outcomes: the vendor +1 with cua 0 or +2 is worse, so C FAILs, no departure excuses it, and #534 goes to the design
+  session as blocking #506; both +1 closes #534, citing the cell; any vendor count other than +1 is NO VERDICT
+  (`reference`: "the reference side did not register the pointerdown"), since the vendor posts a real click and its
+  miss means the scene is broken. There is no runtime visibility check: neither engine's observation carries
+  element frames; the inline pair adds no page height, so it is inside 800×600 by construction; and an unreachable
+  button already lands in the named NO VERDICT, so an engine probe would only re-label it, which is not worth an
+  engine version move. Detail in `docs/evidence/2026-11-23-own-native-engine/gates/534.md`.
 - 2026-11-23, ruling 1169 (the design session, after pilot A's re-run, run 45252131587): the re-run proved the
   plumbing (the mode switch read back exactly with no prompt and held to the end; the guard refused vv-1's first
   capture unsent, and the chained runs and comparisons skipped, NO VERDICT). The alerts re-centred on the switch, to

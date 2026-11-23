@@ -63,6 +63,8 @@
 //                                                [--page popup]   the counters page whose script opens a popup window
 //                                                when the kit posts to its server (#187's isolating slot, C3); this launch
 //                                                alone adds --disable-popup-blocking
+//                                                [--page pointerdown]   the shared page plus ruling 1168's
+//                                                pointerdown-only button, the native matrix's alone
 //   node scripts/repl-parity/scenes-mac.mjs activate <scene> --run <dir>    the run's process to the front (exit 1 if not)
 //   node scripts/repl-parity/scenes-mac.mjs teardown-steps <scene> --run <dir>
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)

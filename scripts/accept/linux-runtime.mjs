@@ -12,13 +12,14 @@
 //      the vendor selection refused, and the pointer set back to the vendor name.
 // Around every fixture a 50 ms watch of its process tree (./linux-runtime-watch.mjs) says which engine answered. Before
 // any cell doctor's four environment rows must pass, and after each home's install sandbox.launcher must pass, or no
-// session cell starts there. Measured, not judged: the module step's time and bytes, the tree's size, and the time from
+// session cell starts there. The upgraded home is installed first, and a browser-only session of the older cua in it
+// gives the by-name import outcomes every browser-only run here is compared with (the coordinator's ruling on F7). Measured, not judged: the module step's time and bytes, the tree's size, and the time from
 // `cua serve`'s start to a first cell's answer, --samples in E against as many under the older cua in U.
 //
-//   node scripts/accept/linux-runtime.mjs --out <dir> [--older <checkout>] [--phases E,U] [--leg <label>] [--samples <n>]
+//   node scripts/accept/linux-runtime.mjs --out <dir> --older <checkout> [--phases E,U] [--leg <label>] [--samples <n>]
 //     writes <dir>/runtime.json (labels, outcomes, counts and scratch paths: the artifact) and exits 0 only when every
 //     cell run passed. Every raw stream (each fixture's own report, doctor's and the installs' output, the strace files)
-//     stays in <dir>/../scratch. --older is needed for U. It refuses to start with CUA_SHIM_SANDBOX set, with no
+//     stays in <dir>/../scratch. It refuses to start with CUA_SHIM_SANDBOX set, with no
 //     DISPLAY, or on display :0.
 import {spawn, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -113,10 +114,10 @@ function createRun({out, scratch}) {
    * signal, seconds, report, watch, out, trace?: {file, summary}}. `watchPaths(report)` names the paths whose opening
    * the trace is read for.
    */
-  async function fixture(kind, {env, traced = false, helper, homes, watchPaths}) {
+  async function fixture(kind, {env, traced = false, helper, homes, watchPaths, extra = []}) {
     const id = label(`${kind}${traced ? '-traced' : ''}`);
     const files = {out: join(scratch, `${id}.out`), err: join(scratch, `${id}.err`), trace: join(scratch, `${id}.strace`)};
-    const [script, ...args] = FIXTURES[kind];
+    const [script, ...args] = [...FIXTURES[kind], ...extra];
     const [command, argv] = traced ? ['strace', [...TRACE_ARGS, '-o', files.trace, '--', process.execPath, script, ...args]] : [process.execPath, [script, ...args]];
     const started = Date.now();
     const sinks = {out: openSync(files.out, 'w'), err: openSync(files.err, 'w')};
@@ -181,6 +182,7 @@ function createRun({out, scratch}) {
 // scratch path; the watch's counts; a trace's summary without paths beyond the scratch file.
 const projectRun = run => run && ({label: run.label, exit: run.exit, signal: run.signal, seconds: run.seconds, status: run.report?.status ?? null,
   steps: (run.report?.steps ?? []).map(s => ({name: s.name, status: s.status})), report: run.out,
+  ...(run.report?.imports?.comparison ? {imports: {comparison: run.report.imports.comparison, playwright: run.report.imports.loaded?.playwright ?? null}} : {}),
   watch: run.watch && {samples: run.watch.samples, maxSkyLinux: run.watch.maxSkyLinux, engines: run.watch.engines.length, skyLinux: run.watch.skyLinux.length, replHost: run.watch.replHost.map(p => p.role)},
   ...(run.trace ? {trace: {file: run.trace.file, processes: run.trace.summary?.processes ?? null, serve: run.trace.summary?.serve ?? null, workers: run.trace.summary?.workers ?? null,
     helpers: run.trace.summary?.helpers ?? null, kernels: run.trace.summary?.kernels?.map(k => ({...k, opened: k.opened?.length})) ?? null, runtimes: run.trace.summary?.runtimes ?? null}} : {})});
@@ -189,11 +191,11 @@ async function main() {
   const option = name => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
   if (process.argv.includes('--loader')) return loader(option('--loader'));
   const out = option('--out');
-  if (!out) throw new Error('usage: linux-runtime.mjs --out <dir> [--older <checkout>] [--phases E,U] [--leg <label>] [--samples <n>]');
+  if (!out) throw new Error('usage: linux-runtime.mjs --out <dir> --older <checkout> [--phases E,U] [--leg <label>] [--samples <n>]');
   const phases = (option('--phases') ?? 'E,U').split(',');
   const older = option('--older') ? resolve(option('--older')) : null;
   const sampleCount = Number(option('--samples') ?? 20);
-  if (phases.includes('U') && !older) throw new Error('--older <checkout of the cua before M6a> is needed for the upgraded home\'s cells');
+  if (!older) throw new Error('--older <checkout of the cua before M6a> is needed: it installs the upgraded home, and its by-name imports are the browser-only runs\' baseline');
   mkdirSync(out, {recursive: true});
   const runDir = dirname(resolve(out));
   const scratch = join(runDir, 'scratch');
@@ -230,19 +232,24 @@ async function main() {
       }
     }
   }
-  const selectedPaths = rep => { const s = Object.values(rep?.imports?.selected ?? {}).filter(p => typeof p === 'string'); return [...new Set([...s, ...s.map(real)])]; };
+  // The paths a browser-only run's trace must show opened: the six selected entries, and playwright's entry and
+  // playwright-core's as require loaded them (ruling 1162).
+  const openedPaths = rep => [...Object.values(rep?.imports?.selected ?? {}), rep?.imports?.loaded?.playwright?.entry, rep?.imports?.loaded?.playwright?.core].filter(p => typeof p === 'string');
+  const selectedPaths = rep => { const s = openedPaths(rep); return [...new Set([...s, ...s.map(real)])]; };
+  let baselineFile = null;
   async function browserRuns(cell, {env, home, traced, label = 'the browser-only session'}) {
     const facts = homeFacts(home);
     for (const mode of traced ? [false, true] : [false]) {
-      const run = await r.fixture('browser', {env, traced: mode, helper: facts.helper, homes: facts.homes, watchPaths: selectedPaths});
+      const run = await r.fixture('browser', {env, traced: mode, helper: facts.helper, homes: facts.homes, watchPaths: selectedPaths, extra: ['--baseline', baselineFile]});
       cell.runs.push(projectRun(run));
       const what = `${label}${mode ? ' under strace -f' : ''}`;
-      check(cell, `${what}: every step passes (the six entries selected from the module tree, its natives mapped, confined)`, fixtureProblems(run));
+      check(cell, `${what}: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)`, fixtureProblems(run),
+        {imports: run.report?.imports?.comparison ?? null});
       check(cell, `${what}: no engine process at any sample`, noEngineProblems(run.watch));
       if (mode) {
-        const opened = Object.values(run.report?.imports?.selected ?? {}).filter(p => typeof p === 'string').map(real);
-        check(cell, `${what}: the kernel opened each selected entry, and the serve's tree named nothing under runtimes/`,
-          !run.trace.summary ? ['strace wrote no trace'] : opened.length !== 6 ? [`the fixture reported ${opened.length} selected entries, not 6`] : traceProblems(run.trace.summary, {opened}));
+        const opened = openedPaths(run.report).map(real);
+        check(cell, `${what}: the kernel opened each selected entry and playwright's loaded ones, and the serve's tree named nothing under runtimes/`,
+          !run.trace.summary ? ['strace wrote no trace'] : opened.length !== 8 ? [`the fixture reported ${opened.length} entries to open, not 6 selected and playwright's 2 loaded`] : traceProblems(run.trace.summary, {opened}));
       }
     }
   }
@@ -299,6 +306,22 @@ async function main() {
     report.environment = environment;
     if (!environment.pass) throw new Error(`doctor's environment rows: ${environment.problems.join('; ')}`);
 
+    // The upgraded home, installed by the cua before M6a, before anything else: the U cells run over it, and a
+    // browser-only session of that cua there gives the by-name imports every browser-only run is compared with.
+    const uHome = join(runDir, 'upgraded', 'cua');
+    if (existsSync(uHome)) throw new Error(`${uHome} already exists: the upgraded home must be fresh`);
+    mkdirSync(dirname(uHome), {recursive: true});
+    const uEnv = {...process.env, CUA_HOME: uHome};
+    const olderCli = join(older, 'bin', 'cua.mjs');
+    const setup = await r.exec('older-install', process.execPath, [olderCli, 'install'], {env: uEnv, minutes: 25});
+    const vendorRelease = readPointer(uHome);
+    const vendorRecordPath = vendorRelease ? join(uHome, 'runtimes', vendorRelease, 'install.json') : null;
+    const vendorRecord = vendorRecordPath && fileIdentity(vendorRecordPath);
+    report.upgradedHome = {home: uHome, olderInstall: {exit: setup.code, seconds: setup.seconds, out: setup.out}, vendorRelease};
+    report.measured.importsOlder = setup.code === 0 ? await r.imports(olderCli, {env: uEnv}) : {failed: `the older cua's install exited ${setup.code}`};
+    baselineFile = join(scratch, 'imports-older.json');
+    writeFileSync(baselineFile, `${JSON.stringify(report.measured.importsOlder.imported ?? null)}\n`);
+
     if (phases.includes('E')) {
       const home = process.env.CUA_HOME;
       const env = {...process.env};
@@ -351,16 +374,8 @@ async function main() {
     }
 
     if (phases.includes('U')) {
-      const home = join(runDir, 'upgraded', 'cua');
-      if (existsSync(home)) throw new Error(`${home} already exists: the upgraded home must be fresh`);
-      mkdirSync(dirname(home), {recursive: true});
-      const env = {...process.env, CUA_HOME: home};
-      const olderCli = join(older, 'bin', 'cua.mjs');
-      const setup = await r.exec('older-install', process.execPath, [olderCli, 'install'], {env, minutes: 25});
-      const vendorRelease = readPointer(home);
-      const vendorRecordPath = vendorRelease ? join(home, 'runtimes', vendorRelease, 'install.json') : null;
-      const vendorRecord = vendorRecordPath && fileIdentity(vendorRecordPath);
-      report.upgradedHome = {home, olderInstall: {exit: setup.code, seconds: setup.seconds, out: setup.out}, vendorRelease};
+      const home = uHome;
+      const env = uEnv;
       if (setup.code !== 0 || !vendorRecord) {
         for (const id of ['U0', 'U1', 'U2', 'U3', 'U4', 'U5']) notRun(id, `the older cua's install did not place a vendor release (exit ${setup.code}, pointer ${vendorRelease ?? 'none'})`);
       } else {
@@ -388,8 +403,6 @@ async function main() {
         check(cell, 'nothing is launched from the vendor tree', nothingLaunchedProblems(u1.watch));
         finish(cell);
         if (sampleCount > 0) report.measured.firstAnswerOlder = await r.firstAnswers(olderCli, {env, n: sampleCount});
-        // Beside E2's: the six imports by name under the cua before M6a, from the vendor tree.
-        report.measured.importsOlder = await r.imports(olderCli, {env});
 
         cell = cellOf('U2');
         const printed = /`node (.+) install`/.exec(a?.hint ?? '')?.[1];

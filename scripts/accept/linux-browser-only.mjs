@@ -10,8 +10,13 @@
 //     over the base it reads from its own environment, CUA_REPL_NODE_MODULE_DIRS), and each must be the entry ENTRIES
 //     names under the resolved module tree. `import.meta.resolve` gives back the specifier for a package, so it shows
 //     nothing; a CommonJS dependency or a mapped library does not identify its entry, so the entry is witnessed itself;
-//   - each of the six imports by name, and `sharp` resizes an image `pngjs` made while `classic-level` writes and reads a
-//     key in the session's temp, which loads each architecture's native code inside the sandbox;
+//   - the six imports by name (the coordinator's ruling on F7, task 152): pixelmatch, pngjs, jpeg-js and classic-level
+//     must import; the kernel's loader refuses playwright and sharp by name under the cua before M6a too, from
+//     identical entry files, so their by-name outcome must equal the older cua's (`--baseline <file>`, its `imported`
+//     map, which the driver takes from a browser-only session of that cua): the same refusal, the same message once paths
+//     are set aside; any new difference, a new success included, fails. `sharp` then runs through `require` from the same
+//     base and resizes an image `pngjs` made, while `classic-level` writes and reads a key in the session's temp, which
+//     loads each architecture's native code inside the sandbox;
 //   - the native files the kernel mapped (/proc/self/maps, which does identify them: `.node` and libvips), each under the
 //     module tree, classic-level's, sharp's and libvips among them;
 //   - the confinement step (./linux-confinement.mjs) with its positive controls;
@@ -19,9 +24,9 @@
 // The driver (./linux-runtime.mjs) runs it plain and under `strace -f`, where the kernel must also have opened each
 // selected entry (the report's `imports.selected`) and nothing under runtimes/.
 //
-//   node scripts/accept/linux-browser-only.mjs   JSON report on stdout; exit 0 when every step passes
+//   node scripts/accept/linux-browser-only.mjs --baseline <file>   JSON report on stdout; exit 0 when every step passes
 // It refuses to start on display :0 or with no DISPLAY: every run is on a private display.
-import {existsSync, mkdtempSync, readdirSync, realpathSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, relative, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -41,10 +46,14 @@ export const ENTRIES = Object.freeze({
   'classic-level': 'classic-level/index.js',
 });
 export const SPECIFIERS = Object.keys(ENTRIES);
+// Judged by name; and compared, by name, with the cua before M6a's outcome (its loader refuses them as this one does).
+export const BY_NAME = ['pixelmatch', 'pngjs', 'jpeg-js', 'classic-level'];
+export const COMPARED = ['playwright', 'sharp'];
 // The tools a browser-only session lists at least.
 export const BROWSER_TOOLS = ['js', 'end_task', 'profiles_list'];
 
-const inside = (dir, path) => { const rel = relative(dir, path); return rel !== '' && !rel.startsWith(`..${sep}`) && rel !== '..' && !rel.startsWith(sep); };
+const inside = (dir, path) => typeof dir === 'string' && within(dir, path);
+const within = (dir, path) => { const rel = relative(dir, path); return rel !== '' && !rel.startsWith(`..${sep}`) && rel !== '..' && !rel.startsWith(sep); };
 
 /**
  * The cell that makes the kernel's own resolution for each of `specifiers`: the bases from CUA_REPL_NODE_MODULE_DIRS as
@@ -78,6 +87,19 @@ export const useCell = () => `const fs = await import('node:fs'), path = await i
   // the mapped natives say where its code came from whatever the import said; \`via\` records which.
   const base = (env.CUA_REPL_NODE_MODULE_DIRS ?? '').split(':').filter(e => path.isAbsolute(e)).map(e => (path.basename(e) === 'node_modules' ? path.dirname(e) : e))[0];
   const load = spec => { if (mods[spec]) { out.via[spec] = 'import'; return mods[spec]; } out.via[spec] = 'require'; return createRequire(path.join(base, '__node_repl__.cjs'))(spec); };
+  // playwright through require from the kernel's base, as cua's own code loads it (ruling 1162), whatever the import
+  // said; the require cache then names the files it loaded, its entry and playwright-core's among them.
+  try {
+    const pw = createRequire(path.join(base, '__node_repl__.cjs'))('playwright');
+    out.via.playwright = 'require';
+    out.used.playwright = typeof pw?.chromium?.launch === 'function' ? 'ok' : 'no chromium.launch on what it loaded';
+  } catch (e) { out.via.playwright = 'require'; out.used.playwright = why(e); }
+  try {
+    const files = Object.keys(createRequire(path.join(base, '__node_repl__.cjs')).cache).filter(f => /\\/node_modules\\/playwright(-core)?\\//.test(f));
+    const inside = f => f.startsWith(path.join(base, 'node_modules') + '/');
+    out.loaded = {playwright: {entry: files.find(f => /\\/node_modules\\/playwright\\/index\\.js$/.test(f)) ?? null, core: files.find(f => /\\/node_modules\\/playwright-core\\/index\\.js$/.test(f)) ?? null,
+      files: files.length, outside: files.filter(f => !inside(f)).slice(0, 5)}};
+  } catch (e) { out.loaded = {playwright: null, error: why(e)}; }
   try {
     const PNG = pick(mods.pngjs, 'PNG'), sharpModule = load('sharp'), sharp = sharpModule?.default ?? sharpModule;
     const png = new PNG({width: 4, height: 4}); png.data.fill(200);
@@ -124,12 +146,42 @@ export function selectionProblems({selected, moduleDir, specifiers = SPECIFIERS,
   return problems;
 }
 
-/** The imports' and the native uses' judge. -> problems. */
-export function useProblems(use) {
+// An import's outcome as compared across the two cuas: 'ok', or its message with every absolute path set aside (the
+// two trees lie in different places).
+const outcomeClass = outcome => (typeof outcome === 'string' ? outcome.replace(/\/[^\s"'`]+/g, '<path>') : null);
+
+/** COMPARED's by-name outcomes here and under the older cua (`older`, its `imported` map): `{spec: {here, older, same}}`. */
+export function importComparison(use, older) {
+  return Object.fromEntries(COMPARED.map(spec => {
+    const here = use?.imported?.[spec] ?? null, then = older?.[spec] ?? null;
+    return [spec, {here, older: then, same: here !== null && then !== null && outcomeClass(here) === outcomeClass(then)}];
+  }));
+}
+
+/**
+ * The imports' and the native uses' judge, `older` the cua before M6a's by-name outcomes and `root` the module tree:
+ * BY_NAME import; COMPARED's outcomes equal the older cua's; playwright loads through require, its entry and
+ * playwright-core's (and every file of either the require cache holds) from the tree (ruling 1162); sharp runs, through
+ * require; classic-level runs. -> problems.
+ */
+export function useProblems(use, {older, root} = {}) {
   if (!use || typeof use !== 'object') return ['the cell reported no imports'];
   const problems = [];
-  for (const spec of SPECIFIERS) if (use.imported?.[spec] !== 'ok') problems.push(`${spec} did not import (${use.imported?.[spec] ?? 'not tried'})`);
-  for (const what of ['sharp', 'classic-level']) if (use.used?.[what] !== 'ok') problems.push(`${what} did not run (${use.used?.[what] ?? 'not tried'})`);
+  for (const spec of BY_NAME) if (use.imported?.[spec] !== 'ok') problems.push(`${spec} did not import (${use.imported?.[spec] ?? 'not tried'})`);
+  // Criterion (c): the kernel refuses these two by name today (#531); once it lands they import by name, and this
+  // comparison becomes a plain by-name pass again.
+  for (const [spec, {here, older: then, same}] of Object.entries(importComparison(use, older))) {
+    if (then === null) problems.push(`no outcome of the cua before M6a to compare ${spec}'s import with`);
+    else if (!same) problems.push(`${spec}'s import by name differs from the cua before M6a's: ${JSON.stringify(here)} here, ${JSON.stringify(then)} there`);
+  }
+  for (const what of ['playwright', 'sharp', 'classic-level']) if (use.used?.[what] !== 'ok') problems.push(`${what} did not run (${use.used?.[what] ?? 'not tried'})`);
+  for (const what of ['playwright', 'sharp']) if (use.used?.[what] === 'ok' && use.via?.[what] !== 'require') problems.push(`${what} did not run through require (${use.via?.[what] ?? 'unrecorded'})`);
+  const pw = use.loaded?.playwright;
+  for (const [what, path] of [['playwright\'s entry', pw?.entry], ['playwright-core\'s entry', pw?.core]]) {
+    if (typeof path !== 'string') problems.push(`${what} was not loaded`);
+    else if (!inside(root, path)) problems.push(`${what} was loaded from ${path}, not the module tree ${root}`);
+  }
+  if (pw?.outside?.length) problems.push(`${pw.outside.length} file${pw.outside.length === 1 ? '' : 's'} of playwright loaded from outside the module tree (${pw.outside[0]})`);
   return problems;
 }
 
@@ -156,7 +208,10 @@ async function main() {
   const runEntries = () => (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')).sort() : []);
   const steps = [];
   const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
-  const report = {fixture: 'linux-browser-only', home, engineSetting: process.env.CUA_NATIVE_ENGINE ?? null, steps};
+  const baseline = process.argv.includes('--baseline') ? process.argv[process.argv.indexOf('--baseline') + 1] : null;
+  let older = null;
+  try { older = baseline ? JSON.parse(readFileSync(baseline, 'utf8')) : null; } catch { older = null; }
+  const report = {fixture: 'linux-browser-only', home, engineSetting: process.env.CUA_NATIVE_ENGINE ?? null, baseline, steps};
   const dir = mkdtempSync(join(tmpdir(), 'cua-browser-only-'));
   let session = null;
   try {
@@ -185,8 +240,11 @@ async function main() {
     const used = await session.js(useCell(), 180_000);
     const use = cellJson(resultText(used), 'use');
     report.imports.natives = use?.natives ?? null;
-    const usedProblems = used.result?.isError ? [`the cell failed: ${resultText(used).slice(0, 300)}`] : useProblems(use);
-    step('each of the six imports by name; sharp resizes a pngjs image and classic-level writes and reads a key in the sandbox', usedProblems.length === 0, {imported: use?.imported ?? null, used: use?.used ?? null, problems: usedProblems});
+    report.imports.loaded = use?.loaded ?? null;
+    report.imports.comparison = importComparison(use, older);
+    const usedProblems = used.result?.isError ? [`the cell failed: ${resultText(used).slice(0, 300)}`] : useProblems(use, {older, root: runtime.root});
+    step('pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox',
+      usedProblems.length === 0, {imported: use?.imported ?? null, comparison: report.imports.comparison, used: use?.used ?? null, via: use?.via ?? null, loaded: use?.loaded ?? null, problems: usedProblems});
     const mapped = nativesProblems({natives: use?.natives, root: runtime.root});
     step('the native files mapped are the module tree\'s: classic-level\'s, sharp\'s and libvips', mapped.length === 0, {mapped: use?.natives?.length ?? null, problems: mapped});
 

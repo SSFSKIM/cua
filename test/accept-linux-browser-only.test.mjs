@@ -3,7 +3,7 @@
 // files mapped. Each judge has its negative control here; the cells themselves are checked to parse.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ENTRIES, SPECIFIERS, cellJson, nativesProblems, selectionCell, selectionProblems, toolsProblems, useCell, useProblems} from '../scripts/accept/linux-browser-only.mjs';
+import {BY_NAME, COMPARED, ENTRIES, SPECIFIERS, cellJson, importComparison, nativesProblems, selectionCell, selectionProblems, toolsProblems, useCell, useProblems} from '../scripts/accept/linux-browser-only.mjs';
 
 const ROOT = '/run/user/.local/share/cua/modules/b71dc1f8185d';
 const MODULES = `${ROOT}/node_modules`;
@@ -35,17 +35,56 @@ test('a selection is compared by real path, so a spelling through a link is the 
   assert.deepEqual(selectionProblems({selected: linked, moduleDir: MODULES, real}), []);
 });
 
-const use = (o = {}) => ({imported: Object.fromEntries(SPECIFIERS.map(s => [s, 'ok'])), used: {sharp: 'ok', 'classic-level': 'ok'}, ...o});
+// The kernel's loader refuses these two by name under the cua before M6a too (the coordinator's ruling on F7, task 152):
+// their by-name outcome is compared with the older cua's, and sharp runs through require.
+const PW = 'The requested module \'./index.js\' does not provide an export named \'default\'';
+const SHARP = 'Unsupported import specifier "../package.json" in node_repl. Only .js and .mjs files are supported.';
+const older = {playwright: PW, sharp: SHARP, pixelmatch: 'ok', pngjs: 'ok', 'jpeg-js': 'ok', 'classic-level': 'ok'};
+// Playwright loaded through require from the kernel's base (ruling 1162): its entry and playwright-core's, from the tree.
+const loaded = (o = {}) => ({playwright: {entry: `${MODULES}/playwright/index.js`, core: `${MODULES}/playwright-core/index.js`, files: 120, outside: [], ...o}});
+const use = (o = {}) => ({imported: {...older}, used: {playwright: 'ok', sharp: 'ok', 'classic-level': 'ok'}, via: {playwright: 'require', sharp: 'require', 'classic-level': 'import'},
+  loaded: loaded(), ...o});
 
-test('the imports pass when all six import and both natives run', () => {
-  assert.deepEqual(useProblems(use()), []);
+test('the by-name four are judged by name; playwright and sharp by the older cua\'s outcome; sharp runs through require', () => {
+  assert.deepEqual(BY_NAME, ['pixelmatch', 'pngjs', 'jpeg-js', 'classic-level']);
+  assert.deepEqual(COMPARED, ['playwright', 'sharp']);
+  assert.deepEqual(useProblems(use(), {older, root: ROOT}), []);
 });
 
-test('negative control: a package that does not import, or a native use that fails, fails the imports', () => {
-  assert.match(useProblems(use({imported: {...use().imported, 'jpeg-js': 'ERR_MODULE_NOT_FOUND'}})).join('; '), /jpeg-js did not import \(ERR_MODULE_NOT_FOUND\)/);
-  assert.match(useProblems(use({used: {sharp: 'ok', 'classic-level': 'EACCES'}})).join('; '), /classic-level did not run \(EACCES\)/);
-  assert.match(useProblems(use({used: {'classic-level': 'ok'}})).join('; '), /sharp did not run \(not tried\)/);
-  assert.deepEqual(useProblems(null), ['the cell reported no imports']);
+test('negative control: a playwright that resolves but is not loaded through require from the module tree fails (ruling 1162)', () => {
+  // Resolved only: the cell never loaded it.
+  assert.match(useProblems(use({used: {sharp: 'ok', 'classic-level': 'ok'}, loaded: {}}), {older, root: ROOT}).join('; '), /playwright did not run \(not tried\).*playwright's entry was not loaded/);
+  assert.match(useProblems(use({via: {playwright: 'import', sharp: 'require'}}), {older, root: ROOT}).join('; '), /playwright did not run through require \(import\)/);
+  // Loaded, but from somewhere else, or with a file of it from outside the tree.
+  const vendor = '/run/user/.local/share/cua/runtimes/26/cua_node/lib/node_modules';
+  assert.match(useProblems(use({loaded: loaded({entry: `${vendor}/playwright/index.js`})}), {older, root: ROOT}).join('; '), /playwright's entry was loaded from .*runtimes.*, not the module tree/);
+  assert.match(useProblems(use({loaded: loaded({core: null})}), {older, root: ROOT}).join('; '), /playwright-core's entry was not loaded/);
+  assert.match(useProblems(use({loaded: loaded({outside: [`${vendor}/playwright-core/lib/x.js`]})}), {older, root: ROOT}).join('; '), /1 file of playwright loaded from outside the module tree/);
+});
+
+test('negative control: a by-name package that does not import, or a native use that fails, fails the imports', () => {
+  assert.match(useProblems(use({imported: {...older, 'jpeg-js': 'ERR_MODULE_NOT_FOUND'}}), {older, root: ROOT}).join('; '), /jpeg-js did not import \(ERR_MODULE_NOT_FOUND\)/);
+  assert.match(useProblems(use({used: {sharp: 'ok', 'classic-level': 'EACCES'}}), {older, root: ROOT}).join('; '), /classic-level did not run \(EACCES\)/);
+  assert.match(useProblems(use({used: {'classic-level': 'ok'}}), {older, root: ROOT}).join('; '), /sharp did not run \(not tried\)/);
+  assert.deepEqual(useProblems(null, {older, root: ROOT}), ['the cell reported no imports']);
+});
+
+test('negative control: any new difference from the older cua\'s by-name outcome fails, a new success included', () => {
+  assert.match(useProblems(use({imported: {...older, sharp: 'Cannot find module \'sharp\''}}), {older, root: ROOT}).join('; '), /sharp's import by name differs from the cua before M6a's: "Cannot find module 'sharp'" here, "Unsupported/);
+  assert.match(useProblems(use({imported: {...older, playwright: 'ok'}}), {older, root: ROOT}).join('; '), /playwright's import by name differs .*"ok" here/);
+  // A path in the message is not a difference: the two trees lie in different places.
+  const pathed = {...older, sharp: 'Cannot read /home/a/runtimes/x/sharp/package.json'};
+  assert.deepEqual(useProblems(use({imported: {...pathed, sharp: 'Cannot read /home/b/modules/y/sharp/package.json'}}), {older: pathed, root: ROOT}), []);
+});
+
+test('negative control: no outcome of the older cua to compare with, or sharp not run through require, fails', () => {
+  assert.match(useProblems(use(), {older: null, root: ROOT}).join('; '), /no outcome of the cua before M6a to compare playwright's import with/);
+  assert.match(useProblems(use({via: {sharp: 'import'}}), {older, root: ROOT}).join('; '), /sharp did not run through require \(import\)/);
+});
+
+test('the comparison names each compared package\'s outcome here and under the older cua', () => {
+  assert.deepEqual(importComparison(use(), older), {playwright: {here: PW, older: PW, same: true}, sharp: {here: SHARP, older: SHARP, same: true}});
+  assert.deepEqual(importComparison(use({imported: {...older, sharp: 'ok'}}), null).sharp, {here: 'ok', older: null, same: false});
 });
 
 const natives = [`${MODULES}/classic-level/prebuilds/linux-x64/classic-level.glibc.node`, `${MODULES}/@img/sharp-linux-x64/lib/sharp-linux-x64.node`,

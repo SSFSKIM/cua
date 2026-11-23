@@ -2,6 +2,8 @@
 
 ## Open
 
+- **Acceptance 12's 50 ms process watch can miss a process shorter than one interval** (#171 M6a, task 152; accepted). `scripts/accept/linux-runtime-watch.mjs` samples each fixture's process tree every 50 ms, as M5's sampler did. A process that lives less than that, or is seen only while it exits, has no executable to read; a short-lived cua-engine version probe was seen only that way under strace. A sky_linux still counts by its name in any state. The watch judges which engine answered. The traced run, not the sampler, judges reads of the vendor tree.
+
 - **Approve can drop a concurrent build's `pending.json`** (#117 M4 re-cut, whole-branch review, 2026-11-23; accepted). A successful approve compares the record with its claimed publication, then unlinks it; a build that rewrites the record in that instant loses it. The bundle survives in the slot; only its status metadata (build time) is lost until the next build.
 - **A busy promoted engine re-signed under another identity keeps serving after a failed approve** (#117 M4 re-cut, same review; accepted). Sessions check build, not signature, so the same build signed differently is accepted until it stops; `candidate.json` makes the next build or approve stop it once idle, and the message names `cua engine stop`.
 - **A console-terminal sign that times out reports `engine_sign_failed` with "check the identity"** (#117 M4 re-cut, pre-existing). When the cause is a keychain prompt left waiting at the console, the hint points the wrong way; the README gives the right steps.

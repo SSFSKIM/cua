@@ -3,57 +3,85 @@
 //
 //   platform           the release the record derives (manifest.mjs loadLinuxRuntime, linuxRelease); a record that its
 //                      pins contradict fails, and doctor stops there, since nothing resolves without it
-//   runtime.installed  the module tree this cua's lock names (manifest.mjs locateRuntime, which never reads the pointer)
-//                      and the pointer: `pass` when the tree is installed and current.json names this release (the
-//                      install writes it once every common part is in place); `warn` when sessions resolve and it names
-//                      the vendor's release, another runtime or nothing; `fail` when the tree is not installed
+//   runtime.installed  every common part and the pointer: `pass` when the module tree this cua's lock names
+//                      (manifest.mjs locateRuntime, which never reads the pointer), the Node a session resolves and the
+//                      sandbox helper are installed, and current.json names this release (the install writes it once
+//                      every common part is in place); `warn` when sessions resolve and current.json names the vendor's
+//                      release, another runtime or nothing, or cannot be read, or when the only part missing is a
+//                      helper CUA_SHIM_SANDBOX=disabled does not run; `fail` when a part is missing or not cua's
 //   runtime.modules    the tree's full check (module-tree.mjs verifyModuleTree): every package's digest, every native
 //                      file's hash, nothing added; `fail` names the first few that differ
-//   runtime.node       the Node sessions here run on: `pass` for the pinned managed Node (its bytes the recorded ones);
-//                      `warn` for a managed Node other than the pin, or CUA_NODE in its place; `fail` for none
+//   runtime.node       the Node a session runs on, as the session resolves it (launch.mjs ownHostNode: CUA_NODE, else
+//                      the managed Node, its bytes the recorded ones): `pass` for the pinned managed Node; `warn` for a
+//                      managed Node other than the pin, or CUA_NODE in its place; `fail` with the lookup's own refusal
 //   runtime.vendor     the vendor's tree (manifest.mjs vendorLinuxRuntime, and its manifest against the pin), kept for
-//                      CUA_NATIVE_ENGINE=vendor until M6b: `pass` installed and whole, `skip` absent, `fail` damaged. It
-//                      folds the vendor rows doctor had on Linux (runtime.files, vendor-manifest, ipc, signatures)
+//                      CUA_NATIVE_ENGINE=vendor until M6b: `pass` installed and whole, `skip` absent, `fail` damaged or
+//                      its pins unreadable (that error stays in this row). It folds the vendor rows doctor had on Linux
+//                      (runtime.files, vendor-manifest, ipc, signatures)
 //
-// Every `fail`, and every `warn` for a part behind its pin, names this cua's own installer by its absolute path, the
-// command the sessions' refusals name (manifest.mjs ownInstaller; ruling 1110). Nothing here launches anything.
+// Every `fail`, and every `warn` for a part behind its pin, names the remedy that repairs the home: where an installer
+// refuses to replace what is there (a tree or a Node cua did not install as recorded, a pointer that is not a file), the
+// exact path to move aside first; then this cua's own installer by its absolute path, with the release it installs
+// (manifest.mjs ownInstaller; ruling 1110). Nothing here launches anything.
+import {lstatSync, realpathSync} from 'node:fs';
 import {CuaError} from './errors.mjs';
-import {readPointer, realHome} from './layout.mjs';
+import {homeLayout, readPointer, realHome} from './layout.mjs';
 import {linuxRelease, loadLinuxRuntime, locateRuntime, ownInstaller, vendorLinuxRuntime} from './manifest.mjs';
 import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
-import {NODE_FLOOR, managedNode} from './managed-node.mjs';
+import {managedNode, nodeLayout, readNodePointer} from './managed-node.mjs';
 import {checkVendorManifest} from './checks.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 const sentence = error => (error.hint ? `${error.message}; ${error.hint}` : error.message);
 const caught = (run, onError) => { try { return run(); } catch (error) { if (!(error instanceof CuaError)) throw error; return onError(error); } };
+const outcome = run => caught(() => ({value: run()}), error => ({refused: error}));
 const older = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
+const present = path => { try { lstatSync(path); return true; } catch { return false; } };
+const real = path => { try { return realpathSync(path); } catch { return path; } };
 
 // -> {rows, runtime, stop}: `runtime` is what sessions resolve (null when they cannot), `stop` that the record itself
-// failed. `linuxRuntime` (the record) is a seam for tests.
-export function linuxRuntimeChecks({home, env, host, pins, linuxRuntime = () => loadLinuxRuntime({host})}) {
+// failed. `resolveNode` is the session's Node lookup (doctor's one resolution, shared with repl.host), `linuxHelper` the
+// helper's check, `sandbox` the CUA_SHIM_SANDBOX mode (null when invalid), and `pins` the vendor's pins or `pinsError`
+// why they could not be loaded. `linuxRuntime` (the record) is a seam for tests.
+export function linuxRuntimeChecks({home, env, host, pins, pinsError, resolveNode, linuxHelper, sandbox, linuxRuntime = () => loadLinuxRuntime({host})}) {
   let parts, release;
   const refused = caught(() => { parts = linuxRuntime(); release = linuxRelease(parts, host.arch); return null; }, error => error);
   if (refused) return {rows: [result('platform', 'fail', sentence(refused))], runtime: null, stop: true};
   const installer = `\`${ownInstaller({release}).command}\``;
   const rows = [result('platform', 'pass', `linux-${host.arch}: cua's own runtime ${release}`)];
 
+  const node = outcome(resolveNode);
+  const helper = outcome(() => linuxHelper({home: realHome(home), arch: host.arch}));
   const runtime = caught(() => locateRuntime({home, host}), error => { rows.push(result('runtime.installed', 'fail', sentence(error))); return null; });
-  if (runtime) rows.push(installedRow(runtime, pins, installer));
+  if (runtime) rows.push(installedRow({runtime, pins, installer, node, helper, sandbox}));
   rows.push(runtime ? modulesRow(runtime) : result('runtime.modules', 'skip', 'no module tree to verify (see runtime.installed)'));
-  rows.push(nodeRow({home, env, host, pinned: parts.node.version, installer}));
-  rows.push(vendorRow({home, host, pins, installer}));
+  rows.push(nodeRow({home, env, host, release, pinned: parts.node.version, installer, node}));
+  rows.push(vendorRow({home, host, pins, pinsError, installer}));
   return {rows, runtime: runtime && {release: runtime.release, root: runtime.root, paths: runtime.paths, parts}, stop: false};
 }
 
-function installedRow(runtime, pins, installer) {
-  const pointer = caught(() => readPointer(realHome(runtime.home)), error => ({unreadable: error.message}));
-  if (pointer === runtime.release) return result('runtime.installed', 'pass', `cua's own runtime ${runtime.release} at ${runtime.root}; current.json names it, the last install that completed here`);
+function installedRow({runtime, pins, installer, node, helper, sandbox}) {
+  const missing = [...(node.refused ? [`its Node: ${node.refused.message}`] : []),
+    ...(helper.refused && sandbox !== 'disabled' ? [`its sandbox helper: ${helper.refused.message}`] : [])];
+  if (missing.length) return result('runtime.installed', 'fail', `cua's own runtime ${runtime.release} is not whole at ${runtime.root}: ${missing.join('; ')}; `
+    + `runtime.node and sandbox.launcher name each part's remedy, and ${installer} installs what is absent`);
+  const unrun = helper.refused ? '; its sandbox helper is not installed, which CUA_SHIM_SANDBOX=disabled does not run' : '';
+  const {pointer: pointerPath} = homeLayout(realHome(runtime.home));
+  let pointer;
+  try { pointer = readPointer(realHome(runtime.home)); } catch (error) {
+    if (!error.code) throw error;
+    // A pointer that is not a file cua wrote (a directory there, say): the install cannot write over it either.
+    if (!(error instanceof CuaError)) return result('runtime.installed', 'warn', `sessions resolve cua's own runtime ${runtime.release} (${runtime.root})${unrun}, `
+      + `but current.json at ${pointerPath} cannot be read (${error.code}): move it aside; ${installer} then writes it`);
+    pointer = {unreadable: error.message};
+  }
+  if (pointer === runtime.release) return result('runtime.installed', unrun ? 'warn' : 'pass', `cua's own runtime ${runtime.release} at ${runtime.root}: `
+    + `its module tree, Node and sandbox helper are installed${unrun ? ' but for the helper' : ''}, and current.json names it, the last install that completed here${unrun}`);
   const names = pointer === null ? 'no release'
     : pointer.unreadable ? `nothing readable (${pointer.unreadable})`
-      : pins.some(pin => pin.release === pointer) || /^\d/.test(pointer) ? `the vendor's release ${pointer}, which an older cua's install wrote`
+      : (pins ?? []).some(pin => pin.release === pointer) || /^\d/.test(pointer) ? `the vendor's release ${pointer}, which an older cua's install wrote`
         : `another cua's runtime, ${pointer}`;
-  return result('runtime.installed', 'warn', `sessions resolve cua's own runtime ${runtime.release} (${runtime.root}), but current.json names ${names}: `
+  return result('runtime.installed', 'warn', `sessions resolve cua's own runtime ${runtime.release} (${runtime.root})${unrun}, but current.json names ${names}: `
     + `no install of this cua has completed here, so a part may be missing or another install's; run ${installer}`);
 }
 
@@ -64,21 +92,28 @@ function modulesRow(runtime) {
   }, error => result('runtime.modules', 'fail', `${error.message}; ${moduleRecoveryHint(runtime.root, runtime.release)}`));
 }
 
-// The Node a session here runs on (launch.mjs ownHostNode on Linux): CUA_NODE when set, else the managed Node.
-function nodeRow({home, env, host, pinned, installer}) {
+// The Node a session here runs on, as the session's own lookup answers (`node`): CUA_NODE when set, else the managed
+// Node. A refusal is the lookup's sentence; where the pinned version's install is there but not as recorded, which
+// node-install never repairs in place, its directory is named to be moved aside first.
+function nodeRow({home, env, host, release, pinned, installer, node}) {
+  if (node.refused) {
+    const {message, hint} = node.refused;
+    if (env.CUA_NODE) return result('runtime.node', 'fail', hint ? `${message}; ${hint}` : message);
+    const dir = nodeLayout(realHome(home)).version(pinned);
+    const version = caught(() => readNodePointer(realHome(home)), () => null);
+    if (version === pinned && present(dir)) return result('runtime.node', 'fail', `${message}; it is never repaired in place: stop any \`cua serve\` using it, move ${dir} aside, then ${ownInstaller({release}).hint}`);
+    return result('runtime.node', 'fail', hint ? `${message}; ${hint}` : `${message}; run ${installer}`);
+  }
+  if (env.CUA_NODE) return result('runtime.node', 'warn', `CUA_NODE=${env.CUA_NODE} (${node.value}) runs sessions here in place of the pinned Node ${pinned}, a named override`);
   const managed = managedNode(home, {host});
-  if (env.CUA_NODE) return result('runtime.node', 'warn', `CUA_NODE=${env.CUA_NODE} runs sessions here in place of the pinned Node ${pinned} (a named override; `
-    + `${managed.path ? `the installed one is ${managed.version}` : `no Node cua installed is usable here: ${managed.missing}`})`);
-  if (managed.missing) return result('runtime.node', 'fail', `no Node cua installed is usable here (${managed.missing}), so every session is refused (runtime_not_installed): `
-    + `run ${installer}, or set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later`);
-  if (Number(managed.version.split('.')[0]) < NODE_FLOOR) return result('runtime.node', 'fail', `the installed Node ${managed.version} at ${managed.path} is older than Node ${NODE_FLOOR}, `
-    + `which cua's own host needs, so every session is refused: run ${installer}`);
+  if (!managed.path || real(managed.path) !== node.value) return result('runtime.node', 'warn', `sessions here run the Node at ${node.value}, not one cua installed: ${installer} installs the pinned ${pinned}`);
   if (managed.version === pinned) return result('runtime.node', 'pass', `the pinned Node ${pinned} at ${managed.path}, its bytes the ones its install record names`);
   return result('runtime.node', 'warn', `the installed Node ${managed.version} at ${managed.path} runs sessions here, ${older(managed.version, pinned) ? 'behind' : 'ahead of'} `
     + `this cua's pinned ${pinned}: ${installer} installs the pinned one`);
 }
 
-function vendorRow({home, host, pins, installer}) {
+function vendorRow({home, host, pins, pinsError, installer}) {
+  if (pinsError) return result('runtime.vendor', 'fail', `${sentence(pinsError)}; only CUA_NATIVE_ENGINE=vendor needs the vendor's tree`);
   return caught(() => {
     const tree = vendorLinuxRuntime({home, pins, host});
     const manifest = checkVendorManifest(tree.root, tree.manifest);

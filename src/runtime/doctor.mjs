@@ -129,14 +129,25 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper, linuxRuntime}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
-  pins ??= loadPins();
+  // On Linux the vendor's pins describe only the vendor's tree: one this checkout cannot load fails that row alone
+  // (runtime.vendor), and the leftovers scan goes on without the release trees they name.
+  let pinsError = null;
+  if (pins === undefined) {
+    if (host.platform !== 'linux') pins = loadVendorPins();
+    else try { pins = loadVendorPins(); } catch (error) { if (!(error instanceof CuaError)) throw error; pinsError = error; pins = []; }
+  }
   const checks = [];
   let pin, runtime;
+  // The own host's Node, resolved once as a connection resolves it (launch.mjs ownHostNode), for the runtime rows and
+  // repl.host alike. CUA_NODE's form is repl.host's to check first; an invalid one is that row's failure.
+  const resolveNode = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home, platform: host.platform, arch: host.arch})));
   if (host.platform === 'linux') {
     // cua's own runtime and the vendor's tree beside it (#171 M6a; src/runtime/doctor-linux-runtime.mjs).
-    const own = linuxRuntimeChecks({home, env, host, pins, ...(linuxRuntime ? {linuxRuntime} : {})});
+    let sandboxMode = null;
+    try { sandboxMode = sandboxModeFrom(env); } catch (error) { if (!(error instanceof CuaError)) throw error; }
+    const own = linuxRuntimeChecks({home, env, host, pins, pinsError, resolveNode, linuxHelper, sandbox: sandboxMode, ...(linuxRuntime ? {linuxRuntime} : {})});
     checks.push(...own.rows);
     if (own.stop) return {ok: false, checks};
     runtime = own.runtime;
@@ -200,7 +211,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
   const engineInputs = host.platform === 'linux' ? engine ?? {} : sharedEngineInputs(engine, env);
-  const replHost = replHostCheck(home, env, host, resolveOwnNode, engineInputs);
+  const replHost = replHostCheck(home, env, host, resolveNode, engineInputs);
   checks.push(replHost.row);
   const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,
     ...(inspectLinuxEngine ? {inspectLinux: inspectLinuxEngine} : {}), ...(readLinuxCapabilities ? {readCapabilities: readLinuxCapabilities} : {})});
@@ -273,8 +284,8 @@ function resolvedOnce(resolve) {
   };
 }
 
-function replHostCheck(home, env, host, resolveOwnNode, engine) {
-  const {platform, arch} = host;
+function replHostCheck(home, env, host, resolve, engine) {
+  const {platform} = host;
   let surfaces;
   // CUA_NODE's form first, as `cua serve` checks it at start (settingsFrom) whatever the selection: an explicit vendor
   // host never asks for Node, but the connection is refused all the same.
@@ -282,11 +293,10 @@ function replHostCheck(home, env, host, resolveOwnNode, engine) {
     if (!(error instanceof CuaError)) throw error;
     return {row: result('repl.host', 'fail', `${error.message}; every connection is refused`)};
   }
-  const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home, platform, arch})));
   const session = replHostSelection(home, env, host, surfaces, resolve, engine);
   const listing = replHostSelection(home, env, host, ['browser'], resolve, engine);
   // A Linux session's engine never changes its host (#171): the engine row names it, this one does not.
-  const words = r => (r.code ? `refused (${r.code}): ${r.message}`
+  const words = r => (r.code ? `refused (${r.code}): ${r.message}${r.hint ? `; ${r.hint}` : ''}`
     : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}${r.engine && platform !== 'linux' ? `; ${engineWords(r.engine)}` : ''}`);
   const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable' || r.engine?.status === 'warn') ? 'warn' : 'pass';
   // `session` is also the engine row's effective selection: the engine a session here actually drives.

@@ -23,7 +23,7 @@
 // last completed and selects nothing (§4.3). The vendor's tree is reached only through `vendorLinuxRuntime`, for
 // `CUA_NATIVE_ENGINE=vendor`, until M6b removes it. Every Linux remedy names this cua's own installer by its absolute
 // path (`ownInstaller`, ruling 1110's F9): a `cua` on PATH from another checkout installs that checkout's runtime.
-import {readFileSync, readdirSync, lstatSync} from 'node:fs';
+import {readFileSync, readdirSync, lstatSync, statSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
@@ -76,6 +76,9 @@ export const recoveryHint = (root, platform = process.platform) => `stop any \`c
 export function isRealDirectory(path) {
   try { return lstatSync(path).isDirectory(); } catch { return false; }
 }
+// Whether anything, a link included, is at `path`; and whether it is, or leads to, a directory.
+const present = path => { try { lstatSync(path); return true; } catch { return false; } };
+const isDirectory = path => { try { return statSync(path).isDirectory(); } catch { return false; } };
 
 export function assertHostSupports(pin, host = hostTarget()) {
   if (pin.platform !== host.platform || pin.arch !== host.arch)
@@ -295,7 +298,16 @@ function locateOwnLinuxRuntime({home, release: named, host}) {
   if (named != null && named !== release)
     fail('unknown_release', `release ${named} is not this cua's Linux runtime, ${release}`, {hint: 'on Linux this cua resolves only its own runtime; CUA_NATIVE_ENGINE=vendor selects the vendor\'s engine'});
   const tree = readModuleTree(home, lock, moduleHostOf(host));
-  if (!tree) fail('runtime_not_installed', `cua's Linux runtime ${release} is not installed in ${home}: its module tree ${join(homeLayout(home).modules, lock.hash)} is missing`, {hint: ownInstaller({release}).hint});
+  if (!tree) {
+    // Something at the tree's path (or a modules/ that is not a directory) that is not cua's install of this lock for
+    // this host: the installer never replaces it, so the remedy names it, to be moved aside first.
+    const {modules} = homeLayout(home);
+    const root = join(modules, lock.hash);
+    const blocking = present(modules) && !isRealDirectory(modules) ? modules : present(root) ? root : null;
+    if (blocking) fail('runtime_not_installed', `cua's Linux runtime ${release} is not installed in ${home}: ${blocking} is there, and is not a module tree cua installed for this lock and host; it is never replaced in place`,
+      {hint: `stop any \`cua serve\` using it, move ${blocking} aside, then ${ownInstaller({release}).hint}`});
+    fail('runtime_not_installed', `cua's Linux runtime ${release} is not installed in ${home}: its module tree ${root} is missing`, {hint: ownInstaller({release}).hint});
+  }
   return {release, home, root: tree.root, paths: {moduleDir: tree.moduleDir}, manifest: {platform: 'linux', arch: host.arch, release, parts}, record: tree.record};
 }
 
@@ -315,13 +327,14 @@ export function vendorLinuxRuntime({home, pins = loadPins(), host = hostTarget()
   const damaged = (why, cause, blocking = root) => fail('release_damaged', `the vendor's release ${pin.release} in ${real} is damaged: ${why}`, {hint: recoveryHint(blocking, 'linux'), cause, context});
   let stat;
   try { stat = lstatSync(root); } catch (error) {
-    if (error.code === 'ENOENT') fail('release_not_installed', `the vendor's release ${pin.release} is not installed in ${real}`, {hint: installHint('linux'), context});
-    // A file where a directory on the way should be blocks every release under it: the remedy names that file.
-    if (error.code === 'ENOTDIR') {
-      const {runtimes} = homeLayout(real);
+    // A file where a directory on the way should be, or a link there that leads nowhere (which reads as absent),
+    // blocks every release under it: the remedy names that file.
+    const {runtimes} = homeLayout(real);
+    if (error.code === 'ENOTDIR' || (error.code === 'ENOENT' && present(runtimes) && !isDirectory(runtimes))) {
       const blocking = isRealDirectory(real) ? runtimes : real;
       damaged(`${blocking} is not a directory, so no release can be installed under it`, error, blocking);
     }
+    if (error.code === 'ENOENT') fail('release_not_installed', `the vendor's release ${pin.release} is not installed in ${real}`, {hint: installHint('linux'), context});
     damaged(`${root} cannot be read (${error.code ?? error.message})`, error);
   }
   if (!stat.isDirectory()) damaged(`${root} is ${stat.isSymbolicLink() ? 'a link' : 'not a directory'}`);

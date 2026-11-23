@@ -222,9 +222,14 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return nodeRepl.withSuspendedTimeout(fn);
   }
 
+  const anotherRelease = `the engine answering ${socketPath} is from another release and is left running. Install this release's engine with cua install --engine, which builds it beside the approved one, then put it in place with cua engine approve (the owner at the console)`;
+  // The engine's own refusal of this client's API version (its ping's incompatibleClientVersion), with the same remedy.
+  const refusedClient = error => new SkyComputerUseError({code: error.code, errorName: error.errorName, meta: error.meta,
+    reason: `${error.message.replace(/^Computer Use server error -?\d+: /, '')} ${anotherRelease[0].toUpperCase()}${anotherRelease.slice(1)}`});
+
   function check(answer, want) {
     if (answer?.serverApiVersion !== CLIENT_API_VERSION) {
-      throw new Mismatch(`cua engine API version mismatch: client=${CLIENT_API_VERSION} server=${String(answer?.serverApiVersion)}; the engine answering ${socketPath} is from another release and is left running. Install this release's engine with cua install --engine, which builds it beside the approved one, then put it in place with cua engine approve (the owner at the console)`);
+      throw new Mismatch(`cua engine API version mismatch: client=${CLIENT_API_VERSION} server=${String(answer?.serverApiVersion)}; ${anotherRelease}`);
     }
     if (answer.engineVersion !== want.engineVersion || answer.build !== want.build) {
       throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Once no session uses it, stop it with cua engine stop: the next session launches the bundle at ${appPath}`);
@@ -260,7 +265,8 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
           return checked;
         } catch (error) {
           candidate.close();
-          if (error instanceof Mismatch || error instanceof Released || (error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion')) throw error;
+          if (error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion') throw refusedClient(error);
+          if (error instanceof Mismatch || error instanceof Released) throw error;
           last = error;
         }
       }

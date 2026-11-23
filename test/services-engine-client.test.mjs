@@ -145,7 +145,9 @@ test('an engine speaking another API version, or refusing the client\'s, fails a
   const engine2 = await startFakeEngine(t, socket2, {handlers: {ping: () => { throw new EngineFailure(-10013, 'The client speaks x', 'incompatibleClientVersion'); }}});
   const {client: client2} = clientFor(socket2);
   t.after(() => client2.close());
-  await assert.rejects(client2.connect(), error => error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion');
+  await assert.rejects(client2.connect(), error => error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion' && error.code === -10013
+    && error.message.includes('The client speaks x') && error.message.includes('left running')
+    && error.message.includes('cua install --engine') && error.message.includes('cua engine approve'));
   assert.equal(engine2.received.length, 1);
 });
 

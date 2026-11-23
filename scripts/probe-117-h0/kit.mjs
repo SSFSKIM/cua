@@ -296,7 +296,7 @@ await step('step1-bundle-no-rows', async () => {
   const doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
   const observed = await sessionStep('s1', {CUA_NATIVE_ENGINE: 'cua'}, [{label: 'textedit', bundle: SCENES.textedit}]);
   const after = engineGrants();
-  return {launched, parent, harnessApproval: approval, doctor, ...observed, grantsAfter: after, stopped: stopEngine()};
+  return {launched, parent, harnessApproval: approval, doctor, ...observed, grantsAfter: after, stopped: stopEngine(), after: front('step1')};
 });
 
 // Part 1, (c): the probe modes as their own LaunchServices instances, no rows.
@@ -362,25 +362,21 @@ await step('step7-tccd-honours', async () => {
 const needsRestart = record['step7-tccd-honours']?.honoured && !record['step7-tccd-honours'].honoured.systemRelaunch && record['step7-tccd-honours'].honoured.systemAfterRestart === true;
 async function settle() { if (needsRestart) { restartTccd(); await sleep(2000); } }
 
-// Step 8: cua's bundle with all its rows: grants after a relaunch, `cua engine approve` with nobody at the console, then
-// a session through the product's own launch (no engine running: the service launches it).
+// What is in front and the whole desktop, after a step: a capture confirmation (UserNotificationCenter) takes the front.
+function front(tag) {
+  const shot = sh('/usr/sbin/screencapture', ['-x', join(OUT, `desktop-${tag}.png`)]);
+  return {frontmost: ssh('frontmost').out, desktop: shot.code === 0 ? `desktop-${tag}.png` : {code: shot.code}};
+}
+
+// Step 8: cua's bundle with all its rows: grants after a relaunch; a session through the product's own launch (no engine
+// running: the service launches it), before any approve, so its own first captures show whether they raise replayd's
+// confirmation; the probe modes; then `cua engine approve` with nobody at the console, and once more.
 await step('step8-bundle-rows', async () => {
   const out = {};
   out.rowsWritten = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ENGINE_ALL});
   await settle();
   out.relaunch = await relaunchLS();
-  const approve = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
-  out.approve = {code: approve.code, ms: approve.ms, json: json(approve.stdout), stderr: approve.stderr.trim().split('\n').slice(-10).join('\n')};
-  if (out.approve.code !== 0 && /engine_capture_confirmation/.test(out.approve.stderr)) {
-    // The confirmation is raised by a copy's first capture; a second approve shows whether it is raised again.
-    const again = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
-    out.approveAgain = {code: again.code, ms: again.ms, json: json(again.stdout), stderr: again.stderr.trim().split('\n').slice(-10).join('\n')};
-  }
-  out.approvedJson = existsSync(PATHS.approved) ? JSON.parse(readFileSync(PATHS.approved, 'utf8')) : null;
-  if (!out.approvedJson || out.approvedJson.harness) out.note = 'approve did not write approved.json; the harness approval from step 1 stands for the session';
   out.stoppedBeforeSession = stopEngine();
-  out.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
-  out.stoppedAfterDoctor = stopEngine();
   Object.assign(out, await sessionStep('s8', {CUA_NATIVE_ENGINE: 'cua'}, [
     {label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA},
     {label: 'finder', bundle: SCENES.finder},
@@ -389,11 +385,27 @@ await step('step8-bundle-rows', async () => {
   ]));
   out.grantsAfter = engineGrants();
   out.parent = out.grantsAfter.pid ? parentOf(out.grantsAfter.pid) : null;
-  out.stopped = stopEngine();
+  out.afterSession = front('step8-session');
   return out;
 });
 // (c) with the engine's rows: each probe instance is the bundle, so the rows should reach it too.
-await step('stepC-probes-rows', async () => probeModes());
+await step('stepC-probes-rows', async () => ({...probeModes(), after: front('stepC-rows')}));
+await step('step8b-approve', async () => {
+  const out = {};
+  const approve = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
+  out.approve = {code: approve.code, ms: approve.ms, json: json(approve.stdout), stderr: approve.stderr.trim().split('\n').slice(-10).join('\n')};
+  out.afterApprove = front('step8-approve');
+  if (out.approve.code !== 0 && /engine_capture_confirmation/.test(out.approve.stderr)) {
+    // The confirmation is raised by a copy's first display capture; a second approve shows whether it is raised again.
+    const again = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
+    out.approveAgain = {code: again.code, ms: again.ms, json: json(again.stdout), stderr: again.stderr.trim().split('\n').slice(-10).join('\n')};
+  }
+  out.approvedJson = existsSync(PATHS.approved) ? JSON.parse(readFileSync(PATHS.approved, 'utf8')) : null;
+  out.stopped = stopEngine();
+  out.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  out.stoppedAfterDoctor = stopEngine();
+  return out;
+});
 
 // Step 9: the vendor's helper with rows for every app bundle in the installed runtime that is its helper.
 await step('step9-vendor-rows', async () => {
@@ -417,6 +429,7 @@ await step('step9-vendor-rows', async () => {
     {label: 'electron', bundle: SCENES.electron},
   ]));
   out.rows = readRows();
+  out.after = front('step9');
   return out;
 });
 
@@ -466,6 +479,6 @@ await step('teardown', async () => {
   const down = ssh(`down all --run '${SCENE_RUN}'`);
   const alerts = sh('/usr/bin/log', ['show', '--last', '90m', '--style', 'ndjson', '--predicate', 'process == "replayd" AND eventMessage CONTAINS "[SCAlert "']);
   const lines = alerts.stdout.split('\n').filter(l => l.startsWith('{') && l.includes('SCAlert'));
-  return {down, replaydSCAlertLinesLast90m: lines.length, rowsAtEnd: readRows()};
+  return {front: front('end'), down, replaydSCAlertLinesLast90m: lines.length, rowsAtEnd: readRows()};
 });
 log('done');

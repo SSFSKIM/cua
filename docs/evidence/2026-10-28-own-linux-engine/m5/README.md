@@ -13,12 +13,16 @@ engine (part 5).
   included, apart from one measurement lane nothing that ships can select (#474, part 3)
   ([arm64 README, at H8](arm64/README.md#L1109);
   [Decision Log, the counted reach at H8](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2707)).
-- **x64: complete on 0.4.3 except its last real-desktop sitting.** Every step of the reach passed on its first run
-  ([x64 README, at H8](x64/README.md#L1243)). V5 last ran at H6 on 0.4.2 and passed 52 of 52
-  ([x64 V5 at H6](x64/README.md#L938)).
-  **PENDING:** x64's V5 at H8 on 0.4.3, in the owner's window 11-23 02:30–08:00Z; it fills the x64 V5 cells below.
-- **PENDING:** the flipped default, shown live: T10's live checks on both machines (task 137), part 6.
-- **PENDING:** the reach table of main's new commits, which says which steps, if any, they send back to a run.
+- **x64: complete on 0.4.3.** Every step of the reach passed on its first run
+  ([x64 README, at H8](x64/README.md#L1243)). V5 passed in one run on the owner's `:0`, 2026-11-23
+  02:30:03–03:07:44Z under GO 1087: every verdict passes, text restores 0/0/0, the all-clear is clear, and the
+  owner's Chrome was untouched; the hold's relative canary held 9 of 9 (draggable max 76.8 ms, median 50.3, plain max
+  1.2), and the capture sidecar beside it captured nothing ([V5 at H8](x64/README.md#L1396)). Ruling 1088 accepted it, which completes M5's counted
+  acceptance at H8 on both machines.
+- **The flipped default, shown live: it passes on both machines** (part 6). T10's checks select cua's engine by
+  default, keep the vendor engine in every fallback home, and fail as required on the commit before the flip.
+- **Main's new commits reach nothing this acceptance measured** (ruling 1089; part 1, the last paragraph): no H8 step
+  reruns.
 
 Steps that 0.4.3's change cannot reach stand on the run of an earlier release (the reach rule, under "How to read").
 Part 1 names, for every item, the release each verdict stands on.
@@ -47,7 +51,7 @@ Part 1 names, for every item, the release each verdict stands on.
 
 - **Some applications need a dedicated desktop for input**: GTK 4 applications such as gnome-text-editor, xterm's
   keys, and Firefox while the real pointer is outside its window. On a shared desktop these are refused with a
-  sentence, where the vendor sent input they ignore ([README, the device mode](../../../../README.md#L1262)).
+  sentence, where the vendor sent input they ignore ([README, the device mode](../../../../README.md#L1281)).
 - **Every short drag from a Chrome or Electron window takes about 450 ms.** The engine keeps the button down until
   450 ms after the press unless the page starts its drag and drop sooner, because Chrome drops a drag its page starts
   after the button is up. A 40 px Chrome selection takes 455.1 ms on x64 and 452.2 on arm64, against the newest vendor
@@ -79,7 +83,7 @@ Part 1 names, for every item, the release each verdict stands on.
 - **Chromium drags on a shared desktop are refused unless their whole path is visible**, and an Electron key release
   can reach the page's tree after the engine has answered (#302) (part 3).
 - The full list of limits a user can meet is the README's
-  [Known limitations (cua's engine)](../../../../README.md#L1297), summarized in part 4.
+  [Known limitations (cua's engine)](../../../../README.md#L1316), summarized in part 4.
 
 ### How to read this page
 
@@ -204,16 +208,16 @@ Each cell names the release its verdict stands on.
 
 | # | What it proves, for a user | x64 | arm64 |
 |---|---|---|---|
-| 1 | No vendor process runs when cua's engine is selected | **Pass** on 0.4.0: only the installed `cua-engine` ran, under cua's trusted worker, and no `sky_linux` ([R3 at H](x64/README.md#L174)). Item 9 shows doctor naming the 0.4.3 pin. R3 reruns on 0.4.3 with the flip (part 6) | **Pass** on 0.4.0, the same ([R3 at H‴](arm64/README.md#L197)). The same rerun with the flip |
-| 2 | Every one of the 21 commands answers as the vendor's does, or as declared | **Pass**: V1–V4 on 0.4.1 ([at H⁗](x64/README.md#L539); [the 21 commands at H](x64/README.md#L299)); V5 on 0.4.2, 52 of 52 ([at H6](x64/README.md#L938)); `move_relative` and `drag_handle`, which V1–V5 don't send, by E1 on 0.4.1 ([E1 at H⁗](x64/README.md#L578); [the map](x64/README.md#L325)). **PENDING:** V5 on 0.4.3 at H8 (the owner's window). Declared cells in part 3 | **Pass**: V1–V4 on 0.4.1 ([at H⁵](arm64/README.md#L489)); V5 on 0.4.3, 52 of 52 ([at H8](arm64/README.md#L1213)); `move_relative` and `drag_handle` by E1 on 0.4.0 ([E1 at H‴](arm64/README.md#L200)). Declared cells in part 3 |
+| 1 | No vendor process runs when cua's engine is selected | **Pass** on 0.4.0: only the installed `cua-engine` ran, under cua's trusted worker, and no `sky_linux` ([R3 at H](x64/README.md#L174)). Item 9 shows doctor naming the 0.4.3 pin. On 0.4.3 at the flip commit, R3 passes with no `sky_linux` in the engine watch, by default and by explicit choice ([T10](t10/README.md#L87), part 6) | **Pass** on 0.4.0, the same ([R3 at H‴](arm64/README.md#L197)); on 0.4.3 at the flip commit, the same ([T10](t10/README.md#L87)) |
+| 2 | Every one of the 21 commands answers as the vendor's does, or as declared | **Pass**: V1–V4 on 0.4.1 ([at H⁗](x64/README.md#L539); [the 21 commands at H](x64/README.md#L299)); V5 on 0.4.3, 52 of 52 ([V5 at H8](x64/README.md#L1396)); `move_relative` and `drag_handle`, which V1–V5 don't send, by E1 on 0.4.1 ([E1 at H⁗](x64/README.md#L578); [the map](x64/README.md#L325)). Declared cells in part 3 | **Pass**: V1–V4 on 0.4.1 ([at H⁵](arm64/README.md#L489)); V5 on 0.4.3, 52 of 52 ([at H8](arm64/README.md#L1213)); `move_relative` and `drag_handle` by E1 on 0.4.0 ([E1 at H‴](arm64/README.md#L200)). Declared cells in part 3 |
 | 3 | At or below the vendor's speed | **Pass**: the seven operations on 0.4.1 (V2, V3 at H⁗); the long drag paths judged on speed, Chrome's canvas on 0.4.3 ([D1 at H8](x64/h8/out/D1.pinned-release/run/summary.md)) and Firefox's canvas on 0.4.0 (D3 at H); desktop moves on 0.4.1 (E1 at H⁗). The scrollbar thumbs pass on distance, not speed: Chrome's on 0.4.3 (D1 at H8), Electron's on 0.4.2 ([D2 at H6](x64/h6/out/D2.pinned-release/run/summary.md)). Listed apart: #358 and #373 declared, and the short Chrome and Electron drags (about 450 ms), which carry no speed verdict (parts 2 and 3) | **Pass**: the seven operations on 0.4.1 (V2, V3 at H⁵); the long drag paths judged on speed, Chrome's canvas on 0.4.3 against the pinned build ([D1 at H8](arm64/h8/out/D1.pinned-release/run/summary.md)) and Firefox's canvas on 0.4.0 (D3 at H‴); desktop moves on 0.4.0 (E1 at H‴). The scrollbar thumbs pass on distance, not speed: Chrome's on 0.4.3 (D1 at H8), Electron's on 0.4.2 ([D2 at H6](arm64/h6/out/D2.pinned-release/run/summary.md)). `activate_window` within the bound. Listed apart: #358 declared, and the short drags, which carry no speed verdict (parts 2 and 3) |
 | 4 | The same elements as the vendor reads | **Pass**: gedit, Chrome and the over-budget page, V2 on 0.4.1 ([V2 at H⁗](x64/README.md#L540)); the truncation line through the facade, FB on 0.4.0 ([FB at H](x64/README.md#L176)) | **Pass**: V2 on 0.4.1 ([at H⁵](arm64/README.md#L490)); the truncation line, FB on 0.4.0 ([FB at H‴](arm64/README.md#L199)) |
-| 5 | Background input leaves a person's windows, focus and pointer alone | **Pass**: the sitting's V1–V5 and Z0 on 0.4.1, every all-clear clear, 0 changes to windows the run did not open over 195 audits ([the sitting at H⁗](x64/README.md#L630), [the scan](x64/README.md#L658)); V5 on 0.4.2 clear with the owner's windows unchanged over 209 checks ([V5 at H6](x64/README.md#L962)). **PENDING:** V5 at H8 | **Pass**: every completed run clear: V1–V4, Z0 and V5 on 0.4.1 ([at H⁵](arm64/README.md#L497)), V5 on 0.4.2 ([at H6](arm64/README.md#L712)) and on 0.4.3 ([at H8](arm64/README.md#L1213)). Set apart: three V5 attempts the guard stopped (one at H⁵, two at H8) read NOT CLEAR and have no verdict (#432, part 3). Nobody uses this desktop (part 3) |
+| 5 | Background input leaves a person's windows, focus and pointer alone | **Pass**: the sitting's V1–V5 and Z0 on 0.4.1, every all-clear clear, 0 changes to windows the run did not open over 195 audits ([the sitting at H⁗](x64/README.md#L630), [the scan](x64/README.md#L658)); V5 on 0.4.2 clear with the owner's windows unchanged over 209 checks ([V5 at H6](x64/README.md#L962)); V5 on 0.4.3 clear, wrap71's 15066 samples with 0 flags, 0 decoy connections and 0 leftovers, the owner's Chrome untouched (owner-diff shows only its profile's mtime) ([V5 at H8](x64/README.md#L1396)) | **Pass**: every completed run clear: V1–V4, Z0 and V5 on 0.4.1 ([at H⁵](arm64/README.md#L497)), V5 on 0.4.2 ([at H6](arm64/README.md#L712)) and on 0.4.3 ([at H8](arm64/README.md#L1213)). Set apart: three V5 attempts the guard stopped (one at H⁵, two at H8) read NOT CLEAR and have no verdict (#432, part 3). Nobody uses this desktop (part 3) |
 | 6 | Text arrives once, exactly | **Pass**: gedit, Chrome's textarea and address bar, gnome-text-editor on a dedicated desktop, every paste safety case ([V1](x64/README.md#L539), [V4](x64/README.md#L542)), on 0.4.1 | **Pass**: V1 and V4 on 0.4.1, every paste case ([at H⁵](arm64/README.md#L489)) |
-| 7 | Duplicate and minimized windows | **Pass**: V3 on 0.4.1 ([at H⁗](x64/README.md#L541)), V5 on 0.4.2 ([at H6](x64/README.md#L938)), R1 on 0.4.0 ([at H](x64/README.md#L172)) | **Pass**: V3 on 0.4.1 with no verdict FAIL ([at H⁵](arm64/README.md#L491)), V5 on 0.4.3 ([at H8](arm64/README.md#L1213)); R1 through the real facade on 0.4.0 ([at H‴](arm64/README.md#L195)) |
-| 8 | The device mode: refused on a shared desktop, applied on a dedicated one | **Pass**: V4 on 0.4.1 ([at H⁗](x64/README.md#L542)), V5 on 0.4.2 ([at H6](x64/README.md#L938)), P1–P6 and R4 on 0.4.0 ([P1–P6 at H](x64/README.md#L186), [R4 at H](x64/README.md#L175)) | **Pass**: V4 on 0.4.1, V5 on 0.4.3, P1–P6 and R4 on 0.4.0 ([V4](arm64/README.md#L492), [P1](arm64/README.md#L209), [R4](arm64/README.md#L198)) |
+| 7 | Duplicate and minimized windows | **Pass**: V3 on 0.4.1 ([at H⁗](x64/README.md#L541)), V5 on 0.4.3 ([V5 at H8](x64/README.md#L1396)), R1 on 0.4.0 ([at H](x64/README.md#L172)) | **Pass**: V3 on 0.4.1 with no verdict FAIL ([at H⁵](arm64/README.md#L491)), V5 on 0.4.3 ([at H8](arm64/README.md#L1213)); R1 through the real facade on 0.4.0 ([at H‴](arm64/README.md#L195)) |
+| 8 | The device mode: refused on a shared desktop, applied on a dedicated one | **Pass**: V4 on 0.4.1 ([at H⁗](x64/README.md#L542)), V5 on 0.4.3 ([V5 at H8](x64/README.md#L1396)), P1–P6 and R4 on 0.4.0 ([P1–P6 at H](x64/README.md#L186), [R4 at H](x64/README.md#L175)) | **Pass**: V4 on 0.4.1, V5 on 0.4.3, P1–P6 and R4 on 0.4.0 ([V4](arm64/README.md#L492), [P1](arm64/README.md#L209), [R4](arm64/README.md#L198)) |
 | 9 | `cua install --engine` fetches, verifies and installs the engine | **Pass** on 0.4.3 in an empty home: the pin's hash, `static-pie`, doctor's engine row passes on 0.4.3 ([item 9 at H8](x64/README.md#L1287)) | **Pass** on 0.4.3, the same; doctor 17 PASS, 7 SKIP, 3 BLOCKED (the Chrome registration rows of an empty home) ([at H8](arm64/README.md#L1117)) |
-| 10 | The suites pass | **Pass** on 0.4.0: R1 (34 cases a lane, only declared differences), R2 (`VERDICT: PASS`, nothing left unproved), R3 ([R1–R3](x64/README.md#L172)). ci-gate green on the 0.4.3 pin after reruns of two flakes it can't reach ([Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2704)). R1–R4 rerun with the flip | **Pass** on 0.4.0: R1 (the vendor's three declared arm64 defects), R2 (the vendor's typeText and paste not judged, part 3), R3 ([R1–R3](arm64/README.md#L195)). The same rerun with the flip |
+| 10 | The suites pass | **Pass** on 0.4.0: R1 (34 cases a lane, only declared differences), R2 (`VERDICT: PASS`, nothing left unproved), R3 ([R1–R3](x64/README.md#L172)). ci-gate green on the 0.4.3 pin after reruns of two flakes it can't reach ([Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2704)). On 0.4.3 at the flip commit, R1–R4 pass ([T10](t10/README.md#L87), part 6) | **Pass** on 0.4.0: R1 (the vendor's three declared arm64 defects), R2 (the vendor's typeText and paste not judged, part 3), R3 ([R1–R3](arm64/README.md#L195)); on 0.4.3 at the flip commit, R1–R4 pass ([T10](t10/README.md#L87)) |
 | 11 | Items 2–8 hold on arm64 | – | **Pass**: items 2–8 above, each on the releases its arm64 cell names (0.4.0 to 0.4.3) |
 
 **The gate's other steps.** On x64 every step passes at its last run except L3a at H6, which fails on the declared
@@ -227,14 +231,27 @@ fell under its floor at H6 for a harness race, which H7 closed; it passed at H7 
 
 | release | x64 | arm64 |
 |---|---|---|
-| 0.4.3 (H8) | D1, C1, K1–K3, L2a, L4b, L4c, L4d; H1 (the cross-check); item 9 and the doctor. **PENDING:** V5 | the same, and V5 |
-| 0.4.2 (H6) | D2, S1, H2, L1, L2b, L3a, L3b, L4a; S2 (the cross-check for V4, S4, L3c, L3e); V5 until H8's | D2, S1, H2, L1, L2b, L3a, L3b, L4a; S2 (the same cross-check) |
+| 0.4.3 (H8) | D1, C1, K1–K3, L2a, L4b, L4c, L4d, V5; H1 (the cross-check); item 9 and the doctor; R1–R4 again at the flip commit (T10) | the same |
+| 0.4.2 (H6) | D2, S1, H2, L1, L2b, L3a, L3b, L4a; S2 (the cross-check for V4, S4, L3c, L3e) | D2, S1, H2, L1, L2b, L3a, L3b, L4a; S2 (the same cross-check) |
 | 0.4.1 (H⁗, H⁵) | V1–V4, Z0 and E1 (H⁗) | V1–V4 and Z0 (H⁵); the twice-load steps outside the later reaches, L3c and L3d among them (H⁗) |
 | 0.4.0 (H, H‴) | R1–R4, FB, P1–P6, D3–D5 and the other steps outside every reach (H) | R1–R4, FB, P1–P6, E1, D3–D5 and the other steps outside every reach (H‴) |
 
-**Where the evidence is thinner than the item.** Items 1 and 10, and the device-mode probes P1–P6, stand on 0.4.0.
-0.4.1 to 0.4.3 changed only how the engine confirms and ends a drop, and these steps either never reach that code or
-were shown not to take it (rulings 827, 828, 929, 990). Part 6's live checks run R3 and R4 on 0.4.3.
+**Where the evidence is thinner than the item.** The device-mode probes P1–P6 stand on 0.4.0, and items 1 and 10
+stand on 0.4.0's counted runs plus T10's runs of R1–R4 on 0.4.3 at the flip commit (part 6). 0.4.1 to 0.4.3 changed
+only how the engine confirms and ends a drop, and these steps either never reach that code or were shown not to take
+it (rulings 827, 828, 929, 990).
+
+**Main's commits since the acceptance began.** main b99232de..33c8dd09, 34 commits, was merged into feat/171-m5
+(abfa26f7). Its reach was read commit by commit (task 137's report §2, local) and accepted by ruling 1089, with no
+H8 step rerun. Nothing reaches the Linux engine's lanes, the harness's judges or the facade's Linux document. Three
+changes run on Linux paths, each with its output unchanged:
+- #441's `download()` failure path, in every run home's `cua install`: it reorders only what happens after a
+  download has failed, and a successful download writes the same bytes;
+- #409's `secrets_list` sentence in tools/list, the same in both of R1's lanes;
+- `sky.mjs` and `secret-input.mjs` (#414, #354), and the MAWS hint (#368).
+
+The commits after main 9c6368ce are summarized in [T10's README](t10/README.md#L31). Main will move again before a
+flip merges; at that merge the flip commit is carried over again with a one-line reach note.
 
 ### 2. The measured bar
 
@@ -360,7 +377,7 @@ live test only, with no counted rate (ruling 1002). The handle end's tail was me
 | Chrome `activate_window` | the declared gap #373 (above) | within the bound, cold [0.315, 0.405], warm [0.885, 0.955] ms (V3 at H⁵) |
 | desktop `key_up`, later requests | within the bound, [0.005, 0.08] ms ([E1 at H⁗](x64/h4/out/E1.pinned-release/run/summary.md)) | within the bound, [0.01, 0.01] ms ([E1 at H‴](arm64/out/E1.pinned-release/run/summary.md)) |
 | L4a's residue: plain Electron drops at twice the load that honestly answered unconfirmed and didn't land, at most 2 in 100 | 0 of 100, and 0 of 100 by drag handle ([at H6](x64/README.md#L914)) | 0 of 100, and 0 of 100 by drag handle ([at H6](arm64/README.md#L704); [the rule](l4a-residue/README.md)) |
-| V5's late-take drag into Chrome | **passes by ruling 680, now built into the judge**: a drag that ended after the observation window closed passes only with every other check met (the notice, the read, the refused next request). At H6, 1 such sample in 9 (the recorded drag duration 191 ms, against the answer at 168.71 ms + 20) ([V5 at H6](x64/README.md#L957)). **PENDING:** V5 at H8 | the same rule, 5 such samples at H8, all passing ([V5 at H8](arm64/README.md#L1213)) |
+| V5's late-take drag into Chrome | **passes by ruling 680, now built into the judge**: a drag that ended after the observation window closed passes only with every other check met (the notice, the read, the refused next request). At H8 none: H6's one such sample did not recur ([V5 at H8](x64/README.md#L1396)). At H6, 1 in 9 (the recorded drag duration 191 ms, against the answer at 168.71 ms + 20) ([V5 at H6](x64/README.md#L957)) | the same rule, 5 such samples at H8, all passing ([V5 at H8](arm64/README.md#L1213)) |
 
 **#415 (P2), a declared limit (ruling 830): an Electron ok whose drop missed the zone.** Under heavy load Electron's
 renderer can lag the final dragover, so the drag answers ok, matching Electron's own dragend, for a drop that landed
@@ -397,7 +414,7 @@ connects to anything it can't count as the run's own. On arm64 the run's own Chr
 handler, which detaches itself, so the guard becomes its parent instead of the run's harness and no longer counts it
 as the run's. Both ends are the run's, so nothing reached a person's session. It stopped arm64's frozen-head V5
 sittings 3 times in 6 across H⁵ to H8 (5 in 17 counting development sittings), each in its first 81 s, and none of
-x64's 4. At H8, V5 passed on the second rerun. The fix (a holder descending from the guard passes; anything else
+x64's (4 before H8; V5 at H8 had 0 flags). At H8, V5 passed on the second rerun. The fix (a holder descending from the guard passes; anything else
 still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2717);
 [the stops at H8](arm64/README.md#L1222)).
 
@@ -424,18 +441,18 @@ still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/sp
 
 - **Text arrives** in every family the run covers (item 6). Each `typeText` and `paste` answers applied, not applied
   with nothing sent, or unconfirmed, and nothing is sent twice
-  ([README, what a session sees](../../../../README.md#L1273)).
+  ([README, what a session sees](../../../../README.md#L1292)).
 - **Requests the vendor answered ok with no effect now take effect, refuse, or say unconfirmed.** Among them: Chromium
   drops taken after the release, Firefox's background pointer input with the real pointer outside its window, an
   expired drag handle, and a context menu that never opened
-  ([M4's outcomes](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2778)). M5's releases fixed two
+  ([M4's outcomes](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2798)). M5's releases fixed two
   false oks the run found after M4, Electron drops read at a stale cursor (0.4.1) and Chrome pages that start their
   drag late (0.4.2), and mitigated a third, long Chrome drags and drops released on a stale position, to a measured
   residual bound (0.4.3, #459 open).
 - **The device mode.** `shared`, the default, assumes a person may be using the desktop: background input changes
   nothing they see, and input an application would ignore is refused with a sentence. `dedicated` gives the desktop to
-  the agent; the cloud template sets it ([README](../../../../README.md#L1262)).
-- **The limits** ([README](../../../../README.md#L1297)): Electron's tree needs `--force-renderer-accessibility`
+  the agent; the cloud template sets it ([README](../../../../README.md#L1281)).
+- **The limits** ([README](../../../../README.md#L1316)): Electron's tree needs `--force-renderer-accessibility`
   (#228); GTK 4 needs a dedicated desktop for input; Firefox and xterm in the background; context menus (#377, #378,
   #379); a context-menu Copy Chrome doesn't serve (#375, #376); Chromium drags, the 450 ms hold and its handler limit,
   and the long drop's tail (#459); late drops (#364, #365, #372); Qt's wheel and paste; minimized and duplicate
@@ -459,7 +476,7 @@ still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/sp
     drives can stall reads for 3–15 s. It is documented as a heavy-load limit in main's README, from 0.28.14
     ([#384](https://github.com/SSFSKIM/cua/issues/384)).
   - **The engine's clipboard unit test is flaky in CI**, six sightings, each passing on rerun. It is a test's race,
-    not a user's ([tech-debt-tracker](../../../../tech-debt-tracker.md#L74);
+    not a user's ([tech-debt-tracker](../../../../tech-debt-tracker.md#L92);
     [Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2309)).
   - **#425** and **#432** (P3) are the harness's, not a user's (part 3).
 
@@ -468,21 +485,33 @@ still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/sp
 A user who wants the vendor engine back sets `CUA_NATIVE_ENGINE=vendor` in `cua serve`'s environment, for that
 server's sessions, or `"engine": "vendor"` in `~/.config/cua/engine.json`, for every session of the account. The
 variable wins over the file. This stays available until M6b retires the vendor engine
-([README, selecting it](../../../../README.md#L1252)).
+([README, selecting it](../../../../README.md#L1271)).
 
 After the flip, a home with no cua engine, an engine older than 0.4.3, or an install record that doesn't match its
 file keeps the vendor engine on its own, with a warning that names `cua install --engine`. An explicit choice of cua's
 engine still refuses an old one ([F5](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2224)).
+An engine file whose hash equals the current pin's asset is read as the pin's version, whatever `install.json` says
+(ruling 1063 (2), [Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2744)).
 
 ### 6. The flipped default, live
 
-**PENDING:** T10's live checks on both machines (task 137) fill this part. They are
-([pre-flight §8.1](../../../doperpowers/specs/2026-10-28-own-linux-engine-m5-preflight.md#L548)):
-- R1–R4 rerun on the flip commit, since it changes `launch.mjs`, which every facade suite launches through;
-- R3 and R4 with no engine setting, which must select cua's engine with reason `default` and run no `sky_linux`;
-- the same checks on the commit before the flip, which must fail naming `vendor`;
-- the fallback homes (no engine, an older one, a mismatched record), which must keep the vendor engine with the
-  warning.
+T10's live checks (task 137) passed on both machines ([T10's README, results](t10/README.md#L87);
+[Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2727)). They ran on private displays, in run-owned homes,
+with the pinned rule enforced, as the pre-flight asks ([§8.1](../../../doperpowers/specs/2026-10-28-own-linux-engine-m5-preflight.md#L548)).
+- **The commit before the flip (A 8f070d5c), x64:** R3 and R4 in the default mode fail as required, at "the session
+  selects vendor (default), not cua's engine by default". Its five fallback probes exit 1, a negative control: before
+  the flip there is no fallback warning to observe (ruling 1063 (1); [note 1](t10/README.md#L116)).
+- **The flip (B 51f6b281), on x64 and arm64 alike:**
+  - default mode: R3 13 of 13 and R4 20 of 20, selecting cua's engine with reason `default`, and no `sky_linux` in
+    the engine watch;
+  - the five fallback homes (no engine, 0.4.2, 0.4.0, 0.3.0, and 0.3.0's file under the current record) 9 of 9 each,
+    answered by the vendor engine with doctor's warning naming the home's reason
+    ([the fallback homes](t10/README.md#L100));
+  - explicit mode: R3 11 of 11 and R4 18 of 18; R1 and R2 PASS.
+- **How they reach the flip on main 33c8dd09 (B 2e6f309f).** The checks ran on the twins 8f070d5c and 51f6b281. They
+  carry to 2e6f309f by diff identity, not by a rerun: outside `.claude-plugin/`, B minus its twin adds and removes
+  exactly main's own lines, and T10's own change is unchanged (rulings 1062, 1089;
+  [the identity](t10/README.md#L6)).
 
 **Superseded:** task 86 ran these on x64 at an older base, `62a461f6`, on engine 0.4.0. Before the flip, R3 and R4
 failed as required, naming `vendor (default)`. After it, R3 passed 13 of 13, R4 20 of 20, and each fallback home 9 of 9

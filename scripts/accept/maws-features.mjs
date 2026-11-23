@@ -8,8 +8,9 @@
 //     [--chrome-key <profiles_list key>] [--steps <step,step,…>]
 //
 // --steps runs only the named steps (the others read SKIP, "not selected"); the #493 proof is
-// --steps profiles,service,firstUse,mawsKey,chromeKey,keyMiss, which opens only loopback pages, closes every tab it
-// opens and downloads nothing (only the download step writes to ~/Downloads, and it removes its own file).
+// --steps literalVendor and --steps profiles,service,firstUse,mawsKey,chromeKey,keyMiss, which open only loopback
+// pages, close every tab they open and download nothing (only the download step writes to ~/Downloads, and it removes
+// its own file).
 //
 // Steps, in order (each PASS, FAIL or SKIP; a step that needs an earlier one's tab is FAIL when that one failed):
 //   profiles   profiles_list lists key maws first, ready, with a maws:… instance
@@ -20,6 +21,10 @@
 //   mawsKey    createBrowserTab("maws", page) (and getBrowser({id: "maws"})) on the same instance; closed again
 //   chromeKey  with --chrome-key <key>: the same with that profiles_list key, on its Chrome profile (SKIP without)
 //   keyMiss    getBrowser({id: "iab"}) fails naming the browser ids and the keys (maws, and the --chrome-key one)
+//   literalVendor  the ticket's literal agent path on the REPL host a MAWS session runs today (a second `cua serve` with
+//              computer,browser and the default engine: the vendor's host on macOS), five js calls: getBrowser() and
+//              its Name line, createBrowserTab(id, page, {visible: true}) throwing the declared #496 limit, the open
+//              without it, createBrowserTab("maws", page) on the same browser, the iab miss; host attested; tabs closed
 //   createTab  cua.getBrowser() selects that instance; createBrowserTab(page) shows the page's document marker
 //   locator    #name filled with "x", #submit clicked: #state reads submitted:x
 //   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset
@@ -50,7 +55,7 @@ import {DOCUMENTATION_CELL, serviceAttestation} from './service-attest.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const RESULT_TAG = 'CUA_FEATURES_RESULT ';
-export const STEPS = ['profiles', 'service', 'firstUse', 'mawsKey', 'chromeKey', 'keyMiss', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation'];
+export const STEPS = ['profiles', 'service', 'firstUse', 'mawsKey', 'chromeKey', 'keyMiss', 'literalVendor', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation'];
 const js = value => JSON.stringify(value);
 
 // One cell: its body runs in an async function; its return value is the step's detail, a throw its error.
@@ -215,13 +220,95 @@ export function featureDecision(msg, origin) {
     ? {...strict, accept: true, reason: 'file transfer with the served page'} : strict;
 }
 
-function startServe(env, page, elicitations) {
+// ---- literalVendor (#493, design ruling 1120) ----------------------------------------------------------------------
+// The ticket's literal agent path as a MAWS session runs it today: `cua serve` from this checkout with the surfaces the
+// installed plugin gives every session (.claude-plugin/plugin.json: CUA_SHIM_SURFACES=computer,browser; MAWS passes
+// only CUA_BROWSER_BACKENDS) and the default engine (CUA_NATIVE_ENGINE and CUA_REPL_HOST removed from its environment),
+// which on macOS is the vendor's REPL host. Each js result attests its host as the other steps' launches do
+// (`_meta['cua/replHost']`, src/repl-host/identity.mjs: cua's own host marks every result, the vendor's none). Five
+// separate js calls, browser calls only: the computer surface's only work is at the first call, when the facade asks
+// the computer-use service for its target (src/cua-api/sky.mjs `setup`), which reaches the computer-use helper and
+// no app: no app approval is asked and none of the person's windows is touched; an approval that did arrive would be
+// declined by the shared policy and listed in the report's elicitations.
+export const LITERAL_SURFACES = 'computer,browser';
+export const VISIBILITY_LIMIT = 'Capability is not available: visibility';   // the vendor host's answer (#496)
+export const literalEnv = env => {
+  const out = {...env, CUA_SHIM_SURFACES: LITERAL_SURFACES, CUA_SHIM_SECRETS: 'off'};
+  delete out.CUA_NATIVE_ENGINE;
+  delete out.CUA_REPL_HOST;
+  return out;
+};
+const markerPoll = page => `await (async () => { ${poll('tab.playwright.locator("#marker").textContent({timeoutMs: 1000})', page.documentMarker, 30000)} return value === ${js(page.documentMarker)}; })()`;
+const closeAndCheck = `const tabId = String(tab.id); await tab.close();
+  const closed = !(await cua.listTabs({browser: globalThis.__literal.browserId, emit: false})).some(t => String(t.id) === tabId);`;
+export const LITERAL_CALLS = page => [
+  ['select', cell(`
+  const browser = await cua.getBrowser();
+  globalThis.__literal = {browserId: browser.browserId};
+  const instance = (await cua.listBrowsers({emit: false})).find(b => b.id === browser.browserId)?.metadata?.extensionInstanceId ?? null;
+  globalThis.__literal.instance = instance;
+  return {browserId: browser.browserId, instance};`)],
+  ['visible', cell(`
+  const tab = await cua.createBrowserTab(globalThis.__literal.browserId, ${js(page.url)}, { visible: true });
+  ${closeAndCheck}
+  return {opened: true, tabId, closed};`)],
+  ['open', cell(`
+  const tab = await cua.createBrowserTab(globalThis.__literal.browserId, ${js(page.url)});
+  const markerMatches = ${markerPoll(page)};
+  ${closeAndCheck}
+  return {tabId, markerMatches, closed};`)],
+  ['mawsKey', cell(`
+  const tab = await cua.createBrowserTab("maws", ${js(page.url)});
+  const markerMatches = ${markerPoll(page)};
+  const sameBrowser = (await cua.listTabs({browser: globalThis.__literal.browserId, emit: false})).some(t => String(t.id) === String(tab.id));
+  ${closeAndCheck}
+  return {tabId, markerMatches, sameBrowser, closed};`)],
+  ['iabMiss', cell(`
+  try { await cua.getBrowser({ id: "iab" }); return {selected: true}; } catch (error) { return {selected: false, error: String(error?.message ?? error).slice(0, 400)}; }`)],
+];
+
+// One reply -> {host, text, detail} or {host, text, error}: the cell's own result or its error, never a throw.
+export function literalReply(reply) {
+  const marker = reply?.result?._meta?.['cua/replHost'];
+  const host = marker?.host ?? (reply?.result ? 'vendor' : null);
+  const text = resultText(reply ?? {});
+  try { return {host, text, detail: parseFeatureResult(reply)}; } catch (error) { return {host, text, error: String(error?.message ?? error)}; }
+}
+
+// The five results -> {ok, detail}: each call's verdict, the attested host, and the Name line of the first-use document.
+export function literalVerdict(results) {
+  const [select, visible, open, mawsKey, iabMiss] = results;
+  const hosts = [...new Set(results.map(r => r.host))];
+  const name = /^- Name: .*$/m.exec(select.text)?.[0] ?? null;
+  const instance = select.detail?.instance ?? null;
+  const calls = {
+    select: {ok: typeof instance === 'string' && instance.startsWith('maws:') && name === '- Name: MAWS in-app browser (maws)', name, instance},
+    visible: {ok: visible.error === VISIBILITY_LIMIT, expected: `throws "${VISIBILITY_LIMIT}" (#496, the vendor host's declared limit)`, ...(visible.error !== undefined ? {error: visible.error} : {detail: visible.detail})},
+    open: {ok: open.detail?.markerMatches === true && open.detail?.closed === true, ...(open.error !== undefined ? {error: open.error} : open.detail)},
+    mawsKey: {ok: mawsKey.detail?.markerMatches === true && mawsKey.detail?.sameBrowser === true && mawsKey.detail?.closed === true, ...(mawsKey.error !== undefined ? {error: mawsKey.error} : mawsKey.detail)},
+    iabMiss: {ok: iabMiss.detail?.selected === false && /^Browser is not available: iab\. Browser ids: .+; profiles_list keys: .*"maws"/.test(iabMiss.detail.error), ...(iabMiss.error !== undefined ? {error: iabMiss.error} : iabMiss.detail)},
+  };
+  const host = hosts.length === 1 ? hosts[0] : hosts;
+  return {ok: host === 'vendor' && Object.values(calls).every(c => c.ok), detail: {host, surfaces: LITERAL_SURFACES, calls}};
+}
+
+// Runs the five calls on `session` (an initialized MCP session of `cua serve`), then end_task.
+export async function runLiteral({session, page}) {
+  const results = [];
+  for (const [, code] of LITERAL_CALLS(page)) results.push(literalReply(await session.js(code, 120_000)));
+  const ended = await session.call('end_task', {}, 30_000);
+  const verdict = literalVerdict(results);
+  return {ok: verdict.ok && !failed(ended), detail: {...verdict.detail, endTask: ended.result?.structuredContent ?? ended.error ?? null}};
+}
+
+function startServe(env, page, elicitations, {literal = false} = {}) {
   const answer = msg => {
     const decision = featureDecision(msg, page.origin);
     elicitations.push(inventoryEntry(msg, decision));
     return answerFor(decision);
   };
-  return openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', ...env}, clientName: 'cua-maws-features', onServerRequest: answer});
+  const base = literal ? literalEnv(process.env) : {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off'};
+  return openSession({args: [CLI, 'serve'], env: {...base, ...env}, clientName: 'cua-maws-features', onServerRequest: answer});
 }
 
 const failed = reply => Boolean(reply.timedOut || reply.error || reply.result?.isError);
@@ -239,7 +326,7 @@ export async function runHarness({other = null, chromeKey = null, only = null} =
   const page = await startFeaturesPage();
   const session = startServe({}, page, elicitations);
   const run = (code, timeoutMs = 60_000) => session.js(code, timeoutMs).then(parseFeatureResult);
-  let maws = null, otherSession = null;
+  let maws = null, otherSession = null, literalSession = null;
   try {
     await session.initialize();
     await check('profiles', async () => {
@@ -274,6 +361,11 @@ export async function runHarness({other = null, chromeKey = null, only = null} =
     await check('keyMiss', async () => {
       const detail = await run(KEY_MISS);
       return {ok: FIRST_USE_CHECKS.miss(detail, ['maws', ...(chromeInstance ? [chromeKey] : [])]), detail};
+    });
+    await check('literalVendor', async () => {
+      literalSession = startServe({}, page, elicitations, {literal: true});
+      await literalSession.initialize();
+      return runLiteral({session: literalSession, page});
     });
     let createdTab = false;
     const tabOk = await check('createTab', async () => {
@@ -316,7 +408,7 @@ export async function runHarness({other = null, chromeKey = null, only = null} =
   } catch (error) {
     if (!Object.values(steps).includes('FAIL')) record('harness', 'FAIL', String(error?.message ?? error));
   } finally {
-    for (const s of [session, otherSession]) if (s) details[s === session ? 'serve' : 'serveOther'] = await s.terminate();
+    for (const [name, s] of [['serve', session], ['serveOther', otherSession], ['serveLiteral', literalSession]]) if (s) details[name] = await s.terminate();
     await page.close();
   }
   for (const name of STEPS) steps[name] ??= 'FAIL';

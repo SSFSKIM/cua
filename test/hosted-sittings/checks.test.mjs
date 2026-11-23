@@ -47,6 +47,14 @@ test('#212\'s observation-only cell: every run asked for recorded complete, and 
     ['FAIL', `runtime error: ${records[1]} is incomplete (the run stopped); 2 panel observations kept in the records`]);
   assert.deepEqual(check('observation', step, 1, {[records[0]]: result([observed])}),
     ['FAIL', `runtime error: no record at ${records[1]} (exit 1); 1 panel observation kept in the records`]);
+  // The run stopped because the alert held its fixture's reset too: missing proof, not a failure. Any other reset failure fails.
+  const blocked = {complete: false, error: 'stopped: the textedit fixture … could not be reset', meta: {hosted: true, fixturesHeld: [{row: step.observe, sample: 1, scene: 'textedit', reset: false, blockedBy: 'alert'}]}, rows: [observed]};
+  assert.deepEqual(check('observation', step, 4, both(result([observed]), blocked)),
+    ['NO VERDICT', `${records[1]} stopped: a fixture's cleanup the capture alert held could not be reset (stopped: the textedit fixture … could not be reset); 2 panel observations kept in the records`]);
+  const otherwise = {...blocked, meta: {hosted: true, fixturesHeld: [{row: step.observe, sample: 1, scene: 'textedit', reset: false}]}};
+  assert.equal(check('observation', step, 1, both(result([observed]), otherwise))[0], 'FAIL');
+  assert.deepEqual(check('record', {record: records[1]}, 4, {[records[1]]: blocked}),
+    ['NO VERDICT', `${records[1]} stopped: a fixture's cleanup the capture alert held could not be reset (stopped: the textedit fixture … could not be reset)`]);
   assert.deepEqual(check('observation', step, 1, both(result([observed]), result([]))), ['FAIL', `driver failure: no ${step.observe} sample recorded in ${records[1]}`]);
   const skipped = row({frontKey: {apps: ['com.apple.TextEdit'], activate: {app: 'com.apple.TextEdit', front: false, key: false}, before: {front: 'com.apple.UserNotificationCenter', key: 'com.apple.UserNotificationCenter'}, after: null}});
   const [status, reason] = check('observation', step, 1, both(result([skipped, skipped]), result([skipped])));

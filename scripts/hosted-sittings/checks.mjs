@@ -34,6 +34,10 @@ const selectionWords = s => `the ${s.selected} engine (${s.reason}) on the ${s.h
 // #212's observation: the Save panel's structure as the destination cell read it (probe-plan.mjs savePanelStructure,
 // before or after the Go To dialog), at least one element line of it.
 const panelObserved = observed => [observed?.before, observed?.after].some(s => s?.count > 0 && Array.isArray(s.lines) && s.lines.length > 0);
+// A run the matrix stopped because the capture alert held its fixture's reset too (../native-matrix/probe-run.mjs
+// resetHeldFixture, `blockedBy: 'alert'`): its proof is missing, not failed. -> the reason, or null for any other stop.
+const resetBlocked = (path, record) => (record.meta?.fixturesHeld ?? []).some(f => f.reset === false && f.blockedBy === 'alert')
+  ? `${path} stopped: a fixture's cleanup the capture alert held could not be reset (${firstProblem(record)})` : null;
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 export const CHECKS = Object.freeze({
@@ -42,7 +46,7 @@ export const CHECKS = Object.freeze({
   record(step, {exit, readJson}) {
     const record = readJson(step.record);
     if (!record) return noRecord(step.record, exit);
-    if (record.complete !== true) return ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`];
+    if (record.complete !== true) { const held = resetBlocked(step.record, record); return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`]; }
     return ['PASS', exit === 0 ? null : `recorded complete; exit ${exit} is the run's own outcome, which its judge reads`];
   },
   verdict(step, {exit, logText}) {
@@ -59,6 +63,8 @@ export const CHECKS = Object.freeze({
     const missing = runs.find(run => !run.record);
     if (missing) return ['FAIL', `runtime error: no record at ${missing.path} (exit ${exit})${kept}`];
     const incomplete = runs.find(run => run.record.complete !== true);
+    const blocked = incomplete && resetBlocked(incomplete.path, incomplete.record);
+    if (blocked) return ['NO VERDICT', `${blocked}${kept}`];
     if (incomplete) return ['FAIL', `runtime error: ${incomplete.path} is incomplete (${firstProblem(incomplete.record)})${kept}`];
     const empty = runs.find(run => !(run.record.rows ?? []).some(row => row.id === step.observe));
     if (empty) return ['FAIL', `driver failure: no ${step.observe} sample recorded in ${empty.path}`];

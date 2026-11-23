@@ -539,6 +539,6 @@ test('#212\'s save sheet, hosted: a cleanup the alert holds too is reset with Te
   const stopped = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls: stuck, cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: heldTyping(stuck, 'always')});
   assert.equal(stopped.result.complete, false);
   assert.ok(stopped.result.problems.some(p => /fixture.*could not be reset/.test(p)), JSON.stringify(stopped.result.problems));
-  assert.deepEqual(stopped.result.meta.fixturesHeld, [{row: SAVE_SHEET, sample: 1, scene: 'textedit', reset: false}]);
+  assert.deepEqual(stopped.result.meta.fixturesHeld, [{row: SAVE_SHEET, sample: 1, scene: 'textedit', reset: false, blockedBy: 'alert'}]);
   assert.equal(sampleCause({...rowOf(stopped.result, SAVE_SHEET), hosted: true}).category, 'alert', 'the row it kept stays missing proof');
 });

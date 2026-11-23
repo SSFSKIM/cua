@@ -292,7 +292,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     if (!(error instanceof AlertHeld)) throw error;
     // The capture alert took the front after the activation: the key unsent, the readings the row's (NO VERDICT).
     const held = done({frontKey: {...readings, before: error.reading, after: keyReading(after())}, ...error.row});
-    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey: held.frontKey});
+    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey: held.frontKey, ...error.row});
     return held;
   }
   if (act === null) return finish({invalid: 'the key guard did not send the action\'s keys'});

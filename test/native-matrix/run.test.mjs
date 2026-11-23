@@ -206,7 +206,7 @@ test('the launch path: the intent journaled before the act, the identity after i
 
 test('on a hosted run a key row whose guard finds the held capture alert in front is NO VERDICT by its readings, the key unsent', async () => {
   const UNC = 'com.apple.UserNotificationCenter';
-  const plan = {id: 'test', frontmost: ['textedit'], speed: false, finding: false, background: [], launch: []};
+  const plan = {id: 'test', frontmost: ['textedit'], speed: true, finding: false, background: [], launch: []};
   let up = false, armed = false;
   const selectAll = cellsOf('textedit', 'pressKey', 'selectAll');
   const held = {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: null}]}}};
@@ -224,6 +224,9 @@ test('on a hosted run a key row whose guard finds the held capture alert in fron
   assert.deepEqual([row.ok, row.frontKey.before, row.frontKey.after], [false, {front: UNC, key: UNC}, {front: UNC, key: UNC}]);
   assert.equal(row.invalid, 'the key guard held the action\'s keys: replayd\'s capture alert in front');
   assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), [['super+a', true]]);
+  // Its timing row carries the same mark, so it counts as `alert` too (fix wave 4).
+  const timing = r.result.rows.find(x => x.section === 'speed' && x.id === 'textedit/method.pressKey.selectAll');
+  assert.deepEqual(timing?.alertHeld, row.alertHeld, JSON.stringify(r.result.rows.filter(x => x.section === 'speed').map(x => x.id)));
 });
 
 // I3a of fix wave 3: the guard's own observation decides. The alert flashes up for the guard's read of ⌘O only and is

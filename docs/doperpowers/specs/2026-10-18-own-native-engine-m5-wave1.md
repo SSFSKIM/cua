@@ -101,6 +101,17 @@ or the owner is prepared and named in its gate's disposition file under
   still typed and the read-back reports the dropped character; how secret text should behave is with the design
   session. The spec's Text paragraph (S L158: a character the layout cannot type goes as a Unicode key event) needs
   the Chromium exception.
+- 2026-11-23, H0's result (#175's findings comment; kit README on `origin/probe/117-h0` 56c08949): all four witnesses
+  pass, so T10, T10b and T3b are released, everything runs hosted and O8 is off. Order on a runner: system-database
+  TCC rows for both bundle ids (the user database is ignored), relaunch, then the cells. Unattended approve needs two
+  passes; the harness does both and the report says so. The `xcode-27` image is macOS 27.0.1 and serves the matrix's
+  macOS 27 witness where a kit can select it; until #504 lands the engine is built on `macos-latest` and copied.
+- 2026-11-23, ruling 1136 (the owner's yes): on GitHub-hosted runners only, kits may pre-record replayd's capture
+  approval, or dismiss its alert, through the same single guarded writer as O0 (H0's kit function; reused, never a
+  second writer); pre-recording before the first capture is preferred.
+- 2026-11-23, new judge rule (the design session): the judge checks that no alert was frontmost during any judged
+  cell; a cell with an alert frontmost is NO VERDICT, never a pass. It belongs to T10's oracle, with a test.
+- 2026-11-23: M5 is ticket #506 (a child of #117); M4 is #505.
 - 2026-11-23, the design session clears #420's kit: built on `probe/420-qual` from `probe/414-qual` b7aebd311,
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,
   watched at 120 s or more, no ci-gate, no TCC write beyond the kit's guard (ruling 1111). The cua side runs now on

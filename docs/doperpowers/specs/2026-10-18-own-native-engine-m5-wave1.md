@@ -64,8 +64,14 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   runtime users matched by executable (e63ab95c5..92b13bb66); `incompleteCause` alert mapped to NO VERDICT and
   symmetric warm-ups (8dd641d2d, b6154d108, 336d1314e; ruling 1153). Pilot A ran clean on run 45224977505 at
   e144990f1.
-- [ ] T3b
-- [ ] T8e
+- [x] T3b — reviewed 2026-11-23 (the hosted staged onboarding; fixes 205870d2c, 5fd641971 after three rounds; merged
+  5f2c43724). No relaunch at stage (c)'s retry is NO VERDICT, never FAIL (a busy-refused relaunch and one never
+  attempted leave the same record). It has not yet run on a runner.
+- [x] T8e — reviewed 2026-11-23 (#258's `electron/frontmost/click.selection` and #259's `electron/frontmost/click.point`
+  caret cells, judged in 'reading' mode, and ruling 1154's alert guard on the matrix; fixes 450dcbe2a..8e5d62f3e, two
+  rounds; merged 3a7523da8). It has not yet run on a runner.
+- [ ] The hosted geometry (rulings 1160, 1164): one guard and placement module for sittings A to D, the display mode
+  set after the warm-ups, the cleanup's window list and mode, and #528's diagnostics. Then A and B re-run placed.
 - [x] T11a — reviewed 2026-11-23 (61743b1da, fixes dbde89ba4, 46d5bb93b) on `feat/117-m5`.
 - [x] T11b — reviewed 2026-11-23 (e1b4a8a01, fixes 9cb3921c7, d20874c8a) on `feat/117-m5-flip` (pushed, merges
   16da95398, 4d02b54a0, all `[skip ci]`); merges only after O1, M4 (#513) on main and the owner's go.
@@ -275,6 +281,18 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, rulings 1160 and 1164 (the design session, after the display probe, run 45233464944): both hosted
+  images run at 1024×768 (mode 3) and offer 1920×1080 (mode 10) as their widest mode. At 1024×768 no scene can be
+  placed clear of the alerts, and at 1920×1080 an alert re-centred with the display leaves Chrome's 1000×760 frame
+  no room. So setup switches to mode 10 `.forSession` after the warm-ups, which raise the same alerts as before (one
+  per copy, recorded) at 1024×768. The record holds the alert bounds before the switch, the mode read back, and the
+  alert bounds read fresh after it; placement uses only the fresh bounds. A UNC window that appears after the
+  warm-ups, or whose bounds change after the switch, is recorded, and a target it overlaps is NO VERDICT alert.
+  Nothing is re-placed mid-run. If the alerts re-centre on the switch: no listed mode is about 2300 wide, so the
+  fallback is a hosted Chrome frame of about 800×600. Narrowing the guard to front and key (option 3) needs the
+  design session again, after the vendor's static gaps (0x1006f54b0, 0x101401098) are closed. The guard and
+  placement are one module that sittings A, B, C and D all call (every pointer event, ruling 1154). The cleanup
+  records the window list and the mode, so the alerts' survival and the mode's hold are shown.
 - 2026-11-23, rulings 1153 and 1154 (the design session, after pilot A's second run; detail in
   `docs/evidence/2026-11-23-own-native-engine/hosted.md`, "Pilot A, run 45220897246"): a capture alert never closes on
   the hosted runner. It is covered by the next activation, so H0 (ii)'s 604 s and that run's "about 15 s" are the same

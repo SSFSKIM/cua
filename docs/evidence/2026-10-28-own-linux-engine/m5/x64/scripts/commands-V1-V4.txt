@@ -1,0 +1,44 @@
+list_windows	V2, V3	3 cells	pass
+list_apps	V2	1 cells	pass
+get_window_state	V2, V3	11 cells	pass
+get_screenshot	V2	1 cells	pass
+launch_app	V2	1 cells	pass
+activate_window	V3	3 cells	pass, declared gap
+click	V2, V3, V4	10 cells	pass, declared unconfirmed
+perform_secondary_action	V3	1 cells	declared unconfirmed
+press_key	V2, V4	6 cells	pass
+key_down	V3, V4	2 cells	pass
+key_up	V3	3 cells	pass
+type_text	V1, V4	7 cells	pass
+type_characters	V2	1 cells	pass
+scroll	V3, V4	6 cells	pass
+move	V3	1 cells	pass
+move_relative	none	0 cells	
+drag	V3, V4	3 cells	declared refusal, pass
+drag_handle	none	0 cells	
+clipboard_read	V1	1 cells	pass
+clipboard_write	V1	1 cells	pass
+clipboard_release	V1	1 cells	pass
+cases, cua alone, not a command's output (14): V1 gedit/caret_placed: pass; V1 cases/bus_trace: pass; V4 chrome-textarea/focus_change: pass; V4 chrome-textarea/focus_change_takeover: pass; V4 chrome-textarea/silent_owner: pass; V4 chrome-textarea/concurrent: pass; V4 chrome-textarea/contention: pass; V4 chrome-textarea/late_page: pass; V4 chrome-textarea/ignored_page: pass; V4 gnome-text-editor/restore_refused: pass; V4 paste-target/stalled_incr: pass; V4 paste-target/late_convert: pass; V4 paste-target/unreadable: pass; V4 cases/bus_trace: pass
+unmapped (21):
+  V2 desktop/capabilities: pass
+  V3 minimized/minimized_press_key: pass
+  V3 minimized/minimized_key_down: pass
+  V3 minimized/minimized_click: pass
+  V3 minimized/minimized_right_click: pass
+  V3 minimized/minimized_click_element: pass
+  V3 minimized/minimized_secondary_action: pass
+  V3 minimized/minimized_move: pass
+  V3 minimized/minimized_scroll: pass
+  V3 minimized/minimized_drag: pass
+  V3 minimized/minimized_type_text: pass
+  V3 minimized/minimized_type_characters: pass
+  V3 minimized/minimized_clipboard_read: pass
+  V3 minimized/minimized_clipboard_write: pass
+  V3 minimized/minimized_press_key_dedicated: pass
+  V3 minimized/minimized_click_dedicated: pass
+  V3 minimized/minimized_type_text_dedicated: pass
+  V3 minimized-xterm/minimized_xterm_key_shared: pass
+  V3 minimized-xterm/minimized_xterm_key_dedicated: pass
+  V4 device-gtk4/gtk4_move_shared: pass
+  V4 device-gtk4/gtk4_move_dedicated: pass

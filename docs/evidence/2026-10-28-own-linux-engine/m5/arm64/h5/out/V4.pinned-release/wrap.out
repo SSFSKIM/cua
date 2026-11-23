@@ -1,0 +1,26 @@
+acceptance on the pinned release; candidate: sha256 8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0, aarch64-unknown-linux-musl static, cua-engine 0.4.1 (7522dcb8fb8c); the pin's arm64 asset of linux-engine-v0.4.1; native/linux-engine as at 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5, the checkout at 7d554dea958a9c9a0b7a6c254365945cf1f18cd4; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44380699966/attempts/1, built from 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5 (refs/heads/release/linux-engine-v0.4.1) on a github-hosted runner; .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44372589299/attempts/1, built from 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5 (refs/heads/m5-engine-041) on a github-hosted runner
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+foreground checks: held (another raised and the top raised back: stacking; the same under one server grab: stacking; the target raised: clean; the focus and the active window switched away and back under one server grab: focus, active; the target activated: clean; another client's override-redirect window mapped: stacking; order restored)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+case chrome-textarea focus_change 0: PASS
+case chrome-textarea focus_change 1: PASS
+case chrome-textarea focus_change 2: PASS
+case chrome-textarea focus_change_takeover 0: PASS
+case chrome-textarea focus_change_takeover 1: PASS
+case chrome-textarea focus_change_takeover 2: PASS
+case chrome-textarea silent_owner 0: PASS
+case chrome-textarea concurrent 0: PASS
+case chrome-textarea concurrent 1: PASS
+case chrome-textarea concurrent 2: PASS
+case chrome-textarea contention 0: PASS
+case chrome-textarea late_page 0: PASS
+case chrome-textarea ignored_page 0: PASS
+case paste-target stalled_incr 0: PASS
+case paste-target late_convert 0: PASS
+case paste-target late_convert 1: PASS
+case paste-target late_convert 2: PASS
+case paste-target unreadable 0: PASS
+case gnome-text-editor restore_refused 0: PASS
+run valid; acceptance on the pinned release: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0; text windows a lane ended (a vendor's restarted, never scored): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/out-arm64-h5/V4.pinned-release/run/results.jsonl
+{"exit": 0, "samples": 12874, "maps_samples": 4292, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 6028, "browsers": 183}

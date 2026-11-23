@@ -1,0 +1,69 @@
+{
+  "engines": [
+    "vendor",
+    "cua"
+  ],
+  "ok": true,
+  "differences": [],
+  "expected": [
+    {
+      "kind": "engine-declaration",
+      "case": "native/app/typetext",
+      "cells": [
+        "exercise"
+      ],
+      "declaration": "linux-text-typetext-m5-arm64",
+      "vendorDefect": "linux-arm64-vendor-engine-typetext-ended-gedit",
+      "reason": "Plan of Work M2 makes typeText positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive, as on x64 (task 96's R1, 34 of 34). The pinned arm64 vendor engine ends gedit instead, answering one of two errors, the declared vendor defect named above (M5's T4, arm64 round)."
+    },
+    {
+      "kind": "engine-declaration",
+      "case": "native/app/paste",
+      "cells": [
+        "exercise"
+      ],
+      "declaration": "linux-text-paste-m5-arm64",
+      "vendorDefect": "linux-arm64-vendor-engine-paste-ended-gedit",
+      "reason": "Plan of Work M2 makes paste positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive, as on x64. The pinned arm64 vendor engine ends gedit instead, the declared vendor defect named above (M5's T4, arm64 round). The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called."
+    },
+    {
+      "kind": "engine-declaration",
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "cells": [
+        "exercise"
+      ],
+      "declaration": "linux-getaxstate-minimized-m5-arm64",
+      "vendorDefect": "linux-arm64-vendor-engine-minimized-window-unavailable",
+      "reason": "M4's T4 on arm64: cua lists the minimized window with `minimized: true`, reads its full tree, answers its screenshot as unavailable, refuses input as minimized and restores it on activate_window, as on x64. The pinned arm64 vendor engine leaves it out of list_windows, x64's defect, declared for the arm64 release (M5's T4, arm64 round)."
+    }
+  ],
+  "cases": 31,
+  "cells": 68,
+  "recordedCases": 34,
+  "vendorDefects": [
+    {
+      "id": "linux-arm64-vendor-engine-minimized-window-unavailable",
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "platform": "linux",
+      "reason": "On the #171 arm64 VM (GCE c4a, M5's T6 pilot, task 96) the pinned vendor engine (sky_linux_arm64, under cua's own host, the only one Linux serves) has x64's defect exactly (linux-x64-vendor-engine-minimized-window-unavailable), in every run: it leaves an iconified window out of list_windows, so once the bound gedit is minimized getAXState, getScreenshot, pressKey and activate_window each answer `Window <id> is unavailable.` and the window stays minimized. The #171 design lists it with `minimized: true`, reads its tree and refuses its input as minimized, so this is recorded vendor behaviour, not passing coverage."
+    },
+    {
+      "id": "linux-arm64-vendor-engine-typetext-ended-gedit",
+      "case": "native/app/typetext",
+      "platform": "linux",
+      "reason": "On the #171 arm64 VM (GCE c4a, M5's T6 pilot, task 96) the pinned vendor engine (sky_linux_arm64, under cua's own host, the only one Linux serves) ends gedit (GTK 3) on typeText in every run: the window is gone within the case's 10 s look (the third value true) and no marker can be read (null). It answers one of two errors, both the same outcome: a D-Bus ServiceUnknown naming the accessibility connection of the gedit that just ended (3 of 4 runs), or `Resource temporarily unavailable (os error 11)` (1 of 4). Only the connection's unique name is masked (`:1.63` in each run, a count of the bus's earlier connections). Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. x64's pinned build answers `editable Paste did not insert text` and leaves gedit alive (linux-x64-vendor-engine-typetext-not-inserted)."
+    },
+    {
+      "id": "linux-arm64-vendor-engine-paste-ended-gedit",
+      "case": "native/app/paste",
+      "platform": "linux",
+      "reason": "On the #171 arm64 VM (GCE c4a, M5's T6 pilot, task 96) the pinned vendor engine (sky_linux_arm64, under cua's own host, the only one Linux serves) ends gedit (GTK 3) on paste in every run, answering a D-Bus ServiceUnknown naming the ended gedit's accessibility connection (`:1.66` in each run, masked): a defect of paste's own, since each case opens its own gedit and this one was never reached by typeText. The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. x64's pinned build answers `editable Paste did not insert text` and leaves gedit alive (linux-x64-vendor-engine-paste-not-inserted)."
+    }
+  ],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "provisionalCells": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

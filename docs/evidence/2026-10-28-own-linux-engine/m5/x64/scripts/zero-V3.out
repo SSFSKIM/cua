@@ -1,0 +1,36 @@
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794876381.447572847
+---
+> mtime ~/.config/google-chrome 1794879204.279633542
+all-clear: clear
+--- V3 exit 0
+--- owner-baseline
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-pV4BDb
+args: --vendor /Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine --scene chrome-input,retention,minimized,minimized-xterm,minimized-recorder --ops click_element,right_click,right_click_fallback,secondary_action,move,drag,scroll,scroll_element_hidden,key_down,key_up,activate_window,after_resize,after_remap,after_covered_change,minimized_press_key,minimized_key_down,minimized_click,minimized_right_click,minimized_click_element,minimized_secondary_action,minimized_move,minimized_scroll,minimized_drag,minimized_type_text,minimized_type_characters,minimized_clipboard_read,minimized_clipboard_write,minimized_press_key_dedicated,minimized_click_dedicated,minimized_type_text_dedicated,minimized_list,minimized_tree,minimized_shot,minimized_restored_shot,minimized_restored_list,minimized_activate,minimized_activate_withdrawn,minimized_xterm_key_shared,minimized_xterm_key_dedicated,minimized_xterm_key_up_foreground,minimized_key_up_background --blocks 3 --run pinned-V3 --pinned
+started 2026-11-17T00:55:33Z finished 2026-11-17T01:33:20Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794876381.447572847
+---
+> mtime ~/.config/google-chrome 1794879204.279633542
+--- pointer
+pointer at start 142 130
+pointer restored to 142 130, reads 142 130 
+--- wrap.out tail
+cua171-diff-pinned-V3-856d086b-input-pinned: the scroll series ended at 5; back to the top
+cua171-diff-pinned-V3-856d086b-input-pinned: the scroll series ended at 328; back to the top
+cua171-diff-pinned-V3-856d086b-input-newest: the scroll series ended at 329; back to the top
+run valid; acceptance on the pinned release: no verdict FAIL; declared refusal (a loss, not a pass): chrome-input drag cua; declared unconfirmed (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua; declared gap (a loss, not a pass): chrome-input activate_window cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/out-x64/V3.pinned-release/run/results.jsonl
+{"exit": 0, "samples": 17521, "maps_samples": 5841, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1741, "browsers": 50}
+--- all-clear
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 0

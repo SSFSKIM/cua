@@ -1,0 +1,85 @@
+/Users/new/.local/share/cua-171/m5/out-x64-h8/C1.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 7 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 3660324: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/D1.pinned-release: unknown: 32 of 34 cua engines (34 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle
+  cua 3639447: no stats: not recorded
+  cua:0ms 3640205: no stats: not recorded
+  cua 3641150: no stats: not recorded
+  cua:0ms 3641544: no stats: not recorded
+  cua 3642507: no stats: not recorded
+  cua:0ms 3642779: no stats: not recorded
+  cua 3643690: no stats: not recorded
+  cua:0ms 3643955: no stats: not recorded
+  cua 3644569: no stats: not recorded
+  cua:0ms 3644831: no stats: not recorded
+  cua:0ms 3645590: no stats: not recorded
+  cua 3646263: no stats: not recorded
+  cua 3646522: no stats: not recorded
+  cua:0ms 3646897: no stats: not recorded
+  cua:0ms 3647774: no stats: not recorded
+  cua 3649037: no stats: not recorded
+  cua 3650241: no stats: not recorded
+  cua:0ms 3650599: no stats: not recorded
+  cua:0ms 3650891: no stats: not recorded
+  cua 3651785: no stats: not recorded
+  cua 3652683: no stats: not recorded
+  cua:0ms 3652958: no stats: not recorded
+  cua 3653592: no stats: not recorded
+  cua:0ms 3653970: no stats: not recorded
+  cua 3655194: no stats: not recorded
+  cua:0ms 3655456: no stats: not recorded
+  cua 3655964: no stats: not recorded
+  cua:0ms 3656235: no stats: not recorded
+  cua 3656811: no stats: not recorded
+  cua:0ms 3657062: no stats: not recorded
+  cua:0ms 3658704: no stats: not recorded
+  cua 3659577: no stats: not recorded
+  reader 3636345: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 3637409: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/H1.pinned-release: TAKEN (entered 560, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 57 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 3681910: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/K1.pinned-release: unknown: 2 of 10 cua engines (4 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle; the recorded: entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0
+  cua 3670272: no stats: not recorded
+  cua 3670672: no stats: not recorded
+  reader 3664296: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 3666146: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/K2.pinned-release: unknown: 2 of 10 cua engines (4 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle; the recorded: entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0
+  cua 3677542: no stats: not recorded
+  cua 3677935: no stats: not recorded
+  reader 3671391: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 3673313: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/K3.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 3 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 3679002: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/L2a.pinned-release: unknown: 24 of 26 cua engines (26 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle
+  cua 3720596: no stats: not recorded
+  cua:0ms 3721705: no stats: not recorded
+  cua 3723821: no stats: not recorded
+  cua:0ms 3724553: no stats: not recorded
+  cua 3725843: no stats: not recorded
+  cua:0ms 3726290: no stats: not recorded
+  cua:0ms 3727283: no stats: not recorded
+  cua 3728372: no stats: not recorded
+  cua 3729106: no stats: not recorded
+  cua:0ms 3729492: no stats: not recorded
+  cua 3730270: no stats: not recorded
+  cua:0ms 3730652: no stats: not recorded
+  cua:0ms 3731867: no stats: not recorded
+  cua 3733101: no stats: not recorded
+  cua 3734407: no stats: not recorded
+  cua:0ms 3734791: no stats: not recorded
+  cua 3735177: no stats: not recorded
+  cua:0ms 3735540: no stats: not recorded
+  cua:0ms 3736730: no stats: not recorded
+  cua 3737824: no stats: not recorded
+  cua 3738913: no stats: not recorded
+  cua:0ms 3739278: no stats: not recorded
+  cua 3739918: no stats: not recorded
+  cua:0ms 3740284: no stats: not recorded
+  reader 3716329: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 3717224: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/L4b.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 37 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 3744938: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/L4c.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 7 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 3767439: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h8/L4d.pinned-release: TAKEN (entered 30, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 50 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 3776291: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 1

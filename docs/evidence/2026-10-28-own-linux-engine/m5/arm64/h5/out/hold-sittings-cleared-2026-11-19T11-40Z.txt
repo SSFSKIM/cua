@@ -1,0 +1,22 @@
+The controller (session linux171) cleared this hold on dc-linux171arm-996d under ruling 730(b). The design session (cua_repl) is live and has been told.
+
+The hold. Task 109's :0 sitting at H''''' (7d554dea, engine 0.4.1). V5.pinned-release read not all-clear 25 s into its run (11:25:27Z). wrap71 flagged one outside-peer-connection: pid 2181578 at t 19.471 s, connecting to the abstract autobind address "@37d51" (inode 19820785). No peer pid was shown. The run reached only its begin row, so it has no verdict and its window audit is unshown.
+
+Analysis:
+- pid 2181578 lived less than one ~107 ms sample gap. It sits between the run's own google-chrome-stable launch (pid 2181571 at 19.453 s, with its run-owned --user-data-dir) and that Chrome's first renderer (2181589 at 19.578 s).
+- No listener holds "@37d51" now, and the inode is gone. So the peer had ended.
+- The only long-lived processes on :0 are the stand-in session's Chrome (pid 9512) and its two crashpad handlers (9527 and 9529), all started 2026-11-17 17:10:49 and still alive. A connection to them would have shown a live listener.
+- This is the short-lived-child race class of 749/750 and 773: a connection to an autobind address whose holder was already absent. The extended 773 rule excuses an autobind connection only when a run Chrome or chrome_crashpad holds its listener in the same snapshot. An absent holder still flags by design, so the guard did what it should, failing closed.
+
+What reached the person: nothing. This VM's :0 is nobody's display. There were 0 decoy connections and 0 window findings, the pointer was restored, and the owner side shows no difference.
+
+Checked before clearing:
+- no cua-engine, sky_linux, gedit or gnome-text-editor process alive;
+- /tmp/.X11-unix holds X0 only;
+- no /tmp/cua171-run-*;
+- no listener on "@37d51".
+
+Next:
+- V5 reruns whole at H''''', judged live, under every guard.
+- The stopped attempt's dir is kept beside it as evidence.
+- Then F2's :0 parts and F3.

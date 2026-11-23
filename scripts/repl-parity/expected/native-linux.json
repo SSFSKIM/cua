@@ -1,5 +1,5 @@
 {
-  "about": "The Linux native suite's engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; Plan of Work M2). The two text cases require a successful method return, the marker read back exactly once and a surviving window. M1b's temporary candidate and baseline method expectations are removed. `declarations` are consumed by `node scripts/repl-parity.mjs diff <vendor-engine run> <cua-engine run> --expected scripts/repl-parity/expected/native-linux.json`: each names the vendor engine's exact declared defect (test/repl-parity/vendor-defects.json) and the exact passing cua assertion and exercise result on that case. Only those exercise results' content and isError and those case assertions are projected, and only when both sides hold exactly what they name; every other field still compares. A declaration nothing needed is itself a difference. The native baseline needs no vendor-failure waiver: its existing better-outcome rule accepts returned/survived/read-back outcomes against failures, and its Linux text cases require every cua sample to succeed while keeping Acceptance 10's engine-speed rule.",
+  "about": "The Linux native suite's engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; Plan of Work M2). The two text cases require a successful method return, the marker read back exactly once and a surviving window. M1b's temporary candidate and baseline method expectations are removed. `declarations` are consumed by `node scripts/repl-parity.mjs diff <vendor-engine run> <cua-engine run> --expected scripts/repl-parity/expected/native-linux.json`: each names the vendor engine's exact declared defect (test/repl-parity/vendor-defects.json) and the exact passing cua assertion and exercise result on that case. Each declaration holds for the vendor runtime release its vendor defect names, one architecture's (M5's T4): the diff applies only the declarations of the release its two runs served, so x64's runs are never held to arm64's declarations or arm64's to x64's, and an architecture with none of its own yet reports its vendor failures as differences. Only those exercise results' content and isError and those case assertions are projected, and only when both sides hold exactly what they name; every other field still compares. A declaration nothing needed is itself a difference. The native baseline needs no vendor-failure waiver: its existing better-outcome rule accepts returned/survived/read-back outcomes against failures, and its Linux text cases require every cua sample to succeed while keeping Acceptance 10's engine-speed rule.",
   "declarations": [
     {
       "id": "linux-text-typetext-m2",
@@ -33,6 +33,39 @@
         "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"}]}
       },
       "reason": "#171 M4's T4 runs getAXState on a minimized window, the getAXState case's named variant (the plain case stays positive on both lanes): cua lists it with `minimized: true` (no other window carries the field), reads its full tree, answers its screenshot as unavailable, refuses input with `Window <id> is minimized; activate it first`, and activate_window restores it, after which the field is gone and the screenshot returns. The pinned x64 vendor engine leaves the minimized window out of list_windows, so every request answers `Window <id> is unavailable.`, the declared vendor defect named above."
+    },
+    {
+      "id": "linux-text-typetext-m5-arm64",
+      "case": "native/app/typetext",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-arm64-vendor-engine-typetext-ended-gedit",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[\"undefined\",1,false]"}]}
+      },
+      "reason": "Plan of Work M2 makes typeText positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive, as on x64 (task 96's R1, 34 of 34). The pinned arm64 vendor engine ends gedit instead, answering one of two errors, the declared vendor defect named above (M5's T4, arm64 round)."
+    },
+    {
+      "id": "linux-text-paste-m5-arm64",
+      "case": "native/app/paste",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-arm64-vendor-engine-paste-ended-gedit",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},\"undefined\",1,false]"}]}
+      },
+      "reason": "Plan of Work M2 makes paste positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive, as on x64. The pinned arm64 vendor engine ends gedit instead, the declared vendor defect named above (M5's T4, arm64 round). The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called."
+    },
+    {
+      "id": "linux-getaxstate-minimized-m5-arm64",
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-arm64-vendor-engine-minimized-window-unavailable",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"}]}
+      },
+      "reason": "M4's T4 on arm64: cua lists the minimized window with `minimized: true`, reads its full tree, answers its screenshot as unavailable, refuses input as minimized and restores it on activate_window, as on x64. The pinned arm64 vendor engine leaves it out of list_windows, x64's defect, declared for the arm64 release (M5's T4, arm64 round)."
     }
   ]
 }

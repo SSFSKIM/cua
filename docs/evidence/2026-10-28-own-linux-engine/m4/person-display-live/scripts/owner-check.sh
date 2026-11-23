@@ -7,10 +7,11 @@
 # person's running user units, org.a11y.Status (read only while org.a11y.Bus is already owned, so the read activates
 # nothing); :0's X client count (Xorg's accepted connections, from the socket table); the modification times
 # (metadata only) of the person's files task 45's list names; the person's runtime directory's names.
+# M5's T4: the person (their home and runtime directory) read from the session (person.sh), never assumed.
 # usage: owner-check.sh <label>
 set -u
 label=$1
-H=/Users/new
+. "$(dirname "$0")/person.sh"
 X() { DISPLAY=:0 XAUTHORITY=$H/.Xauthority timeout 5 "$@" 2>&1; }
 echo "== $label $(date -u +%FT%T.%3NZ)"
 owner=""
@@ -57,8 +58,8 @@ for f in .config/google-chrome .pki .local/share/pki .config/dconf/user .local/s
   if [ -e "$H/$f" ]; then echo "mtime ~/$f $(stat -c '%.Y' "$H/$f")"; else echo "mtime ~/$f absent"; fi
 done
 echo "-- the person's a11y bus socket and runtime directory (names)"
-stat -c 'bus_0 inode %i mtime %.Y' /run/user/501/at-spi/bus_0 2>&1
-ls /run/user/501/at-spi/ 2>&1 | sed 's/^/at-spi dir: /'
-ls -A /run/user/501/ 2>&1 | sed 's/^/runtime dir: /'
+stat -c 'bus_0 inode %i mtime %.Y' "$PRUN/at-spi/bus_0" 2>&1
+ls "$PRUN/at-spi/" 2>&1 | sed 's/^/at-spi dir: /'
+ls -A "$PRUN/" 2>&1 | sed 's/^/runtime dir: /'
 echo "-- X sockets"
 ls -A /tmp/.X11-unix/ | sed 's/^/x socket: /'

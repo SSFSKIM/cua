@@ -50,7 +50,7 @@ test('setup answers the vendor\'s target and its 20 methods in order, starting t
 });
 
 test('an engine the service cannot drive: setup still answers the methods, every method then refuses with the sentence before anything is sent, and the next call retries', async t => {
-  const OLD = 'cua-engine 0.3.0 is older than 0.4.0, which this cua needs; run cua install --engine';
+  const OLD = 'cua-engine 0.3.0 is older than 0.4.3, which this cua needs; run cua install --engine';
   const old = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const svc = service(t, old);
   assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS}, 'the facade gets its methods, never a rejected setup');
@@ -59,7 +59,7 @@ test('an engine the service cannot drive: setup still answers the methods, every
   await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
   assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
   // Installing the right engine needs no new session: the next call checks the version again and starts it.
-  old.setVersion('cua-engine 0.4.0 (fixed000)');
+  old.setVersion('cua-engine 0.4.3 (fixed000)');
   assert.deepEqual(await execute(svc, 'list_windows'), WINDOWS);
   assert.equal(old.spawns().length, 1);
 
@@ -84,7 +84,7 @@ test('a 0.3.0 engine, which names no animated action, is refused before any sett
   // T8 (Decision Log, 2026-11-07, binding on T18): `animated_action` is new in 0.4.0, so a 0.3.0 engine answers an
   // element action with null, and GTK 4's and Qt's actions would settle as a plain element click. No fallback is built;
   // the version gate refuses that engine instead, before anything is sent and before the settler defers anything.
-  const OLD = 'cua-engine 0.3.0 is older than 0.4.0, which this cua needs; run cua install --engine';
+  const OLD = 'cua-engine 0.3.0 is older than 0.4.3, which this cua needs; run cua install --engine';
   const old = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const events = [];
   const svc = service(t, old, {settler: recordingSettler(events)});
@@ -96,11 +96,66 @@ test('a 0.3.0 engine, which names no animated action, is refused before any sett
   }
   await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
   assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
-  // the same service with a 0.4.0 engine settles the element action as T8 measured it
-  old.setVersion('cua-engine 0.4.0 (cafe0000)');
+  // the same service with a current engine settles the element action as T8 measured it
+  old.setVersion('cua-engine 0.4.3 (ba5b043834ce)');
   events.length = 0;
   await execute(svc, 'click', {window: W, element_id: 'n'});
   assert.deepEqual(events, ['wait', 'defer click_element']);
+});
+
+// The version gate's refusal of an engine older than MIN_ENGINE_VERSION whose drop can answer ok wrongly: setup still
+// answers, then a drag, an element click, an element's secondary action, a coordinate click and list_windows are each
+// refused with the version sentence with nothing deferred, and so is drag_start, with no server started; installing
+// the current engine (`CURRENT`) needs no new session, and the next drag is sent and settles as before.
+const CURRENT = 'cua-engine 0.4.3 (ba5b043834ce)';
+async function assertRefusedBeforeAnything(t, versionLine) {
+  const found = versionLine.split(' ')[1];
+  const OLD = `cua-engine ${found} is older than 0.4.3, which this cua needs; run cua install --engine`;
+  const old = fakeLinuxEngine(t, {version: versionLine});
+  const events = [];
+  const svc = service(t, old, {settler: recordingSettler(events)});
+  assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS});
+  for (const [method, input] of [['drag', {window: W, path: [{x: 1, y: 1}, {x: 2, y: 2}]}], ['click', {window: W, element_id: 'n'}],
+    ['perform_secondary_action', {window: W, element_id: 'n', action: 'click'}], ['click', {window: W, x: 1, y: 1}], ['list_windows']]) {
+    events.length = 0;
+    await assert.rejects(execute(svc, method, input), {message: OLD}, method);
+    assert.deepEqual(events.filter(e => e.startsWith('defer')), [], `${method}: nothing deferred, so no settle applies`);
+  }
+  await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
+  assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
+  // installing a current engine needs no new session: the next drag is sent and settles as before
+  old.setVersion(CURRENT);
+  events.length = 0;
+  await execute(svc, 'drag', {window: W, path: [{x: 1, y: 1}, {x: 2, y: 2}]});
+  assert.deepEqual(events, ['wait', 'defer drag']);
+  assert.equal(old.spawns().length, 1);
+}
+
+test('a 0.4.0 engine, whose Electron drop can answer ok where nothing dropped, is refused before anything is sent: no input, drag or drag handle reaches it', async t => {
+  // #171 M5 (ruling 827): 0.4.0 confirmed an Electron drop by the accept cursor at the instant of the release, which a
+  // drag loop running behind the pointer still showed for a place already left; 0.4.1 settles the drop before the
+  // release. The service cannot tell such an ok from a real one, so the version gate refuses 0.4.0, before anything is
+  // sent and before the settler defers anything.
+  await assertRefusedBeforeAnything(t, 'cua-engine 0.4.0 (c55c8e08d9cb)');
+});
+
+test('a 0.4.1 engine, whose Chrome drag can answer as a plain drag while Chrome refused its drop, is refused before anything is sent: no input, drag or drag handle reaches it', async t => {
+  // #171 M5 (rulings 886-888, 892, 893, 897-900): 0.4.1 released a Chrome or Electron drag at 250 ms after its press,
+  // and a renderer that started its drag and drop later was refused by Chrome, so the drag answered ok and nothing
+  // dropped. 0.4.2 holds a Chromium-family source's release until its page can take the drag, and names a Chrome drag
+  // left unconfirmed in a notice. The service cannot tell 0.4.1's plain ok from a real drop, so the version gate
+  // refuses 0.4.1, before anything is sent and before the settler defers anything.
+  await assertRefusedBeforeAnything(t, 'cua-engine 0.4.1 (7522dcb8fb8c)');
+});
+
+test('a 0.4.2 engine, whose long Chrome drag or handle drag can answer ok on a drop Chrome made at a place the path had left, is refused before anything is sent: no input, drag or drag handle reaches it', async t => {
+  // #171 M5 (#459; rulings 962, 967, 974, 993, 995, 998, 1026 and the owner's 997): under load 0.4.2 released a Chrome
+  // drag and drop at once after the path's last motion, and Chrome dropped on a stale accept and position and confirmed
+  // the drop with its activation request, so the drag answered ok. 0.4.3 ends such a drag, and a Chrome source's
+  // drag-handle end, on a tail that refreshes the status at the path's end (release_sync.rs). The service cannot tell
+  // 0.4.2's ok from a drop where the path ended, so the version gate refuses 0.4.2, before anything is sent and before
+  // the settler defers anything.
+  await assertRefusedBeforeAnything(t, 'cua-engine 0.4.2 (9371d2348cf8)');
 });
 
 test('the capability is checked against the engine that receives the command: one restarted while a call waits for the settle is judged by its own report', async t => {
@@ -174,6 +229,22 @@ test('a pending drag notice reaches the facade on the window state; lists, handl
   assert.equal(await execute(svc, 'key_up', {window: W, key: 'a'}), undefined);
   assert.deepEqual(await execute(svc, 'get_screenshot'), [{filepath: engine.shot, data_url: JPEG_URL}]);
   await assert.rejects(execute(svc, 'get_window_state', {window: W, query: 'fails'}), {message: `Window 7 is gone\n${NOTICE}`});
+});
+
+// The hold's notice (#171 M5, ruling 897): a drag, or a drag handle's end, from an identified browser whose hold waited
+// for a take that never came answers ok with the notice beside it; the service resolves that drag to {notice}, which
+// the facade shows (src/cua-api/bind-linux-app.mjs), and a drag with no notice to nothing, as before.
+test('a drag\'s or a handle end\'s hold notice reaches the facade as {notice}; with none they resolve to nothing', async t => {
+  const HOLD = 'the page may have started a drag that did not complete';
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+    if (command === 'drag' && input.path[0].x === 1) return {notice: ${JSON.stringify(HOLD)}};
+    if (command === 'drag_handle' && input.action === 'end') return {notice: ${JSON.stringify(HOLD)}};
+  }`});
+  const svc = service(t, engine);
+  assert.deepEqual(await execute(svc, 'drag', {window: W, path: [{x: 1, y: 1}, {x: 9, y: 1}]}), {notice: HOLD});
+  assert.equal(await execute(svc, 'drag', {window: W, path: [{x: 2, y: 1}, {x: 9, y: 1}]}), undefined);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}});
+  assert.deepEqual(await svc.handleRpc({type: 'drag_end', handle_id: 'h'}), {notice: HOLD});
 });
 
 test('element ids are translated back to native ids before input reaches the engine; an unknown one is refused and nothing is sent', async t => {

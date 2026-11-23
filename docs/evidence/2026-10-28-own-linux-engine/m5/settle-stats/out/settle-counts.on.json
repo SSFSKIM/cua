@@ -1,0 +1,551 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 3863144,
+   "run": "m5-dev-D1-pilot",
+   "opt_in": true,
+   "started": "2026-11-18T16:18:20.416Z",
+   "finished": "2026-11-18T16:20:03.017Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 3863188,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.reader.3863188.jsonl",
+     "lines": 266,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "list_windows": 16,
+      "get_window_state": 250
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "stub-activating",
+     "pid": 3864180,
+     "build": "unidentified",
+     "bin": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-aedde8bc900100980/scripts/linux-engine-diff/stub-activating.mjs",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "pinned",
+     "pid": 3864856,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "newest",
+     "pid": 3864920,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 3865117,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua.3865117.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:0ms",
+     "pid": 3865147,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--drag-step-ms",
+      "0",
+      "--drag-press-dwell-ms",
+      "0",
+      "--drag-release-dwell-ms",
+      "0",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua_0ms.3865147.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "newest",
+     "pid": 3865250,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 3865351,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua.3865351.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:0ms",
+     "pid": 3865382,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--drag-step-ms",
+      "0",
+      "--drag-press-dwell-ms",
+      "0",
+      "--drag-release-dwell-ms",
+      "0",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua_0ms.3865382.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "pinned",
+     "pid": 3865416,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 3865523,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua.3865523.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:0ms",
+     "pid": 3865560,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--drag-step-ms",
+      "0",
+      "--drag-press-dwell-ms",
+      "0",
+      "--drag-release-dwell-ms",
+      "0",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua_0ms.3865560.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "pinned",
+     "pid": 3865667,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "newest",
+     "pid": 3865691,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua:0ms",
+     "pid": 3865722,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--drag-step-ms",
+      "0",
+      "--drag-press-dwell-ms",
+      "0",
+      "--drag-release-dwell-ms",
+      "0",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua_0ms.3865722.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "pinned",
+     "pid": 3865985,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "newest",
+     "pid": 3866137,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 3866317,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua.3866317.jsonl",
+     "lines": 4,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "pinned",
+     "pid": 3866357,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "newest",
+     "pid": 3866460,
+     "build": "vendor",
+     "bin": "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 3866483,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua.3866483.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:0ms",
+     "pid": 3866594,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
+     "argv": [
+      "server",
+      "--drag-step-ms",
+      "0",
+      "--drag-press-dwell-ms",
+      "0",
+      "--drag-release-dwell-ms",
+      "0",
+      "--stats"
+     ],
+     "stats": "opt-in",
+     "stats_file": "engine-stats/3863144.cua_0ms.3866594.jsonl",
+     "lines": 5,
+     "unparsable": 0,
+     "ended": true,
+     "final": false,
+     "sent": {
+      "drag": 2
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    }
+   ]
+  }
+ ]
+}

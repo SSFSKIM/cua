@@ -1,0 +1,2 @@
+private-desktop: the run's session bus exited before it listened (1): dbus-daemon[240008]: Failed to start message bus: Socket name too long
+private-desktop: :1 session; command exit none; watchdog clean

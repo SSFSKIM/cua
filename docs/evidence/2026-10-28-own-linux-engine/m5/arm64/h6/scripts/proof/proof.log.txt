@@ -1,0 +1,4 @@
+2026-11-20T22:28:27Z proof of /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h6: harness harness-dbus, each under /Users/new/.local/share/cua-171/locked.sh task122-arm64
+2026-11-20T22:29:12Z harness exit 0 (/Users/new/.local/share/cua-171/task122/proof/harness.log)
+2026-11-20T22:29:36Z harness-dbus exit 0 (/Users/new/.local/share/cua-171/task122/proof/harness-dbus.log)
+proof: PASS: every part exited 0 (harness harness-dbus)

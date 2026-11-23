@@ -1,0 +1,9 @@
+2026-11-21T04:32:44Z wait m5-h7 load=17.46 15.30 14.38 render-host=none :: timeout -s TERM -k 60 5m /Users/new/.local/share/cua-171/task125/probe-usertime.sh
+2026-11-21T04:45:19Z acquire m5-h7 load=16.99 16.89 15.84 render-host=none :: timeout -s TERM -k 60 5m /Users/new/.local/share/cua-171/task125/probe-usertime.sh
+2026-11-21T04:45:25Z release m5-h7 status=0 load=14.38 16.34 15.67 render-host=none :: timeout -s TERM -k 60 5m /Users/new/.local/share/cua-171/task125/probe-usertime.sh
+2026-11-21T04:48:27Z wait m5-h7 load=1.10 9.06 12.95 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task125/devrun.sh
+2026-11-21T05:01:35Z wait m5-h7 load=17.82 16.73 15.25 render-host=none :: timeout -s TERM -k 60 10m /Users/new/.local/share/cua-171/task125/probe-both.sh
+2026-11-21T05:02:38Z acquire m5-h7 load=17.44 16.81 15.37 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task125/devrun.sh
+2026-11-21T05:04:43Z release m5-h7 status=0 load=2.41 11.18 13.48 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task125/devrun.sh
+2026-11-21T05:04:43Z acquire m5-h7 load=2.41 11.18 13.48 render-host=none :: timeout -s TERM -k 60 10m /Users/new/.local/share/cua-171/task125/probe-both.sh
+2026-11-21T05:04:56Z release m5-h7 status=0 load=1.88 10.64 13.26 render-host=none :: timeout -s TERM -k 60 10m /Users/new/.local/share/cua-171/task125/probe-both.sh

@@ -1,0 +1,48 @@
+{
+  "label": "development run, not a release gate",
+  "step": "C1",
+  "pilot": false,
+  "what": "#264's late-take path (T14) in three freeze bands: landed inside the hold, the edge's late takes counted, refused with the hold notice past it (ruling 931)",
+  "display": "private",
+  "load": "idle",
+  "minutes": 4,
+  "run_name": "m5-dev-C1",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a4d8cf4660dd54f80/",
+    "commit": "4fffcdd314f892f5cbffe9df893cb65b09de0b09",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine",
+    "sha256": "a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/task121/home/.local/share/cua",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-h6 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a4d8cf4660dd54f80/scripts/linux-engine-gate/gate.mjs run C1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task121/gate-dev --dev",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "chrome",
+    "--plan",
+    "t14-late",
+    "--cua",
+    "/Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine",
+    "--run",
+    "m5-dev-C1",
+    "--out",
+    "/Users/new/.local/share/cua-171/task121/gate-dev/C1.development-run/run"
+  ],
+  "started": "2026-11-20T20:05:23.725Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-20T20:07:30.056Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

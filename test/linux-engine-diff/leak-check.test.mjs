@@ -8,12 +8,13 @@
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { SUITE_MARK, findLeaks, leftDirectories, listProcesses, scratchPrefixes } from './suite-check.mjs';
+import { SUITE_ROOT_PREFIX } from './test-root.mjs';
 
 const HAS_PROC = existsSync('/proc/self/cmdline');
 const CHECK = join(import.meta.dirname, 'suite-check.mjs');
@@ -30,9 +31,9 @@ const alive = (pid) => {
 
 test("a leak is a process naming the suite's directory, or one of the suite's naming a run's scratch or profile", () => {
   assert.ok(scratchPrefixes('/tmp').includes('/tmp/cua171-'));
-  const suiteDir = '/tmp/cua171-suite-abc';
+  const suiteDir = '/tmp/cua171-s-abc';
   const processes = [
-    { pid: 10, argv: ['node', '-e', 'x', '--user-data-dir=/tmp/cua171-suite-abc/cua171-chrome-scratch-1/chrome-profile'], marked: false, linux: true },
+    { pid: 10, argv: ['node', '-e', 'x', '--user-data-dir=/tmp/cua171-s-abc/cua171-chrome-scratch-1/chrome-profile'], marked: false, linux: true },
     { pid: 11, argv: ['google-chrome', '--user-data-dir=/tmp/cua171-diff-run-x/chrome-profile'], marked: true, linux: true },
     // another checkout's live run: its scratch, not carrying the suite's mark
     { pid: 12, argv: ['google-chrome', '--user-data-dir=/tmp/cua171-diff-live-y/chrome-profile'], marked: false, linux: true },
@@ -40,10 +41,10 @@ test("a leak is a process naming the suite's directory, or one of the suite's na
     // an exited child not yet reaped
     { pid: 14, argv: [], marked: true, linux: true },
     // this process
-    { pid: process.pid, argv: ['node', '/tmp/cua171-suite-abc/x'], marked: true, linux: true },
+    { pid: process.pid, argv: ['node', '/tmp/cua171-s-abc/x'], marked: true, linux: true },
     // where no environment can be read (off Linux), only the suite's own directory counts
     { pid: 15, argv: ['node /tmp/cua171-diff-z/x'], marked: null, linux: false },
-    { pid: 16, argv: ['node /tmp/cua171-suite-abc/cua171-diff-z/x'], marked: null, linux: false },
+    { pid: 16, argv: ['node /tmp/cua171-s-abc/cua171-diff-z/x'], marked: null, linux: false },
   ];
   assert.deepEqual(findLeaks({ processes, suiteDir, prefixes: scratchPrefixes('/tmp') }).map((p) => p.pid), [10, 11, 16]);
 });
@@ -67,13 +68,36 @@ test('a live stand-in of the suite is seen with its pid and command line', { ski
   }
 });
 
-/** A nested suite of the fixture alone, run through the suite's cleanup check as npm runs the harness suite: `{status, stderr}`. */
-function nestedSuite(leak, pidFile) {
-  const env = { ...process.env, LEAK: leak, LEAK_PID: pidFile };
+/** The environment of a nested suite of the fixture alone (`extra`: the fixture's other variables, leak-fixture/leaks.mjs). */
+function nestedEnv(leak, pidFile, extra = {}) {
+  const env = { ...process.env, LEAK: leak, LEAK_PID: pidFile, ...extra };
   // a child `node --test` must not see this runner's context, or it reports to this runner instead
   delete env.NODE_TEST_CONTEXT;
   delete env[SUITE_MARK];
-  return spawnSync(process.execPath, [CHECK, FIXTURE], { env, encoding: 'utf8', timeout: 60000 });
+  return env;
+}
+
+/** A nested suite of the fixture alone, run through the suite's cleanup check as npm runs the harness suite: `{status, stderr}`. */
+function nestedSuite(leak, pidFile, extra) {
+  return spawnSync(process.execPath, [CHECK, FIXTURE], { env: nestedEnv(leak, pidFile, extra), encoding: 'utf8', timeout: 60000 });
+}
+
+/** The same, started and left running: its end, `{status, stderr}`. */
+function startedSuite(leak, extra) {
+  const child = spawn(process.execPath, [CHECK, FIXTURE], { env: nestedEnv(leak, '/nonexistent', extra), stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (d) => (stderr += d));
+  const timer = setTimeout(() => child.kill('SIGKILL'), 60000);
+  return new Promise((resolve) => child.once('exit', (code) => (clearTimeout(timer), resolve({ status: code, stderr }))));
+}
+
+/** What a nested suite's fixture wrote to `file`, once it holds something (at most 30 s). */
+async function written(file) {
+  const read = () => (existsSync(file) ? readFileSync(file, 'utf8') : '');
+  for (let i = 0; i < 600 && read() === ''; i++) await new Promise((r) => setTimeout(r, 50));
+  const text = read();
+  assert.notEqual(text, '', `the nested suite wrote ${file}`);
+  return text;
 }
 
 test('a suite that leaves a stand-in behind fails, naming its pid and command line, and the stand-in is ended', { skip: !HAS_PROC && 'no /proc here' }, async () => {
@@ -84,7 +108,7 @@ test('a suite that leaves a stand-in behind fails, naming its pid and command li
     const run = nestedSuite('process', pidFile);
     pid = Number(readFileSync(pidFile, 'utf8'));
     assert.equal(run.status, 1, `the suite fails: ${run.stderr}`);
-    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: .*setInterval.*--user-data-dir=\\S*/cua171-suite-\\w+/cua171-leak-fixture-\\w+/chrome-profile`));
+    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: .*setInterval.*--user-data-dir=\\S*/cua171-s-\\w+/cua171-leak-fixture-\\w+/chrome-profile`));
     assert.equal(alive(pid), false, 'and the stand-in is ended');
   } finally {
     if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
@@ -106,7 +130,7 @@ test("a suite that leaves the run's org.a11y.Bus stand-in behind its bus fails, 
     const run = nestedSuite('a11y-stub', pidFile);
     pid = Number(readFileSync(pidFile, 'utf8'));
     assert.equal(run.status, 1, `the suite fails: ${run.stderr}`);
-    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: \\S+ \\S+/scripts/linux-engine-diff/a11y-stub\\.mjs --bus unix:path=\\S*/cua171-suite-\\w+/cua171-leak-fixture-\\w+/bus/`));
+    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: \\S+ \\S+/scripts/linux-engine-diff/a11y-stub\\.mjs --bus unix:path=\\S*/cua171-s-\\w+/cua171-leak-fixture-\\w+/bus/`));
     assert.equal(alive(pid), false, 'and the stand-in is ended');
   } finally {
     if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
@@ -122,13 +146,49 @@ test('a suite that leaves a scratch directory behind fails, naming it, and the d
   assert.equal(existsSync(left), false, 'and the directory is removed');
 });
 
+/** A nested suite's own root, as its fixture wrote it: a suite's test root (test-root.mjs), and gone once the suite ended. */
+function assertRootGone(root) {
+  assert.equal(dirname(root), '/tmp');
+  assert.ok(basename(root).startsWith(SUITE_ROOT_PREFIX), root);
+  assert.equal(existsSync(root), false, `the suite's own directory ${root} is gone`);
+}
+
 test('a suite that leaves nothing behind passes, and its own directory is gone', () => {
-  const suites = () => readdirSync(tmpdir()).filter((name) => name.startsWith('cua171-suite-')).sort();
-  const before = suites();
-  const run = nestedSuite('none', '/nonexistent');
-  assert.equal(run.status, 0, run.stderr);
-  assert.doesNotMatch(run.stderr, /SUITE LEAK/);
-  assert.deepEqual(suites(), before);
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-leakcheck-none-'));
+  try {
+    const run = nestedSuite('none', '/nonexistent', { LEAK_ROOT: join(dir, 'root') });
+    assert.equal(run.status, 0, run.stderr);
+    assert.doesNotMatch(run.stderr, /SUITE LEAK/);
+    assertRootGone(readFileSync(join(dir, 'root'), 'utf8'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a suite that leaves nothing behind passes while another suite starts and ends beside it, and its own directory is gone', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-leakcheck-beside-'));
+  const file = (name) => join(dir, name);
+  try {
+    // its own root, not an inventory of /tmp's: another suite's comes and goes there meanwhile
+    const first = startedSuite('none', { LEAK_ROOT: file('first-root'), LEAK_HOLD: file('first-go') });
+    const firstRoot = await written(file('first-root'));
+    // the second starts once the first runs, and is still running when the first ends
+    const second = startedSuite('none', { LEAK_ROOT: file('second-root'), LEAK_HOLD: file('second-go') });
+    const secondRoot = await written(file('second-root'));
+    writeFileSync(file('first-go'), '');
+    const run = await first;
+    assert.equal(run.status, 0, run.stderr);
+    assert.doesNotMatch(run.stderr, /SUITE LEAK/);
+    assertRootGone(firstRoot);
+    assert.equal(existsSync(secondRoot), true, 'the second suite still runs');
+    writeFileSync(file('second-go'), '');
+    const other = await second;
+    assert.equal(other.status, 0, other.stderr);
+    assertRootGone(secondRoot);
+  } finally {
+    for (const go of ['first-go', 'second-go']) writeFileSync(file(go), '');
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a suite whose tests fail fails the check too, whatever it left", () => {

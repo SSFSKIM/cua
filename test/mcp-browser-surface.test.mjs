@@ -12,6 +12,14 @@ import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {ACCESS_NOTE} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile} from '../src/profiles/registry.mjs';
 import {profileReadiness} from '../src/profiles/commands.mjs';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {PassThrough} from 'node:stream';
+import {createInterface} from 'node:readline';
+import {randomUUID} from 'node:crypto';
+import {openConnection} from '../src/mcp/connection.mjs';
+import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
 
@@ -437,4 +445,75 @@ test('maws unreachable reads as not ready with the reason and the step, never wi
   const {guidance, ...fields} = structured(response);
   assert.deepEqual(fields.profiles, [{key: 'maws', ready: false, reason: 'maws_unreachable'}]);
   assert.match(guidance, /^maws is not ready \(maws_unreachable\): MAWS is not running or this session's browser socket is gone, so start MAWS and call profiles_list again; or cua's peer check is unavailable and its relay refuses the browser service \(cua doctor's maws\.hosts row says why\)\./);
+});
+
+// The Linux js rule on text input follows the engine the connection selected (#171 M5, T8; the spec's Decision Log,
+// M5 pre-flight): the vendor engine's typeText and paste fail in GTK 3 text views, so its rule sends typing to pressKey;
+// cua's engine inserts exact text and refuses, on a shared desktop, input an app ignores in the background, and its
+// rule says so. macOS's rules do not depend on it.
+const GTK3_RULE = /typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call \(minus, space\)\./;
+const CUA_TEXT_RULE = /typeText and paste insert exact text, Unicode and newlines included; pressKey takes X keysyms \(minus, space\)\./;
+const SHARED_DESKTOP_RULE = /"does not accept background input": nothing was sent, since this desktop is shared; use the element's action, or tell the user\./;
+
+test('on Linux the js rule on text input follows the selected engine; macOS\'s does not', () => {
+  for (const surfaces of [['computer'], ['computer', 'browser']]) {
+    const vendor = jsRulesFor(surfaces, {platform: 'linux', engine: 'vendor'});
+    const cua = jsRulesFor(surfaces, {platform: 'linux', engine: 'cua'});
+    assert.equal(jsRulesFor(surfaces, {platform: 'linux'}), vendor, `${surfaces}: an engine not named keeps the vendor engine's rule`);
+    assert.match(vendor, GTK3_RULE, surfaces.join());
+    assert.doesNotMatch(vendor, CUA_TEXT_RULE, surfaces.join());
+    assert.doesNotMatch(vendor, SHARED_DESKTOP_RULE, surfaces.join());
+    assert.doesNotMatch(cua, /GTK3|crash/, surfaces.join());
+    assert.match(cua, CUA_TEXT_RULE, surfaces.join());
+    assert.match(cua, SHARED_DESKTOP_RULE, surfaces.join());
+    const without = (text, ...rules) => text.split('\n').filter(line => !rules.some(rule => rule.test(line)));
+    assert.deepEqual(without(cua, CUA_TEXT_RULE, SHARED_DESKTOP_RULE), without(vendor, GTK3_RULE), `${surfaces}: only the text rule changes`);
+    assert.ok(cua.length + 2 < DESCRIPTION_CAP, `${surfaces}: cua's rules are never cut`);
+    assert.equal(jsRulesFor(surfaces, {platform: 'darwin', engine: 'cua'}), jsRulesFor(surfaces, {platform: 'darwin', engine: 'vendor'}), `${surfaces}: macOS`);
+  }
+  assert.equal(jsRulesFor(['browser'], {platform: 'linux', engine: 'cua'}), jsRulesFor(['browser'], {platform: 'linux', engine: 'vendor'}), 'no computer surface, no rule');
+});
+
+test('the server shows the js rule of the engine it was given', async () => {
+  for (const [engine, rule] of [['cua', CUA_TEXT_RULE], ['vendor', GTK3_RULE], [null, GTK3_RULE]]) {
+    const h = harness({server: {surfaces: ['computer'], platform: 'linux', engine, profiles: {list: () => []}}});
+    const js = (await toolsOf(h)).find(t => t.name === 'js');
+    assert.match(js.description, rule, String(engine));
+    assert.ok(js.description.startsWith(jsRulesFor(['computer'], {platform: 'linux', engine: engine ?? undefined})), String(engine));
+  }
+});
+
+// The whole path: a real Linux connection resolves its engine once at the open (launch.mjs replHostFor), and its
+// tools/list shows that engine's rule; the fake installed runtime's upstream answers the handshake.
+test('a Linux connection shows the js rule of the engine it selected', async t => {
+  const LINUX = {platform: 'linux', arch: 'x64'};
+  const engineDir = mkdtempSync(join(tmpdir(), 'cua-linux-engine-'));
+  t.after(() => rmSync(engineDir, {recursive: true, force: true}));
+  const engineBin = join(engineDir, 'cua-engine');
+  writeFileSync(engineBin, '#!/bin/sh\n', {mode: 0o755});
+  for (const [selected, rule] of [['cua', CUA_TEXT_RULE], ['vendor', GTK3_RULE]]) {
+    const home = fakeInstalledHome(t, {host: LINUX});
+    const runtime = resolveRuntime({home, host: LINUX});
+    const input = new PassThrough(), output = new PassThrough();
+    const frames = [];
+    createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+    const env = {PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
+    const prepareLaunch = launch => ({...launch, command: runtime.paths.node, args: [runtime.paths.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+    const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
+      resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'}),
+      engine: {config: () => ({engine: selected}), installed: () => ({path: engineBin})}});
+    const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
+    const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
+    let js;
+    try {
+      send({id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'linux-rules', version: '0'}}});
+      await reply(1);
+      send({id: 2, method: 'tools/list', params: {}});
+      js = (await reply(2)).result.tools.find(tool => tool.name === 'js');
+    } finally {
+      input.end();
+    }
+    assert.equal((await connection.closed).code, 0, selected);
+    assert.match(js.description, rule, selected);
+  }
 });

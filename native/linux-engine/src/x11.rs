@@ -618,6 +618,25 @@ impl X11 {
             .and_then(|r| wm_class_app(&r.value))
     }
 
+    /// `WM_WINDOW_ROLE` and `WM_CLIENT_MACHINE` as text (`browser.rs`): the role's atom interned only when asked, so a
+    /// drag that never needs it sends nothing more.
+    pub fn role_and_machine(&self, window: Window) -> (Option<String>, Option<String>) {
+        let role = self
+            .conn
+            .intern_atom(true, b"WM_WINDOW_ROLE")
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .map(|r| r.atom)
+            .filter(|&atom| atom != x11rb::NONE)
+            .and_then(|atom| self.get_property(window, atom).ok())
+            .and_then(|r| property_text(&r.value));
+        let machine = self
+            .get_property(window, AtomEnum::WM_CLIENT_MACHINE.into())
+            .ok()
+            .and_then(|r| property_text(&r.value));
+        (role, machine)
+    }
+
     /// The client window at a root point: the top-level under it, then the first window holding `WM_STATE` in its
     /// subtree (a reparenting window manager's frame holds the client).
     pub fn client_at(&self, rx: i16, ry: i16) -> Option<Window> {
@@ -833,6 +852,14 @@ impl X11 {
         let geometry = self.conn.get_geometry(window)?.reply()?;
         let (rect, levels) = self.cover(window, &geometry)?;
         Ok(crate::cover::reach(rect, &levels, &points))
+    }
+
+    /// Whether the root point lies inside `window` and every ancestor (`cover.rs` `inside`): a point the foreground route
+    /// waits for the window to be on top at, so real pointer input there reaches it.
+    pub fn holds_point(&self, window: Window, (px, py): (i16, i16)) -> Result<bool> {
+        let geometry = self.conn.get_geometry(window)?.reply()?;
+        let (rect, levels) = self.cover(window, &geometry)?;
+        Ok(crate::cover::inside(rect, &levels, (px as i32, py as i32)))
     }
 
     /// Whether `window` is on top over its visible area now, as `activate_window` waits for it (task 63; the design

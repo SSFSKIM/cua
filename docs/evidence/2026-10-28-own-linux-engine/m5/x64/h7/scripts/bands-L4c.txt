@@ -1,0 +1,29 @@
+== /Users/new/.local/share/cua-171/m5/out-x64-h7/L4c.pinned-release/run/results.jsonl: 40 drags, load load2, lanes cua
+verdict: pass true; failed []
+findings: ["3 late takes, 3 reported","17 drags whose drag and drop never took, answered as plain drags","T14's share, reported and not a fail: 0 of 20 landed drops answered unconfirmed, within 5%"]
+counts: false_ok 0, unjudged 0, missing_landing 0, false_alarms 0, harness_escapes 0, late 3, late_reported 3, untaken 17, landed 20, unconfirmed_landed 0
+judge's bands: {"inside":{"drags":10,"expected":10,"late":0,"unexercised":0},"edge":{"drags":20,"expected":null,"late":3,"unexercised":0},"past":{"drags":10,"expected":10,"late":0,"unexercised":0}}
+
+| band | drags | identified | stop skipped | stop not before the thaw | unexercised | judge's outcome (exercised) | late takes (exercised) | late takes (all) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| inside | 10 | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
+| edge | 20 | 20 | 0 | 0 | 0 | – | 3 | 3 |
+| past | 10 | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
+
+| cell | n | identified | bound | press marked (ms after send) | median | value − send (server ms) | stop began | thawed | skipped | marks passed over |
+|---|---:|---:|---:|---|---:|---|---|---|---:|---|
+| freeze-600 | 10 | 10 | 10 | 4.2–23.2 | 10.75 | 1–21 | 59.8–78.3 | 601–604.8 | 0 | none |
+| freeze-646 | 5 | 5 | 5 | 8.4–30.9 | 15.7 | 2–29 | 65.4–85.3 | 647.8–650.7 | 0 | none |
+| freeze-648 | 5 | 5 | 5 | 9.4–19.7 | 13.5 | 7–16 | 64.3–74.1 | 650.3–653.3 | 0 | none |
+| freeze-650 | 5 | 5 | 5 | 4.8–20.2 | 17.2 | 1–15 | 59.6–74.4 | 651.2–654.8 | 0 | none |
+| freeze-652 | 5 | 5 | 5 | 10.3–22.7 | 20.9 | 4–20 | 64.7–77.4 | 653–658.9 | 0 | none |
+| freeze-700 | 10 | 10 | 10 | 3.2–20.5 | 9.899999999999999 | 1–14 | 59.5–74.7 | 699.2–702.1 | 0 | none |
+
+binding: 40 of 40 press marks bound; value − send over the bound: 1–29 server ms (median 9)
+freeze rows with no freeze record: 0
+stops begun more than 1 ms before max(60, mark + 55): 1 (freeze-700 #9: mark 7.3, stop 60.9)
+
+unexercised rows: 0
+
+identification over every drag:
+  40 | identified by: Google-chrome, role browser, application "Google Chrome", executable chrome

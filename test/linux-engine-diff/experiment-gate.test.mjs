@@ -14,7 +14,7 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { runExperiment } from '../../scripts/linux-engine-diff/experiments.mjs';
+import { dropSignalsOutcome, runExperiment } from '../../scripts/linux-engine-diff/experiments.mjs';
 import { writeSummary } from '../../scripts/linux-engine-diff/report.mjs';
 
 const ENTRY = fileURLToPath(new URL('../../scripts/linux-engine-diff.mjs', import.meta.url));
@@ -265,4 +265,98 @@ test('a gate drop-signals run on a plan no gate judge holds is refused before an
     const judged = join(fresh('out'), 'run');
     await runExperiment({ experiment: 'drop-signals', families: ['chrome'], plan, cua: '/the/artifact', out: judged, run: `judged-${plan}`, gate: true }, { prepare, start: async () => true });
   }
+});
+
+test("a counted drop-signals run whose --lanes leaves out its plan's cells, or whose plan's judge is another family's, is refused before anything runs (the final review's P2s)", async () => {
+  const refused = async (args, pattern) => {
+    const out = join(fresh('out'), 'run');
+    await assert.rejects(runExperiment({ experiment: 'drop-signals', cua: '/the/artifact', out, run: 'refused', gate: 'pinned', ...args }, { prepare: async () => assert.fail('no candidate is checked for a refused run') }), pattern);
+    assert.equal(existsSync(join(out, 'results.jsonl')), false, 'nothing ran');
+  };
+  // L4d's three parts emptied by a lane none of them runs, and t14-floor's cells by the measurement lane
+  await refused({ families: ['chrome', 'electron'], plan: 't14-stale', lanes: ['cua:handle'] }, /--lanes cua:handle leaves out the counted plan t14-stale's cells: part 1 cua long-left, part 2 cua plain-long/);
+  await refused({ families: ['chrome'], plan: 't14-floor', lanes: ['cua:accept'] }, /leaves out the counted plan t14-floor's cells: cua plain-long, cua left, cua inzone-out/);
+  // the hold's regression gate is Chrome's: its judge holds no Electron run
+  await refused({ families: ['electron'], plan: 'hold-regression' }, /no gate judge holds the drop-signals plan hold-regression \(electron\)/);
+  // a lane filter that keeps every cell, and the hold's regression gate on Chrome, run
+  const prepare = async ({ dir }) => {
+    const path = join(dir, 'cua-engine');
+    writeFileSync(path, MUSL);
+    return { path, record: { gate: true, sha256: 'ab'.repeat(32) } };
+  };
+  for (const [name, args] of [['kept', { families: ['chrome', 'electron'], plan: 't14-stale', lanes: ['cua'] }], ['hold', { families: ['chrome'], plan: 'hold-regression' }]]) {
+    await runExperiment({ experiment: 'drop-signals', cua: '/the/artifact', out: join(fresh('out'), 'run'), run: name, gate: true, ...args }, { prepare, start: async () => true });
+  }
+});
+
+test("a counted drop-signals run no judge holds fails, never passes on the runner's word; a development run's measure stands", () => {
+  const rows = [{ kind: 'drop-signal-scene', specs: [] }];
+  const measured = { complete: true, failed: [] };
+  for (const gate of [true, 'pinned']) {
+    const { judged, outcome } = dropSignalsOutcome({ families: ['electron'], plan: 'hold-regression', gate }, rows, measured);
+    assert.equal(judged, null);
+    assert.equal(outcome.complete, false, String(gate));
+    assert.deepEqual(outcome.failed, ['no gate judge holds the drop-signals plan hold-regression (electron): a counted run is never passed unjudged']);
+  }
+  assert.deepEqual(dropSignalsOutcome({ families: ['electron'], plan: 'hold-regression', gate: false }, rows, measured), { judged: null, outcome: measured });
+  // a judged run's fails fail it, as before
+  const held = dropSignalsOutcome({ families: ['chrome'], plan: 'hold-regression', gate: 'pinned' }, rows, measured);
+  assert.equal(held.judged.judge, 'holdRegressionVerdict');
+  assert.equal(held.outcome.complete, false);
+  assert.ok(held.outcome.failed.length > 0);
+});
+
+// #171 M5, T1: acceptance on the pinned release (candidate.mjs's pinned rule), `--pinned`, for verdict runs and experiments
+
+test('--pinned is the pinned rule for a verdict run and an experiment alike, never beside --gate or --dev', () => {
+  const experiment = ['--experiment', 'drag', '--vendor', '/v', '--cua', '/c', '--out', 'o'];
+  assert.equal(parseArgs([...experiment, '--pinned']).gate, 'pinned');
+  const verdict = ['--vendor', '/v', '--newest', '/n', '--cua', '/c', '--scene', 'gedit', '--ops', 'all', '--out', 'o'];
+  const parsed = parseArgs([...verdict, '--pinned']);
+  assert.deepEqual([parsed.gate, parsed.dev], ['pinned', undefined]);
+  assert.throws(() => parseArgs([...experiment, '--pinned', '--gate']), /--pinned is a rule of its own/);
+  assert.throws(() => parseArgs([...verdict, '--dev', '--pinned']), /--pinned is a rule of its own/);
+});
+
+test('a pinned verdict run refuses an engine that is not the pin\'s: exit 2, the pinned rule named, nothing recorded', async () => {
+  const tmp = fresh('tmp');
+  const out = join(fresh('out'), 'run');
+  const argv = ['--vendor', '/v', '--newest', '/n', '--cua', candidate(MUSL), '--scene', 'desktop', '--ops', 'list_windows', '--out', out, '--pinned'];
+  const { exited } = entry(argv, { bin: fakeTools({ attestationCommit: HEAD }), tmp });
+  const { code, signal, stderr } = await exited;
+  assert.deepEqual({ code, signal }, { code: 2, signal: null }, stderr);
+  assert.match(stderr, /^candidate refused: (an override is set|not the pinned engine)/m);
+  assert.match(stderr, /Acceptance on the pinned release takes the engine a run home's cua install placed/);
+  assert.deepEqual(leftovers(tmp), []);
+  assert.equal(existsSync(join(out, 'results.jsonl')), false);
+});
+
+test('a pinned experiment checks its engine by the pinned rule and is labelled acceptance on the pinned release', async () => {
+  const out = join(fresh('out'), 'run');
+  const record = { gate: 'pinned', sha256: 'ab'.repeat(32), target: 'x86_64-unknown-linux-musl', linkage: 'static-pie', version: 'cua-engine 0.4.0 (c55c8e08d9cb)', commit: HEAD, clean: true, pin: { arch: 'x64', version: '0.4.0', release: 'linux-engine-v0.4.0', sha256: 'ab'.repeat(32) }, engine_tree: { path: 'native/linux-engine', commit: 'c55c8e08d9cbbb057b8b95434787b1e45d41184c', equal: true }, attestation: { verified: true, attestations: [{ run: 'https://github.com/SSFSKIM/cua/actions/runs/43637317960/attempts/1', source_commit: 'c55c8e08d9cbbb057b8b95434787b1e45d41184c', source_ref: 'refs/heads/release/linux-engine-v0.4.0', runner: 'github-hosted' }] } };
+  const prepare = async ({ source, gate, dir }) => {
+    assert.equal(source, '/home/engine/linux/cua-engine');
+    assert.equal(gate, 'pinned');
+    const path = join(dir, 'cua-engine');
+    writeFileSync(path, MUSL);
+    return { path, record };
+  };
+  // the run home's installed engine, as cua's selection picks it there (pinned-home.mjs), is what the experiment runs
+  const pinned = (cua, checked) => {
+    assert.equal(checked, record);
+    return { cua, cuaHome: '/home' };
+  };
+  const { stdout, rows, summary } = await labelled({ experiment: 'drag', cua: '/home/engine/linux/cua-engine', out, run: 'pinned-step', gate: 'pinned', families: [] }, { prepare, pinned });
+  const meta = rows.find((r) => r.kind === 'meta');
+  assert.equal(meta.cua, '/home/engine/linux/cua-engine', 'the installed engine itself, never the check\'s copy');
+  assert.deepEqual([meta.gate, meta.label], ['pinned', 'acceptance on the pinned release']);
+  assert.deepEqual(meta.candidate, record);
+  assert.match(summary, /^## pinned-step \(experiment drag; acceptance on the pinned release\)$/m);
+  assert.match(summary, /the pin's x64 asset of linux-engine-v0\.4\.0; native\/linux-engine as at c55c8e08d9cbbb057b8b95434787b1e45d41184c/);
+  assert.doesNotMatch(summary, /release gate/);
+  assert.match(stdout.split('\n')[0], /^acceptance on the pinned release; candidate: sha256 /);
+  // a pinned run's rows mixed with a development run's under one name are no verdict either
+  const { renderSummary } = await import('../../scripts/linux-engine-diff/report.mjs');
+  const mixed = renderSummary([{ run: 'm', kind: 'meta', experiment: 'drag', gate: 'pinned' }, { run: 'm', kind: 'meta', experiment: 'drag', gate: false }]);
+  assert.match(mixed, /^## m \(not judged: its rows mix acceptance on the pinned release and a development run\)$/m);
 });

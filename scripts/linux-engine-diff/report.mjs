@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { candidateLine, gateLabel } from './candidate.mjs';
+import { DEVELOPMENT_ON_PINNED, DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
 import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
@@ -34,6 +34,9 @@ export function desktopLine(record) {
   const line = `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
   const parts = [line, ...(record.record ? [recordText(record.record)] : [])];
   if (record.skipped?.length) parts.push(`left undone, the window not the run's then: ${record.skipped.map((s) => `${s.what} on ${s.window}`).join('; ')}`);
+  // what the run left on its own side (ruling 730): its end unclean, not a verdict failure
+  if (record.unclean?.length) parts.push(`**its end unclean** (its own side, not a verdict failure): ${record.unclean.join('; ')}`);
+  if (record.leftovers && !record.leftovers.clear) parts.push(`the end check's findings (other runs', left alone): ${record.leftovers.dirs.length} scratch, ${record.leftovers.buses.length} bus processes`);
   return parts.join('; ');
 }
 
@@ -54,6 +57,12 @@ const frac = (rows, key) => {
   const known = rows.filter((r) => typeof r[key] === 'boolean');
   return known.length ? `${known.filter((r) => r[key]).length}/${known.length}` : '–';
 };
+/** What a run name's rows of more than one kind of execution mix: their labels, or "executions of different kinds". */
+const kindsMixed = (kinds) => {
+  if ([...kinds].some((k) => gateLabel(k) === null)) return 'executions of different kinds';
+  const named = { [RELEASE_GATE]: 'a release gate', [PINNED_RELEASE]: PINNED_RELEASE, [DEVELOPMENT_ON_PINNED]: 'a development run on the pinned release', [DEVELOPMENT_RUN]: 'a development run' };
+  return Object.keys(named).filter((label) => [...kinds].some((k) => gateLabel(k) === label)).map((label) => named[label]).join(' and ');
+};
 
 export function renderSummary(lines) {
   const runs = [...new Set(lines.map((l) => l.run))];
@@ -68,7 +77,8 @@ export function renderSummary(lines) {
       const metas = rows.filter((r) => r.kind === 'meta');
       const labelled = rows.filter((r) => r.kind === 'meta' || r.kind === 'experiment-summary');
       const candidates = new Set(metas.map((r) => r.candidate?.sha256 ?? null));
-      const mix = new Set(labelled.map((r) => r.gate)).size > 1 ? 'a release gate and a development run' : candidates.size > 1 ? 'two or more candidates' : metas.length > 1 ? `${metas.length} executions` : null;
+      const kinds = new Set(labelled.map((r) => r.gate));
+      const mix = kinds.size > 1 ? kindsMixed(kinds) : candidates.size > 1 ? 'two or more candidates' : metas.length > 1 ? `${metas.length} executions` : null;
       if (mix) {
         out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
         continue;
@@ -88,8 +98,7 @@ export function renderSummary(lines) {
     // judged, so no row's label stands for another execution's
     const kinds = new Set(rows.filter((r) => r.kind === 'meta' || r.kind === 'end').map((r) => r.gate));
     if (kinds.size > 1) {
-      const mix = kinds.has(true) && kinds.has(false) ? 'a release gate and a development run' : 'executions of different kinds';
-      out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
+      out.push(`## ${run} (not judged: its rows mix ${kindsMixed(kinds)})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
       continue;
     }
     const label = gateLabel(meta?.gate);
@@ -149,7 +158,7 @@ export function renderSummary(lines) {
         const noise = labelled || (v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '');
         const r2 = (x) => Math.round(x * 100) / 100;
         const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
-        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : ['declared refusal', 'declared unconfirmed'].includes(v.verdict) ? `**${v.verdict}**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared gap' ? `**declared gap** (${v.gap.issue}), a loss, not a pass: ${v.declared_gap.join('; ')} (${v.gap.section})` : ['declared refusal', 'declared unconfirmed'].includes(v.verdict) ? `**${v.verdict}**, a loss, not a pass (${v.refusal?.section ?? ''})` : v.verdict === 'unjudged' ? `**unjudged** (a pilot takes no top-up), not a pass: ${v.unjudged.join('; ')}${declared}` : `FAIL: ${v.reasons.join('; ')}${v.unjudged?.length ? `; unjudged (a pilot takes no top-up): ${v.unjudged.join('; ')}` : ''}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');
@@ -165,6 +174,27 @@ export function renderSummary(lines) {
       out.push('| scene | op | samples | landed | answered ok | false ok | landed, reported unconfirmed |', '|---|---|---:|---:|---:|---:|---:|');
       for (const v of verdicts.filter((x) => x.drops)) out.push(`| ${v.scene} | ${v.op} | ${v.drops.samples} | ${v.drops.landed} | ${v.drops.ok} | ${v.drops.false_ok} | ${v.drops.unconfirmed_landed} |`);
       out.push(`| **run** | | ${drops.samples} | ${drops.landed} | ${drops.ok} | ${drops.false_ok} | ${drops.unconfirmed_landed} |`);
+    }
+    // the adaptive hold's notices (ruling 898.2): honest where the page shows no drop; a false alarm where it dropped,
+    // counted here, never hidden
+    const noticed = verdicts.filter((v) => v.hold_notices);
+    if (noticed.length) {
+      out.push('', "Chrome's hold notices (`the page may have started a drag that did not complete`). Honest only where the page shows no drop; a notice on a drag that dropped is a false alarm:", '');
+      out.push('| scene | op | samples | noticed | honest | false alarm | false alarms |', '|---|---|---:|---:|---:|---:|---|');
+      for (const v of noticed) out.push(`| ${v.scene} | ${v.op} | ${v.hold_notices.samples} | ${v.hold_notices.noticed} | ${v.hold_notices.honest} | ${v.hold_notices.false_alarm} | ${v.hold_notices.false_alarms.join(', ') || '–'} |`);
+    }
+    // the hold canary's waits (ruling 930), so drift toward its bar shows before it fails: the draggable cell's presses
+    // that started a drag, their largest and median ping wait, against the plain control's warm largest
+    const canaries = verdicts.filter((v) => v.hold_canary);
+    if (canaries.length) {
+      const ms = (x) => (typeof x === 'number' ? String(x) : '–');
+      out.push('', "The hold canary (device.mjs `holdCanary`): each cell's ping waits in ms. A draggable cell passes on a press that started a drag and read slow by the engine's own 20 ms (`absolute`), or waited 3x the plain control's warm largest and 5 ms at least (`relative`, x64's K1, K2 and V5):", '');
+      out.push('| scene | op | kind | criterion | held | started | largest wait | median wait | plain largest | bar |', '|---|---|---|---|---:|---:|---:|---:|---:|---:|');
+      for (const v of canaries) {
+        const c = v.hold_canary;
+        const draggable = c.kind === 'draggable';
+        out.push(`| ${v.scene} | ${v.op} | ${c.kind} | ${draggable ? (c.criterion ?? 'absolute') : '–'} | ${c.held} | ${draggable ? ms(c.started) : '–'} | ${ms(c.wait_max_ms)} | ${draggable ? ms(c.wait_median_ms) : '–'} | ${draggable ? ms(c.plain_max_ms) : '–'} | ${draggable ? (c.criterion === 'relative' ? ms(c.bar_ms) : '20') : '–'} |`);
+      }
     }
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
     // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
@@ -239,9 +269,10 @@ export function renderSummary(lines) {
     }
     out.push(...prepareFaultsMarkdown(rows));
     out.push(...textRestoresMarkdown(rows));
+    out.push(...textSceneEndsMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
     const endLabel = gateLabel(end?.gate);
-    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
+    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine({ ...end, sceneEnds: end.scene_ends ?? null, vendorEnds: end.vendor_ends ?? null }, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
     // a run from before the harness audited its own trace has no record
     if (end && 'desktop' in end) out.push(desktopLine(end.desktop), '');
@@ -274,6 +305,32 @@ export function textRestoresMarkdown(rows) {
     out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}${r.warm_up ? ", the backstop's warm-up" : r.resample ? ', its resample' : ''}: ${what}`);
   }
   return out;
+}
+
+/**
+ * The text windows a lane ended (scene-ended.mjs, M5's T4): the count per lane, every lane named, and each end with the
+ * request that last reached the window and what took its place: a vendor's restart, the run's end (nothing restarted),
+ * or a candidate's stop. A run from before the count has no record and shows nothing.
+ */
+export function textSceneEndsMarkdown(rows) {
+  const ends = rows.find((r) => r.kind === 'text-scene-ends');
+  if (!ends) return [];
+  const head = `Text windows a lane ended (a vendor's restarted before its next request, never scored; a candidate's stops the run): ${Object.entries(ends.lanes).map(([lane, n]) => `${lane} ${n}`).join(', ')}`;
+  if (!ends.ended.length) return ['', `${head}.`];
+  const out = ['', `${head}:`, ''];
+  // the vendor's ends, declared and undeclared, each apart (M5's T4 arm64 round): neither fails a step
+  const build = (g) => `${g.scene} ${g.op ?? 'an unrecorded request'} ${g.engine} (${g.release ?? 'an unnamed build'}, ${g.sha256 ? `${g.sha256.slice(0, 8)}…` : 'no sha256'})`;
+  const vendor = [];
+  if (ends.vendor?.declared?.length) vendor.push('', 'Vendor ends declared (scene-ended.mjs DECLARED_VENDOR_ENDS; never scored):', '', ...ends.vendor.declared.map((g) => `- ${build(g)}: ${g.count}, declared as ${g.id}`));
+  if (ends.vendor?.undeclared?.length) vendor.push('', "Vendor ends undeclared (never scored; a vendor behaviour the pilot did not see, for a look):", '', ...ends.vendor.undeclared.map((g) => `- ${build(g)}: ${g.count}`));
+  for (const e of ends.ended) {
+    const at = e.op ? `${e.op} ${e.engine} ${e.block}/${e.i}` : `${e.engine}, the ${e.pass} pass`;
+    const last = e.last ? ` after ${e.last.op} ${e.last.block}/${e.last.i}` : '';
+    const r = e.restart;
+    const then = e.kind === 'scene-lost' ? '**the run stopped: a request of its lane ended the application**' : r ? `restarted (${e.scene} ${r.old_pid} replaced by ${r.new_pid}, window ${r.old_id} by ${r.new_id}${warmUpText(r.warm_up)}${r.then ? `; the warm-up ended it too (${r.warm_up_ended}), restarted again unwarmed: window ${r.then.new_id}` : ''})` : 'not restarted: no request was left for it';
+    out.push(`- ${e.scene} ${at}: ${e.ended}${last}; ${then}`);
+  }
+  return [...out, ...vendor];
 }
 
 /**

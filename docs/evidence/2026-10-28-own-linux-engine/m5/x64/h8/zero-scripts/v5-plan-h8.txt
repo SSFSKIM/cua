@@ -1,0 +1,209 @@
+x64 V5 sitting plan at H8 (rulings 1046, 1047, 1053, 1054), written 2026-11-22 ~05:30Z. Start only on the design session's GO,
+relayed. Nothing has touched :0. The preparation below read nothing from :0.
+
+Head and engine
+- t129-x64: a worktree detached and clean at H8 = 048140a2bde0f6398cc910c1aa14ecf2e7e51004. It is the checkout task 135's
+  counted reach ran from: node_modules from a real npm ci (the lockfile is unchanged since), electron 44.9.0, and xprobe
+  built. 0 changes.
+- Home: ~/.local/share/cua-171/m5/home-x64-043, its own `cua install --engine`.
+  - The engine's sha256 is f1513e79…4d921f, the pin's x64 asset. It reads `cua-engine 0.4.3 (ba5b043834ce)`, is
+    static-pie, and install.json has build pinned.
+  - `gate.mjs check --pinned` exit 0: attested (release run 44966356899, and 44964231636; both built from ba5b0438), and
+    the checkout clean at 048140a2. Task 135's counted steps ran on it (all PASS, cb4b1234), and its doctor exited 0.
+- Holder: h8-x64.
+
+When
+- The owner's window is 2026-11-23 02:30–08:00Z.
+- V5 starts at 02:30Z, or at the GO if that comes later. The launcher refuses to start before 02:30Z or after 07:00Z,
+  the latest start for any run. If a run can't start by 07:00Z, I tell you at once.
+- The expected length is about 38 min (V5 at H6 on x64 took 37.6). The hard cap is 55 min: SIGTERM, then SIGKILL
+  120 s later. So the latest end is 07:55Z plus the kill grace, before 08:00Z in every case.
+- The host lock's cap (CUA_LOCK_MAX) is the whole minutes left to 08:00Z, less 2, so a hold ends before 08:00Z at worst.
+
+The budget (ruling 1047: one stop plus one whole rerun, then 823.3/831's conditional slots, all inside 08:00Z)
+
+| slot | starts | ends at the latest |
+|---|---|---|
+| 1. V5 | 02:30Z (or the GO) | 03:27Z (the 55-min cap and the kill grace) |
+| a stop | | I report at once. A stop on #432's known signature goes to the design session with its record, and is rerun whole once it rules; any other stop holds. About 20 min is budgeted for the ruling |
+| 2. V5 rerun whole, after a cleared stop | ~03:50Z | ~04:47Z |
+| 3. and 4. 823.3/831 (a V5 short only by proven premise-unmet samples, rerun whole at most twice, the controller's decision after checking each excluded sample by hand) | ~04:50Z and ~05:50Z | ~05:47Z and ~06:47Z |
+
+- With no stop and a complete V5, the window's work ends at about 03:10Z.
+- The stop plus its rerun end by ~04:47Z, inside ruling 1047's ~06:30Z. The two conditional slots end by ~06:47Z.
+- No run starts past 07:00Z.
+- Between runs the lock is released. Nothing else of mine runs on this host during the window: task 135's steps are done
+  and no driver of mine is armed.
+
+The command
+- First run: `~/.local/share/cua-171/v5h8/go-v5.sh first`, with the sidecar on by default (below). It:
+  - waits for 02:30:00Z;
+  - reads the precheck (below) and refuses on any miss;
+  - waits up to 10 min for the 1-minute load below 1.0;
+  - runs `run-sitting.sh "" ~/.local/share/cua-171/m5/zero-x64-h8 V5`. That is one hold of the host lock, holder
+    h8-x64 (sitting-locked.sh), around sitting.sh: task 123's, as task 115 fixed its exit, with H8's paths.
+- sitting.sh runs exactly the line `gate.mjs print V5 --pinned home-x64-043 --out zero-x64-h8 --holder h8-x64` gave
+  (`v5h8/zero-commands.txt`), with only its leading `locked.sh h8-x64` stripped:
+  `node <t129-x64>/scripts/linux-engine-gate/sitting.mjs --dir <zero-x64-h8>/V5.pinned-release --hold ~/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=<t129-x64>/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py <t129-x64>/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh <zero-x64-h8>/V5.pinned-release <t129-x64>/ --vendor <home-x64-043>/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest ~/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua <home-x64-043>/engine/linux/cua-engine --scene device-firefox,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate --ops <the 44 ops> --blocks 3 --run pinned-V5 --ballast gate --pinned --hold-canary relative`
+  - The 44 ops are firefox_click_pointer_out_shared … identity_kate, the same list as H6's (zero-commands.txt has it in
+    full).
+  - Against H6's V5 line, argument by argument, the line is identical once the checkout, home, out root and holder are
+    placeholders (`v5h8/compare-v5-line.txt`: 35 arguments each).
+- A rerun: `go-v5.sh rerun <kept name> <the ruling's record>`, started by hand only once the ruling allows it, with the
+  sidecar on. It:
+  - refuses while hold-sittings exists, or without the record;
+  - keeps the previous run's directory as `V5.pinned-release.<kept name>` (stopped-1, run-1, …);
+  - prints V5 again, then runs the same precheck, load wait and launcher.
+
+What runs on :0
+- Only V5. V1–V4 and Z0 don't run.
+- Everything V5 starts on :0 is run-owned:
+  - task 59's Firefox 159 (PATH-checked: a Firefox step is refused unless firefox resolves to it);
+  - Google Chrome 156.0.8078.73, on run-owned --user-data-dirs, for the scene windows and the gate's Chrome ballast;
+  - the gedit, GTK 3, GTK 4 and kate identity scenes.
+- They are driven by the pinned vendor build (26.928.40906), the newest (deb-26.1023) and cua's 0.4.3 engine, through
+  synthetic X input on :0. The pointer moves, and it is read before the step and restored after it.
+- The audit proxy (xtrace) runs on its own display (:40 on).
+
+What doesn't run on :0
+- Nothing of the owner's.
+  - No attach to the owner's Chrome and no signal to it. It is pid 2546101, started 11-02 20:16:10, read by ps only.
+  - Never the owner's profile.
+- No private step and no load during a hold. No stress-ng.
+
+Guards (unchanged from H6)
+- **The precheck**, just before each launch (precheck-zero.sh, recorded, :0's pointer read there and only there):
+  - hold-sittings absent and no stress-ng;
+  - the owner's Chrome pid by ps;
+  - the load (the 1-minute load below 1.0);
+  - the host lock's last line;
+  - :0's pointer;
+  - no /tmp/cua171-run-*, and `gate.mjs leftovers` clear;
+  - task 59's Firefox first on PATH and at 159, and google-chrome at 156.0.8078.73;
+  - df / over 20G free (ruling 937).
+
+  On any miss I don't start, and I tell you.
+- **The sitting launcher** (sitting.mjs) runs its start check, then its end check and the all-clear however the step
+  ends. The all-clear covers: no harness-titled window left, no key or button held, the audit of windows it didn't
+  open, and processes left.
+- **wrap71** (M4's guards, unchanged):
+  - owner-check before and after, owner-watch, owner-diff and tmp-watch;
+  - a TMPDIR of the step's own, and decoy connections;
+  - the flag-and-stop on any reach into the person's session.
+- **wrap71 stays exactly H8's (ruling 1053).** The guard fix for #432 is on #432, after M5, and not on H8.
+- **If the all-clear fails**, the launcher writes hold-sittings and sitting.sh stops all :0 work. I don't clear it and I
+  don't rerun on my own. A stop comes to you at once with the flag rows by kind, pid and peer, and the sidecar's
+  attribution. A stop clears only on the design session's ruling.
+- **#432's known signature (ruling 1053).** The run's own Chrome connects to its own chrome_crashpad. The crashpad
+  daemonizes and is reparented to wrap71, the subreaper. wrap71 then doesn't count it as the run's, and fails closed.
+  - I read the stop with `v5h8/classify-stop.py <capture> <run dir>`, read-only. It prints yes or no per condition,
+    and no cmdline or path.
+  - The signature has three parts:
+    - the flag is an outside-peer-connection with no peer pid;
+    - its flagged process is a run chrome under wrap71;
+    - the peer inode's single owner is a chrome_crashpad whose parent is wrap71, and the capture's ss lines show that
+      owner holding the inode.
+  - The classifier reads MATCH on arm's real stopped-2 capture, run read-only on the VM, whole and narrowed alike (below;
+    `classify-stop-arm-stopped-2.txt`, `-narrowed.txt`). It reads NOT MATCHED on the narrowed synthetic test's capture
+    here.
+  - **On a MATCH** I send the record to the design session: the sidecar's attribution, redacted, and the classifier's
+    lines. Once it rules, the run is rerun whole (`go-v5.sh rerun stopped-1 <record>`) inside the window's budget (slot
+    2).
+  - **Any other stop holds**, as before.
+
+The capture sidecar (rulings 1046, 1047; confirmed by ruling 1053; narrowed on x64 by ruling 1054)
+- **What it is.** x64's narrowed copy, `~/.local/share/cua-171/bin/flag-capture-narrow.py`, sha256
+  `03ee08bdec8bb653e32f847cd6a82bbd5e56c57010f0030a3ab337ea2d15e478`. It is not in the repository.
+  - It is task 136's flag-capture.py (26277a1f…b42aedca, the same as the VM's, which stays as built) with one change:
+    what it writes at a flag.
+  - The diff is in its own head: `involves` and `narrowed`, and ring.txt and ss-at-flag.txt written from them.
+- **How it runs.** It runs beside the sitting, never as part of it. go-v5.sh starts it by default just before
+  run-sitting.sh, and stops it with its stop file after.
+  - Its command is `nice -n 10 python3 -I flag-capture-narrow.py --flags <run>/flags.jsonl --out m5/capture-x64-h8[-<kept>] --until <capture>/STOP`.
+  - `SIDECAR=0` would leave it out, and nothing else would change. wrap71 and the watchdog's rule are unchanged either
+    way.
+- **What it does:**
+  - every 100 ms it samples `ss -xpe` into a 3 s ring in memory, and reads flags.jsonl;
+  - it reads no window title, sends no signal, and connects to no display or bus.
+- **At the first flag line (ruling 1054), it writes only:**
+  - the ring's lines and one more `ss -xpe`'s lines that name the flagged peer inode, as a whole number, or contain its
+    peer path, into `ring.txt` (each sample's time with its count of such lines) and `ss-at-flag.txt`;
+  - `owners.json` under 1047's rule, its ring holders read from those same lines.
+
+  The whole ring stays in memory and is never written.
+- **Ruling 1047's limits** in owners.json:
+  - cmdline, ppid and start time only for the flagged peer inode's owner and its parent;
+  - every other process pid and comm only;
+  - no environment.
+- **Where its output goes:**
+  - the raw capture stays on this host outside the repository, `~/.local/share/cua-171/m5/capture-x64-h8*/`, and is
+    never committed;
+  - the README gets only the attribution, redacted (home paths and tokens).
+- **Condition (a), met:** the synthetic test passes on the narrowed build, 2026-11-22 ~05:12Z
+  (`v5h8/flag-capture-test-narrow.out`). The test is task 136's `flag-capture-test.py`, with no display and no :0.
+  - The owner resolved to the test process, with its parent recorded.
+  - Only the allowed fields appeared, and no environment.
+  - The ring showed the inode's holder, and /proc/net/unix had 2 lines.
+  - The sidecar exited 0 after its stop file.
+  - `narrow-check.py` (`narrow-check-test.txt`) shows it wrote only lines naming the test's inode or path: ring.txt
+    11 sample headers and 22 lines, ss-at-flag.txt 2 lines, 0 lines naming neither.
+- **Condition (b), met:**
+  - **The filtered copy.** On the VM, read-only, `narrow-filter.py` filtered arm's stopped-2 capture the way the
+    narrowed writer filters it, into a new copy, `capture-arm64-h8-stopped-2-narrowed-x64check/`
+    (`narrow-filter-arm-stopped-2.txt`).
+    - The ring's 7961 lines in 30 samples became 2, and ss-at-flag became 2 lines.
+    - The ring holders read from the narrowed lines are the same 2 as the whole capture's.
+    - narrow-check passes on the copy: 0 lines name neither the inode nor the path.
+  - **The reading.** classify-stop.py reads MATCH on that copy (`classify-stop-arm-stopped-2-narrowed.txt`), as on the
+    whole capture. Its added condition, "the capture's ss lines show that owner holding the peer inode", is read from
+    the narrowed lines.
+  - So the narrowed output is enough to classify a stop.
+  - The filtered copy stays on the VM, with arm's raw captures.
+- **Its cost here:** `ss -xpe` takes about 7.5 ms a sample on this host (236 lines), so about 0.1 core at 10 samples a
+  second, under nice 10. The narrowing only filters at a flag.
+- **The first, whole-ring synthetic test's capture** (`m5/capture-test-x64-h8/`, from the build before 1054) was
+  deleted from this host at ~05:15Z, since 1054 means no whole ring is kept on x64. Its summary,
+  `flag-capture-test.out`, is kept: it holds no ring.
+
+How it ends
+- V5 ends at its verdict. The launcher's all-clear runs, the pointer is restored, and the hold is released.
+- I read the guard records, the all-clear, the leftovers, the kept traces and the rejudge-audit (after-step.sh), and send
+  you a two-line status within ~10 min of the end. It covers:
+  - the verdict and the all-clear;
+  - flags, decoys and leftovers;
+  - the pointer and the owner's Chrome pid;
+  - the relative canary's draggable max and median wait, and the plain max.
+- A FAIL, or route D's "incomplete only by N premise-unmet samples", is reported as it stands, with the step dir. I
+  never rerun it myself; a rerun takes the slot the ruling gives.
+- If anything looks wrong mid-run, my only action is the step's own SIGTERM through its timeout. No signal goes to
+  anything I didn't start.
+- **After M5 is accepted (ruling 1054):** I delete x64's raw captures from this host. That is every
+  `~/.local/share/cua-171/m5/capture-x64-h8*/` the sitting's runs wrote, and the narrowed synthetic test's
+  `m5/capture-test-x64-h8-narrow/`. The README's redacted attribution is all that is kept. I report each path deleted.
+  The arm VM's raw captures, including the filtered copy made for condition (b), are arm's to delete under the same
+  rule.
+
+The precheck read now, without :0 (`v5h8/precheck-now.out`, 2026-11-22T05:05:40Z)
+- hold-sittings: absent. stress-ng: none. /tmp/cua171-run-*: none.
+- The owner's Chrome: pid 2546101, user new, started Mon Nov 2 20:16:10 2026, read by ps. It is the oldest chrome
+  process, as planned.
+- google-chrome on PATH: /usr/local/bin/google-chrome, Google Chrome 156.0.8078.73.
+- Firefox on PATH as sitting.sh puts it: ~/.local/share/cua-171/task59/bin/firefox, Mozilla Firefox 159.0.
+- df /: 34G free (over 20G).
+- The load: 0.31 3.45 9.07, just after task 135's twice-load steps. The lock's last line is h8-x64's release at
+  04:57:12Z.
+- Not read now, because they need :0 or the run's own check: :0's pointer and `gate.mjs leftovers`. Both are read in the
+  sitting's precheck after the GO.
+
+Files: ~/.local/share/cua-171/v5h8/ holds:
+- the launchers: go-v5.sh, run-sitting.sh, sitting-locked.sh and sitting.sh;
+- precheck-zero.sh and precheck-now.sh with its .out;
+- print-zero.sh with zero-commands.txt, and compare-v5-line.py with its .txt;
+- after-step.sh;
+- classify-stop.py with its checks: arm's stopped-2 whole and narrowed, MATCH; the narrowed synthetic capture, NOT MATCHED;
+- flag-capture-narrow.py (the source of bin/'s copy), narrow-check.py and narrow-filter.py with their outputs, and
+  sidecar-sha256.txt;
+- flag-capture-test.py with its two outputs (whole and narrowed), and from-vm/, task 136's originals.
+
+The step's out root is ~/.local/share/cua-171/m5/zero-x64-h8/. V5.pinned-release there holds only print's README and
+step.json.

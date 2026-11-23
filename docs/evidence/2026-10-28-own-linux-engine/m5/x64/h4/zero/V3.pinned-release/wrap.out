@@ -1,0 +1,67 @@
+acceptance on the pinned release; candidate: sha256 c432c8c2bc4f905b32a171f439bd5e500724b8ff7f8f961f64a34437d9241626, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.1 (7522dcb8fb8c); the pin's x64 asset of linux-engine-v0.4.1; native/linux-engine as at 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5, the checkout at 3b5c0441b41e67ab87dd1265d2ca74325f93dec3; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44380699966/attempts/1, built from 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5 (refs/heads/release/linux-engine-v0.4.1) on a github-hosted runner; .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44372589299/attempts/1, built from 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5 (refs/heads/m5-engine-041) on a github-hosted runner
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 34; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 22; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 323; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 4; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 289; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 316; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 6; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 317; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 300; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 317; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 6; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 320; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 308; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 311; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 313; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 316; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 267; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 323; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 4; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 309; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 290; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 5; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 289; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 311; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 8; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 318; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 301; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 316; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 6; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 309; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 301; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 301; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 2; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 321; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 300; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 3; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 290; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 321; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 4; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 311; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 8; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 285; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 331; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-pinned: the scroll series ended at 340; back to the top
+cua171-diff-pinned-V3-6e349ba6-input-newest: the scroll series ended at 327; back to the top
+run valid; acceptance on the pinned release: no verdict FAIL; declared refusal (a loss, not a pass): chrome-input drag cua; declared unconfirmed (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua; declared gap (a loss, not a pass): chrome-input activate_window cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/zero-x64-h4/V3.pinned-release/run/results.jsonl
+{"exit": 0, "samples": 17467, "maps_samples": 5823, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1716, "browsers": 46}

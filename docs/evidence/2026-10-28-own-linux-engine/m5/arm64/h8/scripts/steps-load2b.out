@@ -1,0 +1,5 @@
+2026-11-22T04:34:43Z run L4c (df / 101G, load 4.89 13.05 14.10) as printed: /Users/new/.local/share/cua-171/locked.sh h8-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-gate/gate.mjs run L4c --pinned /Users/new/.local/share/cua-171/m5/home-arm64-043 --out /Users/new/.local/share/cua-171/m5/out-arm64-h8
+2026-11-22T04:38:55Z end L4c exit 0 load=17.37 12.52 13.33 quiet wait 101 s: load 0.92 9.33 12.65 stress-ng 0
+2026-11-22T04:38:55Z run L4d (df / 101G, load 17.37 12.52 13.33) as printed: /Users/new/.local/share/cua-171/locked.sh h8-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/m5/home-arm64-043 --out /Users/new/.local/share/cua-171/m5/out-arm64-h8
+2026-11-22T05:05:50Z end L4d exit 0 load=17.59 17.27 16.02 quiet wait 180 s: load 0.86 6.85 10.98 stress-ng 0
+2026-11-22T05:05:50Z steps done: L4c L4d

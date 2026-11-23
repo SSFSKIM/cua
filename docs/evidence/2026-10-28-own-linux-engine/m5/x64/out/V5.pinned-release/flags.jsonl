@@ -1,0 +1,2 @@
+{"t": 968.282, "kind": "outside-peer-connection", "pids": [465174], "comm": null, "peer_path": "/tmp/.X11-unix/X40", "peer_pids": [], "peer_comm": null, "peer_inode": "222450639"}
+{"t": 968.283, "kind": "stop-sent", "pid": 398109, "why": "outside-peer-connection"}

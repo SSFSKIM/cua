@@ -1,0 +1,11 @@
+owner pid=9512 start=52059
+tmproot /tmp/c71-Mm7fW8
+args: --vendor /Users/new/.local/share/cua-171/m5/home-arm64-041/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine --scene desktop,gedit,chrome,over-budget --ops list_windows,list_apps,get_screenshot,launch_app,capabilities,tree,tree_shot,press_key,click,type_characters --blocks 3 --run m5-dev-V2 --dev
+started 2026-11-19T12:05:23Z finished 2026-11-19T12:20:51Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1795088460.278479617
+---
+> mtime ~/.config/google-chrome 1795090855.803485629

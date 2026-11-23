@@ -1,0 +1,2 @@
+{"t": 80.948, "kind": "outside-peer-connection", "pids": [1064015], "comm": "chrome", "peer_path": "@7bbca", "peer_pids": [], "peer_comm": null, "peer_inode": "48322360"}
+{"t": 80.949, "kind": "stop-sent", "pid": 1059678, "why": "outside-peer-connection"}

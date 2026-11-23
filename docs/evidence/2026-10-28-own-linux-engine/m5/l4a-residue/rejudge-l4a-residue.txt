@@ -1,0 +1,140 @@
+## x64 T5 L4a (counted, pinned 0.4.0, at H)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/L4a.pinned-release
+run pinned-L4a, plan t17-fix3, load load2, trials the plan whole; checkout fefe306c; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: cua plain 0 of 100, bound 2; cua:handle plain 0 of 100, bound 2
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+
+## x64 pilot L4a (task 87, pilot 2)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/L4a.development-run.pilot
+run m4-dev-L4a-pilot, plan t17-fix3, load load2, trials 2; checkout 01ff0648; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: cua plain 0 of 2, bound 0; cua:handle plain 0 of 2, bound 0
+zone-truth mismatches (ruling 830): none in 12 drags of the window's cells
+
+## arm64 pilot L4a (task 96, pilot 2, pinned 0.4.0)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out/L4a.development-run.pinned.pilot
+run m5-pinned-dev-L4a-pilot, plan t17-fix3, load load2, trials 2; checkout da306cc6; step exit 1
+stored: FAIL (H's judge reproduces the stored verdict: FAIL); with the residue: FAIL; result unchanged
+residue: cua plain 0 of 2, bound 0; cua:handle plain 0 of 2, bound 0
+zone-truth mismatches (ruling 830): none in 12 drags of the window's cells
+failures that stand: cua:handle left: answered ok with no drop and nothing pending on 1 of 2 (#0)
+
+## arm64 pilot L4a rate run (task 96, pilot 100, pinned 0.4.0; task 98's 0.4.0 column)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/l4a-rate/L4a/L4a.development-run.pinned.pilot
+run m5-pinned-dev-L4a-pilot, plan t17-fix3, load load2, trials 100; checkout da306cc6; step exit 1
+stored: FAIL (H's judge reproduces the stored verdict: FAIL); with the residue: FAIL; result unchanged
+residue: cua plain 0 of 100, bound 2; cua:handle plain 1 of 100, bound 2
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+judge failures the residue cleared: cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#20)
+failures that stand: cua:handle left: answered ok with no drop and nothing pending on 1 of 30 (#20)
+
+## task 98 L4a on the prototype (arm64, b74961ca, pilot 100)
+source: git:85886a76:docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/arm64/gate/L4a.development-run.pilot
+run m5-dev-L4a-pilot, plan t17-fix3, load load2, trials 100; checkout b74961ca; step exit 1
+stored: FAIL (H's judge reproduces the stored verdict: FAIL); with the residue: pass; RESULT MOVED
+residue: cua plain 0 of 100, bound 2; cua:handle plain 1 of 100, bound 2
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+judge failures the residue cleared: cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0)
+
+## x64 T5 H1 (counted, idle)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/H1.pinned-release
+run pinned-H1, plan t17-fix3, load idle, trials the plan whole; checkout fefe306c; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+
+## x64 T5 H2 (counted, the gate's window load)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/H2.pinned-release
+run pinned-H2, plan t17-fix3, load gate-windows, trials the plan whole; checkout fefe306c; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+the root cells' unverified ends by answer (ruling 838): cua:desktop root 0 ok and 30 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30
+
+## x64 pilot H1 (task 87)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/H1.development-run.pilot
+run m4-dev-H1-pilot, plan t17-fix3, load idle, trials 2; checkout 01ff0648; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 12 drags of the window's cells
+
+## x64 pilot H2 (task 87)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/H2.development-run.pilot
+run m4-dev-H2-pilot, plan t17-fix3, load gate-windows, trials 2; checkout 01ff0648; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 12 drags of the window's cells
+the root cells' unverified ends by answer (ruling 838): cua:desktop root 0 ok and 2 unconfirmed of 2; cua:handle root 0 ok and 2 unconfirmed of 2
+
+## arm64 pilot H1 (task 96, pilot 2)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out/H1.development-run.pinned.pilot
+run m5-pinned-dev-H1-pilot, plan t17-fix3, load idle, trials 2; checkout da306cc6; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 12 drags of the window's cells
+
+## arm64 pilot H2 (task 96, pilot 2)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out/H2.development-run.pinned.pilot
+run m5-pinned-dev-H2-pilot, plan t17-fix3, load gate-windows, trials 2; checkout da306cc6; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 12 drags of the window's cells
+the root cells' unverified ends by answer (ruling 838): cua:desktop root 0 ok and 2 unconfirmed of 2; cua:handle root 0 ok and 2 unconfirmed of 2
+
+## arm64 pilot H1 rate run (task 96, pilot 100)
+source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/l4a-rate/H1/H1.development-run.pinned.pilot
+run m5-pinned-dev-H1-pilot, plan t17-fix3, load idle, trials 100; checkout da306cc6; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+
+## task 98 H1 on the prototype (arm64, b74961ca, pilot 100)
+source: git:85886a76:docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/arm64/gate/H1.development-run.pilot
+run m5-dev-H1-pilot, plan t17-fix3, load idle, trials 100; checkout b74961ca; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
+residue: not covered
+zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
+
+## negative controls on task 98 L4a on the prototype (arm64, b74961ca, pilot 100) (cua:handle plain: 1 of 100, bound 2)
+- one more honest non-landing than the bound (2 landed drops made the residue's shape): FAIL, as it must (cua:handle plain: 3 honest unconfirmed non-landings of 100, over L4a's residue of 2 (ruling 827 3b: floor(2 × 100 / 100), never rounded up) (#0, #1, #2))
+- the residue row answered ok, its notice and refusal removed: a false ok: FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#0) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's notice not kept by the next acting request: FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#0) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0) | cua:handle plain: the read carried a notice, and the next acting request was not refused with it, on 1 of 100 (#0))
+- the residue row answered an error, its notice kept: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend record missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend an earlier press's (stale): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend another source's (foreign): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend a drop: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's zone counters unread: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's before-press stamp missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's after-press stamp missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend stamp missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the same rows at idle: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the same rows under another judged plan at twice the load (t17-fix2): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- a false ok added in the same series (another landed drop answered ok, nothing dropped): FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#1) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#1))
+- a failure of the run outside this judge kept in its terminal outcome (a window the harness did not open): FAIL, as it must (a window the harness did not open was changed: 0x1 (control))
+- the private display's watchdog not clean: FAIL, as it must (the private display's watchdog: flagged (control))
+- no terminal outcome stored: replay refused, as it must (0 experiment-summary rows: the run has no single terminal outcome); the step keeps its stored result
+- no step.json: replay refused, as it must (no step.json: the step has no terminal record); the step keeps its stored result
+- a stored judge verdict H's judge does not reproduce: replay refused, as it must (H's judge does not reproduce the stored judge verdict); the step keeps its stored result
+- a terminal outcome without the judge's failures: replay refused, as it must (the terminal outcome does not carry the judge's failures); the step keeps its stored result
+- a run exit its terminal outcome does not explain: replay refused, as it must (the run exited 0, where its judged-failed terminal outcome gives 1); the step keeps its stored result
+- a refused run: the run and the step exited 2: replay refused, as it must (the run exited 2, where its judged-failed terminal outcome gives 1); the step keeps its stored result
+- no exits recorded: replay refused, as it must (no exit recorded (the run's undefined, the step's undefined)); the step keeps its stored result
+- no watchdog verdict recorded: replay refused, as it must (no watchdog verdict recorded: the display's clean end is unproved); the step keeps its stored result
+- a step exit its run and watchdog do not give: replay refused, as it must (the step exited 2, where its run's 1 and the watchdog's clean give 1); the step keeps its stored result
+controls: 26 of 26 failed
+## ruling 830's controls on task 98 L4a on the prototype (arm64, b74961ca, pilot 100)
+- an ok on a copy dragend, the zone unchanged: listed, not a fail: as it must (result pass; mismatches cua left 1 of 30)
+- an ok on a dragend of none, no landing: a false ok, not listed: as it must (result FAIL; mismatches none in 320 drags of the window's cells; cua left: answered ok with no drop and nothing pending on 1 of 30 (#0))
+- the copy ok with its before-press stamp missing: not listed: as it must (result pass; mismatches none in 320 drags of the window's cells)
+- the copy ok with its after-press stamp missing: not listed: as it must (result FAIL; mismatches none in 320 drags of the window's cells; cua left: answered ok with no drop and nothing pending on 1 of 30 (#0))
+- the copy ok with its dragend stamp missing: not listed: as it must (result pass; mismatches none in 320 drags of the window's cells)
+ruling 830's controls: 5 of 5 as they must
+## ruling 838's controls on x64 T5 H2 (counted, the gate's window load) (cua:desktop root, 30 unverified ends)
+- an unverified root end answered ok: listed with an unknown settle outcome, and the step not failed: as it must (result pass; cua:desktop root 1 ok (#0 settle failed, activation confirmed: unknown) and 29 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30)
+- the same, its drop cursor's settle carrying the outcome: shown: as it must (result pass; cua:desktop root 1 ok (#0 settle failed, activation confirmed: true) and 29 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30)
+- the unconfirmed answers unchanged: as it must (result pass; cua:desktop root 0 ok and 30 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30)
+- the cell still unmeasured for position: as it must (result pass; cua:desktop root 1 ok (#0 settle failed, activation confirmed: unknown) and 29 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30)
+- the other cells unaffected: the judge failures the same as without the edit: as it must (result pass; cua:desktop root 1 ok (#0 settle failed, activation confirmed: unknown) and 29 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30)
+ruling 838's controls: 5 of 5 as they must

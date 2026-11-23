@@ -1,0 +1,38 @@
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794912381.459358178
+---
+> mtime ~/.config/google-chrome 1794914181.459746855
+all-clear: NOT CLEAR: wrap71 flagged 1 reach into the person's session and 0 decoy connections; the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+--- V3 exit 1
+--- owner-baseline
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-TgQBVD
+args: --vendor /Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1111/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine --scene chrome-input,retention,minimized,minimized-xterm,minimized-recorder --ops click_element,right_click,right_click_fallback,secondary_action,move,drag,scroll,scroll_element_hidden,key_down,key_up,activate_window,after_resize,after_remap,after_covered_change,minimized_press_key,minimized_key_down,minimized_click,minimized_right_click,minimized_click_element,minimized_secondary_action,minimized_move,minimized_scroll,minimized_drag,minimized_type_text,minimized_type_characters,minimized_clipboard_read,minimized_clipboard_write,minimized_press_key_dedicated,minimized_click_dedicated,minimized_type_text_dedicated,minimized_list,minimized_tree,minimized_shot,minimized_restored_shot,minimized_restored_list,minimized_activate,minimized_activate_withdrawn,minimized_xterm_key_shared,minimized_xterm_key_dedicated,minimized_xterm_key_up_foreground,minimized_key_up_background --blocks 3 --run m5-dev-V3 --dev
+started 2026-11-17T11:06:26Z finished 2026-11-17T11:42:52Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794912381.459358178
+---
+> mtime ~/.config/google-chrome 1794914181.459746855
+--- pointer
+pointer at start 142 130
+pointer restored to 142 130, reads 142 130 
+--- wrap.out tail
+cua171-diff-m5-dev-V3-0a69c025-input-newest: the scroll series ended at 10; back to the top
+cua171-diff-m5-dev-V3-0a69c025-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-0a69c025-input-pinned: the scroll series ended at 303; back to the top
+cua171-diff-m5-dev-V3-0a69c025-input-pinned: the scroll series ended at 328; back to the top
+cua171-diff-m5-dev-V3-0a69c025-input-newest: the scroll series ended at 328; back to the top
+{"exit": 143, "samples": 16917, "maps_samples": 5640, "flags": 1, "decoy_connections": 0, "leftovers": [], "processes": 1587, "browsers": 44}
+--- all-clear
+all-clear: NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)
+- the person's side: wrap71 flagged 1 reach into the person's session and 0 decoy connections
+- the person's side: the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+- the run's own side: clean
+- the sitting's exit: 1

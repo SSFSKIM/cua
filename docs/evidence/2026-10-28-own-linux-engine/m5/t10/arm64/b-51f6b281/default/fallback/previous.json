@@ -1,0 +1,112 @@
+{
+ "home": "/tmp/t137arm-b-51f6b281-fallback/fallback/home/cua",
+ "kind": "previous",
+ "reason": "engine_outdated",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "platform": "linux",
+    "display": ":1",
+    "gedit": "/usr/bin/gedit",
+    "home": "previous"
+   }
+  },
+  {
+   "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+   "status": "PASS"
+  },
+  {
+   "name": "the default keeps the vendor's engine for engine_outdated, warning and naming cua install --engine (cua doctor --json)",
+   "status": "PASS",
+   "detail": {
+    "mode": "default",
+    "selected": "vendor",
+    "reason": "engine_outdated",
+    "row": "warn",
+    "doctorExit": 0
+   }
+  },
+  {
+   "name": "the pinned vendor sky_linux of this home's runtime",
+   "status": "PASS",
+   "detail": {
+    "requested": "vendor",
+    "expected": "/tmp/t137arm-b-51f6b281-fallback/fallback/home/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "error": null
+   }
+  },
+  {
+   "name": "list the apps, bind the harness window by X11 id and read its tree; nothing sent to it",
+   "status": "PASS",
+   "detail": {
+    "window": {
+     "apps": 18,
+     "windowId": 6291556,
+     "app": "org.gnome.gedit",
+     "title": "fallback-44f973.txt (/tmp/cua-linux-fallback-cITEsk) - gedit"
+    },
+    "tree": {
+     "source": "at_spi",
+     "lines": 384,
+     "titled": true
+    }
+   }
+  },
+  {
+   "name": "end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "594945ea-52a8-46ca-b0fe-6145d8a94762"
+   }
+  },
+  {
+   "name": "the engine that answered: the pinned vendor sky_linux, the trusted worker's child behind the vendor's service; no cua-engine",
+   "status": "PASS",
+   "detail": {
+    "samples": 18,
+    "observed": [
+     {
+      "exe": "/tmp/t137arm-b-51f6b281-fallback/fallback/home/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+      "kind": "vendor",
+      "parent": "trusted-worker.mjs",
+      "service": "vendor"
+     }
+    ]
+   }
+  },
+  {
+   "name": "approvals: the harness window's app asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.gedit",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  }
+ ],
+ "selection": {
+  "mode": "default",
+  "selected": "vendor",
+  "reason": "engine_outdated",
+  "row": "warn"
+ },
+ "expected": "/tmp/t137arm-b-51f6b281-fallback/fallback/home/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+ "status": "PASS"
+}

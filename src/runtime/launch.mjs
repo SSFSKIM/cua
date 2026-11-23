@@ -182,7 +182,8 @@ import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {defaultHome, homeLayout, realHome} from './layout.mjs';
-import {executableFile, installedLinuxEngine, linuxEnginePath} from './linux-engine.mjs';
+import {executableFile, installedLinuxEngine, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
+import {MIN_ENGINE_VERSION, isOlder} from '../services/engine/linux/client.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
@@ -454,8 +455,11 @@ function macosComputerHost({requested, ambient, resolveOwnNode, engine}) {
 
 // ---- EngineSelection (#117; the native engine's spec, Interfaces) ----
 
-// The engine a macOS computer session drives when nothing selects one: the vendor's until M5 flips it to cua's.
-export const DEFAULT_NATIVE_ENGINE = 'vendor';
+// The engine a computer session drives when nothing selects one, per platform (#171 M5: one constant served both). On
+// macOS the vendor's until #117's M5 flips it to cua's (#192 decides it there). On Linux cua's since #171's M5, on the
+// owner's word: a home without one this cua can drive keeps the vendor's, with a warning (linuxEngineFor below).
+const DEFAULT_NATIVE_ENGINES = Object.freeze({darwin: 'vendor', linux: 'cua'});
+export const defaultNativeEngine = (platform = 'darwin') => DEFAULT_NATIVE_ENGINES[platform] ?? DEFAULT_NATIVE_ENGINES.darwin;
 const NATIVE_ENGINES = ['vendor', 'cua'];
 const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${value}" in ~/.config/cua/engine.json` : reason === 'default' ? `the default engine (${value})` : `CUA_NATIVE_ENGINE=${value}`);
 
@@ -477,9 +481,14 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // or null). There is no host to refuse (cua's own host is the only one there). cua's engine carries `bin` {path,
 // source: 'installed' | 'override'}: CUA_LINUX_ENGINE_BIN in `env`, read only for cua's engine and only by the
 // harnesses, names an engine to run in place of the installed one (an absolute path to an executable file, else
-// refused: invalid_setting, engine_not_installed).
-export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = DEFAULT_NATIVE_ENGINE, config = () => readEngineSettings({env}), installed}) {
-  if (platform === 'linux') return linuxEngineFor({env, home, defaultEngine, config, installed});
+// refused: invalid_setting, engine_not_installed). The default takes the installed engine only when it is at least
+// MIN_ENGINE_VERSION, the oldest cua's Linux service drives, by `installedVersion` (verifiedLinuxEngineVersion: the
+// version its bytes bear out, never by running it; #171 M5, F5 and F5a); otherwise it keeps the vendor's engine with a
+// warning, reason `engine_outdated` (older) or `engine_unrecorded` (no record of the file says what it is), so an update
+// never selects an engine its first request would refuse. An explicit setting takes the installed engine whatever its
+// version, and the service refuses an older one at the first request, naming `cua install --engine`.
+export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion}) {
+  if (platform === 'linux') return linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion});
   installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
@@ -498,7 +507,7 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
   return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
 }
 
-function linuxEngineFor({env, home, defaultEngine, config, installed}) {
+function linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion}) {
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') return {engine: 'vendor', reason: setting.reason, status: 'pass'};
   const override = env.CUA_LINUX_ENGINE_BIN;
@@ -514,6 +523,11 @@ function linuxEngineFor({env, home, defaultEngine, config, installed}) {
     if (setting.reason !== 'default')
       fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and none is installed in this cua home (${linuxEnginePath(cuaHome())}): install it with \`cua install --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
+  }
+  if (setting.reason === 'default') {
+    const version = (installedVersion ?? (() => verifiedLinuxEngineVersion({home: cuaHome()})))();
+    if (version === null) return {engine: 'vendor', reason: 'engine_unrecorded', status: 'warn'};
+    if (isOlder(version, MIN_ENGINE_VERSION)) return {engine: 'vendor', reason: 'engine_outdated', status: 'warn'};
   }
   return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: found.path, lookup: found.lookup ?? found.path, source: 'installed'}};
 }
@@ -552,8 +566,8 @@ export function desktopModeFor({env, config = () => readEngineSettings({env})}) 
 
 // The engine the setting names, before the approved engine, the host and Node decide what a session gets -> {engine,
 // reason: 'explicit' | 'settings' | 'default'}; invalid_setting as nativeEngineFor refuses. Doctor's engine row reports
-// it as the preference beside the effective selection.
-export function nativeEngineSetting({env, config = () => readEngineSettings({env}), defaultEngine = DEFAULT_NATIVE_ENGINE}) {
+// it as the preference beside the effective selection; the default is `platform`'s.
+export function nativeEngineSetting({env, platform = 'darwin', config = () => readEngineSettings({env}), defaultEngine = defaultNativeEngine(platform)}) {
   return engineSetting(env, config, defaultEngine);
 }
 function engineSetting(env, config, defaultEngine) {

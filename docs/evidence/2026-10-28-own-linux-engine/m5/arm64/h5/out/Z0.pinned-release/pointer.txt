@@ -1,0 +1,2 @@
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 

@@ -1,0 +1,11 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-uutSQm
+args: --vendor /Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine --scene gedit --ops type_text,type_text_selection,type_text_dedicated,clipboard_read,clipboard_write,clipboard_release,caret_placed --blocks 3 --run pinned-V1 --pinned
+started 2026-11-16T23:53:27Z finished 2026-11-17T00:30:16Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794872781.445277609
+---
+> mtime ~/.config/google-chrome 1794875422.108227019

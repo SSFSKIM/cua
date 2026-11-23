@@ -1,0 +1,2 @@
+03ee08bdec8bb653e32f847cd6a82bbd5e56c57010f0030a3ab337ea2d15e478  /Users/new/.local/share/cua-171/bin/flag-capture-narrow.py
+26277a1fe5ba120abc3fb628fa655ced7a1665b29ff9150cb8aeb6e0b42aedca  /Users/new/.local/share/cua-171/bin/flag-capture.py

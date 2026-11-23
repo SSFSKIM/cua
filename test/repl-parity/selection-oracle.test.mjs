@@ -12,7 +12,14 @@ test('scratch registration fixtures write each route\'s record, in both orders, 
  finally{rmSync(home,{recursive:true,force:true});}
 });
 import assert from 'node:assert/strict';
-import {expectedSelection,selectionCases,assertSelection} from '../../scripts/repl-parity/selection.mjs';
+import {expectedSelection,selectionCases,assertSelection,ORACLE_DEFAULT_ENGINE,ORACLE_LINUX_DEFAULT_ENGINE} from '../../scripts/repl-parity/selection.mjs';
+import {defaultNativeEngine} from '../../src/runtime/launch.mjs';
+// The oracle states each platform's default itself (it never imports launch.mjs); here it is held to production's, so a
+// flip of one without the other fails (#171 M5: the default is per platform).
+test('the oracle\'s default engine on each platform is production\'s',()=>{
+ assert.equal(ORACLE_DEFAULT_ENGINE,defaultNativeEngine('darwin'));
+ assert.equal(ORACLE_LINUX_DEFAULT_ENGINE,defaultNativeEngine('linux'));
+});
 import {doctorReplHost} from './fixtures/doctor-repl-host.mjs';
 test('independent M5 table preserves explicit refusals and Node fallback, whatever the registration',()=>{
  const base={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:true};
@@ -161,13 +168,22 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
 // #171: on Linux the engine never changes the host, so the table's rows are the host's with the engine's refusals.
 test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host always cua\'s, and the vendor host refused',()=>{
  const row=fields=>expectedSelection({platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'unset',installed:false,...fields});
- assert.deepEqual(row({}),{host:'cua',reason:'linux',status:'pass'});
+ // the default is cua's engine (#171 M5): none installed, the vendor's with a warning; installed, cua's
+ assert.deepEqual(row({}),{host:'cua',reason:'linux',status:'warn'});
+ assert.deepEqual(row({installed:true}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({defaultEngine:'vendor'}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({engine:'vendor',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
  assert.deepEqual(row({engine:'cua',node24:false}),{error:'engine_not_installed'},'the engine refuses before Node');
  assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({engine:'invalid'}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be vendor or cua'});
  assert.deepEqual(row({engine:'invalid',engineFrom:'settings'}),{error:'invalid_setting'});
  assert.deepEqual(row({defaultEngine:'cua'}),{host:'cua',reason:'linux',status:'warn'});
+ // #171 M5 (F5): an installed engine older than this cua needs (or one its record does not match) keeps the default on
+ // the vendor's engine with a warning; set explicitly, it is selected (and refused at its first request, not here)
+ assert.deepEqual(row({defaultEngine:'cua',installed:'outdated'}),{host:'cua',reason:'linux',status:'warn'});
+ assert.deepEqual(row({engine:'cua',installed:'outdated'}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({engine:'cua',engineFrom:'settings',installed:'outdated'}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({defaultEngine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({node24:false}),{error:'repl_host_node'},'Linux has no vendor host to fall back to');
  assert.deepEqual(row({override:'vendor'}),{error:'repl_host_refused'});
  assert.deepEqual(row({override:'vendor',lane:'profiles'}),{error:'repl_host_refused'});

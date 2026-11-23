@@ -19,14 +19,16 @@ import { fileURLToPath } from 'node:url';
 import { runTmp } from './app-env.mjs';
 import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
 import { verifySceneIdentity } from './app-identity.mjs';
+import { DEFAULT_AUDIT_TRACE_MB, traceKeeper } from './audit-traces.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
 import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
-import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { candidateLine, gateLabel, isPinnedRule, prepareCandidate } from './candidate.mjs';
+import { pinnedEngine } from './pinned-home.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
-import { judgeDevice } from './device.mjs';
+import { DEVICE_REFUSAL, SPEED_GAPS, declaredDeviation, declaredParity, declaredRefusal, declaredSpeedGap, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
+import { canaryPlainControl, judgeDevice } from './device.mjs';
 import { IDENTITY_OPS, identityAuditKind } from './identity.mjs';
 import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
 import { Engine } from './engine.mjs';
@@ -37,6 +39,7 @@ import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs'
 import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
+import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, endedTarget, markEndedTargets, mergeAudits, restartLaneScene } from './scene-ended.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress, desktopEnding } from './scenes.mjs';
 import { xdotool, xprobe } from './xtools.mjs';
@@ -211,6 +214,8 @@ export function differingField(reference, candidate) {
 export async function runSample(s) {
   // `traceMark(tag)`: the audit pass's mark in its trace, so a case can attribute requests to its steps (M4's T4)
   const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion, traceMark: s.traceMark };
+  // the request that last reached the window, which an end of the window found before the next one names (scene-ended.mjs)
+  if (s.target) s.target.lastRequest = { op: s.op, block: s.block, i: s.i };
   return withSampleCleanup(ctx, () => measureSample(s, ctx));
 }
 
@@ -848,9 +853,17 @@ async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
 export async function restoreLaneScene({ desktop, windows, sceneName, label, occlusion, warmUp }) {
   const started = performance.now();
   const old = windows[sceneName].text[label];
-  await desktop.close([old]);
-  // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was
-  for (const deadline = Date.now() + 10000; (await desktop.listWindows()).some((w) => w.id === old.id); await sleep(250)) {
+  // a close that could not show the old scene's process to be its own signalled nothing (fix wave 2): a window of it
+  // still there is then nobody's to close, and the restore refuses, rather than wait on it or open a second beside it
+  const closed = await desktop.closeLaneScene(old);
+  // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was.
+  // Gone is keyed on the old window itself, its id and its label (lane and nonce), and on its own spawn's exit (M5's T4,
+  // arm64 round, item (c), fix wave 1): X gives a freed id again, across lanes, so a window of another lane's may hold
+  // the old one's id and must never be waited on, nor closed
+  const oldListed = async () => (await desktop.listWindows()).some((w) => w.id === old.id && (!old.label || String(w.title ?? '').includes(old.label)));
+  if (closed?.refused && (await oldListed())) throw new Error(`${old.label}'s restore refused: ${closed.refused}`);
+  const oldStill = async () => (await oldListed()) || desktop.laneSceneRunning(old);
+  for (const deadline = Date.now() + 10000; await oldStill(); await sleep(250)) {
     if (Date.now() > deadline) throw new Error(`${old.label} did not close for its scene's restore`);
   }
   const fresh = await openScene(desktop, sceneName, old.role, { text: true });
@@ -859,7 +872,7 @@ export async function restoreLaneScene({ desktop, windows, sceneName, label, occ
   else desktop.focusFront();
   const warm_up = warmUp ? await warmUp(fresh) : null;
   // the X server may give the fresh window the old one's id (a freed client's id range is reused): the processes tell them apart
-  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started) };
+  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started), ...(closed?.refused ? { close_refused: closed.refused } : {}) };
   if (warm_up?.refused) record.invalid = `the warm-up's preparation was refused: ${warm_up.refused}`;
   return record;
 }
@@ -968,6 +981,34 @@ export function windowTopUp(open, { warmPerRound }) {
   return { series: [...new Set(open.map((u) => u.series))], rounds: Math.max(deficit('cold'), warmRounds), warmRounds, open };
 }
 
+/** A pilot's decision on a series its blocks left open: it takes no top-up (ruling 722), so the series is unjudged. */
+export const PILOT_UNDECIDED = 'unjudged: a pilot takes no top-up';
+
+/**
+ * The decisions closing the series still open when no top-up follows (`speedDecisions`' `open`), each on the samples
+ * it has: undetermined once the top-ups are spent, a failure; in a pilot, which takes none, `PILOT_UNDECIDED`.
+ */
+export function closeOpenSeries(open, opRows, { vendors, pilot = false }) {
+  return open.map((u) => {
+    const rows = opRows.filter((r) => [...vendors, u.candidate].includes(r.engine) && r.series === u.series);
+    return { candidate: u.candidate, series: u.series, keys: rows.map(sampleKey), samples: u.samples, verdict: pilot ? PILOT_UNDECIDED : 'undetermined, the top-ups spent' };
+  });
+}
+
+/**
+ * A pilot's verdict (ruling 722): each speed reason of a series the judge left undetermined (`verdict.undetermined`) is
+ * moved to `unjudged`, never a pass and no failure; every other reason (an answer, the witness, the audit, the effect, a
+ * decided loss) still fails. `{pass: false, verdict, reasons, unjudged}`, `verdict` 'unjudged' when nothing else failed;
+ * null when no reason is a series left open.
+ */
+export function pilotVerdict(verdict) {
+  const open = new Set((verdict.undetermined ?? []).map((u) => u.series));
+  const unjudged = verdict.reasons.filter((r) => open.has(SPEED_REASON.exec(r)?.[1]));
+  if (!unjudged.length) return null;
+  const reasons = verdict.reasons.filter((r) => !unjudged.includes(r));
+  return { pass: false, verdict: reasons.length ? 'fail' : 'unjudged', reasons, unjudged };
+}
+
 /**
  * One operation's verdict for a candidate with its frozen speed decisions: the speed judged on each decided series'
  * own samples (`decided`), everything else (answers, witness, audit, effect) on every sample, the top-ups' included.
@@ -982,6 +1023,78 @@ export function judgeWithDecisions(rows, options, decided = new Map()) {
   const reasons = [...all.reasons, ...speed.reasons.filter((x) => SPEED_REASON.test(x))];
   const verdict = reasons.length ? 'fail' : speed.parity.length ? 'parity' : 'pass';
   return { ...speed, engines: all.engines, reasons, verdict, pass: verdict === 'pass', decisions: [...frozen.values()].map(({ keys, ...d }) => d) };
+}
+
+/**
+ * One look of the top-up schedule at an operation's series (`speedDecisions`), on the run's rows as written. A request's
+ * end of its own window is found only at its lane's next request (scene-ended.mjs `keepLaneScene`), so the pending ends
+ * are resolved first (`resolveEnds`; the run looks at the scene's vendor lane windows): a vendor sample that ended its
+ * window is marked (`markEndedTargets`, against every written row) before any decision rests on it, and never sets a bar
+ * a decision is frozen with (#171 M5, T4's arm64 round, fix wave 2). `{decided, open, fresh, opRows}`.
+ */
+export async function lookAtSeries({ resolveEnds, readRows, sceneName, op, vendors, candidates, text, parity, decided = new Map() }) {
+  await resolveEnds();
+  const written = readRows();
+  const opRows = markEndedTargets(written.filter((r) => r.kind === 'sample'), written, vendors).filter((r) => r.scene === sceneName && r.op === op);
+  return { ...speedDecisions(opRows, { vendors, candidates, text, parity, decided }), opRows };
+}
+
+/**
+ * One operation's sample rows for its verdicts, from the run's rows as written (`written`): the written row objects
+ * themselves, each vendor sample whose request ended its own window marked `ended_target` in place, matched against
+ * every written row, since the `scene-ended` rows that name them are not samples (fix wave 2: matched against the sample
+ * rows alone, nothing was ever marked).
+ */
+export function operationRows(written, { sceneName, op, vendors }) {
+  const ended = endedTarget(written, vendors);
+  const opRows = written.filter((r) => r.kind === 'sample' && r.scene === sceneName && r.op === op);
+  for (const r of opRows) if (ended(r)) r.ended_target = true;
+  return opRows;
+}
+
+/**
+ * Each sample's answer against its block's reference (`equal`, a declared deviation's `deviation`), on the rows
+ * `operationRows` gave. The reference is the pinned build's answer in the same block: a scene's own windows change
+ * across blocks (gedit marks a document modified, a counter grows), and so does the window list. A text command's is
+ * the answer of a build whose route applied it in that block (the newest build's for its own type_characters). A vendor
+ * sample that ended its own window is never a reference (fix wave 2: it is never scored, and its reply is the crash's);
+ * a block whose vendor samples all ended theirs has no reference, so none of its samples' answers is compared, each
+ * marked `unreferenced`. An operation no vendor build runs (`cuaOnly`) is not given here. `imageOf`: each sample's
+ * screenshot comparison; `answers`: each sample's answer as compared.
+ */
+export function judgeAnswers(opRows, { op, sceneName, text, vendors, imageOf, answers, reference: fixed = OPS[op]?.reference ?? null }) {
+  const usable = opRows.filter((r) => !r.ended_target);
+  const of = (engine, block) => usable.filter((r) => r.engine === engine && r.block === block);
+  const refEngine = (block) => fixed ?? (text ? (vendors.find((v) => of(v, block).some((r) => r.ok)) ?? vendors.find((v) => of(v, block).length) ?? 'pinned') : 'pinned');
+  const refRows = (block) => {
+    const mine = of(refEngine(block), block);
+    return text && mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine;
+  };
+  const reference = (block) => mode(refRows(block).map((r) => r.digest));
+  const refAnswer = (block) => {
+    const digest = reference(block);
+    const r = refRows(block).find((x) => x.digest === digest);
+    return r ? answers.get(`${r.engine}|${sceneName}|${op}|${block}|${r.i}`) : null;
+  };
+  // a block whose every possible reference ended its window (a block with no vendor sample at all is compared as before)
+  const endedAway = (block) => !refRows(block).length && opRows.some((r) => r.block === block && r.ended_target);
+  for (const r of opRows) {
+    if (endedAway(r.block)) {
+      r.unreferenced = true;
+      continue;
+    }
+    const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
+    r.equal = r.digest === reference(r.block) && image !== false;
+    if (!r.equal && image !== false && answers.has(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`)) {
+      const candidate = answers.get(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`);
+      const field = differingField(refAnswer(r.block), candidate);
+      const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
+      if (deviation) {
+        r.equal = true;
+        r.deviation = deviation.op ?? op;
+      }
+    }
+  }
 }
 
 /** A verdict run that cannot start: its name already has rows in the out directory. */
@@ -1005,17 +1118,19 @@ export function runHasRows(results, run) {
 }
 
 /**
- * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`. Each execution has a run name of its
+ * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`, acceptance on the pinned release
+ * with `--pinned`. Each execution has a run name of its
  * own: a name the out directory already has rows of is refused (`RunRefused`), so one execution's rows never label
  * another's. The candidate `--cua` names is stored as `cua-engine` (mode 0700) and checked before anything runs; a gate's
  * refusal is thrown as a `CandidateRefused`. The stored copy's directory is the run's from before the copy is made: it
  * is removed on a refusal, an error, the run's end, and a stop (SIGINT or SIGTERM) at any point. A stop has a handler
  * from before the copy until the run's own (the Desktop's, stop.mjs) is in place, which the run's `handoff` marks: a
  * stop during the checks kills the command they wait on (SIGKILL), waits for it to end, removes the copy and exits; a
- * stop during the run removes it at the exit. Every engine lane of cua runs the stored copy. `start` is the run proper
+ * stop during the run removes it at the exit. Every engine lane of cua runs the stored copy; on the pinned release, the
+ * run home's installed engine itself (pinned-home.mjs). `start` is the run proper
  * (the tests pass their own).
  */
-export async function runDiff(args, { start = diffRun } = {}) {
+export async function runDiff(args, { start = diffRun, prepare = prepareCandidate, pinned = pinnedEngine } = {}) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
@@ -1033,7 +1148,9 @@ export async function runDiff(args, { start = diffRun } = {}) {
     remove();
   });
   try {
-    preparing = prepareCandidate({ source: args.cua, gate: !args.dev, dir, signal: stopping.signal });
+    // a release gate unless --dev; --pinned (args.gate 'pinned'), acceptance on the pinned release, and with --pilot
+    // ('pinned-dev') a development run on it: either takes the pinned rule
+    preparing = prepare({ source: args.cua, gate: isPinnedRule(args.gate) ? args.gate : !args.dev, dir, signal: stopping.signal });
     let candidate;
     try {
       candidate = await preparing;
@@ -1043,7 +1160,9 @@ export async function runDiff(args, { start = diffRun } = {}) {
     // stopped during the checks: the stop exits the process once the command has ended, and nothing more starts
     if (stopping.signal.aborted) await new Promise(() => {});
     process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
-    return await start({ ...args, run, cua: candidate.path }, candidate.record, { handoff: unhook });
+    // on the pinned release the copy is the check's alone: the run drives the installed engine itself (ruling 708)
+    const cua = isPinnedRule(args.gate) ? pinned(args.cua, candidate.record).cua : candidate.path;
+    return await start({ ...args, run, cua }, candidate.record, { handoff: unhook });
   } finally {
     unhook();
     process.off('exit', remove);
@@ -1073,8 +1192,12 @@ async function diffRun(args, candidate, { handoff }) {
     throw new Error("M2's text operations and paste cases run over the wire; their facade-level proof is the facade suites (repl-parity's native text cases, the native baseline)");
   }
   const blockPlan = plan.filter((p) => !isCase(p.op));
+  // whether any lane has text windows of its own (M5's T4 counts what ended them)
+  const textPlanned = blockPlan.some((p) => isText(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
+  // each lane's build by its binary's sha256: the meta row's, and what a vendor's declared ends name (scene-ended.mjs)
+  const builds = Object.fromEntries(engines.map((e) => [e.label, fileSha(e.bin)]));
   // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
@@ -1086,7 +1209,7 @@ async function diffRun(args, candidate, { handoff }) {
     gate: candidate.gate,
     candidate,
     via,
-    engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: fileSha(e.bin) })),
+    engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: builds[e.label] })),
     vendor: args.vendor,
     newest: args.newest,
     scenes: args.scenes,
@@ -1142,6 +1265,25 @@ async function diffRun(args, candidate, { handoff }) {
         windows[scene].text[label] = await open(`text_${label.replace(/[^a-z0-9]+/gi, '_')}`, true);
       }
     }
+    // M5's T4 (scene-ended.mjs): a lane's own text window looked at before each request of its lane's; a vendor's that
+    // ended is restarted as the backstop restores a scene, warmed by the operation for a warm sample (`warmUp`), and a
+    // candidate's stops the run. Answers `{window, restart}`
+    const laneScene = (sceneName, label, at, warmUp = null) =>
+      keepLaneScene({
+        desktop,
+        windows,
+        sceneName,
+        label,
+        vendors: VENDORS,
+        at,
+        emit,
+        restart: () =>
+          restartLaneScene({
+            restore: (w) => restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp: w }),
+            endedNow: () => desktop.sceneEnded(windows[sceneName].text[label]),
+            warmUp,
+          }),
+      });
     const needsStub = plan.some((p) => inputOp(p.op) || isCase(p.op));
     const stubScene = needsStub ? await desktop.openChrome('stub', 'scene.html') : null;
     await desktop.openFront(args.occlusion);
@@ -1162,6 +1304,8 @@ async function diffRun(args, candidate, { handoff }) {
     const measureSeries = async ({ sceneName, op, label, block, n }) => {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       let target = measuredTarget(windows, sceneName, op, label);
+      // the series' cold sample finds its lane's text window still the run's, or a fresh one (M5's T4)
+      if (isText(op)) target = (await laneScene(sceneName, label, { op, block, i: 0, series: 'cold' })).window;
       if (target && args.occlusion === 'visible') desktop.raise(target);
       // a development run's candidate engine through a trace proxy of the series's own (`--trace-engine`), each sample's
       // span in the trace kept on its row
@@ -1169,6 +1313,9 @@ async function diffRun(args, candidate, { handoff }) {
       const env = trace ? { ...(OPS[op].apps ? launch.env : {}), ...trace.env } : OPS[op].apps ? launch.env : undefined;
       let engine = makeEngine(spec, env);
       const sample = (i) => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
+      // a warm sample's fresh window brought to the series' state by the operation itself, run once untimed with its own
+      // preparation and witness, as the series' samples ran it (fix round 1): the backstop's and a restart's alike
+      const warmUpFor = (i) => async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
       const traced = (i) =>
         trace.span(i, () => sample(i)).then(({ value, xtrace }) => {
           if (value.row) value.row.xtrace = xtrace;
@@ -1176,6 +1323,17 @@ async function diffRun(args, candidate, { handoff }) {
         });
       try {
         for (let i = 0; i < n; i++) {
+          // each warm sample finds its lane's text window still the run's, or a fresh one warmed (M5's T4); a restart
+          // whose warm-up's preparation was refused could not reproduce the warm condition, so the sample is left invalid
+          // and not taken, as the backstop leaves one (fix wave 1)
+          if (isText(op) && i > 0) {
+            const kept = await laneScene(sceneName, label, { op, block, i, series: 'warm' }, warmUpFor(i));
+            target = kept.window;
+            if (kept.restart?.invalid) {
+              emit(invalidRestartRow({ label, sceneName, op, block, i, restart: kept.restart }));
+              continue;
+            }
+          }
           // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
           // a cold sample's on a fresh engine, a text window's after the backstop restored the lane's scene (task 24)
           const taken = await sampleUnderRule({
@@ -1188,10 +1346,7 @@ async function diffRun(args, candidate, { handoff }) {
             },
             restoreScene: isText(op)
               ? async ({ cold }) => {
-                  // a warm sample's fresh window is brought to the series' state by the operation itself, run once
-                  // untimed with its own preparation and witness, as the series' samples ran it (fix round 1)
-                  const warmUp = cold ? null : async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
-                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp });
+                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp: cold ? null : warmUpFor(i) });
                   target = windows[sceneName].text[label];
                   return record;
                 }
@@ -1286,17 +1441,31 @@ async function diffRun(args, candidate, { handoff }) {
         // again while failed samples left one short, a bounded number of times; what is still open after that is
         // decided as it stands
         for (let look = 0; ; look++) {
-          const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
-          const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
-          const looked = speedDecisions(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, decided });
+          // a vendor sample that ended its own window sets no bar (lookAtSeries): its end, found only at its lane's next
+          // request, is resolved first on each vendor lane's text window of the scene (restarted as before a cold
+          // sample), so no decision is frozen on a bar it set (fix wave 2)
+          const looked = await lookAtSeries({
+            resolveEnds: async () => {
+              if (!isText(op)) return;
+              for (const label of Object.keys(windows[sceneName]?.text ?? {}).filter((l) => VENDORS.includes(l))) await laneScene(sceneName, label, { pass: 'speed-look' });
+            },
+            readRows: () => readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run),
+            sceneName,
+            op,
+            vendors: VENDORS,
+            candidates,
+            text: isText(op),
+            parity,
+            decided,
+          });
+          const { opRows } = looked;
           decided = looked.decided;
           for (const d of looked.fresh) emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
-          const plan = look < TOP_UP_PLANS ? windowTopUp(looked.open, { warmPerRound: samplesFor(op) }) : null;
+          // a pilot takes no top-up (ruling 722): what its blocks leave open is closed unjudged
+          const plan = !args.pilot && look < TOP_UP_PLANS ? windowTopUp(looked.open, { warmPerRound: samplesFor(op) }) : null;
           if (!plan) {
-            for (const u of looked.open) {
-              const rows = opRows.filter((r) => [...VENDORS, u.candidate].includes(r.engine) && r.series === u.series);
-              const d = { candidate: u.candidate, series: u.series, keys: rows.map(sampleKey), samples: u.samples, verdict: 'undetermined, the top-ups spent' };
-              decided.set(`${u.candidate}|${u.series}`, d);
+            for (const d of closeOpenSeries(looked.open, opRows, { vendors: VENDORS, pilot: args.pilot })) {
+              decided.set(`${d.candidate}|${d.series}`, d);
               emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
             }
             break;
@@ -1338,38 +1507,56 @@ async function diffRun(args, candidate, { handoff }) {
     // process for two samples of each window-targeted operation (reads and screenshots too) on the window it is
     // measured on.
     const audits = {};
+    // each audited operation's lifecycle traces kept beside the results as the judge's projection, never their raw
+    // text, for a later judge (audit-traces.mjs), under this execution's own directory
+    const keeper = traceKeeper({ out: args.out, run, limitMb: args.auditTraces ?? DEFAULT_AUDIT_TRACE_MB });
     if (args.audit) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
-          const target = measuredTarget(windows, sceneName, op, spec.label);
+          if (isText(op)) await laneScene(sceneName, spec.label, { op, block: 'audit', i: 0, series: 'cold' });
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
           const answered = [];
           // each audited sample's scene-text restore, counted in the lane's total (prepare.mjs judgeTextRestores) and
           // never a timed sample
           const restoredText = [];
-          // the proxy, the watcher and the engine, each ended however the samples go
-          const { trace: traceText, ancestry, watcher: watch, proxy } = await withRouteAudit(
-            {
-              openProxy: () => startProxy(),
-              // the audited window's ancestry in the trace's own replies and events, read before the engine connects, so
-              // the foreign-window judge knows which frame holds it and when it ends (task 53)
-              watch: (p) => (Number.isSafeInteger(target?.id) && target.id > 0 ? watchAncestry(p, target.id) : null),
-              startEngine: (p) => makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: p.env.DISPLAY, XAUTHORITY: p.env.XAUTHORITY }),
-              after: async () => {
-                if (ownWindow(op)) target.retainedBy = null;
-                if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
-              },
+          // the audit's two requests in one lifecycle while the window lasts: a request that ended its lane's text window
+          // ends its lifecycle, and the next is audited on the recovered window in a fresh one, its ancestry watched anew
+          // (scene-ended.mjs `auditInSegments`, M5's T4 fix wave 1); a candidate's ended window stops the run there
+          const segments = await auditInSegments({
+            samples: 2,
+            ended: async () => isText(op) && Boolean(await desktop.sceneEnded(measuredTarget(windows, sceneName, op, spec.label))),
+            recover: (next) => laneScene(sceneName, spec.label, { op, block: 'audit', i: next, series: 'cold' }),
+            segment: async ({ from, samples, stopAfter }) => {
+              const target = measuredTarget(windows, sceneName, op, spec.label);
+              let ran = 0;
+              // the proxy, the watcher and the engine, each ended however the samples go
+              const life = await withRouteAudit(
+                {
+                  openProxy: () => startProxy(),
+                  // the audited window's ancestry in the trace's own replies and events, read before the engine connects,
+                  // so the foreign-window judge knows which frame holds it and when it ends (task 53)
+                  watch: (p) => (Number.isSafeInteger(target?.id) && target.id > 0 ? watchAncestry(p, target.id) : null),
+                  startEngine: (p) => makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: p.env.DISPLAY, XAUTHORITY: p.env.XAUTHORITY }),
+                  after: async () => {
+                    if (ownWindow(op)) target.retainedBy = null;
+                    if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
+                  },
+                },
+                async (engine, p) => {
+                  for (let i = from; i < samples; i++) {
+                    const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
+                    if (row.text_restored) restoredText.push({ i, ...row.text_restored });
+                    oks.push(row.ok);
+                    answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
+                    ran++;
+                    if (await stopAfter(i)) break;
+                  }
+                },
+              );
+              return { ran, target, ...life };
             },
-            async (engine, p) => {
-              for (let i = 0; i < 2; i++) {
-                const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
-                if (row.text_restored) restoredText.push({ i, ...row.text_restored });
-                oks.push(row.ok);
-                answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
-              }
-            },
-          );
+          });
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
@@ -1377,24 +1564,33 @@ async function diffRun(args, candidate, { handoff }) {
           // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, and for a
           // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
-          const trace = parseXtrace(traceText);
           const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : op in IDENTITY_OPS ? identityAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
-          const audited = {
-            foreground: () => auditForeground(trace, target.id),
-            'nothing-sent': () => auditNothingSent(trace),
-            background: () => auditRequests(trace),
-            'held-release': () => auditHeldRelease(trace, target.id, { route: OPS[op].holdRoute, marks: proxy.marks }),
-          }[auditKind]();
-          // whatever the operation's route, no request of the engine's may change a window the harness did not open; its
-          // XTEST input may land in a window of a live harness window's client (task 53)
-          const judgedForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root, routeAudit: true });
-          const { foreign } = judgedForeign;
+          // each lifecycle's trace judged on its own window, then the judgments as one, against the run's windows as they
+          // stand now (kept with the traces, so a later judge reads them against the same)
+          const registered = desktop.registry();
+          const traces = segments.map((seg) => parseXtrace(seg.trace));
+          const judgedSegments = segments.map((seg, i) => {
+            const trace = traces[i];
+            const audited = {
+              foreground: () => auditForeground(trace, seg.target.id),
+              'nothing-sent': () => auditNothingSent(trace),
+              background: () => auditRequests(trace),
+              'held-release': () => auditHeldRelease(trace, seg.target.id, { route: OPS[op].holdRoute, marks: seg.proxy.marks }),
+            }[auditKind]();
+            // whatever the operation's route, no request of the engine's may change a window the harness did not open;
+            // its XTEST input may land in a window of a live harness window's client (task 53)
+            return { audited, judgedForeign: auditForeign(trace, { registered, root: desktop.root, routeAudit: true }), ancestry: seg.ancestry, watch: seg.watcher };
+          });
+          const keptTraces = keeper.keep({ name: `${spec.label}-${sceneName}-${op}`, traces, registered: registered.keys(), root: desktop.root });
+          const { audited, foreign, judged } = lifecycleAudit(judgedSegments);
+          const unplaced = judgedSegments.map((j) => j.judgedForeign.unplaced).filter(Boolean);
+          const watched = judgedSegments.filter((j) => j.watch);
+          const single = segments.length === 1;
           engineForeign.push(...foreign.map((f) => `${spec.label} on ${sceneName} ${op}: ${foreignLine(f)}`));
-          // a watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven
-          const clean = audited.clean && foreign.length === 0 && ancestry.watched;
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watch ? { ancestry: ancestry.error ?? watch.chain } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { oks, answered, foreground: foregroundAudit, kind: auditKind, ...judged };
+          const ancestryOf = (j) => j.ancestry.error ?? j.watch.chain;
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: judged.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(single ? {} : { lifecycles: segments.length }), ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watched.length ? { ancestry: single ? ancestryOf(watched[0]) : watched.map(ancestryOf) } : {}), ...(unplaced.length ? { xtest_unplaced: single ? unplaced[0] : unplaced } : {}), kept_traces: keptTraces });
           desktop.focusFront();
         }
       }
@@ -1406,6 +1602,7 @@ async function diffRun(args, candidate, { handoff }) {
     if (args.counts && via === 'wire') {
       for (const { scene: sceneName, op } of blockPlan.filter((p) => isText(p.op))) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
+          await laneScene(sceneName, spec.label, { op, block: 'bus', i: 0, series: 'cold' });
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const engine = makeEngine({ ...spec, stats: false });
           const monitor = await startMonitor(busAddress);
@@ -1427,6 +1624,12 @@ async function diffRun(args, candidate, { handoff }) {
           desktop.focusFront();
         }
       }
+    }
+
+    // The run's last look at every lane's text window (M5's T4): an end after its lane's last request is counted too, a
+    // candidate's stopping the run, and nothing is restarted
+    for (const [sceneName, { text }] of Object.entries(windows)) {
+      for (const label of Object.keys(text)) await keepLaneScene({ desktop, windows, sceneName, label, vendors: VENDORS, at: { pass: 'end' }, restart: null, emit });
     }
 
     // The paste safety cases (safety.mjs): cua alone, on windows of their own, the bus watched for the whole phase.
@@ -1456,46 +1659,25 @@ async function diffRun(args, candidate, { handoff }) {
     // Verdicts: each sample's answer against the pinned build's of its block, a difference excused only by a declared
     // deviation, then the operation judged per candidate.
     const verdicts = [];
+    // the hold canary's criterion (ruling 930): a relative one judges the draggable cell against the plain control's
+    // own waits in this run (device.mjs `canaryPlainControl`)
+    const canary = { criterion: args.holdCanary, plain: canaryPlainControl(rows.filter((r) => r.op === 'chrome_select_nudged_shared' && r.engine === 'cua')) };
     // the device cases (device.mjs): cua alone, each judged by its expectation
     for (const { scene: sceneName, op } of blockPlan.filter((p) => isDevice(p.op))) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op && r.engine === 'cua');
-      const judged = judgeDevice(op, opRows, args.audit ? audits[`${sceneName}|${op}|cua`] : { clean: true, kind: 'skipped' });
+      const judged = judgeDevice(op, opRows, args.audit ? audits[`${sceneName}|${op}|cua`] : { clean: true, kind: 'skipped' }, undefined, { canary });
       const row = { kind: 'verdict', scene: sceneName, op, candidate: 'cua', device: OPS[op].device, ...judged, verdict: judged.pass ? 'pass' : 'fail' };
       verdicts.push(row);
       emit(row);
     }
     for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op))) {
-      const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
-      // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
-      // (gedit marks a document modified, a counter grows), and so does the window list. A text command's is the
-      // answer of a build whose route applied it in that block (the newest build's for its own type_characters).
-      const refEngine = (block) => OPS[op].reference ?? (isText(op) ? (VENDORS.find((v) => opRows.some((r) => r.engine === v && r.block === block && r.ok)) ?? 'pinned') : 'pinned');
-      const refRows = (block) => {
-        const mine = opRows.filter((r) => r.engine === refEngine(block) && r.block === block);
-        return isText(op) && mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine;
-      };
-      const reference = (block) => mode(refRows(block).map((r) => r.digest));
-      const refAnswer = (block) => {
-        const digest = reference(block);
-        const r = refRows(block).find((x) => x.digest === digest);
-        return r ? answers.get(`${r.engine}|${sceneName}|${op}|${block}|${r.i}`) : null;
-      };
+      // a vendor sample that ended its own window sets no bar and is no answer reference (fix wave 2), marked against
+      // every row the run wrote, where its `scene-ended` rows are, on the run's rows in memory (the stored rows stay as
+      // written), every row kept
+      const opRows = operationRows(written, { sceneName, op, vendors: VENDORS });
       const refKept = keep[`pinned|${sceneName}|${op}`];
-      for (const r of opRows) {
-        // an operation no vendor build runs has no answer to equal
-        if (OPS[op].cuaOnly) continue;
-        const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
-        r.equal = r.digest === reference(r.block) && image !== false;
-        if (!r.equal && image !== false && answers.has(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`)) {
-          const candidate = answers.get(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`);
-          const field = differingField(refAnswer(r.block), candidate);
-          const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
-          if (deviation) {
-            r.equal = true;
-            r.deviation = deviation.op ?? op;
-          }
-        }
-      }
+      // an operation no vendor build runs has no answer to equal
+      if (!OPS[op].cuaOnly) judgeAnswers(opRows, { op, sceneName, text: isText(op), vendors: VENDORS, imageOf, answers });
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
         const mine = opRows.filter((r) => r.engine === candidate);
         const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))];
@@ -1510,6 +1692,9 @@ async function diffRun(args, candidate, { handoff }) {
         const verdict = judgeWithDecisions(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity }, speedDecided.get(`${sceneName}|${op}`));
         const extra = {};
         if (routes.length) extra.routes = routes;
+        // its samples in blocks whose vendor samples all ended their windows: no answer to compare them with (judgeAnswers)
+        const unreferenced = mine.filter((r) => r.unreferenced).length;
+        if (unreferenced) extra.answers_unreferenced = unreferenced;
         if (isText(op) && routeOf(op, sceneName)) extra.route_expected = routeOf(op, sceneName);
         if (foreground && args.audit) {
           // the foreground audit: the route's own requests on the target and nothing else, required of cua
@@ -1563,6 +1748,8 @@ async function diffRun(args, candidate, { handoff }) {
         if (declared.length) extra.deviations = declared;
         // a reason added beside the judge (the bus trace, the bus-call bound, the foreground audit) is a failure, parity or not
         if (verdict.reasons.length) verdict.verdict = 'fail';
+        // a pilot's series left open without a top-up: unjudged, apart from the failures, before a declaration reads them
+        if (args.pilot) Object.assign(verdict, pilotVerdict(verdict) ?? {});
         // a declared refusal (M3.1): every cua sample the declared sentence with the witness unchanged excuses the
         // refusal's own answer and effect difference; the audit and every other failure stand
         const refusal = declaredRefusal({ op, scene: sceneName });
@@ -1570,6 +1757,11 @@ async function diffRun(args, candidate, { handoff }) {
           extra.refusal = describe(refusal);
           Object.assign(verdict, declaredRefusalVerdict(verdict, mine, refusal, candidate));
         }
+        // a declared speed gap (#373): its loss listed apart, only while every other part holds as the vendor builds' do;
+        // with no audit of the candidate it fails
+        const gapAudits = Object.fromEntries(labels.map((l) => [l, args.audit ? audits[`${sceneName}|${op}|${l}`] : undefined]).filter(([, a]) => a));
+        const gapped = declaredGapVerdict(verdict, { op, candidate, rows: opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), audits: gapAudits });
+        if (gapped) Object.assign(verdict, gapped);
         const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
         verdicts.push(row);
         emit(row);
@@ -1586,7 +1778,7 @@ async function diffRun(args, candidate, { handoff }) {
       // an operation no vendor build runs (cuaOnly) has no answer to equal
       for (const { scene: sceneName, op } of blockPlan.filter((p) => !OPS[p.op].cuaOnly)) {
         const mine = rows.filter((r) => r.engine === label && r.scene === sceneName && r.op === op && r.digest);
-        if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length, declared: mine.filter((r) => r.deviation).length });
+        if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length, declared: mine.filter((r) => r.deviation).length, ...(mine.some((r) => r.unreferenced) ? { unreferenced: mine.filter((r) => r.unreferenced).length } : {}) });
       }
     }
     // the safety cases: each passes when it ran and every trial passed; the phase's bus trace has no forbidden call
@@ -1612,17 +1804,25 @@ async function diffRun(args, candidate, { handoff }) {
     emit({ kind: 'text-restores', ...restores });
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
-    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps } };
+    // the text windows a lane ended (M5's T4): a vendor's restarts counted, never scored
+    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS, { builds }) : null;
+    if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
+    // every verdict the plan owes must be drawn: one missing fails the run (runOutcome)
+    const planned = plannedVerdicts(plan, labels.filter((l) => !VENDORS.includes(l)));
+    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps, sceneEnds, planned } };
   } catch (error) {
-    if (!(error instanceof CandidateTextLost)) throw error;
-    // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
-    // stops as a failure there, never put back and never absorbed (task 24)
-    const at = error.sample;
-    emit({ kind: 'text-lost', ...at, ...error.record });
+    if (!(error instanceof CandidateTextLost) && !(error instanceof CandidateSceneEnded)) throw error;
+    // a candidate's own text window lost its first word, or ended (M5's T4): a sample of its lane left the person's text
+    // wrong or ended the application, so the run stops as a failure there, never put back, restarted or absorbed (task 24)
+    const at = error.sample ?? error.record;
+    emit(error instanceof CandidateTextLost ? { kind: 'text-lost', ...at, ...error.record } : { kind: 'scene-lost', ...error.record });
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` } };
+    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS, { builds }) : null;
+    if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
+    const where = at.op ? `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}` : `${at.scene} ${at.engine}, the ${at.pass} pass`;
+    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), sceneEnds, stop: `${where}: ${error.message}; the run stopped there` } };
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
@@ -1630,7 +1830,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, ...(outcome.unjudged ? { unjudged: outcome.unjudged } : {}), restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), ...(outcome.vendorEnds ? { vendor_ends: outcome.vendorEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);
@@ -1654,6 +1854,113 @@ export function declaredRefusalVerdict(verdict, mine, refusal, candidate) {
   const what = `declared ${refusal.unconfirmed ? 'unconfirmed answer' : 'refusal'} with ${refusal.effect ? 'its effect and ' : ''}the witness unchanged`;
   if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the ${what}`);
   return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: refusal.unconfirmed ? 'declared unconfirmed' : 'declared refusal', reasons: [] };
+}
+
+/**
+ * One engine's audit of an operation from its lifecycles' judgments (`{audited, judgedForeign, ancestry, watch}` each,
+ * one per lifecycle: scene-ended.mjs `auditInSegments`): `audited` the lifecycles' audits merged (`mergeAudits`),
+ * `foreign` their foreign changes, and `judged` the run's record of it. In the record, `forbidden` is the judge's one
+ * collection (the engine's forbidden requests, the foreign changes, each watcher's error), and beside it, apart, `sent`
+ * the engine's own forbidden requests by name, `foreign` the changes' lines, and `observed` whether the audit observed
+ * at all: `traced` only when every lifecycle's trace holds a request of the engine, `watched` only when every lifecycle
+ * had its window's watcher and it watched to the end, `error` every watcher's error, never among `sent`. `clean`: a
+ * watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven.
+ */
+export function lifecycleAudit(judgedSegments) {
+  const audited = mergeAudits(judgedSegments.map((j) => j.audited));
+  const foreign = judgedSegments.flatMap((j) => j.judgedForeign.foreign);
+  const errors = judgedSegments.map((j) => j.ancestry.error).filter(Boolean);
+  const sent = audited.forbidden.map((f) => f.what);
+  const lines = foreign.map(foreignLine);
+  const watchedAll = judgedSegments.every((j) => j.ancestry.watched);
+  const observed = { traced: audited.traced, watched: judgedSegments.length > 0 && watchedAll && judgedSegments.every((j) => j.watch), error: errors.length ? errors.join('; ') : null };
+  return { audited, foreign, judged: { clean: audited.clean && foreign.length === 0 && watchedAll, sent, foreign: lines, observed, forbidden: [...new Set([...sent, ...lines, ...errors])] } };
+}
+
+/** The field witness.mjs `judgeSpan` records for a span its witness could not read. */
+const WITNESS_FAILED = 'protocol';
+
+/**
+ * A declared speed gap's verdict (deviations.mjs `SPEED_GAPS`; #373's ruling, the design session, sminos 666): null
+ * where no gap declares a speed loss of the failing verdict, so it stands. Otherwise **declared gap** (a loss, listed
+ * apart, never a pass) when every reason is a speed loss of a series a gap declares, and the operation's other parts
+ * hold as the vendor builds' do, and each covered series' interval (`verdict.intervals`) ends within the gap's
+ * `bound_ms` (ruling 728; past it, or with no interval, the loss fails): every candidate sample answered ok with its
+ * effect, as many as the run timed; the
+ * candidate's audit answered ok, with no request the vendor builds' audits of the operation do not show (the activation
+ * itself) and no foreign change; and its witness observed every sample and saw no field change that the vendor builds'
+ * samples did not. Anything else fails, and so does an observer that did not observe (an audit with no request traced
+ * or its window watcher failed, a witness that could not read a sample), shared by every lane or not. `rows`: the
+ * operation's samples, every engine's; `audits`: engine to the run's audit (`{oks, sent, foreign, observed: {traced,
+ * watched, error}}`, `sent` the engine's own forbidden requests by name). Returns `{pass, verdict, reasons, gap,
+ * declared_gap}` or null.
+ */
+export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendors = VENDORS, gaps = SPEED_GAPS }) {
+  if (verdict.verdict !== 'fail') return null;
+  const gapOf = (reason) => {
+    const series = SPEED_REASON.exec(reason)?.[1];
+    return series ? declaredSpeedGap({ op, route: 'window', series }, gaps) : null;
+  };
+  const covered = verdict.reasons.filter(gapOf);
+  if (!covered.length) return null;
+  const kept = verdict.reasons.filter((r) => !gapOf(r));
+  // the gap's bound (ruling 728): a covered series' loss is the gap only while its interval's upper end (cua − bar) is
+  // within `bound_ms`; past it, or with no interval to show its size, the loss fails
+  for (const reason of covered) {
+    const series = SPEED_REASON.exec(reason)[1];
+    const { issue, bound_ms: bound } = gapOf(reason);
+    const interval = verdict.intervals?.find((i) => i.series === series)?.interval;
+    const upper = interval?.[1];
+    if (!(typeof upper === 'number' && typeof bound === 'number' && upper <= bound)) kept.push(`${candidate}: ${series} speed beyond its declared gap (${issue}, ${bound} ms): ${interval ? `the interval [${interval.join(', ')}]` : 'no interval'}; ${reason}`);
+  }
+  const mine = rows.filter((r) => r.engine === candidate);
+  const theirs = rows.filter((r) => vendors.includes(r.engine));
+  const timed = (verdict.engines?.[candidate]?.n_cold ?? 0) + (verdict.engines?.[candidate]?.n_warm ?? 0);
+  const effected = mine.filter((r) => r.ok === true && r.effect === true).length;
+  if (effected !== mine.length || mine.length < timed) kept.push(`${candidate}: effect ${effected} of ${mine.length} samples (${timed} timed)`);
+  const audit = audits?.[candidate];
+  if (!audit) kept.push(`${candidate}: no audit`);
+  else {
+    // an audit that did not observe proves nothing, whatever the vendor builds' audits show: its trace with no request of
+    // the engine, or the window's watcher that failed (`clean` is not asked: the activation's own requests make it false)
+    const seen = audit.observed;
+    if (seen?.traced !== true) kept.push(`${candidate}: the audit's trace holds no request of the engine`);
+    if (!seen || seen.watched === false || seen.error) kept.push(`${candidate}: the audit's window watcher failed${seen?.error ? ` (${seen.error})` : ''}`);
+    if (!audit.oks?.length || !audit.oks.every(Boolean)) kept.push(`${candidate}: the audit's requests did not answer ok`);
+    // the engines' own forbidden requests by name, compared; never the observers' failures
+    const vendorSent = new Set(vendors.flatMap((v) => audits[v]?.sent ?? []));
+    const extra = [...new Set(audit.sent ?? [])].filter((w) => !vendorSent.has(w));
+    if (extra.length) kept.push(`${candidate}: the audit shows requests the vendor builds' do not: ${extra.join(', ')}`);
+    if (audit.foreign?.length) kept.push(`${candidate}: the audit shows ${audit.foreign.length} foreign change(s)`);
+  }
+  // the witness observed every candidate sample: a span it could not read (witness.mjs judgeSpan: `protocol`) or no
+  // witness at all proves nothing of the desktop, whatever the vendor builds' witnesses saw, theirs failing too
+  const unobserved = mine.filter((r) => typeof r.witness !== 'boolean' || (r.witness_fields ?? []).includes(WITNESS_FAILED)).length;
+  if (unobserved) kept.push(`${candidate}: the witness did not observe ${unobserved} of ${mine.length} samples`);
+  // what the witness saw change, apart from its own failure: the fields it judged (notifies too) and their changes
+  const fields = (rs) => new Set(rs.flatMap((r) => [...(r.witness_fields ?? []), ...(r.witness_changes ?? []).map((c) => c.field)]).filter((f) => f !== WITNESS_FAILED));
+  const vendorFields = fields(theirs);
+  const extraFields = [...fields(mine)].filter((f) => !vendorFields.has(f));
+  if (extraFields.length) kept.push(`${candidate}: the witness saw ${extraFields.join(', ')} change, which the vendor builds' did not`);
+  const gap = describe(gapOf(covered[0]));
+  if (kept.length) return { pass: false, verdict: 'fail', reasons: kept, gap, declared_gap: covered };
+  return { pass: false, verdict: 'declared gap', reasons: [], gap, declared_gap: covered };
+}
+
+/**
+ * The verdicts a run's plan (`planOps`) owes, by name (`<scene> <op> <candidate>`), as the run draws them: a device
+ * case's for cua, every other block operation's for each candidate lane, each safety case's for cua, and the cases'
+ * bus trace where the plan has a case. `runOutcome` fails each one with no verdict.
+ */
+export function plannedVerdicts(plan, candidates) {
+  const block = plan.filter((p) => !isCase(p.op));
+  const cases = plan.filter((p) => isCase(p.op));
+  return [
+    ...block.filter((p) => isDevice(p.op)).map((p) => `${p.scene} ${p.op} cua`),
+    ...block.filter((p) => !isDevice(p.op)).flatMap((p) => candidates.map((c) => `${p.scene} ${p.op} ${c}`)),
+    ...cases.map((p) => `${p.scene} ${p.op} cua`),
+    ...(cases.length ? ['cases bus_trace cua'] : []),
+  ];
 }
 
 /** Whether `response` is the answer a declaration with `effect` names for the operation on the scene (its effect then read). */

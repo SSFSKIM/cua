@@ -48,6 +48,11 @@ impl Transport for Bus {
 /// The accessibility bus address: the root window's `AT_SPI_BUS` property, else `org.a11y.Bus.GetAddress` on the
 /// session bus (`$DBUS_SESSION_BUS_ADDRESS`, else `unix:path=$XDG_RUNTIME_DIR/bus`), behaviour §19.
 pub fn bus_address(x: &X11) -> Result<String> {
+    bus_address_by(x, None)
+}
+
+/// [`bus_address`], the session bus's answer had by `deadline` when there is one (`Bus::connect`).
+pub fn bus_address_by(x: &X11, deadline: Option<std::time::Instant>) -> Result<String> {
     if let Some(address) = x.at_spi_bus_address() {
         return Ok(address);
     }
@@ -58,16 +63,22 @@ pub fn bus_address(x: &X11) -> Result<String> {
             Err(_) => bail!("AT-SPI accessibility bus is unavailable"),
         },
     };
-    let mut bus = Bus::connect(&session)?;
-    let reply = bus
-        .call(&MethodCall {
-            dest: "org.a11y.Bus",
-            path: "/org/a11y/bus",
-            iface: "org.a11y.Bus",
-            member: "GetAddress",
-            args: &[],
-        })?
-        .map_err(|e| anyhow!(e))?;
+    let mut bus = Bus::connect(&session, deadline)?;
+    let get = MethodCall {
+        dest: "org.a11y.Bus",
+        path: "/org/a11y/bus",
+        iface: "org.a11y.Bus",
+        member: "GetAddress",
+        args: &[],
+    };
+    let reply = match deadline {
+        None => bus.call(&get)?,
+        Some(deadline) => bus
+            .calls_until(std::slice::from_ref(&get), deadline)?
+            .ok_or_else(|| anyhow!("the session bus did not answer in time"))?
+            .remove(0),
+    }
+    .map_err(|e| anyhow!(e))?;
     match reply.first() {
         Some(Value::Str(address)) => Ok(address.clone()),
         _ => bail!("AT-SPI bus did not return a socket address"),
@@ -179,6 +190,48 @@ pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<crate::families::Too
         name,
         version: first_str(&results[1]),
     }))
+}
+
+/// The accessible name of a process's application (the first the registry lists for the PID: its root's `Name`), read
+/// by `deadline` (`browser.rs`, the design session's ruling 899): `Ok(None)` when the process has none on the bus or
+/// its name is not a string, `Err` when a call fails or the deadline passes first (its late replies are discarded).
+pub fn application_name_of(bus: &mut Bus, pid: u32, deadline: std::time::Instant) -> Result<Option<String>> {
+    let until = |bus: &mut Bus, calls: &[MethodCall]| -> Result<Vec<CallResult>> {
+        bus.calls_until(calls, deadline)?
+            .ok_or_else(|| anyhow!("the accessibility bus did not answer in time"))
+    };
+    let registry = ObjRef {
+        bus: REGISTRY.into(),
+        path: ROOT_PATH.into(),
+    };
+    let listed = until(bus, &[children_call(&registry)])?;
+    let apps = refs_of(&listed[0]).map_err(|e| anyhow!(e))?;
+    let pid_args: Vec<[Arg; 1]> = apps.iter().map(|app| [Arg::Str(&app.bus)]).collect();
+    let pid_calls: Vec<MethodCall> = pid_args
+        .iter()
+        .map(|args| MethodCall {
+            dest: "org.freedesktop.DBus",
+            path: "/org/freedesktop/DBus",
+            iface: "org.freedesktop.DBus",
+            member: "GetConnectionUnixProcessID",
+            args,
+        })
+        .collect();
+    let pids = until(bus, &pid_calls)?;
+    let Some(app) = apps
+        .iter()
+        .zip(&pids)
+        .find(|(_, r)| matches!(r.as_ref().ok().and_then(|v| v.first()), Some(Value::U32(p)) if *p == pid))
+        .map(|(a, _)| a)
+    else {
+        return Ok(None);
+    };
+    let named = until(bus, &[name_call(app)])?;
+    // a `Name` the application failed to answer says nothing of its name: an error, never "no name"
+    named[0]
+        .as_ref()
+        .map_err(|error| anyhow!("its application's Name could not be read: {error}"))?;
+    Ok(first_str(&named[0]))
 }
 
 /// What association concluded (behaviour §4): a frame with the proof that found it, one of the vendor's own failures,

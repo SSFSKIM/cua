@@ -1,0 +1,108 @@
+/Users/new/.local/share/cua-171/task99/proof-h4/npm-test.log: 50 failing
+  test/accept-linux-chrome-features.test.mjs :: a click RPC failure after a completed download remains FAIL and preserves evidence for safe deletion
+  test/accept-maws-features.test.mjs :: the download step passes for the fixture's bytes under the Downloads folder and removes the file it proved it made
+  test/mcp-http.test.mjs :: over real connections, a session lists no device tools, and DELETE answers only after its run entries are released
+  test/native-baseline/approved-runtime.test.mjs :: ownership is the exact executable plus the run's TMPDIR; argv mentions and other TMPDIRs are not owned; nothing else is read out
+  test/native-baseline/run.test.mjs :: a TextEdit whose etime reads 1 s more than the bind has run is still the run's; 2 s more is not
+  test/native-baseline/run.test.mjs :: an engine that will not stop when the run ends fails the run; the state is restored all the same
+  test/refused-serve-exit.test.mjs :: cua serve, refused before its handshake by an unreadable store, exits 1 without answering
+  test/refused-serve-exit.test.mjs :: the probe's serve wrapper, refused before its handshake by an unreadable store, exits 1 without answering
+  test/remote-agent.test.mjs :: a lock left by an agent that is gone is broken; a session id answers 404 after DELETE
+  test/remote-agent.test.mjs :: a rotation ends every open session: a standing stream on the old credential is cut, its session gone
+  test/remote-agent.test.mjs :: agent run --http --relay serves both; a newer connection for the device (4001) makes it close every session and exit 0
+  test/remote-agent.test.mjs :: agent run --http serves sessions over HTTP; two sessions (cap 2) have their own run entries and both close on SIGTERM
+  test/remote-agent.test.mjs :: the resident agent records Chrome readability at startup and refreshes it on profiles_list
+  test/repl-parity/selection-cache.test.mjs :: ordinary selection calls record a complete cold handshake and reuse it on the next call
+  test/repl-parity/socket-error-peer.test.mjs :: owned peer stays open before input and aborts mid-stream with a real transport error
+  test/runtime-node.test.mjs :: a filesystem failure in the Node step fails classified, with the runtime-installed remedy, in JSON and in text
+  test/sandbox/index.test.mjs :: Linux: the pinned helper runs each role under its profile JSON, the kernel denied its deny list, only the worker on the network
+  test/serve-cli.test.mjs :: SIGHUP closes a secrets-on connection like SIGTERM, removing its run entries
+  test/serve-cli.test.mjs :: SIGINT closes a secrets-on connection like SIGTERM, removing its run entries
+  test/serve-cli.test.mjs :: SIGTERM closes the connection and its runtime
+  test/serve-cli.test.mjs :: a client that closes all its pipes mid-task gets an orderly close: exit 0, runtime gone, no run entries
+  test/serve-cli.test.mjs :: a connection's own session approval file is removed at close; other sessions' files are left alone
+  test/serve-cli.test.mjs :: a release step that fails is reported and the rest of the release still runs
+  test/serve-cli.test.mjs :: a signal that arrives while the connection is starting closes it, leaving no run entries
+  test/serve-cli.test.mjs :: an upstream exit fails the pending call, cleans up and exits nonzero
+  test/serve-cli.test.mjs :: cua profiles bind shows each candidate's label, binds a unique name automatically and nothing ambiguous
+  test/serve-cli.test.mjs :: cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail
+  test/serve-cli.test.mjs :: cua serve runs the resolved runtime with an allowlisted environment in an owned directory and removes it at close
+  test/serve-cli.test.mjs :: each connection gets its own random session ID
+  test/serve-cli.test.mjs :: profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request
+  test/serve-cli.test.mjs :: serve resolves the store from its $HOME and project, hands the runtime only their directories, and lists their keys, never a value
+  test/serve-cli.test.mjs :: serve start sweeps the run entries of connections whose process is gone, says so, and leaves live and unrecorded ones
+  test/serve-cli.test.mjs :: serve with no store yet still serves, and secrets_list lists no keys
+  test/serve-cli.test.mjs :: stdio serve reads the device registry and credentials under its $HOME: devices_list probes a registered device, devices_use classifies a failed open
+  test/serve-cli.test.mjs :: the plugin entry cua-shim.mjs is the same server
+  test/serve-cli.test.mjs :: under the scoped default a CUA_HOME below the caller's $TMPDIR serves: the launch's TMPDIR is its own session temp
+  test/serve-cli.test.mjs :: with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid value fails classified before anything is launched
+  test/serve-cli.test.mjs :: with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures cua's browser service and answers profiles_list from the registry
+  test/serve-lazy.test.mjs :: CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole milliseconds
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on SIGHUP: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on SIGINT: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on SIGTERM: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on eof: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: an idle restart reuses a leftover working directory, fixes its mode and removes it at close
+  test/serve-lazy.test.mjs :: an idle runtime stops after the default 15 min through the normal end and the next js relaunches it once, its result opening with the restart notice
+  test/serve-lazy.test.mjs :: every connection teaches and launches cua's browser service, on every home, with CUA_BROWSER_SERVICE ignored
+  test/serve-lazy.test.mjs :: profiles_list's registry part launches nothing; its live check makes only the listing's own launch
+  test/serve-lazy.test.mjs :: the first connection launches at its handshake and records it; a later one answers it and tools/list with no launch, launches once at its first js and never again
+  test/serve-lazy.test.mjs :: the record is the runtime's raw answers; a MAWS session and a plain one replaying it each get their own descriptions
+  test/serve-lazy.test.mjs :: with a MAWS backend the handshake does not wait for its hello; profiles_list and the first launch do, and prefer its instance
+/Users/new/.local/share/cua-171/task99/proof-h4/npm-test-compare.log: 50 failing
+  test/accept-linux-chrome-features.test.mjs :: a click RPC failure after a completed download remains FAIL and preserves evidence for safe deletion
+  test/accept-maws-features.test.mjs :: the download step passes for the fixture's bytes under the Downloads folder and removes the file it proved it made
+  test/mcp-http.test.mjs :: over real connections, a session lists no device tools, and DELETE answers only after its run entries are released
+  test/native-baseline/approved-runtime.test.mjs :: ownership is the exact executable plus the run's TMPDIR; argv mentions and other TMPDIRs are not owned; nothing else is read out
+  test/native-baseline/run.test.mjs :: each row records cua/serviceMs beside cua/engineMs on both lanes, not judged (comparison A's transport separation)
+  test/refused-serve-exit.test.mjs :: cua serve, refused before its handshake by an unreadable store, exits 1 without answering
+  test/refused-serve-exit.test.mjs :: the probe's serve wrapper, refused before its handshake by an unreadable store, exits 1 without answering
+  test/remote-agent.test.mjs :: a lock left by an agent that is gone is broken; a session id answers 404 after DELETE
+  test/remote-agent.test.mjs :: a rotation ends every open session: a standing stream on the old credential is cut, its session gone
+  test/remote-agent.test.mjs :: agent run --http --relay serves both; a newer connection for the device (4001) makes it close every session and exit 0
+  test/remote-agent.test.mjs :: agent run --http serves sessions over HTTP; two sessions (cap 2) have their own run entries and both close on SIGTERM
+  test/remote-agent.test.mjs :: the resident agent records Chrome readability at startup and refreshes it on profiles_list
+  test/repl-parity/selection-cache.test.mjs :: ordinary selection calls record a complete cold handshake and reuse it on the next call
+  test/repl-parity/socket-error-peer.test.mjs :: owned peer stays open before input and aborts mid-stream with a real transport error
+  test/runtime-node.test.mjs :: a filesystem failure in the Node step fails classified, with the runtime-installed remedy, in JSON and in text
+  test/sandbox/index.test.mjs :: Linux: the pinned helper runs each role under its profile JSON, the kernel denied its deny list, only the worker on the network
+  test/serve-cli.test.mjs :: SIGHUP closes a secrets-on connection like SIGTERM, removing its run entries
+  test/serve-cli.test.mjs :: SIGINT closes a secrets-on connection like SIGTERM, removing its run entries
+  test/serve-cli.test.mjs :: SIGTERM closes the connection and its runtime
+  test/serve-cli.test.mjs :: a client that closes all its pipes mid-task gets an orderly close: exit 0, runtime gone, no run entries
+  test/serve-cli.test.mjs :: a connection's own session approval file is removed at close; other sessions' files are left alone
+  test/serve-cli.test.mjs :: a release step that fails is reported and the rest of the release still runs
+  test/serve-cli.test.mjs :: a signal that arrives while the connection is starting closes it, leaving no run entries
+  test/serve-cli.test.mjs :: an upstream exit fails the pending call, cleans up and exits nonzero
+  test/serve-cli.test.mjs :: cua profiles bind shows each candidate's label, binds a unique name automatically and nothing ambiguous
+  test/serve-cli.test.mjs :: cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail
+  test/serve-cli.test.mjs :: cua serve runs the resolved runtime with an allowlisted environment in an owned directory and removes it at close
+  test/serve-cli.test.mjs :: each connection gets its own random session ID
+  test/serve-cli.test.mjs :: profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request
+  test/serve-cli.test.mjs :: serve resolves the store from its $HOME and project, hands the runtime only their directories, and lists their keys, never a value
+  test/serve-cli.test.mjs :: serve start sweeps the run entries of connections whose process is gone, says so, and leaves live and unrecorded ones
+  test/serve-cli.test.mjs :: serve with no store yet still serves, and secrets_list lists no keys
+  test/serve-cli.test.mjs :: stdio serve reads the device registry and credentials under its $HOME: devices_list probes a registered device, devices_use classifies a failed open
+  test/serve-cli.test.mjs :: the plugin entry cua-shim.mjs is the same server
+  test/serve-cli.test.mjs :: under the scoped default a CUA_HOME below the caller's $TMPDIR serves: the launch's TMPDIR is its own session temp
+  test/serve-cli.test.mjs :: with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid value fails classified before anything is launched
+  test/serve-cli.test.mjs :: with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures cua's browser service and answers profiles_list from the registry
+  test/serve-lazy.test.mjs :: CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole milliseconds
+  test/serve-lazy.test.mjs :: a MAWS session's notes, js hint and js rules name the in-app browser; a plain one's do not
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on SIGHUP: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on SIGINT: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on SIGTERM: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: a connection that never launched closes clean on eof: exit 0, nothing launched, nothing left
+  test/serve-lazy.test.mjs :: an idle restart reuses a leftover working directory, fixes its mode and removes it at close
+  test/serve-lazy.test.mjs :: an idle runtime stops after the default 15 min through the normal end and the next js relaunches it once, its result opening with the restart notice
+  test/serve-lazy.test.mjs :: every connection teaches and launches cua's browser service, on every home, with CUA_BROWSER_SERVICE ignored
+  test/serve-lazy.test.mjs :: profiles_list's registry part launches nothing; its live check makes only the listing's own launch
+  test/serve-lazy.test.mjs :: the first connection launches at its handshake and records it; a later one answers it and tools/list with no launch, launches once at its first js and never again
+  test/serve-lazy.test.mjs :: the record is the runtime's raw answers; a MAWS session and a plain one replaying it each get their own descriptions
+  test/serve-lazy.test.mjs :: with a MAWS backend the handshake does not wait for its hello; profiles_list and the first launch do, and prefer its instance
+failing in the first and not in the second: 2
+  test/native-baseline/run.test.mjs :: a TextEdit whose etime reads 1 s more than the bind has run is still the run's; 2 s more is not
+  test/native-baseline/run.test.mjs :: an engine that will not stop when the run ends fails the run; the state is restored all the same
+failing in the second and not in the first: 2
+  test/native-baseline/run.test.mjs :: each row records cua/serviceMs beside cua/engineMs on both lanes, not judged (comparison A's transport separation)
+  test/serve-lazy.test.mjs :: a MAWS session's notes, js hint and js rules name the in-app browser; a plain one's do not

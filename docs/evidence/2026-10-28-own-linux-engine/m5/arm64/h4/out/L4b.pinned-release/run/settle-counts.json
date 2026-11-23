@@ -1,0 +1,1115 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 1765160,
+   "run": "pinned-L4b",
+   "opt_in": false,
+   "started": "2026-11-19T05:15:35.578Z",
+   "finished": "2026-11-19T05:31:39.730Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 1765244,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "list_windows": 10,
+      "get_window_state": 404
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1765909,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1766247,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1766500,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1766949,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 40,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1767172,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1767395,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1767658,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 40,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1767884,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1768165,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1768382,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1768636,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1768847,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1769054,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 38,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1769315,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 34,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1769518,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1769779,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1769983,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1770247,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1770464,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 40,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1770681,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 34,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1770958,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1771157,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 33,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1771421,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1771616,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1771860,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1772071,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1772264,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1772511,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1772719,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1772983,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1773176,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 32,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1773464,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 33,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1773661,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1773885,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1774147,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:accept",
+     "pid": 1774358,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--drag-dnd-release-at-accept",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 38,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    }
+   ]
+  }
+ ]
+}

@@ -42,5 +42,46 @@
     "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host) leaves an iconified window out of list_windows, so once the bound gedit is minimized cua's policy and facade find it nowhere: getAXState, getScreenshot, pressKey and activate_window each answer `Window <id> is unavailable.` and the window stays minimized. The #171 design (Observation, Minimized windows; M4's T4) lists it with `minimized: true`, reads its tree and refuses its input as minimized, so this is recorded vendor behaviour, not passing coverage. The fixture's own second window took the focus (focusedFront true), as on the cua lane.",
     "assertion": {"ok": false, "reason": "the minimized window must be listed with minimized: true, no other window with the field, and the focus on the fixture's own window"},
     "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":false,\"others\":true,\"focusedFront\":true},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"restored\":false},{\"error\":\"Window <id> is unavailable.\"}]"}]}
+  },
+  {
+    "id": "linux-arm64-vendor-engine-typetext-ended-gedit",
+    "host": "cua",
+    "engine": "vendor",
+    "platform": "linux",
+    "runtimeRelease": "26.928.40906-linux-arm64",
+    "case": "native/app/typetext",
+    "reason": "On the #171 arm64 VM (GCE c4a, M5's T6 pilot, task 96) the pinned vendor engine (sky_linux_arm64, under cua's own host, the only one Linux serves) ends gedit (GTK 3) on typeText in every run: the window is gone within the case's 10 s look (the third value true) and no marker can be read (null). It answers one of two errors, both the same outcome: a D-Bus ServiceUnknown naming the accessibility connection of the gedit that just ended (3 of 4 runs), or `Resource temporarily unavailable (os error 11)` (1 of 4). Only the connection's unique name is masked (`:1.63` in each run, a count of the bus's earlier connections). Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. x64's pinned build answers `editable Paste did not insert text` and leaves gedit alive (linux-x64-vendor-engine-typetext-not-inserted).",
+    "assertion": {"ok": false, "reason": "native text input must return without an error"},
+    "result": {"cell": "exercise", "isError": false, "contents": [[{"type": "text", "text": "NATIVE:[{\"error\":\"D-Bus org.freedesktop.DBus.Properties.Get failed: org.freedesktop.DBus.Error.ServiceUnknown: The name :<unique-name> was not provided by any .service files\"},null,true]"}], [{"type": "text", "text": "NATIVE:[{\"error\":\"Resource temporarily unavailable (os error 11)\"},null,true]"}]]},
+    "masks": ["dbus-unique-name"],
+    "counts": {"runs": 4, "outcomes": [3, 1]},
+    "evidence": "docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/ (R1's vendor lane: out/R1.development-run.pinned.pilot/run/parity/vendor/results.jsonl; its three reruns: vendor-reruns/rerun-{1,2,3}/vendor/results.jsonl)"
+  },
+  {
+    "id": "linux-arm64-vendor-engine-paste-ended-gedit",
+    "host": "cua",
+    "engine": "vendor",
+    "platform": "linux",
+    "runtimeRelease": "26.928.40906-linux-arm64",
+    "case": "native/app/paste",
+    "reason": "On the #171 arm64 VM (GCE c4a, M5's T6 pilot, task 96) the pinned vendor engine (sky_linux_arm64, under cua's own host, the only one Linux serves) ends gedit (GTK 3) on paste in every run, answering a D-Bus ServiceUnknown naming the ended gedit's accessibility connection (`:1.66` in each run, masked): a defect of paste's own, since each case opens its own gedit and this one was never reached by typeText. The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. x64's pinned build answers `editable Paste did not insert text` and leaves gedit alive (linux-x64-vendor-engine-paste-not-inserted).",
+    "assertion": {"ok": false, "reason": "native text input must return without an error"},
+    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"D-Bus org.freedesktop.DBus.Properties.Get failed: org.freedesktop.DBus.Error.ServiceUnknown: The name :<unique-name> was not provided by any .service files\"},null,true]"}]},
+    "masks": ["dbus-unique-name"],
+    "counts": {"runs": 4, "outcomes": [4]},
+    "evidence": "docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/ (R1's vendor lane: out/R1.development-run.pinned.pilot/run/parity/vendor/results.jsonl; its three reruns: vendor-reruns/rerun-{1,2,3}/vendor/results.jsonl)"
+  },
+  {
+    "id": "linux-arm64-vendor-engine-minimized-window-unavailable",
+    "host": "cua",
+    "engine": "vendor",
+    "platform": "linux",
+    "runtimeRelease": "26.928.40906-linux-arm64",
+    "case": "native/target-app-decorated-tab/getaxstate/minimized",
+    "reason": "On the #171 arm64 VM (GCE c4a, M5's T6 pilot, task 96) the pinned vendor engine (sky_linux_arm64, under cua's own host, the only one Linux serves) has x64's defect exactly (linux-x64-vendor-engine-minimized-window-unavailable), in every run: it leaves an iconified window out of list_windows, so once the bound gedit is minimized getAXState, getScreenshot, pressKey and activate_window each answer `Window <id> is unavailable.` and the window stays minimized. The #171 design lists it with `minimized: true`, reads its tree and refuses its input as minimized, so this is recorded vendor behaviour, not passing coverage.",
+    "assertion": {"ok": false, "reason": "the minimized window must be listed with minimized: true, no other window with the field, and the focus on the fixture's own window"},
+    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":false,\"others\":true,\"focusedFront\":true},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"restored\":false},{\"error\":\"Window <id> is unavailable.\"}]"}]},
+    "counts": {"runs": 4, "outcomes": [4]},
+    "evidence": "docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/ (R1's vendor lane: out/R1.development-run.pinned.pilot/run/parity/vendor/results.jsonl; its three reruns: vendor-reruns/rerun-{1,2,3}/vendor/results.jsonl)"
   }
 ]

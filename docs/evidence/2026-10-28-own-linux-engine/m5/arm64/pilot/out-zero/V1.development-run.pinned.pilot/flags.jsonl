@@ -1,0 +1,4 @@
+{"t": 11.741, "kind": "run-chrome-home-not-the-runs", "pid": 273501, "home": "/tmp/cua171-run-QDzJHO/home"}
+{"t": 11.741, "kind": "stop-sent", "pid": 273162, "why": "run-chrome-home-not-the-runs"}
+{"t": 11.741, "kind": "run-chrome-home-not-the-runs", "pid": 273499, "home": "/tmp/cua171-run-QDzJHO/home"}
+{"t": 11.741, "kind": "run-chrome-profile-not-the-runs", "pid": 273491, "user_data_dirs": ["/tmp/cua171-run-QDzJHO/chrome-profile"]}

@@ -1,0 +1,26 @@
+owner pid=9512 start=52059
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+all-clear: NOT CLEAR: wrap71 flagged 1 reach into the person's session and 0 decoy connections; the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+--- V5 exit 1
+--- owner-baseline
+owner pid=9512 start=52059
+tmproot /tmp/c71-8OPOW6
+args: --vendor /Users/new/.local/share/cua-171/m5/home-arm64-041/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine --scene device-firefox,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate --ops firefox_click_pointer_out_shared,firefox_click_pointer_under_shared,firefox_right_click_pointer_out_shared,firefox_click_pointer_out_dedicated,firefox_click_visible_shared,firefox_click_overlap_pointer_in_shared,firefox_element_click_covered,firefox_move_pointer_out_shared,firefox_move_overlap_pointer_in_shared,firefox_move_covered_dedicated,firefox_drag_pointer_out_shared,firefox_drag_overlap_pointer_in_shared,firefox_drag_covered_dedicated,firefox_scroll_pointer_out_shared,firefox_scroll_overlap_pointer_in_shared,firefox_scroll_covered_dedicated,chrome_drag_visible_path_shared,chrome_drag_covered_path_shared,chrome_drag_covered_dedicated,chrome_dnd_shared,chrome_dnd_in_front_shared,chrome_dnd_late_shared,chrome_dnd_covered_dedicated,chrome_dnd_short_in_front_shared,chrome_dnd_short_covered_dedicated,chrome_dnd_obscured_in_front_shared,chrome_dnd_obscured_in_front_late_shared,chrome_dnd_late_take_shared,chrome_dnd_short_pointer_outside_shared,chrome_dnd_short_pointer_outside_dedicated,chrome_select_nudged_shared,chrome_dnd_inzone_out_in_front_shared,chrome_dnd_long_left_in_front_shared,identity_apart,identity_stacked,identity_stacked_self_active,identity_stacked_other_active,identity_apart_shot,identity_click_element,identity_secondary_action,identity_type_text,identity_clipboard_read,identity_key_up,identity_kate --blocks 3 --run pinned-V5 --ballast gate --pinned
+started 2026-11-19T11:24:58Z finished 2026-11-19T11:25:23Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+--- pointer
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 
+--- wrap.out tail
+acceptance on the pinned release; candidate: sha256 8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0, aarch64-unknown-linux-musl static, cua-engine 0.4.1 (7522dcb8fb8c); the pin's arm64 asset of linux-engine-v0.4.1; native/linux-engine as at 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5, the checkout at 7d554dea958a9c9a0b7a6c254365945cf1f18cd4; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44380699966/attempts/1, built from 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5 (refs/heads/release/linux-engine-v0.4.1) on a github-hosted runner; .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44372589299/attempts/1, built from 7522dcb8fb8ca8ec443c6da3493acd6b0d7362d5 (refs/heads/m5-engine-041) on a github-hosted runner
+{"exit": 143, "samples": 228, "maps_samples": 77, "flags": 1, "decoy_connections": 0, "leftovers": [], "processes": 106, "browsers": 54}
+--- all-clear
+all-clear: NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)
+- the person's side: wrap71 flagged 1 reach into the person's session and 0 decoy connections
+- the person's side: the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+- the run's own side: clean
+- the sitting's exit: 1

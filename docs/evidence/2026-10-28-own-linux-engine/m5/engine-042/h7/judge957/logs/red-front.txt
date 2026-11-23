@@ -1,0 +1,39 @@
+xprop:  unable to open display ':cua171-tests-reach-no-display'
+✔ L4d is a counted step of the twice-load block on a private display, within the step limit, its plan the three parts (4.156546ms)
+✔ L4d's Electron cell in Electron's window: it crosses the zone, ends outside it, is long enough to outlast the floor, and stays in the window clear of the run's other windows (2.34066ms)
+✔ a plan of parts is judged part by part, each by its own plan's judge, its fails named by the part (24.467477ms)
+✔ launch-plan.mjs prints L4d's plan part by part (1.236355ms)
+✖ a plan of parts opens the run's front window once, before its first sitting, and sits every part (the x64 L4d development run: the second sitting's front xterm was a second window of the same name) (7.198175ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 4
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 342.903209
+
+✖ failing tests:
+
+test at test/linux-engine-diff/l4d.test.mjs:110:1
+✖ a plan of parts opens the run's front window once, before its first sitting, and sits every part (the x64 L4d development run: the second sitting's front xterm was a second window of the same name) (7.198175ms)
+  Error: Command failed: xprop -root AT_SPI_BUS
+  xprop:  unable to open display ':cua171-tests-reach-no-display'
+  
+      at genericNodeError (node:internal/errors:986:15)
+      at wrappedFn (node:internal/errors:540:14)
+      at checkExecSyncError (node:child_process:943:11)
+      at execFileSync (node:child_process:979:15)
+      at file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-diff/xspawn.mjs:160:12
+      at a11yBusAddress (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-diff/scenes.mjs:100:16)
+      at new Oracle (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-diff/oracle.mjs:18:20)
+      at sitDropSignals (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-diff/drop-signals.mjs:871:18)
+      at runDropSignals (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-diff/drop-signals.mjs:863:49)
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/l4d.test.mjs:119:24) {
+    status: 1,
+    signal: null,
+    output: [ null, '', "xprop:  unable to open display ':cua171-tests-reach-no-display'\n" ],
+    pid: 2277950,
+    stdout: '',
+    stderr: "xprop:  unable to open display ':cua171-tests-reach-no-display'\n"
+  }

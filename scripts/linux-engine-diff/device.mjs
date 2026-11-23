@@ -12,16 +12,22 @@
 //   with the witness unchanged and the background audit clean;
 // - `cancel` (shared mode, a drag that Chrome turns into a drag and drop): the request answers that the drag and drop
 //   was cancelled before the drop, exactly, with nothing dropped, the witness unchanged and the background audit clean
-//   (the cancel's Escape is a synthetic key event, never XTEST);
+//   (the cancel's Escape is a synthetic key event, never XTEST); a drag Chrome took nothing for by its release, and
+//   took after it, is judged by the late-take rules instead (ruling 756): the plain drag's ok, the after-release
+//   watch's Escape, nothing dropped, and the next sample refused with the late notice, not run;
 // - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`, along a path that holds the
 //   button until Chrome has taken): every answer is honest (that the drop may have happened, or that nothing was dropped
 //   only where nothing dropped and the witness is unchanged), at least one answer says the drop may have happened, the
 //   background audit is clean, and every sample is on the branch: a drag Chrome took nothing for by its release is
 //   unexercised, a failure of the case, whatever it answered; every sample's notice is read with the next acting
 //   request's answer and held to T14's contract;
+// - in the cancel, late and late-take cases, a plain-drag ok for a drag Chrome never started a drag session for at all
+//   is no sample of the case (ruling 823, premise.mjs): excluded and counted within its run, its cell left short of its
+//   plan reading incomplete, and saying so when that is all it fails for (route D, ruling 841);
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
-//   run), and wherever the drop landed the witness shows the change the notice reports;
+//   run), and wherever the drop landed the witness shows the change the notice reports, but where its dragend came
+//   after the witness's span had closed (ruling 680, `spanLimitMisses`);
 // - `stray` (shared mode, a Chromium drag whose press a pointer event that is not the drag's may have reset, task 20):
 //   the request answers that the drag may not have started, exactly, with nothing dropped, the witness unchanged (the
 //   case's own nudges of the real pointer aside) and the background audit clean: the real pointer parked outside Chrome
@@ -43,15 +49,22 @@
 // mode unless Chrome is already in front) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
 // M3.1's listings beyond M0's (scroll and move for GTK 4 and Gecko, scroll for Qt) join the cases as M0's did.
 
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { pendingOf } from './drop-signals-judge.mjs';
+import { endAgainstZone, pendingOf } from './drop-signals-judge.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, holdNoticed, isShortage, judgePremise, parsePageRead, repeatedSlots, slotProblems } from './premise.mjs';
+import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
 import { stacking, startOverlay } from './clip.mjs';
 import { parkAt, restorePointer } from './park.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
+import { WITNESS_TAIL_MS } from './witness.mjs';
 import { spawnXdotool } from './xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -70,12 +83,17 @@ const lateCause = (app) =>
   `Pending from your last drag, a late drag and drop: ${app} started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop`;
 const unconfirmedCause = (app) =>
   `Pending from your last drag, an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not confirm a drop after the release, so the drop may not have landed as the drag answered`;
+/** The same kind for an Electron drop whose application did not answer the engine's syncs in time (M5's ruling 827). */
+const unansweredCause = (app) =>
+  `Pending from your last drag, an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered`;
 const pendingNotice = (cause) => `${cause}. Read the window before sending input again: your next input request will not be run`;
 const pendingRefusal = (cause, command) => `${cause}; this ${command} request was not run, so read the window before sending it again`;
 export const dndLateNotice = (app) => pendingNotice(lateCause(app));
 export const dndLateRefusal = (app, command) => pendingRefusal(lateCause(app), command);
 export const dndUnconfirmedNotice = (app) => pendingNotice(unconfirmedCause(app));
 export const dndUnconfirmedRefusal = (app, command) => pendingRefusal(unconfirmedCause(app), command);
+export const dndUnansweredNotice = (app) => pendingNotice(unansweredCause(app));
+export const dndUnansweredRefusal = (app, command) => pendingRefusal(unansweredCause(app), command);
 export const dndMayHaveDroppedSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first`;
 
@@ -90,6 +108,12 @@ export function desktopState() {
 }
 
 const DEDICATED = ['--desktop', 'dedicated'];
+/**
+ * The expectations whose cells measure what cua does once Chrome turns the drag into a drag and drop, so a drag Chrome
+ * never took leaves their premise unmet (ruling 823, premise.mjs): the cancel, the late cancel and the late take. A drop
+ * case's plain ok with no drop is ruling 650's false ok instead, and a stray case expects no drag and drop at all.
+ */
+const PREMISE_KINDS = ['cancel', 'late', 'late-take'];
 const LATE = ['--dnd-cancel-after-release'];
 /** The measurement option that leaves a take during the drag unseen until after the release (dnd.rs `LateWatch`). */
 const DEFER = ['--dnd-defer-take'];
@@ -109,12 +133,22 @@ const scrollBar = (ctx) => {
     return null;
   }
 };
-/** The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`. */
+/**
+ * The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`, as drag.mjs `readEffect` reads a page's, with
+ * the page's own status lines kept as written beside it (`raw`: each distinct `dnd` and `moves` line the tree carried,
+ * and whether it carried the scene's page title), the evidence ruling 823's unmet premise is shown by (premise.mjs).
+ * The read's time goes on the sample (`premiseReadAt`), never into the read, which `settledRead` compares.
+ */
 const dropStatus = async (ctx) => {
   try {
     // drag.mjs imports run.mjs, which imports this module
-    const { readEffect } = await import('./drag.mjs');
-    return await readEffect({ desktop: ctx.desktop, oracle: ctx.desktop.oracle }, ctx.scene, ctx.scene.dndAt, 'dnd');
+    const { parseDragStatus } = await import('./drag.mjs');
+    const nodes = preorder((await ctx.desktop.state(ctx.scene)).ax_tree);
+    const texts = nodes.flatMap((n) => [n.name, n.value, n.text].filter((t) => typeof t === 'string'));
+    const status = parseDragStatus(texts);
+    const lines = (prefix) => [...new Set(texts.filter((t) => t.startsWith(prefix)))];
+    ctx.premiseReadAt = Date.now();
+    return { ...status.dnd, log: status.moves, received: status.received, raw: { dnd: lines('dnd '), moves: lines('moves '), titled: typeof ctx.scene.label === 'string' && texts.some((t) => t.includes(ctx.scene.label)) } };
   } catch {
     return null;
   }
@@ -180,6 +214,15 @@ async function pageHome({ scene, cua }) {
 }
 
 const rose = (key) => (before, after) => typeof before?.[key] === 'number' && after?.[key] === before[key] + 1;
+
+/** pages/drag.html `#target`, the drag scene's drop zone, in page pixels (right and bottom exclusive). */
+export const DRAG_TARGET = { left: 560, top: 120, right: 760, bottom: 220 };
+/**
+ * The drop cases' path ends in page pixels (drag.mjs `pagePath`'s last point, for the kinds their requests drag), which
+ * the judge places against the target (the design session's ruling 957: a drop counts as landed only where the path
+ * ended; `endAgainstZone`, with drop-signals-judge.mjs's border margin, ruling 961).
+ */
+const DND_END = { dnd: [660, 170], 'dnd-short': [570, 185], 'dnd-inzone': [720, 250], 'dnd-long-left': [450, 260] };
 
 // ---------------------------------------------------------------------------------------------------------------
 // the conditions
@@ -336,11 +379,13 @@ const selectDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.s
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false, confirm = false }) {
+function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false, confirm = false, endsAt }) {
   const dedicated = expect === 'foreground';
   return {
     // a drop the engine confirms or reports: its notice read on the same engine after the drop's window (`confirm`)
     confirm,
+    // where its path ends, in page pixels, against the target (`DRAG_TARGET`): its drop counts as landed only there
+    ...(endsAt ? { endsAt } : {}),
     // the witness's in-front allowance (witness.mjs), for the request the engine records as made to a window in front
     inFront,
     // the drop's signature already held when the watched drag began (`obscuredInFront`), as the engine records it
@@ -371,6 +416,12 @@ function device({ device: expect, condition = covered, park, read, request, effe
     effect: ['refusal', 'cancel', 'late', 'late-take', 'stray'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
+      // the sample's attempt, for ruling 823's evidence: from the page's last read before the request
+      const attemptFrom = ctx.premiseReadAt;
+      // the reply's own notice, for ruling 823's plain-drag ok (premise.mjs): one that claims or implies a drop is never
+      // an unmet premise
+      // and a drop case's, where an ok with the adaptive hold's notice is judged by its page (ruling 898.2)
+      if (PREMISE_KINDS.includes(expect) || confirm) out.reply_notice = response.notice ?? null;
       // past the drop's window: a confirmed drop leaves nothing pending, an unconfirmed one its notice; a late case's
       // drag, whatever it answered, may leave the after-release watch's report of a late take
       if ((confirm && response.ok) || expect === 'late') Object.assign(out, await readPending(ctx));
@@ -378,7 +429,7 @@ function device({ device: expect, condition = covered, park, read, request, effe
         // whether a drag that leaves the zone started its drag and drop, and whether anything dropped on the zone
         const after = await read(ctx);
         out.started = typeof ctx.before?.starts === 'number' && typeof after?.starts === 'number' && after.starts > ctx.before.starts;
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'refusal') {
         out.expected_error = deviceSentence(ctx.scene.app);
@@ -392,20 +443,23 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.expected_notice = dndLateRefusal(ctx.scene.app, 'move');
         const listed = await ctx.engine.request('list_windows', {});
         out.read_ok = listed.response.ok === true;
+        if (!out.read_ok) out.read_error = String(listed.response.error);
         out.read_notice = listed.response.notice === dndLateNotice(ctx.scene.app);
+        // whatever notice the read carried, the late one or another (ruling 823: a notice implies a drop)
+        out.read_notice_text = listed.response.notice ?? null;
         const next = await ctx.engine.request('move', { window: { id: ctx.scene.id }, x: 10, y: 10 });
         out.next_ok = next.response.ok === true;
         out.next_error = next.response.ok ? null : String(next.response.error);
         out.late_dnd = next.stats?.late_dnd ?? null;
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'stray') {
         out.expected_error = strayNotice(ctx.scene.app);
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'cancel' || expect === 'late') {
         out.expected_error = dndCancelledSentence(ctx.scene.app);
@@ -413,13 +467,15 @@ function device({ device: expect, condition = covered, park, read, request, effe
         // a drop the page counts shows within its settle; one never read counts as dropped
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (dedicated && response.ok) out.activated = activeWindow() === ctx.scene.id;
       // in front: the desktop at the end as it was at the start
       if (inFront) out.desktop_same = JSON.stringify(desktopState()) === JSON.stringify(ctx.desktopBefore);
       // a drag-and-drop case's page counts, before and after, for the record
       if (read === dropStatus) out.drop_status = { before: ctx.before, after: await read(ctx) };
+      // ruling 823's evidence of the sample, on its row and in the run's own record of it (premise.mjs)
+      if (PREMISE_KINDS.includes(expect)) out.premise_evidence = recordPremise(ctx, response, out, { from: attemptFrom, to: Date.now() });
       return out;
     },
     // the foreground route leaves its window active: the front window takes the focus back, outside every span (a
@@ -440,6 +496,7 @@ async function readPending(ctx) {
   const state = await ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: false });
   const next = await ctx.engine.request('preflight', {});
   return {
+    state_ok: state.response.ok === true,
     state_notice: state.response.notice ?? null,
     next_ok: next.response.ok === true,
     next_error: next.response.ok ? null : String(next.response.error),
@@ -464,6 +521,305 @@ function ownPointerLog(r) {
 
 /** Whether a late case's drag reached its branch: a take before the release, so the engine decided an order (dnd.rs `Outcome`). */
 const lateBranch = (r) => typeof r.dnd?.outcome === 'string' && r.dnd.outcome !== 'no_start';
+
+/** The page's counts a drag would move (pages/drag.html): its press on a source, its drag start, its drop, its end. */
+const PAGE_COUNTS = ['downs', 'starts', 'drops', 'ends', 'ups'];
+
+/**
+ * Whether a sample shows no drag of its own: no route, drag or press record (the row's or the engine's), the page read
+ * before and after with every count it keeps unmoved, and the witness unchanged. A refused request's text alone does not
+ * show it was not run (the task review's probe: a drag that ran, with a refusal's text, passed).
+ */
+function notRun(r) {
+  const es = r.engine_stats ?? {};
+  const { before, after } = r.drop_status ?? {};
+  const pageStill = before != null && after != null && PAGE_COUNTS.every((k) => typeof before[k] === 'number' && after[k] === before[k]);
+  return r.route == null && r.dnd == null && r.press == null && es.dnd == null && es.press == null && es.wall == null && pageStill && r.witness === true;
+}
+
+/**
+ * A cancel case's late takes (the design session's ruling 756, from V5's rerun at H): a drag Chrome took nothing for by
+ * its release (the engine's record, `dnd.outcome` `no_start`) answers at the release as a plain drag, and a take after
+ * the release is T14's after-release watch's, as the late-take case's (`--dnd-defer-take`) is: its Escape sent and
+ * recorded with the take's time after the release (`late_dnd`) on the next request on the same engine, the block's next
+ * sample, which is refused with the late notice and shows no drag of its own (`notRun`). Returns each such drag and its
+ * refused request: they answer without the cancel's sentence, and the case's other rules (nothing dropped, the witness
+ * unchanged) still judge both. A drag Chrome took before its release is a drag and drop under way, so it still needs
+ * the sentence.
+ */
+function lateTakes(rows) {
+  const pairs = new Set();
+  for (const drag of rows) {
+    const next = rows.find((r) => r.block === drag.block && r.i === drag.i + 1);
+    if (!next) continue;
+    const late = next.engine_stats?.late_dnd;
+    const app = late?.app;
+    const takenAfterRelease = drag.ok === true && drag.dnd?.outcome === 'no_start' && typeof late?.after_release_ms === 'number' && late.after_release_ms > 0 && late.escaped === true;
+    // the next request answered the notice as T14's contract says, for this case's app: the drag it was, not run
+    const answeredNotice = next.ok === false && next.expected_error === dndCancelledSentence(app) && next.error === dndLateRefusal(app, 'drag');
+    if (takenAfterRelease && answeredNotice && notRun(next)) {
+      pairs.add(drag);
+      pairs.add(next);
+    }
+  }
+  return pairs;
+}
+
+/**
+ * The runner's first read of the page after a drag-and-drop sample (pages/drag.html `drops`): `dropped`, an unread
+ * counter counted as a drop (the safe side for a rule a drop fails), and `drop_seen`, the counter read on both sides and
+ * risen: a definite drop, kept apart from an unread one, so a later read that fails cannot lose it (the re-review of
+ * wave 3, I7: a false alarm whose second read failed went uncounted).
+ */
+export function firstDropRead(before, after) {
+  const read = typeof before?.drops === 'number' && typeof after?.drops === 'number';
+  return { dropped: !(read && after.drops === before.drops), drop_seen: read && after.drops > before.drops };
+}
+
+/**
+ * Whether a drag-and-drop sample's page shows a drop it read: the drop counter read before and after the sample, and
+ * risen, on the runner's first read (`drop_seen`) or the page's later one (`drop_status`). The runner's `dropped` counts
+ * an unread counter as a drop (the checks above), the safe side for a rule a drop fails; a rule a drop passes reads the
+ * counter itself (ruling 870).
+ */
+function dropSeen(r) {
+  const { before, after } = r.drop_status ?? {};
+  return r.drop_seen === true || (typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops > before.drops);
+}
+
+/**
+ * Whether the sample may have dropped, for every rule a drop fails or a drop must be judged by: the runner's bit
+ * (`dropped`, set on its first read after the request, an unread counter counted as a drop) or the page's later read
+ * (`drop_status`) showing the counter risen. Either read's drop is a drop (fix wave 3: the first read can come before a
+ * late drop the later read shows).
+ */
+function mayHaveDropped(r) {
+  return r.dropped !== false || dropSeen(r);
+}
+
+/**
+ * Ruling 898.2: an ok with the adaptive hold's notice (premise.mjs `HOLD_NOTICE`, word for word) is honest only when the
+ * page shows no drop, on read evidence (`noDropRead`): the page's drop counter read before and after the sample, both
+ * numbers, unchanged; the runner's first read, where the case makes one, unchanged too (`dropped` false: an unread
+ * counter counts as a drop, as `mayHaveDropped` has it); no read risen; and the case saw no effect (`honestNotice`). The
+ * in-front drop cases make no first read, so their later read alone decides (task 118's arm runs: with `dropped`
+ * required, no in-front notice could ever be honest, and an honest one, drops 3 to 3, was judged a false ok). One on a
+ * drag that did drop (`falseAlarm`: the counter risen, or the case's effect seen) is a false alarm, counted and reported
+ * in the verdict. One whose page cannot say either way (an unread counter) is neither, and is judged as any ok is.
+ */
+export function honestNotice(r) {
+  return holdNoticed(r) && r.effect !== true && noDropRead(r);
+}
+
+/**
+ * Whether the sample's page was read showing no drop: both reads of the counter numbers, unchanged (see above). An
+ * audited answer, whose row is the binding's (premise.mjs `bindAudit`), is read from its bound evidence's page lines.
+ */
+function noDropRead(r) {
+  const { before, after } = r.drop_status ?? { before: parsePageRead(r.premise_evidence?.page?.before), after: parsePageRead(r.premise_evidence?.page?.after) };
+  const unchanged = typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops === before.drops;
+  return unchanged && (r.dropped === undefined || r.dropped === false) && !dropSeen(r);
+}
+
+export function falseAlarm(r) {
+  return holdNoticed(r) && (r.effect === true || dropSeen(r));
+}
+
+/**
+ * The hold canary (the design session's rulings 897.3 and 898.4, task 117): the extended hold rests on Chrome's browser
+ * answering the engine's `_NET_WM_PING` slowly while it starts a drag its page began, and fast while nothing drags. A
+ * Chrome update that changed either would bring the false oks back quietly, so two of V5's cells check it from the
+ * engine's own hold records (`engine_stats.hold`), whatever else they judge:
+ * - the in-front short drop (`chrome_dnd_short_in_front_shared`, a press on a draggable source): of its samples whose
+ *   hold ran, at least `CANARY_HELD`, and at least half of them busy: a ping round trip, or a ping's wait unanswered
+ *   at the take, of `CANARY_BUSY_MS` or more, where an idle browser answers in about 1.1 ms (p99 1.2 at idle, task 116):
+ *   the browser busy setting up the drag its page started (task 117, sandboxed, idle x64: 9 of 9 held presses on
+ *   Chrome 156 waited 8 to 27 ms, 9 of 9 on Chrome 158 6 to 21 ms; V5 at idle 40 of 40); and at least one of them slow
+ *   by the engine's own threshold (`CANARY_SLOW_MS`, `adaptive_hold::FAST_PING`), the reading that extends a hold at B
+ *   (the re-review of wave 3, I5: a cell whose pings all came back in 6 ms passed, though the engine reads every one
+ *   of them fast), on a press whose drag did start, seen apart from the pings: the engine's watch saw the take, or the
+ *   page counted the sample's own dragstart (the re-review of wave 4, I1: a slow press that started nothing passed);
+ * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): at least `CANARY_HELD` warm
+ *   samples whose hold ran, every one read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read
+ *   slow is counted, not failed (a fresh page's first ping can be slow).
+ * A cell of these two whose rows carry the engine's `--stats` but no hold record fails: its evidence is missing. One
+ * with no `--stats` at all (an engine run without them) is not the canary's; the gate's canary steps require its
+ * record on both cells (`scripts/linux-engine-gate/gate.mjs` `canaryCheck`). On x64 the gate's K1 and K2 judge the
+ * draggable cell by a relative criterion instead of the engine's 20 ms (ruling 930, `holdCanary`'s `criterion`).
+ */
+/** How long a ping waits on a browser busy setting up a drag, at the least: an idle browser answers in about 1.1 ms. */
+export const CANARY_BUSY_MS = 5;
+/** A plain drag's ping is slow from T (cua-engine's `adaptive_hold::FAST_PING`), as the engine reads it at B. */
+export const CANARY_SLOW_MS = 20;
+export const CANARY_HELD = 3;
+/**
+ * The relative criterion (the design session's rulings 930 and 932, x64's K1, K2 and V5): a press on the draggable source that
+ * started a drag waits at least this many times the run's own plain control's warm maximum (`canaryPlainControl`)...
+ */
+export const CANARY_RELATIVE_FACTOR = 3;
+/** ...and at least this long: an idle browser answers in about 1.1 ms, so a bar under it would read noise as a drag. */
+export const CANARY_RELATIVE_FLOOR_MS = 5;
+
+/** Whether the page counted one dragstart between the reads before and after this sample (pages/drag.html `starts`). */
+function ownDragstart(r) {
+  const { before, after } = r.drop_status ?? {};
+  return typeof before?.starts === 'number' && after?.starts === before.starts + 1;
+}
+
+/** A hold record's largest ping wait: a round trip, or an unanswered ping's age at the hold's end; null with none. */
+export function holdPingWait(hold) {
+  const waits = (hold?.pings?.round_trips ?? []).map((t) => t.rtt_ms ?? t.unanswered_ms ?? null).filter((w) => typeof w === 'number');
+  return waits.length ? Math.max(...waits) : null;
+}
+
+const median = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const round1 = (x) => (typeof x === 'number' ? Math.round(x * 10) / 10 : null);
+
+/**
+ * The plain control's own waits for the relative criterion (ruling 930): V5's select control's warm samples whose hold
+ * ran and measured a wait, and the largest of those waits (`holdPingWait`). "The plain control's max" is the warm
+ * samples' alone: each block's first sample (`i` 0) is left out, as the plain control's own rule leaves it out, since a
+ * fresh page's first ping can be slow (a cold slow one is counted there, never failed): a slow cold ping in the maximum
+ * would raise the bar, and could reject a draggable cell whose presses stand well apart from the warm plain drags they
+ * are compared with. A held sample whose hold measured no wait (no
+ * round trip, none unanswered) is no observation and never counts as 0 ms (the review of H6, blocker 1): it is counted
+ * apart, and with fewer than `CANARY_HELD` measured the baseline is not established. `{warm, unmeasured, max_ms}`,
+ * `warm` the measured samples, `max_ms` null with none.
+ */
+export function canaryPlainControl(rows) {
+  const held = rows.filter((r) => r.i !== 0 && r.engine_stats?.hold?.held === true);
+  const waits = held.map((r) => holdPingWait(r.engine_stats.hold)).filter((w) => Number.isFinite(w));
+  return { warm: waits.length, unmeasured: held.length - waits.length, max_ms: waits.length ? Math.max(...waits) : null };
+}
+
+/**
+ * The canary's reasons for a cell's rows (none for a cell it does not judge), and its counts. `criterion` decides the
+ * draggable cell's last rule (ruling 930): `absolute` (arm64's, and the default), a press that started a drag read slow
+ * by the engine's own threshold; `relative` (x64's K1, K2 and V5), a press that started a drag waited
+ * `CANARY_RELATIVE_FACTOR` times the run's own plain control's warm maximum (`plain`, `canaryPlainControl`'s), and
+ * `CANARY_RELATIVE_FLOOR_MS` at the least. The identification, the count of held presses and the busy half stand under
+ * both. Each record carries its waits, so drift toward the bar shows before it fails: the draggable cell's started
+ * presses' largest and median, the plain cell's warm largest.
+ */
+export function holdCanary(op, rows, { criterion = 'absolute', plain = null } = {}) {
+  const recorded = rows.filter((r) => r.engine_stats != null);
+  if (!recorded.length || !['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].includes(op)) return null;
+  const held = recorded.filter((r) => r.engine_stats?.hold?.held === true);
+  const wait = (r) => holdPingWait(r.engine_stats.hold) ?? 0;
+  const slow = held.filter((r) => wait(r) >= CANARY_SLOW_MS);
+  const busy = held.filter((r) => wait(r) >= CANARY_BUSY_MS);
+  // the re-review of wave 4, I1: a sample counts for the canary only where a drag did start, seen apart from the pings:
+  // the take the engine's watch saw (`hold.taken`), or the page's own count of this sample's dragstart
+  const started = (r) => r.engine_stats.hold.taken === true || ownDragstart(r);
+  const slowStarted = slow.filter(started);
+  const reasons = [];
+  // the extension applies only to a source identified as a Chrome browser (ruling 899): one that is not cannot extend
+  const unidentified = held.filter((r) => r.engine_stats.hold.adaptive?.source?.identified !== true);
+  if (unidentified.length) reasons.push(`the hold canary: Chrome was not identified as a browser on ${unidentified.length} of ${held.length} held samples (${unidentified[0].engine_stats.hold.adaptive?.source?.why ?? 'no record'})`);
+  if (op === 'chrome_dnd_short_in_front_shared') {
+    const startedWaits = held.filter(started).map(wait);
+    const waits = { started: startedWaits.length, wait_max_ms: startedWaits.length ? round1(Math.max(...startedWaits)) : null, wait_median_ms: round1(median(startedWaits)) };
+    const relative = criterion === 'relative';
+    const bar = relative && plain?.warm >= CANARY_HELD && typeof plain.max_ms === 'number' ? Math.max(CANARY_RELATIVE_FACTOR * plain.max_ms, CANARY_RELATIVE_FLOOR_MS) : null;
+    if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
+    else if (busy.length * 2 < held.length) reasons.push(`the hold canary: ${held.length - busy.length} of ${held.length} held presses on a draggable source found their browser idle (every ping answered under ${CANARY_BUSY_MS} ms), more than half: Chrome may no longer mark the drag it starts`);
+    else if (relative) {
+      if (bar === null) reasons.push(`the hold canary's relative criterion is untested: the run's plain control has ${plain?.warm ?? 0} warm held samples with a measured wait (${plain?.unmeasured ?? 0} without), fewer than ${CANARY_HELD}`);
+      else if (!startedWaits.length) reasons.push(`the hold canary: none of the ${held.length} held presses on a draggable source started a drag (no take of the engine's watch, no dragstart of the sample's own on the page): nothing shows Chrome's drag setup`);
+      else if (!startedWaits.some((w) => w >= bar)) reasons.push(`the hold canary: none of the ${startedWaits.length} held presses on a draggable source that started a drag waited ${round1(bar)} ms or more (${CANARY_RELATIVE_FACTOR}x the plain control's ${round1(plain.max_ms)} ms, at least ${CANARY_RELATIVE_FLOOR_MS} ms): the largest waited ${waits.wait_max_ms} ms, so nothing marks the drag apart from a plain one`);
+    } else if (!slow.length) reasons.push(`the hold canary: none of ${held.length} held presses on a draggable source read slow by the engine's own threshold (a ping of ${CANARY_SLOW_MS} ms or more): at B the engine would read every one fast, so no busy browser would extend its hold`);
+    else if (!slowStarted.length) reasons.push(`the hold canary: none of the ${slow.length} held presses on a draggable source that read slow by the engine's own threshold started a drag (no take of the engine's watch, no dragstart of the sample's own on the page): their slowness is not Chrome's drag setup`);
+    const bars = relative ? { plain_max_ms: round1(plain?.max_ms), bar_ms: round1(bar) } : {};
+    return { reasons, record: { kind: 'draggable', criterion: relative ? 'relative' : 'absolute', held: held.length, busy: busy.length, slow: slow.length, slow_started: slowStarted.length, ...waits, ...bars } };
+  }
+  const warm = held.filter((r) => r.i !== 0);
+  if (warm.length < CANARY_HELD) reasons.push(`the hold canary's plain control is untested: ${warm.length} warm samples of ${recorded.length} held their drag, fewer than ${CANARY_HELD}`);
+  const warmSlow = slow.filter((r) => r.i !== 0);
+  const unfast = held.filter((r) => r.i !== 0 && !(r.engine_stats.hold.adaptive?.way === 'fixed' && /^every ping answered by B came back under/.test(r.engine_stats.hold.adaptive.why ?? '')));
+  if (warmSlow.length || unfast.length) reasons.push(`the hold canary: a plain drag read slow on ${new Set([...warmSlow, ...unfast]).size} of ${warm.length} warm samples (${[...new Set([...warmSlow, ...unfast])].slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  const own = canaryPlainControl(recorded);
+  return { reasons, record: { kind: 'plain', held: held.length, slow: slow.length, cold_slow: slow.length - warmSlow.length, warm: own.warm, unmeasured: own.unmeasured, wait_max_ms: round1(own.max_ms) } };
+}
+
+/** A cell's hold notices for its verdict, or null when none came: how many, the honest ones and the false alarms. */
+function holdNoticeCounts(rows) {
+  const noticed = rows.filter(holdNoticed);
+  if (!noticed.length) return null;
+  const alarms = noticed.filter(falseAlarm);
+  return { samples: rows.length, noticed: noticed.length, honest: noticed.filter(honestNotice).length, false_alarm: alarms.length, false_alarms: alarms.map((r) => `${r.block}/${r.i}`) };
+}
+
+/**
+ * Whether the page counted this sample's own drag start and dragend (ruling 870): one of each between the reads before
+ * and after it, so the `dur` read after is that drag's, never the previous drag's left on the page (pages/drag.html
+ * keeps its last `dur` until the next dragend).
+ */
+function ownDragendSeen(r) {
+  const { before, after } = r.drop_status ?? {};
+  const one = (key) => typeof before?.[key] === 'number' && after?.[key] === before[key] + 1;
+  return one('starts') && one('ends');
+}
+
+/**
+ * Whether that start and that end are one drag, this press's (fix wave 2): no drag outstanding before the press (the
+ * page's starts and ends equal), so the end counted is not an earlier drag's, and this press's own pointer log (its
+ * `seq`, checked apart) has its dragstart and its dragend logged, which the page writes only while the press's log is
+ * open.
+ */
+function pressOwnsDragend(r) {
+  const { before, after } = r.drop_status ?? {};
+  const logged = (e) => typeof e?.t === 'number';
+  return typeof before?.starts === 'number' && before.starts === before.ends && logged(after?.log?.start) && logged(after?.log?.end);
+}
+
+/**
+ * Whether the witness saw the desktop change in the sample's span: it reported, and named a change (run.mjs
+ * `witness_fields`). A witness whose report could not be read fails its span too (witness.mjs `judgeSpan`, `protocol`),
+ * but it saw nothing, so it records no drop (fix wave 2).
+ */
+function witnessSawChange(r) {
+  const fields = Array.isArray(r.witness_fields) ? r.witness_fields : [];
+  return r.witness === false && fields.length > 0 && !fields.includes('protocol');
+}
+
+/**
+ * Why a late-take sample's drop the witness did not record is not the witness span's limit (the design session's ruling
+ * 680, from M4's V5 on candidate 2; encoded by ruling 867 and tightened by 870): an empty list where it is. The witness
+ * watches until `WITNESS_TAIL_MS` after the engine's answer (witness.mjs `startWitness`), and a late take's drop goes on
+ * after the answer: Chrome activates its window 4 to 8 ms after the page's dragend, so a dragend at or past the answer
+ * plus the tail lands its activation after the span closed. It is the limit only when the sample is otherwise as the
+ * case expects: the drag answered as a plain drag, the read after it ran and carried the notice, the next acting request
+ * was refused with it (T14's contract), the after-release watch escaped the take, the witness watched the span and saw
+ * it clean, the page's pointer log is the sample's own press, the page counted one drag start and one dragend
+ * (`ownDragendSeen`) that are this press's own drag (`pressOwnsDragend`) and a drop it read (`dropSeen`), and that drag's `dur` (pages/drag.html: ms from its dragstart to its dragend) is at least the answer
+ * (`ms`, from the request's send) plus the tail. The press and its dragstart come after the send, so a `dur` that long
+ * puts the dragend at least that long after the send. The rule of M4's re-judge script, rejudge-late-take-window.mjs,
+ * with ruling 870's observations and fix wave 2's bindings added.
+ */
+function spanLimitMisses(r) {
+  const after = r.drop_status?.after;
+  const misses = [];
+  if (r.ok !== true) misses.push('the drag did not answer as a plain drag');
+  if (r.read_ok !== true || r.read_notice !== true) misses.push('the read did not run with the notice');
+  if (!(r.next_ok === false && r.next_error === r.expected_notice)) misses.push('the next acting request was not refused with the notice');
+  if (r.late_dnd?.escaped !== true) misses.push('the after-release watch did not escape the take');
+  if (!dropSeen(r)) misses.push("the page's drop counter was not read rising: no drop seen");
+  // the waiver is for a span the witness watched and saw clean: an unread or absent witness covered nothing (fix wave 2)
+  if (r.witness !== true) misses.push('the witness did not watch the span cleanly (its report unread, or no witness)');
+  // a new press, up by one from the read before, its log numbered with it (premise.mjs `ownPress`'s rule; fix wave 3)
+  const before = r.drop_status?.before;
+  if (!(typeof before?.downs === 'number' && after?.downs === before.downs + 1 && after.log?.seq === after.downs)) misses.push("the page's pointer log is not a new press of the sample's own");
+  else if (!ownDragendSeen(r)) misses.push("the page did not count this press's own drag start and dragend, so its dragend time is not this drag's");
+  else if (!pressOwnsDragend(r)) misses.push("a drag was outstanding before the press, or this press's log has no dragstart and dragend of its own, so the dragend counted may not be this press's");
+  else if (!(typeof after.dur === 'number' && typeof r.ms === 'number')) misses.push(`the page recorded no time for the dragend, or the answer none (dragend ${after.dur}, answer ${r.ms})`);
+  else if (!(after.dur >= r.ms + WITNESS_TAIL_MS)) misses.push(`the dragend (${after.dur} ms after its dragstart) came before the span closed (answer ${r.ms} + ${WITNESS_TAIL_MS} ms)`);
+  return misses;
+}
 
 const at = (point) => ({ x: point.x, y: point.y });
 
@@ -532,20 +888,20 @@ export const DEVICE_OPS = {
   chrome_dnd_shared: device({ device: 'cancel', condition: visible, park: INSIDE, read: dropStatus, request: dndDrag, settleMs: DND_SETTLE_MS }),
   // the drops that land carry nothing pending: Chrome's activation request confirmed each (`confirm`, M4's T14), the
   // control of the after-release watch's reports
-  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd'] }),
   chrome_dnd_late_shared: device({ device: 'late', condition: visible, park: INSIDE, read: dropStatus, request: dndLingerDrag, args: LATE, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd'] }),
   // a short drag and drop (40 px) where the drop goes ahead, in front and dedicated: released at Chrome's accept cursor,
   // or at the floor after the take (dnd.rs RELEASE_AFTER_TAKE), so it lands
-  chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-short'] }),
   // the press-inside control at the floor (the design session, 2026-11-10): a press on a source inside the zone, its
   // first status already an accept, and a path out of it. Chrome must not drop on the stale accept; nothing landing,
   // the drag is never answered ok with nothing pending (task 69 saw one released early that Chrome confirmed)
-  chrome_dnd_inzone_out_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_inzone_out_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-inzone'] }),
   // and the long path that crosses the zone and ends outside it, its steps after the take outlasting the floor, so the
   // release follows its last step (the design session, 2026-11-10: measured clean, the control stays in the gate)
-  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
-  chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-long-left'] }),
+  chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-short'] }),
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
   chrome_dnd_obscured_in_front_shared: device({ device: 'cancel', condition: obscuredInFront, park: INSIDE, read: dropStatus, request: dndDrag, heldAtStart: true, settleMs: DND_SETTLE_MS }),
@@ -558,7 +914,7 @@ export const DEVICE_OPS = {
   // the foreground route, which puts the pointer there, and the drop lands. And the real pointer nudged all through a
   // text selection: the press window of a drag that never takes a drag and drop runs to its release
   chrome_dnd_short_pointer_outside_shared: device({ device: 'stray', condition: pointerOutside, read: dropStatus, request: dndShortDrag, inFront: true, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_short_pointer_outside_dedicated: device({ device: 'foreground', condition: pointerOutside, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_short_pointer_outside_dedicated: device({ device: 'foreground', condition: pointerOutside, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-short'] }),
   chrome_select_nudged_shared: device({ device: 'stray', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: selectDrag, inFront: true, alongside: nudges, pointerMoves: true, settleMs: DND_SETTLE_MS }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
@@ -584,6 +940,140 @@ for (const op of Object.values(DEVICE_OPS)) {
     op.effect = (ctx, input, before, after) => judge(before, after);
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// ruling 823's evidence of each sample (premise.mjs)
+
+const here = dirname(fileURLToPath(import.meta.url));
+const once = new Map();
+const cached = (key, make) => (once.has(key) ? once.get(key) : once.set(key, make()).get(key));
+/** The checkout's head, as run.mjs's meta row records it. */
+const head = () =>
+  cached('head', () => {
+    try {
+      return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: here, encoding: 'utf8' }).trim();
+    } catch {
+      return null;
+    }
+  });
+/** The sha256 of the engine binary a sample's engine runs. */
+const engineSha = (bin) => (typeof bin === 'string' && existsSync(bin) ? cached(`sha|${bin}`, () => createHash('sha256').update(readFileSync(bin)).digest('hex')) : null);
+/** The run's load profile, from its own meta row (run.mjs writes it first): its ballast and occlusion. */
+const loadOf = (results) => {
+  if (once.has(`load|${results}`)) return once.get(`load|${results}`);
+  try {
+    const meta = JSON.parse(readFileSync(results, 'utf8').split('\n')[0]);
+    if (meta.kind !== 'meta') return null;
+    // and the run's recorded plan, its blocks, for the in-run judge (`premiseBinding`)
+    if (Number.isInteger(meta.blocks) && typeof meta.run === 'string') PLANS.set(meta.run, meta.blocks);
+    return once.set(`load|${results}`, { ballast: meta.ballast ?? null, occlusion: meta.occlusion ?? null }).get(`load|${results}`);
+  } catch {
+    // not read yet: nothing kept, so the next sample reads it again
+    return null;
+  }
+};
+
+/**
+ * Every evidence record this process made, by run (`recordedPremise`): the in-run judge's own, for the audit's samples,
+ * whose rows run.mjs does not keep, and the sidecar the judge binds every sample to. A re-judge of stored rows reads the
+ * same records from the run's `premise-evidence.jsonl` (rejudge-device.mjs).
+ */
+const RECORDED = [];
+/** Each run's recorded plan (its meta's `blocks`), by run, as this process's recorder read it. */
+const PLANS = new Map();
+
+/**
+ * A premise case's sample as its evidence (premise.mjs): the sample named (its run, scene, case, block and request
+ * number, its engine's lifecycle, the engine's request id, the window and the page's title), the run's head, engine
+ * bytes and load, its attempt (from the page's last read before the request to the check's end, epoch ms), cua's
+ * reply, the page's status lines before and after as the page wrote them, and the case's own reads. Kept in memory and
+ * appended to the run's `premise-evidence.jsonl` beside its results.
+ */
+function recordPremise(ctx, response, out, attempt) {
+  ctx.engine.premiseLifecycle ??= randomUUID();
+  const outDir = ctx.desktop.logs ? dirname(ctx.desktop.logs) : null;
+  // the case's follow-up reads, by the one allowlist the binding reads them by (premise.mjs `FOLLOW_UPS`)
+  const reads = Object.fromEntries(FOLLOW_UP_FIELDS.filter((k) => k in out).map((k) => [k, out[k]]));
+  const { op, block, i } = ctx.scene.lastRequest ?? {};
+  const record = {
+    kind: 'premise-evidence',
+    run: ctx.desktop.run ?? null,
+    head: head(),
+    engine_sha256: engineSha(ctx.engine.bin),
+    load: outDir ? loadOf(join(outDir, 'results.jsonl')) : null,
+    scene: ctx.sceneName,
+    op,
+    block,
+    i,
+    series: i === 0 ? 'cold' : 'warm',
+    lifecycle: ctx.engine.premiseLifecycle,
+    request: Number.isInteger(response.id) ? response.id : null,
+    window: ctx.scene.id,
+    fixture: { label: ctx.scene.label ?? null },
+    attempt,
+    reply: { ok: response.ok === true, error: response.ok ? null : String(response.error).slice(0, 300), notice: response.notice ?? null },
+    page: { before: ctx.before?.raw ?? null, after: out.drop_status?.after?.raw ?? null },
+    dropped: out.dropped,
+    reads,
+  };
+  RECORDED.push(record);
+  if (outDir) appendFileSync(join(outDir, 'premise-evidence.jsonl'), `${JSON.stringify(record)}\n`);
+  return record;
+}
+
+/**
+ * The in-run judge's sidecar: every record this process made for the samples' run (`lines`, null where it made none, as
+ * for stored rows), and the window its audit is bound to, the run's timed evidence's. A process records one run, so the
+ * run's records are all of them, a foreign fixture's among them a binding error.
+ */
+function recordedPremise(samples) {
+  const run = samples[0]?.run;
+  const ofRun = RECORDED.filter((r) => r.run === run);
+  return { lines: ofRun.length ? ofRun : null, window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null };
+}
+
+/**
+ * A premise cell's two passes bound to the run's sidecar and checked against its recorded plan, both before either is
+ * classified (review 5, finding 4). `premise`: the re-judge's `{lines, window, plan}`; without it (or without `plan`) the
+ * in-run judge's, from this process's records and the run's meta. The plan (`{blocks, audit}`) checks the timed slots
+ * and the audit's cardinality whether or not evidence exists; with none recorded, nothing is excluded and the cell is
+ * marked `unverified`. A slot recorded twice is a problem with or without a plan (review 6). With any problem in either
+ * pass, neither keeps evidence: both are judged from their own rows and answers. Answers `{plan, problems: {slots, plan,
+ * timed, audit}, rows, entries, unverified}`, `rows` the samples or their copies, index for index.
+ */
+export function premiseBinding(op, samples, audit, premise = undefined) {
+  const run = samples[0]?.run;
+  const source = premise?.lines !== undefined ? premise : recordedPremise(samples);
+  const plan = premise && 'plan' in premise ? premise.plan : Number.isInteger(PLANS.get(run)) ? { blocks: PLANS.get(run), audit: audit?.kind !== 'skipped' } : null;
+  const answered = audit && audit.kind !== 'skipped' ? audit.answered ?? [] : [];
+  const bare = bindAudit({ ...audit, answered }, null, { run }).entries;
+  const strip = () => samples.map((r) => (r.premise_evidence == null ? r : (({ premise_evidence, ...rest }) => rest)(r)));
+  const problems = { slots: repeatedSlots(samples), plan: [], timed: [], audit: [] };
+  const lines = source.lines ?? null;
+  const evidenced = samples.some((r) => r.premise_evidence) || (lines ?? []).some((l) => l?.op === op && l?.run === run);
+  if (!plan) return { plan, problems, rows: strip(), entries: bare, unverified: evidenced };
+  problems.plan.push(...slotProblems(samples, { blocks: plan.blocks, seriesLength: 1 + (DEVICE_OPS[op].warmSamples ?? 0) }));
+  if (plan.audit && (!audit || audit.kind === 'skipped')) problems.plan.push('no audit, where its plan has one');
+  else if (plan.audit && answered.length !== AUDIT_PLAN) problems.plan.push(`the audit recorded ${answered.length} request${answered.length === 1 ? '' : 's'}, its plan ${AUDIT_PLAN}`);
+  else if (!plan.audit && audit && audit.kind !== 'skipped') problems.plan.push('an audit its plan has none for (--no-audit)');
+  const timed = bindTimed(samples, { lines });
+  problems.timed.push(...timed.problems);
+  let entries = bare;
+  if (audit?.kind === 'skipped') {
+    // the runner's skipped-audit sentinel (`--no-audit`): no audit, so no audit evidence either
+    const stray = (lines ?? []).filter((l) => l?.block === 'audit' && l?.op === op && l?.run === run);
+    if (stray.length) problems.audit.push(`${stray.length} audit evidence lines for an audit the run skipped`);
+  } else if (audit) {
+    const bound = bindAudit(audit, lines, { run, scene: samples[0]?.scene, op, expect: DEVICE_OPS[op].device, window: source.window, label: evidenceLabel(samples) });
+    problems.audit.push(...bound.problems);
+    entries = bound.entries;
+  }
+  const any = Object.values(problems).some((p) => p.length > 0);
+  return { plan, problems, rows: any ? strip() : timed.rows, entries: any ? bare : entries, unverified: false };
+}
+
+/** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
+export const PREMISE_OPS = new Set(Object.keys(DEVICE_OPS).filter((op) => PREMISE_KINDS.includes(DEVICE_OPS[op].device)));
 
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
@@ -622,32 +1112,87 @@ export function capabilitiesAnswer(output, version) {
  * A device case's verdict from its samples and its audit (`{clean, kind, answered}`, the audit kind its expectation
  * needs): every sample as its expectation says (module header), and the audit clean over at least one audited request
  * that answered as the case expects (a refusal or a cancel its sentence, a late case an honest one, the others
- * success), so a trace of requests that never did what the case measures proves nothing. Returns `{pass, reasons}`.
+ * success), so a trace of requests that never did what the case measures proves nothing. In ruling 823's cells
+ * (`PREMISE_OPS`) a sample or audited request whose premise was unmet is excluded first (premise.mjs). Returns `{pass,
+ * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded.
  */
-export function judgeDevice(op, rows, audit) {
+export function judgeDevice(op, samples, audit, premise = undefined, { canary: canaryOptions = {} } = {}) {
   // the minimized cases have expectations of their own (minimized.mjs)
-  if (op in MINIMIZED_OPS) return judgeMinimized(op, rows, audit);
+  if (op in MINIMIZED_OPS) return judgeMinimized(op, samples, audit);
   // and so do the identity cases (identity.mjs)
-  if (op in IDENTITY_OPS) return judgeIdentity(op, rows, audit);
+  if (op in IDENTITY_OPS) return judgeIdentity(op, samples, audit);
   const expect = DEVICE_OPS[op].device;
   const reasons = [];
-  if (!rows.length) return { pass: false, reasons: ['no samples'] };
-  const bad = (what, pred) => {
-    const failed = rows.filter((r) => !pred(r));
-    if (failed.length) reasons.push(`${what} on ${failed.length} of ${rows.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  if (!samples.length) return { pass: false, reasons: ['no samples'] };
+  // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded and counted, and every rule below judges the
+  // rest; a cell short of its planned cold or warm samples fails as incomplete (route D, ruling 841). Only evidence
+  // bound to the run's sidecar (`premise`: `{lines, window}`, the re-judge's; else this process's records) excludes;
+  // evidence that does not fit its samples is never excluded on, and fails the cell.
+  const unmet = {};
+  let rows = samples;
+  let excluded = 0;
+  let binding = null;
+  if (PREMISE_OPS.has(op)) {
+    // both passes bound and checked against the plan before either is classified
+    binding = premiseBinding(op, samples, audit, premise);
+    for (const p of binding.problems.slots) reasons.push(`the run's rows record a slot twice (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.plan) reasons.push(`the run's rows do not fit its recorded plan (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.timed) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.audit) reasons.push(`the premise evidence of the ${audit?.kind ?? ''} audit does not fit it (ruling 823, never excluded on): ${p}`);
+    const judged = judgePremise(binding.rows, { name: (r) => `${r.block}/${r.i}`, quotas: TIMED_QUOTAS });
+    reasons.push(...judged.reasons);
+    if (judged.record) unmet.timed = judged.record;
+    rows = judged.judged;
+    excluded += judged.excluded;
+  }
+  const premiseJudged = rows.length;
+  // ruling 680 (`spanLimitMisses`): a late take's drop the witness did not record, where it is the witness span's limit,
+  // is judged by that rule alone and the case's other rules judge the rest, which still need a drop the witness recorded.
+  // Taken out after the binding, so the plan still counts its slot; a drop the rule does not cover says why.
+  const spanLimited = [];
+  if (expect === 'late-take') {
+    const uncovered = [];
+    for (const r of rows.filter((x) => mayHaveDropped(x) && !witnessSawChange(x))) {
+      const misses = spanLimitMisses(r);
+      if (misses.length) uncovered.push(`${r.block}/${r.i}: ${misses.join('; ')}`);
+      else spanLimited.push(r);
+    }
+    if (uncovered.length) reasons.push(`the witness span's limit (ruling 680) does not cover ${uncovered.length} of ${rows.length} samples (${uncovered.slice(0, 3).join(', ')})`);
+    rows = rows.filter((r) => !spanLimited.includes(r));
+  }
+  // a condition that some judged sample shows something, where every sample was excluded for its unmet premise: untested,
+  // not failed, since the cell is short of its plan already (review 3, finding 2)
+  const exists = (what, pred) => {
+    if (!premiseJudged) reasons.push(`untested: every sample was excluded for its unmet premise, so whether ${what} is untested`);
+    else if (!rows.some(pred)) return false;
+    return true;
   };
+  const badOf = (list) => (what, pred) => {
+    const failed = list.filter((r) => !pred(r));
+    if (failed.length) reasons.push(`${what} on ${failed.length} of ${list.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  };
+  const bad = badOf(rows);
+  // a check of the engine's own guard, which holds whether or not Chrome took the drag: over every sample, the excluded
+  // ones too, so an exclusion never excuses it (task 100's review 2, finding 5)
+  const badAll = badOf(samples);
   if (expect === 'answer') bad('the answer was not the report', (r) => r.ok && r.answer_ok === true);
   if (expect === 'refusal') {
     bad('not refused with the Device mode sentence', (r) => !r.ok && r.error === r.expected_error);
     bad('the window changed', (r) => r.unchanged === true);
   }
+  // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`): the very rows it was found on,
+  // and their copies the binding judges (their evidence stripped, index for index), never another row of their slot
+  // (task 100's review 6)
+  const late = new Set(expect === 'cancel' ? lateTakes(samples) : []);
+  binding?.rows.forEach((r, k) => late.has(samples[k]) && late.add(r));
   if (expect === 'cancel') {
-    bad('not cancelled with the drag-and-drop sentence', (r) => !r.ok && r.error === r.expected_error);
-    bad('it dropped', (r) => r.dropped === false);
+    // or an honest hold notice (ruling 898.2): Chrome refused a drag its page started too late, or began none
+    bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r) || honestNotice(r));
+    bad('it dropped', (r) => !mayHaveDropped(r));
   }
   if (expect === 'stray') {
     bad('not answered that the drag may not have started', (r) => !r.ok && r.error === r.expected_error);
-    bad('it dropped', (r) => r.dropped === false);
+    bad('it dropped', (r) => !mayHaveDropped(r));
   }
   if (expect === 'late-take') {
     bad('the drag did not answer as a plain drag', (r) => r.ok);
@@ -655,8 +1200,10 @@ export function judgeDevice(op, rows, audit) {
     bad('the read did not carry the notice', (r) => r.read_notice === true);
     bad('the next acting request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
     // the notice says the desktop may have changed: where the drop landed, the witness must show it
-    bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
-    if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
+    // (an observed change, never a witness that could not be read: fix wave 2)
+    bad('a drop the witness did not record', (r) => !mayHaveDropped(r) || witnessSawChange(r));
+    // a drop the page's counter was read showing, never one inferred from an unread counter (ruling 870)
+    if (!exists('a drop landed', (r) => dropSeen(r) && witnessSawChange(r))) reasons.push('no drop landed: the case showed no change for the notice to report');
   }
   // the drops the engine confirms or reports, counted (the design session, 2026-11-10): a drop that landed and was
   // reported unconfirmed is honest, counted for the run (stats.mjs `dropCounts`, a finding only over 5% of a load's
@@ -666,10 +1213,22 @@ export function judgeDevice(op, rows, audit) {
     // a notice holds only when the acting request after it was refused with it (drop-signals-judge.mjs `pendingOf`)
     const held = (r) => pendingOf({ notice: r.state_notice, next: r.state_notice == null ? null : { ok: r.next_ok, error: r.next_error } });
     const pending = (r) => r.state_notice != null && held(r).kept;
-    const landed = rows.filter((r) => r.effect === true);
-    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r));
-    drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
+    // a drop counts as landed only where its path ended (ruling 957): on the target, as planned; one from a path that
+    // ended outside the target is a drop at a stale position, a wrong outcome, and one ending within the border margin is
+    // ambiguous, neither (ruling 961). A drop is the case's effect, or the page's counter read risen after the effect's
+    // poll (`dropSeen`): a late drop at a stale position is still one (the final review's P1, ruling 1091)
+    const at = DEVICE_OPS[op].endsAt ? endAgainstZone(DEVICE_OPS[op].endsAt, DRAG_TARGET) : 'inside';
+    const didDrop = (r) => r.effect === true || dropSeen(r);
+    const dropped = rows.filter(didDrop);
+    const landed = at === 'inside' ? dropped : [];
+    const stale = at === 'outside' ? dropped : [];
+    const ambiguous = at === 'ambiguous' ? dropped : [];
+    // an honest hold notice is no false ok (ruling 898.2); one of another wording, or with no page to vouch for it, is.
+    // A drag that dropped is judged by where it dropped, never a false ok as well
+    const falseOk = rows.filter((r) => r.ok && !didDrop(r) && !pending(r) && !honestNotice(r));
+    drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length, stale_position: stale.length, ambiguous: ambiguous.length };
     if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+    if (stale.length) reasons.push(`a drop at a stale position (the path ended outside the target, the drop landed on it) on ${stale.length} of ${rows.length} samples (${stale.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     const unrefused = rows.filter((r) => r.state_notice != null && !held(r).kept);
     if (unrefused.length) reasons.push(`a notice the next acting request was not refused with on ${unrefused.length} of ${rows.length} samples (${unrefused.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     // and the other way: the next acting request refused for something pending that the read did not announce
@@ -684,24 +1243,28 @@ export function judgeDevice(op, rows, audit) {
   }
   if (expect === 'late') {
     // the case measures a cancel that comes after the release, so only a drag Chrome took by its release is on its
-    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266)
+    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266),
+    // and one it never started a drag session for at all was excluded above (ruling 823)
     bad('unexercised: Chrome took no drag and drop by the release, so the late branch was not reached,', lateBranch);
     bad('a request answered success', (r) => !lateBranch(r) || !r.ok);
     // "nothing was dropped" only where nothing dropped and the desktop is as it was; off the branch, a plain drag's ok
     // only where nothing dropped, or what dropped was reported pending (the after-release watch's late take)
     const reported = (r) => r.state_notice != null && pendingKept(r);
     bad('an answer was not honest', (r) =>
-      lateBranch(r) ? r.error === r.late_error || (r.error === r.expected_error && r.dropped === false && r.witness === true) : r.ok && (reported(r) || (r.dropped === false && r.witness === true)),
+      lateBranch(r) ? r.error === r.late_error || (r.error === r.expected_error && !mayHaveDropped(r) && r.witness === true) : r.ok && (reported(r) || (!mayHaveDropped(r) && r.witness === true)),
     );
     // every drag's pending read, on the branch or off it, held to T14's contract
     bad("the read's notice and the next acting request's refusal did not agree", (r) => r.state_notice !== undefined && r.next_ok !== undefined && pendingKept(r));
-    if (!rows.some((r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
+    if (!exists('an answer said the drop may have happened', (r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
   }
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
-    bad('the effect was not verified', (r) => r.effect === true);
+    // a drop that did not land, honestly noticed (ruling 898.2), is no unverified effect: its answer said so
+    bad('the effect was not verified', (r) => r.effect === true || honestNotice(r));
   }
-  if (DEVICE_OPS[op].heldAtStart) bad('the engine did not watch the drag with the signature already held', (r) => r.dnd?.in_front === false && r.dnd?.held_at_start === true);
+  // a request refused for a late take did not run, so there is no drag of its own to have watched
+  const ran = (r) => !(late.has(r) && r.ok === false);
+  if (DEVICE_OPS[op].heldAtStart) badAll('the engine did not watch the drag with the signature already held', (r) => !ran(r) || (r.dnd?.in_front === false && r.dnd?.held_at_start === true));
   if (DEVICE_OPS[op].inFront) {
     bad('the engine did not record the window as in front', (r) => r.dnd?.in_front === true);
     bad('the desktop at the end was not as at the start', (r) => r.desktop_same === true);
@@ -717,15 +1280,47 @@ export function judgeDevice(op, rows, audit) {
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);
     if (audit && audit.kind !== 'skipped') {
       // the audit counts only where its requests did what the case measures: answered as the case expects
-      const answered = audit.answered ?? [];
+      const audited = audit.answered ?? [];
+      let answered = audited;
+      // the audit's own requests as the binding left them (`premiseBinding`), those whose premise was unmet excluded
+      // (ruling 823); a binding error in either pass binds none, so none is excluded
+      if (PREMISE_OPS.has(op)) {
+        const judged = judgePremise(binding.entries, { name: (e) => `audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
+        reasons.push(...judged.reasons);
+        if (judged.record) unmet.audit = judged.record;
+        answered = judged.judged;
+        excluded += judged.excluded;
+      }
       const expected = (a) => {
-        if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
+        if (expect === 'cancel') return (!a.ok && a.error === a.expected_error) || honestNotice(a);
+        if (expect === 'refusal' || expect === 'stray') return !a.ok && a.error === a.expected_error;
         if (expect === 'late') return !a.ok && (a.error === a.late_error || a.error === a.expected_error);
         return a.ok;
       };
-      if (!answered.length) reasons.push(`the ${audit.kind} audit audited no request`);
+      if (!audited.length) reasons.push(`the ${audit.kind} audit audited no request`);
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}) };
+  // a cell that excluded samples says first what it fails for, so the cause reads off the verdict: only the shortage
+  // (whether V5 is rerun whole for it is the controller's call under §8.2, route D), or more than that
+  if (excluded > 0 && reasons.some(isShortage)) {
+    const n = `${excluded} proven premise-unmet sample${excluded === 1 ? '' : 's'}`;
+    reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
+  }
+  const limited = spanLimited.map((r) => ({ sample: `${r.block}/${r.i}`, dragend_ms: r.drop_status.after.dur, answer_ms: r.ms }));
+  // the hold's notices, counted and reported, the false alarms never hidden (ruling 898.2)
+  const holdNotices = holdNoticeCounts(rows);
+  // the hold canary, on the samples every rule above judged (rulings 897.3, 898.4)
+  const canary = holdCanary(op, rows, canaryOptions);
+  if (canary) reasons.push(...canary.reasons);
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    ...(drops ? { drops } : {}),
+    ...(holdNotices ? { hold_notices: holdNotices } : {}),
+    ...(canary ? { hold_canary: canary.record } : {}),
+    ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}),
+    ...(binding?.unverified ? { plan_unverified: true } : {}),
+    ...(limited.length ? { span_limited: limited } : {}),
+  };
 }

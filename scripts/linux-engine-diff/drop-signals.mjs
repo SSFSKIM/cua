@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, PART_CELLS, PART_PLANS, partFamilies, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -38,7 +38,7 @@ import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { XPROBE, spawnXprobe, xdotool } from './xtools.mjs';
-import { xExecFileSync } from './xspawn.mjs';
+import { xExecFileSync, xSpawn } from './xspawn.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -60,14 +60,20 @@ export const CELLS = {
   // the press-150 source with the run's browser process stopped from 60 ms after the request to the cell's number
   // (`freezeOf`): the renderer's drag start, and the release, wait for the browser (#264's late take, by a lagging
   // browser)
-  ...Object.fromEntries(FREEZE_ENDS.map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
+  ...Object.fromEntries([...FREEZE_ENDS, ...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE, ...LATE_FREEZE_INSIDE].map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
   // V5's lost motion (2026-11-13): the plain short drop with the run's browser stopped from the drag's send to 150 ms,
   // so the press and every step queue unread; and the same press with a path over the zone that goes on long after the
   // stop ends, so the steps sent once the browser reads again come one by one (`freezeOf`)
   ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, () => [[530, 128], [570, 128]]])),
   'prefreeze-linger-150': () => [[530, 128], [570, 128], [700, 128], [570, 160], [700, 160], [575, 128]],
+  // 0.4.1's failed settle (task 101's review): the plain short drop with the run's browser stopped across the drop's
+  // end (`STALL`), so neither of the settle's pings is answered in time and the drop answers the unanswered notice
+  stall: () => [[530, 128], [570, 128]],
   'dragstart-400': () => [[530, 358], [570, 358]],
   'press-400': () => [[530, 404], [570, 404]],
+  // the delayed dragstarts past B (task 117, ruling 900): placed left of the column, a longer path into the zone
+  'dragstart-500': () => [[465, 468], [570, 468]],
+  'dragstart-600': () => [[465, 518], [570, 518]],
   link: () => [[530, 450], [570, 450]],
   image: () => [[530, 496], [570, 496]],
   // a draggable canvas: a drop source under the role the canvas rule predicts never takes (the review of task 68)
@@ -192,12 +198,21 @@ export function t14Outcome(cell, before, after) {
  * the release only when the browser itself lags behind the X stream; a stopped browser lags by construction.
  */
 export const freezeOf = (cell) => {
+  if (cell === 'stall') return STALL;
   const m = /^freeze-(\d+)$/.exec(cell);
-  if (m) return { from: 60, to: Number(m[1]) };
+  // and not before the browser has read the drag's press (`afterPress`, ruling 954): see FREEZE_PRESS_LEAD
+  if (m) return { from: 60, to: Number(m[1]), afterPress: FREEZE_PRESS_LEAD };
   // stopped from the send, before the engine's press goes out (V5's lost motion)
   const pre = /^prefreeze(?:-linger)?-(\d+)$/.exec(cell);
   return pre ? { from: 0, to: Number(pre[1]) } : null;
 };
+
+/**
+ * The `stall` cell's browser stop, in ms after the drag is sent: the floor ends about 350 ms after the take, which comes
+ * some 30 ms after the press, so the stop covers the first ping (asked near the floor's end) and its 150 ms, the rest,
+ * the revisit and the second ping's 150 ms, and ends after the release.
+ */
+export const STALL = { from: 300, to: 950 };
 
 /** The covered-path cells' paths: long enough that a cover of the middle touches neither end. */
 export const COVER_CELLS = {
@@ -252,6 +267,12 @@ export const LANES = {
   // Chrome raised, not activated: a drag the engine watches (its guard) and releases at the path's end (V5's guarded
   // lost motion)
   'cua:guarded': { args: [], guarded: true },
+  // m5-a959 (task 122, ruling 964; merged into feat by task 134), for development runs: no gate step's plan names
+  // these lanes (ruling 981's vendor baseline, `t14-long-vendor`, ran on them). The vendor builds as lanes, each drag
+  // the same `drag` request on the same window and path, the engine `--vendor` or `--newest` names (as the drag
+  // experiment's `dragEngines` builds its vendor lanes), with no flags of cua's and no `--stats`
+  pinned: { args: [], vendor: 'vendor' },
+  newest: { args: [], vendor: 'newest' },
 };
 
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
@@ -309,6 +330,11 @@ export const PLANS = {
   ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  // the same sweep against 0.4.2's hold (task 121): where the thaw falls against a release at press + 450 or + 650
+  'freeze-042': LATE_FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  'freeze-042-fine': [...LATE_FREEZE_FINE, 650].sort((a, b) => a - b).map((to) => ['cua', `freeze-${to}`, 10]),
+  // the inside band's freeze on a slower machine (ruling 954; task 122 runs it on arm64 at twice the load)
+  'freeze-042-inside': [500, 550, 600].map((to) => ['cua', `freeze-${to}`, 10]),
   // V5's lost motion: a browser that reads the X stream only after the drag's steps are all queued (Chromium's core
   // MotionNotify coalescing), against the plain drop and a path that outlasts the stop
   'v5-loss': [['cua', 'plain', 30], ['cua', 'prefreeze-150', 30], ['cua', 'prefreeze-linger-150', 30]],
@@ -322,15 +348,27 @@ export const PLANS = {
   // engine that shipped the release (f9bdb5c2, the lane `cua` there); the press-inside control's false release reverted
   // it to this measurement flag. `t14-floor`: the same drags on the engine as it ships, the floor and the confirmation
   t14: [['cua:accept', 'plain-long', 300], ['cua:accept', 'left', 30], ['cua:accept', 'inzone-out', 30]],
-  't14-floor': [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  't14-floor': PART_CELLS['t14-floor'],
   // the long-path accepted-then-left control on the engine as it ships: 100 a load at idle and twice the load, 30 at
   // the gate's window load
-  't14-long': [['cua', 'long-left', 100]],
+  't14-long': PART_CELLS['t14-long'],
+  // m5-a959 (ruling 964): the same cell on the pinned and newest vendor builds and cua, 100 each, the lanes taking turns
+  // block by block (`blockPlan`)
+  't14-long-vendor': [['pinned', 'long-left', 100], ['newest', 'long-left', 100], ['cua', 'long-left', 100]],
   't14-long-gate': [['cua', 'long-left', 30]],
   // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
   // the engine before T14 too, its failing first
-  't14-late': [['cua', 'freeze-250', 40]],
+  // Since 0.4.2 (the design session's ruling 931, task 121's sweeps): its hold takes a thaw before the release inside,
+  // and Chrome refuses one after it, so the plan runs three freeze bands, judged by drop-signals-judge.mjs `LATE_BANDS`
+  // (inside, the edge whose late takes are counted, past)
+  't14-late': [['cua', 'freeze-600', 10], ...['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'].map((cell) => ['cua', cell, 5]), ['cua', 'freeze-700', 10]],
+  // the knife-edge ride-along (ruling 931.5), a development plan no gate step runs: the thaw at the release, where 0.4.2's
+  // late takes come, judged by T14's late-take contract (at least one, each reported)
+  't14-late-edge': [['cua', 'freeze-650', 40]],
+  // 0.4.1's failed settle end to end (task 101's review; `--family electron`): plain drops whose Electron browser stops
+  // across their end, so the settle's pings go unanswered; a development plan, never judged by the gate
+  't101-stall': [['cua', 'stall', 10]],
   // M4's T17 fix wave (the design session's ruling on task 73's review, 2026-11-11): Electron's drop confirmed by its
   // drag loop's accept cursor at the release, for plain drops behind the floor and for handles (`--family electron`):
   // 300 short drops, the accepted-then-left control and the press inside the zone, 30 each. The short drop, not
@@ -361,9 +399,20 @@ export const PLANS = {
     ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:handle', cell, 30]),
   ],
   't17-slow': [['cua:desktop', 'slow', 30], ['cua:handle', 'slow', 30]],
+  // L4d's Electron part (the design session's ruling 962): the long path that crosses the zone and ends outside it, on
+  // the shipped lane, 30 drags. Chrome's `long-left` fits Electron's window as it is: the page sits at the window's
+  // origin, every point of the path is in the window and clear of the run's other windows (no `other` window or sink
+  // opens for it), it crosses the zone (into it at x 560 on y 128, down x 800 from y 128 to 500), ends 60 px left of it
+  // at (500, 500), and is about 940 px long, so its steps after the take outlast the floor (task 128's x64 run, h7/l4d/)
+  't17-long': PART_CELLS['t17-long'],
   't17-moved': [['cua:desktop', 'moved', 30]],
   // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
+  // the extended hold's limit (task 117, ruling 900.2): delayed dragstarts and late presses up to and past B, 6 drags each
+  'hold-limit': ['dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600'].map((cell) => ['cua', cell, 6]),
+  // the hold's regression cells in the release gate (step K3; ruling 900): drops started late by a busy dragstart
+  // handler, which B lands (drop-signals-judge.mjs `holdRegressionVerdict`)
+  'hold-regression': HOLD_REGRESSION_CELLS,
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -377,6 +426,32 @@ export const PLANS = {
 export function planSpecs({ plan = 'main', ballast = null, trials = null, lanes = null } = {}) {
   const rows = [...(PLANS[plan] ?? (() => { throw new Error(`no plan ${plan}; known: ${Object.keys(PLANS).join(', ')}`); })()), ...(ballast === 'gate' && plan === 'main' ? PLANS.gate : [])];
   return rows.filter(([lane]) => !lanes || lanes.includes(lane)).map(([lane, cell, n]) => ({ lane, cell, n: trials ? Math.min(trials, n) : n }));
+}
+
+/** The specs a run of the harness's arguments (cli.mjs `parseArgs`) sits: the run's own, and launch-plan.mjs's. */
+export const runSpecs = (args) => planSpecs({ plan: args.plan, ballast: args.ballast, trials: args.samplesTrials ?? null, lanes: args.lanes ?? null });
+
+/**
+ * The sittings a run of the harness's arguments sits, in turn: `{family, plan, specs, part}`. A plan of parts
+ * (drop-signals-judge.mjs `PART_PLANS`, ruling 962) sits each part's own plan in its family, `part` its index; its run's
+ * `--family` must name the parts' families, in order. Any other plan is one sitting of the run's family, with no part.
+ */
+export function runSittings(args) {
+  const parts = PART_PLANS[args.plan];
+  if (!parts) return [{ family: args.families?.[0] ?? 'chrome', plan: args.plan, specs: runSpecs(args), part: undefined }];
+  if ((args.families ?? []).join(',') !== partFamilies(args.plan).join(',')) throw new Error(`the plan of parts ${args.plan} runs --family ${partFamilies(args.plan).join(',')}`);
+  return parts.map((p, k) => ({ family: p.family, plan: p.plan, specs: runSpecs({ ...args, plan: p.plan }), part: k }));
+}
+
+/**
+ * The cells of a run's plan its `--lanes` leaves out, every sitting's, as `lane cell` (`part N lane cell` in a plan of
+ * parts); none without `--lanes`. A counted run must run its plan's every cell (experiments.mjs `runExperiment`).
+ */
+export function lanesLeftOut(args) {
+  if (!args.lanes) return [];
+  const label = (s, c) => `${s.part === undefined ? '' : `part ${s.part + 1} `}${c.lane} ${c.cell}`;
+  const kept = new Set(runSittings(args).flatMap((s) => s.specs.map((c) => label(s, c))));
+  return runSittings({ ...args, lanes: null }).flatMap((s) => s.specs.map((c) => label(s, c))).filter((l) => !kept.has(l));
 }
 
 /** A cell's base cell and cover part (`select@middle`). */
@@ -521,19 +596,174 @@ export function runBrowser(profile, { proc = '/proc', read = (path) => readFileS
   return null;
 }
 
-/** The run's browser process stopped over `span` (ms from now), and always continued: what was done, with times. */
-async function freezeBrowser(pid, span) {
+/**
+ * How long after Chrome's browser marks the drag's press read a freeze cell's stop may begin, at the least (the design
+ * session's ruling 954). The engine identifies the source before it presses (`pointer.rs`: the hold's `browser_source`
+ * is read before the press goes out), and its identification asks the browser's own process over AT-SPI (bounded at
+ * 50 ms, ruling 912), so a stop that lands while it runs leaves the source unidentified (arm64 at twice the load at H6: 4
+ * of 40). So the stop waits for the browser's own mark of the press, its `_NET_WM_USER_TIME` (Chromium's X11 window sets
+ * it on each button press it reads), which follows the identification by design, and then for this lead: the time from
+ * the press to the 60 ms of the cells' design at idle on x64 (the press some 5 ms after the send), in which the browser
+ * reads the path's steps past Blink's drag threshold and hands them to the renderer. The thaw stays where the cell puts
+ * it, `to` ms after the send.
+ */
+export const FREEZE_PRESS_LEAD = 55;
+
+/**
+ * When a stop over `span` (ms after the send at `t0`) begins: `from` ms after the send, and for a span with `afterPress`
+ * not before the browser's mark of the press (`press`, wall ms, null for none seen) plus that lead. Answers `{start}` in
+ * ms after the send, or `{skipped}` with why: no press marked by the thaw, or a start at or past the thaw. A skipped stop
+ * is never shortened or dropped silently (ruling 955): its row says so, and the judge counts it unexercised.
+ */
+export function freezeStart(span, t0, press) {
+  if (span.afterPress === undefined) return { start: span.from };
+  if (press === null) return { skipped: `no press marked by the browser by the thaw at ${span.to} ms` };
+  const start = Math.max(span.from, press - t0 + span.afterPress);
+  if (start >= span.to) return { skipped: `the press was marked ${Math.round((press - t0) * 10) / 10} ms after the send, so the stop would begin at ${Math.round(start * 10) / 10} ms, at or past the thaw at ${span.to} ms`, start };
+  return { start };
+}
+
+/**
+ * The run's browser process stopped over `span` (ms after the send at `t0`, the thaw at `t0 + to`), and always
+ * continued: what was done, with times. Every time here is on the monotonic clock (`performance.now`, the re-review of
+ * 0e43238b, finding 1): the send's `t0`, the press mark's arrival, the deadline, the stop and the thaw, so a step of the
+ * wall clock moves none of them. A span that waits for the press (`afterPress`) reads this trial's from
+ * `pressed({from, sent, deadline})` (`startPressWatch`), `sent` the send's server time (`serverNow`), and records the
+ * press's own value beside it. The deadline is read again just before the signal: a timer that woke at or past the thaw
+ * sends none, and the stop is skipped with why (the review of cf1ef10f, finding 1). `now`, `wait` and `kill` are the
+ * clock, the timer and the signal, for the tests.
+ */
+export async function freezeBrowser(pid, span, t0, pressed = null, { sent = null, now = () => performance.now(), wait = sleep, kill = (p, sig) => process.kill(p, sig) } = {}) {
   if (!pid) throw new Error('the freeze cell needs the run\'s browser process');
-  const t0 = Date.now();
-  await sleep(span.from);
-  const stopped = Date.now();
-  process.kill(pid, 'SIGSTOP');
+  if (span.afterPress !== undefined && !pressed) throw new Error("the freeze cell needs the browser's press mark (startPressWatch)");
+  const press = span.afterPress === undefined ? null : await pressed({ from: t0, sent, deadline: t0 + span.to });
+  const at = freezeStart(span, t0, press?.at ?? null);
+  const marked = span.afterPress === undefined ? {} : { press_ms: press === null ? null : Math.round((press.at - t0) * 10) / 10, ...(press ? { press_time: press.time } : {}), sent_time: sent, ...(press?.ignored?.length ? { press_ignored: press.ignored } : {}) };
+  if (at.skipped) return { pid, skipped: at.skipped, ...marked, from_ms: span.from, to_ms: span.to };
+  await wait(t0 + at.start - now());
+  const stopped = now();
+  if (stopped - t0 >= span.to) return { pid, skipped: `the stop's timer woke ${Math.round((stopped - t0) * 10) / 10} ms after the send, at or past the thaw at ${span.to} ms`, ...marked, from_ms: span.from, to_ms: span.to };
+  kill(pid, 'SIGSTOP');
   try {
-    await sleep(span.to - span.from);
+    await wait(t0 + span.to - now());
   } finally {
-    process.kill(pid, 'SIGCONT');
+    kill(pid, 'SIGCONT');
   }
-  return { pid, stopped_ms: stopped - t0, continued_ms: Date.now() - t0 };
+  // to a tenth of a millisecond, as the press is: the stop's own reading, never rounded up to the thaw
+  return { pid, ...marked, stopped_ms: Math.floor((stopped - t0) * 10) / 10, continued_ms: Math.round((now() - t0) * 10) / 10 };
+}
+
+/**
+ * The X server's clock, read here: the server stamps its events with `GetTimeInMillis`, the kernel's monotonic clock in
+ * ms (xserver os/utils.c), the clock `process.hrtime` reads on the same machine, in 32 bits. Task 125's probe shows it
+ * (h7/probe: the press marks' values 2 to 3 ms after the clicks' monotonic times). A private display's server is this
+ * machine's; where the two clocks differ, no mark binds (`pressMarks`) and the stops are skipped, failing closed.
+ */
+export const serverNow = () => Number((process.hrtime.bigint() / 1000000n) % 4294967296n);
+
+/** `a - b` on the server's 32-bit clock, which wraps (about every 49.7 days). */
+const serverDiff = (a, b) => (a - b) | 0;
+
+/**
+ * How far a press's server time may read before the send's (`serverNow` at the send) or after its line's arrival: the
+ * server's clock may be the kernel's coarse monotonic one when that ticks in 1 ms or less, and each reading is whole
+ * milliseconds. A stale mark (an earlier trial's) is a second or more before the send.
+ */
+export const PRESS_CLOCK_SLACK_MS = 2;
+
+/**
+ * The browser's press marks as `xprop -spy` prints them (`startPressWatch`), fed line by line with each line's arrival
+ * (`line(text, at, server)`: the monotonic clock, `performance.now` (the re-review of 0e43238b, finding 1), and the
+ * server's, `serverNow`). The first value printed is the property as
+ * it stood when the spy began, never a press, however late it comes. A mark's value is the X server time of the press
+ * the browser read, so it binds the mark to a trial (the review of cf1ef10f, finding 2): `pressed({from, sent,
+ * deadline})` answers `{at, time}`, the first mark arriving from `from` (the monotonic clock at the send) by `deadline`
+ * (the thaw) whose value is newer than every value seen before it (never a repeat of the property, the baseline's
+ * included), not before the send's server time `sent` (an earlier trial's queued notification), and not after its own
+ * arrival (a server whose clock is not this machine's), each by `PRESS_CLOCK_SLACK_MS`; else null, and the stop is
+ * skipped and its row unexercised (ruling 956), never begun from `from` alone. What was passed over in the trial's
+ * window, with why, is `ignored(trial)`.
+ */
+export function pressMarks({ now = () => performance.now() } = {}) {
+  const marks = [];
+  const waiting = new Set();
+  let latest = null;
+  const why = (m, { from, sent, deadline }) => {
+    if (m.at < from || m.at > deadline) return 'outside the trial';
+    if (!m.newer) return 'not newer than the last value seen';
+    if (serverDiff(m.time, sent) < -PRESS_CLOCK_SLACK_MS) return 'stamped before the send';
+    if (serverDiff(m.time, m.server) > PRESS_CLOCK_SLACK_MS) return 'stamped after it arrived';
+    return null;
+  };
+  const inTrial = (trial) => marks.filter((m) => m.at >= trial.from && m.at <= trial.deadline);
+  const ignored = (trial) => inTrial(trial).filter((m) => why(m, trial) !== null).map((m) => ({ time: m.time, at_ms: Math.round((m.at - trial.from) * 10) / 10, why: why(m, trial) }));
+  const answer = (m, trial) => ({ at: m.at, time: m.time, ...(ignored(trial).length ? { ignored: ignored(trial) } : {}) });
+  return {
+    marks,
+    ignored,
+    line(text, at, server) {
+      const value = /_NET_WM_USER_TIME\(CARDINAL\) = (\d+)/.exec(text)?.[1];
+      if (value === undefined) return;
+      const time = Number(value);
+      if (latest === null) {
+        latest = time;
+        return;
+      }
+      const m = { at, server, time, newer: serverDiff(time, latest) > 0 };
+      if (m.newer) latest = time;
+      marks.push(m);
+      for (const w of waiting) w(m);
+    },
+    pressed(trial) {
+      const seen = marks.find((m) => m.at >= trial.from && why(m, trial) === null && m.at <= trial.deadline);
+      if (seen !== undefined) return Promise.resolve(answer(seen, trial));
+      if (now() >= trial.deadline) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        const done = (v) => {
+          waiting.delete(on);
+          clearTimeout(timer);
+          resolve(v);
+        };
+        const on = (m) => {
+          if (m.at > trial.deadline) done(null);
+          else if (why(m, trial) === null) done(answer(m, trial));
+        };
+        const timer = setTimeout(() => done(null), Math.max(0, trial.deadline - now()));
+        waiting.add(on);
+      });
+    },
+  };
+}
+
+/**
+ * Chrome's browser's own mark of each button press it reads: `_NET_WM_USER_TIME` on its window (or on the window its
+ * `_NET_WM_USER_TIME_WINDOW` names), watched by `xprop -spy`, each change stamped with this process's monotonic clock as
+ * it arrives (`pressMarks`).
+ */
+async function startPressWatch(window) {
+  const named = /window id # (0x[0-9a-f]+)/i.exec(xExecFileSync('xprop', ['-id', String(window), '_NET_WM_USER_TIME_WINDOW'], { encoding: 'utf8', timeout: 5000 }))?.[1];
+  const target = named ?? String(window);
+  const child = xSpawn('stdbuf', ['-oL', 'xprop', '-spy', '-id', target, '_NET_WM_USER_TIME'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const marks = pressMarks();
+  const rl = createInterface({ input: child.stdout });
+  rl.on('line', (l) => marks.line(l, performance.now(), serverNow()));
+  const exited = new Promise((resolve) => {
+    child.once('exit', resolve);
+    child.once('error', resolve);
+  });
+  // the spy's first line, the property as it stands, before any drag is sent
+  await new Promise((resolve) => {
+    rl.once('line', resolve);
+    setTimeout(resolve, 2000);
+  });
+  return {
+    window: Number(target),
+    pressed: (trial) => marks.pressed(trial),
+    async stop() {
+      child.kill('SIGTERM');
+      await exited;
+    },
+  };
 }
 
 /** The window in front for a drag the engine lets drop: raised, active and focused (the front window in its corner). */
@@ -552,7 +782,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const rect = cover ? coverRect(cover, (COVER_CELLS[base])(i)) : null;
   const screenRect = rect && { ...rect, x: rect.x + at.page.x + scene.window.x, y: rect.y + at.page.y + scene.window.y };
   const sent = Date.now();
-  const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base)) : null;
+  // the stop's schedule on the monotonic clock (`freezeBrowser`); the wall clock's `sent` is the watch's and the stats'
+  const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base), performance.now(), ctx.presses?.pressed, { sent: serverNow() }) : null;
   const handled = LANES[lane].handle === true;
   const desktopLane = LANES[lane].desktop === true;
   const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };
@@ -612,6 +843,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     cold,
     ok: value.response.ok === true,
     error: value.response.ok ? undefined : String(value.response.error).slice(0, 300),
+    // the notice the drag's own reply carried: 0.4.2's hold notice on a Chrome drag with no take (ruling 931's bands)
+    reply_notice: value.response.notice ?? null,
     ms: Math.round(value.ms * 10) / 10,
     route: stats.route,
     hold: stats.hold,
@@ -642,17 +875,29 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   return { row, after };
 }
 
-/** The run: the scene, the watch, the ballast, then every block of the plan. */
-export async function runDropSignals(args, { desktop, emit }) {
-  const family = args.families?.[0] ?? 'chrome';
-  if (!['chrome', 'electron'].includes(family)) throw new Error('the drop-signals experiment runs in chrome or electron');
-  const load = args.load ? `load${args.loadFactor ?? 1}` : args.ballast === 'gate' ? 'gate-windows' : 'idle';
-  const specs = planSpecs({ plan: args.plan, ballast: args.ballast, trials: args.samplesTrials ?? null, lanes: args.lanes ?? null });
-  const oracle = new Oracle();
+/**
+ * The run: the front window, opened once (each sitting arranges it, and the run's end closes it), then each of its
+ * sittings in turn (`runSittings`; one, but for a plan of parts), their tables one after another. `sit` is the sitting,
+ * for the tests.
+ */
+export async function runDropSignals(args, { desktop, emit }, { sit = sitDropSignals } = {}) {
+  const sittings = runSittings(args);
+  for (const { family } of sittings) if (!['chrome', 'electron'].includes(family)) throw new Error('the drop-signals experiment runs in chrome or electron');
   await desktop.openFront('visible');
+  const md = [];
+  for (const one of sittings) md.push(...(await sit(args, { desktop, emit }, one)));
+  return { md, complete: true, failed: [] };
+}
+
+/** One sitting: the scene, the watch, the ballast, then every block of its plan; its rows marked with its `part`, if any. */
+async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: planName, specs, part }) {
+  const emit = part === undefined ? emitRow : (row) => emitRow({ ...row, part });
+  const load = args.load ? `load${args.loadFactor ?? 1}` : args.ballast === 'gate' ? 'gate-windows' : 'idle';
+  const oracle = new Oracle();
   const ballast = [];
   const rows = [];
   let watch = null;
+  let presses = null;
   let scene = null;
   let other = null;
   let sink = null;
@@ -682,13 +927,16 @@ export async function runDropSignals(args, { desktop, emit }) {
     await sleep(1000);
     const at = await locate({ desktop, oracle }, scene, ['dnd']);
     watch = await startDropWatch(scene.id);
+    // the browser's mark of each press, for the freeze cells that wait for it (ruling 954)
+    if (specs.some((s) => freezeOf(splitCell(s.cell).base)?.afterPress !== undefined)) presses = await startPressWatch(scene.id);
     // the run's own browser process (the freeze cell's), never one found by name
-    const browser = family === 'chrome' && desktop.chrome ? runBrowser(desktop.chrome.profile) : null;
+    // (Electron's: the scene's own process, the browser process the harness spawned, whose UI thread runs the drag loop)
+    const browser = family === 'chrome' && desktop.chrome ? runBrowser(desktop.chrome.profile) : family === 'electron' ? scene.pid ?? null : null;
     // the `moved` cell's hook point: the root cell's end, the bare root beside the window, on the screen
     const moved = specs.some((s) => splitCell(s.cell).base === 'moved') ? screenOf(scene, windowPath(at, 'root', 0, scene.window).at(-1)) : null;
     const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) }, sink: sink && { id: sink.id, ...clientOrigin(sink.id) }, moved });
-    const ctx = { desktop, scene, at, watch, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends };
-    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: args.plan ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null });
+    const ctx = { desktop, scene, at, watch, presses, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends };
+    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: planName ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null });
     const plan = blockPlan(specs.map((s, k) => ({ ...s, spec: k })));
     for (const [b, block] of plan.entries()) {
       const lane = LANES[block.lane];
@@ -696,7 +944,8 @@ export async function runDropSignals(args, { desktop, emit }) {
       const { cover } = splitCell(block.cell);
       if (Boolean(cover) !== Boolean(lane.cover)) throw new Error(`${block.lane} ${block.cell}: a covered cell runs on the cover lane, and only there`);
       const env = splitCell(block.cell).base === 'moved' ? moveHook(process.env, ends.moved) : undefined;
-      const fresh = () => new Engine({ label: block.lane, bin: args.cua, args: lane.args, stats: true, env }).start();
+      if (lane.vendor && !args[lane.vendor]) throw new Error(`the ${block.lane} lane needs --${lane.vendor}`);
+      const fresh = () => new Engine({ label: block.lane, bin: lane.vendor ? args[lane.vendor] : args.cua, args: lane.args, stats: !lane.vendor, env }).start();
       let engine = lane.gate ? null : fresh();
       try {
         let before = await readStatus(desktop, scene);
@@ -727,9 +976,10 @@ export async function runDropSignals(args, { desktop, emit }) {
     }
   } finally {
     if (watch) await watch.stop();
+    if (presses) await presses.stop();
     await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...(sink ? [sink] : []), ...ballast]);
   }
-  const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${args.plan ?? 'main'}: ${rows.length} drags.`, ''];
+  const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${planName ?? 'main'}${part === undefined ? '' : ` (part ${part + 1} of ${args.plan})`}: ${rows.length} drags.`, ''];
   for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows)]) md.push(...table.md, '');
-  return { md, complete: true, failed: [] };
+  return md;
 }

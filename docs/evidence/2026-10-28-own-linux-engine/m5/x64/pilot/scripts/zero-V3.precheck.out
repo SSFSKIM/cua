@@ -1,0 +1,11 @@
+time 2026-11-15T04:40:05Z
+hold-sittings: absent
+stress-ng: none
+owner chrome: 2546101 Mon Nov  2 20:16:10 2026 chrome
+load 0.20 0.21 0.75
+lock, last line: 2026-11-15T04:28:15Z release t87-pilot status=0 load=0.53 1.10 1.51 render-host=none :: timeout -s TERM -k 120 45m /Users/new/.local/share/cua-171/task87/x64/g.
+pointer: x:142 y:130 screen:0 window:5912655
+/tmp/cua171-run-* present: [/tmp/cua171-run-7nTGZK /tmp/cua171-run-AdXsUJ /tmp/cua171-run-OJWaJi /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+firefox on PATH (run-zero.sh): /Users/new/.local/share/cua-171/task59/bin/firefox
+
+[exited with code 0]

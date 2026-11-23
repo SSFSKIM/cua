@@ -1,0 +1,57 @@
+{
+  "label": "development run, not a release gate",
+  "step": "D4",
+  "pilot": true,
+  "what": "the GTK and Qt editors' drag cells",
+  "display": "private",
+  "load": "idle",
+  "minutes": 25,
+  "run_name": "m5-dev-D4-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t7-h4/",
+    "commit": "3b5c0441b41e67ab87dd1265d2ca74325f93dec3",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+    "sha256": "8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-041",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t7-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-h4/scripts/linux-engine-gate/gate.mjs run D4 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-041 --out /Users/new/.local/share/cua-171/m5/pc-arm64 --dev --pilot 2 --engine-stats",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drag",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-041/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "--occlusion",
+    "visible",
+    "--family",
+    "gedit,gtk-scale,gnome-text-editor,kate,qtcreator",
+    "--trials",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+    "--run",
+    "m5-dev-D4-pilot",
+    "--pilot",
+    "--engine-stats",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/pc-arm64/D4.development-run.pilot/run"
+  ],
+  "started": "2026-11-19T06:36:31.252Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-19T06:41:43.870Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unjudged": [],
+  "unclean": []
+}

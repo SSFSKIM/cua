@@ -1,0 +1,57 @@
+{
+  "label": "development run, not a release gate",
+  "step": "D5",
+  "pilot": true,
+  "what": "Writer (unprimed, T16), the terminals, GTK 4's scale, Writer through gen",
+  "display": "private",
+  "load": "idle",
+  "minutes": 25,
+  "run_name": "m5-dev-D5-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t105-x64/",
+    "commit": "3b5c0441b41e67ab87dd1265d2ca74325f93dec3",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-x64-041/engine/linux/cua-engine",
+    "sha256": "c432c8c2bc4f905b32a171f439bd5e500724b8ff7f8f961f64a34437d9241626"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-x64-041",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t105-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t105-x64/scripts/linux-engine-gate/gate.mjs run D5 --pinned /Users/new/.local/share/cua-171/m5/home-x64-041 --out /Users/new/.local/share/cua-171/m5/pilot-x64-h4 --dev --pilot 2 --engine-stats",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drag",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/home-x64-041/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--occlusion",
+    "visible",
+    "--family",
+    "writer,xterm,xterm-allow,gtk4-input,gnome-terminal,writer-gen",
+    "--trials",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-x64-041/engine/linux/cua-engine",
+    "--run",
+    "m5-dev-D5-pilot",
+    "--pilot",
+    "--engine-stats",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/pilot-x64-h4/D5.development-run.pilot/run"
+  ],
+  "started": "2026-11-18T23:34:27.962Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T23:37:51.735Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unjudged": [],
+  "unclean": []
+}

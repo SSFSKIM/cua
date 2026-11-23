@@ -1,0 +1,27 @@
+== /Users/new/.local/share/cua-171/m5/out-x64-h7/L4d.pinned-release/run/results.jsonl
+verdict: pass false; failed ["part 1 (chrome t14-long): cua long-left: answered ok with no drop and nothing pending on 1 of 100 (#8)"]
+finding: part 1 (chrome t14-long): T14's share, reported and not a fail: 0 of 0 landed drops answered unconfirmed, within 5%
+finding: part 2 (chrome t14-floor): T14's share, reported and not a fail: 0 of 300 landed drops answered unconfirmed, within 5%
+finding: part 3 (electron t17-long): cua long-left: 30 of 30 drags exercised the long path (a take, its motion after the take past the 350 ms floor, and the expected end); 30 took, 30 outlasted the floor
+finding: part 3 (electron t17-long): zone-truth mismatches (ruling 830, a declared app-level limit: an ok answer whose own dragend reported copy while the zone's drop counter did not move), load load2: none in 30 drags of the window's cells
+finding: part 3 (electron t17-long): T14's share, reported and not a fail for these cells: 0 of 0 landed drops answered unconfirmed, within 5%
+
+--- part 1: chrome t14-long (chromeDropVerdict): pass false
+judge's counts: {"load":"load2","drags":100,"untaken":0,"landed":0,"stale_drops":0,"ambiguous":0,"late":0,"late_reported":0,"late_notice_without_take":0,"false_ok":1,"missing_landing":0,"pending_broken":0,"unconfirmed_landed":0,"false_releases":0,"false_release_ok":0,"harness_escapes":0,"over_share":false}
+cua long-left: 100 drags; landed 0, stale 0, ambiguous (in the margin) 0, unplaced 0; path end outside; notices {"unconfirmed":99,"none":1}; ok with nothing pending, started, no drop: 1; untaken (no take) 0; errors 0
+  take 5.1 / 19.1 / 68.7 (n 100); path after the take 402.7 / 457.6 / 587.1 (n 100); last step to release 0 / 0.1 / 6.3 (n 100); activation after release 4.8 / 4.8 / 4.8 (n 1)
+  row #8: landing null, ok true, notice null, next refused false, take 27 ms, path after the take 445 ms, last step to release 0.1 ms, activation after release 4.8 ms
+
+--- part 2: chrome t14-floor (chromeDropVerdict): pass true
+judge's counts: {"load":"load2","drags":360,"untaken":0,"landed":300,"stale_drops":0,"ambiguous":0,"late":0,"late_reported":0,"late_notice_without_take":0,"false_ok":0,"missing_landing":0,"pending_broken":0,"unconfirmed_landed":0,"false_releases":0,"false_release_ok":0,"harness_escapes":0,"over_share":false}
+cua plain-long: 300 drags; landed 300, stale 0, ambiguous (in the margin) 0, unplaced 0; path end inside; notices {"none":300}; ok with nothing pending, started, no drop: 0; untaken (no take) 0; errors 0
+  take 3.9 / 17.6 / 55.5 (n 300); path after the take 350 / 350.1 / 380.8 (n 300); last step to release 0 / 0.2 / 7.9 (n 300); activation after release -1.6 / 2.7 / 15.1 (n 300)
+cua left: 30 drags; landed 0, stale 0, ambiguous (in the margin) 0, unplaced 0; path end outside; notices {"unconfirmed":30}; ok with nothing pending, started, no drop: 0; untaken (no take) 0; errors 0
+  take 7.3 / 14.7 / 33.7 (n 30); path after the take 350.1 / 350.1 / 356.2 (n 30); last step to release 0.1 / 0.3 / 4.1 (n 30); activation after release –
+cua inzone-out: 30 drags; landed 0, stale 0, ambiguous (in the margin) 0, unplaced 0; path end outside; notices {"unconfirmed":30}; ok with nothing pending, started, no drop: 0; untaken (no take) 0; errors 0
+  take 6.3 / 15.6 / 56.5 (n 30); path after the take 0.4 / 350.1 / 350.1 (n 30); last step to release 0.1 / 5 / 350.1 (n 30); activation after release –
+
+--- part 3: electron t17-long (electronDropVerdict): pass true
+judge's counts: {"load":"load2","drags":30,"landed":0,"stale_drops":0,"ambiguous":0,"false_ok":0,"race_false_ok":0,"race_drags":0,"missing_landing":0,"false_error":0,"pending_broken":0,"unconfirmed_landed":0,"by_class":{"move-link":0,"cold-load":0,"other":0},"unverified":0,"long_path":{"drags":30,"took":30,"outlasted":30,"exercised":30,"minimum":20},"over_share":false,"residue":[],"zone_mismatch":[{"lane":"cua","cell":"long-left","drags":30,"count":0}],"root_unverified":[]}
+cua long-left: 30 drags; landed 0, stale 0, ambiguous (in the margin) 0, unplaced 0; path end outside; notices {"unconfirmed":30}; ok with nothing pending, started, no drop: 0; untaken (no take) 0; errors 0
+  take 5.3 / 19 / 32.2 (n 30); path after the take 442.2 / 457 / 530.5 (n 30); last step to release 33.3 / 36.9 / 44.4 (n 30); activation after release –

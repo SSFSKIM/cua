@@ -1,0 +1,1 @@
+/Users/new/.local/share/cua-171/locked.sh task122-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h7c/scripts/linux-engine-gate/gate.mjs run C1 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-042 --out /Users/new/.local/share/cua-171/m5/out-arm64-h7

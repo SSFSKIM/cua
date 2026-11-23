@@ -1,0 +1,2 @@
+development run, not a release gate (task 122, ruling 954.2, plan freeze-042-inside, m5-h7 348cae0f)
+[1120/212054.054455:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA

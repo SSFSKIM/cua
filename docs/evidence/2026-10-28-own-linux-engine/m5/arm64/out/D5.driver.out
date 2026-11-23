@@ -1,0 +1,2 @@
+step.sh 2026-11-18T13:15:37Z start D5 after 171 s quiet wait: load=0.97 9.27 10.41 stress-ng=none
+step.sh 2026-11-18T13:34:05Z end D5 exit 0 load=0.09 0.30 3.17

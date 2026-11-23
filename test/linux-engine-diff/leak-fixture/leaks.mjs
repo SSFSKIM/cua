@@ -3,10 +3,11 @@
 // (a detached stand-in that waits forever, naming a scratch directory of the suite's, its pid written to `LEAK_PID`),
 // `a11y-stub` (the run's org.a11y.Bus stand-in, a11y-stub.mjs, outliving its session bus: held stopped so it cannot see
 // the bus end, then the bus stopped; its pid written to `LEAK_PID`), `directory` (a scratch directory left in the
-// suite's), or nothing; `fail` leaves nothing and fails.
+// suite's), or nothing; `fail` leaves nothing and fails. `LEAK_ROOT`: a file it writes the suite's root (its TMPDIR) to
+// as it starts; `LEAK_HOLD`: a file it waits for before it ends, so another suite can run beside this one.
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -15,6 +16,12 @@ import { startA11yStub } from '../../../scripts/linux-engine-diff/a11y-stub.mjs'
 import { startSessionBus } from '../../../scripts/linux-engine-diff/session-bus.mjs';
 
 test('a test that leaves something of a run behind, or not', async () => {
+  // by a rename, so the file appears whole: the test reads it as soon as it holds something
+  if (process.env.LEAK_ROOT) {
+    writeFileSync(`${process.env.LEAK_ROOT}.part`, tmpdir());
+    renameSync(`${process.env.LEAK_ROOT}.part`, process.env.LEAK_ROOT);
+  }
+  for (let i = 0; process.env.LEAK_HOLD && !existsSync(process.env.LEAK_HOLD) && i < 600; i++) await new Promise((r) => setTimeout(r, 50));
   const dir = mkdtempSync(join(tmpdir(), 'cua171-leak-fixture-'));
   if (process.env.LEAK === 'process') {
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', `--user-data-dir=${join(dir, 'chrome-profile')}`], { stdio: 'ignore', detached: true });

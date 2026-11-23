@@ -1,0 +1,57 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "L2a",
+  "pilot": false,
+  "what": "Chrome's other kinds under the motion model (T11)",
+  "display": "private",
+  "load": "load2",
+  "minutes": 25,
+  "run_name": "pinned-L2a",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/",
+    "commit": "048140a2bde0f6398cc910c1aa14ecf2e7e51004",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine",
+    "sha256": "dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-043",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-gate /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-gate/gate.mjs run L2a --pinned /Users/new/.local/share/cua-171/m5/home-arm64-043 --out /Users/new/.local/share/cua-171/m5/out-arm64-h8",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drag",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-043/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "--occlusion",
+    "visible",
+    "--family",
+    "chrome",
+    "--ops",
+    "select,dnd,canvas",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine",
+    "--run",
+    "pinned-L2a",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64-h8/L2a.pinned-release/run"
+  ],
+  "started": "2026-11-22T03:46:13.223Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-22T04:14:01.395Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

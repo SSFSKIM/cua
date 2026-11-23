@@ -1,0 +1,74 @@
+== after-step 2026-11-19T12:05:21Z /Users/new/.local/share/cua-171/m5/out-arm64-h5/V5.pinned-release
+--- kept traces
+audit rows 52, with kept_traces files 52, files 52, missing 0
+kept-traces exit 0
+--- rejudge-audit
+rejudge-audit exit 0
+run pinned-V5: audits 52, moved 0, unkept 0, incomplete no, foreign stored 0, now 0: reproduces
+row lines (moved or unkept): 0
+rejudge: reproduces the stored findings
+--- settle-check
+/Users/new/.local/share/cua-171/m5/out-arm64-h5/V5.pinned-release: unknown: 20 of 218 cua engines (62 unidentified, held to the counter as cua lanes) not recorded; 42 of them with no counter were sent no drag or drag_handle; the recorded: entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0
+  cua 2295202: no stats: not recorded
+  cua 2295775: no stats: not recorded
+  cua 2296066: no stats: not recorded
+  cua 2298144: no stats: not recorded
+  cua 2298670: no stats: not recorded
+  cua 2298983: no stats: not recorded
+  cua 2299464: no stats: not recorded
+  cua 2299991: no stats: not recorded
+  cua 2300768: no stats: not recorded
+  cua 2301298: no stats: not recorded
+  cua 2301852: no stats: not recorded
+  cua 2302397: no stats: not recorded
+  cua 2303139: no stats: not recorded
+  cua 2303665: no stats: not recorded
+  cua 2304202: no stats: not recorded
+  cua 2304790: no stats: not recorded
+  cua 2305323: no stats: not recorded
+  cua 2306098: no stats: not recorded
+  cua 2306640: no stats: not recorded
+  cua 2307209: no stats: not recorded
+  reader 2184068: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 2188301: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2199146: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2199814: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2234383: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2235060: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2268066: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2268971: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2290413: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2290940: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2291458: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2291813: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2292329: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2292853: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2293367: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2293651: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2294165: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2294687: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2296581: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2297104: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2297611: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2297625: no counter; sent no drag or drag_handle (not a measured zero)
+  reset 2298130: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308028: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308073: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308117: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308326: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308442: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308487: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308559: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308638: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308681: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308725: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2308842: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2309512: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2309952: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2310026: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2310100: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2310769: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2311208: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2311281: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2311355: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 1

@@ -1,0 +1,12 @@
+time 2026-11-17T03:20:07Z
+hold-sittings: absent
+stress-ng: none
+owner chrome: 2546101 Mon Nov  2 20:16:10 2026 chrome
+load 0.02 0.08 0.08
+lock, last line: 2026-11-17T02:16:40Z release t5-x64 status=8 load=0.86 0.94 0.93 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh  /Users/new/.local/share/
+pointer: x:142 y:130 screen:0 window:5912655
+/tmp/cua171-run-* present: []
+firefox on PATH (run-zero.sh): /Users/new/.local/share/cua-171/task59/bin/firefox
+google-chrome: Google Chrome 156.0.8078.73 
+gate leftovers: end check: clear 
+hard stop 2026-11-17T04:50:00Z

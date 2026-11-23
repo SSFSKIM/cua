@@ -1,0 +1,75 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "K2",
+  "pilot": false,
+  "what": "the hold canary on the current stable Chrome (extracted, not installed)",
+  "display": "private",
+  "load": "idle",
+  "minutes": 15,
+  "run_name": "pinned-K2",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h6/",
+    "commit": "69bd7993e1f1cb252574939bd6e8e80674bab5b8",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+    "sha256": "25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-042",
+  "command": "/Users/new/.local/share/cua-171/locked.sh task122-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h6/scripts/linux-engine-gate/gate.mjs run K2 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-042 --out /Users/new/.local/share/cua-171/m5/out-arm64-h6",
+  "chrome": "Google Chrome 158.0.8127.36",
+  "intended_chrome": {
+    "command": "/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/bin/google-chrome",
+    "version": "158.0.8127.36",
+    "under": "/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/"
+  },
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-042/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+    "--scene",
+    "device-chrome-dnd",
+    "--ops",
+    "chrome_dnd_short_in_front_shared,chrome_select_nudged_shared",
+    "--blocks",
+    "3",
+    "--run",
+    "pinned-K2",
+    "--ballast",
+    "gate",
+    "--pinned",
+    "--engine-sandbox",
+    "--hold-canary",
+    "absolute",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64-h6/K2.pinned-release/run"
+  ],
+  "started": "2026-11-21T00:27:42.464Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "canary_check": {
+    "pass": true,
+    "reasons": [],
+    "browsers": [
+      {
+        "pid": 328097,
+        "exe": "/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/root/opt/google/chrome/chrome",
+        "version": "Google Chrome 158.0.8127.36"
+      }
+    ]
+  },
+  "finished": "2026-11-21T00:30:38.045Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

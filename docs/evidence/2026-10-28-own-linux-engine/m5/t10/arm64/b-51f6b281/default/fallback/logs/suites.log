@@ -1,0 +1,17 @@
+2026-11-22T06:05:28Z == fallback head 51f6b281692c47060a47399b72da363748aad7db label counted device cua-171-arm64 engine installed selection default dirty=no
+2026-11-22T06:05:49Z run home /tmp/t137arm-b-51f6b281-fallback/fallback/home installed
+2026-11-22T06:05:49Z fallback home none: shaped exit 0 {"kind":"none","engine":null,"record":null,"verifiedVersion":null}
+2026-11-22T06:06:05Z fallback home none: probe exit 0
+2026-11-22T06:06:26Z run home /tmp/t137arm-b-51f6b281-fallback/fallback/home installed
+2026-11-22T06:06:26Z fallback home previous: shaped exit 0 {"kind":"previous","engine":{"sha256":"25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f","build":"pinned","version":"0.4.2"},"record":{"version":"0.4.2","sha256":"25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f"},"verifiedVersion":"0.4.2"}
+2026-11-22T06:06:42Z fallback home previous: probe exit 0
+2026-11-22T06:07:03Z run home /tmp/t137arm-b-51f6b281-fallback/fallback/home installed
+2026-11-22T06:07:03Z fallback home released: shaped exit 0 {"kind":"released","engine":{"sha256":"0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42","build":"pinned","version":"0.4.0"},"record":{"version":"0.4.0","sha256":"0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"},"verifiedVersion":"0.4.0"}
+2026-11-22T06:07:19Z fallback home released: probe exit 0
+2026-11-22T06:07:40Z run home /tmp/t137arm-b-51f6b281-fallback/fallback/home installed
+2026-11-22T06:07:40Z fallback home older: shaped exit 0 {"kind":"older","engine":{"sha256":"57e699b4eaf8a817b54b3cbdbb473ac038cdf5d7e2ca60c66f7c476a793d9e5f","build":"pinned","version":"0.3.0"},"record":{"version":"0.3.0","sha256":"57e699b4eaf8a817b54b3cbdbb473ac038cdf5d7e2ca60c66f7c476a793d9e5f"},"verifiedVersion":"0.3.0"}
+2026-11-22T06:07:57Z fallback home older: probe exit 0
+2026-11-22T06:08:17Z run home /tmp/t137arm-b-51f6b281-fallback/fallback/home installed
+2026-11-22T06:08:17Z fallback home unrecorded: shaped exit 0 {"kind":"unrecorded","engine":{"sha256":"57e699b4eaf8a817b54b3cbdbb473ac038cdf5d7e2ca60c66f7c476a793d9e5f","build":"unknown","version":null},"record":{"version":"0.4.3","sha256":"dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e"},"verifiedVersion":null}
+2026-11-22T06:08:34Z fallback home unrecorded: probe exit 0
+2026-11-22T06:08:34Z == fallback exit 0

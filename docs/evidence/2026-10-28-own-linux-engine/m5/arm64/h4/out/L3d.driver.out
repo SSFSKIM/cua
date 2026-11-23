@@ -1,0 +1,2 @@
+step.sh 2026-11-19T03:23:21Z start L3d after 180 s quiet wait: load=0.85 9.28 13.72 stress-ng=none flags=[]
+step.sh 2026-11-19T04:07:49Z end L3d exit 1 load=15.51 16.47 16.61

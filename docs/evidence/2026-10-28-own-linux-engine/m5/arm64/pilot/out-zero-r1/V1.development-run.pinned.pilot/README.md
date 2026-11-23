@@ -1,0 +1,10 @@
+# V1 (development run on the pinned release, not acceptance, never counted, pilot)
+
+**development run on the pinned release, not acceptance, never counted.** A pilot: the step's smallest form, to show it starts; no verdict of it is the gate's.
+
+- what: gedit's text operations and its caret case (the newest build's clipboard_write about 15 min)
+- display: :0; load: idle; estimated 40 min
+- run: `m5-pinned-dev-V1-pilot`; the harness's output in `run/`
+- checkout: /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/ at da306cc6319e7e9da282812402308c074b872dee, clean
+- candidate: /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine (sha256 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42 as given)
+- command: `/Users/new/.local/share/cua-171/locked.sh t96-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/m5/pilot-arm64/out-zero-r1/V1.development-run.pinned.pilot --hold /Users/new/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/m5/pilot-arm64/out-zero-r1/V1.development-run.pinned.pilot /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/ --vendor /Users/new/.local/share/cua-171/m5/pilot-arm64/home/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine --scene gedit --ops type_text,type_text_selection,type_text_dedicated,clipboard_read,clipboard_write,clipboard_release,caret_placed --blocks 1 --run m5-pinned-dev-V1-pilot --pinned --pilot`

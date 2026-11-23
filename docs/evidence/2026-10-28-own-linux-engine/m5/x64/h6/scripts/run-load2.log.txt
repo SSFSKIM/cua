@@ -1,0 +1,6 @@
+2026-11-21T01:01:40Z load2 start: L1 L2a L2b L3a L3b L4a L4b L4c fence 1795227300
+2026-11-21T01:58:56Z load2 driver exit 4
+2026-11-21T03:08:34Z load2 start: L2b L3a L3b L4a L4b L4c fence none
+2026-11-21T04:00:22Z load2 driver exit 6
+2026-11-21T04:02:24Z load2 start: L3b L4a L4b L4c fence none
+2026-11-21T05:08:12Z load2 driver exit 0

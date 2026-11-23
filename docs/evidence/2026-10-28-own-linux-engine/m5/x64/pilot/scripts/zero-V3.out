@@ -1,0 +1,33 @@
+firefox on PATH: /Users/new/.local/share/cua-171/task59/bin/firefox
+2026-11-15T04:40:25Z start V3 (/Users/new/.local/share/cua-171/m5/pilot-x64/out)
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-7nTGZK /tmp/cua171-run-AdXsUJ /tmp/cua171-run-OJWaJi /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794716181.382594125
+---
+> mtime ~/.config/google-chrome 1794719756.616095046
+2026-11-15T05:15:59Z end V3 exit 0 (/Users/new/.local/share/cua-171/m5/pilot-x64/out)
+--- owner-baseline
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-v8FxL4
+args: --vendor /Users/new/.local/share/cua-171/m5/pilot-x64/home/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/m5/pilot-x64/home/engine/linux/cua-engine --scene chrome-input,retention,minimized,minimized-xterm,minimized-recorder --ops click_element,right_click,right_click_fallback,secondary_action,move,drag,scroll,scroll_element_hidden,key_down,key_up,activate_window,after_resize,after_remap,after_covered_change,minimized_press_key,minimized_key_down,minimized_click,minimized_right_click,minimized_click_element,minimized_secondary_action,minimized_move,minimized_scroll,minimized_drag,minimized_type_text,minimized_type_characters,minimized_clipboard_read,minimized_clipboard_write,minimized_press_key_dedicated,minimized_click_dedicated,minimized_type_text_dedicated,minimized_list,minimized_tree,minimized_shot,minimized_restored_shot,minimized_restored_list,minimized_activate,minimized_activate_withdrawn,minimized_xterm_key_shared,minimized_xterm_key_dedicated,minimized_xterm_key_up_foreground,minimized_key_up_background --blocks 1 --run m4-dev-V3-pilot --dev
+started 2026-11-15T04:40:26Z finished 2026-11-15T05:15:52Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-7nTGZK /tmp/cua171-run-AdXsUJ /tmp/cua171-run-OJWaJi /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794716181.382594125
+---
+> mtime ~/.config/google-chrome 1794719756.616095046
+--- pointer
+pointer at start 142 130
+pointer restored to 142 130, reads 142 130 
+--- wrap.out tail
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 339; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 339; back to the top
+run valid; development run, not a release gate: no verdict FAIL; declared refusal (a loss, not a pass): chrome-input drag cua; declared unconfirmed (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua; declared gap (a loss, not a pass): chrome-input activate_window cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/pilot-x64/out/V3.development-run.pilot/run/results.jsonl
+{"exit": 0, "samples": 16258, "maps_samples": 5420, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1549, "browsers": 48}

@@ -1,0 +1,19 @@
+{
+  "device": "cua-171",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-PmQIln",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-PmQIln.home",
+  "token": "074bf973-3f97-44bb-8a64-d145082a6a4b",
+  "xSession": {
+    "DISPLAY": ":2",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-3475932-2840f7109bb8",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-kVRraY/baseline/desktop/session/bus/dbus-92E2aPaHzd,guid=44feb342efd88eeb8adf11c96afb38c4",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-PmQIln/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

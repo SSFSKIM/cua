@@ -1,0 +1,16 @@
+{
+  "finished": "2026-11-19T11:25:27.749Z",
+  "exit": 1,
+  "clear": false,
+  "person": [
+    "wrap71 flagged 1 reach into the person's session and 0 decoy connections",
+    "the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown"
+  ],
+  "run": [],
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  }
+}

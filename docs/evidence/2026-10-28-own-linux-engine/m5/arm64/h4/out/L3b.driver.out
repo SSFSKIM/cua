@@ -1,0 +1,2 @@
+step.sh 2026-11-19T02:18:28Z start L3b after 170 s quiet wait: load=0.91 9.54 14.05 stress-ng=none flags=[]
+step.sh 2026-11-19T02:39:20Z end L3b exit 1 load=17.14 16.75 16.07

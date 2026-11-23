@@ -61,6 +61,8 @@
 <div id="press-150" class="abs src" style="top: 294px" draggable="true" data-src="press-150" data-press-ms="150" aria-label="Busy press 150"></div>
 <div id="dragstart-400" class="abs src" style="top: 340px" draggable="true" data-src="dragstart-400" data-dragstart-ms="400" aria-label="Slow dragstart 400"></div>
 <div id="press-400" class="abs src" style="top: 386px" draggable="true" data-src="press-400" data-press-ms="400" aria-label="Busy press 400"></div>
+<div id="dragstart-500" class="abs src" style="left: 440px; top: 450px" draggable="true" data-src="dragstart-500" data-dragstart-ms="500" aria-label="Slow dragstart 500"></div>
+<div id="dragstart-600" class="abs src" style="left: 440px; top: 500px" draggable="true" data-src="dragstart-600" data-dragstart-ms="600" aria-label="Slow dragstart 600"></div>
 <a id="link" class="abs src" style="top: 432px" href="#drop-signals-link" data-src="link">link</a>
 <p id="nested-late" class="abs src" style="top: 524px"><span draggable="true" data-src="nested-late" data-dragstart-ms="150">MM</span></p>
 <canvas id="canvas-drag" class="abs src" style="top: 570px" width="50" height="36" draggable="true" data-src="canvas-drag" aria-label="Draggable canvas"></canvas>
@@ -102,7 +104,7 @@
   // times (ms from the press to dragstart, and from dragstart to dragend), stamped with the press its dragstart followed
   // (`seq`), so the harness binds the record to the trial that made it: the record outlives its trial until the next
   // dragstart
-  const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag', 'inzone', 'move'];
+  const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'seltext', 'canvas-drag', 'inzone', 'move'];
   const dnd = Object.fromEntries(SOURCES.map((s) => [s, { starts: 0, drops: 0 }]));
   const last = { src: 'none', seq: 0, effect: -1, lat: -1, dur: -1 };
   let pressedAt = null;

@@ -135,7 +135,7 @@ test('the input page\'s effects: keys, presses, clicks, context menus, moves, sc
   assert.equal(landed('input-page', 'click', before, s({ downs: 3 }), {}), false, 'the release not yet');
   assert.equal(landed('input-page', 'click_element', before, s({ clicks: 6 }), {}), true);
   assert.equal(landed('input-page', 'right_click', before, s({ context: 2 }), {}), true);
-  assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2, context_on: 'far' }), {}), false, 'on another element');
+  assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2, context_on: 'far' }), { action: 'showContextMenu' }), false, 'on another element');
   assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2 }), { action: 'showContextMenu' }), true);
   assert.equal(landed('input-page', 'secondary_action', before, s({ clicks: 6 }), { action: 'press' }), true, 'Gecko\'s buttons offer only press');
   assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2 }), { action: 'press' }), false);
@@ -156,7 +156,7 @@ test('a field\'s effects: the key\'s character in or out, the pasted text once m
   assert.equal(landed('field', 'press_key', { text: 'abc' }, { text: 'abcx' }, { key: 'x' }), true);
   assert.equal(landed('field', 'press_key', { text: 'abcx' }, { text: 'abc' }, { key: 'BackSpace' }), true);
   assert.equal(landed('field', 'press_key', { text: 'abc' }, { text: 'abc' }, { key: 'x' }), false);
-  assert.equal(landed('field', 'key_down', { text: 'abc' }, { text: 'abcx' }, { key: 'x' }), true);
+  assert.equal(landed('editor', 'key_down', { text: 'abc' }, { text: 'abcx' }, { key: 'x' }), true);
   assert.equal(landed('field', 'type_text', { text: 'a s1q' }, { text: 'a s1qs2q' }, { text: 's2q' }), true);
   assert.equal(landed('field', 'type_text', { text: 'a s2q' }, { text: 'a s2q' }, { text: 's2q' }), false);
   assert.equal(landed('field', 'clipboard_write', { text: 'cua171 x' }, { text: 'cua171 xcua171' }, { word: 'cua171' }), true);

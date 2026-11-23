@@ -50,6 +50,19 @@
 // harness's only through a watched harness window: on it, inside it, on its frame or in its client's range; a request
 // naming its window is judged as everywhere. A ReparentNotify another client sent (SendEvent) proves nothing and is not
 // read.
+//
+// A request naming a window whose life the harness registered, and which has ended, is judged by the life of the id it
+// reaches (task 106; the design session's rulings 857 and 858; arm64's V1 at H'''': the vendor builds' teardown, a
+// SendEvent FocusOut and a Composite UnredirectWindow, sent to the run's own gedit window after the vendor had ended
+// that gedit, read as foreign). The record sees every client's creations: an id whose latest life the stream saw is a
+// registered one that ended has no window now, so such a request is the harness's (`endedOwn`); a request in any later
+// life is judged by that life. xtrace sees only our connections, never another client's creation under a freed id, so
+// there such a request is the harness's only where the server refused it as BadWindow naming that id (no window
+// held it, so nothing changed); one it accepted reached a life the trace never saw begin, and is foreign. The gap this
+// leaves in xtrace: another client opening and closing a window under the id between the end and a refused request
+// reads as the harness's, a request that changed nothing. Input placed by where it lands (XTEST, a warp) and
+// KillClient, whose resource need not be a window, are never excused so. The rule only adds to what is the
+// harness's (ruling 858); which life a finding binds in the record is unchanged (#425).
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -75,6 +88,28 @@ const FOUND_SLACK_MS = 1000;
  * record's by the server's clock, set against the wall clock once), so this covers only the clocks' drift.
  */
 const SPAN_SLACK_MS = 250;
+/**
+ * The ClientMessage types a finding names (ICCCM, EWMH, XDND, XEMBED, the system tray, startup notification, and the
+ * vendor builds' own clipboard stop): any other atom is any client's to intern, a name that may be private, so its
+ * finding reads `a ClientMessage`, live and in a replay of a kept projection alike (audit-traces.mjs). The type decides
+ * no finding, only its label (task 106, fix wave 2).
+ */
+export const CLIENT_MESSAGE_TYPES = new Set([
+  'WM_PROTOCOLS', 'WM_DELETE_WINDOW', 'WM_TAKE_FOCUS', 'WM_CHANGE_STATE', 'WM_STATE',
+  '_NET_ACTIVE_WINDOW', '_NET_CLOSE_WINDOW', '_NET_WM_STATE', '_NET_WM_DESKTOP', '_NET_CURRENT_DESKTOP', '_NET_NUMBER_OF_DESKTOPS',
+  '_NET_SHOWING_DESKTOP', '_NET_MOVERESIZE_WINDOW', '_NET_WM_MOVERESIZE', '_NET_RESTACK_WINDOW', '_NET_REQUEST_FRAME_EXTENTS',
+  '_NET_WM_PING', '_NET_WM_SYNC_REQUEST', '_NET_WM_FULLSCREEN_MONITORS', '_NET_DESKTOP_VIEWPORT', '_NET_DESKTOP_GEOMETRY',
+  '_NET_STARTUP_INFO_BEGIN', '_NET_STARTUP_INFO', '_NET_SYSTEM_TRAY_OPCODE', '_NET_SYSTEM_TRAY_MESSAGE_DATA', 'MANAGER',
+  'XdndEnter', 'XdndPosition', 'XdndStatus', 'XdndLeave', 'XdndDrop', 'XdndFinished', '_XEMBED', '_GTK_SHOW_WINDOW_MENU',
+  'SKY_CLIPBOARD_STOP',
+]);
+/** A ClientMessage type as a finding names it: a listed protocol atom, else none. */
+export const clientMessageType = (name) => (typeof name === 'string' && CLIENT_MESSAGE_TYPES.has(name) ? name : null);
+
+/** The X protocol's BadWindow: the request named a window id that no window holds. */
+const BAD_WINDOW = 3;
+/** The requests whose windows the epoch rule reads: each names its window, and a missing one is BadWindow. */
+const NAMING_OPS = new Set([...WINDOW_OPS, ...PROPERTY_OPS, 'ChangeWindowAttributes', 'ReparentWindow', 'SendEvent', 'SetInputFocus', 'CreateWindow']);
 
 /**
  * The judge. `elements`: the stream (`xtraceElements`, `recordElements`). `registered`: the harness's windows, a Set,
@@ -119,8 +154,9 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   let mutating = 0;
   let unplaced = 0;
   const unattributed = { clients: new Set(), mutating: 0 };
-  // a creation the server refused, and every refused request, by the request element itself
-  const refused = refusedRequests(elements);
+  // a creation the server refused, and every refused request, by the request element itself; and the windows whose
+  // creation a refusal could not be bound to unambiguously, for which the ended-life rule is off
+  const { refused, ambiguous, sole } = refusedRequests(elements);
 
   const lifeOf = (w) => {
     let life = lives.get(w);
@@ -198,6 +234,18 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     return false;
   };
   const harness = (w, watched = false) => within(w, watched) || holds(w, watched);
+  // a request to an id whose latest life the stream saw is one the harness registered, now ended: the record saw every
+  // creation since, so no window holds the id; xtrace did not, so only the server's BadWindow for that id shows it
+  const endedOwn = (el, w) => {
+    if (!NAMING_OPS.has(el.op) || typeof w !== 'number' || w === root || ambiguous.has(w)) return false;
+    const life = lives.get(w);
+    if (!life || life.alive || !isRegistered(w, life)) return false;
+    if (strictBirth) return true;
+    // the error binds to this request alone (its connection sent no other request with its sequence bits, read or
+    // not), names this request's opcodes, and says no window held this id
+    const error = refused.get(el);
+    return error?.code === BAD_WINDOW && error.bad === w && sole.has(error) && error.major === el.major && (error.minor ?? 0) === (MINOR_OF[el.op] ?? 0);
+  };
   // a route audit's XTEST input on a window of a live harness window's client (GTK 4's focus window inside its toplevel,
   // task 50): that client's range is its own while the window lives, and the trace sees the window end only where one
   // of our connections selected its structure (xprobe ancestry, the engine's retention), so only such a window, alive
@@ -280,7 +328,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
         requests++;
         mutating++;
         const parentOk = el.parent === root || harness(el.parent);
-        if (!parentOk && !own(el.c, el.parent)) flag(el, 'CreateWindow under', el.parent);
+        if (!parentOk && !own(el.c, el.parent) && !endedOwn(el, el.parent)) flag(el, 'CreateWindow under', el.parent);
         if (!rejected) born(el, { owned: parentOk });
       } else if (!rejected) {
         const life = born(el, { inside: el.parent !== root && within(el.parent), or: el.or === true });
@@ -313,8 +361,10 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     if (!change) continue;
     mutating++;
     if (change.selection && !harness(change.windows[0]) && !own(el.c, change.windows[0])) {
-      // a selection owner's answer to a foreign requestor's own request: exempt while that request is served
-      if (!serveSelection(open, el, change.selection)) flag(el, change.what, change.windows[0]);
+      // a selection owner's answer to a foreign requestor's own request: exempt while that request is served. The
+      // answer is served first, whatever the server did with it, so its grant opens, turns INCR or closes as it always
+      // did; the ended-life rule decides only whether this one request is a finding (fix wave 1)
+      if (!serveSelection(open, el, change.selection) && !endedOwn(el, change.windows[0])) flag(el, change.what, change.windows[0]);
       continue;
     }
     if (change.unplaced) {
@@ -325,7 +375,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     // window (its frame, a window inside it, its client's range); a request naming its window is judged as ever
     const placed = routeAudit && el.op === 'FakeInput';
     for (const w of new Set(change.windows)) {
-      if (typeof w === 'number' && w !== root && (harness(w, placed) || own(el.c, w) || (placed && inLiveRange(w)))) continue;
+      if (typeof w === 'number' && w !== root && (harness(w, placed) || own(el.c, w) || (placed && inLiveRange(w)) || endedOwn(el, w))) continue;
       flag(el, change.what, w);
     }
     if (rejected) continue;
@@ -343,17 +393,56 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
 const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, UnredirectWindow: 3, UnredirectSubwindows: 4 };
 
 /**
- * The request elements the server refused, as a Set: an error names its request's opcodes and the low 16 bits of its
- * sequence number. xtrace shows every request of its connections, and a reply may come after later requests, so there
+ * The request elements the server refused, as a Map to the error that refused each: an error names its request's
+ * opcodes and the low 16 bits of its sequence number. xtrace shows every request of its connections, and a reply may come after later requests, so there
  * the error is its connection's latest request with those 16 bits (`exact`). The record reads its errors on a context
  * of their own (xprobe `contexts`), so an error may be read before or after later requests of its client; but it
  * records every request of the opcodes it reads, so the refused one is the client's latest recorded request with the
  * error's 16 bits and opcodes at or before the error's server time (`t`). An error for an opcode the record does not
  * read refuses nothing. An error without a time (a record of one context) refuses the client's latest recorded request
  * if its opcode and 16 bits match.
+ * `ambiguous`: the windows of every CreateWindow a timed refusal could name when more than one candidate, at any
+ * tick, could claim it (the record keys a client by its resource-id base, which a later connection may have; an error
+ * carries no connection generation; and the server's 32-bit clock wraps, so a creation after the wrap passes `<=` an
+ * error's time from before it): any of them may be the refused one, so none of their lives is certain; and the window
+ * of a CreateWindow an untimed record error refused, bound by the client's latest request alone. The binding itself is
+ * H''''s, unchanged; `ambiguous` only turns the ended-life rule off (task 106, fix wave 2).
+ * `sole`: the errors that bind to one request unambiguously (task 106, fix wave 3): of the whole stream, before any
+ * time filter and before the requests a judge does not read are dropped (xtrace's `claims`, counted at the parse), its
+ * connection sent exactly one request with its 16 sequence bits. Any other error, and every CreateWindow among its
+ * claimants, is `ambiguous`'s or outside `sole`: the ended-life rule never rests on it.
+ * A record's error counts only when the server timed it inside the request capture (fix wave 4): the errors context
+ * starts before the requests', so an error timed before the capture began may have a claimant that was never
+ * recorded. Its place is read from the server's times alone, never from the order the two contexts' lines were
+ * written: strictly after the capture's start (the `ready` line's `t0`) and strictly before the last recorded request,
+ * on the 32-bit clock read forward from the start. Both ends are ambiguous (fix wave 5): the errors context starts
+ * first, so a refusal from before the capture may share its first tick. An error outside, or one with no time or no
+ * start to read it against, is ambiguous.
  */
 function refusedRequests(elements) {
-  const refused = new Set();
+  const refused = new Map();
+  const ambiguous = new Set();
+  const sole = new Set();
+  // every request of the stream by its client and low 16 sequence bits, whatever its opcode or time
+  const byBits = new Map();
+  for (const el of elements) {
+    if (el.k !== 'req') continue;
+    const bits = `${el.c}|${el.seq & 0xffff}`;
+    if (!byBits.has(bits)) byBits.set(bits, []);
+    byBits.get(bits).push(el);
+  }
+  // the record's request capture, on the server's clock: its start, and the last recorded request read forward from it
+  const t0 = elements.find((el) => el.k === 'ready' && typeof el.t0 === 'number')?.t0;
+  const since = (t) => (t - t0) >>> 0;
+  let span = -1;
+  if (t0 !== undefined) for (const el of elements) if (el.k === 'req' && typeof el.t === 'number') span = Math.max(span, since(el.t));
+  const captured = (el) => el.exact === true || (t0 !== undefined && typeof el.t === 'number' && since(el.t) > 0 && since(el.t) < span);
+  const claim = (el) => {
+    const all = byBits.get(`${el.c}|${el.seq & 0xffff}`) ?? [];
+    const count = typeof el.claims === 'number' ? el.claims : all.length;
+    if (count === 1 && captured(el)) sole.add(el);
+    else for (const r of all) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
+  };
   const bySeq = new Map();
   const last = new Map();
   const timed = new Map();
@@ -369,14 +458,24 @@ function refusedRequests(elements) {
       bySeq.set(`${el.c}|${el.seq & 0xffff}`, el);
       last.set(el.c, el);
     } else if (el.k === 'error' && typeof el.t === 'number') {
+      claim(el);
       const candidates = (timed.get(timedKey(el.c, el.seq, el.major, el.minor)) ?? []).filter((r) => r.t <= el.t);
-      if (candidates.length) refused.add(candidates.at(-1));
+      if (candidates.length) {
+        const chosen = candidates.at(-1);
+        refused.set(chosen, el);
+        if (candidates.length > 1) for (const r of candidates) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
+      }
     } else if (el.k === 'error') {
+      claim(el);
       const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
-      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) refused.add(request);
+      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) {
+        refused.set(request, el);
+        // the record without a time binds by the client's latest request alone, which cannot be shown to be its creation
+        if (!el.exact && request.op === 'CreateWindow' && typeof request.window === 'number') ambiguous.add(request.window);
+      }
     }
   }
-  return refused;
+  return { refused, ambiguous, sole };
 }
 
 /**
@@ -435,7 +534,7 @@ export function changeOf(el, root) {
       const windows = el.destination === root ? [] : [el.destination];
       if (el.event === 'ClientMessage') {
         if (el.cmWindow !== root) windows.push(el.cmWindow);
-        return { what: `${el.cmType ?? 'a'} ClientMessage`, windows };
+        return { what: `${clientMessageType(el.cmType) ?? 'a'} ClientMessage`, windows };
       }
       return { what: `SendEvent ${el.event ?? 'event'}`, windows };
     }
@@ -568,8 +667,17 @@ function xtraceRequest(r, extensions) {
  * the latest input focus a request set or a reply read, a button by the latest pointer reply with no motion since, a
  * motion by the first pointer reply after it and before the next input; anything else is left unplaced.
  */
-export function xtraceElements({ elements, extensions }, root) {
+export function xtraceElements({ elements, extensions, claims }, root) {
   const out = [];
+  // each connection's requests by their low 16 sequence bits, over the whole trace: the parse's count (taken before a
+  // whole-run parse keeps only what the judge reads), else this stream's own
+  const claimants = claims ?? new Map();
+  if (!claims)
+    for (const item of elements) {
+      if (item.k !== 'req') continue;
+      const bits = `${item.r.conn}|${item.r.seq & 0xffff}`;
+      claimants.set(bits, (claimants.get(bits) ?? 0) + 1);
+    }
   const bySeq = new Map();
   let focus;
   let pointer;
@@ -607,8 +715,15 @@ export function xtraceElements({ elements, extensions }, root) {
       const base = text.match(/resource-id=0x([0-9a-f]+) resource-mask=0x([0-9a-f]+)/);
       if (base) out.push({ k: 'base', c: conn, base: Number.parseInt(base[1], 16), mask: Number.parseInt(base[2], 16) });
     } else if (what === 'Error') {
+      // `3=Window: major=25, minor=0, bad=0x01800064, seq=0010`: the error's code and the value it names are read too
       const s = text.match(/\bmajor=(\d+),.*\bseq=([0-9a-f]+)/);
-      if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]), exact: true });
+      const code = text.match(/^(\d+)=/);
+      const minor = text.match(/\bminor=(\d+)/);
+      const bad = text.match(/\bbad=(?:0x([0-9a-f]+)|(\d+))/);
+      if (s) {
+        const seq = Number.parseInt(s[2], 16);
+        out.push({ k: 'error', c: conn, seq, major: Number(s[1]), exact: true, claims: claimants.get(`${conn}|${seq & 0xffff}`) ?? 0, ...(minor ? { minor: Number(minor[1]) } : {}), ...(code ? { code: Number(code[1]) } : {}), ...(bad ? { bad: bad[1] !== undefined ? Number.parseInt(bad[1], 16) : Number(bad[2]) } : {}) });
+      }
     } else if (what === 'DestroyNotify') {
       // a generated one is read too, deliberately unlike ReparentNotify: an end only makes windows foreign (fails closed)
       const w = field(text, 'window');
@@ -704,7 +819,7 @@ function recordLine(line, out, meta, root) {
         meta.mask = r.mask;
         for (const el of out) if (el.k === 'client' && el.mask === undefined) el.mask = r.mask;
       }
-      out.push({ k: 'ready' });
+      out.push({ k: 'ready', ...(typeof r.t0 === 'number' ? { t0: r.t0 } : {}) });
       break;
     case 'failed':
       meta.error = r.error ?? 'the record failed';

@@ -1,0 +1,2 @@
+development run, not a release gate; candidate: sha256 8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0, aarch64-unknown-linux-musl static, cua-engine 0.4.1 (7522dcb8fb8c); attestation not checked (a development run)
+{"exit": 143, "samples": 112, "maps_samples": 38, "flags": 1, "decoy_connections": 0, "leftovers": [], "processes": 66, "browsers": 28}

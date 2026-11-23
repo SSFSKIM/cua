@@ -1,0 +1,6 @@
+2026-11-22T06:01:21Z == accept head 51f6b281692c47060a47399b72da363748aad7db label counted device cua-171-arm64 engine installed selection default dirty=no
+2026-11-22T06:01:42Z run home /tmp/t137arm-b-51f6b281-accept/accept/home installed
+2026-11-22T06:01:46Z pinned check of /tmp/t137arm-b-51f6b281-accept/accept/home/cua: exit 0, acceptance on the pinned release: /tmp/t137arm-b-51f6b281-accept/accept/home/cua/engine/linux/cua-engine
+2026-11-22T06:04:34Z scripts/accept/linux-native.mjs (selection default) exit 0
+2026-11-22T06:04:34Z engine watch: PASS (only /tmp/t137arm-b-51f6b281-accept/accept/home/cua/engine/linux/cua-engine, under the trusted worker; no sky_linux)
+2026-11-22T06:04:35Z == accept exit 0

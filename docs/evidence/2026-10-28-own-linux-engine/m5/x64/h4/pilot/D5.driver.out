@@ -1,0 +1,2 @@
+step.sh 2026-11-18T23:34:27Z start D5 --dev --pilot 2 --engine-stats after 20 s quiet wait: load=0.96 1.09 0.99 stress-ng=none
+step.sh 2026-11-18T23:37:51Z end D5 exit 0 load=0.96 1.09 1.01

@@ -1,0 +1,26 @@
+== 2026-11-20T22:24:30Z setup at 69bd7993e1f1cb252574939bd6e8e80674bab5b8, load 0.42 0.38 0.27
+changes before: 0
+node /usr/bin/node v24.22.1, npm 11.19.1, x86_64
+
+added 25 packages in 860ms
+v44.9.0
+   Compiling autocfg v1.5.1
+   Compiling rustix v1.1.4
+   Compiling bitflags v2.13.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling pxfm v0.1.30
+   Compiling zune-core v0.5.1
+   Compiling bytemuck v1.25.0
+   Compiling byteorder-lite v0.1.0
+   Compiling zune-jpeg v0.5.15
+   Compiling x11rb-protocol v0.13.2
+   Compiling num-traits v0.2.19
+   Compiling moxcms v0.8.1
+   Compiling gethostname v1.1.0
+   Compiling image v0.25.10
+   Compiling x11rb v0.13.2
+   Compiling linux-engine-diff-xprobe v0.0.0 (/Users/new/Developer/GitHub/cua/.claude/worktrees/t123-x64/scripts/linux-engine-diff/xprobe)
+    Finished `release` profile [optimized] target(s) in 28.93s
+-rwx------ 2 new new 1749584 Nov 20 14:25 /Users/new/Developer/GitHub/cua/.claude/worktrees/t123-x64/scripts/linux-engine-diff/xprobe/target/release/xprobe
+changes after: 0
+== 2026-11-20T22:25:02Z setup done

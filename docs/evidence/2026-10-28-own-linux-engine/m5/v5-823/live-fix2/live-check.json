@@ -1,0 +1,147 @@
+{
+ "run": "v5pl",
+ "head": "8292519764159c5e07b95fbaa748873827367f70",
+ "lines": 25,
+ "cells": [
+  {
+   "op": "chrome_dnd_shared",
+   "label": "cua171-diff-v5pl-3b6cfeff-drag-device_cua",
+   "label_of_run": true,
+   "timed": 3,
+   "audited": 2,
+   "reads": 10,
+   "titled": 10,
+   "one_dnd_one_moves": 10,
+   "parsed": 10,
+   "lines_of_this_fixture": 5,
+   "lines_with_notice_field": 5,
+   "lifecycles": 2,
+   "timed_bind_problems": [],
+   "timed_rows_with_evidence": 3,
+   "audit_bind_problems": [],
+   "audit_entries_with_evidence": 2,
+   "verdict": "pass",
+   "reasons": [],
+   "classes": {
+    "timed": {
+     "started": 3
+    },
+    "audit": {
+     "started": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_late_shared",
+   "label": "cua171-diff-v5pl-3b6cfeff-drag-device_cua",
+   "label_of_run": true,
+   "timed": 3,
+   "audited": 2,
+   "reads": 10,
+   "titled": 10,
+   "one_dnd_one_moves": 10,
+   "parsed": 10,
+   "lines_of_this_fixture": 5,
+   "lines_with_notice_field": 5,
+   "lifecycles": 2,
+   "timed_bind_problems": [],
+   "timed_rows_with_evidence": 3,
+   "audit_bind_problems": [],
+   "audit_entries_with_evidence": 2,
+   "verdict": "pass",
+   "reasons": [],
+   "classes": {
+    "timed": {
+     "started": 3
+    },
+    "audit": {
+     "started": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_obscured_in_front_shared",
+   "label": "cua171-diff-v5pl-3b6cfeff-drag-device_cua",
+   "label_of_run": true,
+   "timed": 3,
+   "audited": 2,
+   "reads": 10,
+   "titled": 10,
+   "one_dnd_one_moves": 10,
+   "parsed": 10,
+   "lines_of_this_fixture": 5,
+   "lines_with_notice_field": 5,
+   "lifecycles": 2,
+   "timed_bind_problems": [],
+   "timed_rows_with_evidence": 3,
+   "audit_bind_problems": [],
+   "audit_entries_with_evidence": 2,
+   "verdict": "pass",
+   "reasons": [],
+   "classes": {
+    "timed": {
+     "started": 3
+    },
+    "audit": {
+     "started": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_late_take_shared",
+   "label": "cua171-diff-v5pl-3b6cfeff-drag-device_cua",
+   "label_of_run": true,
+   "timed": 3,
+   "audited": 2,
+   "reads": 10,
+   "titled": 10,
+   "one_dnd_one_moves": 10,
+   "parsed": 10,
+   "lines_of_this_fixture": 5,
+   "lines_with_notice_field": 5,
+   "lifecycles": 2,
+   "timed_bind_problems": [],
+   "timed_rows_with_evidence": 3,
+   "audit_bind_problems": [],
+   "audit_entries_with_evidence": 2,
+   "verdict": "pass",
+   "reasons": [],
+   "classes": {
+    "timed": {
+     "started": 3
+    },
+    "audit": {
+     "started": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_obscured_in_front_late_shared",
+   "label": "cua171-diff-v5pl-3b6cfeff-drag-device_cua",
+   "label_of_run": true,
+   "timed": 3,
+   "audited": 2,
+   "reads": 10,
+   "titled": 10,
+   "one_dnd_one_moves": 10,
+   "parsed": 10,
+   "lines_of_this_fixture": 5,
+   "lines_with_notice_field": 5,
+   "lifecycles": 2,
+   "timed_bind_problems": [],
+   "timed_rows_with_evidence": 3,
+   "audit_bind_problems": [],
+   "audit_entries_with_evidence": 2,
+   "verdict": "pass",
+   "reasons": [],
+   "classes": {
+    "timed": {
+     "started": 3
+    },
+    "audit": {
+     "started": 2
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,42 @@
+{
+  "mode": "session",
+  "harness": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64",
+  "command": [
+    "/Users/new/.local/share/cua-171/task96/vendor-reruns.sh",
+    "inner",
+    "/Users/new/.local/share/cua-171/m5/pilot-arm64/vendor-reruns/rerun-3"
+  ],
+  "started": "2026-11-18T04:20:02.597Z",
+  "display": ":1",
+  "server": 264770,
+  "bus": "unix:path=/tmp/t96vr-1cvOIq/desktop/session/bus/dbus-tzFXMGEGFI,guid=159f3690bf667594a910735d6afd2772",
+  "busPid": 264777,
+  "a11y": "unix:path=/run/user/501/at-spi/bus_1,guid=296fcbfaaca5bc08150c94d56afd2772",
+  "openbox": 264790,
+  "environment": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-264763-fad111e30bfe",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/t96vr-1cvOIq/desktop/session/bus/dbus-tzFXMGEGFI,guid=159f3690bf667594a910735d6afd2772",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "result": {
+    "code": 0,
+    "signal": null
+  },
+  "busStop": {
+    "terminated": true,
+    "killed": false
+  },
+  "watchdog": {
+    "clean": true,
+    "reason": null
+  },
+  "finished": "2026-11-18T04:33:21.887Z",
+  "ended": [
+    {
+      "what": "openbox",
+      "pid": 264790
+    }
+  ]
+}

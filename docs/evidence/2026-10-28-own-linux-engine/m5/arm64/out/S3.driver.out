@@ -1,0 +1,2 @@
+step.sh 2026-11-18T15:16:12Z start S3 after 0 s quiet wait: load=0.56 0.31 0.26 stress-ng=none
+step.sh 2026-11-18T15:39:59Z end S3 exit 0 load=0.05 0.14 0.27

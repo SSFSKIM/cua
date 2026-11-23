@@ -7922,7 +7922,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   0 failures; the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #453.
 
-- Decision (#442, ruling 1073, 2026-11-22, `fix/442-other-control-on-top`, plugin 0.28.31; amends #433's keep and #296's
+- Decision (#442, ruling 1073, 2026-11-22, `fix/442-other-control-on-top`, plugin 0.29.1; amends #433's keep and #296's
   `nonInteractiveHit` keep, StalePoint.swift `otherControlOnTopVerdict`, `heldAtPoint`, `recordLacks`): **a click kept
   through an inert layer, or past a non-interactive hit, is judged by the control the corrected hit lies in; a live
   control the record does not hold at the point refuses (`otherControlOnTop`).** Kit `probe/442-measure` (README

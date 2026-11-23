@@ -260,8 +260,8 @@ export const DEVIATIONS = [
     field: 'error',
     answer: (c) => c.ok === false && PENDING_REFUSAL.test(String(c.error)),
     reason:
-      "after a Chromium drag the engine let drop, or a Chromium drag_handle's end (M4's T17), cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, a Chrome drag's or handle's drop over a window Chrome's request cannot confirm, an Electron drop whose drag loop did not show an accepting drag cursor at the release (known by its own image in the installed cursor themes), put up after the pointer came into the window under the release, one that takes drag and drop, the watch's own failure, or a drag_handle cua released after 30 s with no request of its own is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
-    section: 'Plan of Work, M4 T14 and T17; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10)',
+      "after a Chromium drag the engine let drop, or a Chromium drag_handle's end (M4's T17), cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, a Chrome drag's or handle's drop over a window Chrome's request cannot confirm, an Electron drop whose drag loop did not show an accepting drag cursor at the release (known by its own image in the installed cursor themes), put up after the pointer came into the window under the release, one that takes drag and drop, an Electron drop whose application did not answer the engine's two _NET_WM_PING syncs before its release in time (each bounded at 150 ms; M5's ruling 827, the notice saying it did not answer in time), the watch's own failure, or a drag_handle cua released after 30 s with no request of its own is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
+    section: 'Plan of Work, M4 T14 and T17; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10); M5, ruling 827 (0.4.1 settles before the release)',
   },
   // M4's T16: LibreOffice's VCL positions (engine vcl.rs; writer-drag.mjs `--plan element`)
   ...['click', 'type_text', 'scroll'].map((op) => ({
@@ -400,12 +400,28 @@ export function lineAsReported(shown, truncated) {
 /**
  * The declared speed gaps: a request time slower than the faster vendor build's that is known, explained and owned by
  * the milestone its `section` names. A gap turns only its own operation's, route's and series' failing speed verdict
- * into "declared gap", which the summary lists apart and never counts as a pass; any other loss still fails.
- * `[{op, route, series, reason, section}]`. None is declared: M1a's one, desktop `move`'s later requests, closed when
- * M4's T9 dropped the pause after a desktop path's leading motion, the one at the pointer's own position (Decision
- * Log, T9).
+ * into "declared gap", which the summary lists apart and never counts as a pass; any other loss still fails. The
+ * events experiment's series are `first` and `later` (events.mjs `eventSpeeds`), the verdict run's `cold` and `warm`,
+ * where a gap also requires the operation's every other part to hold as the vendor builds' do, and the upper end of
+ * the series' interval (cua − bar) to stay within `bound_ms`, as `DRAG_SPEED_GAPS`' bound does: past it, or with no
+ * interval, the loss fails (run.mjs `declaredGapVerdict`). `closes` names what closes the gap, as `DRAG_SPEED_GAPS`' does.
+ * `[{op, route, series, issue, bound_ms, reason, section, closes}]`. M1a's one, desktop `move`'s later requests, closed when M4's
+ * T9 dropped the pause after a desktop path's leading motion, the one at the pointer's own position (Decision Log, T9).
  */
-export const SPEED_GAPS = [];
+export const SPEED_GAPS = ['cold', 'warm'].map((series) => ({
+  // measured at M4's release gate on :0 (V3, chrome-input): candidate 1 cold 10.4 ms against the bar's 3.86 (interval
+  // [5.635, 7.8]), warm 7.9 against 0.52 ([6.145, 8.97]); candidate 3 cold 11.56 against 4.26, warm 8.46 against 0.55;
+  // M5's x64 pilot (task 87, V3 on :0) cold [5.785, 11.975], warm [5.905, 9.46]. The bound is the largest measured upper
+  // end, the pilot's cold 11.975, and room: 15 ms leaves 3 ms above it (ruling 728)
+  op: 'activate_window',
+  route: 'window',
+  series,
+  issue: '#373',
+  bound_ms: 15,
+  reason: "activate_window answers once the window manager has raised its window (task 63, 2026-11-06), so the next input can't reach the window it covered; the vendor builds answer before the raise. The wait is the safety; tracked by #373",
+  section: 'Decision Log, M4, T18 gate, candidate 1 (V3, by #373; sminos 666, 667), encoded by M5',
+  closes: { ticket: '#373', route: 'none' },
+}));
 
 /** The speed gap that declares this verdict's loss, or null. */
 export function declaredSpeedGap({ op, route, series }, list = SPEED_GAPS) {

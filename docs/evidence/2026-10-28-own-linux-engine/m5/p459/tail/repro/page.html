@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>xdnd-stale-repro</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  #src { position: absolute; left: 20px; top: 20px; width: 80px; height: 40px; background: #8cf; }
+  #zone { position: absolute; left: 300px; top: 20px; width: 200px; height: 200px; background: #fc8; }
+  #log { position: absolute; left: 20px; top: 300px; white-space: pre; }
+</style>
+<div id="src" draggable="true">drag me</div>
+<div id="zone">zone</div>
+<div id="log"></div>
+<script>
+  // A same-window HTML5 drag: the source at the left, a drop zone the path crosses, the path's end left of the zone.
+  // A drop counted here, at a release outside the zone, is a drop on a stale position.
+  const log = (s) => { document.getElementById('log').textContent += s + '\n'; document.title = 'xdnd-stale-repro ' + s; };
+  let drops = 0;
+  const zone = document.getElementById('zone');
+  let starts = 0;
+  document.getElementById('src').addEventListener('dragstart', (e) => { starts += 1; e.dataTransfer.setData('text/plain', 'x'); });
+  zone.addEventListener('dragover', (e) => e.preventDefault());
+  zone.addEventListener('drop', (e) => { e.preventDefault(); drops += 1; log(`drop ${drops} at ${e.clientX},${e.clientY}`); });
+  document.addEventListener('dragend', (e) => log(`dragend ${e.dataTransfer.dropEffect} at ${e.clientX},${e.clientY} drops ${drops} start ${starts}`));
+  // task 130: where the page's origin is, from a probe motion with no button
+  let probed = false;
+  document.addEventListener('mousemove', (e) => { if (!probed) { probed = true; document.title = `xdnd-stale-repro mm ${e.clientX},${e.clientY}`; } });
+</script>

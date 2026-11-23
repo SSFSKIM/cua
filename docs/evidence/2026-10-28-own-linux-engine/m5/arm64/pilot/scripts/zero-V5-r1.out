@@ -1,0 +1,30 @@
+owner pid=9512 start=52059
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+all-clear: NOT CLEAR: wrap71 flagged 1 reach into the person's session and 0 decoy connections; the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+--- V5 exit 1
+--- owner-baseline
+owner pid=9512 start=52059
+tmproot /tmp/c71-PXXiOz
+args: --vendor /Users/new/.local/share/cua-171/m5/pilot-arm64/home/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine --scene device-firefox,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate --ops firefox_click_pointer_out_shared,firefox_click_pointer_under_shared,firefox_right_click_pointer_out_shared,firefox_click_pointer_out_dedicated,firefox_click_visible_shared,firefox_click_overlap_pointer_in_shared,firefox_element_click_covered,firefox_move_pointer_out_shared,firefox_move_overlap_pointer_in_shared,firefox_move_covered_dedicated,firefox_drag_pointer_out_shared,firefox_drag_overlap_pointer_in_shared,firefox_drag_covered_dedicated,firefox_scroll_pointer_out_shared,firefox_scroll_overlap_pointer_in_shared,firefox_scroll_covered_dedicated,chrome_drag_visible_path_shared,chrome_drag_covered_path_shared,chrome_drag_covered_dedicated,chrome_dnd_shared,chrome_dnd_in_front_shared,chrome_dnd_late_shared,chrome_dnd_covered_dedicated,chrome_dnd_short_in_front_shared,chrome_dnd_short_covered_dedicated,chrome_dnd_obscured_in_front_shared,chrome_dnd_obscured_in_front_late_shared,chrome_dnd_late_take_shared,chrome_dnd_short_pointer_outside_shared,chrome_dnd_short_pointer_outside_dedicated,chrome_select_nudged_shared,chrome_dnd_inzone_out_in_front_shared,chrome_dnd_long_left_in_front_shared,identity_apart,identity_stacked,identity_stacked_self_active,identity_stacked_other_active,identity_apart_shot,identity_click_element,identity_secondary_action,identity_type_text,identity_clipboard_read,identity_key_up,identity_kate --blocks 1 --run pdev-V5 --ballast gate --pinned --pilot
+started 2026-11-18T05:09:02Z finished 2026-11-18T05:09:41Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+--- pointer
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 
+--- wrap.out tail
+    self._target(*self._args, **self._kwargs)
+  File "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py", line 140, in decoy
+    s.bind(path)
+OSError: AF_UNIX path too long
+development run on the pinned release, not acceptance, never counted; candidate: sha256 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42, aarch64-unknown-linux-musl static, cua-engine 0.4.0 (c55c8e08d9cb); the pin's arm64 asset of linux-engine-v0.4.0; native/linux-engine as at c55c8e08d9cbbb057b8b95434787b1e45d41184c, the checkout at da306cc6319e7e9da282812402308c074b872dee; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43637317960/attempts/1, built from c55c8e08d9cbbb057b8b95434787b1e45d41184c (refs/heads/release/linux-engine-v0.4.0) on a github-hosted runner; .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43608161213/attempts/1, built from c55c8e08d9cbbb057b8b95434787b1e45d41184c (refs/heads/feat/171-m4) on a github-hosted runner
+{"exit": 143, "samples": 348, "maps_samples": 117, "flags": 1, "decoy_connections": 0, "leftovers": [], "processes": 143, "browsers": 74}
+--- all-clear
+all-clear: NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)
+- the person's side: wrap71 flagged 1 reach into the person's session and 0 decoy connections
+- the person's side: the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+- the run's own side: clean
+- the sitting's exit: 1

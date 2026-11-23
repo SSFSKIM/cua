@@ -1,0 +1,35 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 1097567,
+   "run": "pinned-V5",
+   "opt_in": false,
+   "started": "2026-11-22T05:06:18.082Z",
+   "finished": "2026-11-22T05:06:28.028Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 1097740,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "list_windows": 5,
+      "get_window_state": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    }
+   ]
+  }
+ ]
+}

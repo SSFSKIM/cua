@@ -1,0 +1,51 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "P5",
+  "pilot": false,
+  "what": "T19's leave cases: the pointer moved out during the request",
+  "display": "private",
+  "load": "idle",
+  "minutes": 20,
+  "run_name": "pinned-P5",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t5-x64/",
+    "commit": "fefe306c288956a48b6c086017f3cd1a58462a07",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-x64",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t5-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t5-x64/scripts/linux-engine-gate/gate.mjs run P5 --pinned /Users/new/.local/share/cua-171/m5/home-x64 --out /Users/new/.local/share/cua-171/m5/out-x64",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "predicates",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--ops",
+    "click,scroll,move,select,dnd",
+    "--plan",
+    "leave",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine",
+    "--run",
+    "pinned-P5",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-x64/P5.pinned-release/run"
+  ],
+  "started": "2026-11-16T22:55:55.112Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-16T23:14:38.903Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

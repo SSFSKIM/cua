@@ -1,0 +1,2 @@
+step.sh 2026-11-22T04:13:20Z start L4b after 231 s quiet wait: load=0.94 8.38 11.13 stress-ng=none df=35G
+step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/scripts/linux-engine-gate/gate.mjs run L4b --pinned /Users/new/.local/share/cua-171/m5/home-x64-043 --out /Users/new/.local/share/cua-171/m5/out-x64-h8

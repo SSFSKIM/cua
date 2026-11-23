@@ -1,0 +1,5 @@
+# arm64 out/H1.pinned-release: the drop-signals verdict re-judged at 74a5a91a (task 139; the final review's P2s)
+
+run pinned-H1: electron t17-fix3, gate pinned, lanes null, trials null, judge electronDropVerdict
+  stored: pass
+  now: pass

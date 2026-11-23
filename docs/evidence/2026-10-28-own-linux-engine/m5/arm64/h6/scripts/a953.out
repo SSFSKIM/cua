@@ -1,0 +1,7 @@
+2026-11-21T04:56:01Z start t14-floor df 114G load=0.11 0.25 2.24
+development run, not a release gate (task 122, ruling 953, plan t14-floor): {"code":0,"signal":null,"clean":true,"reason":null}
+2026-11-21T05:12:35Z end t14-floor exit 0 load=16.82 16.52 12.07
+2026-11-21T05:12:35Z start t14-long df 114G load=16.82 16.52 12.07
+development run, not a release gate (task 122, ruling 953, plan t14-long): {"code":1,"signal":null,"clean":true,"reason":null}
+2026-11-21T05:18:51Z end t14-long exit 1 load=17.62 16.78 13.54
+2026-11-21T05:18:51Z t14-long exited 1: stopped for the controller

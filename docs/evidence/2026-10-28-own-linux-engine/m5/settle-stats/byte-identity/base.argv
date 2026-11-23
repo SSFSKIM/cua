@@ -1,0 +1,5 @@
+["server"]
+["server","--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0"]
+["server","--stats"]
+["server","--stats"]
+["server"]

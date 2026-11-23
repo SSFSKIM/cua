@@ -1,0 +1,88 @@
+✔ the judge's zone is the page's #zone, and every drop cell's path end is its path's own last point (6.056457ms)
+✔ a path end against the zone: inside, outside, and within the border margin ambiguous (0.368905ms)
+✔ ruling 957: Chrome's long-left control, its path ended left of the zone, a drop landed in the zone: a drop at a stale position, never landed, and the step fails (9.056288ms)
+✔ ruling 957 on t14-floor: left and inzone-out end outside the zone, the long drop inside; only the controls' landings are stale (0.699317ms)
+✖ the review of 2dd2b0d8, finding 1: the measurement lane's accept is no proof the path ended in the zone (the engine sends every sample before it reads the cursor): its landings are judged by the path's end too (5.534034ms)
+✔ ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised (1.345935ms)
+✔ ruling 957 in Electron: the controls' and the off-window releases' landings in the zone are stale; the short drop's and the move's land (1.378938ms)
+✔ the hold's regression cells land only where their paths end, inside the zone (0.966711ms)
+✖ the review of 2dd2b0d8, finding 2: an off-window drag whose end was not verified is still judged on the zone's drop: a landing there is stale, never dropped from the evidence (4.139096ms)
+✖ the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts a row only when it took, its motion after the take outlasted the floor, and it ended as expected; short of its minimum the part is unexercised (1.181926ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 7
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 413.919533
+
+✖ failing tests:
+
+test at test/linux-engine-diff/stale-position.test.mjs:76:1
+✖ the review of 2dd2b0d8, finding 1: the measurement lane's accept is no proof the path ended in the zone (the engine sends every sample before it reads the cursor): its landings are judged by the path's end too (5.534034ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   'cua:accept left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)'
+  - ]
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:80:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ 'cua:accept left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:132:1
+✖ the review of 2dd2b0d8, finding 2: an off-window drag whose end was not verified is still judged on the zone's drop: a landing there is stale, never dropped from the evidence (4.139096ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   'cua:desktop root: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 2 (#0)'
+  - ]
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:136:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ 'cua:desktop root: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 2 (#0)' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:146:1
+✖ the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts a row only when it took, its motion after the take outlasted the floor, and it ended as expected; short of its minimum the part is unexercised (1.181926ms)
+  AssertionError [ERR_ASSERTION]
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:152:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

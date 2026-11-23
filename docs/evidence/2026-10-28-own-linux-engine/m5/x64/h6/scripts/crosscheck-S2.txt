@@ -1,0 +1,61 @@
+# the settle cross-check: /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/S2.pinned-release/run/summary.md against /Users/new/.local/share/cua-171/m5/out-x64-h6/S2.pinned-release/run/summary.md
+
+| cell | lane | runs | misses | verdict | differs |
+|---|---|---|---|---|---|
+| firefox-input press_key background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input key_down background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input key_up background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input click_element background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input right_click background | shipped | 31 → 31 | 1 (0 / 0 / 1 / 0) → 1 (0 / 0 / 1 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input secondary_action background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input move background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input scroll background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input drag background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-text press_key background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-text type_text background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-text activate_window background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input click dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input right_click dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input move dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input scroll dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| firefox-input drag dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit press_key background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit key_down background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit drag background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit activate_window background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit type_text background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit clipboard_read background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit clipboard_write background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit press_key desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit click desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit drag desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gedit drag_handle desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+
+| audited cell | audit | ran | effects missed | differs |
+|---|---|---|---|---|
+| firefox-input press_key background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input key_down background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input key_up background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input click_element background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input right_click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input secondary_action background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input move background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input scroll background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-input drag background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-text press_key background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| firefox-text type_text background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit press_key background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit key_down background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit drag background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit type_text background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit clipboard_read background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gedit clipboard_write background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+
+the runs' own failures: earlier none; later none
+cells: 30 and 30; audited: 19 and 19; verdicts differing 0, cells in one only 0, audits differing 0, cells whose misses differ 0
+CROSS-CHECK: SAME verdicts, cells, audits and the runs' own failures
+compare-settle exit 0

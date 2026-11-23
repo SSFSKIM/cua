@@ -1,0 +1,4 @@
+2026-11-21T07:13:17Z start v3b at da2deeb2fda47733e53eca9918646e15775f1d57, cua cua-engine 0.4.2 (9371d2348cf8), df 110G load=6.01 14.10 16.06
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v3b, at twice the load): {"code":0,"signal":null,"clean":true,"reason":null}
+2026-11-21T07:37:17Z end v3b exit 0 load=16.96 16.91 16.79
+2026-11-21T07:37:17Z a959 done: v3b

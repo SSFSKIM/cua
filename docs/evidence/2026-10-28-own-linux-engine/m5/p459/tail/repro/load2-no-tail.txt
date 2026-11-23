@@ -1,0 +1,14 @@
+window 4194306 at 2,44; probe title: xdnd-stale-repro mm 200,200
+page origin in the window: 0,0
+drag 17: dropped, page took nothing: xdnd-stale-repro dragend copy at 639,378 drops 0 start 17
+drag 18: dropped, page took nothing: xdnd-stale-repro dragend copy at 639,378 drops 0 start 18
+drag 22: dropped, page took nothing: xdnd-stale-repro dragend copy at 639,378 drops 0 start 22
+drag 25: dropped, page took nothing: xdnd-stale-repro dragend copy at 639,378 drops 0 start 25
+drag 62: stale: xdnd-stale-repro dragend copy at 639,378 drops 1 start 62
+drag 64: dropped, page took nothing: xdnd-stale-repro dragend copy at 639,378 drops 1 start 64
+drag 73: stale: xdnd-stale-repro dragend copy at 639,378 drops 2 start 73
+drag 82: stale: xdnd-stale-repro dragend copy at 639,378 drops 3 start 82
+drag 90: stale: xdnd-stale-repro dragend copy at 639,378 drops 4 start 90
+drag 92: dropped, page took nothing: xdnd-stale-repro dragend copy at 639,378 drops 4 start 92
+stale-position drops: 4, dropped with nothing taken: 6, clean leaves: 90, of 100 (load 2 per core, step 500 us)
+repro exit 0

@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running tests/live_device.rs (/Users/new/.local/share/cua-171/task121/mutation/target/release/deps/live_device-aab2470e93f7790f)
+
+running 1 test
+test a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply ... FAILED
+
+failures:
+
+---- a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply stdout ----
+
+thread 'a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply' (926844) panicked at tests/live_device.rs:3083:32:
+in front, shared: the watch's Escape reached the source
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.89s
+
+error: test failed, to rerun pass `--test live_device`

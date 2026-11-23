@@ -1,0 +1,2 @@
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v3, at twice the load)
+development run, not a release gate; candidate: sha256 25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f, aarch64-unknown-linux-musl static, cua-engine 0.4.2 (9371d2348cf8); attestation not checked (a development run)

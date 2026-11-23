@@ -1,0 +1,3 @@
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 1

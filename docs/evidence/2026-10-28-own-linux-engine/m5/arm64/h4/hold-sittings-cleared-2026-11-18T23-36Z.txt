@@ -1,0 +1,20 @@
+The controller (session linux171) cleared this hold on dc-linux171arm-996d. Ruling 730(b) lets the controller clear a hold, and the design session (cua_repl) is live and has been told.
+
+The hold. T7 part 2's `:0` sitting at H⁗ (3b5c0441, engine 0.4.1). V1.pinned-release's all-clear read NOT CLEAR at 23:34:28Z. The audit counted 16 vendor-lane `SendEvent FocusOut` and `UnredirectWindow` requests as changes to windows the harness did not open:
+- pinned build, on gedit type_text, type_text_selection and clipboard_write;
+- newest build, on clipboard_write;
+- windows 0x01800064, 0x02c00064 and 0x01a00064.
+
+The cause, analysed and not yet fixed: a harness fault in the audit's window ownership. Those three ids are the run's own gedit windows; the lane restores record them, and the restarted gedits reuse the ids. Each request was the vendor's per-request teardown after it had ended its own gedit (V1 recorded 189 pinned ends and 63 newest ends, all declared). The audit's ownership record didn't cover the ended or reused id when the request landed. x64 never meets this, because its vendor builds end no windows.
+
+What reached the person: nothing. This VM's `:0` is nobody's display. wrap71 raised 0 flags and saw 0 decoy connections, the run's own side is clean, and the pointer was restored.
+
+Checked before clearing:
+- no cua-engine, sky_linux, gedit or gnome-text-editor process alive;
+- /tmp/.X11-unix holds X0 only;
+- no /tmp/cua171-run-*.
+
+Next:
+- No `:0` work on this VM until the audit fix is ruled and lands.
+- T7's private parts continue: the twice-load block, the counter pilot, F2 and F3.
+- V1 is re-judged under the fixed audit, if its stored records allow it, or rerun at the next head with V2–V5 and Z0.

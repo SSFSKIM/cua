@@ -1,0 +1,2 @@
+{"t": 19.471, "kind": "outside-peer-connection", "pids": [2181578], "comm": null, "peer_path": "@37d51", "peer_pids": [], "peer_comm": null, "peer_inode": "19820785"}
+{"t": 19.472, "kind": "stop-sent", "pid": 2180275, "why": "outside-peer-connection"}

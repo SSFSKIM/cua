@@ -1,0 +1,12 @@
+--- m4/gate/scripts/rejudge-late-take-window.mjs
++++ task89/rejudge-680/rejudge-late-take-window.mjs
+@@ -92,7 +92,7 @@
+ }
+ 
+ // the step's planned operations, and the run's terminal failures but the replaced one
+-const step = stepNamed(String(meta?.run).replace(/^m4-gate-/, ''));
++const step = stepNamed(String(meta?.run).replace(/^(m4-gate-|pinned-)/, ''));
+ const stepOps = new Set(verdictOps(step));
+ const planned = step.scenes.flatMap((scene) => SCENE_OPS[scene].filter((op) => stepOps.has(op)).map((op) => `${scene} ${op}`));
+ const verdicts = rows.filter((r) => r.kind === 'verdict');
+

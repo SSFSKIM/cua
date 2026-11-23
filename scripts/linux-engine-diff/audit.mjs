@@ -20,13 +20,18 @@ const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+
 const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=true\S* major-opcode=(\d+)/;
 /**
  * The server's lines the foreign-window judge reads (foreign.mjs): the replies that say where a window lies, where the
- * focus and the pointer are, the errors that refuse a request, the events that end a window, move it to another parent
- * or ask for a selection, and each connection's resource-id base.
+ * focus and the pointer are, the errors that refuse a request (their text keeps the error's code, `3=Window: major=…`),
+ * the events that end a window, move it to another parent or ask for a selection, and each connection's resource-id
+ * base.
  */
-const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) \d+=\w+: | Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
+const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) (?=\d+=\w+: )| Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
 
-/** A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). */
-const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0 });
+/**
+ * A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). `claims`: every request's
+ * connection and low 16 sequence bits, counted before a `keep` drops any, so an error's claimants are the whole trace's
+ * (foreign.mjs `xtraceElements`; task 106, fix wave 3).
+ */
+const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0, claims: new Map() });
 
 function readLine(state, line, keep) {
   const at = state.offset;
@@ -44,6 +49,8 @@ function readLine(state, line, keep) {
   }
   const m = line.match(REQUEST);
   if (!m) return;
+  const bits = `${Number(m[1])}|${Number.parseInt(m[2], 16) & 0xffff}`;
+  state.claims.set(bits, (state.claims.get(bits) ?? 0) + 1);
   const request = {
     conn: Number(m[1]),
     seq: Number.parseInt(m[2], 16),
@@ -59,13 +66,15 @@ function readLine(state, line, keep) {
   state.elements.push({ k: 'req', r: request });
 }
 
-const parsed = ({ requests, extensions, elements }) => ({ requests, extensions, elements });
+const parsed = ({ requests, extensions, elements, claims }) => ({ requests, extensions, elements, claims });
 
 /**
  * A trace's requests `{conn, seq, major, minor, name, text, at}`, the extensions' major opcodes the server reported,
  * and `elements`: in the trace's order, each request (`{k: 'req', r}`) and each server line the foreign-window judge
  * reads (`{k: 'line', conn, seq, what, text}`, `SERVER`). `at` is where the request's line starts in the trace, in
- * bytes, which the proxy's marks are measured in.
+ * bytes, which the proxy's marks are measured in. `claims`: how many requests each connection sent under each value of
+ * the low 16 sequence bits, kept or not. An audit's findings never carry a request's text: it names atoms and
+ * payloads, and the rows outlive the run.
  */
 export function parseXtrace(text) {
   const state = parseState();
@@ -103,7 +112,7 @@ export function auditRequests({ requests, extensions }) {
   const found = [];
   for (const r of requests) {
     const what = forbidden(r, extensions);
-    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    if (what) found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
@@ -130,7 +139,7 @@ export function auditForeground({ requests, extensions }, target) {
     if (!what) continue;
     const targeted = what === 'XTEST FakeInput' || (what !== 'WarpPointer' && namedWindow(r) === target);
     if (targeted) allowed++;
-    else found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    else found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, allowed, forbidden: found };
@@ -144,7 +153,7 @@ export function auditNothingSent({ requests, extensions }) {
   const found = [];
   for (const r of requests) {
     const what = r.major === 25 ? 'SendEvent' : forbidden(r, extensions);
-    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    if (what) found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
@@ -171,13 +180,13 @@ export function auditAnswered({ requests, extensions }, marks, answers) {
     for (const r of requests.filter((x) => x.at >= from && x.at < to)) {
       attributed.add(r);
       const what = answer.refused ? (r.major === 25 ? 'SendEvent' : forbidden(r, extensions)) : forbidden(r, extensions);
-      if (what) found.push({ conn: r.conn, seq: r.seq, what: answer.refused ? `${what} with request ${i}'s refusal` : what, text: r.text });
+      if (what) found.push({ conn: r.conn, seq: r.seq, what: answer.refused ? `${what} with request ${i}'s refusal` : what });
     }
   });
   for (const r of requests) {
     if (attributed.has(r)) continue;
     const what = forbidden(r, extensions);
-    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    if (what) found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
@@ -271,7 +280,12 @@ export function attributeFocusOuts(trace, records, { delayMs }) {
 
 /** A pressed key or button and the release that answers it. */
 const RELEASE_OF = { KeyPress: 'KeyRelease', ButtonPress: 'ButtonRelease' };
-const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'} ${detail}`;
+/**
+ * An input event as a finding names it: its class, never its code (task 106, fix wave 4). A key's code names the key
+ * the engine pressed, so a run's findings could spell out what it typed; the audit compares codes in memory and writes
+ * only `key` or `button`.
+ */
+const inputClass = ({ type }) => (/^Key/.test(type) ? 'key' : 'button');
 
 /**
  * The audit of a key or button held, its window then minimized, then released (M4's T4; the design session's proof):
@@ -286,11 +300,12 @@ const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'
  *   forbids, anywhere;
  * - outside the samples' spans the engine sends no input and nothing the background route forbids.
  * A trace with no requests, or a sample whose marks are missing or out of order, is not clean. Returns `{clean,
- * traced, requests, samples: [{i, held}], forbidden}`.
+ * traced, requests, samples: [{i, held: {keys, buttons}}], forbidden}`: findings and samples name an input by its class,
+ * never its code.
  */
 export function auditHeldRelease({ requests, extensions }, target, { route, marks }) {
   const found = [];
-  const flag = (what, r) => found.push({ conn: r?.conn, seq: r?.seq, what, text: r?.text });
+  const flag = (what, r) => found.push({ conn: r?.conn, seq: r?.seq, what });
   const at = new Map(marks.map((m) => [m.tag, m.at]));
   const indices = [...new Set(marks.map((m) => m.tag.split(':')[1]))].sort((a, b) => Number(a) - Number(b));
   const samples = [];
@@ -312,7 +327,7 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
       const e = inputEvent(r, extensions);
       const what = forbidden(r, extensions);
       if (e && viaRoute(e) && RELEASE_OF[e.type]) pressed.push({ type: e.type, detail: e.detail });
-      else if (e && ['KeyRelease', 'ButtonRelease'].includes(e.type)) flag(`sample ${i}: the hold released ${e.type} ${e.detail}`, r);
+      else if (e && ['KeyRelease', 'ButtonRelease'].includes(e.type)) flag(`sample ${i}: the hold released ${e.type} (a ${inputClass(e)})`, r);
       else if (e && e.via === 'send' && e.type === 'FocusIn' && route === 'background' && e.destination === target) continue;
       else if (e && e.via !== 'xtest') flag(`sample ${i}: the hold sent ${e.type}`, r);
       if (what && what !== 'XTEST FakeInput' && !(route === 'foreground' && what !== 'WarpPointer' && namedWindow(r) === target)) flag(`sample ${i}: the hold sent ${what}`, r);
@@ -328,15 +343,16 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
       if (e && viaRoute(e) && ['KeyRelease', 'ButtonRelease'].includes(e.type)) {
         const k = owed.indexOf(`${e.type} ${e.detail}`);
         if (k >= 0) owed.splice(k, 1);
-        else flag(`sample ${i}: the release sent ${e.type} ${e.detail}, which was not held or was released already`, r);
+        else flag(`sample ${i}: the release sent ${e.type} (unexpected ${inputClass(e)}), which was not held or was released already`, r);
         continue;
       }
       if (e && e.via === 'send' && e.type === 'FocusOut' && route === 'background' && e.destination === target) continue;
-      if (e) flag(`sample ${i}: the release sent ${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}${e.detail === null ? '' : ` ${e.detail}`}`, r);
+      if (e) flag(`sample ${i}: the release sent ${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}${e.detail === null ? '' : ` (a ${inputClass(e)})`}`, r);
       else if (what) flag(`sample ${i}: the release sent ${what}`, r);
     }
-    for (const missing of owed) flag(`sample ${i}: the release never sent ${missing}`);
-    samples.push({ i: Number(i), held: pressed.map(heldName) });
+    for (const missing of owed) flag(`sample ${i}: the release never sent the release of a held ${/^Key/.test(missing) ? 'key' : 'button'}`);
+    // what the hold pressed, counted by class: its codes stay in this audit
+    samples.push({ i: Number(i), held: { keys: pressed.filter((p) => p.type === 'KeyPress').length, buttons: pressed.filter((p) => p.type !== 'KeyPress').length } });
   }
   if (!samples.length) flag('no sample was marked in the trace');
   for (const r of requests) {

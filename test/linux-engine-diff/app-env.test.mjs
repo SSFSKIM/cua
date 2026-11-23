@@ -9,6 +9,8 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { HOME_VARS, launchEnvironment, runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
 import * as chromeModule from '../../scripts/linux-engine-diff/chrome.mjs';
@@ -299,28 +301,32 @@ test('an application whose own variables the environment refuses is never starte
 
 /**
  * The commands the harness starts that are not applications: its X and bus tools, its own programs, the engines
- * (engines are not applications, task 45), the candidate's preparation commands, git, and node as the run's
- * org.a11y.Bus stand-in (a11y-stub.mjs; xspawn.test.mjs holds `process.execPath` to that one start).
+ * (engines are not applications, task 45; `launch.command` an engine's launch inside cua's worker sandbox,
+ * engine-sandbox.mjs), `stdbuf` around xprop's spy (drop-signals.mjs), the candidate's preparation commands, git, node as the run's
+ * org.a11y.Bus stand-in (a11y-stub.mjs; xspawn.test.mjs holds `process.execPath` to that one start), and a running
+ * browser's own executable asked its version (`exe`, chrome.mjs `browserIdentity`: no window, no profile).
  */
-const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl'", "'dbus-monitor'", "'dbus-daemon'", "'xtrace'", "'setpriv'", "'Xvfb'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'command', 'cmd', 'process.execPath']);
+const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl'", "'dbus-monitor'", "'dbus-daemon'", "'xtrace'", "'setpriv'", "'stdbuf'", "'Xvfb'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'XPROBE', 'xprobe', 'this.bin', 'launch.command', 'values.engine', 'args.cua', 'command', 'cmd', 'process.execPath', 'exe']);
 
 test('no application start bypasses the launch environment: every process start is a tool, an engine, or one of the two application launchers', () => {
   const modules = harnessModules();
   assert.ok(['scenes.mjs', 'chrome.mjs', 'families.mjs', 'safety.mjs', 'xtools.mjs'].every((f) => modules.some(({ file }) => file === f)), 'the walk reaches the harness');
   // calls are found in the code, not in its strings ("it could not run (…)"); their arguments are read from the text
   const starts = harnessStarts(modules);
-  const stray = starts.filter(({ command }) => !TOOLS.has(command) && command !== 'CHROME_COMMAND');
+  const stray = starts.filter(({ command }) => !TOOLS.has(command) && command !== 'this.command');
   assert.deepEqual(stray.map(({ file, line, command }) => `${file}:${line}: ${command}`), [], 'a process started with a command that is neither a tool nor an engine: an application must start through Desktop.spawnApp or the run\'s Chrome');
+  // a browser's executable is run only to read its version, in chrome.mjs alone
+  assert.deepEqual(starts.filter(({ command }) => command === 'exe').map(({ file }) => file), ['chrome.mjs']);
   // `cmd`, a command given by the caller, is the application launcher's alone, and so is Chrome's
-  const generic = starts.filter(({ command }) => command === 'cmd' || command === 'CHROME_COMMAND');
-  assert.deepEqual(generic.map(({ file, command }) => `${file} ${command}`).sort(), ['chrome.mjs CHROME_COMMAND', 'scenes.mjs cmd']);
+  const generic = starts.filter(({ command }) => command === 'cmd' || command === 'this.command');
+  assert.deepEqual(generic.map(({ file, command }) => `${file} ${command}`).sort(), ['chrome.mjs this.command', 'scenes.mjs cmd']);
   // each passes the environment the one place builds, and nothing else
   const scenes = modules.find(({ file }) => file === 'scenes.mjs').text;
   const spawnApp = scenes.slice(scenes.indexOf('  spawnApp(label, cmd, args'), scenes.indexOf('  /**', scenes.indexOf('  spawnApp(label, cmd, args')));
   assert.match(spawnApp, /const env = this\.appEnvironment\(extra, \{ home, app \}\);/);
   assert.match(spawnApp, /xSpawn\(cmd, args, \{ \.\.\.options, env, stdio:/, 'the start takes the built environment, after the caller\'s options');
   const chrome = modules.find(({ file }) => file === 'chrome.mjs').text;
-  assert.match(chrome, /const env = this\.environment\(\);[\s\S]*guard\(this\.spawnProcess\)\(CHROME_COMMAND, args, \{ env, stdio: 'ignore', detached: true \}\)/);
+  assert.match(chrome, /const env = this\.environment\(\);[\s\S]*guard\(this\.spawnProcess\)\(this\.command, args, \{ env, stdio: 'ignore', detached: true \}\)/);
   assert.match(scenes, /new ChromeInstance\(\{ scratch: this\.dir, environment: \(\) => this\.appEnvironment\(CHROME_ENV, \{ app: 'chrome' \}\) \}\)/, "the run's Chrome takes the run's environment");
   // the one place: only app-env.mjs sets the variables that place an application's files
   for (const { file, text } of modules.filter(({ file }) => file !== 'app-env.mjs')) {

@@ -1,0 +1,3 @@
+2026-11-23T02:30:03Z wait h8-x64 load=0.38 0.21 0.12 render-host=none :: /Users/new/.local/share/cua-171/v5h8/sitting.sh  /Users/new/.local/share/cua-171/m5/zero-x64-h8 pinned-release V5:55
+2026-11-23T02:30:03Z acquire h8-x64 load=0.38 0.21 0.12 render-host=none :: /Users/new/.local/share/cua-171/v5h8/sitting.sh  /Users/new/.local/share/cua-171/m5/zero-x64-h8 pinned-release V5:55
+2026-11-23T03:07:44Z release h8-x64 status=0 load=1.28 1.26 1.14 render-host=none :: /Users/new/.local/share/cua-171/v5h8/sitting.sh  /Users/new/.local/share/cua-171/m5/zero-x64-h8 pinned-release V5:55

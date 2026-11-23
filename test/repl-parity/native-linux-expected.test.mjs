@@ -4,11 +4,13 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {assessAssertions, vendorDefects} from '../../scripts/repl-parity/vendor-defects.mjs';
 import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
-import {NATIVE_LINUX_EXPECTED, checkEnginePair, validateNativeLinuxExpected} from '../../scripts/repl-parity/native-linux.mjs';
+import {NATIVE_LINUX_EXPECTED, checkEnginePair, declarationsFor, validateNativeLinuxExpected} from '../../scripts/repl-parity/native-linux.mjs';
 import scenarios from './scenarios/native.mjs';
 
 const TYPE = 'native/app/typetext', PASTE = 'native/app/paste', KEY = 'native/app/presskey';
 const RELEASE = '26.928.40906-linux-x64';
+// x64's own declarations: a diff applies only those of its runs' release (M5's T4), and arm64's are declared beside them
+const X64_DECLARATIONS = declarationsFor(NATIVE_LINUX_EXPECTED, RELEASE);
 const text = values => [{type: 'text', text: 'NATIVE:' + JSON.stringify(values)}];
 const FORMAT = [{error: 'Linux paste supports only text format.'}, {error: 'Linux paste supports only text format.'}];
 const outcome = {
@@ -68,7 +70,7 @@ test('the cua lane passes the two positive text cases and accepts neither the ol
 });
 
 test('the diff accepts only the declared vendor failure versus exact positive cua result', () => {
-  const result = compareParityRuns(lane('vendor'), lane('cua'), {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations});
+  const result = compareParityRuns(lane('vendor'), lane('cua'), {engineDeclarations: X64_DECLARATIONS});
   assert.equal(result.ok, true, JSON.stringify(result.differences));
   assert.deepEqual(result.expected.map(e => e.case), [TYPE, PASTE]);
   const plain = compareParityRuns(lane('vendor'), lane('cua'));
@@ -78,14 +80,14 @@ test('the diff accepts only the declared vendor failure versus exact positive cu
   for (const values of [[{error: 'type_text is not available in this engine build'}, 0, false], ['undefined', 2, false], ['undefined', 1, true]]) {
     const cua = lane('cua', {values: {...outcome.cua, [TYPE]: values}});
     cua.rows.find(r => r.case === TYPE && r.assertion).assertion = {ok: true};
-    assert.ok(compareParityRuns(lane('vendor'), cua, {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations}).differences.some(d => d.kind === 'overdeclared' && d.case === TYPE));
+    assert.ok(compareParityRuns(lane('vendor'), cua, {engineDeclarations: X64_DECLARATIONS}).differences.some(d => d.kind === 'overdeclared' && d.case === TYPE));
   }
   const cua = lane('cua'); cua.rows[0] = exercise(KEY, [{inserted: false, cleared: true}]);
-  assert.ok(compareParityRuns(lane('vendor'), cua, {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations}).differences.some(d => d.case === KEY));
+  assert.ok(compareParityRuns(lane('vendor'), cua, {engineDeclarations: X64_DECLARATIONS}).differences.some(d => d.case === KEY));
   const sandbox = lane('cua'); sandbox.meta.caseConfigurations[KEY] = {surfaces: ['computer'], sandbox: 'disabled'};
-  assert.ok(compareParityRuns(lane('vendor'), sandbox, {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations}).differences.some(d => d.kind === 'configuration' && d.case === KEY));
+  assert.ok(compareParityRuns(lane('vendor'), sandbox, {engineDeclarations: X64_DECLARATIONS}).differences.some(d => d.kind === 'configuration' && d.case === KEY));
   // A declaration nothing needed is itself a difference: the vendor now passing cannot use its old defect.
-  const same = compareParityRuns(lane('vendor', {values: outcome.cua}), lane('cua'), {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations});
+  const same = compareParityRuns(lane('vendor', {values: outcome.cua}), lane('cua'), {engineDeclarations: X64_DECLARATIONS});
   assert.equal(same.ok, false);
   assert.ok(same.differences.some(d => d.kind === 'overdeclared'));
 });
@@ -93,7 +95,7 @@ test('the diff accepts only the declared vendor failure versus exact positive cu
 test('the declaration projects only content, isError and the case assertion, never other result fields or duplicate rows', () => {
   for (const mutate of [r => {r.rows[3].structuredContent = {unexpected: true};}, r => {r.rows[3].ok = false;}, r => {r.rows.push({...r.rows[3]});}, r => {r.rows.push({case: TYPE, assertion: {ok: false, reason: 'extra failure'}});}]) {
     const cua = lane('cua'); mutate(cua);
-    assert.equal(compareParityRuns(lane('vendor'), cua, {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations}).ok, false);
+    assert.equal(compareParityRuns(lane('vendor'), cua, {engineDeclarations: X64_DECLARATIONS}).ok, false);
   }
 });
 
@@ -125,4 +127,34 @@ test('the minimized getAXState declaration: the vendor result fails as its defec
   };
   assert.deepEqual(assess({isError: false, content: defect.result.content}), defect.assertion);
   assert.deepEqual(assess({isError: false, content: declaration.cua.result.content}), declaration.cua.assertion);
+});
+
+// M5's T4: the declarations are per architecture. Each holds for the vendor runtime release its vendor defect names
+// (26.928.40906-linux-x64, -linux-arm64), and a diff applies only those of the runs' own release: an arm64 pair is never
+// held to x64's declarations, nor x64's to arm64's. arm64's own are declared from task 96's pilot (the arm64 round;
+// native-linux-arm64.test.mjs proves them on arm64's outcomes).
+const ARM64 = '26.928.40906-linux-arm64';
+
+test('the declarations a diff applies are those of the runs\' own vendor release', () => {
+  const x64 = declarationsFor(NATIVE_LINUX_EXPECTED, RELEASE), arm64 = declarationsFor(NATIVE_LINUX_EXPECTED, ARM64);
+  assert.deepEqual(x64.map(d => d.id), ['linux-text-typetext-m2', 'linux-text-paste-m2', 'linux-getaxstate-minimized-m4']);
+  assert.deepEqual(arm64.map(d => d.id), ['linux-text-typetext-m5-arm64', 'linux-text-paste-m5-arm64', 'linux-getaxstate-minimized-m5-arm64']);
+  assert.ok(arm64.every(d => vendorDefects.find(v => v.id === d.vendorDefect).runtimeRelease === ARM64));
+  assert.deepEqual(declarationsFor(NATIVE_LINUX_EXPECTED, '26.928.40906-linux-riscv64'), [], 'an architecture with none of its own takes none');
+  // one declaration a case a release: a second for the same case and release is refused, as before
+  assert.throws(() => validateNativeLinuxExpected({...NATIVE_LINUX_EXPECTED, declarations: [...NATIVE_LINUX_EXPECTED.declarations, {...arm64[0], id: 'again'}]}), /declaration/);
+});
+
+test("an x64 pair still passes on its declarations; an arm64 pair with x64's outcomes is held to arm64's and fails closed", () => {
+  const x64 = compareParityRuns(lane('vendor'), lane('cua'), {engineDeclarations: X64_DECLARATIONS});
+  assert.equal(x64.ok, true, JSON.stringify(x64.differences));
+  const arm = engine => {const run = lane(engine); run.meta.runtimeRelease = ARM64; return run;};
+  // x64's declarations applied to an arm64 pair: each is reported overdeclared, which the per-release choice avoids
+  const all = compareParityRuns(arm('vendor'), arm('cua'), {engineDeclarations: X64_DECLARATIONS});
+  assert.ok(all.differences.some(d => d.kind === 'overdeclared'));
+  // arm64's own declarations do not hold for x64's outcomes: overdeclared, and the vendor failures undeclared
+  const own = compareParityRuns(arm('vendor'), arm('cua'), {engineDeclarations: declarationsFor(NATIVE_LINUX_EXPECTED, ARM64)});
+  assert.equal(own.ok, false);
+  assert.deepEqual([...new Set(own.differences.filter(d => d.kind === 'overdeclared').map(d => d.case))].sort(), [PASTE, TYPE]);
+  assert.ok(own.differences.some(d => d.kind === 'assertion' && d.case === TYPE));
 });

@@ -1,0 +1,43 @@
+== /Users/new/.local/share/cua-171/m5/out-x64-h8/L4d.pinned-release/run/results.jsonl
+verdict: pass true; failed []
+finding: part 1 (chrome t14-long): T14's share, reported and not a fail: 0 of 0 landed drops answered unconfirmed, within 5%
+finding: part 2 (chrome t14-floor): T14's share, reported and not a fail: 0 of 300 landed drops answered unconfirmed, within 5%
+finding: part 3 (electron t17-long): cua long-left: 30 of 30 drags exercised the long path (a take, its motion after the take past the 350 ms floor, and the expected end); 30 took, 30 outlasted the floor
+finding: part 3 (electron t17-long): zone-truth mismatches (ruling 830, a declared app-level limit: an ok answer whose own dragend reported copy while the zone's drop counter did not move), load load2: none in 30 drags of the window's cells
+finding: part 3 (electron t17-long): T14's share, reported and not a fail for these cells: 0 of 0 landed drops answered unconfirmed, within 5%
+
+counts are "all (gate open / gate shut)", the gate derived
+
+--- part 1: chrome t14-long (chromeDropVerdict): pass true
+judge's counts: {"load":"load2","drags":100,"untaken":0,"landed":0,"stale_drops":0,"ambiguous":0,"late":0,"late_reported":0,"late_notice_without_take":0,"false_ok":0,"missing_landing":0,"pending_broken":0,"unconfirmed_landed":0,"false_releases":0,"false_release_ok":0,"harness_escapes":0,"over_share":false}
+cua long-left: 100 drags, gate open 100 / shut 0; schedule (derived) {"after_path":100}; path end outside
+  landed 0 (0 / 0), stale 0 (0 / 0), in the margin 0 (0 / 0), unplaced 0 (0 / 0), ok with nothing pending and no drop 0 (0 / 0), honest unconfirmed 100 (100 / 0), other honest 0 (0 / 0), untaken 0 (0 / 0), errors 0 (0 / 0), activations 0 (0 / 0)
+  notices {"unconfirmed":100}
+  take 4.9 / 17.2 / 55.2 (n 100); path after the take 415.5 / 457.9 / 551.3 (n 100); last step to release 24.3 / 25.4 / 31.6 (n 100); activation after release –
+  the derivation's check: open rows' last step to release 24.3 / 25.4 / 31.6 (n 100); shut rows' release after the take –
+
+--- part 2: chrome t14-floor (chromeDropVerdict): pass true
+judge's counts: {"load":"load2","drags":360,"untaken":0,"landed":300,"stale_drops":0,"ambiguous":0,"late":0,"late_reported":0,"late_notice_without_take":0,"false_ok":0,"missing_landing":0,"pending_broken":0,"unconfirmed_landed":0,"false_releases":0,"false_release_ok":0,"harness_escapes":0,"over_share":false}
+cua plain-long: 300 drags, gate open 0 / shut 300; schedule (derived) {"in_floor":300}; path end inside
+  landed 300 (0 / 300), stale 0 (0 / 0), in the margin 0 (0 / 0), unplaced 0 (0 / 0), ok with nothing pending and no drop 0 (0 / 0), honest unconfirmed 0 (0 / 0), other honest 0 (0 / 0), untaken 0 (0 / 0), errors 0 (0 / 0), activations 300 (0 / 300)
+  notices {"none":300}
+  take 4 / 17.2 / 67.3 (n 300); path after the take 326 / 326.1 / 333.4 (n 300); last step to release 17.1 / 24.1 / 30.5 (n 300); activation after release -5.9 / 1 / 9.7 (n 300)
+  the derivation's check: open rows' last step to release –; shut rows' release after the take 350 / 350.1 / 357.3 (n 300)
+cua left: 30 drags, gate open 0 / shut 30; schedule (derived) {"in_floor":30}; path end outside
+  landed 0 (0 / 0), stale 0 (0 / 0), in the margin 0 (0 / 0), unplaced 0 (0 / 0), ok with nothing pending and no drop 0 (0 / 0), honest unconfirmed 30 (0 / 30), other honest 0 (0 / 0), untaken 0 (0 / 0), errors 0 (0 / 0), activations 0 (0 / 0)
+  notices {"unconfirmed":30}
+  take 8.6 / 19.4 / 31.1 (n 30); path after the take 326 / 326.1 / 330.2 (n 30); last step to release 20 / 24.1 / 25.3 (n 30); activation after release –
+  the derivation's check: open rows' last step to release –; shut rows' release after the take 350.1 / 350.1 / 351.3 (n 30)
+cua inzone-out: 30 drags, gate open 0 / shut 30; schedule (derived) {"in_floor":30}; path end outside
+  landed 0 (0 / 0), stale 0 (0 / 0), in the margin 0 (0 / 0), unplaced 0 (0 / 0), ok with nothing pending and no drop 0 (0 / 0), honest unconfirmed 30 (0 / 30), other honest 0 (0 / 0), untaken 0 (0 / 0), errors 0 (0 / 0), activations 0 (0 / 0)
+  notices {"unconfirmed":30}
+  take 6.3 / 19.2 / 31.3 (n 30); path after the take 99.8 / 248.6 / 329.1 (n 30); last step to release 21.1 / 102.6 / 251.7 (n 30); activation after release –
+  the derivation's check: open rows' last step to release –; shut rows' release after the take 350.1 / 350.1 / 354.1 (n 30)
+
+--- part 3: electron t17-long (electronDropVerdict): pass true
+judge's counts: {"load":"load2","drags":30,"landed":0,"stale_drops":0,"ambiguous":0,"false_ok":0,"race_false_ok":0,"race_drags":0,"missing_landing":0,"false_error":0,"pending_broken":0,"unconfirmed_landed":0,"by_class":{"move-link":0,"cold-load":0,"other":0},"unverified":0,"long_path":{"drags":30,"took":30,"outlasted":30,"exercised":30,"minimum":20},"over_share":false,"residue":[],"zone_mismatch":[{"lane":"cua","cell":"long-left","drags":30,"count":0}],"root_unverified":[]}
+cua long-left: 30 drags, gate open 0 / shut 30; schedule (derived) {"n/a":30}; path end outside
+  landed 0 (0 / 0), stale 0 (0 / 0), in the margin 0 (0 / 0), unplaced 0 (0 / 0), ok with nothing pending and no drop 0 (0 / 0), honest unconfirmed 30 (0 / 30), other honest 0 (0 / 0), untaken 0 (0 / 0), errors 0 (0 / 0), activations 0 (0 / 0)
+  notices {"unconfirmed":30}
+  take 5.4 / 16.4 / 33.2 (n 30); path after the take 446.2 / 460 / 502.1 (n 30); last step to release 33.7 / 36.6 / 47.5 (n 30); activation after release –
+  the derivation's check: open rows' last step to release –; shut rows' release after the take 480.7 / 495.2 / 539 (n 30)

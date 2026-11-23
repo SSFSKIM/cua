@@ -1,0 +1,10 @@
+2026-11-21T08:14:16Z pre setup: hold-sittings absent, df / 109G, load 4.17 8.86 13.59
+2026-11-21T08:14:16Z setup: t122-h7c already at H7, clean
+2026-11-21T08:14:20Z home check: sha256 equals H7's pin, check --pinned exit 0
+2026-11-21T08:14:20Z pre C1: hold-sittings absent, df / 109G, load 5.36 9.03 13.62
+2026-11-21T08:14:20Z run C1 as printed, the quiet wait inside its hold: /Users/new/.local/share/cua-171/locked.sh task122-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h7c/scripts/linux-engine-gate/gate.mjs run C1 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-042 --out /Users/new/.local/share/cua-171/m5/out-arm64-h7
+2026-11-21T08:35:39Z end C1 exit 0 load=0.31 6.16 11.50 quiet wait 180 s: load 0.87 9.26 13.13 stress-ng 0
+2026-11-21T08:35:40Z pre L4c: hold-sittings absent, df / 109G, load 0.31 6.16 11.50
+2026-11-21T08:35:40Z run L4c as printed, the quiet wait inside its hold: /Users/new/.local/share/cua-171/locked.sh task122-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h7c/scripts/linux-engine-gate/gate.mjs run L4c --pinned /Users/new/.local/share/cua-171/m5/home-arm64-042 --out /Users/new/.local/share/cua-171/m5/out-arm64-h7
+2026-11-21T08:45:54Z end L4c exit 0 load=15.27 10.91 11.62 quiet wait 170 s: load 0.97 7.22 10.76 stress-ng 0
+2026-11-21T08:45:54Z h7 done

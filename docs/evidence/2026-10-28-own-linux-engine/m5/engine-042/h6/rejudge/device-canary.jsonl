@@ -1,0 +1,7 @@
+{"path":"k2-1/K2.pinned-release","run":"pinned-K2","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}
+{"path":"k2-2/K2.pinned-release","run":"pinned-K2","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}
+{"path":"k2-3/K2.pinned-release","run":"pinned-K2","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}
+{"path":"k2-4/K2.pinned-release","run":"pinned-K2","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}
+{"path":"k2-5/K2.pinned-release","run":"pinned-K2","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}
+{"path":"k1-1/K1.pinned-release","run":"pinned-K1","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}
+{"path":"runs/v5-canary/run/results.jsonl","run":"t121-v5-canary","moved":[],"failing":[],"unreproduced":null,"others":[],"premise":[],"device_verdicts":2}

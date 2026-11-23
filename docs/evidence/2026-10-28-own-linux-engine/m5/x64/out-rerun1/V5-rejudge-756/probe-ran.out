@@ -1,0 +1,4 @@
+stored rows: {"pass":true,"reasons":[]}
+probe (0/1 ran 0/2's drag): {"pass":false,"reasons":["not cancelled with the drag-and-drop sentence on 2 of 9 samples (0/0, 0/1)"]}
+as expected: the stored rows pass, the probe fails
+exit 0

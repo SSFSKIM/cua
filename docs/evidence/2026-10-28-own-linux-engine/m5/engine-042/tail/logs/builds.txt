@@ -1,0 +1,4 @@
+/Users/new/.local/share/cua-171/task118/bin/cua-engine-042-arm64-80b98959 f5f435aba72caf307567dbc295140d306064b2660ba8b90b4a534c90950e13e2 cua-engine 0.4.2 (80b98959f931)
+/Users/new/.local/share/cua-171/task118/bin/cua-engine-042-arm64-f8bd6949 962f9f4ec8234a3057fb716a928611608c3832b16e6a062e9815f9c855263ac5 cua-engine 0.4.2 (f8bd69496f54)
+/Users/new/.local/share/cua-171/task118/bin/cua-engine-042-arm64-f10946bf 9d5cf2fc686803f641bdc79099a6d7e49e29918f222192c2e7a918abe2a1c93e cua-engine 0.4.2 (f10946bff622)
+/Users/new/.local/share/cua-171/task118/bin/cua-engine-042-arm64-9371d234 d0e2f2b265865b74df7ecb9f18a03ea41bc387dcc9781bff6d24b8aa76fde280 cua-engine 0.4.2 (9371d2348cf8)

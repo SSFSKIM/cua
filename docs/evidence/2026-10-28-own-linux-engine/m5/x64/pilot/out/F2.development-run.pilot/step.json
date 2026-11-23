@@ -1,0 +1,39 @@
+{
+  "label": "development run, not a release gate",
+  "step": "F2",
+  "pilot": true,
+  "what": "T7 revised: SIGTERM straight after keys and after clicks, 30 each on Chrome and Electron, and SIGKILL as the control",
+  "display": "own",
+  "load": "idle",
+  "minutes": 8,
+  "run_name": "m4-dev-F2-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/",
+    "commit": "01ff0648f3afc4a234669cd381395c91543ce3f7",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/pilot-x64/home/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/pilot-x64/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t87-pilot /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/scripts/linux-engine-gate/gate.mjs run F2 --pinned /Users/new/.local/share/cua-171/m5/pilot-x64/home --out /Users/new/.local/share/cua-171/m5/pilot-x64/out --dev --pilot 2",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "focus-timer",
+    "--stops-only",
+    "--family",
+    "chrome,electron",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/pilot-x64/home/engine/linux/cua-engine",
+    "--run",
+    "m4-dev-F2-pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/pilot-x64/out/F2.development-run.pilot/run"
+  ],
+  "started": "2026-11-15T07:43:17.337Z",
+  "finished": "2026-11-15T07:47:40.271Z",
+  "exit": 0,
+  "child_exit": 0
+}

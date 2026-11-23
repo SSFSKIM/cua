@@ -48,7 +48,9 @@ as Hetzner's 32 KiB).
 - **Desktop.** lightdm logs the user (`--user`, default `cua`; no password, no sudo, root's SSH keys) in to Openbox on
   `:0`. Xorg drives the VM's virtual GPU (`virtio-gpu` on Hetzner), or the dummy driver at 1280x800 when there is no
   `/dev/dri/card*`. Linger is on, so the user's systemd manager and session bus run from boot. The session keeps the
-  screen on, puts AT-SPI's bus up and starts Chrome.
+  screen on, puts AT-SPI's bus up, sets `org.a11y.Status` `IsEnabled` to true before any application starts (Qt 6
+  applications put their accessibility tree on the bus only then; doctor's `accessibility.enabled` row checks it) and
+  starts Chrome.
 - **Packages.** The ones cua and its doctor need (`binutils xz-utils x11-utils dbus-x11 bubblewrap at-spi2-core`), the
   desktop (`xorg openbox lightdm dbus-user-session`), `gedit`, `zenity`, `jq` and `x11vnc`.
 - **Chrome.** `google-chrome-stable` from Google's apt repository (a deb; a Flatpak or snap Chrome cannot start a native
@@ -61,12 +63,18 @@ as Hetzner's 32 KiB).
   `--password-store=basic` (no keyring prompt in an autologin session) and no first-run prompts. Toolkit accessibility
   is on as a system dconf default. One profile, `Default`.
 - **Sandbox.** `kernel.apparmor_restrict_unprivileged_userns = 0` (`/etc/sysctl.d/60-cua-userns.conf`), so the scoped
-  sandbox works for the browser surface alone and for `cua profiles list` and `bind`. With the computer surface the
-  Linux default is `disabled` (README, "Linux": the runtime's sandbox refuses every socket, X's included).
+  sandbox, the Linux default for every surface since 0.15.0, works for the computer and browser surfaces and for
+  `cua profiles list` and `bind` (README, "Linux").
 - **cua.** Node 22 (NodeSource, unless Node 22.14+ or 23.7+ is already on `PATH`), a checkout of `--ref` at `/opt/cua`
-  owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua` (the vendor REPL
-  host and the computer surface run from it), cua's Chrome host registered (`cua chrome register`), and the
-  profile `me` registered for `Default` and bound. The extension starts cua's host as soon as the registration is there,
+  owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua`, cua's Chrome
+  host registered (`cua chrome register`), and the profile `me` registered for `Default` and bound. The same
+  `cua install` places cua's own Linux engine, the pinned `cua-engine` for the VM's architecture, at
+  `~/.local/share/cua/engine/linux/cua-engine`, its SHA-256 checked against `runtime/engine/linux-engine.json`; the
+  computer surface runs on it with `CUA_NATIVE_ENGINE=cua` or `"engine": "cua"`, and on the vendor engine from the
+  installed runtime otherwise (the main README, "Linux"). The user's `~/.config/cua/engine.json` gets
+  `"desktop": "dedicated"`, beside any keys it already has: the desktop belongs to the agent, so cua's engine may bring
+  a window forward for an application that ignores background input instead of refusing it. A mode already set there
+  is kept. The extension starts cua's host as soon as the registration is there,
   so the bind needs no one; if it fails (Chrome not up yet), the checklist keeps it.
 - **The deb.** By default the VM downloads the pin's official URL (about 450 MB); `--deb <https URL>` downloads a
   mirror instead; `--deb <file>` makes `create-hetzner.sh` copy your copy to the VM's `/var/cache/cua/upload.deb`

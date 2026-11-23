@@ -1,0 +1,15 @@
+{
+  "finished": "2026-11-18T04:43:22.417Z",
+  "exit": 1,
+  "clear": false,
+  "person": [
+    "the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown"
+  ],
+  "run": [],
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  }
+}

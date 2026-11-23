@@ -21,14 +21,26 @@
 # Nothing under the person's home is opened, read or listed.
 # Task 71's wrap71.py: task 50's wrap50.py with one change, marked `task 71` (a not-yet-accepted connection to the step's
 # own session bus, inside its TMPDIR and the address the connecting process was given, is counted, not flagged).
+# M5's T4: the person is read from the session, never assumed: the account the guard runs as, its uid and the home its
+# passwd entry names (on the #171 x86-64 VM uid 501 and /Users/new, which task 50 wrote in; the arm64 VM's may differ),
+# and the person's runtime directory /run/user/<uid>; wrap-summary.json records them (`person`).
 # usage: wrap71.py <out> <tmproot> private|person <command...>
-import ctypes, json, os, re, signal, socket, struct, subprocess, sys, threading, time
+import ctypes, json, os, pwd, re, signal, socket, struct, subprocess, sys, threading, time
 
-HOME = '/Users/new'
+PERSON_UID = os.getuid()
+# the home defines the forbidden paths, so an identity that resolves to no existing home fails closed, before anything
+# starts (M5's T4, fix wave 1: `nobody`'s /nonexistent was taken and the run guarded nothing)
+try:
+    HOME = pwd.getpwuid(PERSON_UID).pw_dir
+except KeyError:
+    sys.exit(f'wrap71: no passwd entry for uid {PERSON_UID}: the person cannot be read, so nothing is guarded or started')
+if not HOME or not os.path.isabs(HOME) or not os.path.isdir(HOME):
+    sys.exit(f'wrap71: the person\'s home {HOME!r} (uid {PERSON_UID}) is not an absolute directory that exists: nothing is guarded or started')
+RUNTIME = f'/run/user/{PERSON_UID}'
 MODE = sys.argv[3]
 assert MODE in ('private', 'person'), MODE
 FORBID = [HOME + '/.config/google-chrome', HOME + '/.pki', HOME + '/.local/share/pki'] + ([HOME + '/.Xauthority'] if MODE == 'private' else [])
-A11Y_SOCK = '/run/user/501/at-spi/bus_0'
+A11Y_SOCK = RUNTIME + '/at-spi/bus_0'
 X0_SOCKS = {'/tmp/.X11-unix/X0', '@/tmp/.X11-unix/X0'}
 # the system's own sockets (the system bus, journald), shared by every user and none of the person's
 SYSTEM_SOCKS = {'/run/dbus/system_bus_socket', '/var/run/dbus/system_bus_socket', '/run/systemd/journal/socket', '/run/systemd/journal/stdout'}
@@ -211,10 +223,10 @@ def check_connections(runset):
         if not ours:
             continue
         comm = procs.get(ours[0], {}).get('comm')
-        if r['laddr'].startswith('/run/user/501/') or r['laddr'].startswith(HOME + '/'):
+        if r['laddr'].startswith(RUNTIME + '/') or r['laddr'].startswith(HOME + '/'):
             # a run process serving on a socket in the person's runtime directory or home; on a private display the
             # run's own accessibility bus launcher puts its bus_N there by design (XDG_RUNTIME_DIR is kept, task 45)
-            if MODE == 'private' and re.fullmatch(r'/run/user/501/at-spi/bus_([1-9][0-9]*)', r['laddr']):
+            if MODE == 'private' and re.fullmatch(re.escape(RUNTIME) + r'/at-spi/bus_([1-9][0-9]*)', r['laddr']):
                 key = f'{comm} serves {r["laddr"]} (the run\'s own launcher)'
                 outside[key] = outside.get(key, 0) + 1
             else:
@@ -457,6 +469,7 @@ summary = {
     'processes': [{k: (sorted(v) if isinstance(v, set) else v) for k, v in r.items()} for r in sorted(procs.values(), key=lambda r: r['first'])],
     'home_paths_by_comm': {k: sorted(v) for k, v in sorted(home_paths.items())},
     'mode': MODE,
+    'person': {'uid': PERSON_UID, 'home': HOME, 'runtime_dir': RUNTIME},
     'outside_peers_allowed': dict(sorted(outside.items())),
     'xauthority_by_class': {k: sorted(v) for k, v in sorted(auth_seen.items())},
 }

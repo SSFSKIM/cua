@@ -243,17 +243,31 @@ const COMPUTER_RULES = [
   '- typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
   '- If REPL state is confused, js_reset and rebind; never also use osascript.',
 ];
-const LINUX_COMPUTER_RULES = [
+// The Linux text rule F2 measured (above) is the vendor engine's. With cua's own Linux engine (#171; its spec's Decision Log, M5 pre-flight) the
+// same calls insert exact text through one verified paste, and an app that ignores background input is refused on a
+// shared desktop with nothing sent ("<App> does not accept background input; ..."), so the rule follows the engine the
+// connection selected: `engine` 'cua' takes cua's two lines in its place; any other value, or none, keeps the vendor's.
+const linuxComputerRules = textRules => [
   '- Bind by window: cua.getApp({windowId}) with an id from listWindows(); if REPL state is confused, js_reset and rebind.',
   '- setValue and selectText do not exist; paste types like typeText.',
-  '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
+  ...textRules,
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale).',
   '- Approval is per app: a window\'s app as listWindows() names it, launch_app\'s id, and the whole desktop for input without a window.',
 ];
+const LINUX_COMPUTER_RULES = {
+  vendor: linuxComputerRules(['- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).']),
+  cua: linuxComputerRules([
+    '- typeText and paste insert exact text, Unicode and newlines included; pressKey takes X keysyms (minus, space).',
+    '- "does not accept background input": nothing was sent, since this desktop is shared; use the element\'s action, or tell the user.',
+  ]),
+};
 const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).';
 
-export function jsRulesFor(surfaces, {platform = process.platform, inAppBrowser = false} = {}) {
-  const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
+// `engine`: the native engine the connection selected (launch.mjs nativeEngineFor's `engine`), which decides the
+// Linux text rule above.
+export function jsRulesFor(surfaces, {platform = process.platform, engine, inAppBrowser = false} = {}) {
+  const computer = !surfaces.includes('computer') ? []
+    : platform === 'linux' ? LINUX_COMPUTER_RULES[engine === 'cua' ? 'cua' : 'vendor'] : COMPUTER_RULES;
   return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [...(inAppBrowser ? [JS_MAWS_RULE] : []), BROWSER_POINTER] : [])].join('\n');
 }
 
@@ -268,9 +282,10 @@ export function withHostNotes(instructions, hostNotes) {
 const hintFor = (name, surfaces, platform, maws) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)(hintOs(platform))
   : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name]({os: hintOs(platform), maws}));
 
-// `inAppBrowser`: a MAWS backend is configured (profiles_list's description, js's hint and rules say so).
-export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false} = {}) {
-  const jsRules = jsRulesFor(surfaces, {platform, inAppBrowser});
+// `inAppBrowser`: a MAWS backend is configured (profiles_list's description, js's hint and rules say so). `engine`: as
+// jsRulesFor's.
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false, engine} = {}) {
+  const jsRules = jsRulesFor(surfaces, {platform, engine, inAppBrowser});
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
     .map(tool => ({

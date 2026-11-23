@@ -1,0 +1,2 @@
+step.sh 2026-11-22T03:24:58Z start K3 after 30 s quiet wait: load=0.95 1.21 1.00 stress-ng=none df=36G
+step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/scripts/linux-engine-gate/gate.mjs run K3 --pinned /Users/new/.local/share/cua-171/m5/home-x64-043 --out /Users/new/.local/share/cua-171/m5/out-x64-h8

@@ -1,0 +1,15 @@
+time 2026-11-18T23:15:57Z
+hold-sittings: absent
+stress-ng: none
+owner-check: owner chrome pid 9512 starttime_ticks 52059
+owner-check: :0 _NET_CLIENT_LIST count 1
+owner-check: :0 client 0x600002 class "google-chrome", "Google-chrome" pid 9512 window state: Normal netstate   Position: 10,10 (screen: 0)  Geometry: 1050x780 
+load 0.16 0.16 0.19
+lock, last line: 2026-11-18T23:15:39Z release t7-arm64 status=0 load=0.22 0.18 0.20 render-host=none :: /Users/new/.local/share/cua-171/task99/step-h4.sh H2 /Users/new/.local/sh
+pointer: x:640 y:400 screen:0 window:4194677
+/tmp/cua171-run-* present: []
+firefox on PATH (sitting.sh): /Users/new/.local/share/cua-171/task59/bin/firefox
+google-chrome: Google Chrome 156.0.8078.73 
+node (sitting.sh): /Users/new/.local/share/cua-171/node24/bin/node v24.22.1
+gate leftovers: end check: clear 
+hard stop 2026-11-19T04:35:57Z

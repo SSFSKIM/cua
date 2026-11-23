@@ -1,0 +1,15 @@
+2026-11-21T07:56:08Z driver: C1, df avail 42G
+2026-11-21T07:56:08Z wait C1 load=0.45 1.92 6.40
+2026-11-21T07:58:18Z end C1 exit 0 load=0.36 1.35 5.60 
+    step.sh 2026-11-21T07:56:08Z start C1 after 0 s quiet wait: load=0.45 1.92 6.40 stress-ng=none df=42G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/scripts/linux-engine-gate/gate.mjs run C1 --pinned /Users/new/.local/share/cua-171/m5/home-x64-042 --out /Users/new/.local/share/cua-171/m5/out-x64-h7
+2026-11-21T07:59:15Z driver: L4c, df avail 41G
+2026-11-21T07:59:15Z wait L4c load=10.70 4.07 6.29
+2026-11-21T08:24:16Z end L4c exit 0 load=15.99 12.13 12.41 
+    step.sh 2026-11-21T08:21:46Z start L4c after 211 s quiet wait: load=0.89 8.82 11.58 stress-ng=none df=41G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/scripts/linux-engine-gate/gate.mjs run L4c --pinned /Users/new/.local/share/cua-171/m5/home-x64-042 --out /Users/new/.local/share/cua-171/m5/out-x64-h7
+2026-11-21T09:00:28Z driver: L4d, df avail 41G
+2026-11-21T09:00:28Z wait L4d load=0.75 0.48 1.61
+2026-11-21T09:20:32Z end L4d exit 1 load=17.58 17.31 13.22 
+    step.sh 2026-11-21T09:00:28Z start L4d after 0 s quiet wait: load=0.75 0.48 1.61 stress-ng=none df=41G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/m5/home-x64-042 --out /Users/new/.local/share/cua-171/m5/out-x64-h7

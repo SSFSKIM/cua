@@ -1,0 +1,2 @@
+quiet wait 180 s: load 0.93 9.49 14.06 stress-ng 0
+gate step refused: /Users/new/.local/share/cua-171/m5/out-arm64-h7/C1.pinned-release exists: each execution of a step writes a directory of its own

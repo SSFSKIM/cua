@@ -1,0 +1,53 @@
+{
+  "label": "development run on the pinned release, not acceptance, never counted",
+  "step": "H1",
+  "pilot": true,
+  "what": "T17's Electron cells: plain drags and handles, the controls, the four releases off the window",
+  "display": "private",
+  "load": "idle",
+  "minutes": 22,
+  "run_name": "m5-pinned-dev-H1-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/",
+    "commit": "da306cc6319e7e9da282812402308c074b872dee",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine",
+    "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t96-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/m5/pilot-arm64/home --out /Users/new/.local/share/cua-171/m5/pa/h1 --pilot 100",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--trials",
+    "100",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine",
+    "--run",
+    "m5-pinned-dev-H1-pilot",
+    "--pinned",
+    "--pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/pa/h1/H1.development-run.pinned.pilot/run"
+  ],
+  "started": "2026-11-18T07:33:41.974Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T07:51:01.190Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unjudged": [],
+  "unclean": []
+}

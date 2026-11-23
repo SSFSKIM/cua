@@ -1,0 +1,2 @@
+development run, not a release gate (task 121, V5's canary cells, ruling 932)
+[1120/131145.803429:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA

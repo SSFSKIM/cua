@@ -1,0 +1,901 @@
+version	run	cell	block	i	series	ok	hold_notice	false_ok	false_alarm	dropped	starts	ends	dragstart_ms	release_ms	path	identified	taken	take_ms	path_ms	ping_max_ms
+156	v5-156-1	cancel	0	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	0	1	warm	False	False	False	False	False	1	1			fixed	True	True	256.7	157.3	98.2
+156	v5-156-1	cancel	0	2	warm	False	False	False	False	False	1	1			fixed	True	True	257.7	247.3	4.2
+156	v5-156-1	in front	0	0	cold	True	False	False	False	True	1	1	410.6	769.5	fixed	True	True	417.3	49.3	237.1
+156	v5-156-1	in front	0	1	warm	True	False	False	False	True	1	1	3.4	516.4	fixed	True	True	163.4	48.3	110.1
+156	v5-156-1	in front	0	2	warm	True	False	False	False	False	1	1	155.4	516.2	fixed	True	True	162.5	48.4	102.3
+156	v5-156-1	cancel	1	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	1	1	warm	False	False	False	False	False	1	1			fixed	True	True	183.0	153.9	26.9
+156	v5-156-1	cancel	1	2	warm	False	False	False	False	False	1	1			fixed	True	True	173.8	155.2	16.3
+156	v5-156-1	in front	1	0	cold	True	False	False	False	True	1	1	7.5	507.4	fixed	True	True	155.1	49.3	94.6
+156	v5-156-1	in front	1	1	warm	True	False	False	False	True	1	1	117.3	475.4	fixed	True	True	125.3	48.5	75.8
+156	v5-156-1	in front	1	2	warm	True	False	False	False	True	1	1	180.2	545.3	fixed	True	True	192.9	48.4	143.6
+156	v5-156-1	cancel	2	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	2	1	warm	False	False	False	False	False	1	1			fixed	True	True	393.0	153.9	232.2
+156	v5-156-1	cancel	2	2	warm	False	False	False	False	False	1	1			fixed	True	True	203.5	153.9	48.9
+156	v5-156-1	in front	2	0	cold	True	False	False	False	True	1	1	241.1	597.0	fixed	True	True	246.9	48.4	154.6
+156	v5-156-1	in front	2	1	warm	True	False	False	False	True	1	1	111.4	468.4	fixed	True	True	116.9	48.4	67.3
+156	v5-156-1	in front	2	2	warm	True	False	False	False	True	1	1	16.8	405.3	path		True	52.3	52.3	
+156	v5-156-1	cancel	3	0	cold	False	False	False	False	False	1	1			fixed	True	True	193.3	153.9	38.6
+156	v5-156-1	cancel	3	1	warm	False	False	False	False	False	1	1			fixed	True	True	251.4	153.8	97.3
+156	v5-156-1	cancel	3	2	warm	False	False	False	False	False	1	1			fixed	True	True	228.1	153.9	73.8
+156	v5-156-1	in front	3	0	cold	True	False	False	False	True	1	1	256.1	616.9	fixed	True	True	264.3	49.0	155.6
+156	v5-156-1	in front	3	1	warm	True	False	False	False	True	1	1	2.7	461.6	fixed	True	True	110.2	75.3	23.9
+156	v5-156-1	in front	3	2	warm	True	False	False	False	False	1	1	3.4	508.7	fixed	True	True	158.5	48.4	109.1
+156	v5-156-1	cancel	4	0	cold	False	False	False	False	False	1	1			fixed	True	True	205.9	160.3	44.3
+156	v5-156-1	cancel	4	1	warm	False	False	False	False	False	1	1			fixed	True	True	189.0	153.9	34.5
+156	v5-156-1	cancel	4	2	warm	False	False	False	False	False	1	1			fixed	True	True	250.7	153.9	94.1
+156	v5-156-1	in front	4	0	cold	True	False	False	False	True	1	1	91.8	455.3	fixed	True	True	102.4	48.4	33.9
+156	v5-156-1	in front	4	1	warm	True	False	False	False	True	1	1	9.2	512.2	fixed	True	True	162.1	48.4	112.9
+156	v5-156-1	in front	4	2	warm	True	False	False	False	True	1	1	156.2	516.2	fixed	True	True	163.3	80.2	72.1
+156	v5-156-1	cancel	5	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	5	1	warm	False	False	False	False	False	1	1			extended	True	True	458.3	198.3	252.2
+156	v5-156-1	cancel	5	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	5	0	cold	True	False	False	False	True	1	1	114.4	472.5	fixed	True	True	119.6	48.4	36.3
+156	v5-156-1	in front	5	1	warm	True	False	False	False	True	1	1	499.3	862.0	extended	True	True	511.9	49.2	299.6
+156	v5-156-1	in front	5	2	warm	True	False	False	False	False	1	1	9.0	514.5	fixed	True	True	164.3	69.1	93.9
+156	v5-156-1	cancel	6	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	6	1	warm	False	False	False	False	False	1	1			fixed	True	True	249.2	153.9	84.0
+156	v5-156-1	cancel	6	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	6	0	cold	True	False	False	False	True	1	1	93.8	594.2	fixed	True	True	242.3	48.4	129.0
+156	v5-156-1	in front	6	1	warm	True	False	False	False	False	1	1	1.3	354.5	path		True	4.3	349.0	
+156	v5-156-1	in front	6	2	warm	True	False	False	False	False	1	1	2.6	515.2	fixed	True	True	162.5	48.4	112.1
+156	v5-156-1	cancel	7	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	7	1	warm	False	False	False	False	False	1	1			fixed	True	True	193.3	154.0	38.7
+156	v5-156-1	cancel	7	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	7	0	cold	True	False	False	False	True	1	1	64.9	423.4	fixed	True	True	70.3	50.6	5.3
+156	v5-156-1	in front	7	1	warm	True	False	False	False	True	1	1	1.9	461.5	fixed	True	True	108.6	48.4	53.0
+156	v5-156-1	in front	7	2	warm	True	False	False	False	False	1	1	4.1	502.9	fixed	True	True	150.9	52.0	91.7
+156	v5-156-1	cancel	8	0	cold	False	False	False	False	False	1	1			fixed	True	True	180.7	153.9	26.0
+156	v5-156-1	cancel	8	1	warm	False	False	False	False	False	1	1			fixed	True	True	234.2	153.9	80.0
+156	v5-156-1	cancel	8	2	warm	False	False	False	False	False	1	1			fixed	True	True	426.3	290.3	120.7
+156	v5-156-1	in front	8	0	cold	True	False	False	False	True	1	1	2.5	465.4	fixed	True	True	112.2	49.7	55.8
+156	v5-156-1	in front	8	1	warm	True	False	False	False	True	1	1	12.7	514.9	fixed	True	True	161.0	53.9	105.8
+156	v5-156-1	in front	8	2	warm	True	False	False	False	True	1	1	2.8	478.8	fixed	True	True	128.6	49.4	75.8
+156	v5-156-1	cancel	9	0	cold	False	False	False	False	False	1	1			fixed	True	True	162.2	153.8	7.0
+156	v5-156-1	cancel	9	1	warm	False	False	False	False	False	1	1			fixed	True	True	248.7	153.9	92.8
+156	v5-156-1	cancel	9	2	warm	False	False	False	False	False	1	1			fixed	True	True	220.2	156.2	56.9
+156	v5-156-1	in front	9	0	cold	True	False	False	False	True	1	1	72.7	428.3	fixed	True	True	78.1	48.7	10.6
+156	v5-156-1	in front	9	1	warm	True	False	False	False	False	1	1	4.8	360.4	path		True	10.3	302.1	
+156	v5-156-1	in front	9	2	warm	True	False	False	False	True	1	1	152.2	510.4	fixed	True	True	157.7	48.4	95.3
+156	v5-156-1	cancel	10	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	10	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	10	2	warm	False	False	False	False	False	1	1			fixed	True	True	178.8	153.9	12.2
+156	v5-156-1	in front	10	0	cold	True	False	False	False	True	1	1	188.3	548.5	fixed	True	True	194.8	48.4	106.9
+156	v5-156-1	in front	10	1	warm	True	False	False	False	True	1	1	3.4	509.1	fixed	True	True	156.2	48.5	98.1
+156	v5-156-1	in front	10	2	warm	True	False	False	False	True	1	1	115.8	473.3	fixed	True	True	123.1	48.5	72.7
+156	v5-156-1	cancel	11	0	cold	False	False	False	False	False	1	1			fixed	True	True	192.5	157.4	33.9
+156	v5-156-1	cancel	11	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	11	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	11	0	cold	True	False	False	False	True	1	1	152.3	517.8	fixed	True	True	165.6	49.6	115.4
+156	v5-156-1	in front	11	1	warm	True	False	False	False	True	1	1	132.7	490.2	fixed	True	True	140.0	54.3	77.9
+156	v5-156-1	in front	11	2	warm	True	False	False	False	False	1	1	5.6	358.6	path		True	8.4	290.5	
+156	v5-156-1	cancel	12	0	cold	False	False	False	False	False	1	1			fixed	True	True	172.7	153.9	15.6
+156	v5-156-1	cancel	12	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	12	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	12	0	cold	True	False	False	False	True	1	1	192.3	551.4	fixed	True	True	198.6	48.4	118.7
+156	v5-156-1	in front	12	1	warm	True	False	False	False	True	1	1	2.9	508.4	fixed	True	True	154.3	48.4	98.9
+156	v5-156-1	in front	12	2	warm	True	False	False	False	True	1	1	8.9	364.3	path		True	13.3	175.6	
+156	v5-156-1	cancel	13	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	13	1	warm	False	False	False	False	False	1	1			fixed	True	True	246.7	153.9	92.4
+156	v5-156-1	cancel	13	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	13	0	cold	True	False	False	False	True	1	1	290.0	655.2	fixed	True	True	297.4	50.4	150.5
+156	v5-156-1	in front	13	1	warm	True	False	False	False	True	1	1	2.7	460.5	fixed	True	True	110.2	48.3	55.3
+156	v5-156-1	in front	13	2	warm	True	False	False	False	True	1	1	3.3	508.0	fixed	True	True	155.3	51.0	102.9
+156	v5-156-1	cancel	14	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	14	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	14	2	warm	False	False	False	False	False	1	1			fixed	True	True	410.0	216.4	185.3
+156	v5-156-1	in front	14	0	cold	True	False	False	False	True	1	1	376.1	731.3	fixed	True	True	379.9	70.2	230.8
+156	v5-156-1	in front	14	1	warm	True	False	False	False	True	1	1	383.5	747.4	fixed	True	True	394.1	48.4	221.7
+156	v5-156-1	in front	14	2	warm	True	False	False	False	True	1	1	153.0	524.1	fixed	True	True	170.8	48.4	119.5
+156	v5-156-1	cancel	15	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	15	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	15	2	warm	False	False	False	False	False	1	1			fixed	True	True	198.3	155.0	42.1
+156	v5-156-1	in front	15	0	cold	True	False	False	False	True	1	1	111.6	472.4	fixed	True	True	119.6	48.4	30.6
+156	v5-156-1	in front	15	1	warm	True	False	False	False	True	1	1	345.8	702.3	fixed	True	True	351.9	48.3	232.2
+156	v5-156-1	in front	15	2	warm	True	False	False	False	True	1	1	19.0	400.5	path		True	50.3	50.3	
+156	v5-156-1	cancel	16	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	16	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	16	2	warm	False	False	False	False	False	1	1			fixed	True	True	174.4	159.9	
+156	v5-156-1	in front	16	0	cold	True	False	False	False	True	1	1	246.6	605.6	fixed	True	True	255.4	49.2	144.1
+156	v5-156-1	in front	16	1	warm	True	False	False	False	False	1	1	4.2	512.1	fixed	True	True	162.0	49.6	111.5
+156	v5-156-1	in front	16	2	warm	True	False	False	False	True	1	1	152.4	518.4	fixed	True	True	167.0	49.1	103.6
+156	v5-156-1	cancel	17	0	cold	False	False	False	False	False	1	1			fixed	True	True	165.3	156.8	0.4
+156	v5-156-1	cancel	17	1	warm	False	False	False	False	False	1	1			fixed	True	True	185.0	153.9	27.1
+156	v5-156-1	cancel	17	2	warm	False	False	False	False	False	1	1			fixed	True	True	247.3	154.6	90.1
+156	v5-156-1	in front	17	0	cold	True	False	False	False	True	1	1	441.1	799.6	fixed	True	True	449.4	48.5	236.8
+156	v5-156-1	in front	17	1	warm	True	False	False	False	False	1	1	2.6	465.0	fixed	True	True	114.8	48.4	65.2
+156	v5-156-1	in front	17	2	warm	True	False	False	False	False	1	1	3.4	504.4	fixed	True	True	151.6	48.3	97.3
+156	v5-156-1	cancel	18	0	cold	False	False	False	False	False	1	1			fixed	True	True	382.0	369.6	4.3
+156	v5-156-1	cancel	18	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	18	2	warm	False	False	False	False	False	1	1			fixed	True	True	252.7	153.8	95.3
+156	v5-156-1	in front	18	0	cold	True	False	False	False	True	1	1	2.2	466.4	fixed	True	True	116.3	53.0	55.2
+156	v5-156-1	in front	18	1	warm	True	False	False	False	True	1	1	118.7	479.3	fixed	True	True	127.3	85.3	36.0
+156	v5-156-1	in front	18	2	warm	True	False	False	False	True	1	1	71.1	427.1	fixed	True	True	76.9	48.4	2.1
+156	v5-156-1	cancel	19	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	19	1	warm	False	False	False	False	False	1	1			fixed	True	True	169.6	155.2	12.2
+156	v5-156-1	cancel	19	2	warm	False	False	False	False	False	1	1			fixed	True	True	186.8	154.3	31.4
+156	v5-156-1	in front	19	0	cold	True	False	False	False	True	1	1	204.6	563.4	fixed	True	True	210.8	48.4	108.4
+156	v5-156-1	in front	19	1	warm	True	False	False	False	True	1	1	4.3	457.0	fixed	True	True	106.8	67.3	36.6
+156	v5-156-1	in front	19	2	warm	True	False	False	False	True	1	1	11.6	467.7	fixed	True	True	117.6	48.7	55.9
+156	v5-156-1	cancel	20	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	20	1	warm	False	False	False	False	False	1	1			fixed	True	True	234.2	158.0	68.8
+156	v5-156-1	cancel	20	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	20	0	cold	True	False	False	False	True	1	1	217.3	592.0	fixed	True	True	232.9	48.4	143.0
+156	v5-156-1	in front	20	1	warm	True	False	False	False	True	1	1	3.7	508.4	fixed	True	True	155.3	64.7	89.8
+156	v5-156-1	in front	20	2	warm	True	False	False	False	True	1	1	9.0	480.1	fixed	True	True	126.9	48.4	77.5
+156	v5-156-1	cancel	21	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	21	1	warm	False	False	False	False	False	1	1			fixed	True	True	215.0	155.2	58.5
+156	v5-156-1	cancel	21	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	21	0	cold	True	False	False	False	True	1	1	271.8	636.7	fixed	True	True	282.6	48.4	144.9
+156	v5-156-1	in front	21	1	warm	True	False	False	False	True	1	1	9.9	520.7	fixed	True	True	170.6	52.2	116.3
+156	v5-156-1	in front	21	2	warm	True	False	False	False	True	1	1	6.6	484.1	path		True	131.6	131.6	
+156	v5-156-1	cancel	22	0	cold	False	False	False	False	False	1	1			fixed	True	True	162.6	154.2	6.8
+156	v5-156-1	cancel	22	1	warm	False	False	False	False	False	1	1			fixed	True	True	172.0	155.5	15.2
+156	v5-156-1	cancel	22	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	22	0	cold	True	False	False	False	True	1	1	146.4	512.2	fixed	True	True	157.3	125.2	22.1
+156	v5-156-1	in front	22	1	warm	True	False	False	False	True	1	1	3.3	514.4	fixed	True	True	160.3	48.4	102.9
+156	v5-156-1	in front	22	2	warm	True	False	False	False	True	1	1	150.2	518.4	fixed	True	True	163.1	48.4	114.0
+156	v5-156-1	cancel	23	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	23	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	cancel	23	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-1	in front	23	0	cold	True	False	False	False	False	1	1	1.5	510.7	fixed	True	True	157.2	48.4	108.2
+156	v5-156-1	in front	23	1	warm	True	False	False	False	True	1	1	3.5	514.4	path		True	162.4	162.4	
+156	v5-156-1	in front	23	2	warm	True	False	False	False	False	1	1	10.5	517.1	fixed	True	True	158.4	59.2	86.2
+156	v5-156-1	cancel	24	0	cold	False	False	False	False	False	1	1			fixed	True	True	164.3	153.9	9.8
+156	v5-156-1	cancel	24	1	warm	False	False	False	False	False	1	1			fixed	True	True	215.3	155.3	59.4
+156	v5-156-1	cancel	24	2	warm	False	False	False	False	False	1	1			fixed	True	True	189.1	153.9	29.6
+156	v5-156-1	in front	24	0	cold	True	False	False	False	True	1	1	101.8	465.9	fixed	True	True	111.1	48.5	31.7
+156	v5-156-1	in front	24	1	warm	True	False	False	False	True	1	1	2.3	464.1	fixed	True	True	111.2	48.4	61.8
+156	v5-156-1	in front	24	2	warm	True	False	False	False	True	1	1	1.6	453.7	fixed	True	True	103.6	51.1	47.9
+156	v5-156-2	cancel	0	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	0	1	warm	False	False	False	False	False	1	1			fixed	True	True	167.6	157.3	9.1
+156	v5-156-2	cancel	0	2	warm	False	False	False	False	False	1	1			fixed	True	True	168.5	153.8	7.2
+156	v5-156-2	in front	0	0	cold	True	False	False	False	True	1	1	173.1	531.6	fixed	True	True	179.1	51.7	102.6
+156	v5-156-2	in front	0	1	warm	True	False	False	False	True	1	1	73.4	431.3	fixed	True	True	79.4	52.4	4.3
+156	v5-156-2	in front	0	2	warm	True	False	False	False	True	1	1	2.4	495.7	fixed	True	True	145.6	55.1	89.2
+156	v5-156-2	cancel	1	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	1	1	warm	False	False	False	False	False	1	1			fixed	True	True	238.4	153.9	83.8
+156	v5-156-2	cancel	1	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	1	0	cold	True	False	False	False	True	1	1	102.5	459.5	fixed	True	True	106.4	48.4	30.6
+156	v5-156-2	in front	1	1	warm	True	False	False	False	True	1	1	8.9	450.5	fixed	True	True	100.4	48.4	45.3
+156	v5-156-2	in front	1	2	warm	True	False	False	False	True	1	1	111.4	466.7	fixed	True	True	116.5	68.7	43.3
+156	v5-156-2	cancel	2	0	cold	False	False	False	False	False	1	1			fixed	True	True	174.1	157.4	13.8
+156	v5-156-2	cancel	2	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	2	2	warm	False	False	False	False	False	1	1			fixed	True	True	174.7	153.8	19.9
+156	v5-156-2	in front	2	0	cold	True	False	False	False	True	1	1	7.4	458.9	fixed	True	True	108.8	51.3	55.8
+156	v5-156-2	in front	2	1	warm	True	False	False	False	True	1	1	145.2	507.4	fixed	True	True	154.7	51.9	97.3
+156	v5-156-2	in front	2	2	warm	True	False	False	False	True	1	1	161.6	526.3	fixed	True	True	167.3	48.4	108.3
+156	v5-156-2	cancel	3	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	3	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	3	2	warm	False	False	False	False	False	1	1			fixed	True	True	234.4	153.8	79.6
+156	v5-156-2	in front	3	0	cold	True	False	False	False	True	1	1	231.1	590.6	fixed	True	True	238.4	100.3	126.4
+156	v5-156-2	in front	3	1	warm	True	False	False	False	True	1	1	17.6	399.2	path		True	48.1	49.2	
+156	v5-156-2	in front	3	2	warm	True	False	False	False	True	1	1	4.3	457.0	fixed	True	True	106.9	48.4	51.5
+156	v5-156-2	cancel	4	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	4	1	warm	False	False	False	False	False	1	1			fixed	True	True	442.9	154.0	275.8
+156	v5-156-2	cancel	4	2	warm	False	False	False	False	False	1	1			fixed	True	True	211.1	156.3	52.2
+156	v5-156-2	in front	4	0	cold	True	False	False	False	True	1	1	69.0	431.4	fixed	True	True	75.6	48.5	6.4
+156	v5-156-2	in front	4	1	warm	True	False	False	False	True	1	1	82.2	438.1	fixed	True	True	85.6	48.5	15.9
+156	v5-156-2	in front	4	2	warm	True	False	False	False	True	1	1	113.5	474.5	fixed	True	True	119.4	48.6	69.7
+156	v5-156-2	cancel	5	0	cold	False	False	False	False	False	1	1			fixed	True	True	158.0	153.8	
+156	v5-156-2	cancel	5	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	5	2	warm	False	False	False	False	False	1	1			fixed	True	True	244.6	153.9	84.3
+156	v5-156-2	in front	5	0	cold	True	False	False	False	True	1	1	5.3	509.1	fixed	True	True	156.2	99.1	50.0
+156	v5-156-2	in front	5	1	warm	True	False	False	False	False	1	1	2.8	505.3	fixed	True	True	153.2	48.4	95.9
+156	v5-156-2	in front	5	2	warm	True	False	False	False	True	1	1	14.8	398.7	path		True	48.5	48.9	
+156	v5-156-2	cancel	6	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	6	1	warm	False	False	False	False	False	1	1			fixed	True	True	242.5	153.8	88.3
+156	v5-156-2	cancel	6	2	warm	True	True	False	False	False	0	0			noticed	True	False		157.4	316.5
+156	v5-156-2	in front	6	0	cold	True	False	False	False	True	1	1	158.8	520.2	fixed	True	True	170.0	49.4	119.8
+156	v5-156-2	in front	6	1	warm	True	False	False	False	False	1	1	3.4	511.5	fixed	True	True	158.6	83.8	69.1
+156	v5-156-2	in front	6	2	warm	True	False	False	False	True	1	1	2.7	505.2	fixed	True	True	151.4	50.2	92.2
+156	v5-156-2	cancel	7	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	7	1	warm	False	False	False	False	False	1	1			fixed	True	True	198.6	188.2	0.4
+156	v5-156-2	cancel	7	2	warm	False	False	False	False	False	1	1			fixed	True	True	445.4	369.3	64.5
+156	v5-156-2	in front	7	0	cold	True	False	False	False	True	1	1	92.8	451.0	path		True	100.7	101.1	
+156	v5-156-2	in front	7	1	warm	True	False	False	False	True	1	1	5.3	522.3	fixed	True	True	167.6	51.4	114.0
+156	v5-156-2	in front	7	2	warm	True	False	False	False	True	1	1	17.8	399.6	path		True	49.5	49.5	
+156	v5-156-2	cancel	8	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	8	1	warm	False	False	False	False	False	1	1			fixed	True	True	171.4	154.8	13.3
+156	v5-156-2	cancel	8	2	warm	False	False	False	False	False	1	1			fixed	True	True	240.7	153.9	85.5
+156	v5-156-2	in front	8	0	cold	True	False	False	False	True	1	1	431.0	785.9	fixed	True	True	435.3	48.3	241.1
+156	v5-156-2	in front	8	1	warm	True	False	False	False	True	1	1	10.3	370.9	path		True	18.2	113.3	
+156	v5-156-2	in front	8	2	warm	True	False	False	False	True	1	1	145.6	502.4	fixed	True	True	152.2	48.4	97.9
+156	v5-156-2	cancel	9	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	9	1	warm	False	False	False	False	False	1	1			fixed	True	True	234.1	153.8	79.9
+156	v5-156-2	cancel	9	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	9	0	cold	True	False	False	False	True	1	1	198.7	555.5	fixed	True	True	202.8	48.3	105.8
+156	v5-156-2	in front	9	1	warm	True	False	False	False	True	1	1	12.8	489.1	fixed	True	True	136.3	48.4	86.1
+156	v5-156-2	in front	9	2	warm	True	False	False	False	True	1	1	130.6	486.0	fixed	True	True	135.9	52.2	67.0
+156	v5-156-2	cancel	10	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	10	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	10	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	10	0	cold	True	False	False	False	False	1	1	238.2	594.4	fixed	True	True	244.3	48.4	149.1
+156	v5-156-2	in front	10	1	warm	True	False	False	False	True	1	1	1.9	494.2	fixed	True	True	140.3	48.7	83.1
+156	v5-156-2	in front	10	2	warm	True	False	False	False	True	1	1	95.8	450.6	fixed	True	True	100.4	71.2	22.3
+156	v5-156-2	cancel	11	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	11	1	warm	False	False	False	False	False	1	1			fixed	True	True	194.3	157.1	33.9
+156	v5-156-2	cancel	11	2	warm	False	False	False	False	False	1	1			fixed	True	True	233.1	153.9	77.5
+156	v5-156-2	in front	11	0	cold	True	False	False	False	True	1	1	555.6	925.5	extended	True	True	573.6	48.4	352.6
+156	v5-156-2	in front	11	1	warm	True	False	False	False	True	1	1	20.4	402.4	path		True	50.5	50.5	
+156	v5-156-2	in front	11	2	warm	True	False	False	False	True	1	1	381.2	741.3	fixed	True	True	389.5	50.6	202.1
+156	v5-156-2	cancel	12	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	12	1	warm	False	False	False	False	False	1	1			fixed	True	True	185.0	153.8	30.4
+156	v5-156-2	cancel	12	2	warm	False	False	False	False	False	1	1			fixed	True	True	221.7	217.5	
+156	v5-156-2	in front	12	0	cold	True	False	False	False	True	1	1	2.5	513.5	fixed	True	True	160.8	48.4	101.3
+156	v5-156-2	in front	12	1	warm	True	False	False	False	True	1	1	4.4	508.1	fixed	True	True	155.0	89.0	56.0
+156	v5-156-2	in front	12	2	warm	True	False	False	False	True	1	1	3.5	513.9	fixed	True	True	161.1	125.9	33.4
+156	v5-156-2	cancel	13	0	cold	False	False	False	False	False	1	1			fixed	True	True	166.4	159.5	5.7
+156	v5-156-2	cancel	13	1	warm	False	False	False	False	False	1	1			fixed	True	True	235.0	153.9	80.8
+156	v5-156-2	cancel	13	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	13	0	cold	True	False	False	False	True	1	1	72.9	427.5	fixed	True	True	77.4	48.6	1.3
+156	v5-156-2	in front	13	1	warm	True	False	False	False	True	1	1	23.7	385.0	path		True	31.0	65.1	
+156	v5-156-2	in front	13	2	warm	True	False	False	False	True	1	1	19.0	467.7	fixed	True	True	113.3	48.6	60.7
+156	v5-156-2	cancel	14	0	cold	False	False	False	False	False	1	1			fixed	True	True	405.3	153.9	239.1
+156	v5-156-2	cancel	14	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	14	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	14	0	cold	True	False	False	False	True	1	1	153.8	521.4	fixed	True	True	170.0	49.5	111.6
+156	v5-156-2	in front	14	1	warm	True	False	False	False	False	1	1	5.1	506.6	fixed	True	True	154.4	50.2	97.8
+156	v5-156-2	in front	14	2	warm	True	False	False	False	True	1	1	113.1	471.8	fixed	True	True	119.2	51.0	65.8
+156	v5-156-2	cancel	15	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	15	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	15	2	warm	False	False	False	False	False	1	1			fixed	True	True	255.5	162.8	85.7
+156	v5-156-2	in front	15	0	cold	True	False	False	False	True	1	1	239.8	607.3	fixed	True	True	254.1	48.3	142.6
+156	v5-156-2	in front	15	1	warm	True	False	False	False	False	1	1	34.7	397.0	path		True	44.0	394.1	
+156	v5-156-2	in front	15	2	warm	True	False	False	False	True	1	1	7.5	510.9	fixed	True	True	156.4	49.2	98.5
+156	v5-156-2	cancel	16	0	cold	False	False	False	False	False	1	1			fixed	True	True	170.3	153.8	15.8
+156	v5-156-2	cancel	16	1	warm	False	False	False	False	False	1	1			fixed	True	True	243.3	153.9	89.0
+156	v5-156-2	cancel	16	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	16	0	cold	True	False	False	False	True	1	1	233.1	598.5	fixed	True	True	242.0	48.4	104.3
+156	v5-156-2	in front	16	1	warm	True	False	False	False	True	1	1	102.3	460.3	fixed	True	True	107.6	48.3	57.9
+156	v5-156-2	in front	16	2	warm	True	False	False	False	True	1	1	15.7	503.4	fixed	True	True	151.8	48.4	96.4
+156	v5-156-2	cancel	17	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	17	1	warm	False	False	False	False	False	1	1			fixed	True	True	168.4	153.8	8.7
+156	v5-156-2	cancel	17	2	warm	False	False	False	False	False	1	1			fixed	True	True	212.5	153.8	57.5
+156	v5-156-2	in front	17	0	cold	True	False	False	False	True	1	1	213.5	575.5	fixed	True	True	221.5	49.6	127.1
+156	v5-156-2	in front	17	1	warm	True	False	False	False	True	1	1	4.2	471.4	fixed	True	True	121.2	48.4	71.9
+156	v5-156-2	in front	17	2	warm	True	False	False	False	True	1	1	17.6	407.1	path		True	52.1	52.1	
+156	v5-156-2	cancel	18	0	cold	False	False	False	False	False	1	1			fixed	True	True	158.1	153.9	1.5
+156	v5-156-2	cancel	18	1	warm	False	False	False	False	False	1	1			fixed	True	True	414.8	363.2	35.0
+156	v5-156-2	cancel	18	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	18	0	cold	True	False	False	False	True	1	1	114.0	470.2	fixed	True	True	117.7	48.4	37.0
+156	v5-156-2	in front	18	1	warm	True	False	False	False	True	1	1	160.8	521.6	fixed	True	True	171.5	55.1	115.1
+156	v5-156-2	in front	18	2	warm	True	False	False	False	True	1	1	2.9	480.4	fixed	True	True	127.4	48.6	73.1
+156	v5-156-2	cancel	19	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	19	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	19	2	warm	False	False	False	False	False	1	1			fixed	True	True	219.8	153.9	65.6
+156	v5-156-2	in front	19	0	cold	True	False	False	False	True	1	1	208.8	564.6	fixed	True	True	214.5	48.5	106.3
+156	v5-156-2	in front	19	1	warm	True	False	False	False	False	1	1	3.6	506.9	fixed	True	True	154.8	48.4	97.9
+156	v5-156-2	in front	19	2	warm	True	False	False	False	True	1	1	422.7	782.9	fixed	True	True	429.9	48.5	255.5
+156	v5-156-2	cancel	20	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	20	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	20	2	warm	False	False	False	False	False	1	1			fixed	True	True	237.8	153.8	83.2
+156	v5-156-2	in front	20	0	cold	True	False	False	False	True	1	1	231.9	601.4	fixed	True	True	249.5	48.4	140.5
+156	v5-156-2	in front	20	1	warm	True	False	False	False	False	1	1	7.0	510.2	fixed	True	True	158.3	48.4	107.8
+156	v5-156-2	in front	20	2	warm	True	False	False	False	True	1	1	14.5	512.4	fixed	True	True	157.5	48.4	107.8
+156	v5-156-2	cancel	21	0	cold	False	False	False	False	False	1	1			fixed	True	True	166.4	153.9	11.4
+156	v5-156-2	cancel	21	1	warm	False	False	False	False	False	1	1			fixed	True	True	182.0	161.3	19.4
+156	v5-156-2	cancel	21	2	warm	False	False	False	False	False	1	1			fixed	True	True	162.8	156.4	3.9
+156	v5-156-2	in front	21	0	cold	True	False	False	False	True	1	1	205.3	575.0	fixed	True	True	222.0	121.0	95.0
+156	v5-156-2	in front	21	1	warm	True	False	False	False	True	1	1	154.8	511.4	fixed	True	True	161.2	48.3	111.6
+156	v5-156-2	in front	21	2	warm	True	False	False	False	True	1	1	2.3	490.4	fixed	True	True	137.0	48.3	88.3
+156	v5-156-2	cancel	22	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	22	1	warm	False	False	False	False	False	1	1			fixed	True	True	177.3	155.4	16.8
+156	v5-156-2	cancel	22	2	warm	False	False	False	False	False	1	1			fixed	True	True	156.0	153.9	
+156	v5-156-2	in front	22	0	cold	True	False	False	False	True	1	1	263.6	626.5	fixed	True	True	272.8	48.4	145.7
+156	v5-156-2	in front	22	1	warm	True	False	False	False	True	1	1	329.2	687.4	fixed	True	True	334.0	48.6	219.9
+156	v5-156-2	in front	22	2	warm	True	False	False	False	False	1	1	9.3	400.3	path		True	48.5	48.6	
+156	v5-156-2	cancel	23	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	23	1	warm	False	False	False	False	False	1	1			fixed	True	True	178.8	153.9	16.3
+156	v5-156-2	cancel	23	2	warm	False	False	False	False	False	1	1			fixed	True	True	224.2	158.3	65.1
+156	v5-156-2	in front	23	0	cold	True	False	False	False	True	1	1	86.9	441.7	fixed	True	True	91.6	48.4	13.7
+156	v5-156-2	in front	23	1	warm	True	False	False	False	True	1	1	112.5	469.5	fixed	True	True	119.2	48.5	63.2
+156	v5-156-2	in front	23	2	warm	True	False	False	False	True	1	1	2.4	511.1	fixed	True	True	160.9	48.4	108.0
+156	v5-156-2	cancel	24	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	cancel	24	1	warm	False	False	False	False	False	1	1			fixed	True	True	252.3	217.2	33.9
+156	v5-156-2	cancel	24	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-2	in front	24	0	cold	True	False	False	False	True	1	1	61.5	415.6	fixed	True	True	65.4	48.5	9.5
+156	v5-156-2	in front	24	1	warm	True	False	False	False	True	1	1	1.8	411.1	fixed	True	True	60.9	48.4	12.1
+156	v5-156-2	in front	24	2	warm	True	False	False	False	True	1	1	4.4	506.2	fixed	True	True	151.3	48.4	102.4
+156	v5-156-3	cancel	0	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	0	1	warm	False	False	False	False	False	1	1			fixed	True	True	160.1	153.9	2.5
+156	v5-156-3	cancel	0	2	warm	False	False	False	False	False	1	1			fixed	True	True	205.0	153.9	49.7
+156	v5-156-3	in front	0	0	cold	True	False	False	False	True	1	1	88.7	448.9	fixed	True	True	98.8	48.3	29.7
+156	v5-156-3	in front	0	1	warm	True	False	False	False	True	1	1	102.1	456.6	fixed	True	True	106.4	48.4	29.6
+156	v5-156-3	in front	0	2	warm	True	False	False	False	True	1	1	98.2	455.0	fixed	True	True	103.2	55.0	46.9
+156	v5-156-3	cancel	1	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	1	1	warm	False	False	False	False	False	1	1			fixed	True	True	224.0	153.9	69.4
+156	v5-156-3	cancel	1	2	warm	False	False	False	False	False	1	1			fixed	True	True	220.0	153.9	65.5
+156	v5-156-3	in front	1	0	cold	True	False	False	False	True	1	1	109.2	472.2	fixed	True	True	120.3	53.1	27.5
+156	v5-156-3	in front	1	1	warm	True	False	False	False	True	1	1	3.5	500.3	fixed	True	True	146.5	49.3	91.2
+156	v5-156-3	in front	1	2	warm	True	False	False	False	True	1	1	2.5	512.5	fixed	True	True	158.3	48.4	102.7
+156	v5-156-3	cancel	2	0	cold	False	False	False	False	False	1	1			fixed	True	True	177.2	156.0	19.9
+156	v5-156-3	cancel	2	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	2	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	2	0	cold	True	False	False	False	True	1	1	13.7	434.2	fixed	True	True	84.0	48.5	34.2
+156	v5-156-3	in front	2	1	warm	True	False	False	False	True	1	1	2.7	507.6	fixed	True	True	156.1	48.3	100.8
+156	v5-156-3	in front	2	2	warm	True	False	False	False	False	1	1	152.8	508.9	fixed	True	True	158.7	49.6	104.5
+156	v5-156-3	cancel	3	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	3	1	warm	False	False	False	False	False	1	1			fixed	True	True	162.8	154.4	8.0
+156	v5-156-3	cancel	3	2	warm	False	False	False	False	False	1	1			fixed	True	True	238.0	153.9	82.4
+156	v5-156-3	in front	3	0	cold	True	False	False	False	True	1	1	102.5	463.5	fixed	True	True	111.6	48.4	30.6
+156	v5-156-3	in front	3	1	warm	True	False	False	False	False	1	1	26.8	387.0	path		True	32.0	382.1	
+156	v5-156-3	in front	3	2	warm	True	False	False	False	True	1	1	147.8	507.5	fixed	True	True	153.8	48.3	101.2
+156	v5-156-3	cancel	4	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	4	1	warm	True	True	False	False	False	0	0			noticed	True	False		154.3	245.2
+156	v5-156-3	cancel	4	2	warm	False	False	False	False	False	1	1			extended	True	True	507.9	153.9	346.7
+156	v5-156-3	in front	4	0	cold	True	False	False	False	True	1	1	2.8	503.4	fixed	True	True	152.9	48.4	103.3
+156	v5-156-3	in front	4	1	warm	True	False	False	False	True	1	1	2.4	465.9	fixed	True	True	113.4	50.5	60.4
+156	v5-156-3	in front	4	2	warm	True	False	False	False	True	1	1	2.7	463.5	fixed	True	True	111.6	49.1	61.8
+156	v5-156-3	cancel	5	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	5	1	warm	True	True	False	False	False	0	0			noticed	True	False		156.3	259.6
+156	v5-156-3	cancel	5	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	5	0	cold	True	False	False	False	True	1	1	97.7	459.6	fixed	True	True	106.3	48.4	28.3
+156	v5-156-3	in front	5	1	warm	True	False	False	False	True	1	1	6.7	460.6	fixed	True	True	110.2	49.4	59.9
+156	v5-156-3	in front	5	2	warm	True	False	False	False	True	1	1	159.8	531.3	fixed	True	True	173.3	50.3	112.0
+156	v5-156-3	cancel	6	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	6	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	6	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	6	0	cold	True	False	False	False	True	1	1	111.8	469.3	fixed	True	True	116.9	49.4	39.2
+156	v5-156-3	in front	6	1	warm	True	False	False	False	True	1	1	146.9	506.3	fixed	True	True	153.5	49.7	95.4
+156	v5-156-3	in front	6	2	warm	True	False	False	False	True	1	1	3.1	363.2	path		True	13.1	343.8	
+156	v5-156-3	cancel	7	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	7	1	warm	False	False	False	False	False	1	1			fixed	True	True	222.8	200.0	15.7
+156	v5-156-3	cancel	7	2	warm	False	False	False	False	False	1	1			fixed	True	True	283.3	155.0	126.0
+156	v5-156-3	in front	7	0	cold	True	False	False	False	True	1	1	114.2	471.8	fixed	True	True	121.6	48.6	66.5
+156	v5-156-3	in front	7	1	warm	True	False	False	False	True	1	1	105.3	463.0	fixed	True	True	112.8	48.3	53.5
+156	v5-156-3	in front	7	2	warm	True	False	False	False	False	1	1	4.5	511.1	fixed	True	True	151.5	72.5	70.4
+156	v5-156-3	cancel	8	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	8	1	warm	False	False	False	False	False	1	1			fixed	True	True	158.0	153.9	2.7
+156	v5-156-3	cancel	8	2	warm	False	False	False	False	False	1	1			fixed	True	True	185.3	153.8	27.7
+156	v5-156-3	in front	8	0	cold	True	False	False	False	True	1	1	209.6	574.6	fixed	True	True	220.6	48.6	125.1
+156	v5-156-3	in front	8	1	warm	True	False	False	False	True	1	1	103.2	464.2	fixed	True	True	110.7	80.2	23.5
+156	v5-156-3	in front	8	2	warm	True	False	False	False	True	1	1	107.0	470.3	fixed	True	True	116.3	50.5	63.7
+156	v5-156-3	cancel	9	0	cold	False	False	False	False	False	1	1			fixed	True	True	205.0	155.4	47.3
+156	v5-156-3	cancel	9	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	9	2	warm	False	False	False	False	False	1	1			fixed	True	True	194.4	154.4	39.0
+156	v5-156-3	in front	9	0	cold	True	False	False	False	True	1	1	18.8	509.0	fixed	True	True	156.1	48.4	106.7
+156	v5-156-3	in front	9	1	warm	True	False	False	False	True	1	1	145.9	510.7	fixed	True	True	159.4	49.2	109.4
+156	v5-156-3	in front	9	2	warm	True	False	False	False	False	1	1	3.3	356.9	path		True	6.7	299.6	
+156	v5-156-3	cancel	10	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	10	1	warm	False	False	False	False	False	1	1			fixed	True	True	411.7	197.5	204.5
+156	v5-156-3	cancel	10	2	warm	False	False	False	False	False	1	1			fixed	True	True	191.4	153.9	36.7
+156	v5-156-3	in front	10	0	cold	True	False	False	False	True	1	1	167.4	523.7	fixed	True	True	173.5	48.4	91.5
+156	v5-156-3	in front	10	1	warm	True	False	False	False	True	1	1	2.0	510.0	fixed	True	True	157.7	49.0	105.1
+156	v5-156-3	in front	10	2	warm	True	False	False	False	True	1	1	145.9	522.3	fixed	True	True	168.1	49.2	111.0
+156	v5-156-3	cancel	11	0	cold	False	False	False	False	False	1	1			fixed	True	True	171.4	154.9	15.2
+156	v5-156-3	cancel	11	1	warm	False	False	False	False	False	1	1			fixed	True	True	256.8	153.8	102.2
+156	v5-156-3	cancel	11	2	warm	False	False	False	False	False	1	1			fixed	True	True	248.7	153.8	93.4
+156	v5-156-3	in front	11	0	cold	True	False	False	False	True	1	1	3.1	518.0	fixed	True	True	165.0	50.0	109.8
+156	v5-156-3	in front	11	1	warm	True	False	False	False	True	1	1	113.4	471.4	fixed	True	True	119.4	51.2	65.7
+156	v5-156-3	in front	11	2	warm	True	False	False	False	True	1	1	22.7	526.9	fixed	True	True	173.9	54.6	111.6
+156	v5-156-3	cancel	12	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	12	1	warm	False	False	False	False	False	1	1			fixed	True	True	219.5	155.3	61.9
+156	v5-156-3	cancel	12	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	12	0	cold	True	False	False	False	True	1	1	92.3	449.4	fixed	True	True	99.3	48.4	35.9
+156	v5-156-3	in front	12	1	warm	True	False	False	False	True	1	1	22.1	471.9	fixed	True	True	121.8	48.3	70.5
+156	v5-156-3	in front	12	2	warm	True	False	False	False	False	1	1	15.0	372.0	path		True	20.2	229.2	
+156	v5-156-3	cancel	13	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	13	1	warm	False	False	False	False	False	1	1			fixed	True	True	261.7	153.9	107.4
+156	v5-156-3	cancel	13	2	warm	True	True	False	False	False	0	0			noticed	True	False		153.9	257.2
+156	v5-156-3	in front	13	0	cold	True	False	False	False	True	1	1	13.4	516.5	fixed	True	True	164.4	48.4	114.8
+156	v5-156-3	in front	13	1	warm	True	False	False	False	True	1	1	2.6	478.3	fixed	True	True	126.6	51.5	72.9
+156	v5-156-3	in front	13	2	warm	True	False	False	False	False	1	1	4.7	366.3	path		True	11.9	185.5	
+156	v5-156-3	cancel	14	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	14	1	warm	False	False	False	False	False	1	1			fixed	True	True	232.2	153.8	64.5
+156	v5-156-3	cancel	14	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	14	0	cold	True	False	False	False	True	1	1	103.5	459.8	fixed	True	True	107.5	49.5	41.4
+156	v5-156-3	in front	14	1	warm	True	False	False	False	True	1	1	176.1	542.2	fixed	True	True	192.0	53.2	137.6
+156	v5-156-3	in front	14	2	warm	True	False	False	False	True	1	1	2.9	469.1	fixed	True	True	116.6	50.0	58.4
+156	v5-156-3	cancel	15	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	15	1	warm	False	False	False	False	False	1	1			fixed	True	True	251.3	153.9	90.0
+156	v5-156-3	cancel	15	2	warm	False	False	False	False	False	1	1			fixed	True	True	209.8	153.9	54.1
+156	v5-156-3	in front	15	0	cold	True	False	False	False	True	1	1	2.3	471.9	fixed	True	True	118.0	49.3	63.0
+156	v5-156-3	in front	15	1	warm	True	False	False	False	True	1	1	3.2	517.1	fixed	True	True	167.0	48.4	112.5
+156	v5-156-3	in front	15	2	warm	True	False	False	False	True	1	1	173.8	538.0	fixed	True	True	183.4	52.3	123.9
+156	v5-156-3	cancel	16	0	cold	False	False	False	False	False	1	1			fixed	True	True	182.8	153.8	26.9
+156	v5-156-3	cancel	16	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	16	2	warm	False	False	False	False	False	1	1			fixed	True	True	271.1	154.8	111.7
+156	v5-156-3	in front	16	0	cold	True	False	False	False	True	1	1	187.3	546.7	fixed	True	True	194.4	48.7	109.9
+156	v5-156-3	in front	16	1	warm	True	False	False	False	True	1	1	123.9	483.5	fixed	True	True	130.2	49.1	76.0
+156	v5-156-3	in front	16	2	warm	True	False	False	False	True	1	1	2.7	521.3	fixed	True	True	169.6	48.3	113.2
+156	v5-156-3	cancel	17	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	17	1	warm	False	False	False	False	False	1	1			fixed	True	True	219.1	171.7	47.0
+156	v5-156-3	cancel	17	2	warm	False	False	False	False	False	1	1			fixed	True	True	193.6	154.8	37.9
+156	v5-156-3	in front	17	0	cold	True	False	False	False	True	1	1	104.1	466.6	fixed	True	True	116.5	48.4	42.4
+156	v5-156-3	in front	17	1	warm	True	False	False	False	True	1	1	120.8	477.0	fixed	True	True	126.8	48.4	73.2
+156	v5-156-3	in front	17	2	warm	True	False	False	False	True	1	1	10.5	421.4	fixed	True	True	67.2	48.4	18.4
+156	v5-156-3	cancel	18	0	cold	False	False	False	False	False	1	1			fixed	True	True	168.5	154.0	13.4
+156	v5-156-3	cancel	18	1	warm	False	False	False	False	False	1	1			fixed	True	True	184.7	153.8	30.5
+156	v5-156-3	cancel	18	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	18	0	cold	True	False	False	False	True	1	1	98.2	461.5	fixed	True	True	105.8	54.6	31.8
+156	v5-156-3	in front	18	1	warm	True	False	False	False	True	1	1	4.4	516.1	fixed	True	True	163.7	49.5	113.4
+156	v5-156-3	in front	18	2	warm	True	False	False	False	True	1	1	14.3	466.6	fixed	True	True	114.1	49.6	55.7
+156	v5-156-3	cancel	19	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	19	1	warm	False	False	False	False	False	1	1			fixed	True	True	213.7	153.8	58.9
+156	v5-156-3	cancel	19	2	warm	False	False	False	False	False	1	1			fixed	True	True	192.1	158.2	33.0
+156	v5-156-3	in front	19	0	cold	True	False	False	False	True	1	1	155.2	521.8	fixed	True	True	168.7	48.4	118.7
+156	v5-156-3	in front	19	1	warm	True	False	False	False	True	1	1	134.3	496.5	fixed	True	True	141.6	48.8	83.0
+156	v5-156-3	in front	19	2	warm	True	False	False	False	True	1	1	374.5	734.3	fixed	True	True	384.2	52.9	228.2
+156	v5-156-3	cancel	20	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	20	1	warm	False	False	False	False	False	1	1			fixed	True	True	177.0	154.1	21.8
+156	v5-156-3	cancel	20	2	warm	False	False	False	False	False	1	1			fixed	True	True	166.3	153.8	10.5
+156	v5-156-3	in front	20	0	cold	True	False	False	False	True	1	1	68.2	422.4	fixed	True	True	72.3	52.0	3.2
+156	v5-156-3	in front	20	1	warm	True	False	False	False	True	1	1	16.8	466.6	fixed	True	True	109.0	48.7	50.3
+156	v5-156-3	in front	20	2	warm	True	False	False	False	True	1	1	3.6	510.5	fixed	True	True	158.1	48.5	102.5
+156	v5-156-3	cancel	21	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	21	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	21	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	21	0	cold	True	False	False	False	True	1	1	221.0	590.5	fixed	True	True	237.0	48.4	151.5
+156	v5-156-3	in front	21	1	warm	True	False	False	False	True	1	1	119.5	477.2	fixed	True	True	123.4	48.4	73.9
+156	v5-156-3	in front	21	2	warm	True	False	False	False	True	1	1	100.8	459.7	fixed	True	True	104.9	54.5	49.6
+156	v5-156-3	cancel	22	0	cold	False	False	False	False	False	1	1			fixed	True	True	175.6	154.9	19.1
+156	v5-156-3	cancel	22	1	warm	False	False	False	False	False	1	1			fixed	True	True	255.0	153.9	100.7
+156	v5-156-3	cancel	22	2	warm	False	False	False	False	False	1	1			fixed	True	True	226.3	153.9	72.0
+156	v5-156-3	in front	22	0	cold	True	False	False	False	True	1	1	352.2	708.0	fixed	True	True	356.2	50.8	201.1
+156	v5-156-3	in front	22	1	warm	True	False	False	False	True	1	1	3.3	521.1	fixed	True	True	167.3	74.1	87.6
+156	v5-156-3	in front	22	2	warm	True	False	False	False	True	1	1	119.6	480.3	fixed	True	True	126.5	52.4	70.9
+156	v5-156-3	cancel	23	0	cold	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	23	1	warm	True	True	False	False	False	0	0			noticed	True	False		153.9	238.2
+156	v5-156-3	cancel	23	2	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	in front	23	0	cold	True	False	False	False	True	1	1	157.0	522.7	fixed	True	True	166.8	48.5	114.9
+156	v5-156-3	in front	23	1	warm	True	False	False	False	True	1	1	151.2	508.8	fixed	True	True	158.5	48.3	108.5
+156	v5-156-3	in front	23	2	warm	True	False	False	False	True	1	1	154.5	514.2	fixed	True	True	161.4	52.2	107.9
+156	v5-156-3	cancel	24	0	cold	False	False	False	False	False	1	1			fixed	True	True	178.1	153.9	23.4
+156	v5-156-3	cancel	24	1	warm	False	False	False	False	False	1	1			no hold record					
+156	v5-156-3	cancel	24	2	warm	False	False	False	False	False	1	1			fixed	True	True	411.9	286.2	105.9
+156	v5-156-3	in front	24	0	cold	True	False	False	False	True	1	1	94.8	596.3	fixed	True	True	242.9	48.4	136.3
+156	v5-156-3	in front	24	1	warm	True	False	False	False	True	1	1	8.6	421.3	path		True	67.3	111.4	
+156	v5-156-3	in front	24	2	warm	True	False	False	False	False	1	1	3.0	509.3	fixed	True	True	154.4	48.4	99.1
+158	v5-158-1	cancel	0	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	0	1	warm	False	False	False	False	False	1	1			fixed	True	True	174.4	155.7	16.9
+158	v5-158-1	cancel	0	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	0	0	cold	True	False	False	False	False	1	1	14.6	381.7	path		True	29.7	233.8	
+158	v5-158-1	in front	0	1	warm	True	False	False	False	True	1	1	150.7	522.1	fixed	True	True	169.8	48.4	112.7
+158	v5-158-1	in front	0	2	warm	True	False	False	False	True	1	1	487.5	850.3	extended	True	True	497.5	49.3	267.4
+158	v5-158-1	cancel	1	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	1	1	warm	False	False	False	False	False	1	1			fixed	True	True	180.9	153.9	25.4
+158	v5-158-1	cancel	1	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	1	0	cold	True	False	False	False	True	1	1	4.9	495.5	fixed	True	True	142.6	53.5	87.4
+158	v5-158-1	in front	1	1	warm	True	False	False	False	True	1	1	128.4	493.5	fixed	True	True	140.9	48.9	86.4
+158	v5-158-1	in front	1	2	warm	True	False	False	False	True	1	1	112.9	475.6	path		True	125.4	125.4	
+158	v5-158-1	cancel	2	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	2	1	warm	False	False	False	False	False	1	1			fixed	True	True	166.3	153.9	7.6
+158	v5-158-1	cancel	2	2	warm	False	False	False	False	False	1	1			fixed	True	True	160.1	153.9	5.5
+158	v5-158-1	in front	2	0	cold	True	False	False	False	True	1	1	180.5	538.5	fixed	True	True	186.0	48.5	104.1
+158	v5-158-1	in front	2	1	warm	True	False	False	False	True	1	1	3.2	501.4	fixed	True	True	147.5	51.9	81.1
+158	v5-158-1	in front	2	2	warm	True	False	False	False	False	1	1	10.1	366.6	path		True	16.5	113.6	
+158	v5-158-1	cancel	3	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	3	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	3	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	3	0	cold	True	False	False	False	True	1	1	71.1	427.6	fixed	True	True	77.5	48.4	2.1
+158	v5-158-1	in front	3	1	warm	True	False	False	False	True	1	1	114.5	470.1	fixed	True	True	120.0	48.4	62.7
+158	v5-158-1	in front	3	2	warm	True	False	False	False	True	1	1	5.2	489.7	fixed	True	True	137.8	48.4	84.0
+158	v5-158-1	cancel	4	0	cold	False	False	False	False	False	1	1			fixed	True	True	341.4	153.9	179.2
+158	v5-158-1	cancel	4	1	warm	False	False	False	False	False	1	1			fixed	True	True	195.0	155.7	38.6
+158	v5-158-1	cancel	4	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	4	0	cold	True	False	False	False	True	1	1	257.9	634.8	fixed	True	True	277.8	48.4	132.8
+158	v5-158-1	in front	4	1	warm	True	False	False	False	True	1	1	156.0	522.0	fixed	True	True	168.1	48.5	108.1
+158	v5-158-1	in front	4	2	warm	True	False	False	False	True	1	1	2.0	484.1	fixed	True	True	134.0	53.1	80.2
+158	v5-158-1	cancel	5	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	5	1	warm	False	False	False	False	False	1	1			fixed	True	True	163.5	157.2	
+158	v5-158-1	cancel	5	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	5	0	cold	True	False	False	False	False	1	1	3.8	501.5	fixed	True	True	146.5	54.5	86.0
+158	v5-158-1	in front	5	1	warm	True	False	False	False	False	1	1	9.3	362.8	path		True	12.7	200.3	
+158	v5-158-1	in front	5	2	warm	True	False	False	False	True	1	1	142.5	500.6	fixed	True	True	150.5	50.8	98.7
+158	v5-158-1	cancel	6	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	6	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	6	2	warm	False	False	False	False	False	1	1			fixed	True	True	168.7	153.9	9.2
+158	v5-158-1	in front	6	0	cold	True	False	False	False	True	1	1	3.1	493.0	fixed	True	True	142.6	48.4	93.2
+158	v5-158-1	in front	6	1	warm	True	False	False	False	True	1	1	7.9	449.2	fixed	True	True	99.0	48.8	42.1
+158	v5-158-1	in front	6	2	warm	True	False	False	False	True	1	1	2.4	487.2	fixed	True	True	137.1	48.4	87.8
+158	v5-158-1	cancel	7	0	cold	False	False	False	False	False	1	1			fixed	True	True	158.1	153.9	
+158	v5-158-1	cancel	7	1	warm	False	False	False	False	False	1	1			fixed	True	True	164.3	153.9	3.9
+158	v5-158-1	cancel	7	2	warm	False	False	False	False	False	1	1			fixed	True	True	162.7	153.9	
+158	v5-158-1	in front	7	0	cold	True	False	False	False	True	1	1	89.1	444.1	fixed	True	True	92.6	48.6	23.2
+158	v5-158-1	in front	7	1	warm	True	False	False	False	True	1	1	14.9	398.2	path		True	48.0	48.5	
+158	v5-158-1	in front	7	2	warm	True	False	False	False	True	1	1	137.2	501.4	fixed	True	True	148.7	48.3	93.5
+158	v5-158-1	cancel	8	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	8	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	8	2	warm	False	False	False	False	False	1	1			fixed	True	True	162.2	153.9	6.4
+158	v5-158-1	in front	8	0	cold	True	False	False	False	True	1	1	132.7	488.2	fixed	True	True	137.9	48.4	63.3
+158	v5-158-1	in front	8	1	warm	True	False	False	False	True	1	1	130.9	501.5	fixed	True	True	148.6	51.2	88.1
+158	v5-158-1	in front	8	2	warm	True	False	False	False	True	1	1	8.3	498.4	fixed	True	True	143.6	98.2	36.3
+158	v5-158-1	cancel	9	0	cold	False	False	False	False	False	1	1			fixed	True	True	164.7	156.4	2.4
+158	v5-158-1	cancel	9	1	warm	False	False	False	False	False	1	1			fixed	True	True	226.0	153.9	71.8
+158	v5-158-1	cancel	9	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	9	0	cold	True	False	False	False	True	1	1	90.3	576.4	fixed	True	True	223.9	48.4	115.2
+158	v5-158-1	in front	9	1	warm	True	False	False	False	True	1	1	4.6	452.6	fixed	True	True	102.5	48.4	49.3
+158	v5-158-1	in front	9	2	warm	True	False	False	False	False	1	1	6.6	367.3	path		True	14.3	183.4	
+158	v5-158-1	cancel	10	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	10	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	10	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	10	0	cold	True	False	False	False	True	1	1	68.0	424.4	fixed	True	True	73.0	48.4	1.1
+158	v5-158-1	in front	10	1	warm	True	False	False	False	True	1	1	139.5	504.1	fixed	True	True	154.0	48.4	104.6
+158	v5-158-1	in front	10	2	warm	True	False	False	False	True	1	1	101.2	456.7	fixed	True	True	106.6	48.4	51.4
+158	v5-158-1	cancel	11	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	11	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	11	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	11	0	cold	True	False	False	False	True	1	1	3.1	463.0	fixed	True	True	112.8	48.4	61.5
+158	v5-158-1	in front	11	1	warm	True	False	False	False	True	1	1	1.9	365.6	path		True	12.6	238.7	
+158	v5-158-1	in front	11	2	warm	True	False	False	False	True	1	1	4.4	478.0	fixed	True	True	125.8	49.6	68.8
+158	v5-158-1	cancel	12	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	12	1	warm	False	False	False	False	False	1	1			fixed	True	True	393.8	179.7	204.4
+158	v5-158-1	cancel	12	2	warm	False	False	False	False	False	1	1			fixed	True	True	186.7	153.9	31.5
+158	v5-158-1	in front	12	0	cold	True	False	False	False	True	1	1	238.9	605.1	fixed	True	True	249.2	52.1	126.4
+158	v5-158-1	in front	12	1	warm	True	False	False	False	True	1	1	2.6	472.3	fixed	True	True	116.4	49.3	66.5
+158	v5-158-1	in front	12	2	warm	True	False	False	False	True	1	1	2.9	458.4	fixed	True	True	108.3	48.4	55.9
+158	v5-158-1	cancel	13	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	13	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	13	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	13	0	cold	True	False	False	False	True	1	1	92.8	452.5	fixed	True	True	100.1	48.4	36.0
+158	v5-158-1	in front	13	1	warm	True	False	False	False	False	1	1	11.2	489.4	fixed	True	True	136.4	49.4	86.3
+158	v5-158-1	in front	13	2	warm	True	False	False	False	True	1	1	107.0	465.6	fixed	True	True	113.5	48.3	63.7
+158	v5-158-1	cancel	14	0	cold	False	False	False	False	False	1	1			fixed	True	True	171.2	153.9	16.1
+158	v5-158-1	cancel	14	1	warm	False	False	False	False	False	1	1			fixed	True	True	214.1	156.1	56.9
+158	v5-158-1	cancel	14	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	14	0	cold	True	False	False	False	True	1	1	94.5	454.4	fixed	True	True	100.5	48.4	28.1
+158	v5-158-1	in front	14	1	warm	True	False	False	False	True	1	1	2.9	495.4	fixed	True	True	140.6	52.6	80.1
+158	v5-158-1	in front	14	2	warm	True	False	False	False	True	1	1	24.8	398.1	path		True	48.0	48.4	
+158	v5-158-1	cancel	15	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	15	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	15	2	warm	False	False	False	False	False	1	1			fixed	True	True	174.6	153.8	20.1
+158	v5-158-1	in front	15	0	cold	True	False	False	False	False	1	1	222.8	579.3	fixed	True	True	228.2	49.8	135.1
+158	v5-158-1	in front	15	1	warm	True	False	False	False	True	1	1	131.1	496.7	fixed	True	True	146.5	48.4	95.7
+158	v5-158-1	in front	15	2	warm	True	False	False	False	True	1	1	477.0	839.4	extended	True	True	485.3	50.4	293.1
+158	v5-158-1	cancel	16	0	cold	False	False	False	False	False	1	1			fixed	True	True	180.8	153.9	18.4
+158	v5-158-1	cancel	16	1	warm	False	False	False	False	False	1	1			fixed	True	True	229.3	153.9	73.7
+158	v5-158-1	cancel	16	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	16	0	cold	True	False	False	False	True	1	1	138.2	499.4	fixed	True	True	145.8	54.4	90.2
+158	v5-158-1	in front	16	1	warm	True	False	False	False	True	1	1	2.2	472.4	fixed	True	True	116.5	58.4	49.1
+158	v5-158-1	in front	16	2	warm	True	False	False	False	True	1	1	2.4	444.9	fixed	True	True	94.6	48.7	41.2
+158	v5-158-1	cancel	17	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	17	1	warm	False	False	False	False	False	1	1			fixed	True	True	184.9	153.8	29.6
+158	v5-158-1	cancel	17	2	warm	False	False	False	False	False	1	1			fixed	True	True	226.2	153.9	61.0
+158	v5-158-1	in front	17	0	cold	True	False	False	False	True	1	1	171.0	528.4	fixed	True	True	178.3	48.4	95.2
+158	v5-158-1	in front	17	1	warm	True	False	False	False	True	1	1	98.8	463.1	path		True	108.3	108.3	
+158	v5-158-1	in front	17	2	warm	True	False	False	False	False	1	1	146.5	511.4	fixed	True	True	157.3	48.4	104.0
+158	v5-158-1	cancel	18	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	18	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	18	2	warm	False	False	False	False	False	1	1			fixed	True	True	164.3	153.9	9.6
+158	v5-158-1	in front	18	0	cold	True	False	False	False	False	1	1	2.9	498.5	fixed	True	True	143.6	99.5	35.0
+158	v5-158-1	in front	18	1	warm	True	False	False	False	True	1	1	17.3	477.1	fixed	True	True	127.0	48.4	74.6
+158	v5-158-1	in front	18	2	warm	True	False	False	False	True	1	1	18.2	456.8	fixed	True	True	106.7	50.5	54.5
+158	v5-158-1	cancel	19	0	cold	False	False	False	False	False	1	1			fixed	True	True	158.1	153.9	3.8
+158	v5-158-1	cancel	19	1	warm	False	False	False	False	False	1	1			fixed	True	True	174.7	155.3	18.1
+158	v5-158-1	cancel	19	2	warm	False	False	False	False	False	1	1			fixed	True	True	256.7	217.4	38.0
+158	v5-158-1	in front	19	0	cold	True	False	False	False	True	1	1	216.2	577.4	fixed	True	True	225.6	48.4	134.3
+158	v5-158-1	in front	19	1	warm	True	False	False	False	True	1	1	34.7	418.1	path		True	68.0	68.0	
+158	v5-158-1	in front	19	2	warm	True	False	False	False	True	1	1	2.6	446.3	fixed	True	True	96.2	48.4	41.1
+158	v5-158-1	cancel	20	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	20	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	20	2	warm	False	False	False	False	False	1	1			fixed	True	True	221.6	155.4	64.9
+158	v5-158-1	in front	20	0	cold	True	False	False	False	True	1	1	169.9	524.4	fixed	True	True	174.2	48.5	92.6
+158	v5-158-1	in front	20	1	warm	True	False	False	False	True	1	1	14.1	366.9	path		True	16.7	80.0	
+158	v5-158-1	in front	20	2	warm	True	False	False	False	True	1	1	4.0	453.3	fixed	True	True	103.1	48.4	53.8
+158	v5-158-1	cancel	21	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	21	1	warm	False	False	False	False	False	1	1			fixed	True	True	187.0	153.9	28.7
+158	v5-158-1	cancel	21	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	21	0	cold	True	False	False	False	True	1	1	100.1	457.7	fixed	True	True	107.5	48.4	34.9
+158	v5-158-1	in front	21	1	warm	True	False	False	False	True	1	1	2.0	504.7	path		True	150.8	151.2	
+158	v5-158-1	in front	21	2	warm	True	False	False	False	True	1	1	148.0	514.9	fixed	True	True	160.0	51.9	97.2
+158	v5-158-1	cancel	22	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	22	1	warm	False	False	False	False	False	1	1			fixed	True	True	198.6	155.3	41.0
+158	v5-158-1	cancel	22	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	22	0	cold	True	False	False	False	True	1	1	168.2	524.5	fixed	True	True	174.2	48.4	95.2
+158	v5-158-1	in front	22	1	warm	True	False	False	False	True	1	1	3.2	491.8	fixed	True	True	138.3	48.4	89.5
+158	v5-158-1	in front	22	2	warm	True	False	False	False	False	1	1	1.8	489.6	fixed	True	True	139.4	49.7	89.0
+158	v5-158-1	cancel	23	0	cold	False	False	False	False	False	1	1			fixed	True	True	158.1	153.9	3.2
+158	v5-158-1	cancel	23	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	23	2	warm	False	False	False	False	False	1	1			fixed	True	True	245.0	153.9	90.8
+158	v5-158-1	in front	23	0	cold	True	False	False	False	True	1	1	100.2	460.5	fixed	True	True	108.5	48.4	26.9
+158	v5-158-1	in front	23	1	warm	True	False	False	False	True	1	1	106.1	462.0	fixed	True	True	111.9	101.3	4.6
+158	v5-158-1	in front	23	2	warm	True	False	False	False	False	1	1	3.5	495.3	fixed	True	True	143.4	52.4	89.7
+158	v5-158-1	cancel	24	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	24	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	cancel	24	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-1	in front	24	0	cold	True	False	False	False	True	1	1	208.0	565.3	fixed	True	True	213.3	48.4	122.6
+158	v5-158-1	in front	24	1	warm	True	False	False	False	True	1	1	4.7	458.3	fixed	True	True	104.3	48.3	46.0
+158	v5-158-1	in front	24	2	warm	True	False	False	False	False	1	1	10.4	495.7	fixed	True	True	143.1	49.6	82.4
+158	v5-158-2	cancel	0	0	cold	False	False	False	False	False	1	1			fixed	True	True	166.3	153.9	6.9
+158	v5-158-2	cancel	0	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	0	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	0	0	cold	True	False	False	False	True	1	1	195.6	555.5	fixed	True	True	202.5	48.4	110.0
+158	v5-158-2	in front	0	1	warm	True	False	False	False	True	1	1	21.1	400.0	path		True	49.8	49.8	
+158	v5-158-2	in front	0	2	warm	True	False	False	False	True	1	1	148.5	516.2	fixed	True	True	162.2	49.3	104.0
+158	v5-158-2	cancel	1	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	1	1	warm	False	False	False	False	False	1	1			fixed	True	True	240.7	156.4	83.9
+158	v5-158-2	cancel	1	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	1	0	cold	True	False	False	False	True	1	1	78.8	438.8	fixed	True	True	86.9	53.7	17.0
+158	v5-158-2	in front	1	1	warm	True	False	False	False	True	1	1	14.0	452.4	fixed	True	True	100.6	48.4	51.2
+158	v5-158-2	in front	1	2	warm	True	False	False	False	True	1	1	2.6	508.6	fixed	True	True	151.7	50.4	101.1
+158	v5-158-2	cancel	2	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	2	1	warm	False	False	False	False	False	1	1			fixed	True	True	231.1	153.9	76.6
+158	v5-158-2	cancel	2	2	warm	False	False	False	False	False	1	1			fixed	True	True	374.7	181.1	187.1
+158	v5-158-2	in front	2	0	cold	True	False	False	False	True	1	1	218.4	587.3	fixed	True	True	231.8	49.2	134.1
+158	v5-158-2	in front	2	1	warm	True	False	False	False	True	1	1	6.2	488.2	fixed	True	True	136.8	48.4	87.3
+158	v5-158-2	in front	2	2	warm	True	False	False	False	True	1	1	15.4	404.3	path		True	52.0	52.5	
+158	v5-158-2	cancel	3	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	3	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	3	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	3	0	cold	True	False	False	False	True	1	1	115.8	475.2	fixed	True	True	122.5	50.0	69.2
+158	v5-158-2	in front	3	1	warm	True	False	False	False	True	1	1	2.5	472.5	fixed	True	True	122.1	48.4	57.7
+158	v5-158-2	in front	3	2	warm	True	False	False	False	True	1	1	138.9	500.0	fixed	True	True	149.9	59.7	87.9
+158	v5-158-2	cancel	4	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	4	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	4	2	warm	False	False	False	False	False	1	1			fixed	True	True	222.7	153.8	68.5
+158	v5-158-2	in front	4	0	cold	True	False	False	False	True	1	1	269.4	625.6	fixed	True	True	275.4	48.4	144.0
+158	v5-158-2	in front	4	1	warm	True	False	False	False	True	1	1	135.6	503.1	fixed	True	True	153.0	48.4	103.3
+158	v5-158-2	in front	4	2	warm	True	False	False	False	True	1	1	8.3	496.7	fixed	True	True	146.5	48.6	96.9
+158	v5-158-2	cancel	5	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	5	1	warm	False	False	False	False	False	1	1			fixed	True	True	172.7	155.3	7.2
+158	v5-158-2	cancel	5	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	5	0	cold	True	False	False	False	True	1	1	251.1	606.6	fixed	True	True	256.4	48.3	151.6
+158	v5-158-2	in front	5	1	warm	True	False	False	False	True	1	1	150.1	517.9	fixed	True	True	164.1	51.8	106.6
+158	v5-158-2	in front	5	2	warm	True	False	False	False	True	1	1	150.7	517.3	fixed	True	True	164.1	48.4	111.6
+158	v5-158-2	cancel	6	0	cold	False	False	False	False	False	1	1			fixed	True	True	195.4	153.9	39.9
+158	v5-158-2	cancel	6	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	6	2	warm	False	False	False	False	False	1	1			fixed	True	True	227.3	154.7	67.7
+158	v5-158-2	in front	6	0	cold	True	False	False	False	True	1	1	374.6	731.9	fixed	True	True	381.7	48.4	229.2
+158	v5-158-2	in front	6	1	warm	True	False	False	False	True	1	1	1.5	506.8	fixed	True	True	154.1	48.4	101.4
+158	v5-158-2	in front	6	2	warm	True	False	False	False	True	1	1	133.1	491.8	fixed	True	True	139.4	92.2	41.2
+158	v5-158-2	cancel	7	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	7	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	7	2	warm	False	False	False	False	False	1	1			fixed	True	True	200.7	155.3	37.7
+158	v5-158-2	in front	7	0	cold	True	False	False	False	True	1	1	169.8	526.4	fixed	True	True	176.1	48.4	98.7
+158	v5-158-2	in front	7	1	warm	True	False	False	False	True	1	1	5.8	460.4	fixed	True	True	110.2	48.4	56.8
+158	v5-158-2	in front	7	2	warm	True	False	False	False	True	1	1	154.4	514.0	fixed	True	True	161.0	142.4	4.7
+158	v5-158-2	cancel	8	0	cold	False	False	False	False	False	1	1			fixed	True	True	434.0	153.9	270.0
+158	v5-158-2	cancel	8	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	8	2	warm	False	False	False	False	False	1	1			fixed	True	True	174.0	153.9	11.4
+158	v5-158-2	in front	8	0	cold	True	False	False	False	True	1	1	246.1	617.6	fixed	True	True	263.6	48.3	136.3
+158	v5-158-2	in front	8	1	warm	True	False	False	False	True	1	1	137.2	507.4	fixed	True	True	154.3	82.4	60.9
+158	v5-158-2	in front	8	2	warm	True	False	False	False	True	1	1	8.7	370.1	path		True	19.9	95.0	
+158	v5-158-2	cancel	9	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	9	1	warm	False	False	False	False	False	1	1			fixed	True	True	204.6	154.5	48.8
+158	v5-158-2	cancel	9	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	9	0	cold	True	False	False	False	True	1	1	93.4	456.4	fixed	True	True	102.6	48.4	30.8
+158	v5-158-2	in front	9	1	warm	True	False	False	False	True	1	1	149.1	512.0	fixed	True	True	160.2	48.4	99.2
+158	v5-158-2	in front	9	2	warm	True	False	False	False	True	1	1	303.9	663.6	fixed	True	True	313.5	48.5	210.1
+158	v5-158-2	cancel	10	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	10	1	warm	False	False	False	False	False	1	1			fixed	True	True	171.3	158.3	11.7
+158	v5-158-2	cancel	10	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	10	0	cold	True	False	False	False	True	1	1	249.8	611.8	fixed	True	True	261.7	49.3	130.7
+158	v5-158-2	in front	10	1	warm	True	False	False	False	True	1	1	121.2	479.3	fixed	True	True	127.1	48.4	73.5
+158	v5-158-2	in front	10	2	warm	True	False	False	False	True	1	1	4.6	454.3	fixed	True	True	102.6	65.3	29.3
+158	v5-158-2	cancel	11	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	11	1	warm	False	False	False	False	False	1	1			fixed	True	True	206.3	154.8	51.1
+158	v5-158-2	cancel	11	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	11	0	cold	True	False	False	False	True	1	1	228.3	597.6	fixed	True	True	243.5	49.6	143.3
+158	v5-158-2	in front	11	1	warm	True	False	False	False	True	1	1	2.3	498.1	fixed	True	True	144.3	65.1	68.3
+158	v5-158-2	in front	11	2	warm	True	False	False	False	False	1	1	3.5	360.9	path		True	10.8	235.5	
+158	v5-158-2	cancel	12	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	12	1	warm	False	False	False	False	False	1	1			fixed	True	True	217.3	155.5	53.9
+158	v5-158-2	cancel	12	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	12	0	cold	True	False	False	False	True	1	1	51.4	410.6	fixed	True	True	57.0	48.4	1.1
+158	v5-158-2	in front	12	1	warm	True	False	False	False	False	1	1	8.5	362.9	path		True	11.3	361.4	
+158	v5-158-2	in front	12	2	warm	True	False	False	False	True	1	1	144.3	510.5	fixed	True	True	157.6	48.3	97.3
+158	v5-158-2	cancel	13	0	cold	False	False	False	False	False	1	1			fixed	True	True	366.6	153.8	205.4
+158	v5-158-2	cancel	13	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	13	2	warm	False	False	False	False	False	1	1			fixed	True	True	396.4	316.0	62.5
+158	v5-158-2	in front	13	0	cold	True	False	False	False	True	1	1	1.8	487.0	fixed	True	True	135.4	48.4	82.8
+158	v5-158-2	in front	13	1	warm	True	False	False	False	True	1	1	3.9	482.5	fixed	True	True	132.3	50.1	81.0
+158	v5-158-2	in front	13	2	warm	True	False	False	False	True	1	1	4.4	462.1	fixed	True	True	108.4	48.7	57.7
+158	v5-158-2	cancel	14	0	cold	False	False	False	False	False	1	1			fixed	True	True	375.5	162.2	203.0
+158	v5-158-2	cancel	14	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	14	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	14	0	cold	True	False	False	False	True	1	1	101.0	456.2	fixed	True	True	106.0	48.4	33.0
+158	v5-158-2	in front	14	1	warm	True	False	False	False	True	1	1	2.1	500.4	fixed	True	True	147.7	49.2	92.3
+158	v5-158-2	in front	14	2	warm	True	False	False	False	True	1	1	2.5	480.0	fixed	True	True	122.2	120.0	
+158	v5-158-2	cancel	15	0	cold	False	False	False	False	False	1	1			fixed	True	True	174.7	153.9	19.4
+158	v5-158-2	cancel	15	1	warm	False	False	False	False	False	1	1			fixed	True	True	192.3	155.1	35.7
+158	v5-158-2	cancel	15	2	warm	False	False	False	False	False	1	1			fixed	True	True	180.6	154.1	25.2
+158	v5-158-2	in front	15	0	cold	True	False	False	False	False	1	1	51.9	410.0	path		True	56.0	406.1	
+158	v5-158-2	in front	15	1	warm	True	False	False	False	True	1	1	6.2	501.7	fixed	True	True	151.6	66.3	75.2
+158	v5-158-2	in front	15	2	warm	True	False	False	False	True	1	1	113.9	475.3	fixed	True	True	119.6	51.1	62.6
+158	v5-158-2	cancel	16	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	16	1	warm	False	False	False	False	False	1	1			fixed	True	True	198.7	180.1	17.7
+158	v5-158-2	cancel	16	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	16	0	cold	True	False	False	False	True	1	1	260.0	625.0	fixed	True	True	270.1	48.5	166.3
+158	v5-158-2	in front	16	1	warm	True	False	False	False	True	1	1	7.7	434.1	fixed	True	True	83.9	48.5	34.3
+158	v5-158-2	in front	16	2	warm	True	False	False	False	True	1	1	447.9	808.3	extended	True	True	456.3	51.4	292.1
+158	v5-158-2	cancel	17	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	17	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	17	2	warm	False	False	False	False	False	1	1			fixed	True	True	255.2	153.9	89.9
+158	v5-158-2	in front	17	0	cold	True	False	False	False	True	1	1	143.7	509.4	fixed	True	True	156.5	50.1	103.1
+158	v5-158-2	in front	17	1	warm	True	False	False	False	True	1	1	13.2	461.2	fixed	True	True	110.9	48.4	56.6
+158	v5-158-2	in front	17	2	warm	True	False	False	False	True	1	1	125.6	493.4	fixed	True	True	137.4	50.3	78.0
+158	v5-158-2	cancel	18	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	18	1	warm	False	False	False	False	False	1	1			fixed	True	True	175.7	164.7	10.4
+158	v5-158-2	cancel	18	2	warm	False	False	False	False	False	1	1			fixed	True	True	189.7	153.9	32.4
+158	v5-158-2	in front	18	0	cold	True	False	False	False	True	1	1	93.0	450.6	fixed	True	True	98.6	48.4	31.1
+158	v5-158-2	in front	18	1	warm	True	False	False	False	True	1	1	2.5	481.3	fixed	True	True	129.3	48.4	73.0
+158	v5-158-2	in front	18	2	warm	True	False	False	False	False	1	1	6.6	364.0	path		True	13.8	124.6	
+158	v5-158-2	cancel	19	0	cold	False	False	False	False	False	1	1			fixed	True	True	176.0	154.2	17.3
+158	v5-158-2	cancel	19	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	19	2	warm	False	False	False	False	False	1	1			fixed	True	True	162.2	153.9	8.0
+158	v5-158-2	in front	19	0	cold	True	False	False	False	True	1	1	63.3	425.5	fixed	True	True	69.1	48.3	2.1
+158	v5-158-2	in front	19	1	warm	True	False	False	False	True	1	1	3.2	501.0	fixed	True	True	148.1	48.4	89.1
+158	v5-158-2	in front	19	2	warm	True	False	False	False	True	1	1	18.7	495.1	fixed	True	True	141.6	50.9	90.2
+158	v5-158-2	cancel	20	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	20	1	warm	False	False	False	False	False	1	1			fixed	True	True	245.2	154.1	81.2
+158	v5-158-2	cancel	20	2	warm	False	False	False	False	False	1	1			fixed	True	True	162.7	158.5	
+158	v5-158-2	in front	20	0	cold	True	False	False	False	True	1	1	101.5	460.7	fixed	True	True	110.5	48.3	30.7
+158	v5-158-2	in front	20	1	warm	True	False	False	False	True	1	1	2.5	501.4	fixed	True	True	151.2	63.8	86.6
+158	v5-158-2	in front	20	2	warm	True	False	False	False	False	1	1	28.1	388.0	path		True	34.0	384.1	
+158	v5-158-2	cancel	21	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	21	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	21	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	21	0	cold	True	False	False	False	True	1	1	431.8	789.7	fixed	True	True	438.3	49.6	217.4
+158	v5-158-2	in front	21	1	warm	True	False	False	False	True	1	1	2.7	471.6	fixed	True	True	119.6	48.7	68.8
+158	v5-158-2	in front	21	2	warm	True	False	False	False	True	1	1	11.5	464.5	fixed	True	True	112.9	78.1	26.2
+158	v5-158-2	cancel	22	0	cold	False	False	False	False	False	1	1			fixed	True	True	370.1	153.8	214.2
+158	v5-158-2	cancel	22	1	warm	False	False	False	False	False	1	1			fixed	True	True	160.2	153.9	5.1
+158	v5-158-2	cancel	22	2	warm	False	False	False	False	False	1	1			fixed	True	True	228.1	153.9	73.9
+158	v5-158-2	in front	22	0	cold	True	False	False	False	True	1	1	62.7	420.0	fixed	True	True	67.0	48.3	2.1
+158	v5-158-2	in front	22	1	warm	True	False	False	False	True	1	1	100.8	460.3	fixed	True	True	106.5	48.4	55.8
+158	v5-158-2	in front	22	2	warm	True	False	False	False	False	1	1	35.1	391.0	path		True	39.0	389.1	
+158	v5-158-2	cancel	23	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	23	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	23	2	warm	False	False	False	False	False	1	1			fixed	True	True	176.9	158.3	17.3
+158	v5-158-2	in front	23	0	cold	True	False	False	False	True	1	1	74.8	581.5	fixed	True	True	228.6	48.4	145.7
+158	v5-158-2	in front	23	1	warm	True	False	False	False	True	1	1	108.3	468.3	fixed	True	True	115.7	48.4	61.1
+158	v5-158-2	in front	23	2	warm	True	False	False	False	True	1	1	105.6	463.3	fixed	True	True	113.1	49.6	50.8
+158	v5-158-2	cancel	24	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	cancel	24	1	warm	False	False	False	False	False	1	1			fixed	True	True	236.2	153.8	81.7
+158	v5-158-2	cancel	24	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-2	in front	24	0	cold	True	False	False	False	True	1	1	79.5	567.4	fixed	True	True	214.5	48.3	135.4
+158	v5-158-2	in front	24	1	warm	True	False	False	False	True	1	1	401.6	757.3	fixed	True	True	407.0	48.4	216.0
+158	v5-158-2	in front	24	2	warm	True	False	False	False	True	1	1	113.7	469.4	fixed	True	True	119.3	48.6	65.8
+158	v5-158-3	cancel	0	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	0	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	0	2	warm	False	False	False	False	False	1	1			fixed	True	True	176.1	157.4	17.6
+158	v5-158-3	in front	0	0	cold	True	False	False	False	True	1	1	525.4	885.5	extended	True	True	532.5	50.5	313.4
+158	v5-158-3	in front	0	1	warm	True	False	False	False	True	1	1	4.5	446.4	fixed	True	True	96.2	48.4	38.2
+158	v5-158-3	in front	0	2	warm	True	False	False	False	True	1	1	105.8	464.4	fixed	True	True	112.2	49.7	61.4
+158	v5-158-3	cancel	1	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	1	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	1	2	warm	False	False	False	False	False	1	1			fixed	True	True	169.8	155.3	7.5
+158	v5-158-3	in front	1	0	cold	True	True	False	False	False	0	0			noticed	True	False		52.5	297.5
+158	v5-158-3	in front	1	1	warm	True	False	False	False	True	1	1	161.3	522.4	fixed	True	True	171.5	49.6	120.8
+158	v5-158-3	in front	1	2	warm	True	False	False	False	False	1	1	6.3	361.1	path		True	10.7	211.8	
+158	v5-158-3	cancel	2	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	2	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	2	2	warm	False	False	False	False	False	1	1			fixed	True	True	158.7	156.6	1.5
+158	v5-158-3	in front	2	0	cold	True	False	False	False	True	1	1	101.6	460.5	fixed	True	True	107.5	51.5	22.2
+158	v5-158-3	in front	2	1	warm	True	False	False	False	True	1	1	13.9	485.1	fixed	True	True	132.2	61.7	60.3
+158	v5-158-3	in front	2	2	warm	True	False	False	False	True	1	1	2.3	508.3	fixed	True	True	156.4	58.1	88.3
+158	v5-158-3	cancel	3	0	cold	False	False	False	False	False	1	1			fixed	True	True	185.9	155.0	30.6
+158	v5-158-3	cancel	3	1	warm	False	False	False	False	False	1	1			fixed	True	True	191.3	154.0	34.7
+158	v5-158-3	cancel	3	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	3	0	cold	True	False	False	False	True	1	1	178.2	539.9	fixed	True	True	187.3	48.6	107.6
+158	v5-158-3	in front	3	1	warm	True	False	False	False	True	1	1	167.2	529.7	fixed	True	True	179.5	55.1	111.8
+158	v5-158-3	in front	3	2	warm	True	False	False	False	True	1	1	7.8	476.0	fixed	True	True	119.2	58.0	54.2
+158	v5-158-3	cancel	4	0	cold	False	False	False	False	False	1	1			fixed	True	True	181.0	153.9	24.3
+158	v5-158-3	cancel	4	1	warm	False	False	False	False	False	1	1			fixed	True	True	162.3	153.9	7.4
+158	v5-158-3	cancel	4	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	4	0	cold	True	False	False	False	True	1	1	246.7	616.6	fixed	True	True	262.6	48.4	146.9
+158	v5-158-3	in front	4	1	warm	True	False	False	False	True	1	1	6.7	476.1	fixed	True	True	123.4	71.1	48.1
+158	v5-158-3	in front	4	2	warm	True	False	False	False	True	1	1	6.3	504.3	fixed	True	True	150.5	49.2	96.2
+158	v5-158-3	cancel	5	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	5	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	5	2	warm	False	False	False	False	False	1	1			fixed	True	True	202.9	155.5	41.5
+158	v5-158-3	in front	5	0	cold	True	False	False	False	True	1	1	255.7	634.4	fixed	True	True	271.9	48.4	148.5
+158	v5-158-3	in front	5	1	warm	True	False	False	False	True	1	1	12.0	485.0	fixed	True	True	132.0	76.0	47.0
+158	v5-158-3	in front	5	2	warm	True	False	False	False	True	1	1	148.8	510.3	fixed	True	True	156.6	107.3	41.3
+158	v5-158-3	cancel	6	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	6	1	warm	False	False	False	False	False	1	1			fixed	True	True	164.7	156.3	7.6
+158	v5-158-3	cancel	6	2	warm	False	False	False	False	False	1	1			fixed	True	True	168.4	153.9	8.3
+158	v5-158-3	in front	6	0	cold	True	False	False	False	True	1	1	247.3	610.5	fixed	True	True	254.6	49.7	157.8
+158	v5-158-3	in front	6	1	warm	True	False	False	False	True	1	1	98.3	455.5	fixed	True	True	103.5	62.1	35.2
+158	v5-158-3	in front	6	2	warm	True	False	False	False	True	1	1	17.3	450.3	fixed	True	True	96.5	50.3	39.1
+158	v5-158-3	cancel	7	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	7	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	7	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	7	0	cold	True	False	False	False	True	1	1	241.8	609.9	fixed	True	True	252.9	53.0	164.7
+158	v5-158-3	in front	7	1	warm	True	False	False	False	True	1	1	146.6	511.6	fixed	True	True	158.3	51.8	106.0
+158	v5-158-3	in front	7	2	warm	True	False	False	False	True	1	1	9.6	464.8	fixed	True	True	111.9	51.6	54.0
+158	v5-158-3	cancel	8	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	8	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	8	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	8	0	cold	True	False	False	False	True	1	1	60.9	420.5	fixed	True	True	64.7	49.5	1.1
+158	v5-158-3	in front	8	1	warm	True	False	False	False	True	1	1	433.3	796.3	fixed	True	True	438.3	76.3	303.4
+158	v5-158-3	in front	8	2	warm	True	False	False	False	True	1	1	2.9	452.4	fixed	True	True	101.1	50.4	45.4
+158	v5-158-3	cancel	9	0	cold	False	False	False	False	False	1	1			fixed	True	True	178.6	153.8	24.1
+158	v5-158-3	cancel	9	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	9	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	9	0	cold	True	False	False	False	True	1	1	229.2	592.5	fixed	True	True	240.3	48.4	142.9
+158	v5-158-3	in front	9	1	warm	True	False	False	False	True	1	1	2.7	491.6	fixed	True	True	141.5	48.3	91.8
+158	v5-158-3	in front	9	2	warm	True	False	False	False	True	1	1	8.2	517.3	fixed	True	True	164.0	48.4	114.4
+158	v5-158-3	cancel	10	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	10	1	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	10	2	warm	False	False	False	False	False	1	1			fixed	True	True	168.5	153.9	13.5
+158	v5-158-3	in front	10	0	cold	True	False	False	False	True	1	1	331.5	694.5	fixed	True	True	336.0	54.5	203.3
+158	v5-158-3	in front	10	1	warm	True	False	False	False	True	1	1	150.0	511.7	fixed	True	True	161.6	48.4	108.6
+158	v5-158-3	in front	10	2	warm	True	False	False	False	True	1	1	5.9	463.0	fixed	True	True	112.9	48.4	58.3
+158	v5-158-3	cancel	11	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	11	1	warm	False	False	False	False	False	1	1			fixed	True	True	247.8	153.9	93.2
+158	v5-158-3	cancel	11	2	warm	False	False	False	False	False	1	1			fixed	True	True	191.2	157.8	23.3
+158	v5-158-3	in front	11	0	cold	True	False	False	False	True	1	1	98.3	454.4	fixed	True	True	102.6	48.4	18.1
+158	v5-158-3	in front	11	1	warm	True	False	False	False	True	1	1	10.5	469.0	fixed	True	True	117.3	53.0	62.7
+158	v5-158-3	in front	11	2	warm	True	False	False	False	True	1	1	152.2	512.8	fixed	True	True	158.7	48.4	101.7
+158	v5-158-3	cancel	12	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	12	1	warm	True	True	False	False	False	0	0			noticed	True	False		153.9	233.6
+158	v5-158-3	cancel	12	2	warm	False	False	False	False	False	1	1			fixed	True	True	162.2	153.8	5.0
+158	v5-158-3	in front	12	0	cold	True	False	False	False	True	1	1	94.2	458.4	fixed	True	True	104.5	50.5	31.2
+158	v5-158-3	in front	12	1	warm	True	False	False	False	True	1	1	2.4	461.5	fixed	True	True	111.3	49.5	55.0
+158	v5-158-3	in front	12	2	warm	True	False	False	False	True	1	1	102.7	461.1	fixed	True	True	108.8	48.5	58.3
+158	v5-158-3	cancel	13	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	13	1	warm	False	False	False	False	False	1	1			fixed	True	True	191.2	153.9	36.4
+158	v5-158-3	cancel	13	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	13	0	cold	True	False	False	False	True	1	1	159.7	529.6	fixed	True	True	177.2	119.1	52.6
+158	v5-158-3	in front	13	1	warm	True	False	False	False	True	1	1	384.6	741.6	fixed	True	True	390.7	48.9	237.1
+158	v5-158-3	in front	13	2	warm	True	False	False	False	True	1	1	7.2	511.4	fixed	True	True	159.0	49.4	106.4
+158	v5-158-3	cancel	14	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	14	1	warm	False	False	False	False	False	1	1			fixed	True	True	232.2	153.8	71.1
+158	v5-158-3	cancel	14	2	warm	False	False	False	False	False	1	1			fixed	True	True	181.0	156.1	13.0
+158	v5-158-3	in front	14	0	cold	True	False	False	False	True	1	1	96.2	455.2	fixed	True	True	104.5	48.3	19.1
+158	v5-158-3	in front	14	1	warm	True	False	False	False	True	1	1	145.0	508.6	fixed	True	True	158.5	76.4	74.9
+158	v5-158-3	in front	14	2	warm	True	False	False	False	True	1	1	14.7	459.6	fixed	True	True	107.1	48.7	57.5
+158	v5-158-3	cancel	15	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	15	1	warm	False	False	False	False	False	1	1			fixed	True	True	226.0	153.9	71.4
+158	v5-158-3	cancel	15	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	15	0	cold	True	False	False	False	True	1	1	100.3	458.6	fixed	True	True	108.5	48.4	31.8
+158	v5-158-3	in front	15	1	warm	True	False	False	False	True	1	1	4.1	503.0	fixed	True	True	152.8	65.4	86.2
+158	v5-158-3	in front	15	2	warm	True	False	False	False	True	1	1	153.3	513.0	fixed	True	True	160.4	59.0	100.1
+158	v5-158-3	cancel	16	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	16	1	warm	False	False	False	False	False	1	1			fixed	True	True	236.6	158.2	77.1
+158	v5-158-3	cancel	16	2	warm	True	True	False	False	False	0	0			noticed	True	False		153.9	220.3
+158	v5-158-3	in front	16	0	cold	True	False	False	False	True	1	1	221.5	582.9	fixed	True	True	232.8	48.5	147.9
+158	v5-158-3	in front	16	1	warm	True	False	False	False	True	1	1	17.0	404.1	path		True	51.1	51.1	
+158	v5-158-3	in front	16	2	warm	True	False	False	False	True	1	1	2.1	487.5	fixed	True	True	137.4	48.3	87.7
+158	v5-158-3	cancel	17	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	17	1	warm	False	False	False	False	False	1	1			fixed	True	True	168.0	165.9	
+158	v5-158-3	cancel	17	2	warm	False	False	False	False	False	1	1			extended	True	True	553.0	305.8	228.8
+158	v5-158-3	in front	17	0	cold	True	False	False	False	False	1	1	0.8	497.5	fixed	True	True	145.1	48.7	87.6
+158	v5-158-3	in front	17	1	warm	True	False	False	False	True	1	1	1.9	496.7	fixed	True	True	146.6	48.4	90.6
+158	v5-158-3	in front	17	2	warm	True	False	False	False	True	1	1	13.2	509.6	fixed	True	True	155.7	50.4	104.7
+158	v5-158-3	cancel	18	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	18	1	warm	False	False	False	False	False	1	1			fixed	True	True	228.4	156.5	70.8
+158	v5-158-3	cancel	18	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	18	0	cold	True	False	False	False	True	1	1	14.6	398.9	path		True	48.0	48.4	
+158	v5-158-3	in front	18	1	warm	True	False	False	False	True	1	1	139.5	506.4	fixed	True	True	154.4	48.4	98.0
+158	v5-158-3	in front	18	2	warm	True	False	False	False	True	1	1	2.3	459.5	fixed	True	True	106.6	48.3	57.2
+158	v5-158-3	cancel	19	0	cold	False	False	False	False	False	1	1			fixed	True	True	162.2	153.8	6.7
+158	v5-158-3	cancel	19	1	warm	False	False	False	False	False	1	1			fixed	True	True	217.9	153.9	58.8
+158	v5-158-3	cancel	19	2	warm	False	False	False	False	False	1	1			fixed	True	True	187.2	153.9	21.9
+158	v5-158-3	in front	19	0	cold	True	False	False	False	True	1	1	90.4	447.3	fixed	True	True	94.2	48.5	16.9
+158	v5-158-3	in front	19	1	warm	True	False	False	False	True	1	1	145.4	504.4	fixed	True	True	154.3	48.3	86.0
+158	v5-158-3	in front	19	2	warm	True	False	False	False	True	1	1	2.5	496.9	fixed	True	True	143.6	48.4	88.3
+158	v5-158-3	cancel	20	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	20	1	warm	False	False	False	False	False	1	1			fixed	True	True	183.8	155.5	25.5
+158	v5-158-3	cancel	20	2	warm	False	False	False	False	False	1	1			fixed	True	True	190.7	155.3	28.4
+158	v5-158-3	in front	20	0	cold	True	False	False	False	True	1	1	222.3	579.6	fixed	True	True	229.4	50.6	122.0
+158	v5-158-3	in front	20	1	warm	True	False	False	False	True	1	1	2.2	491.5	fixed	True	True	137.5	48.3	83.0
+158	v5-158-3	in front	20	2	warm	True	False	False	False	True	1	1	148.2	511.4	fixed	True	True	157.7	48.4	108.0
+158	v5-158-3	cancel	21	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	21	1	warm	False	False	False	False	False	1	1			fixed	True	True	243.0	153.8	83.5
+158	v5-158-3	cancel	21	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	21	0	cold	True	False	False	False	True	1	1	234.6	598.4	fixed	True	True	243.2	48.4	137.5
+158	v5-158-3	in front	21	1	warm	True	False	False	False	False	1	1	11.9	369.0	path		True	17.0	367.0	
+158	v5-158-3	in front	21	2	warm	True	False	False	False	True	1	1	4.9	469.2	fixed	True	True	119.1	48.4	67.0
+158	v5-158-3	cancel	22	0	cold	False	False	False	False	False	1	1			fixed	True	True	385.2	153.9	216.8
+158	v5-158-3	cancel	22	1	warm	False	False	False	False	False	1	1			fixed	True	True	360.3	153.9	197.4
+158	v5-158-3	cancel	22	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	22	0	cold	True	False	False	False	False	1	1	8.2	364.4	path		True	14.1	239.2	
+158	v5-158-3	in front	22	1	warm	True	False	False	False	True	1	1	150.2	508.8	fixed	True	True	155.4	86.7	55.9
+158	v5-158-3	in front	22	2	warm	True	False	False	False	True	1	1	7.9	363.1	path		True	11.5	198.2	
+158	v5-158-3	cancel	23	0	cold	False	False	False	False	False	1	1			fixed	True	True	177.0	153.9	20.7
+158	v5-158-3	cancel	23	1	warm	False	False	False	False	False	1	1			fixed	True	True	190.4	155.3	33.8
+158	v5-158-3	cancel	23	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	23	0	cold	True	False	False	False	True	1	1	81.3	442.5	fixed	True	True	86.4	51.4	4.3
+158	v5-158-3	in front	23	1	warm	True	False	False	False	True	1	1	457.1	817.4	extended	True	True	466.6	48.4	277.7
+158	v5-158-3	in front	23	2	warm	True	False	False	False	True	1	1	150.8	520.1	fixed	True	True	167.3	48.6	117.4
+158	v5-158-3	cancel	24	0	cold	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	cancel	24	1	warm	False	False	False	False	False	1	1			fixed	True	True	158.5	154.2	2.9
+158	v5-158-3	cancel	24	2	warm	False	False	False	False	False	1	1			no hold record					
+158	v5-158-3	in front	24	0	cold	True	False	False	False	True	1	1	60.4	558.0	fixed	True	True	204.0	127.0	71.0
+158	v5-158-3	in front	24	1	warm	True	False	False	False	True	1	1	133.4	487.8	fixed	True	True	137.7	48.4	86.1
+158	v5-158-3	in front	24	2	warm	True	False	False	False	True	1	1	2.4	486.4	fixed	True	True	131.5	48.6	82.5

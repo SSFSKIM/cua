@@ -1,0 +1,9 @@
+{
+ "exit": {
+  "code": 1,
+  "signal": null
+ },
+ "samples": 8,
+ "maxSkyLinux": 0,
+ "engines": []
+}

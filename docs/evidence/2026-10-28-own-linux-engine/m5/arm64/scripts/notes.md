@@ -1,0 +1,13 @@
+# task 99 notes
+- ci-gate on H''' f6275fb6 (from the controller): run 44278659157 passed 7 of 8; engine-linux failed on the known clipboard flake (an_unconfirmed_paste_s_current_time_refusal, tech-debt-tracker, 4th sighting); rerun 44283284127 passed -> GREEN.
+- feat/171-m5 has f55a6543 (tracker line): rebase before push.
+- setup 2026-11-18 09:58-09:59Z: t7-arm64 at f6275fb6 clean, electron 44.9.0, xprobe; t7-main a39d26ff (origin/main); home-arm64 0cbde8f0 check --pinned exit 0; Chrome 156.0.8078.73-1 arm64 held, harness runs google-chrome -> /usr/local/bin/google-chrome wrapper -> /usr/bin/google-chrome-stable -> /opt/google/chrome.
+- current stable Chrome arm64 in Google's pool at 09:5xZ: 158.0.8127.36-1 (not 157).
+- proof 10:00-10:37Z: npm-test H 6101/5854 pass/48 fail/199 skip; main a39d26ff 5855/5612/47/196; harness 1246/1242/0/4; harness-dbus 91/91; engine-static 0; engine-live 622 passed 0 failed 1 ignored; two-screens exit 1 (x86_64 target hardcoded).
+- two-screens-aarch64 copy (task99/two-screens-aarch64.sh; diff: cd line + target) 3/3 pass 10:39:55Z.
+- H-only: run.test.mjs TextEdit etime; comparison A's candidate lane. main-only: serve-lazy MAWS notes. Flake alternation 10 each 10:40-10:44Z: H 16 fails, main 7 (flake-run-test.log exit column is date's: ruling 774 defect; counts from logs).
+- CONTROLLER RULING (msg after proof): (1) two-screens passed by aarch64 copy (name path + diff in README); (2) npm test passes 743 (give 48 vs 47, H-only list, alternation). Controller adds tracker lines. F2 uses current stable at run time; record version.
+- item 9: 11:05:12-11:05:33Z exit 0; sha=pin 0cbde8f0; aarch64 statically linked; doctor exit 0, engine PASS, a11y PASS, 3 chrome rows BLOCKED (no registration); 0 engines left; home removed; private-desktop :1 clean.
+- idle driver start 11:06:19Z. D1 11:07:59-11:30:32 exit 0. D2 acquired 11:47:53.
+- PLAN CHANGE (controller, rulings 827/828, received ~11:55Z): 0.4.1 cut; H'''' coming. Skip class-A steps still ahead in the idle block (H1, H2, L4a, D2, L2b, L1, S1, L3b) -> in idle: S1, H1, H2 skipped; D2 already in flight at 11:47:53 (before the change) -> let it finish, recorded as run. After the idle block STOP: no :0 sitting, no twice-load. Commit idle evidence scanned, status, wait. Later at H'''' on 0.4.1: :0 sitting, twice-load incl class A, unjudged passes, one uncounted pilot-form run of class-B idle steps at counted load profile, all with --stats.
+- STOP set ~11:56Z; relaunch-idle.sh restarts driver on D3 D4 D5 R1 R2 R3 R4 FB E1 S2 S3 S4 F1a F1b F2 ES P1 P2 P3 P4 P6 P5 C1.

@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -24,6 +25,13 @@ use anyhow::{Context, Result, anyhow, bail};
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 /// The vendor's socket timeouts; here, how long the bus may stay silent while calls are outstanding.
 pub const IO_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How many connects with a deadline may still wait on a socket that has not accepted them (`Bus::connect`): a
+/// listener whose accept queue stays full keeps their threads, no more than this many.
+const PENDING_CONNECTS: usize = 2;
+
+/// The connects with a deadline waiting now, in this engine.
+static CONNECTING: AtomicUsize = AtomicUsize::new(0);
 
 const METHOD_CALL: u8 = 1;
 pub const METHOD_RETURN: u8 = 2;
@@ -562,6 +570,9 @@ pub struct Bus {
     skip: usize,
     /// How long the bus may stay silent before every outstanding call fails.
     io_timeout: Duration,
+    /// The instant the next flush's writes must end by, when its caller has one (`calls_until`): None, the I/O timeout
+    /// alone.
+    write_by: Option<Instant>,
     pub unique_name: String,
     pub stats: BusStats,
 }
@@ -579,34 +590,93 @@ impl std::fmt::Display for Broken {
 impl std::error::Error for Broken {}
 
 impl Bus {
-    /// Connects, authenticates with `EXTERNAL` and says `Hello` (behaviour §19).
-    pub fn connect(address: &str) -> Result<Bus> {
-        let stream = match parse_address(address)? {
-            SocketAddr::Path(path) => UnixStream::connect(&path).context("failed to connect to the D-Bus socket")?,
-            SocketAddr::Abstract(name) => {
-                let addr = std::os::unix::net::SocketAddr::from_abstract_name(&name)
-                    .context("failed to connect to the abstract D-Bus socket")?;
-                UnixStream::connect_addr(&addr).context("failed to connect to the abstract D-Bus socket")?
+    /// Connects, authenticates with `EXTERNAL` and says `Hello` (behaviour §19), the whole setup done by `deadline` when
+    /// there is one (the browser identification's bound, `adaptive_hold::IDENTIFY_BOUND`): a bus that accepts the
+    /// connection and then stays silent fails it then, not after [`IO_TIMEOUT`]. The connection keeps [`IO_TIMEOUT`]
+    /// once it is set up.
+    pub fn connect(address: &str, deadline: Option<Instant>) -> Result<Bus> {
+        // what the setup's next read or write may wait: what is left of the deadline, never more than IO_TIMEOUT
+        let left = || -> Result<Duration> {
+            match deadline {
+                None => Ok(IO_TIMEOUT),
+                Some(deadline) => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        bail!("the D-Bus connection was not set up in time");
+                    }
+                    Ok((deadline - now).min(IO_TIMEOUT))
+                }
+            }
+        };
+        let socket = parse_address(address)?;
+        let open = move || -> Result<UnixStream> {
+            Ok(match socket {
+                SocketAddr::Path(path) => {
+                    UnixStream::connect(&path).context("failed to connect to the D-Bus socket")?
+                }
+                SocketAddr::Abstract(name) => {
+                    let addr = std::os::unix::net::SocketAddr::from_abstract_name(&name)
+                        .context("failed to connect to the abstract D-Bus socket")?;
+                    UnixStream::connect_addr(&addr).context("failed to connect to the abstract D-Bus socket")?
+                }
+            })
+        };
+        let stream = match deadline {
+            None => open()?,
+            // a listener whose accept queue is full holds a blocking connect until it accepts, however long (the
+            // re-review of wave 4, I3): with a deadline the connect runs on a thread of its own, waited for no longer
+            // than what is left. One that never returns keeps its thread, and at most PENDING_CONNECTS such threads
+            // wait at once; past them the connect fails at once
+            Some(_) => {
+                if CONNECTING.fetch_add(1, Ordering::SeqCst) >= PENDING_CONNECTS {
+                    CONNECTING.fetch_sub(1, Ordering::SeqCst);
+                    bail!("earlier connections to the D-Bus socket are still waiting to be accepted");
+                }
+                let (opened, receive) = std::sync::mpsc::channel();
+                let spawned = std::thread::Builder::new().name("dbus-connect".into()).spawn(move || {
+                    let stream = open();
+                    CONNECTING.fetch_sub(1, Ordering::SeqCst);
+                    let _ = opened.send(stream);
+                });
+                if let Err(error) = spawned {
+                    CONNECTING.fetch_sub(1, Ordering::SeqCst);
+                    bail!("the D-Bus connection's thread could not start: {error}");
+                }
+                match receive.recv_timeout(left()?) {
+                    Ok(stream) => stream?,
+                    Err(_) => bail!("the D-Bus socket did not accept the connection in time"),
+                }
             }
         };
         let uid = {
             use std::os::unix::fs::MetadataExt;
             std::fs::metadata("/proc/self")?.uid()
         };
-        let mut bus = Bus::over(stream, IO_TIMEOUT)?;
+        let mut bus = Bus::over(stream, left()?)?;
         bus.stream.write_all(&auth_line(uid))?;
-        let line = bus.read_auth_line()?;
+        let line = bus.read_auth_line(&left)?;
         if !line.starts_with("OK ") {
             bail!("D-Bus EXTERNAL authentication failed");
         }
+        bus.stream.set_write_timeout(Some(left()?))?;
         bus.stream.write_all(b"BEGIN\r\n")?;
-        let hello = bus.call(&MethodCall {
+        let hello = MethodCall {
             dest: "org.freedesktop.DBus",
             path: "/org/freedesktop/DBus",
             iface: "org.freedesktop.DBus",
             member: "Hello",
             args: &[],
-        })?;
+        };
+        let hello = match deadline {
+            None => bus.call(&hello)?,
+            Some(deadline) => bus
+                .calls_until(std::slice::from_ref(&hello), deadline)?
+                .ok_or_else(|| anyhow!("the D-Bus connection was not set up in time"))?
+                .remove(0),
+        };
+        bus.io_timeout = IO_TIMEOUT;
+        bus.stream.set_read_timeout(Some(IO_TIMEOUT))?;
+        bus.stream.set_write_timeout(Some(IO_TIMEOUT))?;
         let reply = hello.map_err(|e| anyhow!(e))?;
         bus.unique_name = reply.first().and_then(Value::as_str).unwrap_or_default().to_string();
         bus.stats.connections = 1;
@@ -626,15 +696,18 @@ impl Bus {
             ready: VecDeque::new(),
             skip: 0,
             io_timeout: timeout,
+            write_by: None,
             unique_name: String::new(),
             stats: BusStats::default(),
         })
     }
 
-    fn read_auth_line(&mut self) -> Result<String> {
+    /// The bus's answer to `AUTH`, each read waiting at most what `left` says is left of the setup's time.
+    fn read_auth_line(&mut self, left: &impl Fn() -> Result<Duration>) -> Result<String> {
         let mut line = Vec::new();
         let mut byte = [0u8; 1];
         while !line.ends_with(b"\r\n") {
+            self.stream.set_read_timeout(Some(left()?))?;
             if self.stream.read(&mut byte)? == 0 {
                 bail!("D-Bus EXTERNAL authentication failed");
             }
@@ -671,13 +744,40 @@ impl Bus {
     }
 
     pub fn flush(&mut self) -> Result<()> {
-        if !self.out.is_empty() {
-            let out = std::mem::take(&mut self.out);
+        if self.out.is_empty() {
+            return Ok(());
+        }
+        let out = std::mem::take(&mut self.out);
+        let Some(by) = self.write_by else {
             self.stream
                 .write_all(&out)
                 .map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")))?;
-        }
-        Ok(())
+            return Ok(());
+        };
+        // by the caller's deadline: each write waits no longer than what is left of it (a write that blocks returns
+        // what it wrote only at its timeout, so `write_all` could wait that long again), and a write that runs out
+        // leaves a message half sent: the connection is `Broken`, for the caller to drop
+        let mut sent = 0;
+        let written = loop {
+            if sent == out.len() {
+                break Ok(());
+            }
+            let now = Instant::now();
+            if now >= by {
+                break Err("the accessibility bus did not take the calls in time".to_string());
+            }
+            if let Err(e) = self.stream.set_write_timeout(Some((by - now).min(self.io_timeout))) {
+                break Err(e.to_string());
+            }
+            match self.stream.write(&out[sent..]) {
+                Ok(0) => break Err("the accessibility bus closed".to_string()),
+                Ok(n) => sent += n,
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(e) => break Err(e.to_string()),
+            }
+        };
+        self.stream.set_write_timeout(Some(self.io_timeout))?;
+        written.map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")).into())
     }
 
     /// Calls sent whose replies have not been handed out.
@@ -751,7 +851,13 @@ impl Bus {
             refuse_text_mutator(call)?;
         }
         let serials = calls.iter().map(|c| self.send(c)).collect::<Result<Vec<u32>>>()?;
-        self.flush()?;
+        // the writes wait no later than the deadline either (the final review of wave 5: a bus that stopped reading
+        // held the flush for the whole IO_TIMEOUT). A write that runs out may leave a message half sent, so it fails
+        // as `Broken`, and the caller drops the connection and makes a new one
+        self.write_by = Some(deadline);
+        let flushed = self.flush();
+        self.write_by = None;
+        flushed?;
         loop {
             if serials.iter().all(|s| self.ready.iter().any(|(r, _)| r == s)) {
                 let mut results = Vec::with_capacity(serials.len());
@@ -1425,6 +1531,36 @@ mod tests {
         assert_eq!((first.0, second.0), (a, b));
         assert!(first.1.unwrap_err().contains("os error 11"));
         assert_eq!(bus.in_flight(), 0);
+        drop(theirs);
+    }
+
+    /// The final review of wave 5: a bus that has stopped reading holds a write once its queue is full. With a deadline
+    /// the batch's flush waits no later than it, and fails as `Broken` (a message may be half sent: the caller drops
+    /// the connection), not after the connection's 2 s I/O timeout; the connection's own timeouts are put back.
+    #[test]
+    fn a_batch_with_a_deadline_on_a_bus_that_stopped_reading_fails_broken_at_the_deadline() {
+        let (ours, theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, IO_TIMEOUT).unwrap();
+        // far more than the socket's buffers hold, so the flush blocks on the peer that never reads
+        let long = "x".repeat(4096);
+        let args = [Arg::Str(&long)];
+        let calls: Vec<MethodCall> = (0..1000)
+            .map(|_| MethodCall {
+                dest: "org.freedesktop.DBus",
+                path: "/org/freedesktop/DBus",
+                iface: "org.freedesktop.DBus",
+                member: "GetConnectionUnixProcessID",
+                args: &args,
+            })
+            .collect();
+        let started = Instant::now();
+        let error = bus
+            .calls_until(&calls, started + Duration::from_millis(50))
+            .unwrap_err();
+        let took = started.elapsed();
+        assert!(error.downcast_ref::<Broken>().is_some(), "{error:#}");
+        assert!(took < Duration::from_millis(250), "the flush waited {took:?}");
+        assert_eq!(bus.stream.write_timeout().unwrap(), Some(IO_TIMEOUT));
         drop(theirs);
     }
 

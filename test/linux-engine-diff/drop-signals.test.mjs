@@ -311,7 +311,10 @@ test("the plan's cells: every drop path 40 px into the zone, the covers placed o
   const { ZONE_CELLS } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
   const zone = { x0: 560, x1: 960, y0: 100, y1: 620 };
   const inZone = ([x, y]) => x >= zone.x0 && x < zone.x1 && y >= zone.y0 && y < zone.y1;
-  for (const cell of ZONE_CELLS.filter((c) => c !== 'plain-long')) {
+  // the delayed dragstarts past B (task 117) sit left of the column, a longer path into the zone: the handler's delay, not
+  // the path, times their drops
+  for (const cell of ['dragstart-500', 'dragstart-600']) assert.ok(!inZone(CELLS[cell](0)[0]) && inZone(CELLS[cell](0)[1]), cell);
+  for (const cell of ZONE_CELLS.filter((c) => !['plain-long', 'dragstart-500', 'dragstart-600'].includes(c))) {
     const path = CELLS[cell](0);
     assert.equal(path.length, 2, cell);
     assert.equal(Math.hypot(path[1][0] - path[0][0], path[1][1] - path[0][1]), 40, `${cell}: a short drop`);
@@ -469,7 +472,7 @@ test("V5's motion-loss cells: the run's browser stopped from the drag's send, a 
   const { CELLS, PLANS, T14_SOURCE, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   assert.deepEqual(freezeOf('prefreeze-150'), { from: 0, to: 150 }, 'stopped before the press goes out');
   assert.deepEqual(freezeOf('prefreeze-linger-150'), { from: 0, to: 150 });
-  assert.deepEqual(freezeOf('freeze-250'), { from: 60, to: 250 }, "T13's cells unchanged");
+  assert.deepEqual(freezeOf('freeze-250'), { from: 60, to: 250, afterPress: 55 }, "T13's cells: from 60 ms, and not before the press is read (ruling 954)");
   assert.deepEqual(CELLS['prefreeze-150'](0), CELLS.plain(0), 'the plain short drop');
   const linger = CELLS['prefreeze-linger-150'](0);
   assert.deepEqual(linger.slice(0, 2), CELLS.plain(0));
@@ -478,6 +481,17 @@ test("V5's motion-loss cells: the run's browser stopped from the drag's send, a 
   assert.ok(linger.slice(1).every(([x, y]) => x >= 560 && x <= 960 && y >= 100 && y <= 620), 'over the zone');
   for (const cell of ['prefreeze-150', 'prefreeze-linger-150']) assert.equal(T14_SOURCE[cell], 'plain', cell);
   assert.deepEqual(PLANS['v5-loss'].map(([lane, cell]) => `${lane} ${cell}`), ['cua plain', 'cua prefreeze-150', 'cua prefreeze-linger-150']);
+});
+
+test("0.4.1's failed settle, end to end (task 101's review): Electron's browser stopped across the end of a plain drop, so neither of the settle's pings is answered in time", async () => {
+  const { CELLS, PLANS, T14_SOURCE, freezeOf, STALL } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(CELLS.stall(0), CELLS.plain(0), 'the plain short drop');
+  assert.equal(T14_SOURCE.stall, 'plain');
+  // the floor ends about 350 ms after the take, which comes some 30 ms after the press: the stop covers the first ping
+  // (asked near the floor's end), its 150 ms, the rest, the revisit and the second ping's 150 ms
+  assert.deepEqual(freezeOf('stall'), STALL);
+  assert.ok(STALL.from <= 300 && STALL.to - STALL.from >= 600, JSON.stringify(STALL));
+  assert.deepEqual(PLANS['t101-stall'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua stall 10']);
 });
 
 test("the lost motion's bound and the guarded route: a sweep of stops past the hold's refresh, and the same stops on a drag the engine watches", async () => {
@@ -494,4 +508,168 @@ test("the lost motion's bound and the guarded route: a sweep of stops past the h
   // the guarded route: Chrome raised and not activated, so the engine watches the drag and releases at its path's end
   assert.deepEqual(LANES['cua:guarded'], { args: [], guarded: true });
   assert.deepEqual(PLANS['v5-guarded'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua:guarded plain 20', 'cua:guarded prefreeze-30 20', 'cua:guarded prefreeze-40 20', 'cua:guarded prefreeze-150 20']);
+});
+
+test("0.4.2's freeze sweep (task 121): the press-150 source stopped from 60 ms to ends bracketing a release at press + 450 and + 650", async () => {
+  const { CELLS, PLANS, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const { CELL_SOURCE, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, ZONE_CELLS } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  assert.ok(LATE_FREEZE_ENDS.some((to) => to < 450) && LATE_FREEZE_ENDS.some((to) => to > 650), 'both releases bracketed');
+  assert.ok(LATE_FREEZE_FINE.every((to) => to > 645 && to < 655), 'the fine sweep, millisecond by millisecond about 650');
+  for (const to of [...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE]) {
+    const cell = `freeze-${to}`;
+    assert.deepEqual(freezeOf(cell), { from: 60, to, afterPress: 55 }, cell);
+    assert.deepEqual(CELLS[cell](0), CELLS['freeze-250'](0), `${cell}: T13's freeze path`);
+    assert.equal(CELL_SOURCE[cell], 'press-150', cell);
+    assert.ok(ZONE_CELLS.includes(cell), `${cell}: a drop the zone counts`);
+  }
+  assert.deepEqual(PLANS['freeze-042'], LATE_FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]));
+  assert.deepEqual(PLANS['freeze-042-fine'].map(([, cell]) => cell), [646, 647, 648, 649, 650, 651, 652, 653, 654].map((to) => `freeze-${to}`));
+});
+
+test("the freeze cells wait for the browser's mark of the press, after the engine's identification (ruling 954); a stop past the thaw is skipped and says so (ruling 955)", async () => {
+  const { FREEZE_PRESS_LEAD, freezeOf, freezeStart } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const span = freezeOf('freeze-600');
+  const t0 = 1000;
+  // at idle the press is marked some 5 ms after the send: the stop begins at 60 ms, as the cells were designed
+  assert.deepEqual(freezeStart(span, t0, t0 + 5), { start: 60 });
+  // a late identification delays the press: the stop waits for it and its lead, the thaw stays at 600
+  assert.deepEqual(freezeStart(span, t0, t0 + 80), { start: 80 + FREEZE_PRESS_LEAD });
+  // no press marked by the thaw, or one too late for any stop before it: skipped, with why, never shortened silently
+  assert.match(freezeStart(span, t0, null).skipped, /no press marked by the browser by the thaw at 600 ms/);
+  const late = freezeStart(span, t0, t0 + 560);
+  assert.match(late.skipped, /the press was marked 560 ms after the send, so the stop would begin at 615 ms, at or past the thaw at 600 ms/);
+  // the stops that begin before the press by design keep their start (V5's lost motion, 0.4.1's failed settle)
+  assert.deepEqual(freezeStart(freezeOf('prefreeze-150'), t0, null), { start: 0 });
+  assert.equal(freezeOf('stall').afterPress, undefined);
+});
+
+test("ruling 956: the press mark is the browser's own or none; never seen, or seen past the thaw, the stop is skipped, never begun from 60 ms alone", async () => {
+  const { pressMarks, freezeOf, freezeStart } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const line = (v) => `_NET_WM_USER_TIME(CARDINAL) = ${v}`;
+  const now = performance.now();
+  // the server's 32-bit clock, 1e9 ms at the test's start
+  const at = (wall) => wall - now + 1e9;
+  const trial = (from, deadline) => ({ from, sent: at(from), deadline });
+  // the spy's first value is the property as it stood, never a press, even when it arrives after the drag's send
+  const m = pressMarks();
+  m.line(line(at(now + 9)), now + 10, at(now + 10));
+  assert.equal(await m.pressed(trial(now, now + 50)), null, 'the first value is no press');
+  m.line('xprop: something else', now + 20, at(now + 20));
+  m.line(line(at(now + 29)), now + 30, at(now + 30));
+  assert.deepEqual(await m.pressed(trial(now, now + 50)), { at: now + 30, time: at(now + 29) }, 'a later change is the press');
+  // a mark only past the deadline (the thaw) is none
+  const late = pressMarks();
+  late.line(line(1), now, at(now));
+  late.line(line(at(now + 79)), now + 80, at(now + 80));
+  assert.equal(await late.pressed(trial(now, now + 50)), null);
+  // none at all by a deadline already gone
+  assert.equal(await pressMarks().pressed(trial(now - 100, now - 1)), null);
+  // and with no mark the stop is skipped, not begun at its 60 ms
+  const span = freezeOf('freeze-650');
+  assert.equal(freezeStart(span, now, null).start, undefined);
+  assert.match(freezeStart(span, now, null).skipped, /no press marked/);
+});
+
+test("the review of cf1ef10f, finding 2: the press mark is bound to the trial by its value, the press's server time; a queued earlier mark and a repeated value are never this trial's press", async () => {
+  const { pressMarks } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const line = (v) => `_NET_WM_USER_TIME(CARDINAL) = ${v}`;
+  const t0 = performance.now();
+  const at = (clock) => clock - t0 + 1e9;
+  const m = pressMarks();
+  m.line(line(at(t0 - 9000)), t0 - 5000, at(t0 - 5000)); // the baseline, primed
+  // the earlier trial's press (stamped at t0 - 1500), its notification queued until after this trial's send
+  m.line(line(at(t0 - 1500)), t0 + 3, at(t0 + 3));
+  // the baseline value again, after the send: a repeat, no press
+  m.line(line(at(t0 - 9000)), t0 + 4, at(t0 + 4));
+  const waiting = m.pressed({ from: t0, sent: at(t0), deadline: t0 + 600 });
+  // this trial's own press, stamped after the send
+  m.line(line(at(t0 + 6)), t0 + 7, at(t0 + 7));
+  const got = await waiting;
+  assert.deepEqual({ at: got.at, time: got.time }, { at: t0 + 7, time: at(t0 + 6) });
+  // what was passed over is kept, with why, for the row
+  assert.deepEqual(got.ignored, [{ time: at(t0 - 1500), at_ms: 3, why: 'stamped before the send' }, { time: at(t0 - 9000), at_ms: 4, why: 'not newer than the last value seen' }]);
+  assert.deepEqual(m.ignored({ from: t0, sent: at(t0), deadline: t0 + 600 }).map((x) => x.why), ['stamped before the send', 'not newer than the last value seen']);
+  // with only the stale and the repeated marks, the trial has no press: the stop is skipped
+  const stale = pressMarks();
+  stale.line(line(at(t0 - 9000)), t0 - 5000, at(t0 - 5000));
+  stale.line(line(at(t0 - 1500)), t0 + 3, at(t0 + 3));
+  stale.line(line(at(t0 - 1500)), t0 + 4, at(t0 + 4));
+  assert.equal(await stale.pressed({ from: t0, sent: at(t0), deadline: performance.now() + 30 }), null);
+  // a value stamped after the line arrived is no press of this clock's: the server's clock is not the one read here
+  const ahead = pressMarks();
+  ahead.line(line(1), t0 - 5000, at(t0 - 5000));
+  ahead.line(line(at(t0 + 500)), t0 + 8, at(t0 + 8));
+  assert.equal(await ahead.pressed({ from: t0, sent: at(t0), deadline: performance.now() + 30 }), null);
+  assert.deepEqual(ahead.ignored({ from: t0, sent: at(t0), deadline: t0 + 600 }).map((x) => x.why), ['stamped after it arrived']);
+  // the 32-bit server clock wraps: a press just past the wrap is newer than a baseline just before it
+  const wrap = pressMarks();
+  wrap.line(line(2 ** 32 - 3), t0 - 10, 2 ** 32 - 2);
+  wrap.line(line(4), t0 + 6, 5);
+  assert.deepEqual(await wrap.pressed({ from: t0, sent: 2 ** 32 - 1, deadline: t0 + 600 }), { at: t0 + 6, time: 4 });
+});
+
+test("the review of cf1ef10f, finding 1: a stop whose timer wakes at or past the thaw sends no signal and is skipped, with why; the judge counts it unexercised", async () => {
+  const { freezeBrowser, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const { chromeDropVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const { dropRow } = await import('./drop-rows.mjs');
+  const run = async (overshoot) => {
+    let clock = 0;
+    const signals = [];
+    const record = await freezeBrowser(7, freezeOf('freeze-600'), 0, async () => ({ at: 540, time: 1540 }), {
+      now: () => clock,
+      wait: async (ms) => { clock += Math.max(0, ms) + overshoot; },
+      kill: (pid, sig) => signals.push(`${pid} ${sig}`),
+      sent: 1000,
+    });
+    return { record, signals };
+  };
+  // the stop due at +595 (the mark at +540, its lead 55) whose timer woke at +603: past the thaw at 600
+  const woke = await run(8);
+  assert.deepEqual(woke.signals, [], 'no SIGSTOP past the thaw');
+  assert.match(woke.record.skipped, /the stop's timer woke 603 ms after the send, at or past the thaw at 600 ms/);
+  assert.equal(woke.record.stopped_ms, undefined);
+  // on time, the stop and the continue, the press's value and the send's server time recorded
+  const onTime = await run(0);
+  assert.deepEqual(onTime.signals, ['7 SIGSTOP', '7 SIGCONT']);
+  assert.deepEqual(onTime.record, { pid: 7, press_ms: 540, press_time: 1540, sent_time: 1000, stopped_ms: 595, continued_ms: 600 });
+  // the scheduler's record into the verdict: the woken-late stop is unexercised for the inside band, the on-time one its outcome
+  const row = (i, freeze) => ({ ...dropRow({ family: 'chrome', cell: 'freeze-600', i, landed: true }), hold: { taken: true, adaptive: { source: { identified: true } } }, freeze });
+  const rows = [...Array.from({ length: 7 }, (_, i) => row(i, onTime.record)), ...Array.from({ length: 3 }, (_, i) => row(7 + i, woke.record))];
+  const v = chromeDropVerdict(rows, { specs: [{ lane: 'cua', cell: 'freeze-600', n: 10 }], plan: 't14-late', bands: [{ band: 'inside', cells: ['freeze-600'], expects: 'landed', min: 8 }] });
+  assert.deepEqual(v.counts.bands.inside, { drags: 10, expected: 7, late: 0, unexercised: 3 });
+  assert.deepEqual(v.failed, ['the inside band (freeze-600): 7 of 10 drags landed after a take inside the hold, fewer than its 8: the band is unexercised']);
+});
+
+test("the re-review of 0e43238b, finding 1: the stop is scheduled on the monotonic clock: the wall clock stepping back 100 ms moves neither the press's deadline nor the stop", async () => {
+  const { freezeBrowser, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  // both clocks read 1000 at the send; the wall clock steps back 100 ms as the browser's press mark arrives, 610 ms
+  // after the send on the monotonic clock: past freeze-600's thaw
+  let mono = 1000;
+  let wall = 1000;
+  const realNow = Date.now;
+  const realPerf = Object.getOwnPropertyDescriptor(performance, 'now') ?? null;
+  Date.now = () => wall;
+  Object.defineProperty(performance, 'now', { configurable: true, value: () => mono });
+  try {
+    const signals = [];
+    const pressed = async () => {
+      mono += 610;
+      wall += 510;
+      return { wall, at: mono, time: 77 };
+    };
+    const wait = async (ms) => {
+      const step = Math.max(0, ms);
+      mono += step;
+      wall += step;
+    };
+    const record = await freezeBrowser(7, freezeOf('freeze-600'), 1000, pressed, { sent: 70, wait, kill: (pid, sig) => signals.push(`${pid} ${sig}`) });
+    assert.deepEqual(signals, [], 'no SIGSTOP: the press came past the thaw');
+    assert.equal(typeof record.skipped, 'string', JSON.stringify(record));
+    assert.equal(record.stopped_ms, undefined);
+    assert.equal(record.press_ms, 610);
+  } finally {
+    Date.now = realNow;
+    if (realPerf) Object.defineProperty(performance, 'now', realPerf);
+    else delete performance.now;
+  }
 });

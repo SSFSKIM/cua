@@ -1,0 +1,28 @@
+owner pid=9512 start=52059
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+all-clear: clear
+--- V3 exit 0
+--- owner-baseline
+owner pid=9512 start=52059
+tmproot /tmp/c71-uFQ1at
+args: --vendor /Users/new/.local/share/cua-171/m5/pilot-arm64/home/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine --scene chrome-input,retention,minimized,minimized-xterm,minimized-recorder --ops click_element,right_click,right_click_fallback,secondary_action,move,drag,scroll,scroll_element_hidden,key_down,key_up,activate_window,after_resize,after_remap,after_covered_change,minimized_press_key,minimized_key_down,minimized_click,minimized_right_click,minimized_click_element,minimized_secondary_action,minimized_move,minimized_scroll,minimized_drag,minimized_type_text,minimized_type_characters,minimized_clipboard_read,minimized_clipboard_write,minimized_press_key_dedicated,minimized_click_dedicated,minimized_type_text_dedicated,minimized_list,minimized_tree,minimized_shot,minimized_restored_shot,minimized_restored_list,minimized_activate,minimized_activate_withdrawn,minimized_xterm_key_shared,minimized_xterm_key_dedicated,minimized_xterm_key_up_foreground,minimized_key_up_background --blocks 1 --run pdev-V3 --pinned --pilot
+started 2026-11-18T04:50:01Z finished 2026-11-18T04:57:39Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+--- pointer
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 
+--- wrap.out tail
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+cua171-diff-pdev-V3-4df49f1d-input-pinned: the scroll series ended at 323; back to the top
+cua171-diff-pdev-V3-4df49f1d-input-newest: the scroll series ended at 328; back to the top
+run valid; development run on the pinned release, not acceptance, never counted: no verdict FAIL; declared refusal (a loss, not a pass): chrome-input drag cua; declared unconfirmed (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua; unjudged (a pilot takes no top-up; not a pass): chrome-input click_element cua, chrome-input right_click cua, chrome-input right_click_fallback cua, chrome-input secondary_action cua, chrome-input move cua, chrome-input drag cua, chrome-input scroll cua, chrome-input scroll_element_hidden cua, chrome-input key_down cua, chrome-input key_up cua, chrome-input activate_window cua, retention after_resize cua, retention after_remap cua, retention after_covered_change cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/pilot-arm64/out-zero-r1/V3.development-run.pinned.pilot/run/results.jsonl
+{"exit": 0, "samples": 4010, "maps_samples": 1338, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 621, "browsers": 45}
+--- all-clear
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 0

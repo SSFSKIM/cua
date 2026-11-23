@@ -1,0 +1,5 @@
+{"files":113,"json_fields":386,"sentence_quotes":0,"text_quotes":9,"own":392,"not_own":3,"distinct":28}
+not the harness's own: /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h8-x64-v5/docs/evidence/2026-10-28-own-linux-engine/m5/x64/h8/zero-scripts/after-step.sh:44: a value of 2 characters
+not the harness's own: /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h8-x64-v5/docs/evidence/2026-10-28-own-linux-engine/m5/x64/h8/zero-scripts/after-step.sh:44: a value of 10 characters
+not the harness's own: /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h8-x64-v5/docs/evidence/2026-10-28-own-linux-engine/m5/x64/h8/zero-scripts/after-step.sh:44: a value of 7 characters
+title scan exit 1

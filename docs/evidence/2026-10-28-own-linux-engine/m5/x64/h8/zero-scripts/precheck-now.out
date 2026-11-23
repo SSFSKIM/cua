@@ -1,0 +1,11 @@
+time 2026-11-22T05:05:40Z
+hold-sittings: absent
+stress-ng: none
+owner chrome (expected pid 2546101): 2546101 new      Mon Nov  2 20:16:10 2026 chrome
+the oldest chrome process by ps: 2546101 Mon Nov  2 20:16:10 2026
+load 0.31 3.45 9.07
+lock, last line: 2026-11-22T04:57:12Z release h8-x64 status=0 load=17.41 17.27 15.45 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.
+/tmp/cua171-run-* present: []
+google-chrome on PATH: /usr/local/bin/google-chrome -> Google Chrome 156.0.8078.73 
+firefox on PATH (sitting.sh): /Users/new/.local/share/cua-171/task59/bin/firefox -> Mozilla Firefox 159.0
+df /: 34G free

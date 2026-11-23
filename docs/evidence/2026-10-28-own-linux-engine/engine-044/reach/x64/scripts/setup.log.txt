@@ -1,0 +1,28 @@
+== 2026-11-23T10:09:22Z setup at cd03a47bde2a484e1c3ecbf07cc97aada720fda7, load 0.82 1.52 1.26
+changes before: 0
+node /usr/bin/node v24.22.1, npm 11.19.1, x86_64
+
+added 25 packages in 863ms
+-rwxr-xr-x 1 new new 229489992 Dec 31  1979 node_modules/electron/dist/electron
+electron 44.9.0
+   Compiling autocfg v1.5.1
+   Compiling rustix v1.1.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling bitflags v2.13.2
+   Compiling pxfm v0.1.30
+   Compiling zune-core v0.5.1
+   Compiling bytemuck v1.25.0
+   Compiling x11rb-protocol v0.13.2
+   Compiling zune-jpeg v0.5.15
+   Compiling byteorder-lite v0.1.0
+   Compiling num-traits v0.2.19
+   Compiling moxcms v0.8.1
+   Compiling gethostname v1.1.0
+   Compiling image v0.25.10
+   Compiling x11rb v0.13.2
+   Compiling linux-engine-diff-xprobe v0.0.0 (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-diff/xprobe)
+    Finished `release` profile [optimized] target(s) in 28.93s
+-rwx------ 2 new new 1749584 Nov 23 02:09 /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-diff/xprobe/target/release/xprobe
+Google Chrome 156.0.8078.73 
+changes after: 0
+== 2026-11-23T10:09:54Z setup done

@@ -1,102 +1,83 @@
 #!/usr/bin/env node
-// The fallback homes' probe (#171 M5; the pre-flight's §3, "The fallback homes get their own probe"; F5 and F5a): a cua
-// home where the default must keep the vendor's engine, because none of cua's is installed (`none`), the installed one
-// is older than this cua needs (`previous`, 0.4.2; `released`, 0.4.0; `older`, 0.3.0), or its install.json does not
-// match its file (`unrecorded`: a newer record beside an older engine). With nothing selecting an engine (the default
-// mode's inputs: no CUA_NATIVE_ENGINE, no "engine" in engine.json), it requires
-//   - cua doctor --json to say the vendor's engine is selected, for that home's reason, its engine row a warning naming
-//     the reason and `cua install --engine` (./linux-selection.mjs fallbackSelectionProblem);
-//   - one observation the vendor's build supports, over `cua serve` on stdio: list the apps, bind a harness gedit window
-//     by X11 window id, read its tree. Nothing is sent to it: no input, no text;
-//   - the engine that answered to be the pinned vendor's sky_linux of this home's runtime, the trusted worker's child,
-//     behind the vendor's service, and no cua-engine at all, judged from the serve's process tree sampled every 50 ms
-//     (scripts/repl-parity/engine-answered.mjs, the facade suites' own judge of an engine lane).
-// The full acceptance checks (R3, R4) and the zero-sky_linux assertion stay with a home that holds the current engine.
-// Approvals: only the harness window's app is accepted, once. Its whole GUI footprint: one standalone gedit process on an
-// empty file in a directory it creates under /tmp, ended and removed in `finally`.
-// Run in the X session's environment, in the home to probe (CUA_HOME, HOME and the XDG directories the run's):
+// The fallback homes' probe (#171 M5's pre-flight §3, F5 and F5a; its new form #171 M6a, F3): a cua home with no usable
+// engine of cua's, because none is installed (`none`), the installed one is older than this cua needs (`previous`,
+// 0.4.3; `released`, 0.4.0; `older`, 0.3.0), or its install.json does not match its file (`unrecorded`: a newer record
+// beside an older engine). M5's default kept the vendor's engine in such a home; since M6a it refuses every computer
+// session there, for the home's own reason, naming this cua's own installer with --engine by its absolute path
+// (manifest.mjs ownInstaller, ruling 1110). With nothing selecting an engine (the default mode's inputs: no
+// CUA_NATIVE_ENGINE, no "engine" in engine.json), the probe requires
+//   - cua doctor --json to say the default prefers cua's engine and refuses it for that reason, its engine row a failure
+//     naming the reason and the installer (./linux-selection.mjs refusedSelectionProblem);
+//   - `cua serve`, asked for a session over stdio, to refuse the open: it exits 1 without answering the client, its
+//     refusal naming the reason and the installer, and no engine runs below it, judged from its process tree sampled
+//     every 50 ms (scripts/repl-parity/engine-answered.mjs engineProcesses; ./linux-selection.mjs refusedOpenProblem).
+// No session opens, so nothing is asked of a person and no window is touched: the probe starts no application.
+// Run in the home to probe (CUA_HOME, HOME and the XDG directories the run's), in the X session's environment as the
+// gate's other parts are:
 //   node scripts/accept/linux-fallback.mjs --home none|previous|released|older|unrecorded   JSON report; exit 0 when every step passes
 import {spawn} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
-import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
-import {findTool} from '../../src/runtime/tools.mjs';
-import {engineAnsweredProblem, engineProcesses, expectedEngine, mergeObservations} from '../repl-parity/engine-answered.mjs';
-import {pinnedApprovals} from './lib.mjs';
-import {FALLBACK_HOMES, fallbackSelectionProblem, selectionSteps} from './linux-selection.mjs';
-import {openSession, resultText} from './mcp-session.mjs';
+import {ownInstaller} from '../../src/runtime/installer.mjs';
+import {engineProcesses, mergeObservations} from '../repl-parity/engine-answered.mjs';
+import {FALLBACK_HOMES, refusedOpenProblem, refusedSelectionProblem, selectionSteps} from './linux-selection.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
+// How long the serve has to refuse the open; the refusal comes before it reads its input, in well under a second.
+const REFUSAL_WAIT_MS = 60_000;
 const at = process.argv.indexOf('--home');
 const kind = at < 0 ? null : process.argv[at + 1];
 const home = process.env.CUA_HOME ?? defaultHome();
+const remedy = `${ownInstaller().command} --engine`;
 const steps = [];
 const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
-const report = {home, kind, reason: FALLBACK_HOMES[kind] ?? null, steps};
-const dir = mkdtempSync('/tmp/cua-linux-fallback-');
-const file = join(dir, `fallback-${randomBytes(3).toString('hex')}.txt`);
-let gedit = null;
-let session = null;
+const report = {home, kind, reason: FALLBACK_HOMES[kind] ?? null, remedy, steps};
+let serve = null;
 let sampler = null;
-const pinned = new Set();
-const asked = [];
 const observations = [];
 let sampleError = null;
 try {
-  const gEditPath = findTool('gedit', process.env.PATH);
-  if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && !!gEditPath && kind in FALLBACK_HOMES,
-    {platform: process.platform, display: process.env.DISPLAY ?? null, gedit: gEditPath ?? null, home: kind})) throw new Error('preconditions');
-  selectionSteps({mode: 'default', env: process.env, cli: CLI, step, report, judge: doctor => fallbackSelectionProblem(doctor, kind),
-    judged: `the default keeps the vendor's engine for ${FALLBACK_HOMES[kind]}, warning and naming cua install --engine (cua doctor --json)`});
-  const expected = expectedEngine({engine: 'vendor', home});
-  if (!step('the pinned vendor sky_linux of this home\'s runtime', !!expected.expected, expected)) throw new Error('no vendor engine');
-  report.expected = expected.expected;
+  if (!step('preconditions', process.platform === 'linux' && kind in FALLBACK_HOMES, {platform: process.platform, home: kind})) throw new Error('preconditions');
+  selectionSteps({mode: 'default', env: process.env, cli: CLI, step, report, judge: doctor => refusedSelectionProblem(doctor, kind, {remedy}),
+    judged: `the default refuses cua's engine for ${FALLBACK_HOMES[kind]}, its engine row a failure naming the reason and ${remedy} (cua doctor --json)`});
 
-  writeFileSync(file, '');
-  gedit = spawn(gEditPath, ['--standalone', file], {detached: true, stdio: 'ignore'});
-  session = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_PERSIST: 'session'}, clientName: 'cua-linux-fallback', onServerRequest: pinnedApprovals(() => pinned, asked)});
-  const sample = () => { try { observations.push(engineProcesses(session.pid)); } catch (error) { sampleError ??= error.message; } };
+  // The open: a client asks `cua serve` for a session over stdio, as Claude Code does, and the serve must refuse it.
+  serve = spawn(process.execPath, [CLI, 'serve'], {stdio: ['pipe', 'pipe', 'pipe'], env: process.env});
+  let stdout = '', stderr = '';
+  serve.stdout.on('data', data => { stdout += data; });
+  serve.stderr.on('data', data => { stderr += data; });
+  serve.stdin.on('error', () => {});   // EPIPE once the serve has refused and gone
+  const exited = new Promise(resolve => serve.once('close', (code, signal) => resolve({code, signal})));
+  const sample = () => { try { observations.push(engineProcesses(serve.pid)); } catch (error) { sampleError ??= error.message; } };
   sampler = setInterval(sample, 50);
-  await session.initialize();
-
-  // The observation: the apps, then the harness window found by its title (which asks nothing), bound by id, its tree read.
-  const find = await session.js(`const apps = await cua.listApps({emit: false}); const deadline = Date.now() + 20000; let win;
-    while (!win && Date.now() < deadline) { win = (await cua.listWindows({emit: false})).find(w => (w.title ?? '').includes(${JSON.stringify(basename(file))})); if (!win) await new Promise(r => setTimeout(r, 500)); }
-    if (!win) throw new Error('the harness window did not appear');
-    globalThis.probeWindow = win; nodeRepl.write(JSON.stringify({apps: apps.length, windowId: win.id, app: win.app, title: win.title}));`, 90_000);
-  const found = /\{"apps".*\}$/m.exec(resultText(find))?.[0];
-  const window = found ? JSON.parse(found) : null;
-  if (typeof window?.app === 'string' && window.app) pinned.add(window.app);
-  const read = window && await session.js(`const app = await cua.getApp({windowId: probeWindow.id}); const tree = await app.getAXState({emit: false, disableDiffing: true});
-    nodeRepl.write(JSON.stringify({source: /Accessibility source: (\\S+)/.exec(tree)?.[1] ?? null, lines: tree.split('\\n').length, titled: tree.includes(${JSON.stringify(basename(file))})}));`, 90_000);
-  const tree = read ? JSON.parse(/\{"source".*\}$/m.exec(resultText(read))?.[0] ?? 'null') : null;
-  step('list the apps, bind the harness window by X11 id and read its tree; nothing sent to it',
-    !find.result?.isError && window?.apps > 0 && !read?.result?.isError && tree?.lines > 1 && tree?.titled === true,
-    {window, tree, ...(tree ? {} : {result: resultText(read ?? find).slice(0, 600)})});
-
-  const ended = await session.call('end_task');
-  step('end_task', ended.result?.structuredContent?.status === 'ended', ended.result?.structuredContent);
+  sample();
+  serve.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-linux-fallback', version: '0'}}})}\n`);
+  let timer;
+  const exit = await Promise.race([exited, new Promise(resolve => { timer = setTimeout(() => resolve(null), REFUSAL_WAIT_MS); })]);
+  clearTimeout(timer);
   clearInterval(sampler);
   sampler = null;
+  if (exit) serve = null;
+  // Any line the serve wrote that answers the request, a result or an error, is a session the client could read.
+  const answered = stdout.split('\n').some(line => { try { const message = JSON.parse(line); return message.id !== undefined && message.method === undefined && ('result' in message || 'error' in message); } catch { return false; } });
   const observed = mergeObservations(...observations);
-  const problem = engineAnsweredProblem({requested: 'vendor', expected: expected.expected, observed, ...(sampleError ? {sampleError} : {})}, 'the probe\'s session');
-  step('the engine that answered: the pinned vendor sky_linux, the trusted worker\'s child behind the vendor\'s service; no cua-engine',
-    problem === null, {samples: observations.length, observed, ...(problem ? {problem} : {})});
-  const approvals = asked.filter(a => a.method === 'elicitation/create');
-  step('approvals: the harness window\'s app asked once and accepted, nothing else asked', approvals.length === 1 && approvals[0].app === window?.app && approvals[0].action === 'accept',
-    {asked: approvals, otherRequests: asked.length - approvals.length});
-  const exit = await session.terminate();
-  session = null;
-  step('cua serve exited cleanly', exit.code === 0 && !exit.forced, exit);
+  const open = {exit, stderr, answered, observed, ...(sampleError ? {sampleError} : {})};
+  const problem = refusedOpenProblem(open, kind, {remedy});
+  step(`cua serve refuses the open for ${FALLBACK_HOMES[kind]}: it exits 1 unanswered, naming the reason and ${remedy}, with no engine below it`, problem === null,
+    {exit, answered, samples: observations.length, observed, stderr: stderr.slice(0, 1200), ...(problem ? {problem} : {})});
 } catch (error) {
   if (!steps.some(s => s.status === 'FAIL')) step('probe', false, error.message);
 } finally {
   if (sampler) clearInterval(sampler);
-  if (session) await session.terminate();
-  if (gedit?.pid) try { process.kill(gedit.pid, 'SIGTERM'); } catch {}
-  rmSync(dir, {recursive: true, force: true});
+  // A serve that did not refuse is this probe's own child: ended, then killed if it outlives a bounded wait.
+  if (serve && serve.exitCode === null && serve.signalCode === null) {
+    const gone = new Promise(resolve => serve.once('close', resolve));
+    serve.kill('SIGTERM');
+    let timer;
+    const ended = await Promise.race([gone.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10_000); })]);
+    clearTimeout(timer);
+    if (!ended) { serve.kill('SIGKILL'); await gone; }
+  }
 }
 report.status = steps.length && steps.every(s => s.status === 'PASS') ? 'PASS' : 'FAIL';
 console.log(JSON.stringify(report, null, 1));

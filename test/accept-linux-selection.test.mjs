@@ -1,10 +1,11 @@
 // How the Linux acceptance fixtures show which engine a session selected (#171 M5; the pre-flight's §3, "How the default
 // is shown live"): the explicit mode names cua's engine as M4 ran them; the default mode names none, refuses to start
-// unless nothing does, and reads the selection from `cua doctor --json`; the fallback homes' probe reads the vendor's,
-// with the warning that names why and `cua install --engine`. Pure: no doctor runs here.
+// unless nothing does, and reads the selection from `cua doctor --json`; the fallback homes' probe reads the default's
+// refusal (#171 M6a), from doctor and from a refused open, each naming why and this cua's installer with --engine.
+// Pure: no doctor runs here.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {FALLBACK_HOMES, defaultSelectionProblem, fallbackSelectionProblem, selectionMode, unsetSelectionProblems} from '../scripts/accept/linux-selection.mjs';
+import {FALLBACK_HOMES, defaultSelectionProblem, refusedOpenProblem, refusedSelectionProblem, selectionMode, unsetSelectionProblems} from '../scripts/accept/linux-selection.mjs';
 
 test('the mode is --selection explicit or default, explicit when not given; anything else is refused', () => {
   assert.equal(selectionMode([]), 'explicit');
@@ -41,17 +42,47 @@ test('the default mode passes only when doctor says the default selected cua\'s 
   assert.equal(defaultSelectionProblem(null), 'cua doctor --json printed no report');
 });
 
-test('a fallback home passes only when the default keeps the vendor\'s engine for its own reason, with a warning naming cua install --engine', () => {
+// #171 M6a (F3): M5's fallback to the vendor's engine is a refusal. A fallback home passes only when doctor says the
+// default prefers cua's engine and refuses every computer session for that home's own reason, its engine row a failure
+// naming the reason and this cua's own installer with --engine (the absolute command the refusal names, ruling 1110).
+const REMEDY = 'node /checkout/bin/cua.mjs install --engine';
+const refusedDoctor = (reason, {status = 'fail', detail = `cua's engine is preferred (the default engine), but sessions here are refused (${reason}): … install this cua's engine with \`${REMEDY}\` …`,
+  selected = null, preferred = {engine: 'cua', reason: 'default'}, refused = reason} = {}) => ({ok: false, checks: [{name: 'repl.host', status: 'pass', detail: '…'}, {name: 'engine', status, detail}],
+  engine: {selected, reason: selected === null ? refused : 'default', refused: refused && {code: refused, message: '…'}, preferred, service: selected}});
+
+test('a fallback home passes only when the default prefers cua\'s engine and refuses it for the home\'s own reason, naming this cua\'s installer', () => {
   assert.deepEqual(FALLBACK_HOMES, {none: 'engine_not_installed', previous: 'engine_outdated', released: 'engine_outdated', older: 'engine_outdated', unrecorded: 'engine_unrecorded'});
-  const warned = reason => doctor('vendor', reason, {status: 'warn', detail: `cua's engine is the default, but … (${reason}): … cua install --engine …`});
-  for (const [kind, reason] of Object.entries(FALLBACK_HOMES)) assert.equal(fallbackSelectionProblem(warned(reason), kind), null, kind);
-  assert.equal(fallbackSelectionProblem(warned('engine_not_installed'), 'older'), 'the session selects vendor (engine_not_installed), not the vendor\'s engine for engine_outdated');
-  assert.equal(fallbackSelectionProblem(doctor('cua', 'default'), 'older'), 'the session selects cua (default), not the vendor\'s engine for engine_outdated');
-  const unwarned = doctor('vendor', 'engine_outdated', {status: 'pass', detail: '… cua install --engine'});
-  assert.equal(fallbackSelectionProblem(unwarned, 'older'), 'doctor\'s engine row is pass, not a warning');
-  const noRemedy = doctor('vendor', 'engine_outdated', {status: 'warn', detail: 'cua\'s engine is the default, but … (engine_outdated)'});
-  assert.equal(fallbackSelectionProblem(noRemedy, 'older'), 'doctor\'s engine row does not name cua install --engine');
-  const noReason = doctor('vendor', 'engine_outdated', {status: 'warn', detail: 'cua\'s engine is the default, but …: cua install --engine replaces it'});
-  assert.equal(fallbackSelectionProblem(noReason, 'older'), 'doctor\'s engine row does not name its reason, engine_outdated');
-  assert.equal(fallbackSelectionProblem(warned('engine_outdated'), 'other'), 'no fallback home other: none, previous, released, older or unrecorded');
+  const judge = (report, kind) => refusedSelectionProblem(report, kind, {remedy: REMEDY});
+  for (const [kind, reason] of Object.entries(FALLBACK_HOMES)) assert.equal(judge(refusedDoctor(reason), kind), null, kind);
+  // M5's fallback, the vendor's engine kept with a warning, is a failure now
+  const kept = {...refusedDoctor('engine_outdated', {status: 'warn'}), engine: {selected: 'vendor', reason: 'engine_outdated', refused: null, preferred: {engine: 'cua', reason: 'default'}, service: 'vendor'}};
+  assert.equal(judge(kept, 'older'), 'the session selects vendor (engine_outdated), where the default must refuse it for engine_outdated');
+  assert.equal(judge(refusedDoctor('x', {selected: 'cua', refused: null}), 'older'), 'the session selects cua (default), where the default must refuse it for engine_outdated');
+  assert.equal(judge(refusedDoctor('engine_not_installed'), 'older'), 'the session is refused for engine_not_installed, not engine_outdated');
+  assert.equal(judge(refusedDoctor('engine_outdated', {preferred: {engine: 'cua', reason: 'explicit'}}), 'older'), 'doctor\'s preferred engine is cua (explicit), not cua\'s by default');
+  assert.equal(judge(refusedDoctor('engine_outdated', {status: 'warn'}), 'older'), 'doctor\'s engine row is warn, not a failure');
+  assert.equal(judge(refusedDoctor('engine_outdated', {detail: `… install this cua's engine with \`${REMEDY}\``}), 'older'), 'doctor\'s engine row does not name its reason, engine_outdated');
+  assert.equal(judge(refusedDoctor('engine_outdated', {detail: '… refused (engine_outdated): run `cua install --engine`'}), 'older'), `doctor's engine row does not name ${REMEDY}`);
+  assert.equal(judge(refusedDoctor('engine_outdated'), 'other'), 'no fallback home other: none, previous, released, older or unrecorded');
+  assert.equal(judge(null, 'older'), 'cua doctor --json printed no report');
+  // the default remedy is this checkout's own installer
+  assert.match(refusedSelectionProblem(refusedDoctor('engine_outdated'), 'older'), /does not name node .*\/bin\/cua\.mjs install --engine$/);
+});
+
+// The refused open: `cua serve` exits 1 before it answers anything, saying the reason and the installer, and no engine
+// runs below it. Anything less is not a refusal, and nothing that ran stands in for one.
+test('a refused open: the serve exits 1 unanswered, naming the reason and the installer, with no engine below it', () => {
+  const stderr = `cua: auto … selects cua's own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.4, which this cua needs: install this cua's engine with \`${REMEDY}\` … [engine_outdated]\n  run \`node /checkout/bin/cua.mjs install\`; …\n`;
+  const refused = {exit: {code: 1, signal: null}, stderr, answered: false, observed: []};
+  const judge = (open, kind = 'older') => refusedOpenProblem(open, kind, {remedy: REMEDY});
+  assert.equal(judge(refused), null);
+  assert.equal(judge({...refused, exit: null}), 'cua serve did not refuse the open: it was still running when the probe stopped waiting');
+  assert.equal(judge({...refused, exit: {code: 0, signal: null}}), 'cua serve exited with code 0, not 1');
+  assert.equal(judge({...refused, exit: {code: null, signal: 'SIGKILL', forced: true}}), 'cua serve exited with code null, not 1');
+  assert.equal(judge({...refused, answered: true}), 'cua serve answered the client: a session opened');
+  assert.equal(judge(refused, 'none'), 'cua serve\'s refusal does not name engine_not_installed');
+  assert.equal(judge({...refused, stderr: 'cua: … [engine_outdated]\n'}), `cua serve's refusal does not name ${REMEDY}`);
+  assert.equal(judge({...refused, observed: [{exe: '/h/engine/linux/cua-engine', kind: 'cua'}]}), 'an engine ran below the refused serve: /h/engine/linux/cua-engine (cua)');
+  assert.equal(judge({...refused, sampleError: 'proc unreadable'}), 'an engine observation failed (proc unreadable), so what ran below the serve is unknown');
+  assert.equal(judge(refused, 'other'), 'no fallback home other: none, previous, released, older or unrecorded');
 });

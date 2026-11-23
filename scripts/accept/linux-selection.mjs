@@ -5,16 +5,21 @@
 //             ~/.config/cua/engine.json (its "desktop" may stand), so the session runs whatever the default selects. The
 //             fixture refuses to start otherwise, then reads the selection from `cua doctor --json`'s engine report and
 //             requires cua's engine with reason `default`
-// The fallback homes' probe (linux-fallback.mjs) runs with the default mode's inputs and requires the vendor's engine,
-// kept by the default for its home's own reason (FALLBACK_HOMES), with doctor's warning naming it and `cua install
-// --engine`.
+// The fallback homes' probe (linux-fallback.mjs) runs with the default mode's inputs in a home that holds no usable
+// engine of cua's. M5's default kept the vendor's engine there; since #171 M6a (F3) it refuses every computer session
+// for the home's own reason (FALLBACK_HOMES), and the probe requires that refusal from doctor (refusedSelectionProblem)
+// and from an open (refusedOpenProblem), each naming the reason and this cua's own installer with --engine, by its
+// absolute path (manifest.mjs ownInstaller, ruling 1110).
 import {spawnSync} from 'node:child_process';
 import {engineSettingsPath, readEngineSettings} from '../../src/runtime/engine-sign.mjs';
+import {ownInstaller} from '../../src/runtime/installer.mjs';
 
 export const SELECTION_MODES = ['explicit', 'default'];
-// Each fallback home, and the reason the default keeps the vendor's engine there (src/runtime/launch.mjs nativeEngineFor).
+// Each fallback home, and the reason the default refuses cua's engine there (src/runtime/launch.mjs nativeEngineFor).
 export const FALLBACK_HOMES = Object.freeze({none: 'engine_not_installed', previous: 'engine_outdated', released: 'engine_outdated', older: 'engine_outdated', unrecorded: 'engine_unrecorded'});
-const REMEDY = 'cua install --engine';
+// The remedy every refusal names: this checkout's own installer with --engine.
+const engineInstaller = () => `${ownInstaller().command} --engine`;
+const noHome = kind => `no fallback home ${kind}: ${Object.keys(FALLBACK_HOMES).join(', ').replace(/, (?=[^,]*$)/, ' or ')}`;
 
 /** The mode `--selection <mode>` in `argv` names: explicit when absent; anything else throws. */
 export function selectionMode(argv) {
@@ -56,18 +61,42 @@ export function defaultSelectionProblem(report) {
 }
 
 /**
- * A fallback home's judge (`kind` a key of FALLBACK_HOMES): null when doctor says the default kept the vendor's engine for
- * that home's reason, its engine row a warning naming the reason and `cua install --engine`; else what differs.
+ * A fallback home's judge from doctor (`kind` a key of FALLBACK_HOMES; `remedy` the installer the refusal must name,
+ * this checkout's own with --engine): null when doctor says the default prefers cua's engine and refuses every computer
+ * session for that home's reason, its engine row a failure naming the reason and `remedy`; else what differs. An engine
+ * selected, the vendor's included, is never a refusal.
  */
-export function fallbackSelectionProblem(report, kind) {
+export function refusedSelectionProblem(report, kind, {remedy = engineInstaller()} = {}) {
   const reason = FALLBACK_HOMES[kind];
-  if (!reason) return `no fallback home ${kind}: ${Object.keys(FALLBACK_HOMES).join(', ').replace(/, (?=[^,]*$)/, ' or ')}`;
+  if (!reason) return noHome(kind);
   const found = reported(report);
   if (typeof found === 'string') return found;
-  if (found.selected !== 'vendor' || found.reason !== reason) return `${says(found)}, not the vendor's engine for ${reason}`;
-  if (found.row.status !== 'warn') return `doctor's engine row is ${found.row.status}, not a warning`;
+  if (found.selected !== null) return `${says(found)}, where the default must refuse it for ${reason}`;
+  const {preferred, refused} = report.engine;
+  if (refused?.code !== reason || found.reason !== reason) return `the session is refused for ${refused?.code ?? found.reason}, not ${reason}`;
+  if (preferred?.engine !== 'cua' || preferred?.reason !== 'default') return `doctor's preferred engine is ${preferred?.engine} (${preferred?.reason}), not cua's by default`;
+  if (found.row.status !== 'fail') return `doctor's engine row is ${found.row.status}, not a failure`;
   if (!found.row.detail.includes(`(${reason})`)) return `doctor's engine row does not name its reason, ${reason}`;
-  if (!found.row.detail.includes(REMEDY)) return `doctor's engine row does not name ${REMEDY}`;
+  if (!found.row.detail.includes(remedy)) return `doctor's engine row does not name ${remedy}`;
+  return null;
+}
+
+/**
+ * A fallback home's judge from an open: `open` is what `cua serve` did when a client asked it for a session, {exit
+ * ({code, signal, forced?}, or null while it still ran), stderr, answered (whether it answered the client at all),
+ * observed (the engine processes seen below it), sampleError?}. Null when it refused: it exited 1 without answering,
+ * its refusal naming the home's reason and `remedy`, and no engine ran below it; else what differs.
+ */
+export function refusedOpenProblem(open, kind, {remedy = engineInstaller()} = {}) {
+  const reason = FALLBACK_HOMES[kind];
+  if (!reason) return noHome(kind);
+  if (!open.exit) return 'cua serve did not refuse the open: it was still running when the probe stopped waiting';
+  if (open.answered) return 'cua serve answered the client: a session opened';
+  if (open.exit.code !== 1) return `cua serve exited with code ${open.exit.code}, not 1`;
+  if (!open.stderr.includes(`[${reason}]`)) return `cua serve's refusal does not name ${reason}`;
+  if (!open.stderr.includes(remedy)) return `cua serve's refusal does not name ${remedy}`;
+  if (open.sampleError) return `an engine observation failed (${open.sampleError}), so what ran below the serve is unknown`;
+  if (open.observed.length) return `an engine ran below the refused serve: ${open.observed.map(o => `${o.exe} (${o.kind})`).join(', ')}`;
   return null;
 }
 

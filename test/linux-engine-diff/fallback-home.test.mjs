@@ -1,5 +1,6 @@
 // The fallback homes of #171 M5 (scripts/linux-engine-gate/fallback-home.mjs): each shaped from a home that holds this
-// cua's install, and each one the default selection then keeps on the vendor's engine for its own reason. The engine
+// cua's install, and each one where the default selection, which M5 kept on the vendor's engine, refuses cua's engine
+// for its own reason since #171 M6a (F3). The engine
 // assets are stand-ins served by a stubbed fetch, in scratch homes: nothing is downloaded.
 
 import assert from 'node:assert/strict';
@@ -24,7 +25,7 @@ const pinFor = (version) => ({ version, release: `linux-engine-v${version}`, ass
 const CURRENT = pinFor(MIN_ENGINE_VERSION);
 const OLDER = pinFor('0.3.0');
 const RELEASED = pinFor('0.4.0');
-const PREVIOUS = pinFor('0.4.2');
+const PREVIOUS = pinFor('0.4.3');
 const HOST = { platform: 'linux', arch: 'x64' };
 const serving = async (href) => {
   const bytes = engine(/linux-engine-v([\d.]+)\//.exec(href)[1]);
@@ -51,11 +52,11 @@ test("the released pin is linux-engine-v0.4.0's, older than this cua needs, as t
   if (recorded) assert.deepEqual(RELEASED_PIN, recorded);
 });
 
-test("the previous pin is linux-engine-v0.4.2's, the release just below this cua's minimum, as the checked-in pin held it until 0.4.3's", () => {
-  assert.equal(PREVIOUS_PIN.version, '0.4.2');
+test("the previous pin is linux-engine-v0.4.3's, below this cua's minimum, as main's checked-in pin held it until 0.4.4's", () => {
+  assert.equal(PREVIOUS_PIN.version, '0.4.3');
   assert.ok(isOlder(PREVIOUS_PIN.version, MIN_ENGINE_VERSION));
   assert.ok(isOlder(RELEASED_PIN.version, PREVIOUS_PIN.version));
-  const recorded = pinAt('0710ebc1^');
+  const recorded = pinAt('da927265^');
   if (recorded) assert.deepEqual(PREVIOUS_PIN, recorded);
 });
 

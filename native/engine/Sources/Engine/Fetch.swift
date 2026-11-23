@@ -236,10 +236,17 @@ struct AttributeRead {
 /// The roles a password field can have when its subrole cannot be read (ruling 1ea561bc:813): a text-entry role.
 let presumedSecureRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole]
 
+/// #525 (rulings 1156, 1166): the standard roles that are never secure text entry, so a null or failed subrole on one is
+/// no reason to close it: it classifies open and its value is read as the vendor reads it. An allowlist, so a role off
+/// it (a custom role string, AXUnknown) fails closed as ruling 813 has it. Only what evidence needs is listed: Finder's
+/// toolbar group around Search (M5 pilot B).
+let neverSecureRoles: Set<String> = [kAXGroupRole]
+
 /// How a reply classifies its element (#405, rulings 1ea561bc:811 and 813): `closed`, its value attributes dropped,
-/// for a password field by role or subrole and whenever the role or subrole could not be read (`failed`); `secure`, the
-/// node said to be a password field, for one by role or subrole, an unreadable role, and a text-entry role with an
-/// unreadable subrole, never another readable role, which cannot be one.
+/// for a password field by role or subrole and whenever the role or subrole could not be read (`failed`), except a
+/// subrole on a role that is never secure text entry (`neverSecureRoles`, #525), which is open; `secure`, the node said
+/// to be a password field, for one by role or subrole, an unreadable role, and a text-entry role with an unreadable
+/// subrole, never another readable role, which cannot be one.
 struct ValueClassification: Equatable {
   var closed = false
   var secure = false
@@ -262,9 +269,15 @@ func valueClassification(_ read: AttributeRead) -> ValueClassification {
   }
   guard let role else { return ValueClassification(closed: true, secure: true, failed: true) }
   if role == "AXSecureTextField" || subrole == .subrole("AXSecureTextField") { return ValueClassification(closed: true, secure: true) }
-  guard subrole == .failed else { return ValueClassification() }
+  guard subrole == .failed, !neverSecureRoles.contains(role) else { return ValueClassification() }
   return ValueClassification(closed: true, secure: presumedSecureRoles.contains(role), failed: true)
 }
+
+/// #525: whether a classification reply that found its element open names a role whose Markdown is read
+/// (`markdownRoles`). An element observed as a text field may answer another role by the time its attributed string
+/// would be read; a group's subrole no longer closes it (`neverSecureRoles`), so the role read in that same reply,
+/// not the one observed, decides the read.
+func markdownEligible(_ read: AttributeRead) -> Bool { readbackBatchRole(read).map(markdownRoles.contains) ?? false }
 
 /// #405: whether a reply classifies its element closed (`valueClassification`), its value attributes dropped, by the rule
 /// every value read of a field follows (`writtenValueFieldClosed`).
@@ -459,14 +472,17 @@ class ElementSource: @unchecked Sendable {
   /// The Markdown rendering of a text element's value (the parameterized attributed-string read), timed. Its role and
   /// subrole are requested again just before (#405): when that request fails or finds the field closed, nil with no
   /// read, and `data` closed too (here and in the cache), so nothing read of it earlier reaches its node or identity.
+  /// #525: an open reply whose role is no longer a text role (`markdownEligible`) is nil with no read, `data` kept.
   final func markdown(_ element: AXUIElement, data: inout ElementData, length: Int) -> String? {
     // Fails closed: an element that cannot be classified now (a request that fails reads as its role unreadable) keeps
     // nothing read of it before.
-    let classified = request(element, classifyingAttributes).map(valueClassification) ?? ValueClassification(closed: true, secure: true, failed: true)
+    let read = request(element, classifyingAttributes)
+    let classified = read.map(valueClassification) ?? ValueClassification(closed: true, secure: true, failed: true)
     if classified.closed {
       data = close(element, data, classified)
       return nil
     }
+    guard let read, markdownEligible(read) else { return nil }
     return costs.time("markdown") { readMarkdown(element, length: length) }
   }
 

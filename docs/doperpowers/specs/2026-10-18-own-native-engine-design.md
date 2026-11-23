@@ -8622,6 +8622,83 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - 1737 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
   Date/Author: 2026-11-23, cursor235's builder for #520.
 
+- Decision (#525, rulings 1156 and 1166, 2026-11-23, `fix/525-null-subrole-group` from 893e19d7; reverses part of
+  ruling 813 and of the #501 entry): a null or failed subrole on a role that is never secure text entry is no reason to
+  close the element. Such a role is listed (`neverSecureRoles`); on it the element classifies open, as #501 had it for
+  a null subrole before, and its value is read as the vendor reads it. The list holds AXGroup alone, the only role the
+  evidence needs. Ruling 1166 made it an allowlist: a role off it (a custom role string, AXUnknown, AXButton,
+  AXStaticText) keeps ruling 813, closed and "value unread", so the next custom role that hosts a password field fails
+  closed. The text-entry roles (`presumedSecureRoles`) stay closed, secure and unread; an unreadable role and the
+  AXSecureTextField role or subrole stay closed and secure.
+  - What is reversed: ruling 813 closed every readable role with a failed subrole, and #501 added the null one. For
+    AXGroup only, both now classify open.
+  - The cause (M5 pilot B, run 45226949355, engine c83131f0, which contains #501): Finder's full and before texts
+    print `container Value: value unread, Secondary Actions: Move previous, Remove from toolbar` around `button
+    Search`, where the vendor prints only the button; the 13 lines after it shift by one. The artifacts carry no raw
+    subrole. The code admits one source for that line: `container` is AXGroup's word alone (render.mjs `roleWord`), and
+    `value unread` prints only for a node whose `valueUnread` the walk set (Walk.swift, `classificationFailed` and not
+    `secure`). That pair comes only from `valueClassification` on a readable role off the text-entry roles whose
+    subrole decoded `.failed`: a null slot, a failed slot or a value that is no string. A request that fails, and an
+    unreadable role, close it `secure` instead (`secure text`), and a source that reads no values (#390) sets no
+    `classificationFailed`. Which of the three slots Finder answered is not recorded; the fix covers all three.
+    `descriptive` counts `valueUnread`, so render rule (4) kept the one-child group that the vendor replaces by its
+    button.
+  - The consumers, for an AXGroup with a null or failed subrole (every other role reads as on 893e19d7):
+    - The walk's `classifiedData` and the node: open, its value read; the node has no `valueUnread`, and the render
+      replaces Finder's group by its button.
+    - The Markdown's re-classification (`ElementSource.markdown`): unchanged; only AXTextArea and AXTextField reach it.
+    - The Lineage identity: `valueUnread` and `classificationFailed` false, so the value counts and the identity
+      matches across handles, not only for the same one.
+    - StalePoint: `screenshotLabelsUnknown` withholds nothing and #520's `valueOpen` is true. That bit is all that
+      changes: the record keeps a value only for an AXStaticText (`screenshotLabelValue`), so a group's record holds
+      none, and no refusal sentence or verdict changes.
+    - `classifiedRead`: select_text reads the group's value instead of refusing it secure, and the focused group's
+      selected text prints in the trailer.
+    - `valueReadClosed`: paste's `focusedEffectReading` is not secure. select_text's Markdown guard is unchanged, since
+      only text roles reach it.
+    - type_text: `readbackClass` answers `.open("AXGroup")`, so the marker route climbs past the group as past any
+      ancestor that is no field, where it used to stop `.closed(.secure)`. `readbackSecure` now follows the same rule (its
+      test holds it equal to the classification's `closed`), so a focused group is refused `notTextField`, not `secure`,
+      with nothing read either way. `readbackPasswordField` and `readbackLength` are unchanged, since their role gate
+      excludes AXGroup.
+    - `writtenValueFieldClosed` and `setValueClosed` do not read the classification. They use `secureTextField`
+      (#283), which still fails closed for any role with an unreadable subrole, so set_value on such a group still
+      reads no value back. This is left as it was: it costs only a value read on a write to a group.
+    - The label-slot helper (`LabelSlots.swift`, tests only) follows the classification.
+  - The proof:
+    - `NeverSecureRoleTests` (2): the classification and its direct readers, and the walk with its identity and record,
+      for each role with a null and a failed subrole. A group is open; AXTextField, AXComboBox and AXTextArea are
+      secure; AXMyCustomRole, AXUnknown, AXButton and AXStaticText are closed and unread; an unreadable role and
+      AXSecureTextField are unchanged.
+    - `NullClassifyingSlotTests` and `TypeReadbackTests` change only their AXGroup case. The latter's failed-subrole
+      `secure` refusal now uses a custom role.
+    - The render test (`services-engine-render.test.mjs`) runs Finder's toolbar shape: with `valueUnread` the group
+      keeps its line, and without it the line is `button Search` at the group's depth.
+    - Red on 893e19d7's sources: 4 tests fail with 22 assertions, every one an AXGroup case. Every text-entry,
+      custom-role and unreadable-role assertion passes there.
+    - 1740 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+    - No Finder golden is checked in. Pilot B is the only check, and it is judged again on the fixed engine.
+  Date/Author: 2026-11-23, cursor235's builder for #525.
+
+- Decision (#525, the review of 893e19d7..271aa18a, 2026-11-23; amends the entry above): the attributed-string read
+  needs a text role in the batch that classifies the element just before it, not only in the observed role.
+  (P2) An element observed as an AXTextField can answer AXGroup with a null or failed subrole in that batch. On main
+  the batch closed it, and nothing more was read. Under the entry above it is open. The walk's
+  `ElementSource.markdown` and select_text's `selectionSearchText` checked the text role against the observed role
+  alone and took the fresh batch only for closed or open, so both went on to request `AXAttributedStringForRange` of
+  the group. The walk then rendered the group's text as the old field's Markdown, and select_text used it to choose a
+  range.
+  - The fix: `markdownEligible` requires the fresh batch's role (`readbackBatchRole`) to be in `markdownRoles`, now
+    shared by the walk and select_text. Otherwise nothing more is read: the walk returns no Markdown and keeps the
+    open data, and select_text searches the plain value alone. Ordinary group values stay open.
+  - The proof: `NeverSecureRoleTests.testAFieldThatTurnsIntoAGroupBeforeTheMarkdownReadIsNotReadAsText` runs two
+    batches, field then group, for a null and a failed subrole, through both readers. On 271aa18a's sources it fails
+    with 4 assertions: one attributed read each in the walk and in select_text, for both slots. A field still a field
+    is read as before.
+  - (P3) The StalePoint line of the consumer list above is corrected: only `valueOpen` changes, and no refusal text.
+  - 1741 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  Date/Author: 2026-11-23, cursor235's builder for #525.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

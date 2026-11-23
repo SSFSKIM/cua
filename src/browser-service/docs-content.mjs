@@ -16,7 +16,7 @@
 // browserAuth capability's document is cua's own, for the local form it serves (the tab handed to the person to sign
 // in themselves; authhandoff.mjs), in place of the vendor's secure ChatGPT credential form. Since #494 the guidance a
 // first call does not act on is a lookup whose description states its rule (docs.mjs), and "api-reference" is the
-// generated full reference.
+// generated full reference, listed as "api-reference/<browser id>".
 //
 // An entry: {name, mode: 'included' | 'lookup' | 'model', description?, requiredFor?: [wire types], when?: {browserTypes?,
 // requiredApiMembers?, requiredBrowserCapabilities?, requiredTabCapabilities?, excludedTabCapabilities?}}.
@@ -87,7 +87,7 @@ export const DOCUMENT_MANIFEST = [
     "name": "cua-browser-service"
   },
   {
-    "description": "how to work in a page: check the state after each action, never repeat an action that had no effect, never `goto` the URL a tab is already on, proof-of-work screenshots, one focused lookup over guessed URLs; read before your first page action",
+    "description": "how to work in a page: check the state after each action, never blindly repeat an action that had no effect (inspect the state and resolve what blocks it before retrying), never `goto` the URL a tab is already on, proof-of-work screenshots, one focused lookup over guessed URLs; read before your first page action",
     "mode": "lookup",
     "name": "api-use-behavior"
   },
@@ -131,7 +131,7 @@ export const DOCUMENT_MANIFEST = [
     "name": "screenshots"
   },
   {
-    "description": "every interface, member and option type of this browser's API; the API Reference below lists the members most tasks use",
+    "description": "every interface, member and option type of this browser's API, by its id; the API Reference below lists the members most tasks use",
     "mode": "lookup",
     "name": "api-reference"
   },

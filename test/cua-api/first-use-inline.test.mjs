@@ -14,6 +14,11 @@ import {Documentation} from '../../src/browser-service/docs.mjs';
 import {API_MANIFEST, disabledMemberIds} from '../../src/browser-service/manifest.mjs';
 import {browserSelection} from '../../src/browser-service/browsers.mjs';
 import {SERVICE_VERSION} from '../../src/browser-service/index.mjs';
+import {kernelNode} from '../repl-host/kernel-harness.mjs';
+import {startHost, texts} from '../repl-host/supervisor-harness.mjs';
+
+const {node, skip} = kernelNode();
+const own = {skip};
 
 const INLINE_LIMIT = 50_000;
 // The first cell's documentation leaves the cell's own output at least 5% of the limit in the largest configuration
@@ -76,14 +81,72 @@ for (const [label, selected] of Object.entries(SELECTIONS)) {
 
 test('every pointer of the first-use documentation leads to a document, and the full API reference stays reachable', async () => {
   const docs = serviceDocumentation();
-  await assert.rejects(docs.read('api-reference'), {message: 'Documentation is not available until a browser is selected: api-reference'});
-  const text = await docs.readBrowser(SELECTIONS['a Chrome profile'].selection, {browserKeys: SELECTIONS['a Chrome profile'].keys});
+  const {selection, keys} = SELECTIONS['a Chrome profile'];
+  await assert.rejects(docs.read(`api-reference/${selection.id}`), {message: /^Documentation is not available: api-reference\/extension:1\. Its browser has not been documented/});
+  await assert.rejects(docs.read('api-reference'), {message: /^Documentation is not available: api-reference\. Name the browser/});
+  const text = await docs.readBrowser(selection, {browserKeys: keys});
   const catalogue = text.split('# Additional Documentation\n')[1].split('\n\n')[0];
   const names = [...catalogue.matchAll(/^- `([^`]+)`: /gmu)].map(([, name]) => name);
-  for (const name of ['browser-safety', 'tab-cleanup-chrome', 'cua-browser-service', 'api-use-behavior', 'api-reference']) assert.ok(names.includes(name), name);
+  for (const name of ['browser-safety', 'tab-cleanup-chrome', 'cua-browser-service', 'api-use-behavior', 'api-reference/extension:1']) assert.ok(names.includes(name), name);
   for (const name of names) assert.ok((await docs.read(name)).length > 0, name);
-  assert.match(text, /await agent\.documentation\.get\("api-reference"\)/, 'the API Reference names the full one');
-  const full = await docs.read('api-reference');
+  assert.ok(text.includes('nodeRepl.write(await agent.documentation.get("api-reference/extension:1"))'), 'the API Reference names the full one');
+  const full = await docs.read('api-reference/extension:1');
   for (const part of ['interface PlaywrightFrameLocator {', 'interface TabClipboardAPI {', 'type LocatorClickOptions = {', '  evaluateAll<TResult, TArg>', '  downloadMedia('])
     assert.ok(full.includes(part) && !text.includes(part), part);
+});
+
+test('the api-reference pointer is bound to its browser: after A, B, A each pointer still reads its own backend\'s reference', async () => {
+  const docs = serviceDocumentation();
+  const a = browserSelection({}, 'extension:1', announced('inst-a'));
+  // B's backend does not support selectOption (its apiSupportOverrides), so its reference differs from A's there.
+  const b = browserSelection({}, 'extension:2', {...announced('inst-b'), apiSupportOverrides: {'PlaywrightLocator.selectOption': false}});
+  const pointer = text => JSON.parse(/nodeRepl\.write\(await agent\.documentation\.get\(("api-reference\/[^"]+")\)\)/u.exec(text)[1]);
+  const selectOption = '  selectOption(value: SelectOptionInput';
+  const firstA = await docs.readBrowser(a);
+  const onB = await docs.readBrowser(b);
+  assert.deepEqual([pointer(firstA), pointer(onB)], ['api-reference/extension:1', 'api-reference/extension:2']);
+  assert.ok(firstA.includes(selectOption) && !onB.includes(selectOption), 'the summaries differ');
+  assert.ok((await docs.read(pointer(firstA))).includes(selectOption), 'A\'s pointer after B was documented reads A\'s reference');
+  const againA = await docs.readBrowser(a);
+  assert.equal(pointer(againA), 'api-reference/extension:1');
+  assert.ok((await docs.read(pointer(againA))).includes(selectOption));
+  assert.ok(!(await docs.read(pointer(onB))).includes(selectOption), 'B\'s pointer after A again reads B\'s reference');
+});
+
+// Each balanced `nodeRepl.write(…)` call in `text`.
+function writeCalls(text) {
+  const calls = [];
+  for (let at = text.indexOf('nodeRepl.write('); at !== -1; at = text.indexOf('nodeRepl.write(', at + 1)) {
+    let depth = 0, end = at;
+    for (; end < text.length; end++) {
+      if (text[end] === '(') depth++;
+      else if (text[end] === ')' && --depth === 0) break;
+    }
+    calls.push(text.slice(at, end + 1));
+  }
+  return calls;
+}
+
+// On the own host a cell shows only what it writes or logs: an awaited lookup's string is not shown. So every lookup
+// the documentation advertises prints its result, and each, run as written in a real kernel under cua's REPL host,
+// puts the looked-up text in the visible tool response.
+test('every advertised lookup prints its text in the own host\'s visible tool response', own, async t => {
+  const docs = serviceDocumentation();
+  const {selection, keys} = SELECTIONS['a Chrome profile'];
+  const text = await docs.readBrowser(selection, {browserKeys: keys});
+  const required = (() => { try { docs.assertRequiredDocumentationRead('tab_cdp_call'); } catch (error) { return error.message; } })();
+  const sources = [text, await docs.read(`api-reference/${selection.id}`), required];
+  const lookup = /await (?:agent\.documentation\.get\(|\(await \w+\.capabilities\.get\([^)]*\)\)\.documentation\(\)|browser\.documentation\(\))/gu;
+  for (const source of sources) for (const match of source.matchAll(lookup))
+    assert.equal(source.slice(match.index - 'nodeRepl.write('.length, match.index), 'nodeRepl.write(', `an advertised lookup that shows nothing: ${source.slice(match.index, match.index + 80)}`);
+  const examples = [...new Set(sources.flatMap(writeCalls))]
+    .map(code => code.replace('"<name>"', '"browser-safety"').replace('.get(id)', '.get("viewport")').replace('.get(name)', '.get("screenshots")'))
+    .filter(code => !code.includes('<'));
+  assert.ok(examples.length >= 6, examples.join('\n'));
+  const host = await startHost(t, {node});
+  await host.js('globalThis.agent = {documentation: {get: async name => `LOOKED-UP ${name}`}};'
+    + 'const bound = kind => ({documentation: async () => `LOOKED-UP ${kind} documentation`, capabilities: {get: async id => ({documentation: async () => `LOOKED-UP ${kind} capability ${id}`})}});'
+    + 'globalThis.browser = bound("browser"); globalThis.tab = bound("tab");');
+  assert.ok(!texts(await host.js('await agent.documentation.get("browser-safety")')).join('').includes('LOOKED-UP'), 'the vendor\'s bare form shows nothing (why the examples print)');
+  for (const code of examples) assert.match(texts(await host.js(code)).join(''), /LOOKED-UP /u, code);
 });

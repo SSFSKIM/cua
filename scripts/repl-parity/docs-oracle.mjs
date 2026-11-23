@@ -138,11 +138,14 @@ const browserClauses=[
  '// browser was selected during bootstrap.',
 ];
 for(const clause of browserClauses)assert.ok(builder.includes(clause),`browser source pin lacks contract clause: ${clause}`);
+// cua's own edit of a vendor clause (#494): the vendor's lookup example returns the text without showing it, so the
+// shared browser service prints it.
+const ownBrowserClauses={'Use `await agent.documentation.get("<name>")` when you need one of these topics:':'Use `nodeRepl.write(await agent.documentation.get("<name>"))` when you need one of these topics; the call alone returns the text without showing it:'};
 export function assertSelectedBrowserDocument(text,{auxiliary:withAuxiliary=false}={}){
  assert.equal(typeof text,'string');
  if(withAuxiliary){assert.ok(text.startsWith(auxiliary+'\n\n'),'first selected browser must retain complete auxiliary bytes');text=text.slice(auxiliary.length+2);}
  normalizeSelectedBrowserDocument(text);
- for(const clause of browserClauses)assert.ok(text.includes(clause),`missing retained browser clause: ${clause}`);
+ for(const vendorClause of browserClauses){const clause=ownBrowserClauses[vendorClause]??vendorClause;assert.ok(text.includes(clause),`missing retained browser clause: ${clause}`);}
  assert.ok(!text.includes('Computer Use Confirmations Policy'),'browser document must not duplicate core confirmations');
  assert.ok(!/^# (?:Browser|Tab) Capability:/m.test(text),'capability lookup documents must not be emitted eagerly');
 }

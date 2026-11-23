@@ -59,7 +59,7 @@ test('named documents: read when listed, refused otherwise; a required document 
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '1.0.0'});
   assert.match(await docs.read('screenshots'), /^# Screenshots/);
   await assert.rejects(docs.read('../api'), {message: 'Documentation is not available: ../api'});
-  assert.throws(() => docs.assertRequiredDocumentationRead('tab_cdp_call'), {message: 'Required documentation has not been read: "confirmations", "capabilities/tab/cdp". Read the instructions with await agent.documentation.get("confirmations"); await agent.documentation.get("capabilities/tab/cdp").'});
+  assert.throws(() => docs.assertRequiredDocumentationRead('tab_cdp_call'), {message: 'Required documentation has not been read: "confirmations", "capabilities/tab/cdp". Read the instructions with nodeRepl.write(await agent.documentation.get("confirmations")); nodeRepl.write(await agent.documentation.get("capabilities/tab/cdp")).'});
   docs.assertRequiredDocumentationRead('list_tabs');
   await docs.readBrowser(EXTENSION);
   assert.throws(() => docs.assertRequiredDocumentationRead('tab_cdp_call'), {message: /"capabilities\/tab\/cdp"\. /}, 'a capability document is read on its own (vendor parity)');
@@ -71,7 +71,7 @@ test('named documents: read when listed, refused otherwise; a required document 
 test('the API reference states cua\'s evaluate and budgets: the main world, no replay, 3 s by default up to 120 s, 0 one attempt', async () => {
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '9.8.7'});
   await docs.readBrowser(EXTENSION);
-  const text = await docs.read('api-reference');
+  const text = await docs.read('api-reference/1');
   assert.doesNotMatch(text, /read-only (?:page |DOM )?scope|read-only JavaScript/i, 'no read-only evaluate scope');
   assert.match(text, /\/\/ timeoutMs on locator, wait and evaluate calls is a per-phase budget in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000\./);
   for (const member of ['evaluate<TResult, TArg>(pageFunction: PlaywrightEvaluateFunction', 'evaluate<TResult, TArg>(pageFunction: LocatorEvaluateFunction', 'evaluateAll<TResult, TArg>']) {
@@ -141,7 +141,7 @@ test('the vendor\'s guidance is kept where it still holds, and loses what belong
     assert.ok(firstUse.includes(`\n- \`${name}\`: `), name);
     assert.ok((await docs.read(name)).startsWith(heading), name);
   }
-  const text = [firstUse, ...await Promise.all([...Object.keys(lookups), 'api-reference'].map(name => docs.read(name)))].join('\n\n');
+  const text = [firstUse, ...await Promise.all([...Object.keys(lookups), 'api-reference/1'].map(name => docs.read(name)))].join('\n\n');
   assert.doesNotMatch(text, /may prompt user approval/, 'history asks no approval');
   assert.match(DOCUMENTS['api-use-behavior'], /Call `browser\.history\(\)` only when necessary for the request, never speculatively/);
   assert.doesNotMatch(text, /plugin:\/\/|openai-bundled|openai-curated/, 'no Codex app tab mentions');

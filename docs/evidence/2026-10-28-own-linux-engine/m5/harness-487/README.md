@@ -6,7 +6,7 @@
 (origin/main's `drop-signals-judge.mjs` at da7585c3) and with this branch's. Both go through the dispatcher, with the
 run's meta row. The output is `rejudge-settle-rest.jsonl`, one line per run and a summary line.
 
-- **179 runs, 144 of them judged.** Of the judged runs, 40 are t17-fix3, including H8's H1 on x64 and on arm64.
+- **186 runs, 144 of them judged** (rerun at fix wave 1; the 7 more are this task's own pilot and diagnostic sittings under `pilot/`, which no judge holds). Of the judged runs, 40 are t17-fix3, including H8's H1 on x64 and on arm64.
 - **No fail list moved from base** (`moved_from_base: []`).
 - **Both H8 H1 runs** are on `cua-engine 0.4.3 (ba5b043834ce)`. Each stored a pass and still passes, with
   `settle_rest: {applies: false, version: "0.4.3"}`.
@@ -25,7 +25,7 @@ run's meta row. The output is `rejudge-settle-rest.jsonl`, one line per run and 
 
 The two engines:
 - 0.4.3: the pinned `home-x64-043/engine/linux/cua-engine`.
-- 0.4.4: the candidate `cua-engine-0.4.4-linux-x64` from build run 45129424625, sha256 9bd2e584…d075d078b.
+- 0.4.4: the candidate `cua-engine-0.4.4-linux-x64` from build run 45129424625, sha256 9bd2e5844b52c8b877b59ffa8fba1f0dac9e9efd94ded5190471d9daf75d078b.
 
 ### The pilot (x64, idle)
 

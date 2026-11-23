@@ -886,7 +886,7 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     ms: Math.round(value.ms * 10) / 10,
     route: stats.route,
     // the drag's pacing, its family's (`--stats` `drag_pacing`): the named lane's proof that the named window paced it
-    drag_pacing: stats.drag_pacing,
+    drag_pacing: stats.drag_pacing ?? null,
     // the named lane's window, which the drag named: its id, and its client's origin the path was given from
     named: namedLane ? { id: ctx.named.id, x: ctx.named.x, y: ctx.named.y } : undefined,
     hold: stats.hold,

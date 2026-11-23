@@ -708,12 +708,14 @@ const COPY = 1;
 export const SETTLE_REST = { plan: 't17-fix3', since: [0, 4, 4], rest_ms: 30 };
 
 /**
- * The engine's version from a run's meta row's `cua_version` (`cua-engine X.Y.Z (sha)`, the engine's own `--version`,
- * experiments.mjs), as `[X, Y, Z]`, or null where it does not read so.
+ * The engine's version from a run's meta row's `cua_version`, as `[X, Y, Z]`: the whole recorded string must be the
+ * engine's own `--version` line (experiments.mjs reads it trimmed), `cua-engine X.Y.Z (<commit>)`, the commit a git
+ * abbreviation (7 to 40 hex digits; the builds stamp 12) or `unknown` (cua-engine `main.rs` `version`, `build.rs`).
+ * Anything else, a truncated or extended line included, is null, so malformed metadata never opts a run out of a check.
  */
 export function engineVersionOf(cuaVersion) {
-  const m = typeof cuaVersion === 'string' ? /^cua-engine (\d+)\.(\d+)\.(\d+)(?: \(|$)/.exec(cuaVersion) : null;
-  return m ? m.slice(1).map(Number) : null;
+  const m = typeof cuaVersion === 'string' ? /^cua-engine (\d+)\.(\d+)\.(\d+) \((?:[0-9a-f]{7,40}|unknown)\)$/.exec(cuaVersion) : null;
+  return m ? m.slice(1, 4).map(Number) : null;
 }
 
 /** Whether version `a` is `b` or later, part by part. */
@@ -722,14 +724,44 @@ const atLeast = (a, b) => {
   return true;
 };
 
-/** A row's settle record: its drag's drop cursor's (`drop_cursor.settle`), or its handle's; null for a drop that settled nothing. */
-export const settleOf = (r) => r.drop_cursor?.settle ?? r.handle?.drop_cursor?.settle ?? null;
+/** Whether `v` is a record (a JSON object), not a scalar, an array or null. */
+const isRecord = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The cursor watch's record a row carries: a handle's (`handle.drop_cursor`), else the drag's (`drop_cursor`); undefined for none. */
+const watchOf = (r) => (r.handle ? (r.handle.drop_cursor ?? r.drop_cursor) : r.drop_cursor);
 
 /**
- * `SETTLE_REST` held to a run's rows (`cuaVersion`, its meta row's): on an engine of 0.4.4 or later, a settled row
- * (`settleOf`) whose `rest_ms` is not 30, or is no integer or missing, fails, named; on an earlier engine nothing is
- * checked, and a finding says why; a version that cannot be read fails, so the check is never skipped. Pushes its fails
- * and findings; answers its counts (`applies` null for an unreadable version).
+ * A row's settle record: its drag's drop cursor's (`drop_cursor.settle`), or its handle's, and only a record; null for a
+ * drop that settled nothing, or whose `settle` is not a record (`settleMalformed`).
+ */
+export const settleOf = (r) => [r.drop_cursor?.settle, r.handle?.drop_cursor?.settle].find(isRecord) ?? null;
+
+/** Whether a row carries a `settle` that is not a record (`false`, a number, a string): never a settle, never its absence. */
+const settleMalformed = (r) => settleOf(r) === null && [r.drop_cursor, r.handle?.drop_cursor].some((c) => isRecord(c) && 'settle' in c && c.settle !== undefined);
+
+/**
+ * Whether the engine was bound to settle a row's drop, from evidence apart from the settle's own record: an Electron
+ * scene's drop (`family`), its button down, a take its hold saw (a drag's `hold.taken`; a handle's `handle.hold.taken`,
+ * the hold before its end, `handle.pressed` its button), and a cursor watch that did not fail to start (its record
+ * without an `error`: the engine settles only with a live watch). These are the conditions the engine settles on
+ * (cua-engine `pointer.rs`: a take and the cursor watch; `handle.rs` `settles`: the button down and a take the hold saw).
+ * A taken drop with no watch record at all is held to it too: an Electron source's drop the engine lets land always has
+ * one. A drag the engine saw no take for, or whose watch failed, is not.
+ */
+export function settleExpected(r) {
+  if (r.family !== 'electron') return false;
+  const taken = r.handle ? r.handle.pressed === true && r.handle.hold?.taken === true : r.hold?.taken === true;
+  const watch = watchOf(r);
+  return taken && !(isRecord(watch) && watch.error != null);
+}
+
+/**
+ * `SETTLE_REST` held to a run's rows (`cuaVersion`, its meta row's): on an engine of 0.4.4 or later, every row with a
+ * settle record (`settleOf`), and every row the engine was bound to settle (`settleExpected`) or whose `settle` is no
+ * record, is held to it. One with no settle record fails (the review of 86d6b945: the record must not be the only
+ * evidence that it should be there), and one whose `rest_ms` is not 30, or is no integer or missing, fails, each named;
+ * on an earlier engine nothing is checked, and a finding says why; a version that cannot be read fails, so the check is
+ * never skipped. Pushes its fails and findings; answers its counts (`applies` null for an unreadable version).
  */
 function settleRestCheck(rows, cuaVersion, failed, findings) {
   const version = engineVersionOf(cuaVersion);
@@ -742,15 +774,18 @@ function settleRestCheck(rows, cuaVersion, failed, findings) {
     findings.push(`the settle's rest is not checked: engine ${shown} predates its record (from ${SETTLE_REST.since.join('.')})`);
     return { applies: false, version: shown };
   }
-  const settled = rows.filter((r) => settleOf(r) !== null);
+  const held = rows.filter((r) => settleOf(r) !== null || settleExpected(r) || settleMalformed(r));
+  const unrecorded = held.filter((r) => settleOf(r) === null);
+  const recorded = held.filter((r) => settleOf(r) !== null);
   const restOf = (r) => settleOf(r).rest_ms;
-  const missing = settled.filter((r) => !Number.isInteger(restOf(r)));
-  const wrong = settled.filter((r) => Number.isInteger(restOf(r)) && restOf(r) !== SETTLE_REST.rest_ms);
-  const named = (rs, say) => `${rs.slice(0, 5).map(say).join(', ')}${rs.length > 5 ? ', …' : ''}`;
-  const of = (rs) => `${rs.length} of ${settled.length} settled drags`;
+  const missing = recorded.filter((r) => !Number.isInteger(restOf(r)));
+  const wrong = recorded.filter((r) => Number.isInteger(restOf(r)) && restOf(r) !== SETTLE_REST.rest_ms);
+  const named = (rs, say = (r) => `${r.lane} ${r.cell} #${r.i}`) => `${rs.slice(0, 5).map(say).join(', ')}${rs.length > 5 ? ', …' : ''}`;
+  const of = (rs) => `${rs.length} of ${held.length} settled drags`;
+  if (unrecorded.length) failed.push(`a settle was expected (the engine's take with a live cursor watch, or a settle field) and no settle record (drop_cursor.settle, an object) is there on ${unrecorded.length} of ${held.length} drags held to it (${named(unrecorded)}) (#487, engine ${shown})`);
   if (wrong.length) failed.push(`the settle's rest (drop_cursor.settle.rest_ms) is not Electron's ${SETTLE_REST.rest_ms} ms on ${of(wrong)} (${named(wrong, (r) => `${r.lane} ${r.cell} #${r.i} rested ${restOf(r)} ms`)}) (#487, engine ${shown})`);
-  if (missing.length) failed.push(`a settled drag lacks the settle's rest (drop_cursor.settle.rest_ms, an integer in ms) on ${of(missing)} (${named(missing, (r) => `${r.lane} ${r.cell} #${r.i}`)}) (#487: engine ${shown} records it on every settle)`);
-  return { applies: true, version: shown, settled: settled.length, rest_30: settled.length - wrong.length - missing.length, wrong: wrong.length, missing: missing.length };
+  if (missing.length) failed.push(`a settled drag lacks the settle's rest (drop_cursor.settle.rest_ms, an integer in ms) on ${of(missing)} (${named(missing)}) (#487: engine ${shown} records it on every settle)`);
+  return { applies: true, version: shown, settled: held.length, rest_30: recorded.length - wrong.length - missing.length, wrong: wrong.length, missing: missing.length, unrecorded: unrecorded.length };
 }
 
 /**
@@ -913,7 +948,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   if (ambiguousRows.length) findings.push(ambiguousFinding(ambiguousRows));
   // #487's settle rest: item 1's plan, every settled row on an engine that records it (`SETTLE_REST`)
   const settleRest = plan === SETTLE_REST.plan ? settleRestCheck(rows, cuaVersion, failed, findings) : undefined;
-  if (settleRest?.applies) md.push('', `The settle's rest (#487, engine ${settleRest.version}): ${settleRest.rest_30} of ${settleRest.settled} settled drags rested ${SETTLE_REST.rest_ms} ms; ${settleRest.wrong} another rest, ${settleRest.missing} without the record.`);
+  if (settleRest?.applies) md.push('', `The settle's rest (#487, engine ${settleRest.version}): ${settleRest.rest_30} of ${settleRest.settled} settled drags rested ${SETTLE_REST.rest_ms} ms; ${settleRest.wrong} another rest, ${settleRest.missing} without rest_ms, ${settleRest.unrecorded} without the settle record.`);
   total.race_false_ok = race.false_ok;
   total.race_drags = race.drags;
   if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
@@ -950,21 +985,28 @@ export const NAMED_LANE = 'cua:named-gtk4';
 /** The engine's name for the named window's family, and its drag rest (cua-engine `families.rs`: GTK 4's `DragPacing::NONE`). */
 const NAMED_FAMILY = { family: 'GTK 4', rest_ms: 0 };
 
+/** The proofs a drop of the named lane gives of #487's case (`namedSourceUnproven`), in the order it names them. */
+const NAMED_PROOFS = ['electron', 'pacing', 'route', 'press', 'start', 'settle'];
+
 /**
  * What a drop of the named lane fails to prove of #487's case, from its own record, as a list (empty: exercised):
- * `pacing`, the drag's pacing (`--stats` `drag_pacing`) not the named window's family's, GTK 4 with rest 0; `route`, not
- * the foreground route; `press`, no drop-cursor watch, which the engine starts only for a press source of a family it
- * confirms by its drag loop's cursor (Electron's; `pointer.rs` `drop_cursor`), so the press went to no Electron window;
- * `start`, the page saw its source start no drag; `settle`, no settle ran (`drop_cursor.settle`).
+ * `electron`, the row is not the Electron scene's; `pacing`, the drag's pacing (`--stats` `drag_pacing`) not the named
+ * window's family's, GTK 4 with rest 0; `route`, not the foreground route; `press`, no live drop-cursor watch (a record,
+ * without an `error`), which the engine starts only for a press source of a family it confirms by its drag loop's cursor
+ * (Electron's; `pointer.rs` `drop_cursor`), so the press went to no Electron window; `start`, the page saw its source
+ * start no drag; `settle`, no settle record on the drag's own watch (`drop_cursor.settle`, a record: the review of
+ * 86d6b945, a `settle: false` counted).
  */
 export function namedSourceUnproven(r) {
-  const unproven = [];
-  if (r.drag_pacing?.family !== NAMED_FAMILY.family || r.drag_pacing?.rest_ms !== NAMED_FAMILY.rest_ms) unproven.push('pacing');
-  if (r.route !== 'foreground') unproven.push('route');
-  if (!r.drop_cursor || typeof r.drop_cursor !== 'object') unproven.push('press');
-  if (r.outcome?.started !== true) unproven.push('start');
-  if (settleOf(r) === null) unproven.push('settle');
-  return unproven;
+  const fails = {
+    electron: r.family !== 'electron',
+    pacing: r.drag_pacing?.family !== NAMED_FAMILY.family || r.drag_pacing?.rest_ms !== NAMED_FAMILY.rest_ms,
+    route: r.route !== 'foreground',
+    press: !isRecord(r.drop_cursor) || r.drop_cursor.error != null,
+    start: r.outcome?.started !== true,
+    settle: !isRecord(r.drop_cursor?.settle),
+  };
+  return NAMED_PROOFS.filter((k) => fails[k]);
 }
 
 /**
@@ -989,7 +1031,7 @@ export function namedSourceTable(rows, { ends = PATH_ENDS } = {}) {
   });
   const exercised = list.filter((r) => namedSourceUnproven(r).length === 0);
   const unexercised = list.filter((r) => !exercised.includes(r));
-  const unproven = Object.fromEntries(['pacing', 'route', 'press', 'start', 'settle'].map((k) => [k, unexercised.filter((r) => namedSourceUnproven(r).includes(k)).length]));
+  const unproven = Object.fromEntries(NAMED_PROOFS.map((k) => [k, unexercised.filter((r) => namedSourceUnproven(r).includes(k)).length]));
   const rests = {};
   for (const r of list) {
     const s = settleOf(r);

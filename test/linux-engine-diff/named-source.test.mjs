@@ -56,8 +56,25 @@ test('a drop that proves the case is exercised; each missing proof is named', ()
     ['press', { drop_cursor: undefined }],
     ['start', { outcome: { started: false, landed: false, effect: null } }],
     ['settle', { drop_cursor: { accepted: true } }],
+    // the review of 86d6b945: the Electron scene's row, and a real settle record on the drag's own watch
+    ['electron', { family: 'chrome' }],
+    ['electron', { family: undefined }],
+    ['press', { drop_cursor: true }],
+    ['press', { drop_cursor: [] }],
+    ['press', { drop_cursor: { accepted: null, error: 'connection refused', settle: settle() } }],
+    ...[false, true, 0, 'settled', [], null].map((v) => ['settle', { drop_cursor: { accepted: true, settle: v } }]),
+    ['settle', { drop_cursor: { accepted: true }, handle: { drop_cursor: { settle: settle() } } }],
   ];
   for (const [why, edit] of cases) assert.ok(namedSourceUnproven({ ...named(), ...edit }).includes(why), `${why}: ${JSON.stringify(edit)}`);
+});
+
+test("the review's probe: a Chrome-labelled row whose settle is `false` is not exercised, and its landing is never counted as the case's", () => {
+  const probe = { ...named({ i: 0 }), family: 'chrome', drop_cursor: { settle: false } };
+  assert.deepEqual(namedSourceUnproven(probe), ['electron', 'settle']);
+  const { counts } = namedSourceTable([probe]);
+  assert.equal(counts.exercised.drags, 0);
+  assert.equal(counts.exercised.landed, 0);
+  assert.equal(counts.unexercised.landed, 1);
 });
 
 test("each drop counted by T17's definitions, exercised and not apart: never a pass on a drop that did not prove the case", () => {
@@ -80,13 +97,13 @@ test("each drop counted by T17's definitions, exercised and not apart: never a p
     drags: 6,
     exercised: { drags: 4, landed: 2, false_ok: 1, stale: 0, honest_unconfirmed: 1, ambiguous: 0, error: 0 },
     unexercised: { drags: 2, landed: 1, false_ok: 1, stale: 0, honest_unconfirmed: 0, ambiguous: 0, error: 0 },
-    unproven: { pacing: 0, route: 1, press: 0, start: 0, settle: 1 },
+    unproven: { electron: 0, pacing: 0, route: 1, press: 0, start: 0, settle: 1 },
     settle_rest_ms: { absent: 5 },
   });
   const text = md.join('\n');
   assert.match(text, /\| exercised \| 4 \| 2 \| 1 \| 0 \| 1 \| 0 \| 0 \|/);
   assert.match(text, /\| not exercised \| 2 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \|/);
-  assert.match(text, /route 1, .*settle 1/);
+  assert.match(text, /electron 0, pacing 0, route 1, .*settle 1/);
 });
 
 test("a stale drop is T17's: the zone counted a drop the path did not end in", () => {

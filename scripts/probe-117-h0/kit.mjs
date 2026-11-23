@@ -19,7 +19,7 @@ import {openSession, resultText} from '../accept/mcp-session.mjs';
 import {watchCaptureAlerts, enginePaths, engineDirectory} from '../../src/runtime/engine.mjs';
 import {BUNDLE_ID as ENGINE_BUNDLE_ID, EXECUTABLE} from '../../src/runtime/engine-bundle.mjs';
 import {launchProbe, runProbe} from '../native-matrix/live-device.mjs';
-import {readRows, writability, grantRows, revokeRows, restartTccd} from './tcc.mjs';
+import {USER_DB, readRows, writability, grantRows, revokeRows, restartTccd} from './tcc.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.platform !== 'darwin') {
   console.error('probe-117-h0: refused: a disposable GitHub-hosted macOS runner only');
@@ -357,11 +357,14 @@ const bundleOf = () => PATHS.bundle;
 await step('step7-tccd-honours', async () => {
   const out = {};
   out.baseline = await relaunchLS();
-  out.userRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['accessibility'], db: 'user'});
-  await sleep(1000);
-  out.afterUserRowLive = engineGrants();
-  out.afterUserRowRelaunch = await relaunchLS();
-  revokeRows({client: ENGINE_BUNDLE_ID, services: ['accessibility'], db: 'user'});
+  // The macOS 27 image has no user database at all (run 45150346656): that half is skipped there, and said so.
+  if (existsSync(USER_DB)) {
+    out.userRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['accessibility'], db: 'user'});
+    await sleep(1000);
+    out.afterUserRowLive = engineGrants();
+    out.afterUserRowRelaunch = await relaunchLS();
+    revokeRows({client: ENGINE_BUNDLE_ID, services: ['accessibility'], db: 'user'});
+  } else out.userRow = {skipped: `no user database at ${USER_DB}`};
   out.systemRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['accessibility'], db: 'system'});
   await sleep(1000);
   out.afterSystemRowLive = engineGrants();
@@ -372,7 +375,7 @@ await step('step7-tccd-honours', async () => {
     out.afterRestartRelaunch = await relaunchLS();
   }
   out.rows = readRows();
-  out.honoured = {user: out.afterUserRowRelaunch.grants.accessibility === true || out.afterUserRowLive.accessibility === true,
+  out.honoured = {user: out.afterUserRowRelaunch ? out.afterUserRowRelaunch.grants.accessibility === true || out.afterUserRowLive.accessibility === true : null,
     systemLive: out.afterSystemRowLive.accessibility === true, systemRelaunch: out.afterSystemRowRelaunch.grants.accessibility === true,
     systemAfterRestart: out.afterRestartRelaunch?.grants.accessibility ?? null};
   return out;

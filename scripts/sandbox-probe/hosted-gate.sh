@@ -69,9 +69,6 @@ RAW=$S/reports ERR=$S/stderr
 mkdir -p "$U" "$RAW/oracles" "$ERR"
 M0=docs/evidence/2026-10-17-own-sandbox/m0
 BASELINE=docs/evidence/2026-10-18-hosted-macos-gate/baseline
-# The scratch root M0's records were taken under (oracle.mjs ran with --home <root>/home --user-home <root>/userhome), read
-# from the two captures' own provenance, which must agree, rather than written here as an account's home.
-M0_ROOT=$(node scripts/sandbox-probe/recorded-root.mjs "$M0/argv-capture/capture-signed-scoped.json" "$M0/argv-capture/capture-signed-default.json")
 # What every cua command here sees: the scratch homes, a fixed PATH with this Node.
 scratch() { env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$(command -v node)")" HOME="$U" CUA_HOME="$H" LANG=C.UTF-8 TMPDIR="$S/tmp" "$@"; }
 mkdir -p "$S/tmp"
@@ -142,9 +139,13 @@ judge() {
       env: {onlyLeft: e.onlyLeft, onlyRight: e.onlyRight, differing: e.differing.map(d => d.name)}, cwd: j.undeclared.cwd, sandboxed: j.undeclared.sandboxed})}`)' "$4" || true
   return "$code"
 }
+# The scratch root M0's records were taken under (oracle.mjs ran with --home <root>/home --user-home <root>/userhome), read
+# from the two captures' own provenance, which must agree, rather than written here as an account's home. Resolved in
+# the replay's own step, so captures without it fail the replays alone and every other step still runs.
 port_vs_capture() {
   code=0
-  quiet "port-vs-signed-$1" '' scratch node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture "$M0/argv-capture/capture-signed-$1.json" --relocate "$M0_ROOT=$S/m0" --out "$RAW/oracles/port-vs-signed-$1.json" || code=$?
+  m0_root=$(quiet "recorded-root-$1" '^recorded-root: ' node scripts/sandbox-probe/recorded-root.mjs "$M0/argv-capture/capture-signed-scoped.json" "$M0/argv-capture/capture-signed-default.json") || return $?
+  quiet "port-vs-signed-$1" '' scratch node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture "$M0/argv-capture/capture-signed-$1.json" --relocate "$m0_root=$S/m0" --out "$RAW/oracles/port-vs-signed-$1.json" || code=$?
   publish port-vs-capture "$RAW/oracles/port-vs-signed-$1.json" "$OUT/oracles/port-vs-signed-$1.json" || [ "$code" != 0 ] || code=1
   return "$code"
 }

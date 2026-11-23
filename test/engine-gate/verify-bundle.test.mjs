@@ -52,7 +52,7 @@ test('a fresh ad hoc build passes every check: pending in the slot, this source\
   assert.deepEqual(failed(checks), [], JSON.stringify(checks, null, 1));
   assert.deepEqual(checks.map(c => c.label), [
     'the build answered pending in the slot beside the approved path',
-    'the build is this checkout\'s source',
+    'the answer\'s build and version metadata match this checkout\'s source',
     'Info.plist: bundle id io.github.ssfskim.cua.engine',
     'Info.plist: LSUIElement true',
     'Info.plist: build and version equal the source\'s',
@@ -67,9 +67,9 @@ test('a fresh ad hoc build passes every check: pending in the slot, this source\
 test('a build that is not this checkout\'s source fails the source and Info.plist checks', darwinOnly, async t => {
   const b = await built(t);
   assert.deepEqual(failed(b.verify({expected: {build: 'f'.repeat(64), engineVersion: '1.2.3'}})),
-    ['the build is this checkout\'s source', 'Info.plist: build and version equal the source\'s', 'pending.json names this build, ad hoc']);
+    ['the answer\'s build and version metadata match this checkout\'s source', 'Info.plist: build and version equal the source\'s', 'pending.json names this build, ad hoc']);
   assert.deepEqual(failed(b.verify({expected: {build: b.answer.build, engineVersion: '9.9.9'}})),
-    ['the build is this checkout\'s source', 'Info.plist: build and version equal the source\'s']);
+    ['the answer\'s build and version metadata match this checkout\'s source', 'Info.plist: build and version equal the source\'s']);
 });
 
 test('an answer that is not a fresh pending build in the slot fails the slot check', darwinOnly, async t => {

@@ -7,7 +7,8 @@
 //
 // The build lands in the pending slot beside the approved path (design ruling 1118) and stays there: nothing here
 // approves, launches or opens the bundle, so no permission or capture prompt is raised. Checked: the answer names a
-// fresh build in the slot; its build and version are this checkout's source (src/runtime/engine-bundle.mjs); the
+// fresh build in the slot; its build and version metadata match this checkout's source (src/runtime/engine-bundle.mjs;
+// metadata only: that the binary is this source's rests on the gate compiling and assembling it fresh); the
 // Info.plist (read by plutil) carries the engine's bundle id, LSUIElement true and that build and version; the
 // executable is Mach-O code; `codesign --verify --strict` passes; the signature is ad hoc with hardened runtime, the
 // engine's identifier and no entitlements; pending.json names the build, ad hoc; and no bundle or approved.json is at
@@ -51,7 +52,7 @@ export function verifyEngineBundle({answer, dir, expected, runSync = spawnSync})
   const inSlot = answer?.ok === true && answer.pending === true && answer.changed === true && answer.bundlePath === bundle;
   check('the build answered pending in the slot beside the approved path', inSlot,
     answer ? `ok ${answer.ok}, pending ${answer.pending}, changed ${answer.changed}, ${answer.bundlePath === bundle ? 'in the slot' : 'not in the slot'}` : 'no answer');
-  check('the build is this checkout\'s source', answer?.build === expected.build && answer?.engineVersion === expected.engineVersion,
+  check('the answer\'s build and version metadata match this checkout\'s source', answer?.build === expected.build && answer?.engineVersion === expected.engineVersion,
     `answered build ${answer?.build ?? 'none'} version ${answer?.engineVersion ?? 'none'}; source build ${expected.build} version ${expected.engineVersion}`);
 
   const plist = infoPlist(bundle, runSync);

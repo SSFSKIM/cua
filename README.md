@@ -2,8 +2,9 @@
 
 Lets Claude Code read and operate macOS and Linux apps (accessibility tree, screenshots, clicks, typing, menus).
 `cua serve` (the plugin runs it through `cua-shim.mjs`) is a stdio MCP server: supported sessions now use cua's own
-JavaScript REPL host and vendor-compatible `cua` API; macOS computer sessions keep OpenAI's host (see Use). Both still
-need the pinned runtime that `cua install` verifies and places under `CUA_HOME`, for the native engine and the retained
+JavaScript REPL host and vendor-compatible `cua` API; macOS computer sessions run on cua's own native engine and host
+by default, and keep OpenAI's host and engine on a Mac with no approved engine this cua drives, or as the rollback (see
+Use, Native engine). Both still need the pinned runtime that `cua install` verifies and places under `CUA_HOME`, for the native engine and the retained
 vendor host. The sandbox that confines the model's JavaScript is cua's own on both platforms, and no Codex CLI is
 installed or launched (#115; see Configuration). Vendor files stay unmodified, and nothing in ChatGPT.app or `~/.codex`
 is read or modified. With the browser surface turned on it also drives your existing Chrome profiles,
@@ -28,13 +29,18 @@ The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-c
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
   `--archive <zip>`, and refuses anything whose length, SHA-256, layout or OpenAI code signatures (team `2DC432GLL2`)
   differ from `runtime/releases/*.json`. Vendor files are never modified or re-signed.
-- Accessibility and Screen Recording for the native computer-use helper (`Codex Computer Use.app`, started by the
-  runtime through LaunchServices). macOS asks on first use; `cua doctor` cannot see these grants and reports them as
-  `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
-  runtime too and is reused as it is, never stopped or replaced.
-- Native control needs no account, and nothing is read from ChatGPT.app or `~/.codex`. macOS computer sessions, the one
-  place the vendor's `node_repl` still runs, give it its own `CODEX_HOME` under `CUA_HOME` (`state/codex`, its config
-  and app approvals) until #117; cua's own host and Linux use none.
+- For cua's own macOS engine, the default (#117): `cua Engine.app` approved on this Mac at version 0.2.0 or later,
+  built with `cua install --engine` and approved with `cua engine approve` with the owner at the console
+  (`docs/onboarding-new-mac.md`), with Accessibility, Screen & System Audio Recording and Input Monitoring granted to
+  **cua Engine**. Without one, macOS computer sessions keep the vendor engine below, with a warning (Use, Native engine).
+- For the vendor engine, the fallback and the rollback on macOS: Accessibility and Screen Recording for the native
+  computer-use helper (`Codex Computer Use.app`, started by the runtime through LaunchServices). macOS asks on first
+  use; `cua doctor` cannot see these grants and reports them as `blocked` until a live run shows them. Where ChatGPT's
+  Computer Use already runs, its compatible helper serves this runtime too and is reused as it is, never stopped or
+  replaced.
+- Native control needs no account, and nothing is read from ChatGPT.app or `~/.codex`. macOS computer sessions on the
+  vendor engine, the one place the vendor's `node_repl` still runs, give it its own `CODEX_HOME` under `CUA_HOME`
+  (`state/codex`, its config and app approvals) until #117's M6; cua's own host and Linux use none.
 - For Chrome only: Google Chrome with the cua extension in each profile you want to use (loaded unpacked from the
   checkout's `extension/` today; it will be listed on the Chrome Web Store) and `cua chrome register` run once (see
   Chrome). No account or login is needed. cua never installs the extension for you.
@@ -143,7 +149,7 @@ Apart from Claude Code's tool permission, OpenAI's stack asks before an app is f
 (see Linux). An app declined is remembered for the connection; whether one accepted is depends on `CUA_SHIM_PERSIST`:
 
 - `session` (the default): the connection remembers it until it closes, through the runtime's idle stops, so every
-  new connection asks once more per app. (The vendor's host, which macOS computer sessions run, also writes
+  new connection asks once more per app. (The vendor's host, which macOS computer sessions on the vendor engine run, also writes
   `$CUA_HOME/state/codex/computer-use/sessions/<session id>.toml`, removed when its connection closes.)
 - `none`: an accepted app is asked about again on every use.
 - `always` is refused at start (`invalid_setting`): cua remembers an approval for its connection only. To stop being
@@ -194,9 +200,25 @@ With `CUA_REPL_HOST` unset or empty, the defaults are:
 |---|---|---|
 | Linux | `cua`, with Node 24+ | The owned host serves Linux computer and browser sessions (`linux`); it is the only host there: the vendor host is retired on Linux (#115), so `CUA_REPL_HOST=vendor` is refused (`repl_host_refused`) and a missing Node 24 refuses (`repl_host_node`) |
 | macOS, browser only (MAWS and profile listing included) | `cua`, with Node 24+ | No native-helper peer is needed (`browser_only`) |
-| macOS, computer enabled | `vendor` | The native helper accepts only the vendor host's `node_repl` as a peer until #117 (`macos_native_peer_requires_vendor`); MAWS does not override this |
+| macOS, computer enabled, cua's engine (the default; Native engine, below) | `cua`, with Node 24+ | cua's engine runs on cua's own host (`cua_engine`). Where the default cannot take it, the vendor host and engine with a warning: no approved engine (`engine_not_installed`), one older than this cua drives (`engine_outdated`), or no Node 24 (`own_host_node_unavailable`) |
+| macOS, computer enabled, the vendor engine (`CUA_NATIVE_ENGINE=vendor`) | `vendor` | The vendor's helper accepts only the vendor host's `node_repl` as a peer (`macos_native_peer_requires_vendor`); MAWS does not override this |
 
 Either host runs cua's own browser service with the browser surface (Chrome).
+
+**Native engine (macOS).** A macOS computer session drives cua's own engine, `cua Engine.app` built from
+`native/engine/` (#117, `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`), unless something selects the
+vendor's: `CUA_NATIVE_ENGINE` in the server's environment, else `"engine"` in `~/.config/cua/engine.json` (Configuration).
+The default takes the engine approved on this Mac (`~/Library/Application Support/cua/engine/cua Engine.app`) only when
+it is at least the version this cua drives (0.2.0). Otherwise the session keeps the vendor host and engine, and `cua
+doctor`'s `repl.host` and `engine` rows warn, naming why and the remedy: with no approved engine
+(`engine_not_installed`) or one older than 0.2.0 (`engine_outdated`, what every engine built before 0.2.0 reports),
+build one with `cua install --engine`, then approve it with `cua engine approve` with the owner at the console (only the
+approval, when a build that meets the minimum is already pending); with no Node 24 (`own_host_node_unavailable`), the
+Node remedies below. So a plugin update never breaks a session before its engine is approved. An explicit selection of cua's
+engine (the variable, the file or `CUA_REPL_HOST=cua`) is refused in those cases instead, naming its remedy.
+**The way back:** `CUA_NATIVE_ENGINE=vendor` in a session's environment, or `"engine": "vendor"` in
+`~/.config/cua/engine.json` for every session on the Mac, runs the vendor host and engine as before #117's M5; it
+stays until #117's M6 retires the vendor engine.
 
 The own host takes the first Node 24 or later it finds through `CUA_NODE` (an absolute path), the Node `cua install`
 placed under `$CUA_HOME/node`, the node running cua, then the first `node` on `PATH`, never the vendor's pinned Node.
@@ -211,8 +233,9 @@ the command fails after the runtime is in place and says so; `--no-node` skips i
 the tarball. If no candidate qualifies, a macOS session that would default to cua keeps the vendor host with reason
 `own_host_node_unavailable`, and a Linux session is refused: run `cua install`, install Node 24 or later yourself, or
 set `CUA_NODE` to one. This is selection before launch, not a retry on another host after a failed launch. On macOS
-`CUA_REPL_HOST=vendor` is the rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`) or when the
-computer surface is enabled on macOS (`repl_host_refused`); it is never silently downgraded. This replaces the host and
+`CUA_REPL_HOST=vendor` is the rollback for the host. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable
+Node is found (`repl_host_node`), when the computer surface on macOS runs the vendor engine (`repl_host_refused`), or
+when cua's engine is not approved here (`engine_not_installed`, `engine_outdated`); it is never silently downgraded. This replaces the host and
 facade on supported sessions, not the installed vendor runtime.
 
 `cua doctor`'s `repl.host` row names the host and reason for the configured session and the separate browser-only
@@ -249,7 +272,7 @@ For a messaging app, open the room you mean before asking.
 
 ### The agent cursor (macOS, cua's own engine)
 
-With cua's own macOS engine (`CUA_NATIVE_ENGINE=cua`, #117), every session that acts on the Mac shows its own cursor
+With cua's own macOS engine (the default since #117's M5), every session that acts on the Mac shows its own cursor
 where it acts: a small rounded arrow with a frosted halo, in the session's colour, with a pill naming the session. The
 engine posts the agent's clicks, drags and scrolls straight to the app, so your pointer never moves; the cursor is how
 you see where they land. It glides to each target along a curve and dips at a click, but the action goes out at once
@@ -280,8 +303,8 @@ label, colour and switch with the session, so the device draws them as the clien
 It is on by default. `"cursor": false` in `~/.config/cua/engine.json` turns it off for every session on the Mac,
 read when the engine starts (stop it with `cua engine stop`; the next session relaunches it); `CUA_CURSOR=0` in a
 session's server environment turns that session's off (Configuration). `cua engine status` and `cua doctor`'s engine
-row report `cursor: on` or `cursor: off (engine.json)`. The vendor engine, still the default, shows OpenAI's own cursor
-instead, and these switches do not reach it. The design and its acceptance are
+row report `cursor: on` or `cursor: off (engine.json)`. The vendor engine (the fallback and the rollback) shows
+OpenAI's own cursor instead, and these switches do not reach it. The design and its acceptance are
 `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`; the attended proof is
 `docs/evidence/2026-10-30-macos-agent-cursor/`.
 
@@ -443,8 +466,8 @@ products: the per-URL site-status check that ended a session on sites OpenAI blo
 and its stored grants, and every approval prompt of its own. It lifts two of the vendor's limits: each phase of a
 locator action, wait or `evaluate` takes the caller's `timeoutMs` up to 120 s (3 s by default), and `evaluate` runs in
 the page's own world as Playwright's does. The REPL host is a separate choice (Use): browser-only macOS and Linux
-sessions default to cua's host when Node 24+ resolves; macOS sessions that also enable `computer` keep the vendor host
-until #117, with the same cua browser service.
+sessions default to cua's host when Node 24+ resolves; macOS sessions that also enable `computer` take the host their
+native engine needs, with the same cua browser service.
 
 With the browser surface the model gets a fifth tool, `profiles_list`, whose description carries the Chrome rules:
 select only a profile `profiles_list` returned and never pick one for you, use Playwright locators for input, give a
@@ -1568,9 +1591,9 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 | `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime (`runtimes/`), the Node `cua install` places for cua's own host (`node/`), on Linux cua's sandbox helper (`sandbox/<tag>/`), on macOS the vendor host's config and approvals (`state/codex`, its `CODEX_HOME`) and its per-session compat settings (`state/compat`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory, with its session temp `run/<session>/tmp`, which is the connection's `TMPDIR`, and a record of the process that owns it; on Linux under `default` also `kernel/<session>`; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row). JavaScript cells cannot read it under `scoped` or `default` but the runtime, the Node and their own run directory (see below) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host and cua's own browser service, no login needed), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
-| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
+| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions take the host their native engine needs, cua's for cua's engine (the default) and the vendor's for the vendor engine (`CUA_NATIVE_ENGINE`). If only Node is missing, macOS keeps the vendor host, and with the default engine the vendor engine too (`own_host_node_unavailable`), and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS (with cua's engine, its service loaded in the vendor host) and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS with the vendor engine (`repl_host_refused`) or with no approved engine this cua drives (`engine_not_installed`, `engine_outdated`), or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
-| `CUA_NATIVE_ENGINE` | `cua` on Linux, `vendor` on macOS | `vendor` or `cua`: the native engine of computer sessions, on macOS (#117) and on Linux (#171; Linux, cua's own engine). Unset or empty, `"engine"` in `~/.config/cua/engine.json` decides, else the default: on Linux cua's engine where one this cua can drive is installed (else the vendor engine, with a warning in `cua doctor`), on macOS the vendor engine. cua's engine needs one installed: on Linux `cua-engine` (`cua install --engine`), on macOS an approved engine (`cua engine build`, `cua engine approve`). An explicit selection with none installed is refused (`engine_not_installed`, naming the remedy). On macOS the approved engine must be at least the version this cua drives (0.1.0, which every approved engine meets today): an older one is refused when selected explicitly and passed over by the default, with a warning in `cua doctor` (`engine_outdated`), naming `cua engine approve` for a pending build that meets it, else `cua install --engine` then `cua engine approve`. Any other value refuses (`invalid_setting`). Each connection resolves it once at its open; `cua doctor`'s `engine` row reports it |
+| `CUA_NATIVE_ENGINE` | `cua` | `vendor` or `cua`: the native engine of computer sessions, on macOS (#117; Use, Native engine) and on Linux (#171; Linux, cua's own engine). Unset or empty, `"engine"` in `~/.config/cua/engine.json` decides, else the default, cua's engine where one this cua can drive is installed, else the vendor engine with a warning in `cua doctor` (on macOS with the vendor host too). cua's engine needs one installed: on Linux `cua-engine` (`cua install --engine`), on macOS an approved engine (`cua install --engine`, then `cua engine approve` with the owner at the console). An explicit selection with none installed is refused (`engine_not_installed`, naming the remedy). On macOS the approved engine must be at least the version this cua drives (0.2.0; every engine built before it reports 0.1.0): an older one is refused when selected explicitly and passed over by the default, with a warning in `cua doctor` (`engine_outdated`), naming `cua engine approve` for a pending build that meets it, else `cua install --engine` then `cua engine approve`. `vendor` is the rollback on macOS until #117's M6: `CUA_NATIVE_ENGINE=vendor` for a session, `"engine": "vendor"` in `~/.config/cua/engine.json` for the Mac. Any other value refuses (`invalid_setting`). Each connection resolves it once at its open; `cua doctor`'s `engine` row reports it |
 | `CUA_DESKTOP_MODE` | `shared` | `shared` or `dedicated`: the device mode cua's engine runs in (Linux, cua's own engine; macOS since #282). `shared`: a person may be using this desktop, so input an application ignores in the background is refused with nothing sent. `dedicated`: the desktop is the agent's, so such input brings its window forward. Unset or empty, `"desktop"` in `~/.config/cua/engine.json` decides, else `shared`; the cloud template writes `dedicated`. Any other value refuses (`invalid_setting`) |
 | `CUA_CURSOR` | on | `0` turns this session's agent cursor off (macOS, cua's own engine: the cursor that shows where the agent acts, labelled and coloured per session). `"cursor": false` in `~/.config/cua/engine.json` turns it off for every session on the device, read when the engine starts (any other value of the key stops the engine at start); `cua engine status` and `cua doctor` report `cursor: on` or `cursor: off (engine.json)`. A remote device session takes the client's setting, not the device's environment |
 | `CUA_CURSOR_LABEL` | the session's sminos name, else the project folder's name | the label on this session's cursor (MAWS sets it for the sessions it supervises); trimmed, control characters removed, cut at 24 characters |

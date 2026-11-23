@@ -69,13 +69,13 @@ export const socketPathFor = appPath => join(dirname(appPath), 'engine.sock');
 
 // MIN_ENGINE_VERSION, the oldest cua's engine this service drives (#117 M5, R4: Linux's rule, #171 F5). engineVersion
 // stood at 0.1.0 through some fifty-five engine changes and moves with every change to the engine's program from 0.2.0
-// on (scripts/engine-version-check.mjs, the `engine-version` gate). The minimum stays where today's approved builds
-// (0.1.0) meet it until the macOS default flips to cua's engine (ruling 1126: the raise to 0.2.0 is the flip's, which
-// merges only after the owner's Mac has approved a 0.2.0 build). The selection (src/runtime/launch.mjs nativeEngineFor)
-// enforces it from the approved bundle's version before anything launches, and the client again at each connect, from
-// the bundle it is about to launch or talk to: a default session keeps the vendor's engine, with a warning, while the
-// approved engine is older, and an explicit one is refused.
-export const MIN_ENGINE_VERSION = '0.1.0';
+// on (scripts/engine-version-check.mjs, the `engine-version` gate). Raised to 0.2.0 with the macOS default's flip to
+// cua's engine (ruling 1126), which merges only after the owner's Mac has approved a 0.2.0 build: every build before
+// it reports 0.1.0. The selection (src/runtime/launch.mjs nativeEngineFor) enforces it from the approved bundle's
+// version before anything launches, and the client again at each connect, from the bundle it is about to launch or
+// talk to: a default session keeps the vendor's engine, with a warning, while the approved engine is older, and an
+// explicit one is refused.
+export const MIN_ENGINE_VERSION = '0.2.0';
 
 // An engine version's [major, minor, patch]; a `+metadata` suffix (the harnesses' fixture engine carries one) is set
 // aside. Null for a version this cua cannot read.

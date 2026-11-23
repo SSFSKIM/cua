@@ -29,11 +29,14 @@ test('independent M5 table preserves explicit refusals and Node fallback, whatev
  assert.deepEqual(expectedSelection({...base,node24:false}),{host:'vendor',reason:'own_host_node_unavailable',status:'warn'});
  assert.equal(expectedSelection({...base,override:'cua',node24:false}).error,'repl_host_node');
  for(const registration of ['none','chatgpt','cua-then-chatgpt'])assert.deepEqual(expectedSelection({...base,registration}),expectedSelection(base),registration);
- assert.equal(expectedSelection({...base,surfaces:['computer','browser']}).reason,'macos_native_peer_requires_vendor');
+ // #117 M5: the default cua engine, none approved in these rows, keeps the vendor host; the vendor engine named keeps it too
+ assert.equal(expectedSelection({...base,surfaces:['computer','browser']}).reason,'engine_not_installed');
+ assert.equal(expectedSelection({...base,surfaces:['computer','browser'],engine:'vendor'}).reason,'macos_native_peer_requires_vendor');
  assert.equal(expectedSelection({...base,registration:'chatgpt',maws:true}).host,'cua');
  assert.equal(expectedSelection({...base,surfaces:['computer','browser'],maws:true}).host,'vendor');
  assert.deepEqual(expectedSelection({...base,registration:'chatgpt',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
- assert.equal(expectedSelection({...base,registration:'chatgpt',surfaces:['computer','browser'],override:'cua'}).error,'repl_host_refused');
+ assert.equal(expectedSelection({...base,registration:'chatgpt',surfaces:['computer','browser'],override:'cua'}).error,'engine_not_installed');
+ assert.equal(expectedSelection({...base,registration:'chatgpt',surfaces:['computer','browser'],override:'cua',engine:'vendor'}).error,'repl_host_refused');
  assert.equal(expectedSelection({...base,override:'invalid'}).error,'invalid_setting');
  assert.equal(expectedSelection({...base,override:'invalid',lane:'profiles'}).error,'invalid_repl_host');
  assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none'}).reason,'linux');
@@ -138,7 +141,12 @@ const engineInputs=row=>({config:()=>(row.engineFrom==='settings'?{engine:row.en
 const engineEnv=row=>(row.engine&&row.engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:row.engine==='empty'?'':row.engine}:{});
 test('the oracle\'s engine table: today\'s path, the target, comparison A, the refusals in order and the default cua\'s until-M6 rows',()=>{
  const row=fields=>expectedSelection({platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true,engine:'unset',installed:false,...fields});
- assert.deepEqual(row({}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'});
+ // the default is cua's engine (#117 M5): none approved, the vendor host and engine with a warning; approved, cua's
+ assert.deepEqual(row({}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});
+ assert.deepEqual(row({installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
+ assert.deepEqual(row({engine:'vendor'}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'},'the rollback');
+ assert.deepEqual(row({engine:'vendor',engineFrom:'settings'}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'},'the rollback for a Mac');
+ assert.deepEqual(row({defaultEngine:'vendor'}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'});
  // An empty CUA_NATIVE_ENGINE is unset; an unknown engine in engine.json is refused as one in the environment is.
  assert.deepEqual(row({engine:'empty',installed:true}),row({installed:true}));
  assert.deepEqual(row({engine:'invalid',engineFrom:'settings'}),{error:'invalid_setting'});
@@ -152,7 +160,7 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
  assert.deepEqual(row({engine:'vendor',override:'cua',installed:true}),{error:'repl_host_refused'});
  assert.deepEqual(row({engine:'invalid',override:'cua',node24:false,managedNode:false}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be vendor or cua'});
  assert.deepEqual(row({engine:'cua',engineFrom:'settings',installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
- // The default cua (M5 on), until M6.
+ // The default cua (M5 on), until M6, stated whatever the oracle's default.
  assert.deepEqual(row({defaultEngine:'cua',installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
  assert.deepEqual(row({defaultEngine:'cua'}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});
  assert.deepEqual(row({defaultEngine:'cua',override:'vendor'}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});

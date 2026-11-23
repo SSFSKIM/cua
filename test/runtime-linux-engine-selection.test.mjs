@@ -118,14 +118,14 @@ test('a default cua engine: cua\'s when the installed one is at least MIN_ENGINE
   assert.equal(select(home, {HOME: user}, {defaultEngine: 'cua', installedVersion: () => null}).reason, 'engine_unrecorded');
 });
 
-// #171 M5: the default is per platform (one constant served both, the pre-flight's C16), and macOS's stays the vendor's
-// (#192 decides it there).
-test('the default is per platform; macOS\'s is the vendor\'s, whatever is installed', () => {
-  assert.equal(defaultNativeEngine('darwin'), 'vendor');
+// #171 M5: the default is per platform (one constant served both, the pre-flight's C16); macOS's flipped by #117's M5.
+test('the default is per platform: cua\'s on both, each kept on the vendor\'s where no engine this cua drives is installed', () => {
+  assert.equal(defaultNativeEngine('darwin'), 'cua', 'flipped by #117 M5, on the owner\'s word');
   assert.equal(defaultNativeEngine('linux'), 'cua', 'flipped by #171 M5, on the owner\'s word');
   const app = {bundlePath: '/Users/u/Library/Application Support/cua/engine/CuaEngine.app', engineVersion: '0.9.0', build: 'b'};
-  assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, platform: 'darwin', config: () => ({}), installed: () => app}), {engine: 'vendor', reason: 'default', status: 'pass'});
-  assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, config: () => ({}), installed: () => app}), {engine: 'vendor', reason: 'default', status: 'pass'}, 'macOS when no platform is named');
+  assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, platform: 'darwin', config: () => ({}), installed: () => app}), {engine: 'cua', reason: 'default', status: 'pass', app});
+  assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, config: () => ({}), installed: () => app}), {engine: 'cua', reason: 'default', status: 'pass', app}, 'macOS when no platform is named');
+  assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, config: () => ({}), installed: () => null}), {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'});
 });
 
 test('CUA_LINUX_ENGINE_BIN names the engine only when the selection is cua: absolute, an executable file, or refused', t => {

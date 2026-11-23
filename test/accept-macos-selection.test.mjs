@@ -79,15 +79,14 @@ async function doctorOn(kind, t) {
     inspectEngine: async () => facts, readEngineRecords: () => ({bundlePath: BUNDLE, exists: Boolean(app), approved: app ? {build: FIXTURE_ENGINE.build, approvedAt: null} : null, pending: null})});
 }
 
-// The mode's verdict against this commit's default. macOS's default is still the vendor's engine, so the mode fails on
-// every home: each selects the vendor's engine by default. The flip (T11b) turns this verdict to PASS.
-test('the mode\'s verdict against production\'s selection: FAIL while the macOS default is the vendor\'s engine', async t => {
+// The mode's verdict against this commit's default. macOS's default is cua's engine since the flip (T11b), so the mode
+// passes on every home: the approved engine at the minimum is selected by default, and the three fallbacks keep the
+// vendor's host and engine with the warning naming why. On the commit before the flip the same homes all selected the
+// vendor's engine by default, and the mode failed (T11a).
+test('the mode\'s verdict against production\'s selection: PASS since the macOS default is cua\'s engine', async t => {
   const reports = {};
   for (const kind of Object.keys(HOMES)) reports[kind] = await doctorOn(kind, t);
-  assert.deepEqual(sittingVerdict(reports), {pass: false, homes: {
-    default: 'the session selects vendor (default), not cua\'s engine by default',
-    none: 'the session selects vendor (default), not the vendor\'s engine for engine_not_installed',
-    node: 'the session selects vendor (default), not the vendor\'s engine for own_host_node_unavailable',
-    outdated: 'the session selects vendor (default), not the vendor\'s engine for engine_outdated',
-  }});
+  assert.deepEqual(sittingVerdict(reports), {pass: true, homes: {default: null, none: null, node: null, outdated: null}});
+  assert.deepEqual(Object.fromEntries(Object.entries(reports).map(([kind, report]) => [kind, [report.engine.selected, report.engine.reason]])),
+    {default: ['cua', 'default'], none: ['vendor', 'engine_not_installed'], node: ['vendor', 'own_host_node_unavailable'], outdated: ['vendor', 'engine_outdated']});
 });

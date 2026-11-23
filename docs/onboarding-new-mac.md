@@ -18,7 +18,7 @@ that was set up that way moves with the README's "Moving a home off the ChatGPT 
 | 4 Extension in each Chrome profile | the cua extension from the Chrome Web Store once listed; until then load `extension/` unpacked | yes | `chrome.extension.<key>` PASS |
 | 5 Native host registration | `cua chrome register` | no | `chrome.host.registered` PASS |
 | 6 Register and bind the profile | `cua profiles add`, Chrome open on it, `cua profiles bind` | yes, for any pick | `profiles list`: ready |
-| 7 macOS permissions (native surface) | allow Accessibility and Screen Recording when asked | yes, once | a live native call |
+| 7 cua's engine and its permissions (native surface) | `cua install --engine`, then `cua engine approve`; allow cua Engine's Accessibility, Screen & System Audio Recording and Input Monitoring | yes, once | `cua doctor`: `engine` PASS |
 | 8 Claude Code wiring | `claude mcp add …`, settings permissions and hook | no | `claude mcp list`: Connected |
 
 ## The steps
@@ -34,7 +34,8 @@ node bin/cua.mjs doctor
 
 Requirements: Apple silicon, Node 22 or newer. `install` refuses an archive whose hash, layout or code signatures
 differ from the pinned record, and never modifies vendor files. Doctor's `runtime.*` and `sandbox` rows should PASS;
-`helper.live` and `helper.permissions` stay BLOCKED until step 7.
+`helper.live` and `helper.permissions` stay BLOCKED until a native call, and the `engine` row warns until step 7 (no
+approved engine yet, so computer sessions keep the vendor's).
 
 ### 2. Secrets (only if secret substitution will be used)
 
@@ -91,12 +92,24 @@ loading it again) mints a new id, after which `list` says `binding_stale` and `b
 means no backend is live at all: open a window in the profile (`cua profiles open <key>` does it from the terminal) and
 open the cua extension's popup if it still has no backend.
 
-### 7. macOS permissions for the native surface
+### 7. cua's engine and macOS permissions for the native surface
 
-The first native call (the `computer` surface) starts the pinned helper through LaunchServices; it shows its own
-"Enable ChatGPT Computer Use" window and then macOS asks for Accessibility and Screen Recording, attributed to the
-helper, not to the terminal. A person allows them once in System Settings. Over SSH these prompts cannot be shown, so
-steps 4 and 7 happen at the console. A browser-only machine still needs
+The `computer` surface runs cua's own engine by default (#117), `cua Engine.app` at
+`~/Library/Application Support/cua/engine/`, once one is built and approved on this Mac:
+
+```sh
+node bin/cua.mjs install --engine     # builds the engine from native/engine/, pending approval (Xcode and a signing identity: README)
+node bin/cua.mjs engine approve       # at the console: puts the pending build in place; macOS asks for its permissions
+node bin/cua.mjs doctor               # the engine row: selected cua (default), the three permissions true
+```
+
+macOS attributes Accessibility, Screen & System Audio Recording and Input Monitoring to **cua Engine**, not to the
+terminal, and a person allows them once in System Settings. Until an engine at the version this cua drives is approved
+(an older one, or none, makes doctor's `engine` row warn and names these two commands), computer sessions keep the
+vendor's engine: the first native call then starts the pinned helper through LaunchServices, which shows its own
+"Enable ChatGPT Computer Use" window before macOS asks for Accessibility and Screen Recording on the helper's behalf.
+`CUA_NATIVE_ENGINE=vendor`, or `"engine": "vendor"` in `~/.config/cua/engine.json`, keeps a session or the Mac on the
+vendor's engine (the rollback). Over SSH these prompts cannot be shown, so steps 4 and 7 happen at the console. A browser-only machine still needs
 the runtime to start for the listing launch, but the Chrome acceptance ran without granting the native permissions
 first.
 

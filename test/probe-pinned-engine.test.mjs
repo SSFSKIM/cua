@@ -17,7 +17,10 @@ test('a macOS computer lane pins its engine into cua serve\'s environment; elsew
   assert.deepEqual(lane.pin, {engine: 'cua', pinnedBy: '--engine'});
   assert.deepEqual(lane.serveEnv, {PATH: '/usr/bin', CUA_NATIVE_ENGINE: 'cua', CUA_HOME: HOME});
   assert.equal(env.CUA_NATIVE_ENGINE, 'vendor', 'the caller\'s environment is not touched');
-  assert.equal(pinLane({env: {}, home: HOME, surfaces: ['computer', 'browser'], platform: 'darwin'}).serveEnv.CUA_NATIVE_ENGINE, 'vendor', 'the default is pinned too');
+  // The default is pinned too: cua's since #117's M5, so a lane given no engine is refused on a Mac with no approved
+  // engine rather than measuring the vendor's fallback under the default's name.
+  assert.deepEqual(pinLane({env: {}, home: HOME, surfaces: ['computer', 'browser'], platform: 'darwin'}).pin, {engine: 'cua', pinnedBy: 'default'});
+  assert.equal(pinLane({env: {}, home: HOME, surfaces: ['computer', 'browser'], platform: 'darwin'}).serveEnv.CUA_NATIVE_ENGINE, 'cua', 'the default is pinned too');
 
   assert.throws(() => pinLane({flag: 'cua', env: {}, home: HOME, surfaces: ['computer'], platform: 'linux'}), LaneUsageError);
   assert.throws(() => pinLane({flag: 'cua', env: {}, home: HOME, surfaces: ['browser'], platform: 'darwin'}), LaneUsageError);

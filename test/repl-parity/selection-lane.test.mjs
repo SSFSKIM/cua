@@ -73,9 +73,11 @@ test('the profiles-listing invalid row accepts only invalid_repl_host with the e
 });
 
 test('other refusals are read from the row\'s own doctor lane too',()=>{
- const row={platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'cua',node24:true,managedNode:true};
+ // the vendor engine named (#117 M5: by default the engine is cua's, which this row has none of)
+ const row={platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'cua',node24:true,managedNode:true,engine:'vendor'};
  assert.equal(expectedSelection(row).error,'repl_host_refused');
- const refused='refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the default vendor engine: the vendor\'s computer-use helper accepts only the vendor host\'s node_repl as a peer';
+ assert.equal(expectedSelection({...row,engine:'unset'}).error,'engine_not_installed');
+ const refused='refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the vendor engine (CUA_NATIVE_ENGINE=vendor): the vendor\'s computer-use helper accepts only the vendor host\'s node_repl as a peer';
  const own='cua host (explicit): CUA_REPL_HOST=cua, on Node /node';
  const detail=(ordinary,listing)=>`${ordinary}. Browser route: none, no browser surface. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
  assert.doesNotThrow(()=>assertSelection(row,{doctor:{status:'fail',detail:detail(refused,own)},error:'repl_host_refused',errorMessage:'cua: repl_host_refused'}));

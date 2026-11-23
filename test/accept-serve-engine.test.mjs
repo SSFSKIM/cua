@@ -68,8 +68,9 @@ test('accountEngine reads engine.json and the approved engine from the account\'
   const select = engine => {
     try { return replHostFor({platform: 'darwin', surfaces: ['computer'], ambient: {HOME: store}, resolveOwnNode: () => NODE24, engine}); } catch (error) { return {code: error.code}; }
   };
-  // The store home has no setting: on its own the selection is the default vendor engine.
-  assert.deepEqual(select(undefined).engine, {engine: 'vendor', reason: 'default', status: 'pass'});
+  // The store home has no setting: on its own the selection is the default, cua's engine (#117 M5), which finds no
+  // approved engine there and keeps the vendor's with a warning.
+  assert.deepEqual(select(undefined).engine, {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'});
   // The account's setting selects cua's engine; the account has no approved engine either, so the setting is refused.
   assert.deepEqual(accountEngine(account).config(), {engine: 'cua'});
   assert.equal(accountEngine(account).installed(), null);

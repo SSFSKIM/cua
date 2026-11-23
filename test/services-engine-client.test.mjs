@@ -17,7 +17,9 @@ import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
 import {MAX_FRAME, SkyComputerUseError, SkyComputerUseTransportError} from '../src/services/engine/protocol.mjs';
 import {DEFAULT_DEADLINE_MS, MIN_ENGINE_VERSION, bundleIdentity, createEngineClient, socketPathFor} from '../src/services/engine/client.mjs';
 
-const IDENTITY = {engineVersion: '0.1.0', build: 'b1'};
+// The fake engine's identity: at the service's minimum (MIN_ENGINE_VERSION), so the client drives it.
+const IDENTITY = {engineVersion: '0.2.0', build: 'b1'};
+const startFake = (t, path, options = {}) => startFakeEngine(t, path, {identity: IDENTITY, ...options});
 // Blocks this thread for `ms`, as a loaded machine or a long synchronous task does.
 const stall = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -51,8 +53,8 @@ test('the socket is engine.sock beside the bundle, and the bundle\'s version and
   const app = join(dir, 'cua Engine.app');
   assert.equal(socketPathFor(app), join(dir, 'engine.sock'));
   mkdirSync(join(app, 'Contents'), {recursive: true});
-  writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version: '0.1.0', build: 'abc123'}));
-  assert.deepEqual(bundleIdentity(app), {engineVersion: '0.1.0', build: 'abc123'});
+  writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version: '0.2.0', build: 'abc123'}));
+  assert.deepEqual(bundleIdentity(app), {engineVersion: '0.2.0', build: 'abc123'});
   assert.throws(() => bundleIdentity(join(dir, 'missing.app')), /Info\.plist/);
   assert.equal(DEFAULT_DEADLINE_MS, 120_000);
 });
@@ -60,14 +62,14 @@ test('the socket is engine.sock beside the bundle, and the bundle\'s version and
 // #117 M5, R4: the selection read the approved bundle's version before the launch, but the bundle may change before a
 // connect; the client checks the minimum again on the bundle it reads at each connect, before connecting or launching.
 test('a bundle below the minimum the service drives is refused at the connect, before anything is connected to or launched, also when it changed after a good connect', async t => {
-  assert.equal(MIN_ENGINE_VERSION, '0.1.0', 'today\'s approved builds meet it until the flip (ruling 1126)');
+  assert.equal(MIN_ENGINE_VERSION, '0.2.0', 'raised with the flip (ruling 1126): every build before T9 reports 0.1.0');
   const dir = scratchDir(t);
   const app = join(dir, 'cua Engine.app');
   const socket = join(dir, 'engine.sock');
   mkdirSync(join(app, 'Contents'), {recursive: true});
   const bundle = version => writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version, build: 'b1'}));
-  bundle('0.1.0');
-  const engine = await startFakeEngine(t, socket);
+  bundle('0.2.0');
+  const engine = await startFake(t, socket);
   const {nodeRepl, launches} = workerRepl();
   const client = createEngineClient({nodeRepl, appPath: app, socketPath: socket, firstConnectMs: 150, launchWaitMs: 1500});
   t.after(() => client.close());
@@ -76,20 +78,23 @@ test('a bundle below the minimum the service drives is refused at the connect, b
   const pings = engine.received.filter(r => r.method === 'ping').length;
   bundle('0.0.9');   // replaced by an older bundle between the selection (or the last connect) and this one
   await assert.rejects(client.connect(), error => error instanceof SkyComputerUseTransportError
-    && error.message.startsWith(`cua engine too old: ${app} is version 0.0.9, older than 0.1.0, the oldest this cua drives; nothing was launched.`)
+    && error.message.startsWith(`cua engine too old: ${app} is version 0.0.9, older than 0.2.0, the oldest this cua drives; nothing was launched.`)
     && error.message.includes('cua engine approve') && error.message.includes('cua install --engine'));
   assert.equal(engine.received.filter(r => r.method === 'ping').length, pings, 'no ping');
   assert.equal(launches.length, 0, 'no launch');
-  // The minimum as a seam: an engine at 0.1.0 under a 0.2.0 minimum, the flip's.
-  const raised = clientFor(socket, {minimumVersion: '0.2.0'});
+  // An engine at 0.1.0, what every approved build before T9 reports, under the shipped minimum.
+  bundle('0.1.0');
+  await assert.rejects(client.connect(), /version 0\.1\.0, older than 0\.2\.0/);
+  // The minimum as a seam: the same engine under a later minimum.
+  const raised = clientFor(socket, {minimumVersion: '0.3.0'});
   t.after(() => raised.client.close());
-  await assert.rejects(raised.client.connect(), /version 0\.1\.0, older than 0\.2\.0/);
+  await assert.rejects(raised.client.connect(), /version 0\.2\.0, older than 0\.3\.0/);
   assert.equal(raised.launches.length, 0);
 });
 
 test('connect pings with cua-engine-1, accepts an engine whose version and build match the bundle, and reuses the live connection', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket);
+  const engine = await startFake(t, socket);
   const {client, launches} = clientFor(socket);
   t.after(() => client.close());
   assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY});
@@ -102,7 +107,7 @@ test('connect pings with cua-engine-1, accepts an engine whose version and build
 
 test('a session\'s device mode (#282) is named in every connection\'s ping, so the engine applies it per connection', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket);
+  const engine = await startFake(t, socket);
   const {client} = clientFor(socket, {desktop: 'dedicated'});
   t.after(() => client.close());
   await client.connect();
@@ -114,7 +119,7 @@ test('a session\'s device mode (#282) is named in every connection\'s ping, so t
 
 test('an engine naming a variant (#187\'s control build) is accepted on its version and build, and the variant kept in its identity', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  await startFakeEngine(t, socket, {identity: {...IDENTITY, variant: 'control-no-inert-click'}});
+  await startFake(t, socket, {identity: {...IDENTITY, variant: 'control-no-inert-click'}});
   const {client} = clientFor(socket);
   t.after(() => client.close());
   assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY, variant: 'control-no-inert-click'});
@@ -122,7 +127,7 @@ test('an engine naming a variant (#187\'s control build) is accepted on its vers
 
 test('a connection opened late in the first window gets its own full ping wait, so a slow ping to a healthy engine launches nothing', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {ping: async () => { await new Promise(resolve => setTimeout(resolve, 80)); return {serverApiVersion: 'cua-engine-1', ...IDENTITY}; }}});
+  const engine = await startFake(t, socket, {handlers: {ping: async () => { await new Promise(resolve => setTimeout(resolve, 80)); return {serverApiVersion: 'cua-engine-1', ...IDENTITY}; }}});
   const {client, launches, nodeRepl} = clientFor(socket);
   t.after(() => client.close());
   // The relay opens the socket only 130 ms into the 150 ms window, leaving the ping 20 ms of it.
@@ -137,7 +142,7 @@ test('a connection opened late in the first window gets its own full ping wait, 
 // beat a connect the engine had already accepted (#441, a loaded hosted runner).
 test('a stall of the event loop past the first window does not make a running engine look absent: the connect it held back wins over the window', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket);
+  const engine = await startFake(t, socket);
   const {client, launches, nodeRepl} = clientFor(socket);
   t.after(() => client.close());
   // The loop stalls 300 ms right after the open is requested and the 150 ms window armed; the socket connects meanwhile.
@@ -149,14 +154,14 @@ test('a stall of the event loop past the first window does not make a running en
 });
 
 test('a build or version mismatch fails at once with the diagnostic naming cua install --engine, never launching, retrying or stopping that engine', async t => {
-  for (const identity of [{engineVersion: '0.1.0', build: 'other'}, {engineVersion: '9.9.9', build: 'b1'}]) {
+  for (const identity of [{engineVersion: '0.2.0', build: 'other'}, {engineVersion: '9.9.9', build: 'b1'}]) {
     const socket = join(scratchDir(t), 'engine.sock');
-    const engine = await startFakeEngine(t, socket, {identity, handlers: {shutdown: () => assert.fail('a service never stops an engine it did not launch')}});
+    const engine = await startFake(t, socket, {identity, handlers: {shutdown: () => assert.fail('a service never stops an engine it did not launch')}});
     const {client, launches} = clientFor(socket);
     t.after(() => client.close());
     await assert.rejects(client.connect(), error => error instanceof SkyComputerUseTransportError
       && error.message.includes('cua install --engine') && error.message.includes(`version ${identity.engineVersion} build ${identity.build}`)
-      && error.message.includes('version 0.1.0 build b1') && error.message.includes('left running'));
+      && error.message.includes('version 0.2.0 build b1') && error.message.includes('left running'));
     assert.deepEqual(engine.received.map(r => r.method), ['ping'], 'one ping, no retry');
     assert.equal(launches.length, 0);
   }
@@ -164,7 +169,7 @@ test('a build or version mismatch fails at once with the diagnostic naming cua i
 
 test('an engine speaking another API version, or refusing the client\'s, fails at once naming cua install --engine', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {ping: () => ({serverApiVersion: 'cua-engine-2', ...IDENTITY})}});
+  const engine = await startFake(t, socket, {handlers: {ping: () => ({serverApiVersion: 'cua-engine-2', ...IDENTITY})}});
   const {client} = clientFor(socket);
   t.after(() => client.close());
   await assert.rejects(client.connect(), error => error instanceof SkyComputerUseTransportError
@@ -172,7 +177,7 @@ test('an engine speaking another API version, or refusing the client\'s, fails a
   assert.equal(engine.received.length, 1);
 
   const socket2 = join(scratchDir(t), 'engine.sock');
-  const engine2 = await startFakeEngine(t, socket2, {handlers: {ping: () => { throw new EngineFailure(-10013, 'The client speaks x', 'incompatibleClientVersion'); }}});
+  const engine2 = await startFake(t, socket2, {handlers: {ping: () => { throw new EngineFailure(-10013, 'The client speaks x', 'incompatibleClientVersion'); }}});
   const {client: client2} = clientFor(socket2);
   t.after(() => client2.close());
   await assert.rejects(client2.connect(), error => error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion');
@@ -185,7 +190,7 @@ test('a failed connect launches the bundle through LaunchServices, under the sus
   let depthAtLaunch;
   const {client, launches, budget} = clientFor(socket, {launch: () => {
     depthAtLaunch = budget.depth;
-    setTimeout(async () => { engine = await startFakeEngine(t, socket); }, 200);
+    setTimeout(async () => { engine = await startFake(t, socket); }, 200);
   }});
   t.after(() => client.close());
   assert.equal((await client.connect()).build, 'b1');
@@ -221,7 +226,7 @@ test('execute sends the method, its arguments, a deadline 120 s out and the line
   let depthAtEngine;
   const {client, budget} = clientFor(socket);
   t.after(() => client.close());
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFake(t, socket, {handlers: {
     'execute:get_app_state': () => { depthAtEngine = budget.depth; return {lineage: 'L1'}; },
     'execute:resolve_app': () => { depthAtEngine = budget.depth; return {appPath: '/A.app'}; },
   }});
@@ -241,7 +246,7 @@ test('execute sends the method, its arguments, a deadline 120 s out and the line
 
 test('status asks the engine for its identity and grants, a request of its own outside execute', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {status: () => ({accessibility: false, connections: 0})}});
+  const engine = await startFake(t, socket, {handlers: {status: () => ({accessibility: false, connections: 0})}});
   const {client} = clientFor(socket);
   t.after(() => client.close());
   assert.deepEqual(await client.status(), {accessibility: false, connections: 0});
@@ -252,7 +257,7 @@ test('one request in flight: a second waits until the first is answered, and its
   const socket = join(scratchDir(t), 'engine.sock');
   let answeredFirstAt = 0;
   let answeredFirstWall = 0;
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFake(t, socket, {handlers: {
     'execute:slow': () => new Promise(resolve => setTimeout(() => { answeredFirstAt = performance.now(); answeredFirstWall = Date.now(); resolve('slow'); }, 120)),
     'execute:fast': () => 'fast',
   }});
@@ -268,7 +273,7 @@ test('one request in flight: a second waits until the first is answered, and its
 
 test('the engine answers its own deadline (timeoutReached) before the client gives up; a request with no answer past the deadline and its grace is a transport error and the next call reconnects', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFake(t, socket, {handlers: {
     'execute:settles': ({deadlineUnixMilliseconds}) => new Promise((_, reject) => setTimeout(() => reject(new EngineFailure(-10005, 'timeoutReached', 'timeoutReached')), Math.max(0, deadlineUnixMilliseconds - Date.now()) + 20)),
     'execute:hang': () => NO_REPLY,
     'execute:ok': () => 'ok',
@@ -287,7 +292,7 @@ test('the engine answers its own deadline (timeoutReached) before the client giv
 test('engine errors become SkyComputerUseError with the engine\'s errorName and the vendor\'s message envelope; the input meta rides along', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const meta = {inputRoute: null, startedAt: null, endedAt: null, receivedAt: 1, hidIdleMs: 20};
-  await startFakeEngine(t, socket, {handlers: {
+  await startFake(t, socket, {handlers: {
     'execute:get_app_state': () => { throw new EngineFailure(-10005, 'noWindowsAvailable', 'noWindowsAvailable'); },
     'execute:click': () => { throw new EngineFailure(-10005, 'The menu bar opens through the app\'s keyboard shortcut.', 'menuBarItemUnsupported', {meta}); },
     'execute:weird': () => { throw new EngineFailure(-32602, 'Invalid params: method is required', 'invalidParams'); },
@@ -303,7 +308,7 @@ test('engine errors become SkyComputerUseError with the engine\'s errorName and 
 
 test('an oversized frame from the engine, a malformed response or a closed socket fails the request in flight as a transport error; the next call reconnects', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFake(t, socket, {handlers: {
     'execute:huge': (_params, {socket: peer}) => { const header = Buffer.alloc(4); header.writeUInt32LE(MAX_FRAME + 1, 0); peer.write(header); return NO_REPLY; },
     'execute:bad': (_params, {socket: peer, request}) => { peer.write(frame({jsonrpc: '2.0', id: request.id})); return NO_REPLY; },
     'execute:drop': (_params, {socket: peer}) => { peer.destroy(); return NO_REPLY; },
@@ -327,7 +332,7 @@ const CURSOR = {label: 'linux171', color: '#8250df', enabled: true};
 
 test('every new connection sends the session\'s cursor request right after its ping, before the first execute', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok', 'execute:drop': (_p, {socket: peer}) => { peer.destroy(); return NO_REPLY; }}});
+  const engine = await startFake(t, socket, {handlers: {cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok', 'execute:drop': (_p, {socket: peer}) => { peer.destroy(); return NO_REPLY; }}});
   const {client} = clientFor(socket, {cursor: CURSOR});
   t.after(() => client.close());
   assert.equal((await client.execute('ok', {})).result, 'ok');
@@ -348,7 +353,7 @@ async function until(check, ms = 2_000) {
 
 test('no cursor context, no cursor request: release (end_task) sends endTask (#292) and closes the connection', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  const engine = await startFake(t, socket, {handlers: {'execute:ok': () => 'ok'}});
   const {client} = clientFor(socket);
   t.after(() => client.close());
   await client.execute('ok', {});
@@ -365,7 +370,7 @@ test('release (end_task) unpublishes the connection at once, writes {hide: true}
   t.after(() => client.close());
   await client.release();
   assert.equal(launches.length, 0, 'an end_task never starts an engine to close a connection it never had');
-  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
+  const engine = await startFake(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
   await client.execute('ok', {});
   const released = client.release();
   assert.equal(client.connected, false, 'unpublished at once');
@@ -379,7 +384,7 @@ test('release (end_task) unpublishes the connection at once, writes {hide: true}
 
 test('after release the next request reconnects: a new connection, told the session\'s cursor again', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
+  const engine = await startFake(t, socket, {handlers: {cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
   const {client, launches} = clientFor(socket, {cursor: CURSOR});
   t.after(() => client.close());
   await client.execute('ok', {});
@@ -396,7 +401,7 @@ test('after release the next request reconnects: a new connection, told the sess
 test('a connect in flight at release publishes nothing: its late ping answer closes the socket, the old request fails unsent, and a request after release reconnects', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   let answerPing = null, held = true;
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFake(t, socket, {handlers: {
     ping: () => {
       const answer = {serverApiVersion: 'cua-engine-1', ...IDENTITY};
       if (!held) return answer;
@@ -422,7 +427,7 @@ test('a connect in flight at release publishes nothing: its late ping answer clo
 test('requests queued at release fail unsent and never reconnect; the one in flight fails as on any close', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   let finish = null;
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFake(t, socket, {handlers: {
     'execute:slow': () => new Promise(resolve => { finish = () => resolve('slow'); }), 'execute:ok': () => 'ok'}});
   const {client} = clientFor(socket);
   t.after(() => client.close());
@@ -442,7 +447,7 @@ test('requests queued at release fail unsent and never reconnect; the one in fli
 
 test('an engine without the cursor method answers methodNotFound: the session goes on, and that connection is sent no more cursor requests', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  const engine = await startFake(t, socket, {handlers: {'execute:ok': () => 'ok'}});
   const {client} = clientFor(socket, {cursor: CURSOR});
   t.after(() => client.close());
   assert.equal((await client.execute('ok', {})).result, 'ok');
@@ -454,7 +459,7 @@ test('an engine without the cursor method answers methodNotFound: the session go
 
 test('a cursor request the engine refuses otherwise fails nothing either, is logged, and the hide is still sent at release', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => { if (!hide) throw new EngineFailure(-32602, 'Invalid params: color must be #rrggbb', 'invalidParams'); return {cursor: 'on', reason: null}; },
+  const engine = await startFake(t, socket, {handlers: {cursor: ({hide}) => { if (!hide) throw new EngineFailure(-32602, 'Invalid params: color must be #rrggbb', 'invalidParams'); return {cursor: 'on', reason: null}; },
     'execute:ok': () => 'ok'}});
   const lines = [];
   const {client} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
@@ -469,7 +474,7 @@ test('a cursor request the engine refuses otherwise fails nothing either, is log
 
 test('an unanswered cursor request is abandoned at its bound without closing the connection: a longer execute behind it still answers', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => NO_REPLY,
+  const engine = await startFake(t, socket, {handlers: {cursor: () => NO_REPLY,
     'execute:slow': () => new Promise(resolve => setTimeout(() => resolve('slow'), 300))}});
   const lines = [];
   const {client} = clientFor(socket, {cursor: CURSOR, cursorWaitMs: 80, log: line => lines.push(line)});
@@ -486,7 +491,7 @@ test('an unanswered cursor request is abandoned at its bound without closing the
 
 test('methodNotFound, the older engine\'s answer, is expected and not logged', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
-  await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  await startFake(t, socket, {handlers: {'execute:ok': () => 'ok'}});
   const lines = [];
   const {client} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
   t.after(() => client.close());
@@ -537,7 +542,7 @@ function fullCloseRepl() {
 test('over a fully closing relay, release closes only once endTask is answered, and resolves then', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   let answered = null;
-  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok',
+  const engine = await startFake(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok',
     endTask: async () => { await new Promise(resolve => setTimeout(resolve, 60)); answered = performance.now(); return {released: 1}; }}});
   const {nodeRepl} = fullCloseRepl();
   const client = createEngineClient({nodeRepl, appPath: '/Applications/Fake Engine.app', socketPath: socket, expected: IDENTITY, firstConnectMs: 150, launchWaitMs: 1500, cursor: CURSOR});
@@ -556,7 +561,7 @@ test('over a fully closing relay, release closes only once endTask is answered, 
 test('an endTask the engine never answers holds the close back at most its bound, and a request in flight fails at once', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   let finish = null;
-  const engine = await startFakeEngine(t, socket, {handlers: {endTask: () => NO_REPLY,
+  const engine = await startFake(t, socket, {handlers: {endTask: () => NO_REPLY,
     'execute:slow': () => new Promise(resolve => { finish = () => resolve('slow'); })}});
   const {nodeRepl} = fullCloseRepl();
   const client = createEngineClient({nodeRepl, appPath: '/Applications/Fake Engine.app', socketPath: socket, expected: IDENTITY, firstConnectMs: 150, launchWaitMs: 1500, endTaskWaitMs: 120});

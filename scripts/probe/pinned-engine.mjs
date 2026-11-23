@@ -18,7 +18,10 @@ export class LaneUsageError extends Error {}
 // The engine a lane pins, before anything is read: `flag` is --engine (undefined when not given), `env` the caller's
 // environment, `home` the CUA_HOME it serves, `surfaces` the server's (settingsFrom). A macOS computer session pins an
 // engine (`pin` {engine, pinnedBy}) and serves with CUA_NATIVE_ENGINE set to it; anywhere else no engine is driven, `pin`
-// is null and --engine is a usage error (LaneUsageError, as is an unknown engine). -> {pin, serveEnv}.
+// is null and --engine is a usage error (LaneUsageError, as is an unknown engine). A lane given no engine pins the
+// platform's default, cua's on macOS since #117's M5: pinned, it is refused on a Mac with no approved engine (or one
+// below the minimum) instead of measuring the vendor's fallback under the default's name; --engine vendor, or
+// CUA_NATIVE_ENGINE=vendor, names the vendor's. -> {pin, serveEnv}.
 export function pinLane({flag, env, home, surfaces, platform = process.platform}) {
   const engineDriven = platform === 'darwin' && surfaces.includes('computer');
   if (flag !== undefined && !engineDriven) throw new LaneUsageError('--engine applies only to the computer surface on macOS');

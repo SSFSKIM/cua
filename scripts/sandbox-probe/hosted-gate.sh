@@ -19,7 +19,9 @@
 #                 A change that moves a fingerprint on purpose records the new baseline in the same pull request: the
 #                 failing gate's artifact holds this run's fingerprints (the baseline's form) and image.json.
 #   own-sandbox   scripts/accept/own-sandbox.mjs on cua's own host and on the vendor host (#115 items 1 to 5).
-#   probe-secrets scripts/probe-secrets.mjs against its own synthetic store (#115 items 6 and 7's live roundtrip).
+#   probe-secrets scripts/probe-secrets.mjs against its own synthetic store (#115 items 6 and 7's live roundtrip), on
+#                 the vendor engine (CUA_NATIVE_ENGINE=vendor): the probe pins the engine its lane names, by default
+#                 macOS's, cua's since #117's M5, and this runner has no approved engine of cua's, so it says which.
 #   engine-lane   scripts/probe-engine-lane.mjs (#117), cua's engine service on cua's own host (the target row) and in the
 #                 vendor trusted worker (comparison A's lane), against a fixture approved engine and a fake engine at its
 #                 socket; nothing is launched.
@@ -147,7 +149,7 @@ own_sandbox() {
 }
 probe_secrets() {
   code=0
-  quiet probe-secrets '' scratch node scripts/probe-secrets.mjs --report "$RAW/probe-secrets.json" > /dev/null || code=$?
+  quiet probe-secrets '' scratch env CUA_NATIVE_ENGINE=vendor node scripts/probe-secrets.mjs --report "$RAW/probe-secrets.json" > /dev/null || code=$?
   [ ! -f "$RAW/probe-secrets.json" ] || quiet probe-secrets-read '^hosted-gate: ' node -e 'for (const s of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).steps) console.error(`hosted-gate: probe-secrets ${s.status} ${s.name}`)' "$RAW/probe-secrets.json" || true
   publish probe-secrets "$RAW/probe-secrets.json" "$OUT/probe-secrets.json" || [ "$code" != 0 ] || code=1
   return "$code"

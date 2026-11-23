@@ -320,17 +320,18 @@ const withoutNode = () => { throw Object.assign(new CuaError('repl_host_node', '
 // The engine inputs are fixed (no engine.json, no engine installed), so a machine's own settings never leak in.
 const hostFor = (platform, surfaces, host, resolveOwnNode = withNode, extra = {}) => outcome(() => replHostFor({platform, surfaces,
   ambient: host === undefined ? extra : {...extra, CUA_REPL_HOST: host}, resolveOwnNode, engine: {config: () => ({}), installed: () => null}}));
-// The vendor engine by default, as a macOS computer selection carries it.
-const DEFAULT_VENDOR_ENGINE = {engine: 'vendor', reason: 'default', status: 'pass'};
-// A Linux computer selection's: cua's engine is the default there (#171 M5), and with none installed (these fixed
-// inputs) the vendor's is kept with a warning.
+// The vendor engine selected explicitly, as a macOS computer selection carries it.
+const EXPLICIT_VENDOR_ENGINE = {engine: 'vendor', reason: 'explicit', status: 'pass'};
+// A computer selection's on either platform: cua's engine is the default (#171 M5 on Linux, #117 M5 on macOS), and with
+// none installed (these fixed inputs) the vendor's is kept with a warning, on macOS with the vendor host.
 const DEFAULT_LINUX_ENGINE = {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
+const DEFAULT_MACOS_ENGINE = DEFAULT_LINUX_ENGINE;
 // A resolver that counts its calls, so a test can say whether (and how often) a selection asked for Node.
 const counted = resolve => { const fn = () => { fn.calls++; return resolve(); }; fn.calls = 0; return fn; };
 // Browser settings the host selection ignores: MAWS client mode, and a CUA_BROWSER_SERVICE #79 no longer reads.
 const IGNORED = [{}, {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, {CUA_BROWSER_SERVICE: 'vendor'}, {CUA_BROWSER_SERVICE: 'cua'}];
 
-test('the REPL host follows the selection table: macOS computer keeps vendor, Linux and browser-only sessions default to cua\'s own host', () => {
+test('the REPL host follows the selection table: macOS computer with no approved engine keeps vendor, Linux and browser-only sessions default to cua\'s own host', () => {
   const vendor = reason => ({host: 'vendor', reason});
   const own = reason => ({host: 'cua', reason, node: NODE24});
   for (const unset of [undefined, '']) for (const extra of IGNORED) {
@@ -340,8 +341,9 @@ test('the REPL host follows the selection table: macOS computer keeps vendor, Li
       ['linux', BROWSER, own('linux')],
       ['linux', BOTH, {...own('linux'), engine: DEFAULT_LINUX_ENGINE}],
       ['darwin', BROWSER, own('browser_only')],
-      ['darwin', COMPUTER, {...vendor('macos_native_peer_requires_vendor'), engine: DEFAULT_VENDOR_ENGINE}],
-      ['darwin', BOTH, {...vendor('macos_native_peer_requires_vendor'), engine: DEFAULT_VENDOR_ENGINE}],   // MAWS client mode does not override macOS computer
+      // #117 M5: the default cua engine with none approved keeps the vendor host and engine, with a warning
+      ['darwin', COMPUTER, {...vendor('engine_not_installed'), engine: DEFAULT_MACOS_ENGINE}],
+      ['darwin', BOTH, {...vendor('engine_not_installed'), engine: DEFAULT_MACOS_ENGINE}],   // MAWS client mode does not override macOS computer
     ]) {
       const resolve = counted(withNode);
       assert.deepEqual(hostFor(platform, surfaces, unset, resolve, extra), expected, label(`${platform} ${surfaces}`));
@@ -350,7 +352,11 @@ test('the REPL host follows the selection table: macOS computer keeps vendor, Li
   }
   for (const surfaces of [COMPUTER, BROWSER, BOTH]) for (const extra of IGNORED) {
     const resolve = counted(withNode);
-    assert.deepEqual(hostFor('darwin', surfaces, 'vendor', resolve, extra), {...vendor('explicit'), ...(surfaces.includes('computer') ? {engine: DEFAULT_VENDOR_ENGINE} : {})}, `${surfaces}: an explicit vendor is the rollback on macOS`);
+    // the default cua engine with none approved names its fallback (the spec's table: CUA_REPL_HOST=vendor, none installed)
+    assert.deepEqual(hostFor('darwin', surfaces, 'vendor', resolve, extra), surfaces.includes('computer') ? {...vendor('engine_not_installed'), engine: DEFAULT_MACOS_ENGINE} : vendor('explicit'),
+      `${surfaces}: an explicit vendor is the rollback on macOS`);
+    if (surfaces.includes('computer'))
+      assert.deepEqual(hostFor('darwin', surfaces, 'vendor', resolve, {...extra, CUA_NATIVE_ENGINE: 'vendor'}), {...vendor('explicit'), engine: EXPLICIT_VENDOR_ENGINE}, `${surfaces}: with the vendor engine, the rollback whole`);
     const linux = hostFor('linux', surfaces, 'vendor', resolve, extra);
     assert.equal(linux.code, 'repl_host_refused', `${surfaces}: the vendor host is retired on Linux (#115 M3, #135)`);
     assert.match(linux.message, /CUA_REPL_HOST=vendor is not supported on Linux.*#135/);
@@ -367,13 +373,16 @@ test('a home with no registration or only the removed route\'s record selects th
     const launch = (surfaces, ambient = AMBIENT) => outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient, surfaces, resolveOwnNode: withNode,
       services: Object.assign({}, surfaces.includes('computer') ? {sky: SKY_SERVICE} : {}, {browser: BROWSER_SERVICE})}).replHost);
     assert.deepEqual(launch(BROWSER), {host: 'cua', reason: 'browser_only'});
-    assert.deepEqual(launch(BOTH), {host: 'vendor', reason: 'macos_native_peer_requires_vendor'});
+    assert.deepEqual(launch(BOTH), {host: 'vendor', reason: 'engine_not_installed'}, 'the default cua engine, none approved (#117 M5)');
+    assert.deepEqual(launch(BOTH, {...AMBIENT, CUA_NATIVE_ENGINE: 'vendor'}), {host: 'vendor', reason: 'macos_native_peer_requires_vendor'});
     for (const extra of IGNORED) {
       assert.deepEqual(replHostFor({platform: 'darwin', surfaces: BROWSER, ambient: extra, home, resolveOwnNode: withNode}), {host: 'cua', reason: 'browser_only', node: NODE24}, JSON.stringify(extra));
       assert.deepEqual(launch(BROWSER, {...AMBIENT, ...extra, CUA_REPL_HOST: 'cua'}), {host: 'cua', reason: 'explicit'}, `CUA_REPL_HOST=cua with ${JSON.stringify(extra)}`);
     }
-    assert.equal(launch(BOTH, {...AMBIENT, CUA_REPL_HOST: 'cua'}).code, 'repl_host_refused', 'macOS computer is refused for its helper, not for the browser');
-    assert.doesNotMatch(launch(BOTH, {...AMBIENT, CUA_REPL_HOST: 'cua'}).message, /ChatGPT|CUA_BROWSER_SERVICE|cua chrome register/);
+    const vendorEngine = {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NATIVE_ENGINE: 'vendor'};
+    assert.equal(launch(BOTH, vendorEngine).code, 'repl_host_refused', 'macOS computer on the vendor engine is refused for its helper, not for the browser');
+    assert.doesNotMatch(launch(BOTH, vendorEngine).message, /ChatGPT|CUA_BROWSER_SERVICE|cua chrome register/);
+    assert.equal(launch(BOTH, {...AMBIENT, CUA_REPL_HOST: 'cua'}).code, 'engine_not_installed', 'the default cua engine with none approved, as an explicit cua (#117 M5)');
   }
 });
 
@@ -384,7 +393,8 @@ test('with no Node 24 or later, a macOS session the table moves to cua\'s own ho
       assert.deepEqual(hostFor('linux', surfaces, unset, withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'}, surfaces);
   }
   // Sessions that keep the vendor host for another reason keep that reason.
-  assert.deepEqual(hostFor('darwin', BOTH, undefined, withoutNode), {host: 'vendor', reason: 'macos_native_peer_requires_vendor', engine: DEFAULT_VENDOR_ENGINE});
+  assert.deepEqual(hostFor('darwin', BOTH, undefined, withoutNode), {host: 'vendor', reason: 'engine_not_installed', engine: DEFAULT_MACOS_ENGINE});
+  assert.deepEqual(hostFor('darwin', BOTH, undefined, withoutNode, {CUA_NATIVE_ENGINE: 'vendor'}), {host: 'vendor', reason: 'macos_native_peer_requires_vendor', engine: EXPLICIT_VENDOR_ENGINE});
   // A CUA_NODE that is not an absolute path is an invalid setting, refused, not a missing Node.
   const invalid = () => { throw new CuaError('invalid_setting', 'CUA_NODE must be the absolute path of a Node executable'); };
   assert.equal(hostFor('linux', COMPUTER, undefined, invalid).code, 'invalid_setting');
@@ -406,18 +416,21 @@ test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and 
   for (const [platform, surfaces] of [['linux', COMPUTER], ['darwin', BROWSER]])
     assert.deepEqual(hostFor(platform, surfaces, 'cua', withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'});
 
-  // macOS computer with the vendor engine: the vendor helper's peer rule, the only refusal left.
+  // macOS computer with the vendor engine: the vendor helper's peer rule; with the default cua engine and none
+  // approved, the explicit cua engine's refusal (#117 M5).
   for (const surfaces of [COMPUTER, BOTH]) for (const extra of IGNORED) {
-    const result = hostFor('darwin', surfaces, 'cua', withNode, extra);
+    const result = hostFor('darwin', surfaces, 'cua', withNode, {...extra, CUA_NATIVE_ENGINE: 'vendor'});
     assert.equal(result.code, 'repl_host_refused', `${surfaces}: ${JSON.stringify(result)}`);
     for (const pattern of [/macOS/, /CUA_NATIVE_ENGINE=cua/, /CUA_SHIM_SURFACES=browser/]) assert.match(result.message, pattern);
+    assert.equal(hostFor('darwin', surfaces, 'cua', withNode, extra).code, 'engine_not_installed', `${surfaces}, the default engine`);
   }
 
   // Whatever the inputs: no override selects cua exactly where an explicit cua is honoured and a Node 24 resolves,
   // and never refuses; cua is cua or a refusal; without a Node 24 macOS keeps the vendor host and Linux refuses.
   for (const platform of ['darwin', 'linux']) for (const surfaces of [COMPUTER, BROWSER, BOTH]) {
     const cua = hostFor(platform, surfaces, 'cua');
-    assert.ok(cua.host === 'cua' || cua.code === 'repl_host_refused', JSON.stringify(cua));
+    // macOS computer with no approved engine: the default cua engine's refusal (#117 M5)
+    assert.ok(cua.host === 'cua' || cua.code === 'repl_host_refused' || cua.code === 'engine_not_installed', JSON.stringify(cua));
     const implicit = hostFor(platform, surfaces, undefined);
     assert.equal(implicit.host, cua.host === 'cua' ? 'cua' : 'vendor', JSON.stringify(implicit));
     const without = hostFor(platform, surfaces, undefined, withoutNode);
@@ -465,11 +478,15 @@ test('the own host\'s Node is the first of CUA_NODE, the running node and node o
 
 test('the launch records the host it runs; an explicit cua host runs the own supervisor on the resolved user Node, never the vendor\'s', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
-  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
+  // The vendor engine named, so the computer surface runs on the vendor host (#117 M5: the default cua engine with none
+  // approved keeps it too, with its own reason).
+  const vendorEngine = {...AMBIENT, CUA_NATIVE_ENGINE: 'vendor'};
+  assert.deepEqual(buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT}).replHost, {host: 'vendor', reason: 'engine_not_installed'});
+  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: vendorEngine});
   assert.deepEqual(vendor.replHost, {host: 'vendor', reason: 'macos_native_peer_requires_vendor'});
   assert.equal(vendor.command, runtime.paths.node);
   assert.equal(Object.keys(vendor.env).some(k => k === 'CUA_REPL_HOST' || k === 'CUA_NODE'), false, 'the selection is the proxy\'s, not the runtime\'s');
-  const explicitVendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor', CUA_NODE: '/x/node'}});
+  const explicitVendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...vendorEngine, CUA_REPL_HOST: 'vendor', CUA_NODE: '/x/node'}});
   assert.deepEqual(explicitVendor.replHost, {host: 'vendor', reason: 'explicit'});
   assert.deepEqual(explicitVendor.env, vendor.env, 'an explicit vendor launch is the vendor launch');
 
@@ -488,7 +505,8 @@ test('the launch records the host it runs; an explicit cua host runs the own sup
   const noNode = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode: () => ownHostNode({ambient: {}, execPath: join(dir, 'absent')}), ...browserOnly});
   assert.deepEqual([noNode.replHost, noNode.command], [{host: 'vendor', reason: 'own_host_node_unavailable'}, runtime.paths.node], 'and keeps the vendor host where no Node 24 resolves');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: 'node'}, ...browserOnly})).code, 'invalid_setting');
-  assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua'}})).code, 'repl_host_refused', 'macOS computer');
+  assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...vendorEngine, CUA_REPL_HOST: 'cua'}})).code, 'repl_host_refused', 'macOS computer on the vendor engine');
+  assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua'}})).code, 'engine_not_installed', 'macOS computer, the default cua engine, none approved');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'own'}, ...browserOnly})).code, 'invalid_repl_host');
 });
 
@@ -734,7 +752,9 @@ test('doctor\'s repl.host row names no browser route: a browser-only session is 
     assert.doesNotMatch(browserOnly.detail, /Browser route|ChatGPT/);
   }
   const computer = await row(homeWith(() => {}), {CUA_SHIM_SURFACES: 'computer'});
-  assert.match(computer.detail, /^vendor host \(macos_native_peer_requires_vendor\)/);
+  assert.match(computer.detail, /^vendor host \(engine_not_installed\)/, 'the default cua engine, none approved (#117 M5)');
+  const vendorEngine = await row(homeWith(() => {}), {CUA_SHIM_SURFACES: 'computer', CUA_NATIVE_ENGINE: 'vendor'});
+  assert.match(vendorEngine.detail, /^vendor host \(macos_native_peer_requires_vendor\)/);
   const invalid = await row(homeWith(() => {}), {CUA_REPL_HOST: 'own'});
   assert.equal(invalid.status, 'fail');
   assert.match(invalid.detail, /CUA_REPL_HOST must be cua or vendor/);
@@ -766,8 +786,9 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with the remed
   for (const pattern of [/^vendor host \(own_host_node_unavailable\)/, /cua's own host needs Node 24 or later/, new RegExp(TRIED.map(x => x.replace(/[()]/g, '\\$&')).join(', ')),
     /run `cua install` \(it installs the pinned Node 24 for it under \$CUA_HOME\/node\)/, /install Node 24 or later yourself/, /set CUA_NODE to the absolute path of one/, /The profile listing \(browser only\): vendor host \(own_host_node_unavailable\)/])
     assert.match(warned.detail, pattern);
-  // A session that keeps the vendor host anyway (macOS computer) still warns for its listing, which would default to cua.
-  const computer = await row(DARWIN, {CUA_SHIM_SURFACES: 'computer,browser'}, withoutNode);
+  // A session that keeps the vendor host anyway (macOS computer on the vendor engine) still warns for its listing, which
+  // would default to cua.
+  const computer = await row(DARWIN, {CUA_SHIM_SURFACES: 'computer,browser', CUA_NATIVE_ENGINE: 'vendor'}, withoutNode);
   assert.equal(computer.status, 'warn');
   assert.match(computer.detail, /^vendor host \(macos_native_peer_requires_vendor\)/);
   // An explicit cua with no Node 24 is a refusal, as the connection's is.
@@ -1065,17 +1086,19 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
 // one is refused; the remedy is `cua engine approve` when a build pending beside it meets the minimum, else
 // `cua install --engine` then `cua engine approve`. An approved engine at or above the minimum is driven whatever is
 // pending beside it.
-test('the shipped minimum is 0.1.0 until the flip (ruling 1126): an approved 0.1.0 engine selects', () => {
-  assert.equal(MIN_ENGINE_VERSION, '0.1.0');
-  for (const [settingLabel, defaultEngine] of [['CUA_NATIVE_ENGINE=cua', 'vendor'], ['unset', 'cua']]) {
-    const selected = outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: SETTINGS[settingLabel].env, resolveOwnNode: withNode,
-      engine: {defaultEngine, config: () => SETTINGS[settingLabel].config, installed: () => OLD_APP, pending: () => assert.fail('nothing to remedy')}}));
-    assert.deepEqual(shapeOf(selected), {host: 'cua', reason: 'cua_engine', engine: 'cua', status: 'pass'}, settingLabel);
-    assert.equal(selected.engine.app.engineVersion, '0.1.0');
-  }
-  const unread = outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {}, resolveOwnNode: withNode,
-    engine: {defaultEngine: 'cua', config: () => ({}), installed: () => ({...APP, engineVersion: '0.0.0-fixture'}), pending: () => null}}));
-  assert.equal(unread.reason, 'engine_outdated', 'a version this cua cannot read is below even 0.1.0');
+// The shipped minimum and default, neither injected: what an owner's Mac meets after an update to the flip.
+test('the shipped minimum is 0.2.0 since the flip (ruling 1126): an approved 0.1.0 engine falls back with engine_outdated, an explicit one is refused', () => {
+  assert.equal(MIN_ENGINE_VERSION, '0.2.0');
+  const select = (ambient, installed) => outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient, resolveOwnNode: withNode,
+    engine: {config: () => ({}), installed: () => installed, pending: () => null}}));
+  const kept = select({}, OLD_APP);
+  assert.deepEqual(shapeOf(kept), {host: 'vendor', reason: 'engine_outdated', engine: 'vendor', status: 'warn'}, 'every build before T9 reports 0.1.0');
+  assert.deepEqual([kept.engine.outdated.engineVersion, kept.engine.minimum], ['0.1.0', '0.2.0']);
+  const explicit = select({CUA_NATIVE_ENGINE: 'cua'}, OLD_APP);
+  assert.equal(explicit.code, 'engine_outdated');
+  assert.ok(explicit.message.includes('is version 0.1.0, older than 0.2.0, the oldest this cua drives: build it with `cua install --engine`'), explicit.message);
+  assert.deepEqual(shapeOf(select({}, {...OLD_APP, engineVersion: '0.2.0'})), {host: 'cua', reason: 'cua_engine', engine: 'cua', status: 'pass'}, 'a 0.2.0 build, O1\'s, is driven');
+  assert.equal(select({}, {...APP, engineVersion: '0.0.0-fixture'}).reason, 'engine_outdated', 'a version this cua cannot read is below the minimum');
 });
 
 test('below the minimum the default keeps the vendor\'s with a warning and an explicit selection is refused, naming the remedy', () => {
@@ -1178,8 +1201,8 @@ test('the production engine inputs: engine.json and the approved engine are read
   t.after(s.cleanup);
   const user = realpathSync(s.dir);
   const dir = join(user, 'Library', 'Application Support', 'cua', 'engine');
-  // No engine.json and no approved engine: the default (vendor) without asking for the bundle.
-  assert.deepEqual(replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {HOME: user}, resolveOwnNode: withNode}).engine, {engine: 'vendor', reason: 'default', status: 'pass'});
+  // No engine.json and no approved engine: the default (cua's engine, #117 M5) finds none there and keeps the vendor's.
+  assert.deepEqual(replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {HOME: user}, resolveOwnNode: withNode}).engine, {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'});
   mkdirSync(join(user, '.config', 'cua'), {recursive: true});
   writeFileSync(join(user, '.config', 'cua', 'engine.json'), JSON.stringify({engine: 'cua', signingIdentity: 'unused'}));
   const refused = outcome(() => replHostFor({platform: 'darwin', surfaces: COMPUTER, ambient: {HOME: user}, resolveOwnNode: withNode}));

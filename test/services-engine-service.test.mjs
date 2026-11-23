@@ -50,11 +50,13 @@ function scene(app, overrides = {}) {
 }
 
 let facadeInstance = 0;
+// The fake engine's identity: at the service's minimum (MIN_ENGINE_VERSION), so the client drives it.
+const ENGINE = {engineVersion: '0.2.0', build: 'b1'};
 
 // A session: the fake engine, the worker's nodeRepl, the service behind the real wrapper, and the facade over it.
 // `handlers` override the engine's; `answer(request)` is the client's answer to an approval (accept for the session).
 async function session(t, {handlers = {}, answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), secrets = {}, env = {},
-  identity} = {}) {
+  identity = ENGINE} = {}) {
   const s = shortScratch('cua-esv-');
   t.after(s.cleanup);
   const socket = join(s.dir, 'engine.sock');
@@ -100,7 +102,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     emitContentItem: item => { record.items.push(item); },
     withSuspendedTimeout: async fn => { record.budget++; try { return await fn(); } finally { record.budget--; } },
   };
-  const client = createEngineClient({nodeRepl, appPath: nodeRepl.env.CUA_ENGINE_APP, socketPath: socket, expected: {engineVersion: '0.1.0', build: 'b1'}});
+  const client = createEngineClient({nodeRepl, appPath: nodeRepl.env.CUA_ENGINE_APP, socketPath: socket, expected: {engineVersion: '0.2.0', build: 'b1'}});
   t.after(() => client.close());
   // The client's round trips, fixed per method: the policy's resolve_app slower than any method's, so a result meta
   // that took its time would show.
@@ -147,7 +149,7 @@ test('getApp: resolved once, approved, observed by path with a screenshot, rende
   assert.equal(record.asked[0].message, 'Allow Computer Use to use "TextEdit"?');
   assert.deepEqual(record.asked[0].meta.tool_params, {app: 'com.apple.TextEdit'}, 'the supervisor\'s memory keys on the resolved bundle id');
   assert.deepEqual(meta['codex/toolSurface'], {app: {appId: 'com.apple.TextEdit', kind: 'appId'}, kind: 'computerUse'});
-  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
+  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.2.0', build: 'b1'});
   assert.equal(meta['cua/engineMs'], 7.25, 'the observation\'s own round trip, not the policy\'s');
   assert.equal(meta['cua/settle'], null);
 });
@@ -205,7 +207,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.deepEqual(meta['cua/activationClickKind'], {kind: 'activationPoint'});
   assert.equal(meta['cua/activationJoin'], 'rearmed');
   assert.equal(meta['cua/pointUnconfirmed'], true);
-  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
+  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.2.0', build: 'b1'});
 
   await call(() => app.click([120, 40], {mouseButton: 'right', clickCount: 2}));
   const coordinate = engine.executes().at(-1);
@@ -301,7 +303,7 @@ test('an input error carries the engine\'s meta; the next call\'s meta starts ov
   assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null});
   assert.equal(meta['cua/activationGuardMs'], 1000.2);
   assert.equal(meta['cua/engineMs'], null, 'a failed call leaves no round trip standing as its own');
-  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
+  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.2.0', build: 'b1'});
   await call(() => app.getAXState({emit: false}));
   for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs', 'cua/activationGuardMs', 'cua/pointUnconfirmed']) assert.equal(meta[key], null, key);
 });
@@ -758,10 +760,10 @@ test('#374: a Show Menu\'s confirmation rides as cua/menu, and menuUnconfirmed r
 });
 
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
-  const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
+  const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.2.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});
   const {app} = await getApp('TextEdit');
-  const control = {engine: 'cua', version: '0.1.0', build: 'b1', variant: 'control-no-inert-click'};
+  const control = {engine: 'cua', version: '0.2.0', build: 'b1', variant: 'control-no-inert-click'};
   assert.deepEqual(meta['cua/nativeEngine'], control);
   await assert.rejects(call(() => app.pressKey('super+l')));
   assert.deepEqual(meta['cua/nativeEngine'], control);
@@ -883,7 +885,7 @@ test('list_apps: no policy, the tool surface naming no app, the vendor\'s row sh
   const {sky, call, meta, record, engine} = await session(t);
   assert.deepEqual(await call(() => sky.list_apps()), [{id: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true}, {id: 'io.example.old', displayName: 'Old', isRunning: false, lastUsedDate: 1.5, useCount: 2}]);
   assert.deepEqual(meta['codex/toolSurface'], {app: null, kind: 'computerUse'});
-  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
+  assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.2.0', build: 'b1'});
   assert.equal(record.elicitations.length, 0);
   assert.deepEqual(record.suspendedAt.list_apps, [false]);
   assert.deepEqual(engine.executes().map(p => p.method), ['list_apps']);
@@ -927,8 +929,8 @@ async function ownService(t, env, {handlers = {}} = {}) {
   t.after(s.cleanup);
   const app = join(s.dir, 'cua Engine.app');
   mkdirSync(join(app, 'Contents'), {recursive: true});
-  writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version: '0.1.0', build: 'b1'}));
-  const engine = await startFakeEngine(t, join(s.dir, 'engine.sock'), {handlers: {
+  writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version: '0.2.0', build: 'b1'}));
+  const engine = await startFakeEngine(t, join(s.dir, 'engine.sock'), {identity: ENGINE, handlers: {
     'execute:list_apps': () => [], cursor: () => ({cursor: 'on', reason: null}), ...handlers}});
   const hooks = [];
   const nodeRepl = {env: {CUA_ENGINE_APP: app, ...env}, nativePipe: nativePipe(), launchServices: {openApplication: async () => assert.fail('no launch')},

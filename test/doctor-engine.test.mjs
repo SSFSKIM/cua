@@ -37,13 +37,14 @@ const WITHOUT_NODE = () => { throw Object.assign(new CuaError('repl_host_node', 
 // stubbed; the session's selection is repl.host's, computed as doctor computes it (replHostFor with the same inputs).
 // `installed`: true for APP, false for none, or the approved engine itself; `pending` the build pending beside it
 // (engine-minimum.mjs pendingEngine's shape); `sourceBuild` this plugin's engine build (APP's unless a case says
-// otherwise); `minimumVersion` the service's minimum (FIXTURE_MINIMUM; null for the shipped one).
+// otherwise); `minimumVersion` the service's minimum (FIXTURE_MINIMUM; null for the shipped one); `defaultEngine` the
+// default (the vendor's unless a case says otherwise; null for the shipped one).
 const FIXTURE_MINIMUM = '0.2.0';
 async function row(env = {}, {read = facts(), installed = true, config = {}, defaultEngine = 'vendor', platform = 'darwin', records, node = true, pending = null, sourceBuild = BUILD,
   minimumVersion = FIXTURE_MINIMUM} = {}) {
   const inspections = [];
   const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', ...env};
-  const engine = {defaultEngine, config: () => config, installed: () => (installed === true ? APP : installed || null), pending: () => pending, sourceBuild: () => sourceBuild,
+  const engine = {...(defaultEngine ? {defaultEngine} : {}), config: () => config, installed: () => (installed === true ? APP : installed || null), pending: () => pending, sourceBuild: () => sourceBuild,
     ...(minimumVersion ? {minimumVersion} : {})};
   let session;
   try { session = replHostFor({platform, surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: '/nonexistent-home', resolveOwnNode: node ? WITH_NODE : WITHOUT_NODE, engine}); } catch (error) {
@@ -251,8 +252,8 @@ test('cua\'s engine preferred with no approved engine: refused sessions fail the
 // #117 M5, R4 and ruling 1118: the service's minimum engine. Below it the default keeps the vendor's and the row warns,
 // an explicit selection is refused and the row fails, each naming the remedy; at or above it a newer pending build does
 // not fall back, and the row shows both builds; an approved build that is not this plugin's engine source warns where
-// cua's engine is preferred and is stated where the vendor's is. The shipped minimum is 0.1.0 until the flip (ruling
-// 1126), so these rows run against FIXTURE_MINIMUM, the 0.2.0 the flip will ship.
+// cua's engine is preferred and is stated where the vendor's is. These rows run against FIXTURE_MINIMUM, 0.2.0, which
+// the flip ships (ruling 1126); the last case reads the shipped minimum and default themselves.
 const OLD = {bundlePath: BUNDLE, engineVersion: '0.1.0', build: BUILD};
 const oldFacts = over => facts({engineVersion: '0.1.0', running: false, status: null, ...over});
 const pendingBuild = over => ({build: OTHER_BUILD, engineVersion: '0.4.1', bundlePath: '/Users/someone/Library/Application Support/cua/engine/pending/cua Engine.app', builtAt: 'later', ...over});
@@ -278,9 +279,14 @@ test('an approved engine below the minimum: the default\'s fallback warns and an
   assert.equal(explicit.mayLaunch, false);
   assert.match(explicit.row.detail, /^cua's engine is preferred \(CUA_NATIVE_ENGINE=cua\), but the approved engine is version 0\.1\.0, older than 0\.2\.0, the oldest this cua drives, so every macOS computer session is refused \(engine_outdated\): /);
   assert.ok(explicit.row.detail.endsWith(BUILD_ALONE), explicit.row.detail);
-  // At the shipped minimum (0.1.0) the same approved engine is driven.
-  const shipped = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: OLD, minimumVersion: null, read: facts({engineVersion: '0.1.0'})});
-  assert.equal(shipped.report.selected, 'cua', shipped.row.detail);
+  // The shipped minimum (0.2.0) and default (cua's, #117 M5), neither injected: an owner's Mac whose approved engine is
+  // a build before T9 (0.1.0) keeps the vendor's after the update, warned with both steps; one at 0.2.0 is driven.
+  const shipped = await row({}, {defaultEngine: null, installed: OLD, minimumVersion: null, read: oldFacts()});
+  assert.deepEqual([shipped.report.selected, shipped.report.reason, shipped.row.status], ['vendor', 'engine_outdated', 'warn'], shipped.row.detail);
+  assert.ok(shipped.row.detail.startsWith('cua\'s engine is preferred (the default engine), but the approved engine is version 0.1.0, older than 0.2.0'), shipped.row.detail);
+  assert.ok(shipped.row.detail.endsWith(BUILD_ALONE), shipped.row.detail);
+  const current = await row({}, {defaultEngine: null, installed: {...OLD, engineVersion: '0.2.0'}, minimumVersion: null, read: facts({engineVersion: '0.2.0'})});
+  assert.deepEqual([current.report.selected, current.report.reason], ['cua', 'default'], current.row.detail);
 });
 
 test('an approved engine at or above the minimum with a newer build pending: no fallback, both builds shown; an approved build that is not this plugin\'s source warns', async () => {

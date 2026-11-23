@@ -147,8 +147,9 @@ client on another machine, see Remote control.
 Apart from Claude Code's tool permission, a computer session asks before an app is first used, `Allow Computer Use to
 use "X"?`, as an MCP elicitation that Claude Code shows as a dialog. Who asks follows the engine: on cua's own engine
 (macOS's default, and Linux's) cua's engine service asks it per app with the vendor's message and lists
-(`src/services/engine/policy.mjs`; Linux's by window, see Linux); on the vendor engine OpenAI's stack asks it. An app
-declined is remembered for the connection; whether one accepted is depends on `CUA_SHIM_PERSIST`:
+(`src/services/engine/policy.mjs`; Linux's by window, see Linux). On macOS's vendor engine OpenAI's stack asks it; on
+Linux cua's same policy asks for the vendor's engine too. An app declined is remembered for the connection; whether
+one accepted is depends on `CUA_SHIM_PERSIST`:
 
 - `session` (the default): the connection remembers it until it closes, through the runtime's idle stops, so every
   new connection asks once more per app. (The vendor's host, which macOS computer sessions on the vendor engine run, also writes
@@ -221,11 +222,14 @@ meeting the minimum is approved. An explicit selection of cua's engine (the vari
 is refused in those cases instead, naming its remedy: a Mac that opted into cua's engine before this version, on an
 approved 0.1.0 build, needs an approved 0.2.0 or later build before it updates (`cua install --engine`, then `cua
 engine approve`), or the way back below until it has one. An install never approves: the engine `cua install` builds
-waits pending, and the default keeps the vendor's (an explicit selection keeps refusing) until the owner runs `cua
-engine approve` at the console.
+waits pending until the owner runs `cua engine approve` at the console. Meanwhile an approved build at or above the
+minimum stays in use (ruling 1118); only a Mac with no usable approved build (none, or one older than 0.2.0) keeps the
+vendor's engine by default until that approval, and refuses an explicit selection of cua's.
 **The way back:** `CUA_NATIVE_ENGINE=vendor` in a session's environment, or `"engine": "vendor"` in
 `~/.config/cua/engine.json` for every session on the Mac, runs the vendor host and engine as before #117's M5; it
-stays until #117's M6 retires the vendor engine.
+stays until #117's M6 retires the vendor engine. Where `CUA_REPL_HOST=cua` is set, also unset it or set it to
+`vendor`: cua's own host does not run the vendor engine, and a computer session that asks for both is refused
+(`repl_host_refused`).
 
 The own host takes the first Node 24 or later it finds through `CUA_NODE` (an absolute path), the Node `cua install`
 placed under `$CUA_HOME/node`, the node running cua, then the first `node` on `PATH`, never the vendor's pinned Node.

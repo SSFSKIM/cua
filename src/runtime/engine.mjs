@@ -27,7 +27,7 @@ import {CuaError, fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
 import {BUNDLE_ID, BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
 import {configuredIdentity, identityMatches, lastLines, readEngineSettings, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
-import {clearBuildFailure, recordBuildFailure} from './engine-build-failure.mjs';
+import {DEVELOPER_TOOLS_MISSING, XCODE_FIX, XCODE_NOT_SELECTED, clearBuildFailure, recordBuildFailure} from './engine-build-failure.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
 import {bundleIdentity, plistString} from '../services/engine/client.mjs';
 
@@ -423,7 +423,10 @@ async function buildPending(ctx, {identity, scratchPath, sourceRoot = ENGINE_SOU
   const compiled = await ctx.run('swift', ['build', '-c', 'release', '--package-path', sourceRoot, '--scratch-path', scratch], {timeout: BUILD_TIMEOUT_MS});
   if (compiled.code !== 0) {
     if (compiled.error === 'ENOENT') fail('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built', {hint: 'install Xcode (or its command line tools: xcode-select --install), then run cua engine build again'});
-    fail('engine_build_failed', `swift build failed (exit ${compiled.code}):\n${buildFailureDetail(`${compiled.stdout}\n${compiled.stderr}`)}`, {hint: 'the approved bundle is unchanged'});
+    const output = `${compiled.stdout}\n${compiled.stderr}`;
+    if (DEVELOPER_TOOLS_MISSING.test(output))
+      fail('engine_build_failed', `${XCODE_NOT_SELECTED}, so swift cannot run (exit ${compiled.code}):\n${buildFailureDetail(output)}`, {hint: `${XCODE_FIX}, then run cua engine build again`});
+    fail('engine_build_failed', `swift build failed (exit ${compiled.code}):\n${buildFailureDetail(output)}`, {hint: 'the approved bundle is unchanged'});
   }
 
   rmSync(paths.staging, {recursive: true, force: true});

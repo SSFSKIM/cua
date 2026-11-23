@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {engineFallback, engineFallbackFor, fallbackLine, sessionNotice} from '../src/runtime/engine-notice.mjs';
-import {buildFailureCause, clearBuildFailure, readBuildFailure, recordBuildFailure} from '../src/runtime/engine-build-failure.mjs';
+import {buildFailureCause, buildFailureFix, clearBuildFailure, readBuildFailure, recordBuildFailure} from '../src/runtime/engine-build-failure.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from '../src/runtime/layout.mjs';
 
 const NOT_INSTALLED = {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
@@ -82,11 +82,27 @@ test('the build failure\'s cause is short, one line, and carries no identity, st
   assert.equal(cause(new CuaError('engine_build_failed', 'swift build failed (exit 1):\nno detail')), 'compile error (swift build exit 1)');
   const sha = 'f'.repeat(40);
   const signed = cause(new CuaError('engine_sign_failed', `codesign could not sign with ${sha} for signer Apple Development: Some One (ABCDE12345) at /Users/someone/Library/x\nmore`), {home: '/Users/someone'});
-  assert.equal(signed, 'engine_sign_failed: codesign could not sign with <signing identity> for signer <signing identity> at ~/Library/x');
+  assert.equal(signed, 'engine_sign_failed: codesign could not sign with <signing identity> for signer <signing identity> at <path>');
   assert.ok(!signed.includes(sha) && !signed.includes('Some One'));
+  // Every absolute path goes, quoted (spaces and all) or bare, under HOME or not.
   const raw = Object.assign(new Error(`EACCES: permission denied, mkdir '/Users/someone/Library/Application Support/cua/engine'\n    at mkdirSync (node:fs:1:1)`), {code: 'EACCES'});
-  assert.equal(cause(raw, {home: '/Users/someone'}), 'EACCES: permission denied, mkdir \'~/Library/Application Support/cua/engine\'');
+  assert.equal(cause(raw, {home: '/Users/someone'}), 'EACCES: permission denied, mkdir \'<path>\'');
+  assert.equal(cause(new CuaError('engine_sign_failed', 'the staged bundle at /private/var/folders/x/T/staging/cua Engine.app reads as unsigned')),
+    'engine_sign_failed: the staged bundle at <path> Engine.app reads as unsigned', 'an unquoted path ends at its first space');
+  assert.doesNotMatch(cause(new CuaError('engine_sign_failed', 'see /opt/x and "/tmp/a b/c" and (/var/y)')), /\/opt|\/tmp|\/var/);
   assert.ok(cause(new CuaError('engine_build_failed', 'x'.repeat(500))).length <= 200, 'bounded');
+});
+
+// A swift shim with no active developer directory exits non-zero with xcrun's or xcode-select's own words: that is a
+// missing toolchain, not a compile error, and its fix is Xcode.
+test('a missing or unselected toolchain is classified before formatting: Xcode, not a compile error', () => {
+  for (const words of ['xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools), missing xcrun at: /Library/Developer/CommandLineTools/usr/bin/xcrun',
+    'xcode-select: error: tool \'swift\' requires Xcode, but active developer directory \'/Library/Developer/CommandLineTools\' is a command line tools instance']) {
+    for (const error of [new CuaError('engine_build_failed', `swift build failed (exit 1):\n${words}`), new CuaError('engine_build_failed', `Xcode is not installed or not selected, so swift cannot run (exit 1):\n${words}`)]) {
+      assert.equal(buildFailureCause(error), 'Xcode is not installed or not selected', error.message);
+      assert.match(buildFailureFix(error), /xcode-select --install.*xcode-select --switch/);
+    }
+  }
 });
 
 test('the failure record: written with the cause and the time, never the message; cleared; garbage reads as none; never throws', t => {

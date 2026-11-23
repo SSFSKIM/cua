@@ -325,6 +325,11 @@ test('a failed build records its cause beside approved.json, with no identity; t
   assert.equal(w.json('build-failed.json').cause, 'compile error (swift build exit 1): cannot find type \'Bar\' in scope');
   noIdentity(w.text('build-failed.json'), 'the record');
   assert.equal(w.plistBuild(), OLD_BUILD, 'the approved bundle keeps serving');
+  // A swift shim with no active developer directory: the toolchain is missing, not the source broken.
+  w.state.swift = () => ({code: 1, stdout: '', stderr: 'xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools), missing xcrun at: /Library/Developer/CommandLineTools/usr/bin/xcrun\n'});
+  await assert.rejects(buildEngine(w.deps), error => (assert.match(error.message, /^Xcode is not installed or not selected, so swift cannot run \(exit 1\):\nxcrun: error: invalid active developer path/),
+    assert.match(error.hint, /xcode-select --install/), true));
+  assert.equal(w.json('build-failed.json').cause, 'Xcode is not installed or not selected');
   delete w.state.swift;
   await buildEngine(w.deps);
   assert.ok(!existsSync(join(w.dir, 'build-failed.json')), 'a successful build supersedes the failure');

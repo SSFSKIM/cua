@@ -13,15 +13,26 @@ import {redact} from './engine-sign.mjs';
 const RECORD = 'build-failed.json';
 const MAX_CAUSE = 200;
 
-// The words of a failed build's cause, by what failed: the causes the owner can act on are named (swift missing means
-// Xcode, an identity missing), a compile error by its first error line without the file's path; anything else by its
-// code and the first line of its message.
+// swift's own words when it cannot run at all: the /usr/bin shim finds no active developer directory, or only the
+// command line tools where it needs Xcode. A missing toolchain, never a compile error.
+export const DEVELOPER_TOOLS_MISSING = /xcrun: error: invalid active developer path|xcrun: error: unable to find utility|missing xcrun at|xcode-select: error: (tool '[^']*' requires Xcode|no developer tools)|requires Xcode, but active developer directory/i;
+export const XCODE_NOT_SELECTED = 'Xcode is not installed or not selected';
+export const XCODE_FIX = 'install Xcode or its command line tools (xcode-select --install), or select an installed one with xcode-select --switch';
+// Absolute paths in a cause: a quoted one whole, spaces and all; a bare one up to its first space or delimiter.
+const QUOTED_PATH = /(['"])(?:~\/|\/)[^'"]*\1/g;
+const BARE_PATH = /(^|[\s(=:,])(?:~\/|\/)[^\s'"(),;]*/g;
+
+// The words of a failed build's cause, by what failed: the causes the owner can act on are named (swift missing, or a
+// swift that cannot run for want of a selected Xcode, means Xcode; an identity missing), a compile error by its first
+// error line without the file's path; anything else by its code and the first line of its message. No absolute path
+// stays: the full diagnostic is the installer's to print, not the cause's.
 export function buildFailureCause(error, {identity, home = homedir()} = {}) {
   const message = String(error?.message ?? error ?? '');
   const first = message.split('\n')[0];
   let cause;
   if (error?.code === 'engine_identity_missing') cause = 'no signing identity is configured';
   else if (error?.code === 'engine_build_failed' && /^swift is not installed/.test(first)) cause = 'Xcode is not installed (no swift)';
+  else if (error?.code === 'engine_build_failed' && (first.startsWith(XCODE_NOT_SELECTED) || DEVELOPER_TOOLS_MISSING.test(message))) cause = XCODE_NOT_SELECTED;
   else if (error?.code === 'engine_build_failed' && /^swift build failed/.test(first)) {
     const exit = /\(exit ([^)]+)\)/.exec(first)?.[1];
     const line = message.split('\n').find(text => /\berror: /.test(text));
@@ -33,6 +44,7 @@ export function buildFailureCause(error, {identity, home = homedir()} = {}) {
   }
   let out = redact(cause, identity);
   if (home && home !== '/') out = out.split(home).join('~');
+  out = out.replace(QUOTED_PATH, '$1<path>$1').replace(BARE_PATH, '$1<path>');
   return out.length > MAX_CAUSE ? `${out.slice(0, MAX_CAUSE - 1)}…` : out;
 }
 
@@ -41,6 +53,7 @@ export function buildFailureCause(error, {identity, home = homedir()} = {}) {
 export function buildFailureFix(error) {
   const first = String(error?.message ?? '').split('\n')[0];
   if (error?.code === 'engine_build_failed' && /^swift is not installed/.test(first)) return 'install Xcode or its command line tools (xcode-select --install)';
+  if (error?.code === 'engine_build_failed' && (first.startsWith(XCODE_NOT_SELECTED) || DEVELOPER_TOOLS_MISSING.test(String(error?.message ?? '')))) return XCODE_FIX;
   if (error?.code === 'engine_build_failed' && /^swift build failed/.test(first)) return null;
   return error?.hint ?? null;
 }

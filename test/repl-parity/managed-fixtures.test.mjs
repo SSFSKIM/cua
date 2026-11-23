@@ -82,11 +82,12 @@ test('installer failures remove the scratch instead of falling back to a copied 
 
 test('the default managed installer runs the checkout CLI with its isolated environment, from the prepared archive cache',t=>{
  const {source,ambient,archives}=fixture(t);let invocation;
- const scratch=prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
+ const scratch=prepareCapabilityHome({source,ambient:{...ambient,CUA_NATIVE_ENGINE:'cua'},archives,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
  t.after(()=>scratch.cleanup());
  const cache=archiveCacheDir(source);
  assert.equal(invocation[0],process.execPath);assert.deepEqual(invocation[1],['bin/cua.mjs','install','--archive',join(cache,'r1-linux-x64.deb'),'--node-archive',join(cache,'node-v24.0.0-linux-x64.tar.gz')]);
  assert.equal(realpathSync(invocation[2].cwd),realpathSync(new URL('../../',import.meta.url)));assert.equal(invocation[2].env.CUA_HOME,scratch.dir);assert.equal(invocation[2].env.CUA_NODE,undefined);
+ assert.equal(invocation[2].env.CUA_NATIVE_ENGINE,'vendor','the acquisition never builds an engine under the scratch HOME (#117 M4)');
 });
 
 test('an absent or damaged archive cache refuses before any scratch exists or anything installs',t=>{

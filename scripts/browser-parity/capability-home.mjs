@@ -25,10 +25,11 @@ import {defaultHome, homeLayout, readPointer, writePointer} from '../../src/runt
 import {cuaRecordFile} from '../../src/chrome/route.mjs';
 import {backendDir} from '../../src/chrome/extension.mjs';
 
-// The installer and executable-facts boundaries are synchronous and injectable; local doubles never run install.
+// The installer and executable-facts boundaries are synchronous and injectable; local doubles never run install. The
+// install acquires only: pinned to the vendor engine, so it never builds an engine under the scratch HOME (#117 M4).
 function installRuntime({env,run,archives}) {
   run(process.execPath, ['bin/cua.mjs', ...installArgs(archives)], {
-    cwd: fileURLToPath(new URL('../../', import.meta.url)), env,
+    cwd: fileURLToPath(new URL('../../', import.meta.url)), env: {...env, CUA_NATIVE_ENGINE: 'vendor'},
     stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000, maxBuffer: 1024 * 1024,
   });
 }

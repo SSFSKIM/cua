@@ -10,6 +10,7 @@ import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
 import {POPUP_DELAYS,LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
 import {signalsOf,cssPoint} from './signals.mjs';
+import {pressOf} from './check.mjs';
 import {outcomeOf,stalePointOf,sentenceOf,routeOf,findLink,uncoveredBy,labelledOf,nodeAt,overlayAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
@@ -216,7 +217,7 @@ async function main(){
       const ok=attested&&!invalid;
       const verdicts=score({attested:ok,observeFailed,cell:c.cell,at:c.at,click:clickOutcome,stale:guard,clicks:read?.clicks});
       const aim=found?.[c.at];
-      const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,guard,route:click?routeOf(click.reply):null,
+      const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,guard,route:click?routeOf(click.reply):null,press:click?pressOf(click.reply):null,
         sentence:spec.cover&&click&&clickOutcome==='screenChangedSinceScreenshot'?sentenceOf(click.reply):null,...verdicts,
         observeError:observeFailed?(observed?.reply?.result?'target-not-found':outcomeOf(observed?.reply)):null,
         clickEvents:read?(read.clicks??[]).map(x=>`${x.type}:${x.link}${x.trusted?'':':untrusted'}`).slice(0,12):null,

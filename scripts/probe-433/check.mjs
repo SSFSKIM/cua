@@ -126,12 +126,23 @@ export function stalePointOf(reply){
     // #442's fix: whether the guard hit-tested again after its wait, and whether the answer changed (absent on main).
     hitCorrection:['same','changed','none'].includes(sp.hitCorrection)?sp.hitCorrection:sp.hitCorrection==null?null:'other',
     // The hit's time (on the fix's window refusal after its wait, the delayed hit's: correctedHitMs) and #452's window signal.
-    hitMs:Number.isFinite(sp.hitMs)?sp.hitMs:null,by:sp.by==null?null:name(sp.by)};
+    hitMs:Number.isFinite(sp.hitMs)?sp.hitMs:null,by:sp.by==null?null:name(sp.by),
+    // #481's fix: "corrected" when the route was carried from #442's corrected hit (hitRole then names it).
+    routeHit:sp.routeHit==null?null:sp.routeHit==='corrected'?'corrected':'other'};
 }
 // #433 (ruling 909): the guard's refusal sentence, the engine's own error message on the owned fixture, captured for an
 // overlay cell's refusal only; control characters dropped, at most 600 characters.
 export const sentenceOf=reply=>{const m=reply?.error?.message;return typeof m==='string'?m.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,600):null;};
 export const routeOf=reply=>{const r=metaOf(reply)?.inputRoute;return r==null?null:name(r);};
+// #481: what the element route pressed, from the meta's \`elementClick\` (closed codes only): why it ran, its plan and action,
+// the pressed control's role and whether it was the hit or an ancestor, and where a refused walk stopped. Null when none.
+export function pressOf(reply){
+  const e=metaOf(reply)?.elementClick;
+  if(!e||typeof e!=='object')return null;
+  return {reason:e.reason==null?null:name(e.reason),plan:e.plan==null?null:name(e.plan),action:e.action==null?null:name(e.action),
+    pressedRole:role(e.pressedRole),pressed:e.pressed==='hit'||e.pressed==='ancestor'?e.pressed:e.pressed==null?null:'other',
+    walkStopped:e.walkStopped==null?null:name(e.walkStopped)};
+}
 
 // How far a frame moved and grew between two readings (points, or CSS pixels for the page's own geometry).
 const r2=x=>Math.round(x*100)/100;

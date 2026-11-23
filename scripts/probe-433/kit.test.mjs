@@ -129,7 +129,7 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
     stalePoint: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXStaticText', hitRole: 'AXStaticText', ms: 1.2}}}};
   assert.equal(outcomeOf(refused), 'screenChangedSinceScreenshot');
   assert.deepEqual(stalePointOf(refused), {verdict: 'refused', reason: 'nodeGone', identity: null, recordedRole: 'AXStaticText',
-    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null, hitCorrection: null, hitMs: null, by: null});
+    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null, hitCorrection: null, hitMs: null, by: null, routeHit: null});
   // #433's fix: the control beneath, and how it was found.
   const under = stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXGroup', underlyingRole: 'AXLink', underlyingIdentity: 'recreated'}}}});
   assert.equal(under.underlyingRole, 'AXLink'); assert.equal(under.underlyingIdentity, 'recreated');
@@ -589,4 +589,22 @@ test('#442: the refuse cells must refuse every fix row; the review\'s shapes ans
   const s = gates(shapeRefused, {coverage: cov});
   assert.equal(s.shapeAsMain.pass, false); assert.equal(s.otherOnTopElsewhere.rows, 1); assert.equal(s.otherOnTopElsewhere.mainKeptLanded, 1);
   assert.equal(stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', hitCorrection: 'changed'}}}}).hitCorrection, 'changed');
+});
+
+test('#481: the record at the point is whole only where every child its node listed is recorded, with no thin incomplete strip below', async () => {
+  const {recordAt, signalsOf} = await import('./signals.mjs');
+  const {pressOf} = await import('./check.mjs');
+  const f = {x: 0, y: 0, width: 100, height: 50}, p = {x: 10, y: 10};
+  const whole = [{role: 'AXGroup', depth: 1, frame: f, children: 1}, {role: 'AXGroup', depth: 2, frame: f, children: 0}];
+  assert.equal(recordAt(whole, p).complete, true);
+  // The deepest node listed two children and the record holds none (a depth cut).
+  assert.equal(recordAt([whole[0], {...whole[1], children: 2}], p).complete, false);
+  // A thin incomplete strip below the node.
+  const strip = {role: 'AXGroup', depth: 3, frame: {x: 0, y: 0, width: 100, height: 1}, children: 3};
+  assert.equal(recordAt([whole[0], {...whole[1], children: 1}, strip], p).complete, false);
+  assert.equal(signalsOf({nodes: whole, point: p}).record.complete, true);
+  assert.deepEqual(pressOf({result: {meta: {elementClick: {reason: 'webArea', plan: 'action', action: 'AXPress', pressedRole: 'AXLink', pressed: 'ancestor'}}}}),
+    {reason: 'webArea', plan: 'action', action: 'AXPress', pressedRole: 'AXLink', pressed: 'ancestor', walkStopped: null});
+  assert.equal(pressOf({result: {meta: {}}}), null);
+  assert.equal(stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', routeHit: 'corrected'}}}}).routeHit, 'corrected');
 });

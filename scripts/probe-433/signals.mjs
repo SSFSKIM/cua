@@ -42,7 +42,19 @@ export function recordAt(nodes,p,spec={}){
     return set.filter(i=>!holders.has(i)).map(i=>({name:nameOf(label(list[i]),spec),role:role(list[i].role),frame:frameOf(list[i].frame),
       press:Array.isArray(list[i].actions)&&list[i].actions.includes('AXPress')}));};
   const d=deepest==null?null:list[deepest];
+  // #481's gate (StalePoint.swift \`routeTakesCorrectedHit\`): the node's record is whole, no child it listed missing from the
+  // record (a frameless incomplete child making its parent incomplete), and no thin (1 pt) incomplete strip below it. From
+  // the observation's nodes, by count, as the engine judges where the listed children are not known by handle.
+  const recorded=new Array(list.length).fill(0);parent.forEach(j=>{if(j!=null)recorded[j]++;});
+  const incomplete=new Set(),gap=new Set(),thin=f=>!!f&&(f.width<=1||f.height<=1);
+  for(let i=list.length-1;i>=0;i--){
+    if(recorded[i]<(Number.isInteger(list[i]?.children)?list[i].children:0))incomplete.add(i);
+    if(list[i]?.frame==null&&incomplete.has(i)&&parent[i]!=null)incomplete.add(parent[i]);
+    if(thin(list[i]?.frame)&&incomplete.has(i))gap.add(i);
+    if(gap.has(i)&&parent[i]!=null)gap.add(parent[i]);
+  }
   return {deepest:d?role(d.role):null,inert:!!d&&!acts(d)&&!up(deepest).some(j=>acts(list[j])),
+    complete:deepest==null?null:!incomplete.has(deepest)&&!gap.has(deepest),
     engine:innermost(acts),role:innermost(n=>INTERACTIVE.has(n?.role))};
 }
 const label=n=>[n?.title,n?.description,n?.value].find(v=>typeof v==='string'&&v.trim())??'';
@@ -131,7 +143,7 @@ export function signalsOf({spec={},nodes,point,pre,post,after,warm,domPre,domPos
     return {paintTop:painted[0],treeLast:later,treeAgrees:later===painted[0],
       visible:Object.fromEntries(tree.filter(c=>c.visible!==undefined).map(c=>[c.name,c.visible]))};};
   return {
-    record:record&&{deepest:record.deepest,inert:record.inert,role:names(record.role),engine:names(record.engine),
+    record:record&&{deepest:record.deepest,inert:record.inert,complete:record.complete,role:names(record.role),engine:names(record.engine),
       engineRoles:record.engine.map(c=>c.role).sort().join('+')||'none'},
     ax,dom,recipient,
     a:{recordVsPost:record&&live(ax.post)?!sameSet(record.role,live(ax.post)):null,

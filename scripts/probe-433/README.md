@@ -998,3 +998,46 @@ Against #453's counted run [45075999203](https://github.com/SSFSKIM/cua/actions/
 
 Each row was delivered (route 1), confirmed by `overlayClick` and taken, as on 45075999203: the omnibox and the popover as their row AXStaticText and AXButton, and the permission prompt as its AXButton (allow granted, block NotAllowedError). Kit `0d52741c`, Chrome 157.0.8103.79, macOS 26.7.2.
 
+
+## #481 qual
+
+#481 (`fix/481-corrected-hit-route`, candidate head `02b5372a`, main `b1b15484`): on Chromium, when the guard keeps a click and #442's re-hit changed the answer (`stalePoint.hitCorrection: "changed"`), the kept verdict carries the corrected hit. The element route, #454's menu-item check and #458's pop-up check all act on it, and the meta says `stalePoint.routeHit: "corrected"`, with `hitRole` naming the corrected hit. Where the node's record is incomplete, the route keeps main's first hit (StalePoint.swift `routeTakesCorrectedHit`: `subtreeRecorded` with no gaps), so `deepfront` stays as main. An unrecorded control that the corrected hit names is refused at the press (`pressedOther`, where main answers `backgroundClickRefused`).
+
+Not yet run: the final head comes first. The plan is one smoke, then five counted runs, one in flight at a time, about 4 to 4.5 hours in all (Electron's lane is the slowest, 40–55 minutes a run).
+
+```sh
+# S: smoke, reps 1, both heads, every cell below
+# R1 cold, reps 10 (400 rows per lane): #442's batch 1 overlay keeps
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover,tipremount,twinunder
+# R2 cold, reps 10 (460): slideover, siblingstack, decomove and the reviewer shapes
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=slideover,siblingstack,decomove,deepfront,overflowlink,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad
+# R3 cold, reps 5 (330): #442's batch 2, the keep cells, #340's cells and capremount
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=5 -f hits=cold -f cells=retext,plain,like,remount,textbehind,btnremount,tableremount,tablecellremount,inbox,reltime,shrink,linksave,moved,linkmono,right,centre,capremount
+# R4 warm, reps 10 (440): #442's batch 3, and deepfront
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=warm -f cells=slideover,siblingstack,overcontrol,bgbutton,overlapinto,overlaprow,scrim,twincover,retext,plain,deepfront
+# P: #453's delivering kinds on the fix head, 10 each, shared-behind
+gh workflow run probe-453.yml --ref probe/453-measure -f engine="$FIX_SHA" -f reps=99 -f kit=qual453 -f label=fix481 -f 'flags=--cellreps 10' -f 'only=^omnibox/shared-behind/click$,^popover/shared-behind/click$,^permission/shared-behind/(allow|block)$'
+# The bar: node scripts/probe-433/bar481.mjs R1=<dir> R2=<dir> R3=<dir> R4=<dir>
+```
+
+R1 to R4 cover #442's batches 1–3: the same cells and repetitions, cold and warm, main against fix, which hold #442's 890 keep rows.
+
+What the kit adds for #481:
+- Every row records the route's press (`press`, from the meta's `elementClick`): why it ran, its plan and action, the pressed role, `hit` or `ancestor`, and a refused walk's stop. Every row also records the fix's `stalePoint.routeHit`.
+- Every row records whether its node record is whole (`signals.record.complete`, from the observation: the node at the point listed no child the record lacks, and has no thin incomplete strip below it; the engine's `subtreeRecorded` and `gapsBelow`, by count).
+- `bar481.mjs` pairs each fix row with main's and prints:
+  1. Keep rows (main kept and landed), with the worse ones by name.
+  2. Better rows (main missed, the fix landed).
+  3. Every change of verdict, guard reason or click outcome (`backgroundClickRefused` to `pressedOther`, for example).
+  4. False ok on each head (kept, the click answered ok, nothing on the target; cells whose own cover takes the click are left out), and "kept, then refused by the route" by outcome.
+  5. Ruling 1105's gate: every row whose node record is incomplete, main against fix, with its differences and any `routeHit`.
+  6. Press parity per Chromium keep cell: what each head pressed, and where the page logged the click, with the fix's `routeHit` count.
+  7. slideover's and decomove's fix answers, and `stalePoint.ms` per head.
+
+The bar:
+1. All of #442's keep rows land as on main or better, with no keep row worse or newly refused, and every reason change named.
+2. `overcontrol` lands on its target on CfT. No false ok is left in the keep cells, or each one left is named with its cause.
+3. Press parity on every Chromium keep cell, and `routeHit` present or not.
+4. Ruling 1105: every row whose node record is incomplete (`deepfront`, and any other cell where it applies) answers exactly as main does, with no `routeHit`. The deepfront tally is given per lane, cold and warm.
+5. Unchanged: slideover refuses as on 8feea998, decomove refuses `controlGone`, and #453's three delivering kinds (10 each, shared-behind) behave as on 45128593886.
+6. Cost: `stalePoint.ms` p50 / p95, main against fix, as #442's.

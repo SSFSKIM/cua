@@ -1,0 +1,39 @@
+# t487-named x100 on 0.4.4 and x100 on 0.4.3 (arm64, twice the load, harness 5f59e5bc), regraded offline by fix wave 4 (task 142)
+
+The judge is be565ccd's scripts/linux-engine-diff/drop-signals-judge.mjs (`namedSourceTable`, `namedSourceUnproven`),
+identical to harness-487 at 2f367ae2. It was given the scene row's Electron window and the rows as stored
+(044/run/results.jsonl.gz and 043/run/results.jsonl.gz), which this regrade does not change.
+
+The aim is read by its content (`aimProven`): the root point inside the recorded source rectangle, the parked point
+equal to it, and the scene's Electron window in the parked chain.
+
+The script is task 142's scratch /Users/new/.local/share/cua-171/task142/regrade-w3-runs.mjs, run from the checkout:
+
+    node regrade-w3-runs.mjs scripts/linux-engine-diff/drop-signals-judge.mjs \
+      <044 results.jsonl.gz> <043 results.jsonl.gz>
+
+Its output follows unchanged.
+
+## dev-t147-w3-t487-named-044-load2: cua-engine 0.4.4 (23f342178d94), harness 5f59e5bcbb94c06c1a0327a76c0642e24a48482d, load load2, 100 drops; the scene's Electron window 18874371
+
+| drops | drags | refused before any input | landed | false ok | stale drops | honest unconfirmed | ambiguous | error |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| exercised | 100 | 0 | 100 | 0 | 0 | 0 | 0 | 0 |
+| not exercised | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+Not exercised, by the proof missing: electron 0, pacing 0, route 0, aim 0, press 0, start 0, settle 0.
+Drops whose aim is unproven: 0.
+The settles' rest_ms: 30 ms 100.
+Press points: {"x":530,"y":128}; source rectangles: {"x":505,"y":110,"w":50,"h":36}.
+
+## dev-t147-w3-t487-named-043-load2: cua-engine 0.4.3 (ba5b043834ce), harness 5f59e5bcbb94c06c1a0327a76c0642e24a48482d, load load2, 100 drops; the scene's Electron window 18874371
+
+| drops | drags | refused before any input | landed | false ok | stale drops | honest unconfirmed | ambiguous | error |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| exercised | 100 | 0 | 100 | 0 | 0 | 0 | 0 | 0 |
+| not exercised | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+Not exercised, by the proof missing: electron 0, pacing 0, route 0, aim 0, press 0, start 0, settle 0.
+Drops whose aim is unproven: 0.
+The settles' rest_ms: absent 100.
+Press points: {"x":530,"y":128}; source rectangles: {"x":505,"y":110,"w":50,"h":36}.

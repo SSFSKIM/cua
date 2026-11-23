@@ -14,11 +14,13 @@
 // the user window under the composition and the per-context preference, where the oracle reads the user window around
 // each act and the composition's row also requires the user's field to keep its value. The mid-switch row schedules the
 // probe's switch inside its typeText, as the probe cells schedule their keystrokes (./probe-plan.mjs).
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop} from './steps.mjs';
+import {activate, activated, activationOf, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, push, quiet, read, readKey, sendKeys, skippedReadings,
+  Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
@@ -233,12 +235,16 @@ async function perContextRows(ctx, field, rows) {
 // The mid-switch row: the Latin source, the field's scene in front, a long keyed typeText, and the probe's switch to
 // Korean scheduled inside it. It must stop with inputSourceChanged (its sentence in the message), entering exactly what the field then holds (its
 // hash against the text's first `cua/entered` units), the sentence's own count the same (`judgeMidSwitch`). The Latin
-// source is selected again after it.
+// source is selected again after it. Its front/key readings (./front-key.mjs) are the field scene's activation, the
+// reading the key guard takes before the act and one after its check; an activation that did not take front and key
+// sends nothing.
 async function midSwitchRow(ctx, r) {
   const field = r.field;
   await quiet(ctx, field);
   const front = activate(ctx, field);
   if (!front?.ok) return invalidRow(ctx, r, `${field} did not come to the front`);
+  const app = SCENES[field].bundleId;
+  if (!activated(ctx, app)) return push(ctx, {...rowBase(ctx, r), frontKey: skippedReadings(ctx, [app], app)});
   if (!establishSource(ctx, ABC, `midSwitch:${field}`)) return invalidRow(ctx, r, notHeld(ABC, field));
   const retries = [];
   let preMs = PRE_MS.textedit;
@@ -274,20 +280,22 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   if (!prepared.ok || !prepared.value?.ready) return end({invalid: `not prepared: ${prepared.error ?? prepared.value?.reason ?? 'no reason'}`});
   alertCheck(ctx, `before ${r.id}`);
   const started = device(ctx, ['probe', 'input-source', '--source', KOREAN_2SET, '--lead', String(PROBE_LEAD_MS)]);
-  let act = null, finished = null;
+  let act = null, finished = null, before = null;
   try {
+    before = read(ctx, null, {frontKey: true});
     act = span(await sendKeys(ctx, scheduledActCell(field, {at: started.scheduled - preMs, act: `await __app.typeText(${j(r.string.text)});`, tag: 'unicode.midSwitch'}),
-      ['typeText'], {scene: field, front: read(ctx), kind: 'row', key}));
+      ['typeText'], {scene: field, front: before, kind: 'row', key}));
   } finally { finished = device(ctx, ['probe', 'finish']); }
   if (!act) return end({invalid: 'the key guard did not send the action'});
   alertCheck(ctx, `after ${r.id}`);
   if (!act.ok) return end({invalid: 'the act cell failed', error: act.error});
   const check = span(await ctx.lane.js(fieldCheckCell(field, null, 'unicode.midSwitch.check')));
+  const app = SCENES[field].bundleId, frontKey = {apps: [app], activate: activationOf(ctx, app), before: keyReading(before), after: readKey(ctx)};
   const entered = act.engine?.entered ?? null, switchedAt = finished?.answer?.selectedAt;
   const interval = intervalOf(ctx.engine, act);
   const {ok, stopped, exact, sentenceEntered, sentenceAgrees} = judgeMidSwitch({threw: act.value.threw, message: act.value.message, entered, field: check.value, text: r.string.text});
-  const row = {ok, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {stopped, errorName: act.value.errorName, message: act.value.message ?? null, entered, sentenceEntered, sentenceAgrees, length: check.value?.length ?? null, hash: check.value?.hash ?? null, exact,
+  const row = {ok, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
+    outcome: {stopped, errorName: errorNameOf(act), message: act.value.message ?? null, entered, sentenceEntered, sentenceAgrees, length: check.value?.length ?? null, hash: check.value?.hash ?? null, exact,
       intervalSource: interval?.source ?? null, switchOffsetMs: interval && Number.isFinite(switchedAt) ? switchedAt - interval.from : null}};
   const why = probeProblem(finished?.answer) ?? postValidity(switchedAt, interval)?.replace('the probe posted', 'the probe switched');
   if (why) return end({...row, ok: false, invalid: why}, {retry: true, preMs: nextPreMs({callAt: act.value.callAt, interval, postedAt: switchedAt, scheduled: started.scheduled, preMs})});

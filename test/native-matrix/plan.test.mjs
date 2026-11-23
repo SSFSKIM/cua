@@ -534,3 +534,47 @@ test('#354: a list\'s type-select keeps cua\'s typeUnconfirmed for an element th
   await assert.rejects(act(answering('The text was typed, but the field does not read as expected'), {}), /does not read as expected/);
   await assert.rejects(act(answering('The user changed \'x\'.'), {}), /user changed/);
 });
+
+// T10b′ (the M5 wave-1 record): what the judge's conservative-answer rule reads (./answers.mjs conservativeEffect), on
+// an act that threw: the target's watched state read unchanged since the prepare (`unchanged`), and the case's own
+// check reading its intended effect all the same (`effect`), both read back from the fixture, never inferred.
+test('an act that threw records whether the state stayed as prepared and whether the intended effect was read anyway', async () => {
+  const thrower = (field, {write, name}) => {
+    field.app.typeText = async (...args) => {
+      field.app.calls.push(['typeText', ...args]);
+      if (write) field.state.value = field.state.value.replace(field.state.selected, args[0]);
+      field.state.selected = null;
+      throw Object.assign(new Error(`Computer Use server error -10005: ${name}`), {errorName: name});
+    };
+    return field;
+  };
+  const landed = await runCase('electron', 'electron', thrower(electronField(), {write: true, name: 'typeUnconfirmed'}).app, 'typeText', 'replace');
+  assert.equal(landed.act.value.threw, true);
+  assert.equal(landed.check.value.ok, false, 'an outcome case whose act threw fails whatever it reads');
+  assert.deepEqual([landed.check.value.outcome.effect, landed.check.value.outcome.unchanged, landed.check.value.outcome.errorName], [true, false, 'typeUnconfirmed']);
+  const refused = await runCase('electron', 'electron', thrower(electronField(), {write: false, name: 'backgroundClickRefused'}).app, 'typeText', 'replace');
+  assert.deepEqual([refused.check.value.outcome.effect, refused.check.value.outcome.unchanged], [false, false], 'the selection collapsed: not the state as prepared');
+  // Nothing at all moved: the state as prepared, selection and value alike.
+  const still = electronField();
+  still.app.typeText = async () => { throw Object.assign(new Error('Computer Use server error -10005: refused'), {errorName: 'backgroundClickRefused'}); };
+  const untouched = await runCase('electron', 'electron', still.app, 'typeText', 'replace');
+  assert.deepEqual([untouched.check.value.outcome.effect, untouched.check.value.outcome.unchanged], [false, true]);
+  // An act that answered: its outcome as before, no reading for an answer it did not give.
+  const ok = await runCase('electron', 'electron', electronField().app, 'typeText', 'replace');
+  assert.equal(ok.check.value.ok, true);
+  assert.equal('unchanged' in ok.check.value.outcome || 'effect' in ok.check.value.outcome, false);
+  assert.doesNotMatch(JSON.stringify([landed, refused, untouched]), /alpha|bravo|charlie|quick brown/, 'the watched state stays in the cell');
+});
+
+test('a fixed-string Unicode row whose act threw: the field read empty as prepared, or holding the expected text', async () => {
+  const {unicodeCase} = await import('../../scripts/native-matrix/unicode-plan.mjs');
+  const c = unicodeCase({field: 'electron', method: 'typeText', string: {id: 'hangul', text: '한글 테스트'}});
+  const cells = caseCells('electron', c);
+  const runOn = async app => { const apps = {electron: app}; await run(cells.prepare, {apps}); await run(cells.act, {apps}); const check = await run(cells.check, {apps}); delete globalThis.__m; return check.value; };
+  const unconfirmed = electronField();
+  unconfirmed.app.typeText = async text => { unconfirmed.state.value = text; throw Object.assign(new Error('Computer Use server error -10005: not confirmed'), {errorName: 'typeUnconfirmed'}); };
+  assert.deepEqual(await runOn(unconfirmed.app).then(v => [v.ok, v.outcome.exact, v.outcome.effect, v.outcome.unchanged]), [false, true, true, false]);
+  const refused = electronField();
+  refused.app.typeText = async () => { throw Object.assign(new Error('Computer Use server error -10005: refused before any key'), {errorName: 'concealedInputUnavailable'}); };
+  assert.deepEqual(await runOn(refused.app).then(v => [v.ok, v.outcome.exact, v.outcome.effect, v.outcome.unchanged]), [false, false, false, true]);
+});

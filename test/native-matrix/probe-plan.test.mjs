@@ -10,8 +10,9 @@ import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {TEXT_FIELDS} from '../../scripts/native-matrix/plan.mjs';
 import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS,
-  SAVE_PANEL_CONTROLS, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell} from '../../scripts/native-matrix/probe-plan.mjs';
-import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
+  SAVE_PANEL_CONTROLS, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell} from '../../scripts/native-matrix/probe-plan.mjs';
+import {rowIndexOfName, valueOfIndex, indexOfId} from '../../scripts/native-matrix/matrix-text.mjs';
+import {advanceNumbering, NOTE, render} from '../../src/services/engine/render.mjs';
 import {node as axNode, skyshot as axSkyshot} from '../native-goldens/builder.mjs';
 
 const act = (engine, meta = {}, value = {callAt: 1_000, endAt: 3_000}) => ({engine: {actionInterval: null, receivedAt: null, ...meta}, value});
@@ -254,4 +255,37 @@ test('#212\'s destination cell as shipped is observation only: the controls are 
   const dialog = after.lines.find(l => l.head === 'sheet fixture-go-to'), field = after.lines.find(l => l.id === 'fixture-go-to-field');
   assert.deepEqual([field.focused, field.parent, field.head, dialog.parent], [true, dialog.index, 'text field', after.lines.find(l => l.head === 'sheet fixture-save-panel').index]);
   assert.ok(!JSON.stringify(result.value.observed).includes('Documents'), 'no value leaves the cell');
+});
+
+// ---- Acceptance 3's keystroke witness, against the Finder and TextEdit goldens ---------------------------------------
+
+const witnessGolden = scene => readFileSync(fileURLToPath(new URL(`../native-goldens/${scene}/vendor.txt`, import.meta.url)), 'utf8');
+// Finder's list with the named rows alone selected, its trailer as src/services/engine/render.mjs writes one.
+const finderSelecting = (...names) => {
+  const finder = witnessGolden('finder');
+  if (!names.length) return finder;
+  const tree = finder.split(/\n\n(?:The focused UI element is |Selected text: |Selected:\n)/)[0];
+  return `${tree}\n\nSelected:\n${names.map(n => `\t${rowIndexOfName(finder, n)} row (selected)`).join('\n')}\n\n${NOTE}`;
+};
+// TextEdit's document as the golden holds it, or with `document` its value; `__m.before` its value before the click, as the
+// click case's prepare keeps it.
+const runWitness = async (code, {finder, document}) => {
+  const doc = witnessGolden('textedit'), original = String(valueOfIndex(doc, indexOfId(doc, 'First Text View')));
+  globalThis.__apps = {finder: {getAXState: async () => finder}, textedit: {getAXState: async () => (document === undefined ? doc : doc.replace(original, document))}};
+  globalThis.__m = {before: original.replace(/\*\*/g, '')};
+  const output = [];
+  try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', code)({write: t => output.push(t)}); }
+  finally { delete globalThis.__apps; delete globalThis.__m; }
+  return parseCell(output.join('\n'))?.value;
+};
+
+test('the keystroke witness types a file the selection must move to, and reads Finder\'s selection and TextEdit\'s document back as booleans', async () => {
+  assert.deepEqual(await runWitness(WITNESS_PREPARE_CELL, {finder: finderSelecting()}), {target: WITNESS_FILES[0]});
+  assert.deepEqual(await runWitness(WITNESS_PREPARE_CELL, {finder: finderSelecting(WITNESS_FILES[0])}), {target: WITNESS_FILES[1]}, 'already selected: the other file');
+  const check = witnessCheckCell(WITNESS_FILES[0]);
+  assert.deepEqual(await runWitness(check, {finder: finderSelecting(WITNESS_FILES[0])}), {finderSelected: true, documentUnchanged: true});
+  assert.deepEqual(await runWitness(check, {finder: finderSelecting()}), {finderSelected: false, documentUnchanged: true}, 'the keys did not reach Finder');
+  assert.deepEqual(await runWitness(check, {finder: finderSelecting(WITNESS_FILES[0], WITNESS_FILES[1])}), {finderSelected: false, documentUnchanged: true}, 'the file alone');
+  assert.deepEqual(await runWitness(check, {finder: finderSelecting(WITNESS_FILES[0]), document: 'cua scene document scene-file-007'}), {finderSelected: true, documentUnchanged: false},
+    'the keys reached the document');
 });

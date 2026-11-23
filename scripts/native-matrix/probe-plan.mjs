@@ -394,6 +394,33 @@ if (typeof globalThis.__saveDir === "string") {
 }
 return {cancelled: !__saveSheet(ax), destinationRemoved};`);
 
+// ---- Acceptance 3's keystroke witness ---------------------------------------------------------------------------------
+// In TextEdit's background click with Finder's window in front (./plan.mjs isAcceptance3), after the click and its check:
+// a probe keystroke, gated on the run's Finder window, types a run-owned file's name, which Finder's list must select
+// (type-select), while TextEdit's document keeps its value (S L238: Finder kept the keyboard focus, the document took no
+// key). The file is the seventh, or the eighth when the seventh is already the one selected, so the selection must move.
+export const WITNESS_FILES = Object.freeze(['scene-file-007', 'scene-file-008']);
+// The probe's time ahead of its launch: the launch and its gate's first reading fit inside it.
+export const WITNESS_LEAD_MS = 1_500;
+const onlySelected = 'const __only = (ax, name) => { const s = selectedIndexesOf(ax), row = rowIndexOfName(ax, name); return row !== null && s.length === 1 && s[0] === row; };';
+// -> {target}.
+export const WITNESS_PREPARE_CELL = cell(`${prelude('finder')}
+// cua-matrix-cell: witness.prepare
+${onlySelected}
+const ax = await observe();
+return {target: __only(ax, ${j(WITNESS_FILES[0])}) ? ${j(WITNESS_FILES[1])} : ${j(WITNESS_FILES[0])}};`);
+// Finder's list read for the file alone selected, and TextEdit's document against its value before the click (the click
+// case's prepare kept it in `__m.before`); both through the lane's observations of the run's own windows, booleans out.
+// -> {finderSelected, documentUnchanged}.
+export const witnessCheckCell = target => cell(`${prelude('finder')}
+// cua-matrix-cell: witness.check
+${onlySelected}
+const ax = await observe();
+const __doc = globalThis.__apps?.textedit;
+const __text = __doc ? await __doc.getAXState({emit: false, disableDiffing: true}) : "";
+const __value = plain(valueOfIndex(__text, indexOfId(__text, "First Text View")) ?? "");
+return {finderSelected: __only(ax, ${j(target)}), documentUnchanged: typeof globalThis.__m?.before === "string" && __value === globalThis.__m.before};`);
+
 // Intervention fires: after the refusal, the last typed character's landing on the document. -> {landed}.
 export const endsWithCell = (scene, text) => cell(`${prelude(scene)}
 // cua-matrix-cell: intervention.landed

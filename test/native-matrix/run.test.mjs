@@ -20,7 +20,7 @@ test('one pairing of the background regime: the hold in order, a conforming resu
   assert.equal(result.cell, 'non-interference');
   const order = names(steps).filter(s => !/^(matrix read|matrix step|matrix alerts|helpers)/.test(s));
   assert.deepEqual(order, ['home', 'live begin', 'matrix load', 'prepare', 'preflight', 'scenes preflight', 'scenes up', 'goldens steps', 'scenes up', 'goldens steps', 'goldens engine-stop',
-    'matrix compile', 'live watch', 'serve', 'live watch', 'matrix launched', 'live recover', 'matrix launched', 'scenes frontmost', 'cleanup', 'matrix load']);
+    'matrix compile', 'live watch', 'serve', 'matrix probe', 'matrix probe', 'live watch', 'matrix launched', 'live recover', 'matrix launched', 'scenes frontmost', 'cleanup', 'matrix load']);
   // The device's load before the run's work and after its put-back, for the hold's record.
   assert.deepEqual(Object.keys(result.meta.load), ['before', 'after']);
   assert.deepEqual(result.meta.load.before, {loadavg: [1.5, 1.2, 1], uptimeS: 86_400, cpus: 10});
@@ -196,8 +196,21 @@ test('the launch path: the intent journaled before the act, the identity after i
 
 test('a key skipped with one of the run\'s windows in front leaves the row invalid; with another app in front the run stops', async () => {
   // The user window (Finder) is in front; a frontmost-regime key cell for TextEdit sees Finder: skipped, the row invalid.
+  // The front/key readings say TextEdit took front and key, so it is the key guard's own reading that holds the keys back.
   const plan = {id: 'test', frontmost: ['finder', 'textedit'], speed: false, finding: false, background: [], launch: []};
-  const own = await runWith({plan, ops: {matrix: (base, a) => (a[0] === 'step' && a[1] === 'activate' && a[2] === 'textedit' ? base(['step', 'activate', 'finder', ...a.slice(3)]) : base(a))}});
+  const toFinder = a => a[0] === 'step' && a[1] === 'activate' && a[2] === 'textedit';
+  const textEdit = {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'};
+  let last = null;
+  const own = await runWith({plan, ops: {matrix: (base, a) => {
+    if (a[0] === 'step' && a[1] === 'activate') last = a[2];
+    if (toFinder(a)) return {...base(['step', 'activate', 'finder', ...a.slice(3)]), frontKey: textEdit};
+    return a[0] === 'read' && a.includes('--with') && last === 'textedit' ? {...base(a), frontKey: textEdit} : base(a);
+  }}});
+  // Read honestly, the same activation did not take TextEdit front: no act of TextEdit's is sent, none invalid (ruling 1141).
+  const honest = await runWith({plan, ops: {matrix: (base, a) => (toFinder(a) ? base(['step', 'activate', 'finder', ...a.slice(3)]) : base(a))}});
+  const textedit = honest.result.rows.filter(r => r.target === 'textedit');
+  assert.ok(textedit.length > 10 && textedit.every(r => r.ok === false && r.invalid === undefined && r.frontKey.activate.front === false && r.frontKey.after === null));
+  assert.deepEqual(honest.result.meta.keySkipped, []);
   const skipped = own.result.rows.filter(r => /key guard/.test(r.invalid ?? ''));
   assert.deepEqual(skipped.map(r => r.id).sort(), ['textedit/frontmost/paste.replace', 'textedit/frontmost/pressKey.selectAll', 'textedit/frontmost/typeText.replace']);
   assert.ok(own.result.rows.filter(r => r.target === 'finder').every(r => !r.invalid), 'Finder\'s own keys went with Finder in front');

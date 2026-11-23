@@ -69,7 +69,8 @@
 //              owner-accepted route 4, a family that activates itself at launch) are `interference.declared`, and do
 //              not excuse the row's outcome.
 //   error      optional, a bounded sentence (at most 300 characters)
-// Anything else a row carries is kept and ignored by the summary.
+// Anything else a row carries is kept and ignored by the summary. A row never says ok against its own reading: `ok: true`
+// with `outcome.userKept` false, or with `outcome.exact` false, does not conform (rowProblems).
 import * as fs from 'node:fs';
 import {join} from 'node:path';
 import {frontKeyProblems} from './front-key.mjs';
@@ -134,6 +135,11 @@ export function rowProblems(row, at = 'row') {
   if (row.interference !== undefined && typeof row.interference?.ok !== 'boolean') out.push(`${at}.interference.ok is not a boolean`);
   if (row.declared !== undefined && !(isString(row.declared?.kind) && isString(row.declared?.cause))) out.push(`${at}.declared needs a kind and a cause`);
   if (row.frontKey !== undefined) out.push(...frontKeyProblems(row.frontKey, `${at}.frontKey`));
+  // The judge trusts `ok: true` (./cell-verdict.mjs), so a row never says ok against its own reading (T10a's deferred
+  // item). The other way is an answer of its own: exact text with ok false is an unconfirmed answer that landed, a
+  // changed user value, or a row whose ok needs more than its read-back (concurrent use, the mid-switch row).
+  if (row.ok === true && row.outcome?.userKept === false) out.push(`${at}.ok is true while outcome.userKept is false: the user's value changed`);
+  if (row.ok === true && row.outcome?.exact === false) out.push(`${at}.ok is true while outcome.exact is false: the read-back is not the expected text`);
   return out;
 }
 

@@ -8083,6 +8083,18 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   vendor comparison and the staged onboarding to run hosted; a runner is disposable and holds nothing of the owner's.
   Date/Author: 2026-11-23, the owner (relayed by the design session as ruling 1111); recorded by cursor235's H0 lane (#175).
 
+- Decision (2026-11-23, the owner, given directly in cursor235's session after ruling 1136's relay: replayd's
+  screen-capture approval may be pre-recorded by kits on GitHub-hosted runners only, never on any of the owner's Macs
+  (O0a; extends O0)): a kit may pre-record replayd's approval for cua's engine bundle and the vendor's helper before
+  their first capture, through the same single guarded writer as O0's TCC rows, which refuses before any store access
+  unless `RUNNER_ENVIRONMENT=github-hosted`, and cites this entry where it writes. Pre-recording is preferred to
+  dismissing the alert; nothing dismisses or approves the alert on any of the owner's Macs, and nothing there runs the
+  writer (ruling 1137: the guard is proved by a unit test with a spy store). Rationale: H0's observe-only run
+  45156038821 found replayd's "bypass the system private window picker" alert never closes by itself (10 minutes, both
+  copies) and holds front and key focus, so without it every hosted judged cell is NO VERDICT (ruling 1136's judge
+  rule) and R3's comparison could not run hosted.
+  Date/Author: 2026-11-23, the owner (answered directly; first relayed as ruling 1136); recorded by cursor235 (#175, #506).
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -369,17 +369,27 @@ extension Engine {
     var selectedText: Any = NSNull()
     var selectedElements: [String] = []
     var focusRead: String?
+    var focusFallback = false
     timings.time("focus") {
       // The vendor's focus is the application's AXFocusedUIElement (ApplicationUIElement.focusedUIElementContext()
-      // 0x100774a9c, tolerating no value and an unsupported attribute; F §1.7), with no fallback. Why a read answered
-      // nothing is kept in the timings, so a live comparison can tell an app that answered no focus from one whose
-      // focused element the walk did not reach.
+      // 0x100774a9c, tolerating no value and an unsupported attribute; F §1.7); for an Electron app that names none, the
+      // window's web area that holds a selection stands in for the trailer alone (#527, `observedFocus`). Why a read
+      // answered nothing is kept in the timings, so a live comparison can tell an app that answered no focus from one
+      // whose focused element the walk did not reach.
       let read = copyAttribute(application, kAXFocusedUIElementAttribute)
-      guard let value = read.value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
-        focusRead = read.error == .success ? "notAnElement" : "AXError \(read.error.rawValue)"
+      let named = read.value.flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
+      if named == nil { focusRead = read.error == .success ? "notAnElement" : "AXError \(read.error.rawValue)" }
+      let observed = observedFocus(application: named, electron: webAccessibility.isElectron(app.appPath), webArea: {
+        electronWebAreaFocus(under: window, children: { elementList(attribute($0, kAXChildrenAttribute)).map(prepare) },
+                             role: { stringAttribute($0, kAXRoleAttribute) }, hasSelection: liveWebAreaHoldsSelection)
+      })
+      if observed.fallback, let webArea = observed.element {
+        focusFallback = true
+        if let token = walk.token(of: webArea) { focused = token } else { focusRead = "outsideTheWalk" }
         return
       }
-      let element = prepare(value as! AXUIElement)
+      guard let value = observed.element else { return }
+      let element = prepare(value)
       if let token = walk.token(of: element) { focused = token } else { focusRead = "outsideTheWalk" }
       if let text = focusedSelectedText(request: { fetchAttributes(element, $0) }) { selectedText = text }
       // The selected elements the trailer names: the focused element's selected children, else its selected rows.
@@ -389,6 +399,7 @@ extension Engine {
       }
     }
     if let focusRead { timings.set("focusRead", focusRead) }
+    if focusFallback { timings.set("focusFallback", "webArea") }
     lineage.commit(walk.revision)
     // A process the walk met for the first time (a panel's service) is watched from now on; it cannot vouch for the time
     // since its elements were read, so it invalidates until the next observation.
@@ -473,6 +484,53 @@ func focusedSelectedText(request: ([String]) -> AttributeRead?) -> String? {
         let value = read.values[kAXSelectedTextAttribute], CFGetTypeID(value) == CFStringGetTypeID() else { return nil }
   let text = value as! String
   return text.isEmpty ? nil : bounded(text)
+}
+
+/// The observation's focused element (#527): the application's AXFocusedUIElement when it names one; else, for an
+/// Electron app (`electronApp`), `webArea()`, which names the element only (`fallback`): the vendor's skyshot tree
+/// builder (FUN_10022cb30, disassembly 0x10022cf0c–0x10022cf80) takes it as the tree's focused element when the context
+/// names none and `ApplicationUIElement.isElectronApp` 0x10070725c holds, and reads nothing else from it. No other app
+/// falls back, and whether the window is key does not enter (with its window key, M5's Electron fixture named its focused
+/// element; with none, it named none, run 45226949355).
+func observedFocus<Element>(application: Element?, electron: Bool, webArea: () -> Element?) -> (element: Element?, fallback: Bool) {
+  if let application { return (application, false) }
+  guard electron else { return (nil, false) }
+  return (webArea(), true)
+}
+
+/// Whether an app is Electron by its Info.plist: `NSBundle.isElectronApp` 0x100248438 compares `NSPrincipalClass` with
+/// `AtomApplication`, and nothing else (Chrome's `BrowserCrApplication` is web-shaped, not Electron).
+func electronApp(info: [String: Any]) -> Bool { info["NSPrincipalClass"] as? String == "AtomApplication" }
+
+/// The vendor's `UIElementProtocol.descendant(ofType: WebAreaUIElement.self, passingTest:)` 0x10079fbc0 on the window:
+/// breadth first from the window's children (the window itself is no candidate), the first AXWebArea that holds a
+/// selection; a web area that holds none is descended into like any element. cua bounds it as it bounds the web-area
+/// wait's search (`webAreaSearchLimit` elements read); the vendor does not.
+func electronWebAreaFocus<Element>(under window: Element, children: (Element) -> [Element], role: (Element) -> String?,
+                                   hasSelection: (Element) -> Bool, limit: Int = webAreaSearchLimit) -> Element? {
+  var queue = children(window)
+  var head = 0
+  while head < queue.count && head < limit {
+    let element = queue[head]
+    head += 1
+    if role(element) == "AXWebArea", hasSelection(element) { return element }
+    queue.append(contentsOf: children(element))
+  }
+  return nil
+}
+
+/// The vendor's test on a candidate web area (FUN_10022e0c0): its AXSelectedTextRange is non-empty
+/// (`selectedTextRange` 0x10077d110), or it answers an AXSelectedTextMarkerRange (`selectedTextMarkerRange` 0x10077cdb8,
+/// typed `UITextMarkerRange?`; cua checks the type with `ReadbackMarkerSymbols`), however short. The Electron fixture's
+/// page passed it in M5 pilot B's unkeyed run.
+func webAreaHoldsSelection(range: [String: Int]?, markerRange: Bool) -> Bool {
+  (range?["length"] ?? 0) > 0 || markerRange
+}
+
+func liveWebAreaHoldsSelection(_ webArea: AXUIElement) -> Bool {
+  let marker = attribute(webArea, "AXSelectedTextMarkerRange")
+  let isRange = marker.map { value in ReadbackMarkerSymbols.live.map { CFGetTypeID(value) == $0.rangeTypeID } ?? false } ?? false
+  return webAreaHoldsSelection(range: rangeWire(attribute(webArea, kAXSelectedTextRangeAttribute)), markerRange: isRange)
 }
 
 /// The primary window, polled every 50 ms until `deadline` (Unix ms); past it, `timeoutReached` for an app the

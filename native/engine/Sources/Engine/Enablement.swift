@@ -58,7 +58,7 @@ let enablementReleaseGraceMs: Double = 300_000
 let webAreaLeadMs: UInt32 = 100
 let webAreaWaitMs = 1_000.0
 let webAreaPollMs: UInt32 = 50
-private let webAreaSearchLimit = 1_000
+let webAreaSearchLimit = 1_000
 
 /// Whether an app's Info.plist makes it web-shaped (F §1.7): a URL type with the `http` scheme, or Electron's or
 /// Chromium's principal class.
@@ -213,6 +213,7 @@ final class WebAccessibility: @unchecked Sendable {
   private var webShapedByPath: [String: Bool] = [:]
   private var chromiumByPath: [String: Bool] = [:]
   private var pageEngineByPath: [String: PageEngine] = [:]
+  private var electronByPath: [String: Bool] = [:]
   private var webAreaSeen: Set<String> = []
   private var writtenBack: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
@@ -347,6 +348,17 @@ final class WebAccessibility: @unchecked Sendable {
     let chromium = chromiumFamily(info: info)
     chromiumByPath[appPath] = chromium
     return chromium
+  }
+
+  /// `electronApp` of the app at `appPath`, read once per path (#527).
+  func isElectron(_ appPath: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if let known = electronByPath[appPath] { return known }
+    let info = (NSDictionary(contentsOfFile: appPath + "/Contents/Info.plist") as? [String: Any]) ?? [:]
+    let electron = electronApp(info: info)
+    electronByPath[appPath] = electron
+    return electron
   }
 
   /// `pageEngine` of the app at `appPath`, read once per path.

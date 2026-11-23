@@ -172,7 +172,8 @@ const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activation
 // for Testing), whether the web area was seen or waited for (and how long), how many clipping frames read {0, 0, 0, 0}
 // and were taken as cutting nothing and what the enabling observation's poll of one found, in how many reads and how
 // long (#312: Firefox's web area on first contact), and each settle's status,
-// duration and counts, and why the focus read named no element (`focusRead`: an AXError, notAnElement or outsideTheWalk).
+// duration and counts, why the focus read named no element (`focusRead`: an AXError, notAnElement or outsideTheWalk),
+// and whether an Electron app's web area stood in for it (`focusFallback`, #527).
 // A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts as at most 16 names
 // to integers; never the text, the tree or the timings of every phase. Beside them the service adds the focus every
 // observation read (./observations.mjs focus: the focused element's index and role, #188), which the trailer's selected
@@ -180,7 +181,7 @@ const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activation
 const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'enablementWrite', 'enablementWriteError', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
   'unplacedClips', 'clipReread', 'clipRereadReads', 'clipRereadMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
-  'settleTreeReused', 'focusRead'];
+  'settleTreeReused', 'focusRead', 'focusFallback'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;
 const isScalar = value => typeof value === 'boolean' || Number.isFinite(value) || (typeof value === 'string' && value.length <= DIAGNOSTIC_STRING_CHARS);
 const isCounts = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length <= DIAGNOSTIC_COUNTS

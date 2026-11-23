@@ -5,7 +5,8 @@
 // The trace is the one TRACE_ARGS writes: every process in one file, each line led by its pid, pids translated out of
 // bubblewrap's PID namespace, strings long enough to hold a path. The reader keeps, per process, its parent (from the
 // fork-family calls' return values), the programs it executed (successful execve and execveat only), and how many calls
-// it made after its last exec. It never keeps a line: the summary carries pids, counts and booleans.
+// it made after its last exec. It never keeps a line: the summary carries pids, counts and booleans, and, for the paths a
+// caller names to watch (E2's six module entries), which of them each kernel opened.
 //
 //   node scripts/accept/linux-trace.mjs <trace> --helper <pinned helper path> --home <CUA_HOME>   JSON summary and verdict
 
@@ -34,6 +35,10 @@ const KERNEL = /src\/repl-host\/kernel\.mjs"/;
 const program = call => /"((?:[^"\\]|\\.)*)"/.exec(call)?.[1] ?? null;
 
 const RETURN_FD = /\)\s+=\s+\d+<([^>]*)>/;
+// The calls that open a file: one that returned a descriptor opened every path it names.
+const OPENS = new Set(['open', 'openat', 'openat2', 'creat']);
+// Whether the call's return column is a descriptor (`= 5`, or -y's `= 5</path>`), not an error.
+const openedDescriptor = call => /^\d+(?:<|\s|$)/.test(call.slice(([...call.matchAll(/\)\s+= /g)].at(-1)?.index ?? call.length) + 1).replace(/^\s+=\s+/, ''));
 const CWD_DECODED = /AT_FDCWD<([^>]*)>/;
 
 // Where each traced call (`-e trace=%file,%process,fchdir`) keeps its pathnames, by argument position: a bare number is
@@ -140,15 +145,17 @@ function callPaths(name, call, cwd) {
 /**
  * A streaming reader: `line(text)` for each line of the trace, then `summary()`. `home` is the CUA_HOME (or a list of
  * its spellings) whose `runtimes/` is counted; `cwd` is the first process's working directory, inherited by its
- * children at each fork.
+ * children at each fork. `watch`, absolute paths: each kernel's summary then names those it opened (an open-family call
+ * that returned a descriptor, by the kernel or by a thread or child of it that never exec'd), in `watch`'s order.
  */
-export function traceReader({helper, home, cwd = null}) {
+export function traceReader({helper, home, cwd = null, watch = null}) {
+  const watched = watch ? new Set(watch) : null;
   const procs = new Map();
   const pending = new Map();
   const roots = [home].flat().map(h => `${h.replace(/\/$/, '')}/runtimes`);
   const inRuntimes = path => roots.some(root => path === root || path.startsWith(`${root}/`));
   const proc = pid => {
-    if (!procs.has(pid)) procs.set(pid, {parent: null, execs: [], argv: [], calls: 0, runtimesCalls: 0, unresolved: 0, cwd: {path: procs.size === 0 ? cwd : null}});
+    if (!procs.has(pid)) procs.set(pid, {parent: null, execs: [], argv: [], calls: 0, runtimesCalls: 0, unresolved: 0, opened: new Set(), cwd: {path: procs.size === 0 ? cwd : null}});
     return procs.get(pid);
   };
   const finish = (pid, name, call) => {
@@ -169,6 +176,7 @@ export function traceReader({helper, home, cwd = null}) {
     const {paths, unresolved} = callPaths(name, call, p.cwd.path);
     if (paths.some(inRuntimes)) p.runtimesCalls += 1;
     else if (unresolved) p.unresolved += 1;
+    if (watched && OPENS.has(name) && openedDescriptor(call)) for (const path of paths) if (watched.has(path)) p.opened.add(path);
     if (value === 0 && name === 'chdir') p.cwd.path = paths[0] ?? null;
     if (value === 0 && name === 'fchdir') p.cwd.path = paths[0] ?? null;
     if (EXEC.test(`${name}(`)) {
@@ -204,11 +212,23 @@ export function traceReader({helper, home, cwd = null}) {
       const helpers = [...procs].filter(([, p]) => p.execs.includes(helper)).map(([pid]) => pid);
       const serve = pidsWhere(argv => SERVE.test(argv))[0] ?? null;
       const inServe = pid => serve !== null && (pid === serve || up(pid).includes(serve));
+      // The kernel's own opens: its own, and those of every thread or child below it that exec'd nothing.
+      const openedBy = pid => {
+        const opened = new Set(procs.get(pid).opened);
+        for (const [other, q] of procs) {
+          if (other === pid || q.execs.length) continue;
+          const chain = up(other);
+          const at = chain.indexOf(pid);
+          if (at >= 0 && chain.slice(0, at).every(a => !procs.get(a)?.execs.length)) for (const path of q.opened) opened.add(path);
+        }
+        return watch.filter(path => opened.has(path));
+      };
       const kernels = nodeRunning(KERNEL).map(([pid, p]) => ({
         pid,
         underHelper: p.execs.slice(0, -1).includes(helper) || up(pid).some(a => helpers.includes(a)),
         underServe: inServe(pid),
         callsAfterExec: p.calls,
+        ...(watched ? {opened: openedBy(pid)} : {}),
       }));
       const served = [...procs].filter(([pid]) => inServe(pid)).map(([, p]) => p);
       const unresolved = served.reduce((n, p) => n + p.unresolved, 0);

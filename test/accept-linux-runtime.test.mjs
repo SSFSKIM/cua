@@ -273,15 +273,67 @@ test('negative control: a failed smoke (its end_task, a killed traced run), a mi
 
 test('the artifact is an explicit list of projected reports, and the workflow uploads exactly that list', () => {
   assert.deepEqual(ARTIFACT_FILES, ['pilot.json', 'smoke.json', 'smoke-traced.json']);
-  const workflow = readFileSync(new URL('../.github/workflows/linux-runtime.yml', import.meta.url), 'utf8');
-  const upload = workflow.slice(workflow.indexOf('uses: actions/upload-artifact'));
+  const {upload} = jobUpload('pilot');
   const listed = [...upload.matchAll(/\$\{\{ env\.RUN \}\}\/artifact\/([\w.-]+)/g)].map(m => m[1]);
   assert.deepEqual(listed, ARTIFACT_FILES);
   assert.doesNotMatch(upload, /artifact\/\s*$/m, 'no directory upload');
+});
+
+// A job's text in the workflow (from its key to the next job's) and its upload step's text.
+function jobUpload(job) {
+  const workflow = readFileSync(new URL('../.github/workflows/linux-runtime.yml', import.meta.url), 'utf8');
+  const start = workflow.indexOf(`\n  ${job}:\n`);
+  const next = workflow.slice(start + 1).search(/\n  [\w-]+:\n/);
+  const text = next < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + next);
+  return {text, upload: text.slice(text.indexOf('uses: actions/upload-artifact'))};
+}
+
+test('the acceptance job runs the driver with the older checkout and uploads only its projected report', () => {
+  const {text, upload} = jobUpload('acceptance');
+  assert.match(text, /inputs\.suite == 'acceptance'/);
+  assert.match(text, /scripts\/accept\/linux-runtime-env\.sh "\$RUN" -- node scripts\/accept\/linux-runtime\.mjs --out "\$RUN\/artifact" --older "\$GITHUB_WORKSPACE\/older-cua"/);
+  assert.deepEqual([...upload.matchAll(/\$\{\{ env\.RUN \}\}\/artifact\/([\w.-]+)/g)].map(m => m[1]), ['runtime.json']);
+  assert.match(jobUpload('pilot').text, /inputs\.suite == 'pilot'/);
 });
 
 test('a smoke\'s projection keeps its status and each step\'s name and status, nothing of its details', () => {
   const projected = projectSmoke({status: 'FAIL', home: '/h', marker: 'cua-f2-1', steps: [{name: 'bind', status: 'PASS', detail: {title: 'fixture.txt - gedit'}}, {name: 'end_task', status: 'FAIL', detail: 'x'}]});
   assert.deepEqual(projected, {status: 'FAIL', steps: [{name: 'bind', status: 'PASS'}, {name: 'end_task', status: 'FAIL'}]});
   assert.equal(projectSmoke(null), null);
+});
+
+// E2's "opened" witness (the M6a pre-flight §5.2, the browser-only fixture): which of the watched paths each kernel
+// opened, by itself or through a thread or child that never exec'd (libuv's pool opens for fs.promises).
+const MODULES = `${HOME}/modules/b71d/node_modules`;
+const WATCH = [`${MODULES}/pngjs/lib/png.js`, `${MODULES}/sharp/dist/index.mjs`];
+const withOpens = opens => [traced(), ...opens].join('\n');
+
+test('the reader names the watched paths each kernel opened, its threads\' opens included, and nothing it was not asked to watch', () => {
+  const summary = summarizeTrace(withOpens([
+    `106   openat(AT_FDCWD</w>, "${WATCH[0]}", O_RDONLY|O_CLOEXEC) = 5<${WATCH[0]}>`,
+    '106   clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM, exit_signal=0, stack=0x7f, stack_size=0x7ff}, 88) = 107',
+    `107   openat(AT_FDCWD</w>, "${WATCH[1]}", O_RDONLY|O_CLOEXEC) = 6<${WATCH[1]}>`,
+    '106   openat(AT_FDCWD</w>, "/etc/passwd", O_RDONLY) = 7</etc/passwd>',
+  ]), {helper: HELPER, home: HOME, watch: WATCH});
+  assert.deepEqual(summary.kernels.map(k => k.opened), [WATCH]);
+});
+
+test('negative control: a failed open, a stat, or an open by a process that is not the kernel\'s is not the kernel opening the path', () => {
+  const summary = summarizeTrace(withOpens([
+    `106   openat(AT_FDCWD</w>, "${WATCH[0]}", O_RDONLY|O_CLOEXEC) = -1 EACCES (Permission denied)`,
+    `106   newfstatat(AT_FDCWD</w>, "${WATCH[1]}", {st_mode=S_IFREG|0644, st_size=1, ...}, 0) = 0`,
+    `102   openat(AT_FDCWD</repo>, "${WATCH[1]}", O_RDONLY|O_CLOEXEC) = 9<${WATCH[1]}>`,
+  ]), {helper: HELPER, home: HOME, watch: WATCH});
+  assert.deepEqual(summary.kernels.map(k => k.opened), [[]]);
+  // A child the kernel started that exec'd another program is no longer the kernel.
+  const exec = summarizeTrace(withOpens([
+    '106   clone(child_stack=NULL, flags=SIGCHLD) = 108',
+    '108   execve("/bin/cat", ["cat"], 0x7ffd /* 1 vars */) = 0',
+    `108   openat(AT_FDCWD</w>, "${WATCH[0]}", O_RDONLY) = 3<${WATCH[0]}>`,
+  ]), {helper: HELPER, home: HOME, watch: WATCH});
+  assert.deepEqual(exec.kernels.map(k => k.opened), [[]]);
+});
+
+test('without a watch list the summary carries no opened paths', () => {
+  assert.equal('opened' in summarizeTrace(traced(), {helper: HELPER, home: HOME}).kernels[0], false);
 });

@@ -5,7 +5,15 @@
 // The trace is the one TRACE_ARGS writes: every process in one file, each line led by its pid, pids translated out of
 // bubblewrap's PID namespace, strings long enough to hold a path. The reader keeps, per process, its parent (from the
 // fork-family calls' return values), the programs it executed (successful execve and execveat only), and how many calls
-// it made after its last exec. It never keeps a line: the summary carries pids, counts and booleans.
+// it made after its last exec, whether it ended (an exit or exit_group call, or strace's `+++ killed by`/`+++ exited`
+// line: -qq prints no normal exit), and the paths it opened since its last exec. It never keeps a line: the summary
+// carries pids, counts and booleans, each worker's and kernel's executable, the launches of the serve's tree (the
+// helper, bubblewrap, the REPL host, an engine), and, for the paths a caller names to watch (E2's module entries), which
+// of them each kernel opened.
+//
+// The count of the serve's tree's calls under runtimes/ is complete only when every path was resolved, no file call was
+// left unfinished at the trace's end (its operands are still read: a pending open under runtimes/ counts as a call), and
+// every process of the tree ended. Anything less is incomplete, never a clean zero (#171 task 152, fix wave 1).
 //
 //   node scripts/accept/linux-trace.mjs <trace> --helper <pinned helper path> --home <CUA_HOME>   JSON summary and verdict
 
@@ -27,6 +35,7 @@ const RETURNED = /\)\s+=\s+(-?\d+)(?:\s|$)/;
 // --pidns-translation's note on a pid returned inside another PID namespace: `= 2 /* 1648650 in strace's PID NS */`.
 const TRANSLATED = /\)\s+=\s+-?\d+\s+\/\* (\d+) in strace's PID NS \*\//;
 const SERVE = /\/bin\/cua\.mjs", "serve"/;
+const REPL_HOST = /src\/repl-host\/([\w-]+)\.mjs"/;
 const WORKER = /src\/repl-host\/trusted-worker\.mjs"/;
 const KERNEL = /src\/repl-host\/kernel\.mjs"/;
 
@@ -34,6 +43,10 @@ const KERNEL = /src\/repl-host\/kernel\.mjs"/;
 const program = call => /"((?:[^"\\]|\\.)*)"/.exec(call)?.[1] ?? null;
 
 const RETURN_FD = /\)\s+=\s+\d+<([^>]*)>/;
+// The calls that open a file: one that returned a descriptor opened every path it names.
+const OPENS = new Set(['open', 'openat', 'openat2', 'creat']);
+// Whether the call's return column is a descriptor (`= 5`, or -y's `= 5</path>`), not an error.
+const openedDescriptor = call => /^\d+(?:<|\s|$)/.test(call.slice(([...call.matchAll(/\)\s+= /g)].at(-1)?.index ?? call.length) + 1).replace(/^\s+=\s+/, ''));
 const CWD_DECODED = /AT_FDCWD<([^>]*)>/;
 
 // Where each traced call (`-e trace=%file,%process,fchdir`) keeps its pathnames, by argument position: a bare number is
@@ -140,15 +153,17 @@ function callPaths(name, call, cwd) {
 /**
  * A streaming reader: `line(text)` for each line of the trace, then `summary()`. `home` is the CUA_HOME (or a list of
  * its spellings) whose `runtimes/` is counted; `cwd` is the first process's working directory, inherited by its
- * children at each fork.
+ * children at each fork. `watch`, absolute paths: each kernel's summary then names those it opened (an open-family call
+ * that returned a descriptor, by the kernel or by a thread or child of it that never exec'd), in `watch`'s order.
  */
-export function traceReader({helper, home, cwd = null}) {
+export function traceReader({helper, home, cwd = null, watch = null}) {
+  const watched = watch ? new Set(watch) : null;
   const procs = new Map();
   const pending = new Map();
   const roots = [home].flat().map(h => `${h.replace(/\/$/, '')}/runtimes`);
   const inRuntimes = path => roots.some(root => path === root || path.startsWith(`${root}/`));
   const proc = pid => {
-    if (!procs.has(pid)) procs.set(pid, {parent: null, execs: [], argv: [], calls: 0, runtimesCalls: 0, unresolved: 0, cwd: {path: procs.size === 0 ? cwd : null}});
+    if (!procs.has(pid)) procs.set(pid, {parent: null, forkedAt: null, execs: [], argv: [], calls: 0, runtimesCalls: 0, unresolved: 0, opened: new Set(), ended: false, cwd: {path: procs.size === 0 ? cwd : null}});
     return procs.get(pid);
   };
   const finish = (pid, name, call) => {
@@ -159,6 +174,10 @@ export function traceReader({helper, home, cwd = null}) {
       if (value > 0) {
         const child = proc(value);
         child.parent = pid;
+        // Which program of the parent forked it: the number of execs the parent had made then.
+        child.forkedAt = p.execs.length;
+        // A thread ends with its thread group, which an exit_group of any member ends without a line of the thread's own.
+        if (/CLONE_THREAD/.test(call)) child.leader = p.leader ?? pid;
         // CLONE_FS shares the working directory (threads); a fork copies it.
         if (child.cwd.path === null) child.cwd = /CLONE_FS/.test(call) ? p.cwd : {path: p.cwd.path};
       }
@@ -169,12 +188,19 @@ export function traceReader({helper, home, cwd = null}) {
     const {paths, unresolved} = callPaths(name, call, p.cwd.path);
     if (paths.some(inRuntimes)) p.runtimesCalls += 1;
     else if (unresolved) p.unresolved += 1;
+    if (watched && OPENS.has(name) && openedDescriptor(call)) for (const path of paths) if (watched.has(path)) p.opened.add(path);
     if (value === 0 && name === 'chdir') p.cwd.path = paths[0] ?? null;
     if (value === 0 && name === 'fchdir') p.cwd.path = paths[0] ?? null;
     if (EXEC.test(`${name}(`)) {
-      if (value === 0) { p.execs.push(program(call)); p.argv.push(call); p.calls = 0; }
+      // What a process opened before an exec was the earlier program's, never the one that runs after it.
+      if (value === 0) { p.execs.push(program(call)); p.argv.push(call); p.calls = 0; p.opened = new Set(); }
+      // An exec of a program under runtimes/ that failed is still an attempt to launch it.
+      else if (paths.some(inRuntimes)) (p.attempts ??= []).push(paths.find(inRuntimes));
       return;
     }
+    // exit ends this thread alone; exit_group ends its whole thread group.
+    if (name === 'exit' || name === 'exit_group') p.ended = true;
+    if (name === 'exit_group') proc(p.leader ?? pid).groupEnded = true;
     p.calls += 1;
   };
   return {
@@ -183,8 +209,14 @@ export function traceReader({helper, home, cwd = null}) {
       if (!m) return;
       const pid = Number(m[1]);
       let call = m[2];
-      proc(pid);
-      if (call.startsWith('+++') || call.startsWith('---')) return;
+      const p = proc(pid);
+      if (call.startsWith('+++')) {
+        if (/^\+\+\+ (exited|killed)/.test(call)) p.ended = true;
+        // A kill by signal ends the whole thread group; an exit line is this thread's own.
+        if (/^\+\+\+ killed/.test(call)) proc(p.leader ?? pid).groupEnded = true;
+        return;
+      }
+      if (call.startsWith('---')) return;
       const resumed = RESUMED.exec(call);
       if (resumed) {
         const start = pending.get(pid);
@@ -192,7 +224,15 @@ export function traceReader({helper, home, cwd = null}) {
         if (!start) return;
         return finish(pid, resumed[1], `${start}${call.slice(resumed[0].length)}`);
       }
-      if (call.endsWith('<unfinished ...>')) { pending.set(pid, call.slice(0, -'<unfinished ...>'.length)); return; }
+      if (call.endsWith('<unfinished ...>')) {
+        const start = call.slice(0, -'<unfinished ...>'.length);
+        // exit and exit_group never resume: the thread has ended, and with exit_group its whole group.
+        if (/^exit(?:_group)?\(/.test(start)) {
+          p.ended = true;
+          if (/^exit_group\(/.test(start)) proc(p.leader ?? pid).groupEnded = true;
+        } else pending.set(pid, start);
+        return;
+      }
       const name = /^(\w+)\(/.exec(call)?.[1];
       if (name) finish(pid, name, call);
     },
@@ -202,26 +242,81 @@ export function traceReader({helper, home, cwd = null}) {
       // Node itself running `script`, not the helper or bubblewrap that carry it after their `--`.
       const nodeRunning = script => [...procs].filter(([, p]) => p.execs.length && /(^|\/)node[^/]*$/.test(p.execs.at(-1)) && script.test(p.argv.at(-1)));
       const helpers = [...procs].filter(([, p]) => p.execs.includes(helper)).map(([pid]) => pid);
+      // Every Node a pid exec'd, in order: a wrong one is not hidden by a later right one.
+      const nodeExes = p => p.execs.filter(e => /(^|\/)node[^/]*$/.test(e ?? ''));
       const serve = pidsWhere(argv => SERVE.test(argv))[0] ?? null;
       const inServe = pid => serve !== null && (pid === serve || up(pid).includes(serve));
+      // The kernel's own opens since its exec: its own, and those of every thread or child it forked after that exec
+      // which exec'd nothing itself, down any chain of such.
+      const openedBy = pid => {
+        const kernel = procs.get(pid);
+        const opened = new Set(kernel.opened);
+        for (const [other, q] of procs) {
+          if (other === pid || q.execs.length) continue;
+          const chain = [other, ...up(other)];
+          const at = chain.indexOf(pid);
+          if (at < 1) continue;
+          const below = chain.slice(0, at);
+          if (below.every(a => !procs.get(a)?.execs.length) && procs.get(below.at(-1)).forkedAt === kernel.execs.length) for (const path of q.opened) opened.add(path);
+        }
+        return watch.filter(path => opened.has(path));
+      };
       const kernels = nodeRunning(KERNEL).map(([pid, p]) => ({
         pid,
         underHelper: p.execs.slice(0, -1).includes(helper) || up(pid).some(a => helpers.includes(a)),
         underServe: inServe(pid),
         callsAfterExec: p.calls,
+        exe: p.execs.at(-1),
+        nodeExes: nodeExes(p),
+        ...(watched ? {opened: openedBy(pid)} : {}),
       }));
-      const served = [...procs].filter(([pid]) => inServe(pid)).map(([, p]) => p);
+      // A file call left unfinished at the end: its operands are read as written, and it leaves the count incomplete.
+      for (const [pid, start] of pending) {
+        const name = /^(\w+)\(/.exec(start)?.[1];
+        // An unfinished exec is read too: its program is a path it names (execve's first operand, execveat's pair).
+        if (!name || NO_PATHS.has(name)) continue;
+        const q = procs.get(pid);
+        const {paths} = callPaths(name, `${start})`, q.cwd.path);
+        if (paths.some(inRuntimes)) q.runtimesCalls += 1;
+        q.pendingFile = (q.pendingFile ?? 0) + 1;
+      }
+      pending.clear();
+      const servedPids = [...procs.keys()].filter(inServe);
+      const served = servedPids.map(pid => procs.get(pid));
       const unresolved = served.reduce((n, p) => n + p.unresolved, 0);
+      const pendingFile = served.reduce((n, p) => n + (p.pendingFile ?? 0), 0);
+      // A thread has ended when it exited itself, or its group ended: by an exit_group or a kill, or when every thread
+      // of the group, its leader's included, had exited one by one. A leader's own exit does not end its other threads.
+      const groupDone = leader => {
+        const head = procs.get(leader);
+        if (!head) return false;
+        if (head.groupEnded) return true;
+        return head.ended && [...procs.values()].filter(q => q.leader === leader).every(q => q.ended);
+      };
+      const unended = servedPids.filter(pid => { const q = procs.get(pid); return !q.ended && !groupDone(q.leader ?? pid); }).length;
+      // What the serve's tree launched, exec by exec: the helper, bubblewrap, an engine, or Node running the REPL host.
+      const launched = [];
+      for (const pid of servedPids) {
+        if (pid === serve) continue;
+        const q = procs.get(pid);
+        q.execs.forEach((exe, i) => {
+          const role = /(^|\/)node[^/]*$/.test(exe) ? REPL_HOST.exec(q.argv[i])?.[1] : null;
+          const kind = inRuntimes(exe) ? 'runtimes' : exe === helper ? 'helper' : /(^|\/)bwrap$/.test(exe) ? 'bwrap' : /(^|\/)cua-engine$/.test(exe) ? 'engine' : /(^|\/)sky_linux_[^/]*$/.test(exe) ? 'sky_linux' : role ?? null;
+          if (kind) launched.push({pid, kind, program: exe});
+        });
+        for (const path of q.attempts ?? []) launched.push({pid, kind: 'runtimes', program: path, attempted: true});
+      }
       return {
         processes: procs.size,
         serve,
-        workers: nodeRunning(WORKER).map(([pid]) => ({pid, underServe: inServe(pid)})),
+        workers: nodeRunning(WORKER).map(([pid, p]) => ({pid, underServe: inServe(pid), exe: p.execs.at(-1), nodeExes: nodeExes(p)})),
         helpers,
         bwrap: [...procs].filter(([, p]) => p.execs.some(e => /(^|\/)bwrap$/.test(e))).map(([pid]) => pid),
         kernels,
         // Measured: the serve's tree's calls that name a path under runtimes/, and the calls whose relative path could
         // not be resolved; with any of those the count is incomplete, never a clean zero.
-        runtimes: {calls: served.reduce((n, p) => n + p.runtimesCalls, 0), unresolved, complete: unresolved === 0},
+        runtimes: {calls: served.reduce((n, p) => n + p.runtimesCalls, 0), unresolved, pending: pendingFile, unended, complete: unresolved === 0 && pendingFile === 0 && unended === 0},
+        launched,
       };
     },
   };

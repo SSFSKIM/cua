@@ -7,6 +7,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
+import {emptyFieldCell} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {Stop} from '../../scripts/native-matrix/steps.mjs';
 import {KOREAN_2SET, MID_SWITCH, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
@@ -287,4 +288,25 @@ test('a per-context setup that throws fails that condition alone, its rows inval
   assert.ok(stopped.result.problems.some(p => /stopped: interrupted by SIGINT/.test(p)), JSON.stringify(stopped.result.problems));
   const ran = stopped.result.rows.filter(r => r.condition === 'perContext');
   assert.ok(ran.length === 18 && ran.every(r => r.id.startsWith('chrome/') &&r.excluded === NOT_JUDGED.perContext), JSON.stringify(ran.map(r => [r.id, r.excluded])).slice(0, 300));
+});
+
+// The review's second round: only the preference's write is the condition's to recover from. A lane-integrity failure
+// in the setup (an answer attested by another engine, a cell without its device-clock window) stops the lane, and no
+// request follows it.
+test('a lane-integrity failure in the per-context setup is never recovered: after an attestation mismatch no request is issued', async () => {
+  const plan = {...planOf('korean'), unicode: {fields: ['chrome', 'electron'], conditions: ['perContext']}};
+  const calls = [];
+  let injected = null;
+  const vendorAttested = c => {
+    if (injected !== null || !c.includes(emptyFieldCell('chrome'))) return null;
+    injected = calls.length;
+    return {ready: true, _meta: {'cua/nativeEngine': {engine: 'vendor', version: '26.0', build: '26.0-dry'}}};
+  };
+  const {result} = await runWith({plan, cellName: 'korean', ops: contextHeld, cell: vendorAttested, calls});
+  assert.notEqual(injected, null, 'the per-context prepare was answered');
+  assert.equal(calls.length, injected + 1, `no request after the mismatch: ${calls.slice(injected + 1).map(c => c.code.slice(0, 80)).join(' | ')}`);
+  assert.equal(result.complete, false);
+  assert.ok(result.problems.some(p => /a result attested the vendor engine, not the requested cua: the lane stopped/.test(p)), JSON.stringify(result.problems));
+  assert.ok(!result.rows.some(r => r.condition === 'perContext'), 'no row is made up from a stopped lane');
+  assert.ok(!result.meta.unicode.readings.some(r => r.setupError), 'not taken for the condition\'s own failure');
 });

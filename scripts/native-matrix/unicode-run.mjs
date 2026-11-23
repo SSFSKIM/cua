@@ -175,36 +175,46 @@ async function composingRows(ctx, field, rows) {
   }
 }
 
+// The per-context preference's write failing on the device: the one setup failure the condition recovers from.
+export class PerContextWriteFailed extends Error {}
+// The preference written on through the device command, its failure marked as PerContextWriteFailed; a Stop passes
+// through unmarked. -> whether the preference then read on.
+function writePerContextOn(ctx) {
+  try { return device(ctx, ['source', 'per-context', '--value', 'on'])?.perContext === true; } catch (error) {
+    if (error instanceof Stop) throw error;
+    throw new PerContextWriteFailed(String(error?.message ?? error).slice(0, 200));
+  }
+}
+
 // The per-context preference on, the driven scene's context holding the Korean source (selected while it was in front),
 // the user window in front under the Latin source; the rows behind it; then the driven scene brought back to the front,
 // where its context must still read Korean. Without those readings the rows say nothing: invalid. Held or not, the rows
 // are out of every verdict (ruling 1119, #185; unicodeSection marks them `excluded`): they run and report what they read.
-// A setup step that throws (the preference's write, a device read) fails this condition alone: its rows are invalid
-// with the error, and the run goes on, since the input sections' restore puts the preference back and verifies it, and
-// an unconfirmed restore still leaves the run incomplete. A run-wide stop (Stop: an interrupt, the owner at the Mac)
-// is never caught here.
+// One setup failure is this condition's alone: the preference's write refused or failing on the device
+// (PerContextWriteFailed). Its rows are invalid with the error and the run goes on, since the input sections' restore
+// puts the preference back and verifies it, and an unconfirmed restore still leaves the run incomplete. Every other
+// throw propagates: a run-wide stop (Stop), and the lane's integrity failures (an answer attested by another engine, a
+// cell without its device-clock window, ./lane.mjs), after which no request may be issued.
 async function perContextRows(ctx, field, rows) {
   const {user} = rows[0];
-  let on = false, korean = false, latin = false, userWindow = null, before = null;
-  try {
-    await quiet(ctx, field);
-    await quiet(ctx, user);
-    on = device(ctx, ['source', 'per-context', '--value', 'on'])?.perContext === true;
-    const front = activate(ctx, field);
-    const driven = front?.ok ? await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field)) : null;
-    const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : 'the driven field was not prepared';
-    korean = engaged === null;
-    const userFront = activate(ctx, user);
-    latin = userFront?.ok === true && useSource(ctx, ABC, `perContext@${user}`);
-    userWindow = latin ? userWindowOf(read(ctx).reading, ctx.records[user].pid) : null;
-    before = !on ? 'the per-context preference did not read on' : !korean ? `the driven scene's Korean source was not established while it was in front: ${engaged}`
-      : !latin ? 'the Latin source was not selected with the user window in front' : !userWindow ? `the user window (${user}) was not in front` : null;
-  } catch (error) {
-    if (error instanceof Stop) throw error;
-    const message = String(error?.message ?? error).slice(0, 200);
-    ctx.meta.unicode.readings.push({when: `perContext:${field}@${user}`, setupError: message});
-    before = `the per-context setup failed: ${message}`;
+  await quiet(ctx, field);
+  await quiet(ctx, user);
+  let on;
+  try { on = writePerContextOn(ctx); } catch (error) {
+    if (!(error instanceof PerContextWriteFailed)) throw error;
+    ctx.meta.unicode.readings.push({when: `perContext:${field}@${user}`, setupError: error.message});
+    for (const r of rows) invalidRow(ctx, r, `the per-context setup failed: ${error.message}`);
+    return;
   }
+  const front = activate(ctx, field);
+  const driven = front?.ok ? await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field)) : null;
+  const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : 'the driven field was not prepared';
+  const korean = engaged === null;
+  const userFront = activate(ctx, user);
+  const latin = userFront?.ok === true && useSource(ctx, ABC, `perContext@${user}`);
+  const userWindow = latin ? userWindowOf(read(ctx).reading, ctx.records[user].pid) : null;
+  const before = !on ? 'the per-context preference did not read on' : !korean ? `the driven scene's Korean source was not established while it was in front: ${engaged}`
+    : !latin ? 'the Latin source was not selected with the user window in front' : !userWindow ? `the user window (${user}) was not in front` : null;
   if (before) { for (const r of rows) invalidRow(ctx, r, before); return; }
   const done = [];
   for (const r of rows) done.push(await caseRow(ctx, field, 'background', unicodeCase(r), {...options(r), user, userWindow}));

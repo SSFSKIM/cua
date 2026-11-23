@@ -1244,3 +1244,146 @@ anything is touched). The sitting's verdict is the check's, not the driver's exi
   A grant can name its services.
 - `plan.test.mjs`: D's `onboarding` step, in its place and its form.
 - `checks.test.mjs`: the `onboarding` check.
+
+## Hosted geometry (rulings 1160, 1164)
+
+Built on branch `m5/geometry`, off feat/117-m5 at 5e0aebc64. Nothing here ran on a runner. It is proven by unit tests
+with doubles only; the first hosted run is the evidence still owed.
+
+### What was built
+
+- **One shared alert guard**, `scripts/hosted-sittings/alert-guard.mjs`. T8e's rules moved out of the matrix so every
+  sitting uses the same code:
+  - `guardReading` turns a window list and the targets into bounds.
+  - `guardCause` applies the pointer rule. It refuses when a UserNotificationCenter window overlaps one of the target's
+    windows or an Open panel, or when UserNotificationCenter holds the front or the key. An unread reading is refused as
+    `unread`.
+  - `keyCause` applies the key rule: UserNotificationCenter holds the key.
+  - `captureCause` applies the capture rule. A screen or region capture that intersects an alert is refused as `alert`.
+    A window capture is refused only when its own window is overlapped.
+  - `clearFrame` makes the smallest move that clears the alerts, below the 25-point menu bar and with an 8-point margin.
+    `placeWindows` reads, moves and reads back each window. It records `{scene, number, from, moved, to, readBack,
+    matched}` or a reason.
+  - `guardMark` and `countGuards` give the row mark (`alertGuard: {cause, detail}`, `invalid`) and the per-cell
+    counts.
+
+  `scripts/native-matrix/alert-guard.mjs` now re-exports these and keeps only the matrix's cell mapping.
+- **A device reader**, `scripts/hosted-sittings/guard-device.mjs`. It is a CLI and a module that runs on the device the
+  cell drives:
+  - `read --target <scene:pid:window[:only]> [--key]` returns `{bounds, front, key, keyWindow, at}`.
+  - `place --pid|--panel --window --frame` returns `{requested, readBack, matched}`.
+
+  It uses the matrix's `system-windows.swift`, compiled once into `~/Library/Caches/cua-harness/guard-device`, together
+  with `lsappinfo` for the front app and the live device's focus and window-frame probes. Sittings A and B call it
+  through their device (local, or the loopback for B). That way the reading is the target's own, and the same on both
+  sides.
+- **The display mode step** in setup (ruling 1164), in `scripts/hosted-sittings/display-mode.mjs`, plus a `set <w> <h>`
+  subcommand in `display-modes.swift`. Run without arguments, that script still lists the modes read-only.
+  - The step runs after the warm-ups, so each copy still raises its one alert at 1024x768. It runs before the engine
+    stop and the placement, and only on a GitHub-hosted runner.
+  - It reads the mode, the alerts and the front. It then sets 1920x1080 by size (1x, usable) through
+    `CGBeginDisplayConfiguration`, `CGConfigureDisplayWithDisplayMode` and `CGCompleteDisplayConfiguration(.forSession)`,
+    and reads the display back.
+  - For 3 s it watches the window list and the front, polling every 0.5 s. Then it reads the alerts fresh.
+  - These fail the setup: a new UserNotificationCenter or System Settings window, System Settings in front, a
+    read-back other than 1920x1080, no 1920x1080 mode offered, or a window list that could not be read before or after
+    the switch (a prompt across it would go unseen). Nothing is answered or closed.
+  - Re-centred alerts are recorded. The placement step that follows reads its alerts fresh, after the switch. Chrome
+    keeps its size; a scene that cannot be cleared stays the guard's to refuse.
+- **The screen at the end.** After every step of a sitting, `hosted-sittings.mjs` reads the alert windows (number,
+  layer, bounds) and the display mode again. It records them in `sitting.json` as `screenAtEnd: {alerts, mode, bounds,
+  modeHeld}` and in `sitting.md` under "The screen at the end".
+- **#528's diagnostics** on sitting B's ACTION row, on both sides. They are value-free, and verdicts do not read them.
+  - `diagnostics.before`: the front app, the key owner and window, and the scenes-mac activate answer, which was
+    previously discarded. All are read just before the click.
+  - `diagnostics.meta`: the ACTION cell's `_meta` keys and its route keys.
+  - `diagnostics.click`: what `click` returned.
+  - `diagnostics.focusAfterClick`: the focused element's index from the diff's focus trailer, read right after the
+    click.
+- **T8e's review Minors.**
+  - `closePanel` now activates TextEdit before its Escape after the background pairing (`openPanel@finder`).
+  - `resetHeldFixture` throws `ResetBlocked`, a `Stop` that carries the guard's cause. When a reset is blocked, `runOnce`
+    records the fixture's unrun samples (`recordUnrun`, "a held fixture could not be reset").
+
+### How each sitting calls the module
+
+The sittings share the rules:
+
+- The guard reads the target's state fresh before every pointer event, key event or capture.
+- It never sends and judges afterwards, and a refused cell is not retried.
+- A refusal writes a row marked with `guardMark`. It counts per side per cell (`alertGuardCounts`) and stops the run
+  with `alertGuardStop: {cause, detail, at}`.
+- `checks.mjs` reads that stop as NO VERDICT. `record` and `observation` look at `meta.alertGuardStop` or the top-level
+  `alertGuardStop`. The new `acceptance` check returns PASS on exit 0. It returns NO VERDICT only when the report names
+  an `alertGuardStop` and every item outside the fixture's (5, 6, 8) is PASS or INFO, and FAIL otherwise.
+
+Per sitting:
+
+- **A (native-baseline, `scripts/native-baseline/macos.mjs`).**
+  - The device gains `guard({pid, key})` and `place({pid|panel, window, frame})`, each a `guard-device.mjs` call in the
+    checkout.
+  - TextEdit's window is placed after `setup.activate` and again after `setup.newDocument`. Each placement goes to
+    `meta.placement`.
+  - `setup.newDocument`, `task.close` and each task's act run under the pointer guard. Key cells run under the key
+    guard, and the screenshot measure runs under the capture guard (`measure(..., {before})`).
+  - A refusal stops the sitting. `record` reads that stop as NO VERDICT.
+- **B (repl-parity native-mac, `scripts/repl-parity/native-mac.mjs`).**
+  - After each scene's bring-up, the scene's window is placed (`meta.scenes[id].placement`).
+  - The ACTION cell is guarded before it is sent, on each side's own device. A refusal writes the action row with its
+    mark and diagnostics, and records `alertGuardStop` at `<scene>/action`. The scene ends as a `SceneProblem`, so the
+    other side's cell is not sent either.
+  - `observation` reads the stop as NO VERDICT.
+- **C (the matrix).** The matrix already ran under T8e's guard. It now imports the shared module, and `placeScenes` and
+  `placePanel` go through `placeWindows`.
+- **D (accept-native, verify `--bind`, the approval cycles, T3b).**
+  - `textedit up` places the scratch document's windows clear of the alerts and records the placement in
+    `textedit-placement.json` (`textedit-guard.mjs`). verify `--bind`, #216's approval cycles and T3b's onboarding bind
+    that document.
+  - Those three send no pointer or key event of their own, only observations of the placed window. They keep their own
+    front and key sampling (rulings 1136 and 1141).
+  - accept-native's live TextEdit run is shared by items 5, 6 and 8, and on a hosted runner it takes the guard. Its
+    document is placed after open (`observations.placement`). Every typing or key cell is refused before it is sent
+    when the guard says so, and the step is marked BLOCKED "NO VERDICT <cause>: …".
+  - The report carries `alertGuardStop`. D's step is judged by the `acceptance` check on `acceptance.json`.
+
+### The setup record's shape
+
+`setup.json` gains `modeSwitch` between `warmUps` and `placement`:
+
+```
+modeSwitch: {
+  before:   {mode: {width, height, modeId, pixelWidth, pixelHeight}, alerts: [{number, layer, bounds}], front},
+  set:      {width, height, modeId, pixelWidth, pixelHeight} | null,
+  readBack: {bounds: {x, y, width, height}, mode},
+  after:    {alerts: [...], front},
+  promptSeen: [{number, owner, layer, bounds} | {front}],
+  recentred:  [{number, from, to}],
+  watchedMs
+}
+```
+
+The step's detail line reads, for example, "1024x768 (mode 3) -> 1920x1080 (mode 10), read back 1920x1080; 2 alert
+windows, none moved; no prompt". Off a hosted runner the step refuses before it reads anything. `placement` keeps its
+shape, and its alerts are now the fresh ones after the switch.
+
+### Tests
+
+These suites were run on this Mac:
+
+- `node --test` on `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`,
+  `test/accept-textedit-{cells,readback}`: 940/940.
+- `test/repl-parity`, `test/cursor-sitting`: 1039/1039.
+- `test/accept-{native-cli,scripts-load,key-guard,window-close,onboarding}`: 112/112.
+
+`swiftc -typecheck` passes on `display-modes.swift`. The mode switch was never run here.
+
+What the tests cover:
+
+- **New suites.** `alert-guard`, `guard-device`, `display-mode` and `textedit-guard`. The `display-mode` tests cover a
+  prompt seen, a read-back mismatch, re-centred alerts and the hosted-only refusal.
+- **`setup.test.mjs`.** The step's place in the order and a failing switch.
+- **Sitting A** (`native-baseline/run.test.mjs`) **and sitting B** (`repl-parity/native-mac-run.test.mjs`). Tests that
+  an overlapping alert refuses the pointer event on both sides, that the run records NO VERDICT alert, and that the
+  hosted check reads NO VERDICT. B also gets the ACTION diagnostics test.
+- **The Minors.** One test for each, in the matrix's `run.test.mjs` and `probe-run.test.mjs`. `run-records.test.mjs`
+  counts the extra TextEdit activation from Minor 1.

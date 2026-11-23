@@ -2744,6 +2744,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **F5a's boundary (1063 (2)).** An executable whose hash equals the current pin's asset is read as the pin's version, whatever `install.json` says. It is written into F5a's text in the pre-flight.
   - **The reach of main's new commits:** only d44a4fe1 (#441, `install.mjs download()`'s failure path) touches a Linux path. The table goes to the design session once, after the window (1056).
 
+- Decision (2026-11-23, M5 close-out; the design session's rulings 960 (folded here), 1087–1093): M5's acceptance and what goes to the owner.
+  - **What each engine's ok claims (ruling 960, cited by number on the owner page).** A cua plain ok on a Chrome drop claims the drop was confirmed. A vendor ok claims only that the action ran, and says nothing about a drop. So a cua false ok and a vendor ok with no drop are different things, and stale-position drops are the comparable wrong outcome. The same ruling extended #429's declared limit to x64 at twice the load (L3a at H6).
+  - **x64's V5 at H8 (1087, 1088).** It passed in one sitting on the owner's `:0`, 2026-11-23 02:30:03–03:07:44Z: every verdict PASS, the all-clear clear, wrap71 at 0 flags in 15066 samples, and the narrowed sidecar capturing nothing. That completed the counted acceptance at H8 on both arches.
+  - **Main's reach (1089).** Main b99232de..33c8dd09 (34 commits) reaches no Linux engine lane, judge or Linux document, so no H8 step reruns. m5-main-merge-2 (d26f0e80) is merged into feat (abfa26f7). At the flip's merge, B is re-ported onto the then-current main with a one-line reach note.
+  - **Accepted (1090).** M5's counted acceptance at H8 is accepted on both arches, with the owner page at 41c8cc75 complete.
+    - The x64 and arm64 raw sidecar captures are deleted (1054), and the READMEs keep the redacted attribution only.
+    - The flip's decision is with the owner, and T10 stays unmerged on m5-t10-r3 (A 3e2e5d5f, B 2e6f309f) until the answer.
+  - **The owner's yes (2026-11-23, ruling 1093).** The owner chose to flip the Linux default to cua's own engine in plugin 0.29.0. The design session had told the owner the re-grading would come first, so the flip merges only after the whole-branch review's harness wave (task 139) rejudges the stored H8 rows with none moving. Task 139's rejudge moved no H8 row. Main had not moved since 33c8dd09, so B needed no re-port (the reach note). T10 merged into feat as a15d0618.
+  - **The whole-branch review's engine findings** go to 0.4.4 as tickets (1091, 1092): #487 (P2, fail-open: an Electron settle on the named window's rest in dedicated mode, on the owner page's list) and #488 (P3, fail-closed: a handle end's settle skipped when the take was already seen).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -7,11 +7,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LANES, NAMED_PLACE, PLANS, frameAround, namedPath, pathUnder, planSpecs, rootClientRect } from '../../scripts/linux-engine-diff/drop-signals.mjs';
+import { LANES, NAMED_PLACE, PLANS, frameAround, namedAim, namedPath, pathUnder, planSpecs, rootClientRect } from '../../scripts/linux-engine-diff/drop-signals.mjs';
+import { ParkRefused } from '../../scripts/linux-engine-diff/park.mjs';
 import { NAMED_LANE, judgedDropSignalsPlan, namedSourceTable, namedSourceUnproven } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { dropRow } from './drop-rows.mjs';
 
 const settle = (rest) => ({ before_rest: { answered: true }, second_rest: 'needless', after_motion: { answered: true }, settled: true, settle_failed_activation_confirmed: false, ...(rest === undefined ? {} : { rest_ms: rest }) });
+
+/** The scene's Electron window (its `drop-signal-scene` row's `window`). */
+const ELECTRON = 5;
+/** The judge's view of a named drop, the scene's Electron window given. */
+const unproven = (r) => namedSourceUnproven(r, { electronWindow: ELECTRON });
+/** The named lane's table, the scene's Electron window given. */
+const table = (rows) => namedSourceTable(rows, { electronWindow: ELECTRON });
 
 /** A drop of the named lane that exercised the case: landed and ok by default. */
 const named = ({ i = 0, rest, ...o } = {}) => ({
@@ -20,9 +28,9 @@ const named = ({ i = 0, rest, ...o } = {}) => ({
   drag_pacing: { family: 'GTK 4', rest_ms: 0, step_us: 0 },
   drop_cursor: { accepted: true, settle: settle(rest) },
   // the engine's count of the settles the drag's request entered (drop-signals.mjs `settleCount`)
-  settle_count: { before: 0, after: 1, entered: 1, before_from: 'fresh', after_from: 1 },
+  settle_count: { before: 0, after: 1, entered: 1, before_from: 'fresh', after_from: 1, requests: { first: 1, last: 1 } },
   // where the press went (drop-signals.mjs `namedAim`): inside the plain source, the pointer parked over the scene there
-  named: { id: 7, x: 961, y: 262, aim: { root: { x: 530, y: 128 }, park: { ok: true, at: { x: 530, y: 128 }, chain: [5] }, source: { x: 500, y: 110, w: 60, h: 36 }, inside: true } },
+  named: { id: 7, x: 961, y: 262, aim: { root: { x: 530, y: 128 }, park: { ok: true, at: { x: 530, y: 128 }, chain: [4, ELECTRON] }, source: { x: 505, y: 110, w: 50, h: 36 }, inside: true } },
 });
 
 /** `xwininfo -id` for the named window under the harness's Openbox, its client's real origin (961, 262). */
@@ -81,7 +89,7 @@ test("the named window's frame may cover no point of the path, its segments' too
 });
 
 test('a drop that proves the case is exercised; each missing proof is named', () => {
-  assert.deepEqual(namedSourceUnproven(named()), []);
+  assert.deepEqual(unproven(named()), []);
   const cases = [
     ['pacing', { drag_pacing: { family: 'xterm', rest_ms: 0 } }],
     ['pacing', { drag_pacing: { family: 'GTK 4', rest_ms: 30 } }],
@@ -114,14 +122,14 @@ test('a drop that proves the case is exercised; each missing proof is named', ()
     ['settle', { settle_count: { before: 4, after: 4, entered: 1 } }],
   ];
   const readError = { ...named(), drop_cursor: { steps: [], accepted: null, error: 'the read timed out', settle: settle() } };
-  assert.equal(namedSourceUnproven(readError).includes('press'), false);
-  for (const [why, edit] of cases) assert.ok(namedSourceUnproven({ ...named(), ...edit }).includes(why), `${why}: ${JSON.stringify(edit)}`);
+  assert.equal(unproven(readError).includes('press'), false);
+  for (const [why, edit] of cases) assert.ok(unproven({ ...named(), ...edit }).includes(why), `${why}: ${JSON.stringify(edit)}`);
 });
 
 test("the review's probe: a Chrome-labelled row whose settle is `false` is not exercised, and its landing is never counted as the case's", () => {
   const probe = { ...named({ i: 0 }), family: 'chrome', drop_cursor: { settle: false } };
-  assert.deepEqual(namedSourceUnproven(probe), ['electron', 'settle']);
-  const { counts } = namedSourceTable([probe]);
+  assert.deepEqual(unproven(probe), ['electron', 'settle']);
+  const { counts } = table([probe]);
   assert.equal(counts.exercised.drags, 0);
   assert.equal(counts.exercised.landed, 0);
   assert.equal(counts.unexercised.landed, 1);
@@ -142,33 +150,89 @@ test("each drop counted by T17's definitions, exercised and not apart: never a p
     // another lane's row is not this table's
     dropRow({ family: 'electron', lane: 'cua', i: 0 }),
   ];
-  const { counts, md } = namedSourceTable(rows);
+  const { counts, md } = namedSourceTable(rows, { electronWindow: ELECTRON });
   assert.deepEqual(counts, {
     drags: 6,
-    exercised: { drags: 4, landed: 2, false_ok: 1, stale: 0, honest_unconfirmed: 1, ambiguous: 0, error: 0 },
-    unexercised: { drags: 2, landed: 1, false_ok: 1, stale: 0, honest_unconfirmed: 0, ambiguous: 0, error: 0 },
+    exercised: { drags: 4, skipped: 0, landed: 2, false_ok: 1, stale: 0, honest_unconfirmed: 1, ambiguous: 0, error: 0 },
+    unexercised: { drags: 2, skipped: 0, landed: 1, false_ok: 1, stale: 0, honest_unconfirmed: 0, ambiguous: 0, error: 0 },
     unproven: { electron: 0, pacing: 0, route: 1, aim: 0, press: 0, start: 0, settle: 1 },
     settle_rest_ms: { absent: 5 },
   });
   const text = md.join('\n');
-  assert.match(text, /\| exercised \| 4 \| 2 \| 1 \| 0 \| 1 \| 0 \| 0 \|/);
-  assert.match(text, /\| not exercised \| 2 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \|/);
+  assert.match(text, /\| exercised \| 4 \| 0 \| 2 \| 1 \| 0 \| 1 \| 0 \| 0 \|/);
+  assert.match(text, /\| not exercised \| 2 \| 0 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \|/);
   assert.match(text, /electron 0, pacing 0, route 1, aim 0, .*settle 1/);
 });
 
 test("a stale drop is T17's: the zone counted a drop the path did not end in", () => {
   // the plain cell ends in the zone, so a landing there is landed; the `left` cell's would be stale
-  const { counts } = namedSourceTable([{ ...named({ cell: 'left', landed: true }) }]);
+  const { counts } = table([{ ...named({ cell: 'left', landed: true }) }]);
   assert.equal(counts.exercised.stale, 1);
   assert.equal(counts.exercised.landed, 0);
 });
 
 test("the settles' rests are tallied, so 0.4.4's fix wave shows Electron's 30 ms", () => {
-  const { counts, md } = namedSourceTable([named({ i: 0, rest: 30 }), named({ i: 1, rest: 30 }), named({ i: 2, rest: 0 })]);
+  const { counts, md } = table([named({ i: 0, rest: 30 }), named({ i: 1, rest: 30 }), named({ i: 2, rest: 0 })]);
   assert.deepEqual(counts.settle_rest_ms, { 0: 1, 30: 2 });
   assert.match(md.join('\n'), /rest_ms: 0 ms 1, 30 ms 2/);
 });
 
 test('a sitting with none of the lane prints nothing', () => {
-  assert.deepEqual(namedSourceTable([dropRow({ family: 'electron' })]).md, []);
+  assert.deepEqual(table([dropRow({ family: 'electron' })]).md, []);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix wave 4 (the whole-branch re-review of 1317cc35)
+
+test("wave 4, P2 3: the aim proves only with its content: the root inside the source, the parked point the root, the scene's Electron window under it", () => {
+  const withAim = (aim) => ({ ...named(), named: { id: 7, x: 961, y: 262, aim } });
+  // the reviewer's case: the flags alone
+  assert.ok(unproven(withAim({ inside: true, park: { ok: true } })).includes('aim'));
+  const full = named().named.aim;
+  assert.deepEqual(unproven(withAim(full)), []);
+  const cases = [
+    ['the root outside the source', { ...full, root: { x: 600, y: 128 }, park: { ...full.park, at: { x: 600, y: 128 } } }],
+    ['the parked point not the root', { ...full, park: { ...full.park, at: { x: 531, y: 128 } } }],
+    ["the chain without the scene's window", { ...full, park: { ...full.park, chain: [4, 99] } }],
+    ['no chain', { ...full, park: { ok: true, at: full.park.at } }],
+    ['no source', { ...full, source: null }],
+    ['no root', { ...full, root: undefined }],
+    ['a refused park', { ...full, park: { ...full.park, ok: false } }],
+    ['a refused aim with no park', { root: full.root, refused: 'the press point is under another window', top: 9, holds: 0 }],
+  ];
+  for (const [why, aim] of cases) assert.ok(unproven(withAim(aim)).includes('aim'), why);
+  // with no Electron window known, no aim proves
+  assert.ok(namedSourceUnproven(named()).includes('aim'));
+});
+
+test("wave 4, P2 4: a press point not over the scene's Electron window is refused before the warp, and nothing is pressed", async () => {
+  const path = [{ x: 530, y: 128 }, { x: 570, y: 128 }];
+  const calls = [];
+  const ctx = (holds) => ({
+    scene: { id: ELECTRON, window: { x: 0, y: 0 } },
+    named: { x: 961, y: 262 },
+    oracle: { extents: () => ({ x: 505, y: 110, w: 50, h: 36 }) },
+    desktop: { topAt: (p, ids) => (calls.push(['topAt', p, ids]), { top: 11, holds }), state: async () => ({ ax_tree: { id: 'a', name: 'Plain source', children: [] } }) },
+  });
+  const park = (p) => (calls.push(['park', p]), { x: p.x, y: p.y, chain: [4, ELECTRON] });
+  const refused = await namedAim(ctx(0), path, { park });
+  assert.equal(calls.some(([k]) => k === 'park'), false, 'no warp');
+  assert.match(refused.refused, /not over the scene's Electron window/);
+  assert.deepEqual(refused.root, { x: 530, y: 128 });
+  calls.length = 0;
+  const aimed = await namedAim(ctx(ELECTRON), path, { park });
+  assert.deepEqual(calls.map(([k]) => k), ['topAt', 'park']);
+  assert.equal(aimed.refused, undefined);
+  assert.deepEqual(aimed.park, { ok: true, at: { x: 530, y: 128 }, chain: [4, ELECTRON] });
+  assert.equal(aimed.inside, true);
+  // a park the pointer reading refuses after the warp (the window changed between): refused too, so nothing is pressed
+  const late = await namedAim(ctx(ELECTRON), path, { park: () => { throw new ParkRefused('the pointer is over another window'); } });
+  assert.match(late.refused, /the pointer is over another window/);
+});
+
+test('wave 4, P2 4: a refused trial is counted unexercised with its reason, never as an error, a false ok or a landing', () => {
+  const skipped = { ...dropRow({ family: 'electron', lane: NAMED_LANE, i: 3, landed: false, started: false }), ok: undefined, skipped: 'the press point (530, 128) is not over the scene\'s Electron window', named: { aim: { root: { x: 530, y: 128 }, refused: 'x' } } };
+  const { counts } = namedSourceTable([named({ i: 0 }), skipped], { electronWindow: ELECTRON });
+  assert.equal(counts.exercised.drags, 1);
+  assert.deepEqual(counts.unexercised, { drags: 1, skipped: 1, landed: 0, false_ok: 0, stale: 0, honest_unconfirmed: 0, ambiguous: 0, error: 0 });
 });

@@ -27,6 +27,9 @@
 //                so it is this run's) of `lane` holding an observation of every home (macos-selection.mjs HOMES),
 //                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
 //                on the flip cua's engine on cua's host in the default home and each fallback's own reason elsewhere
+//   acceptance   accept-native in sitting D: exit 0 passes; otherwise its report (`record`) is read: a run in which the
+//                shared alert guard refused a cell of the TextEdit fixture (`alertGuardStop`, rulings 1154, 1160) and
+//                no item outside the fixture's (5, 6, 8) failed is NO VERDICT; anything else fails as `exit` does
 //   onboarding   T3b's staged onboarding (sitting D): its record (`record`) judged stage by stage against M4's behaviour
 //                (./onboarding-judge.mjs), in ruling 1149's order: a result answered on another engine than the side
 //                (`engine`) is NO VERDICT before any FAIL; a missing or incomplete record is NO VERDICT, never a pass
@@ -37,6 +40,9 @@ import {classifyAttestedRecord} from '../probe/lib.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
 
 const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert']);
+// accept-native's items its live TextEdit fixture proves (scripts/accept-native.mjs: 5, 6 and 8), the ones the alert
+// guard's refusal there leaves unproven.
+const FIXTURE_ITEMS = Object.freeze([5, 6, 8]);
 const VERDICT_LINE = /^VERDICT: (PASS|FAIL|NO VERDICT|OWNER)\b/gm;
 const firstProblem = record => record.error ?? record.problems?.[0] ?? record.refused?.[0] ?? 'no reason recorded';
 
@@ -140,6 +146,14 @@ export const CHECKS = Object.freeze({
     return ['FAIL', `driver failure: no observation recorded (${rows.find(row => row.invalid)?.invalid ?? 'no reason recorded'})`];
   },
   onboarding: (step, {exit, readJson}) => judgeOnboarding(readJson(step.record), {path: step.record, exit, engine: step.engine}),
+  acceptance(step, {exit, readJson}) {
+    if (exit === 0) return ['PASS', null];
+    const report = readJson(step.record), stop = report?.alertGuardStop;
+    if (!stop) return ['FAIL', null];
+    const others = (report.items ?? []).filter(item => !FIXTURE_ITEMS.includes(item.id) && !['PASS', 'INFO'].includes(item.status));
+    if (others.length) return ['FAIL', `item${others.length > 1 ? 's' : ''} ${others.map(item => `${item.id} ${item.status}`).join(', ')}; the alert guard also refused ${stop.at}`];
+    return ['NO VERDICT', `${stop.cause}: the alert guard refused ${stop.at} in the TextEdit fixture (${stop.detail}); items ${FIXTURE_ITEMS.join(', ')} unproven`];
+  },
   selection(step, {exit, readJson}) {
     if (exit !== step.expect) return ['FAIL', `exit ${exit}, expected ${step.expect}`];
     const report = readJson(step.report);

@@ -92,9 +92,13 @@ function sittingD(ctx) {
   const home = `${ctx.scratch}/cua-accept`, verify = engine => ['node', 'verify.mjs', '--engine', engine, '--bind', 'com.apple.TextEdit'];
   return [
     {id: 'scratch-install', label: 'the pinned runtime in accept-native\'s scratch home', kind: 'run', argv: ['node', 'bin/cua.mjs', 'install', '--json'], env: {CUA_HOME: home, CUA_NATIVE_ENGINE: 'vendor'}},
+    // Its report read by the `acceptance` check: an alert guard's refusal in the TextEdit fixture is NO VERDICT (ruling 1154).
     {id: 'accept-native', label: `accept-native --engine cua, items ${ACCEPT_NATIVE_ITEMS.join(', ')}`, kind: 'run', needs: ['scratch-install'], env: {CUA_HOME: home, XDG_CONFIG_HOME: acceptConfig(ctx)},
+      check: 'acceptance', record: `${ctx.out}/acceptance.json`, report: `${ctx.out}/acceptance.json`,
       argv: ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', ACCEPT_NATIVE_ITEMS.join(','), '--report', `${ctx.out}/acceptance.json`]},
-    {id: 'textedit-up', label: 'a scratch TextEdit document, the window verify --bind and the approval cycles bind', kind: 'fixture', argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`]},
+    // The document's windows placed clear of the alerts once it is up (rulings 1160, 1164), recorded beside the sitting.
+    {id: 'textedit-up', label: 'a scratch TextEdit document, the window verify --bind and the approval cycles bind', kind: 'fixture',
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`, '--record', `${ctx.out}/textedit-placement.json`]},
     {id: 'verify-cua', label: 'verify --engine cua --bind TextEdit (Acceptance 2)', kind: 'run', needs: ['textedit-up'], argv: verify('cua')},
     {id: 'verify-vendor', label: 'verify --engine vendor --bind TextEdit (Acceptance 9, attested)', kind: 'run', needs: ['textedit-up'], argv: verify('vendor')},
     {id: 'approval-cycles', label: `#216's approval cycles (${APPROVAL_CYCLES}) on cua's engine and host`, kind: 'run', needs: ['textedit-up'], env: {CUA_SHIM_SURFACES: 'computer,browser'},

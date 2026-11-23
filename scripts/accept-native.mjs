@@ -95,6 +95,8 @@ import {
   suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, tapDiagnostics, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
+import {isGithubHosted} from './hosted-sittings/runner.mjs';
+import {textEditGuard} from './hosted-sittings/textedit-guard.mjs';
 import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
@@ -324,9 +326,15 @@ async function liveSecrets() {
   return secretsProbeEvidence({result: r, report, ended: ended(r), lastError: sanitize(r.stderr.trim().split('\n').at(-1) ?? '')});
 }
 
+// On a GitHub-hosted runner (sitting D) the fixture's document is placed clear of replayd's alerts and every cell that
+// types or presses a key goes under the shared alert guard (rulings 1154, 1160, 1164): a refusal is the report's
+// alertGuardStop, which the hosted check reads as NO VERDICT (scripts/hosted-sittings/checks.mjs `acceptance`).
 async function liveTextEdit() {
   if (!options['live-textedit']) return null;
-  return runTextEdit({home, engine: pin, secret: callerSecret ?? Boolean(options['live-secrets']), forbid: value => forbidden.push(value)});
+  const result = await runTextEdit({home, engine: pin, secret: callerSecret ?? Boolean(options['live-secrets']), forbid: value => forbidden.push(value),
+    guard: isGithubHosted() ? textEditGuard() : null});
+  if (result?.observations?.alertGuardStop) state.alertGuardStop = result.observations.alertGuardStop;
+  return result;
 }
 
 const NOT_REQUESTED = flag => check(`opt-in ${flag}`, 'BLOCKED', `not run: pass ${flag} to run it (never counted as a pass when skipped)`);
@@ -349,6 +357,7 @@ async function item5(textedit) {
   ];
   addItem(5, 'Live native fixture: its own disposable TextEdit document', checks, {
     nativeHelper: o.nativeHelper, textEdit: o.textEdit, screenshot: o.screenshot, elicitations: o.elicitations, connections: o.connections, guiInputStopped: o.guiInputStopped,
+    ...(o.placement ? {placement: o.placement} : {}), ...(o.alertGuards ? {alertGuards: o.alertGuards} : {}),
     ...(o.engine ? {engine: o.engine} : {}),
     note: 'cold start of the pinned helper is not shown here: see item 9',
   });
@@ -613,6 +622,7 @@ const report = {
   release: state.doctor?.runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
   startedAt: started.toISOString(), finishedAt: new Date().toISOString(),
   summary: Object.fromEntries(items.map(i => [i.id, i.status])),
+  ...(state.alertGuardStop ? {alertGuardStop: state.alertGuardStop} : {}),
   connectionDirectoriesLeft: runLeftovers.length,
   items,
 };

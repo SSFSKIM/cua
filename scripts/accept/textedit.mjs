@@ -172,7 +172,18 @@ export function createFixtureDocument(home) {
 // driven. `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored
 // key). `pauseFile` (CUA_PAUSE_FILE, scripts/mini-pause.mjs): every cell waits at its boundary while the mini's CI runner
 // is busy, and never aborts, the owner standing by; each pause is in the observations.
-export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost}) {
+// The alert guard's answer before a key cell (`guard.check()`): its cause, or null to send; a reading that throws is
+// unread, never clear.
+export function alertGuardRefusal(guard) {
+  try { return guard.check() ?? null; } catch (error) { return {category: 'unread', detail: `the alert guard could not read the screen (${error.message})`}; }
+}
+
+// `guard` (a GitHub-hosted runner's only, scripts/hosted-sittings/textedit-guard.mjs; rulings 1154, 1160, 1164): the
+// document's TextEdit windows placed clear of replayd's alerts once it is open (observations.placement), and every cell
+// that types or presses a key refused when an alert overlaps them or holds the front or key, or the screen is unread,
+// since cua's engine may click around a keyed typeText: the step BLOCKED with its NO VERDICT cause, nothing sent and no
+// further input (observations.alertGuards, alertGuardStop, which accept-native's report carries to the hosted check).
+export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost, guard = null}) {
   const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
@@ -243,6 +254,14 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   // ./key-guard.mjs); otherwise nothing is sent, the skip is recorded (observations.keySkipped) and the step fails, and
   // the fixture sends no further input. -> the cell's reply, or null when it was skipped.
   const keyCell = async (session, step, keys, code) => {
+    const refused = guard ? alertGuardRefusal(guard) : null;
+    if (refused) {
+      (observations.alertGuards ??= []).push({step, cause: refused.category, detail: refused.detail});
+      observations.alertGuardStop ??= {cause: refused.category, detail: refused.detail, at: step};
+      guiStopped = `the alert guard refused ${step}: ${refused.detail} (ruling 1154)`;
+      record(step, 'BLOCKED', `NO VERDICT ${refused.category}: ${guiStopped}; nothing was sent and the fixture sent no further input`);
+      return null;
+    }
     // The pause wait (pausing()) comes first, then the check, then the cell with no pause between them.
     const sent = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs]});
     if (sent.sent) return sent.result;
@@ -332,6 +351,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     launched = await awaitLaunch({pids: textEditPids, before: textEditBefore, startedAt: runStartedAt});
     observations.textEdit.launch = {captured: Boolean(launched.launch), candidates: launched.candidates.length, waitedMs: launched.waitedMs, missed: launched.missed};
     await sleep(1000);  // let the document window come to the front
+    if (guard) { try { observations.placement = await guard.place(); } catch (error) { observations.placement = {error: error.message}; } }
     record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new RTF with a fixed placeholder and proportional regular font, in a directory created for this run under $CUA_HOME, opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
       : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
         : textEditBefore.length ? ' (already running)' : launched.missed ? ` (no new TextEdit pid within ${launched.waitedMs} ms of the open: a miss, so none is recorded as its own)` : ''}`);

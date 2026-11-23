@@ -24,7 +24,7 @@
 //   node scripts/hosted-sittings.mjs plan <a..f> --out <dir> [--pilot] [--flipped]     the steps, as JSON; runs nothing
 //   node scripts/hosted-sittings.mjs counts <dir>...                                   per-cell counts of result dirs
 //   node scripts/hosted-sittings.mjs focus-timing --approved-engine <bundle> --out <file>   the focus probe's cost
-//   node scripts/hosted-sittings.mjs textedit up --file <path> | down                  sitting D's scratch document
+//   node scripts/hosted-sittings.mjs textedit up --file <path> [--record <file>] | down   sitting D's scratch document, placed clear of the alerts
 //   node scripts/hosted-sittings.mjs onboarding --out <file>
 //       T3b's staged onboarding, sitting D's last step (scripts/hosted-sittings/onboarding.mjs): cua's engine's TCC rows
 //       set stage by stage, a relaunch at each, the product's answers recorded to <file>, which the sitting's check judges
@@ -45,6 +45,8 @@ import {execStep, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
 import {runOnboarding} from './hosted-sittings/onboarding.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
+import {readScreenAtEnd} from './hosted-sittings/display-mode.mjs';
+import {textEditGuard} from './hosted-sittings/textedit-guard.mjs';
 
 const REPO = resolve(dirname(new URL(import.meta.url).pathname), '..');
 class Usage extends Error {}
@@ -92,21 +94,36 @@ async function runCommand(sitting, values) {
       parts.push(reads);
     }
   }
-  writeJson(join(out, 'sitting.json'), report);
+  // The cleanup's record (rulings 1160, 1164): the alert windows (number, layer, bounds) and the display's mode as they
+  // stand once every step ran, so the alerts' survival and the mode's hold through the sitting are shown.
+  const screenAtEnd = readScreenAtEnd();
+  parts.push('## The screen at the end', '', `${screenAtEnd.alerts ? `${screenAtEnd.alerts.length} alert window${screenAtEnd.alerts.length === 1 ? '' : 's'}` : 'the window list unread'}; `
+    + `the display ${screenAtEnd.mode ? `${screenAtEnd.mode.width}x${screenAtEnd.mode.height} (mode ${screenAtEnd.mode.modeId})` : 'unread'}${screenAtEnd.modeHeld === false ? ', NOT the mode setup set' : ''}.`, '');
+  writeJson(join(out, 'sitting.json'), {...report, screenAtEnd});
   writeFileSync(join(out, 'sitting.md'), parts.join('\n'));
   process.stdout.write(parts.join('\n'));
   return report.exit;
 }
 
-function textedit(action, values) {
+// The scratch document up, its windows then placed clear of replayd's alerts from a fresh reading (rulings 1160, 1164;
+// scripts/hosted-sittings/textedit-guard.mjs), the placement printed and kept at --record. A placement that could not
+// be read or made is recorded; the guard of each later step decides what it refuses.
+async function textedit(action, values) {
   assertGithubHosted(process.env, process.platform, 'the scratch TextEdit document');
   if (action === 'down') { spawnSync('pkill', ['-x', 'TextEdit']); return 0; }
-  if (action !== 'up' || !values.file) usage('textedit up --file <path> | textedit down');
+  if (action !== 'up' || !values.file) usage('textedit up --file <path> [--record <file>] | textedit down');
   mkdirSync(dirname(values.file), {recursive: true});
   if (!existsSync(values.file)) writeFileSync(values.file, 'cua hosted sitting: scratch document\n');
   if (spawnSync('open', ['-a', 'TextEdit', values.file]).status !== 0) return 1;
   for (let i = 0; i < 30; i++) {
-    if (spawnSync('pgrep', ['-x', 'TextEdit']).status === 0) { spawnSync('sleep', ['2']); return 0; }
+    if (spawnSync('pgrep', ['-x', 'TextEdit']).status === 0) {
+      spawnSync('sleep', ['2']);
+      let placement;
+      try { placement = await textEditGuard().place(); } catch (error) { placement = {error: error.message}; }
+      process.stdout.write(json({placement}));
+      if (values.record) writeJson(values.record, {placement});
+      return 0;
+    }
     spawnSync('sleep', ['1']);
   }
   return 1;
@@ -116,7 +133,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'approved-engine': {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}}});
+    report: {type: 'string'}, 'approved-engine': {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
   switch (command) {
     case 'setup': {
       const report = await hostedSetup({checkout: REPO, commit: commitOf(), engineArchive: values['engine-archive'] ? resolve(values['engine-archive']) : null, home: homedir(),

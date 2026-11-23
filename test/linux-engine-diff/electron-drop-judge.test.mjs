@@ -10,6 +10,9 @@ import { dropRow } from './drop-rows.mjs';
 
 const UNCONFIRMED = 'unconfirmed';
 
+/** A run's meta row as experiments.mjs writes it: its engine's version, an engine before #487's settle-rest record. */
+const META = { kind: 'meta', cua_version: 'cua-engine 0.4.3 (ba5b043834ce)' };
+
 /** One Electron drag's row (drop-rows.mjs): a landed drop into the zone by default, answered ok with nothing pending. */
 const drag = ({ notice = null, ...o } = {}) => dropRow({ family: 'electron', pending: notice, ...o });
 const many = (n, f) => Array.from({ length: n }, (_, i) => f(i));
@@ -222,8 +225,11 @@ test("a landed move is classed by this trial's own dragend, never by an earlier 
 // unconfirmed notice, kept by its refusal, and no drop on the page) is allowed up to floor(2 × n / 100) times in a cell
 // of n plain drops; one more fails. A false ok is never part of it, and the rule covers no other load, cell or plan.
 
-/** L4a's judge: the plan the residue is for (`t17-fix3`), as the dispatcher passes it. */
-const fix3 = (rows, opts) => electronDropVerdict(rows, { ...opts, plan: 't17-fix3' });
+/**
+ * L4a's judge: the plan the residue is for (`t17-fix3`), as the dispatcher passes it, with the run's engine version
+ * (its meta row's) as the stored rows' 0.4.3, whose settle records predate #487's rest check (settle-rest.test.mjs).
+ */
+const fix3 = (rows, opts) => electronDropVerdict(rows, { cuaVersion: META.cua_version, ...opts, plan: 't17-fix3' });
 
 /** A cell at twice the load: `n` drops, the first `honest` of them honest unconfirmed non-landings, the rest landed and ok. */
 const residueCell = (n, honest, { lane = 'cua:handle', load = 'load2', cell = 'plain' } = {}) =>
@@ -363,7 +369,7 @@ test('the residue admits a non-landing only on its whole evidence: the dispatch 
 });
 
 test("the residue is L4a's plan's alone: the dispatcher opts t17-fix3 in, and another judged plan at twice the load gets no allowance", () => {
-  const verdictOf = (plan, rows) => dropSignalsVerdict({ families: ['electron'], plan }, [{ kind: 'drop-signal-scene', specs: [{ lane: 'cua:handle', cell: 'plain', n: rows.length }] }, ...rows]);
+  const verdictOf = (plan, rows) => dropSignalsVerdict({ families: ['electron'], plan }, [META, { kind: 'drop-signal-scene', specs: [{ lane: 'cua:handle', cell: 'plain', n: rows.length }] }, ...rows]);
   const fix3Run = verdictOf('t17-fix3', residueCell(100, 2));
   assert.deepEqual(fix3Run.failed, []);
   assert.equal(fix3Run.counts.residue[0].count, 2);
@@ -400,7 +406,7 @@ test('a zone-truth mismatch is reported apart, per lane and cell, and fails noth
   }
   // L4a's plan and another judged plan, through the dispatcher, report it the same
   for (const plan of ['t17-fix3', 't17-floor']) {
-    const v = dropSignalsVerdict({ families: ['electron'], plan }, [{ kind: 'drop-signal-scene', specs: [{ lane: 'cua', cell: 'left', n: 30 }] }, ...leftCell(30, 2)]);
+    const v = dropSignalsVerdict({ families: ['electron'], plan }, [META, { kind: 'drop-signal-scene', specs: [{ lane: 'cua', cell: 'left', n: 30 }] }, ...leftCell(30, 2)]);
     assert.deepEqual(v.failed, [], plan);
     assert.equal(v.counts.zone_mismatch[0].count, 2, plan);
   }

@@ -279,7 +279,7 @@ async function runOnce(options, io) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);
       if (!front?.ok) throw new Error(`${id} did not come to the front before its bind (${front?.reason ?? 'no answer'})`);
-      const bound = await js(ctx, 'setup', `bind:${id}`, BIND(id, ctx.records[id].app), {timeoutMs: BIND_MS});
+      const bound = await js(ctx, 'setup', `bind:${id}`, BIND(id, ctx.records[id].app, ctx.engine), {timeoutMs: BIND_MS});
       if (!bound.ok) throw new Error(`${id} could not be bound: ${bound.error}`);
     }
     snapshot();

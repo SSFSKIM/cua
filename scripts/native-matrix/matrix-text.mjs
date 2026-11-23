@@ -49,8 +49,12 @@ export function indexOfId(ax, id) {
   return elementLines(ax).find(l => lone.test(l.content))?.index ?? null;
 }
 // The value of the element `index` (its `Value: ` part, through the lines a multi-line value spans, up to the next
-// element line or the blank line before the trailer), or null when the line carries none.
-export function valueOfIndex(ax, index) {
+// element line or the blank line before the trailer), or null when the line carries none. On cua's lane (`rendering`
+// 'cua', by default the lane the run's bind recorded, globalThis.__axRendering, ./goldens-cells.mjs BIND) a multi-line
+// value prints on its element's one line with its breaks escaped (#526: `\n`, `\r`, any other break `\uXXXX`): when
+// it is the line's last part (nothing `, ` after `Value: `) it is read whole and decoded. Everything else reads as
+// before, so a value with a later part is cut at its first `, ` (the reader ticket's residue).
+export function valueOfIndex(ax, index, rendering = globalThis.__axRendering) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
   if (at < 0) return null;
@@ -59,6 +63,10 @@ export function valueOfIndex(ax, index) {
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
   const value = parts.join('\n');
+  const breaks = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g;
+  if (rendering === 'cua' && parts.length === 1 && !value.includes(', ') && breaks.test(value)) {
+    return value.replace(breaks, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
+  }
   // A part after the value on its first line (only short parts follow a value; a long value moves last).
   return parts.length === 1 ? value.split(', ')[0] : value;
 }
@@ -67,10 +75,11 @@ export function focusedIndexOf(ax) {
   const m = /^The focused UI element is (\d+) /m.exec(String(ax));
   return m ? Number(m[1]) : null;
 }
-// The trailer's selected text, or null.
+// The trailer's selected text, or null: raw inside its fence, three backticks on the vendor's lane and on cua's longer
+// than any run of backticks in the text (#552).
 export function selectedTextOf(ax) {
-  const m = /\nSelected text: ```\n([\s\S]*?)\n```/.exec(String(ax));
-  return m ? m[1] : null;
+  const m = /\nSelected text: (`{3,})\n([\s\S]*?)\n\1(?=\n|$)/.exec(String(ax));
+  return m ? m[2] : null;
 }
 // The trailer's selected elements: [index].
 export function selectedIndexesOf(ax) {

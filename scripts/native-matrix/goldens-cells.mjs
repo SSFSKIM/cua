@@ -25,9 +25,12 @@ const __write = async (kind, name, text) => {
   return {kind, path: file, bytes: Buffer.byteLength(text), sha256: (await import("node:crypto")).createHash("sha256").update(text).digest("hex")};
 };`;
 
-// Binds a scene's app by its path (the facade's one `app` string) for the later cells.
-export const BIND = (scene, app) => cell(`/* goldens:bind ${scene} */
-globalThis.__apps ??= {}; globalThis.__apps[${j(scene)}] = await cua.getApp(${j(app)}); return {bound: true};`);
+// Binds a scene's app by its path (the facade's one `app` string) for the later cells, and records the lane's rendering
+// of the text when the caller names its engine (globalThis.__axRendering, which ./matrix-text.mjs valueOfIndex and
+// ../repl-parity/scenes-mac-text.mjs indexOfTarget read: cua's escapes a value's line breaks, #526); without one the
+// text is read as printed, as the vendor's lanes are.
+export const BIND = (scene, app, engine = null) => cell(`/* goldens:bind ${scene} */
+${engine === null ? '' : `globalThis.__axRendering = ${j(engine === 'cua' ? 'cua' : 'vendor')};\n`}globalThis.__apps ??= {}; globalThis.__apps[${j(scene)}] = await cua.getApp(${j(app)}); return {bound: true};`);
 
 // The fixed state's full text. -> {files: [{kind: "vendor.txt", path, bytes, sha256}]}.
 export const FIXED = (scene, title) => cell(`/* goldens:fixed ${scene} */

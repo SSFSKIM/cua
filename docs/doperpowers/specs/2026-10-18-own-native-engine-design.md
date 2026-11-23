@@ -8406,6 +8406,42 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   `controlDiffers` assertions pass on both. 1666 swift tests (1 skipped), 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #500.
 
+- Decision (#501, rulings 1083 and 1131, 2026-11-23, `fix/501-null-subrole`): a null AXSubrole slot is unread, and a
+  null AXRole slot is unknown. These were the two cases #500 left. On main, `valueClassification` read a null subrole as
+  `.none`, so a text field with one was not presumed a password field: #405's presumption failed open. And the walk
+  recorded a null role as "AXUnknown" with `roleRead` true, which made the node known and inert. Both stay outside
+  `unreadable`, and the rule reads `AttributeRead.null` and `ElementData.null` (#500's plumbing).
+  1. The subrole. `valueClassification` takes a null subrole as `.failed`, exactly as a failed read. A text-entry role
+     (`presumedSecureRoles`) is then closed, secure and failed; any other role is closed and failed but not secure, so its
+     node says `valueUnread`. Every reader of the classification follows with no change of its own: the walk's
+     `classifiedData` (the node's `secure`, the cache and the identity, which matches only the same handle), the
+     Markdown's re-classification, `classifiedRead`, select_text's guard, paste's `focusedEffectReading`, and the
+     read-back's `readbackClass` and `readbackLength`. In `readbackLength`, the concealed request's final batch
+     (`presumeSecure` false) answers `fieldUnreadable`, as it does for a failed subrole. Nothing logs a value that the
+     classification drops.
+  2. The role. `ElementData.roleRead` is false for a failed or a null AXRole, and both walk sites now record it. So the
+     stale-point record has `roleUnknown`, `actionable` nil, and a control of unknown kind for the nodes under it. #431's
+     twin search and #453's row check (`roleChanged`) then treat the node as a failed role. The classification already
+     presumed a null role secure, because it decodes as no role.
+  Consumers left as main, each already reading null as unread or failing closed:
+  - `subroleRead` and `readbackSubrole` are single reads. They already took a kCFNull success as `.failed`, because the
+    value is not a string.
+  - `readbackBatchRole` already read a null role as unreadable.
+  - The node's wire `subrole` is null, as for a failed read. No model-facing text changes.
+  - `ElementData.subrole` is nil for a null slot, as for a failed one. Its readers are `readsValueSettability`,
+    `overlayClick`'s alert-dialog check, `relabelUncomparedSubroles` and the identity's subrole match.
+  - The frame read's role (`roleReadWithFrame`, AXColumn only) and `containsWebArea` take a null role as not that role.
+  Proven offline in `NullClassifyingSlotTests` (4 tests). The nulls are injected at decode time, through
+  `AttributeRead.decode` and the walk fake's `nullAttributes`. The cases covered:
+  - a null subrole on AXTextField, AXTextArea and AXComboBox is presumed secure, in the classification and in the walk;
+  - a null subrole on AXButton, AXGroup and AXStaticText is closed but not secure;
+  - the concealed read-back answers `fieldUnreadable`;
+  - a null role records `roleUnknown`, not inert;
+  - a non-null AXSecureTextField subrole and an ordinary subrole classify as on main.
+  On cdb36ad3 the four tests fail with 37 assertions, and the unchanged-case assertions pass. 1713 swift tests
+  (1 skipped), 0 failures; the release build passes on Xcode 27.2.
+  Date/Author: 2026-11-23, cursor235's builder for #501.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

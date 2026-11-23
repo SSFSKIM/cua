@@ -32,6 +32,13 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 | 9 | T11a | The default-selection mode, failing while the macOS default is the vendor's |
 | 10 | T11b | The flip: `darwin: 'cua'`, its mirrors, tests and docs (PF §7). Stays on the branch, unmerged |
 
+**The owner's sitting (PF §5, O1 to O6): a prerequisite this wave adds.** #560 lands first: the device side's read of
+the hosted venue is bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), beside the direct
+`RUNNER_ENVIRONMENT=github-hosted` checks every hosted-only write already makes. Until #560 is on the branch the owner
+sits from, the M5 harness (`scripts/hosted-sittings/`, and the scenes, matrix, baseline and native-mac lanes it drives)
+never runs on the owner's MacBook or on the mini. The pre-flight's §5 "Order" carries the same line (the design
+session's to add on `docs/117-progress`).
+
 ## Progress
 
 - [x] T9 — reviewed clean 2026-11-23 (e84ba7953, fix b709b776a). The combined tree with M4's re-cut (the pending
@@ -337,6 +344,11 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   Unproven until the next B and C runs: that TextEdit sizes the opened window from the view size; they must read the
   scene window about 505 wide (480 + padding and scroller) and about 877 high, its right edge left of 822, the same on
   both sides, with textedit/action sent, and every Electron action's ownKey read (`keyWindowRead`, no unread).
+- 2026-11-23, #560 (the design session): the hosted venue's device-side read is not bound to the runner's VM, so
+  #560 lands before the owner's sitting (O1 to O6), and until then the M5 harness never runs on the owner's MacBook or
+  on the mini (Plan of Work, "The owner's sitting"). Every hosted-only write checks `RUNNER_ENVIRONMENT=github-hosted`
+  itself at the point of writing, not the runner record alone; the audit and the checks it added are in
+  `docs/evidence/2026-11-23-own-native-engine/hosted.md` (#560's paragraph).
 - 2026-11-23, ruling 1168's cell after the #538 probe (the design session): the cell proves reach, not path. Blink's
   `DispatchSimulatedClick(kFromAccessibility)`, which Chromium's AXPress reaches, dispatches a trusted pointerdown
   (pointerId 1, `"mouse"`, button 0) on the node itself, so the pointerdown-only button counts cua's AXPress as it

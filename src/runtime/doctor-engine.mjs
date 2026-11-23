@@ -228,8 +228,8 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
   }
   // cua's engine preferred, by the default too, runs or is refused at the open (#171 M6a, F3): no other engine stands
   // in for it.
-  if (refused || selection.selected !== 'cua')
-    return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here ${refused ? 'are refused' : 'run another engine'} (${refused?.code ?? selection.reason}; see repl.host): ${held}`), report};
+  if (refused)
+    return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${refused.code}; see repl.host): ${held}`), report};
 
   const bin = session.engine.bin;
   const runs = bin.source === 'override'

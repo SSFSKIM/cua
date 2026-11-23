@@ -200,7 +200,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
   const engineInputs = host.platform === 'linux' ? engine ?? {} : sharedEngineInputs(engine, env);
-  const replHost = replHostCheck(home, env, host.platform, resolveOwnNode, engineInputs);
+  const replHost = replHostCheck(home, env, host, resolveOwnNode, engineInputs);
   checks.push(replHost.row);
   const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,
     ...(inspectLinuxEngine ? {inspectLinux: inspectLinuxEngine} : {}), ...(readLinuxCapabilities ? {readCapabilities: readLinuxCapabilities} : {})});
@@ -253,9 +253,9 @@ function engineWords({engine, reason, app}) {
 
 // The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?, engine?} or, refused, {code,
 // message, hint?}. `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
-function replHostSelection(home, env, platform, surfaces, resolveOwnNode, engine) {
+function replHostSelection(home, env, {platform, arch}, surfaces, resolveOwnNode, engine) {
   try {
-    return replHostFor({platform, surfaces, ambient: env, home, resolveOwnNode, engine});
+    return replHostFor({platform, arch, surfaces, ambient: env, home, resolveOwnNode, engine});
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return {code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {})};
@@ -273,7 +273,8 @@ function resolvedOnce(resolve) {
   };
 }
 
-function replHostCheck(home, env, platform, resolveOwnNode, engine) {
+function replHostCheck(home, env, host, resolveOwnNode, engine) {
+  const {platform, arch} = host;
   let surfaces;
   // CUA_NODE's form first, as `cua serve` checks it at start (settingsFrom) whatever the selection: an explicit vendor
   // host never asks for Node, but the connection is refused all the same.
@@ -281,9 +282,9 @@ function replHostCheck(home, env, platform, resolveOwnNode, engine) {
     if (!(error instanceof CuaError)) throw error;
     return {row: result('repl.host', 'fail', `${error.message}; every connection is refused`)};
   }
-  const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home})));
-  const session = replHostSelection(home, env, platform, surfaces, resolve, engine);
-  const listing = replHostSelection(home, env, platform, ['browser'], resolve, engine);
+  const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home, platform, arch})));
+  const session = replHostSelection(home, env, host, surfaces, resolve, engine);
+  const listing = replHostSelection(home, env, host, ['browser'], resolve, engine);
   // A Linux session's engine never changes its host (#171): the engine row names it, this one does not.
   const words = r => (r.code ? `refused (${r.code}): ${r.message}`
     : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}${r.engine && platform !== 'linux' ? `; ${engineWords(r.engine)}` : ''}`);

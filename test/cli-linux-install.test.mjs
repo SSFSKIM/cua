@@ -193,8 +193,11 @@ test('the engine fails under the default (cua\'s): nonzero; browser-only opens, 
   assert.deepEqual(report.sessions, {browser: true, cua: false, vendor: true});
   await opens(home, {surfaces: 'browser'});
   await opens(home, {surfaces: 'computer', engine: 'vendor'});
-  const why = await refused(home, {surfaces: 'computer', engine: 'cua'}, 'engine_not_installed');
-  assert.match(`${why.message} ${why.hint ?? ''}`, /install --engine/);
+  for (const engine of [undefined, 'cua']) {
+    const why = await refused(home, {surfaces: 'computer', engine}, 'engine_not_installed');
+    assert.ok(why.message.includes(`\`${INSTALLER} --engine\``), why.message);
+    assert.ok(why.hint.includes(`\`${INSTALLER}\``), why.hint);
+  }
 });
 
 test('the engine fails under CUA_NATIVE_ENGINE=vendor: 0, said; browser-only and the vendor\'s engine open', async t => {
@@ -220,7 +223,7 @@ test('the vendor\'s tree fails under the default: 0, said; browser-only and cua\
   assert.deepEqual(report.sessions, {browser: true, cua: true, vendor: false});
   await opens(home, {surfaces: 'browser'});
   await opens(home, {surfaces: 'computer'});
-  const why = await refused(home, {surfaces: 'computer', engine: 'vendor'});
+  const why = await refused(home, {surfaces: 'computer', engine: 'vendor'}, 'engine_not_installed');
   assert.ok(why.hint.includes(`\`${INSTALLER}\``), why.hint);
 });
 
@@ -234,7 +237,7 @@ test('the vendor\'s tree fails under CUA_NATIVE_ENGINE=vendor: nonzero; followin
   assert.match(first.report.error.message, new RegExp(`^the vendor's release ${VENDOR.release} was not installed: could not fetch vendor: ENOTFOUND$`));
   assert.deepEqual(first.report.sessions, {browser: true, cua: true, vendor: false});
   await opens(home, {surfaces: 'browser', engine: 'vendor'});
-  const why = await refused(home, {surfaces: 'computer', engine: 'vendor'});
+  const why = await refused(home, {surfaces: 'computer', engine: 'vendor'}, 'engine_not_installed');
 
   // The refusal names this cua's installer by its absolute path: run exactly that, with the server back.
   const [, entry, rest] = why.hint.match(/`node (\S+) install([^`]*)`/);

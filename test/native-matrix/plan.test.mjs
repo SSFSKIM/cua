@@ -272,6 +272,14 @@ test('selectText.notText expects each scene\'s own refusal sentence and no other
   assert.equal(chrome.ok, true, JSON.stringify(chrome));
   for (const other of [notSettable, 'Timed out waiting for the application to respond', 'The element did not accept the text selection.'])
     assert.equal((await check('chrome', other)).ok, false, other);
+  // The whole refusal, in the server error's envelope or bare: the sentence quoted inside another error is not it.
+  const thrown = message => fakeApp(golden('chrome', 'vendor.txt'), {selectText: () => { throw new Error(message); }});
+  const whole = async message => (await runCase('chrome', 'chrome', thrown(message), 'selectText', 'notText')).check.value.ok;
+  assert.equal(await whole(notFound), true, 'bare');
+  assert.equal(await whole(`Computer Use server error -10005: ${notFound}`), true, 'in the envelope');
+  for (const quoted of [`Computer Use server error -10005: Timed out waiting for focus after: ${notFound}`, `${notFound}, then the focus timed out`,
+    `Error: ${notFound}`, `Computer Use server error -10005: ${notFound}.`])
+    assert.equal(await whole(quoted), false, quoted);
   for (const scene of ['textedit', 'finder']) {
     assert.equal((await check(scene, notSettable)).ok, true, scene);
     assert.equal((await check(scene, notFound)).ok, false, scene);

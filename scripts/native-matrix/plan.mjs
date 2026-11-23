@@ -47,6 +47,9 @@ const DOCUMENT = textEditDocument().lines;
 export const TYPED = 'The quick brown fox jumps over the lazy dog.';
 export const PASTED = 'Pack my box with five dozen liquor jugs.';
 const INVALID_INDEX = 99999;
+// A refusal matched whole (`refusedAs` takes a regular expression's source): the sentence alone, or in the server
+// error's envelope the vendor's helper and cua's service wrap it in (`Computer Use server error <code>: `).
+const wholeRefusal = sentence => `^(?:Computer Use server error -?\\d+: )?${sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
 // The vendor's refusal sentences (native/engine carries them verbatim: ValueSetting.swift, TextSelection.swift,
 // src/services/engine/render.mjs indexState, Skyshot.swift).
 export const REFUSALS = Object.freeze({
@@ -54,7 +57,8 @@ export const REFUSALS = Object.freeze({
   notText: 'Cannot select text for an element that does not support a settable selected text range',
   // #190: select_text's second refusal (F-helper-logic.md §16.2), after the settability check passed and no unique
   // match was found. Chromium answers a checkbox's selected text range settable, so this is the not-text refusal there.
-  textNotFound: 'Could not find the requested text to select in the element',
+  // The whole message, bare or in the server error's envelope: the sentence quoted inside another error is not it.
+  textNotFound: wholeRefusal('Could not find the requested text to select in the element'),
   invalidIndex: `${INVALID_INDEX} is an invalid element ID`,
   noWindow: '(noWindowsAvailable|timeoutReached)',
 });

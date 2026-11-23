@@ -119,7 +119,7 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
   try { preferred = nativeEngineSetting({env, platform, config, ...(engine.defaultEngine ? {defaultEngine: engine.defaultEngine} : {})}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     const refused = {code: error.code, message: error.message};
-    return {row: result('engine', 'fail', `${error.message}; every ${linux ? 'Linux' : 'macOS'} computer session is refused (${error.code})`),
+    return {row: result('engine', 'fail', `${error.message}; every ${linux ? 'Linux' : 'macOS'} computer session is refused (${error.code})${linux ? `: ${SETTING_FIX.engine}` : ''}`),
       report: linux ? {...linuxReport({refused, preferred: null}), reason: error.code} : {...notApplicable(error.code), refused}};
   }
   const refused = session.code ? {code: session.code, message: session.message, ...(session.hint ? {hint: session.hint} : {})} : null;
@@ -205,6 +205,12 @@ function linuxHeld(facts, say) {
   return facts.executable ? words : `${words}; ${say('fail', `it is not executable, so no session runs it: ${install} places it again`)}`;
 }
 
+// The correction of a Linux setting no installer can fix: where it is set, what it may name.
+const SETTING_FIX = {
+  engine: 'name vendor or cua there, or remove the setting for the default',
+  desktop: 'name shared or dedicated there, or remove the setting for shared',
+};
+
 const DESKTOP_WORDS = {
   explicit: mode => `CUA_DESKTOP_MODE=${mode}`,
   settings: mode => `"desktop": "${mode}" in ${SETTINGS}`,
@@ -228,8 +234,10 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
   }
   // cua's engine preferred, by the default too, runs or is refused at the open (#171 M6a, F3): no other engine stands
   // in for it.
+  // The selection's own sentence and remedy (an engine's refusal names the engine's installer; a Node's or a setting's,
+  // their own), never the installed engine's facts in its place.
   if (refused)
-    return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${refused.code}; see repl.host): ${held}`), report};
+    return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${refused.code}): ${refused.message}${refused.hint ? `; ${refused.hint}` : ''}`), report};
 
   const bin = session.engine.bin;
   const runs = bin.source === 'override'
@@ -237,7 +245,7 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
     : `${held}, ${SERVICE_WORDS}`;
   const device = deviceMode({env, config});
   const desktop = device.desktop;
-  const mode = device.verdict ? say(device.verdict, device.words) : device.words;
+  const mode = device.verdict ? say(device.verdict, `${device.words}: ${SETTING_FIX.desktop}`) : device.words;
   // An invalid device mode has failed the row already, and no session starts the engine in it.
   const caps = desktop ? await linuxCapabilities({bin, facts, desktop: desktop.mode, env, readCapabilities}) : {report: null, unread: 'the device mode is invalid', words: ''};
   if (caps.verdict) verdicts.push(caps.verdict);
@@ -264,7 +272,11 @@ async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
     report = await readCapabilities({path: bin.path, desktop, env: {...desktopSessionEnv(env), ...(env.HOME ? {HOME: env.HOME} : {})}});
   } catch (error) {
     if (NO_DISPLAY.test(error.message)) return {report: null, unread: error.message, ...noDisplay(error.message)};
-    return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}`};
+    // The remedy: an engine CUA_LINUX_ENGINE_BIN names is the harness's to drop; an installed one may be placed again, and
+    // the session's environment (display, bus, sandbox) is what doctor's other rows describe.
+    const remedy = bin.source === 'override' ? 'unset CUA_LINUX_ENGINE_BIN to run the installed engine instead'
+      : `if the engine is at fault, ${engineInstall()} places the pinned one again; the display, accessibility and sandbox rows describe the session's environment`;
+    return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}; ${remedy}`};
   }
   const {CANNOT} = await import('../services/engine/linux/methods.mjs');   // the service's words, loaded only on Linux
   const lacking = Object.keys(CANNOT).filter(key => [undefined, null, false].includes(key.split('.').reduce((at, part) => at?.[part], report)));

@@ -5,17 +5,18 @@
   engine) and T11 (the default-selection mode, then the flip), §7 and §8.
 - Spec: `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`. The design session owns it and its Decision
   Log; this file is the wave's living record on `feat/117-m5` until the design session folds it into the spec (the
-  spec's Progress is being reconciled on `docs/117-progress` and M4's re-cut adds its own block, so this wave does not
-  edit the spec's log in place).
+  spec's Progress is being reconciled on `docs/117-progress` and M4's re-cut adds its own block, so this wave edits the
+  spec only where the design session asks, as for T8a's Text change).
 - Branch `feat/117-m5` from main b1b15484. M4's re-cut runs beside it on `feat/117-m4-recut`.
-- Rulings received during the wave: 1118 (install never replaces an approved engine at or above the minimum; a new
-  source builds pending beside it, `cua engine approve` promotes). #189 and #185 are with the design session.
+- Rulings received during the wave are in the Decision Log (1118, 1119, 1126, 1128, 1136, the scope change). M5 is
+  ticket #506; M4 is #505.
 
 ## Plan of Work (this wave)
 
 Order: T9 first, so the engine-version rule binds every engine change T8 makes; then T8a to T8d, T10, T3b, T8e;
-then T11's two commits (scope change, below). Nothing here runs hosted, touches the GUI or Accessibility, or needs the owner: a witness that needs a runner
-or the owner is prepared and named in its gate's disposition file under
+then T11's two commits (scope change, below). Nothing here touches this Mac's GUI or Accessibility, or needs the
+owner. Hosted runs are limited to what the design session clears (so far #420's kit, and T10's and T3b's lanes after
+H0's pass); a witness not yet cleared is prepared and named in its gate's disposition file under
 `docs/evidence/2026-11-23-own-native-engine/gates/`.
 
 | # | Task | Scope (PF) |

@@ -1,30 +1,41 @@
 # M4's live evidence, from the closed `feat/117-m4`
 
-M4's evidence directory as it stood on `feat/117-m4` at a8c3bc1c (PR #211, closed): the mini's holds and owner
-sittings of 2026-10-23 and 2026-10-24 and the hosted download proof. M4's report
-(`docs/doperpowers/specs/2026-10-18-own-native-engine-m4-report.md`) and its Decision Log entries (the design spec's
-"M4 on feat/117-m4" block) cite it. Every file here is byte-identical to the branch's; none was edited.
+This is M4's evidence directory as it stood on `feat/117-m4` at a8c3bc1c (PR #211, closed): the mini's holds and owner
+sittings of 2026-10-23 and 2026-10-24, and the hosted download proof. M4's report
+(`docs/doperpowers/specs/2026-10-18-own-native-engine-m4-report.md`) and the design spec's "M4 on feat/117-m4"
+Decision Log block both cite it. Every file here is byte-identical to the branch's copy; none was edited.
 
 ## Owner-content check
 
-The repository is public, so every file was read for the owner's windows or apps, names, email, account or machine
-names, home-directory paths naming the user, personal content, and tokens or secret-looking values, before it was
-committed. Checked by the M4 re-cut's T7 executor (an agent), 2026-11-23. The directory holds no images.
+The repository is public, so all 47 files were read before commit. The check was done by the M4 re-cut's T7 executor
+(an agent) on 2026-11-23. It looked for:
 
-47 files were read: 37 passed and are here; 10 were left out. Each of the 10 fails for one reason only: a
-home-directory path naming the user account (the approved engine's and the vendor runtime's locations under the home
-`Library/Application Support`, a checkout under the home, or the coordinator's job directory). Nothing else in any
-of the 47 failed. These files remain readable at a8c3bc1c on the branch.
+- the owner's windows or apps, names, email, and account or machine names
+- profile names or ids
+- home-directory paths naming the user
+- personal content
+- tokens or secret-looking values
 
-| Left out | Reason |
-|---|---|
-| `2026-10-23-frame-d0-prestep/engine-approved-frame-d0.json` | home path (the approved engine's bundle path) |
-| `2026-10-23-frame-prestep/engine-approved-frame.json` | home path (the approved engine's bundle path) |
-| `2026-10-23-hold/acceptance1.json` | home path (`doctor`'s engine row names the bundle path) |
-| `2026-10-23-hold/compatibility.json` | home path (the vendor runtime and a checkout) |
-| `2026-10-23-hold/putback.json` | home path (the vendor runtime) |
-| `2026-10-23-hold/vendor-admission-safe.json` | home path (the vendor runtime) |
-| `2026-10-23-owner-retry/provenance.json` | home path (the coordinator's job directory) |
-| `2026-10-23-unattended-retry/admission-engine.json` | home path (`doctor`'s engine row names the bundle path) |
-| `2026-10-23-unattended-retry/compatibility.json` | home path (the vendor runtime and a checkout) |
-| `2026-10-24-owner-timeout/provenance.json` | home path (the coordinator's job directory) |
+The directory holds no images. The reading covered every distinct JSON key and string value in all 47 files.
+
+**All 47 files passed and are here.**
+
+### What the check saw
+
+- Generated probe key names (`CUA_PROBE_…`, `CUA_ACCEPT_UI_…`) appear without their values.
+- The vendor's signing team ID and the engine's bundle id appear; both are public.
+- The window records hold PIDs, numbers and bounds, never titles.
+- One note says a disposable fixture document autosaved to iCloud's TextEdit folder. It gives no name and no content.
+
+### The home path
+
+The home path `/Users/new/…` appears in 10 files. The first commit of this directory left those 10 out under a
+literal reading of the rule. On 2026-11-23 the design session ruled that this path is not owner content, and the 10
+files were then added unchanged:
+
+- The bare account path `/Users/new/` names no person.
+- It already appears in 4,045 public files on main, 3,494 of them under `docs/evidence/`.
+- Ruling 1124 is the precedent: it kept a `/Users/new/…` socket path in #493's public evidence.
+
+The ruling covers that path only. The check stays as it was for names, emails, tokens, profile names or ids,
+non-fixture windows and images.

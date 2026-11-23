@@ -177,12 +177,13 @@ function notApplicable(reason) {
 function vendorRow(selection, records, builds) {
   const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : SOURCE_WORDS[selection.preferred.reason]('vendor');
   const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so macOS computer sessions use the vendor\'s Codex Computer Use helper (helper.live)';
-  const pending = records.pending ? `build ${shortBuild(records.pending.build)} is pending` : null;
-  const putInPlace = '(cua engine approve, with the owner at the console, puts it in place)';
-  const holds = records.approved && records.exists ? `approved.json approves build ${shortBuild(records.approved.build)} at ${records.bundlePath}`
-    : pending ? `${pending} at ${records.pending.bundlePath} ${putInPlace}`
+  // With approved.json present the pending build is buildWords' alone to name, so it is named once.
+  const install = '(cua install --engine, then cua engine approve with the owner at the console)';
+  const approved = records.approved && `approved.json approves build ${shortBuild(records.approved.build)}`;
+  const holds = approved ? (records.exists ? `${approved} at ${records.bundlePath}` : `${approved}, but no bundle is at ${records.bundlePath}${builds.pending ? '' : ` ${install}`}`)
+    : records.pending ? `build ${shortBuild(records.pending.build)} is pending at ${records.pending.bundlePath} (cua engine approve, with the owner at the console, puts it in place)`
     : records.exists ? `a bundle at ${records.bundlePath} is not approved (cua engine approve)`
-    : 'none is installed on this Mac (cua install --engine, then cua engine approve with the owner at the console)';
+    : `none is installed on this Mac ${install}`;
   return {
     row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. `
       + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own, which runs an approved engine: ${holds}`

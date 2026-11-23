@@ -116,6 +116,12 @@ test('a build pending beside the approved engine is shown once with it: the appr
   const vendor = await row({CUA_NATIVE_ENGINE: 'vendor'}, {pending, records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: slot})});
   assert.equal(vendor.row.detail.split('cccccccccccc').length, 2, vendor.row.detail);
   assert.ok(vendor.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa at ${BUNDLE}; a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built then)`), vendor.row.detail);
+  // A stale approved.json (its bundle gone) with a build pending: still named once, and no remedy that contradicts it.
+  const stale = await row({CUA_NATIVE_ENGINE: 'vendor'}, {pending, records: () => ({bundlePath: BUNDLE, exists: false, approved: {build: BUILD, approvedAt: 'when'}, pending: slot})});
+  assert.equal(stale.row.detail.split('cccccccccccc').length, 2, stale.row.detail);
+  assert.ok(stale.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa, but no bundle is at ${BUNDLE}; a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built then)`), stale.row.detail);
+  const gone = await row({CUA_NATIVE_ENGINE: 'vendor'}, {records: () => ({bundlePath: BUNDLE, exists: false, approved: {build: BUILD, approvedAt: 'when'}, pending: null})});
+  assert.ok(gone.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa, but no bundle is at ${BUNDLE} (cua install --engine, then cua engine approve with the owner at the console)`), gone.row.detail);
 });
 
 // M4's builder stages a re-signed copy of the approved build (another identity, the same source hash) in the slot; the

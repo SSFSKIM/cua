@@ -222,11 +222,12 @@ async function snapshotArchive(path, dest, {length}, {deb}) {
 }
 
 // `length` is the pinned length; an asset pinned by its hash alone (cua's Linux engine) gives `maxLength` instead, a
-// bound on what is accepted before the hash is checked.
-export async function download({url, length, maxLength}, dest, fetchImpl, onProgress) {
+// bound on what is accepted before the hash is checked. `redirect` is fetch's policy: the ModuleTree's tarballs pass
+// 'error', so their canonical URL is the one that serves them; every other asset follows redirects, as before.
+export async function download({url, length, maxLength, redirect = 'follow'}, dest, fetchImpl, onProgress) {
   let response;
   try {
-    response = await fetchImpl(url, {redirect: 'follow'});
+    response = await fetchImpl(url, {redirect});
   } catch (error) {
     fail('download_failed', `could not fetch ${url}: ${error.cause?.code ?? error.message}`, {cause: error});
   }

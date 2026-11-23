@@ -14,13 +14,16 @@
 //   4. computes the vendor's closures from the same roots in its lockfile, by the same rule, and requires the two to
 //      hold the same packages by name, version and SHA-512. That lockfile lists every platform's packages, so either
 //      deb vouches for both closures; given both, it compares against each and records that it did;
-// then 5. fetches each tarball once, checks its SHA-512, reads it with cua's tarball reader (so a package the installer
-// would refuse is refused here), and records its length. It writes nothing unless every check passes, and run twice it
+// Each deb is first copied into a private scratch directory, and that one snapshot is hashed, matched and read, so a
+// file replaced while the script runs cannot pair a pinned hash with another lockfile.
+// Then 5. fetches each tarball once from its canonical URL (a redirect is refused) under a size bound, checks its
+// SHA-512, reads it with cua's tarball reader (so a package the installer would refuse is refused here), and records
+// its length. It writes nothing unless every check passes, and run twice it
 // writes the same bytes. It runs no package script and unpacks no package. Run it when the lock is written and
 // whenever it changes, on a machine that holds a pinned deb, and review its output like any pin.
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, createReadStream, createWriteStream, fstatSync, mkdtempSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, fstatSync, mkdtempSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pipeline} from 'node:stream/promises';
@@ -33,6 +36,9 @@ import {readTarball} from '../src/runtime/tarball.mjs';
 // The targets cua's Linux runtime serves: the vendor's two debs, both glibc.
 export const TARGETS = [{platform: 'linux', arch: 'arm64', libc: 'glibc'}, {platform: 'linux', arch: 'x64', libc: 'glibc'}];
 
+// The largest tarball accepted from the registry; the largest pinned one, libvips, is about 8.5 MB.
+export const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
+
 const mismatch = message => fail('pin_mismatch', message);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -44,11 +50,12 @@ async function fileSha256(path) {
   return hash.digest('hex');
 }
 
-async function matchPin(deb, pins) {
-  const fd = openSync(deb, 'r');
+// `snapshot` is the private copy of the deb named `deb`.
+async function matchPin(deb, snapshot, pins) {
+  const fd = openSync(snapshot, 'r');
   let length;
   try { length = fstatSync(fd).size; } finally { closeSync(fd); }
-  const digest = await fileSha256(deb);
+  const digest = await fileSha256(snapshot);
   const pin = pins.find(p => p.archive.format === 'deb' && p.archive.length === length && p.archive.sha256 === digest);
   if (!pin) fail('archive_not_pinned', `${deb} (${length} bytes, SHA-256 ${digest}) is not a pinned vendor deb`);
   return {pin, sha256: digest};
@@ -91,19 +98,17 @@ function run(command, args) {
   });
 }
 
-async function vendorLockfile(deb, pin, {tar}) {
-  const {start, length} = arMember(deb, 'data.tar.xz');
-  const scratch = mkdtempSync(join(tmpdir(), 'cua-modules-pin-'));
+// The lockfile out of the snapshot, by way of its data.tar.xz member copied beside it.
+async function vendorLockfile(deb, snapshot, scratch, pin, {tar}) {
+  const {start, length} = arMember(snapshot, 'data.tar.xz');
+  const payload = join(scratch, 'data.tar.xz');
+  await pipeline(createReadStream(snapshot, {start, end: start + length - 1}), createWriteStream(payload));
   try {
-    const payload = join(scratch, 'data.tar.xz');
-    await pipeline(createReadStream(deb, {start, end: start + length - 1}), createWriteStream(payload));
-    try {
-      return await run(tar, ['-xJOf', payload, lockfileMember(pin)]);
-    } catch (error) {
-      fail('lockfile_unreadable', `could not take ${lockfileMember(pin)} out of ${deb}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
-    }
+    return await run(tar, ['-xJOf', payload, lockfileMember(pin)]);
+  } catch (error) {
+    fail('lockfile_unreadable', `could not take ${lockfileMember(pin)} out of ${deb}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
   } finally {
-    rmSync(scratch, {recursive: true, force: true});
+    rmSync(payload, {force: true});
   }
 }
 
@@ -247,11 +252,24 @@ function compareClosures(ours, theirs, label) {
 
 // ---- the tarballs ----
 
-async function fetchTarball(entry, fetchImpl) {
+async function fetchTarball(entry, fetchImpl, maxBytes) {
   let response;
-  try { response = await fetchImpl(entry.resolved, {redirect: 'follow'}); } catch (error) { fail('download_failed', `could not fetch ${entry.resolved}: ${error.cause?.code ?? error.message}`); }
-  if (!response.ok) fail('download_failed', `${entry.resolved} answered HTTP ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  try { response = await fetchImpl(entry.resolved, {redirect: 'error'}); } catch (error) { fail('download_failed', `could not fetch ${entry.resolved}: ${error.cause?.code ?? error.message}`); }
+  if (!response.ok || !response.body) fail('download_failed', `${entry.resolved} answered HTTP ${response.status}`);
+  const declared = Number(response.headers.get('content-length'));
+  if (declared > maxBytes) fail('archive_length_mismatch', `${entry.resolved} declares ${declared} bytes, more than the ${maxBytes}-byte bound`);
+  const chunks = [];
+  let received = 0;
+  const reader = response.body.getReader();
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    received += chunk.value.length;
+    if (received > maxBytes) {
+      await reader.cancel();
+      fail('archive_length_mismatch', `${entry.resolved} sent more than the ${maxBytes}-byte bound`);
+    }
+    chunks.push(chunk.value);
+  }
+  const bytes = Buffer.concat(chunks);
   const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
   if (integrity !== entry.integrity) fail('archive_hash_mismatch', `${entry.name}@${entry.version}: ${entry.resolved} has SHA-512 ${integrity}; the lock says ${entry.integrity}`);
   readTarball(bytes);
@@ -260,7 +278,7 @@ async function fetchTarball(entry, fetchImpl) {
 
 // ---- the run ----
 
-export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, pins = loadPins().filter(p => p.platform === 'linux'), fetch = globalThis.fetch, tar = 'tar', log = message => console.error(message)}) {
+export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, pins = loadPins().filter(p => p.platform === 'linux'), fetch = globalThis.fetch, tar = 'tar', maxTarballBytes = MAX_TARBALL_BYTES, log = message => console.error(message)}) {
   if (!debs?.length) fail('usage', 'name at least one pinned vendor deb');
   const lockText = readFileSync(join(modulesDir, 'package-lock.json'), 'utf8');
   const lock = parseModuleLock(lockText);
@@ -269,9 +287,17 @@ export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, pins = loa
 
   const vendor = [];
   for (const deb of debs) {
-    const {pin, sha256: archiveSha256} = await matchPin(deb, pins);
-    log(`${deb}: the pinned ${pin.release}`);
-    const lockfile = await vendorLockfile(deb, pin, {tar});
+    const scratch = mkdtempSync(join(tmpdir(), 'cua-modules-pin-'));
+    let pin, archiveSha256, lockfile;
+    try {
+      const snapshot = join(scratch, 'archive.deb');
+      try { copyFileSync(deb, snapshot, fsConstants.COPYFILE_FICLONE); } catch (error) { fail('archive_missing', `${deb} is not readable: ${error.code ?? error.message}`); }
+      ({pin, sha256: archiveSha256} = await matchPin(deb, snapshot, pins));
+      log(`${deb}: the pinned ${pin.release}`);
+      lockfile = await vendorLockfile(deb, snapshot, scratch, pin, {tar});
+    } finally {
+      rmSync(scratch, {recursive: true, force: true});
+    }
     const parsed = parseVendorLockfile(lockfile.toString('utf8'));
     for (const {host, packages} of closures) compareClosures(packages, vendorClosure(parsed, roots, host), `${pin.release}'s lockfile against the ${host.arch} closure`);
     log(`${pin.release}: its lockfile holds both closures, by name, version and SHA-512`);
@@ -281,7 +307,7 @@ export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, pins = loa
   const lengths = new Map();
   for (const {packages} of closures) for (const entry of packages) {
     if (lengths.has(entry.path)) continue;
-    lengths.set(entry.path, await fetchTarball(entry, fetch));
+    lengths.set(entry.path, await fetchTarball(entry, fetch, maxTarballBytes));
     log(`${entry.name}@${entry.version}: ${lengths.get(entry.path)} bytes, SHA-512 checked`);
   }
 

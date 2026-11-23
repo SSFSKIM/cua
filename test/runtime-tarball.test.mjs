@@ -18,6 +18,8 @@ function setup(t) {
 }
 const refused = pattern => error => { assert.equal(error.code, 'tarball_invalid', `${error.code}: ${error.message}`); if (pattern) assert.match(error.message, pattern); return true; };
 const listAll = dir => readdirSync(dir, {recursive: true}).sort();
+// A tar stream's members without its two end blocks.
+const withoutEnd = entries => { const bytes = tarBytes(entries); return bytes.subarray(0, bytes.length - 1024); };
 
 test('a package tarball reads as its files and directories under the top directory, which is stripped', () => {
   const bytes = packageTarball('sharp', '0.35.4', {'lib/index.js': 'module.exports = 1;\n', 'lib/sharp.node': 'addon'});
@@ -76,9 +78,16 @@ test('each member a package may not carry refuses the whole package, and nothing
     'duplicate member': [[good, {name: 'package/a.js', data: 'one'}, {name: 'package/a.js', data: 'two'}], /duplicate/],
     'a file that is also a directory': [[good, {name: 'package/a', data: 'file'}, {name: 'package/a/b.js', data: 'x'}], /duplicate|conflict/],
     'oversized member': [[good, {name: 'package/huge.bin', size: 300 * 1024 * 1024}], /bound|size/],
+    'a second top-directory header': [[{name: 'package/', type: 'dir', mode: 0o755}, good, {name: 'package/', type: 'dir', mode: 0o755}], /duplicate/],
+    'a NUL inside a pax path': [[good, {name: 'PaxHeader', type: 'pax', data: paxRecord('path', 'package/lib/a\0b.js')}, {name: 'package/ok.js', data: 'x'}], /NUL/],
+    'a NUL inside a GNU long name': [[good, {name: '././@LongLink', type: 'longname', data: 'package/lib/a\0b.js\0'}, {name: 'package/ok.js', data: 'x'}], /NUL/],
+    // The end of the archive is two zero blocks with nothing but zeros after them.
+    'a member after the end block': [gzipSync(Buffer.concat([withoutEnd([good]), Buffer.alloc(512), withoutEnd([{name: 'package/hidden.js', data: 'x'}]), Buffer.alloc(1024)])), /end/],
+    'a single end block': [gzipSync(Buffer.concat([withoutEnd([good]), Buffer.alloc(512)])), /end/],
+    'data after the end': [gzipSync(Buffer.concat([tarBytes([good]), Buffer.from('trailing')])), /end/],
   };
   for (const [name, [entries, pattern]] of Object.entries(cases)) {
-    const bytes = tarball(entries);
+    const bytes = Buffer.isBuffer(entries) ? entries : tarball(entries);
     assert.throws(() => readTarball(bytes), refused(pattern), name);
     const dest = join(dir, name.replace(/\W+/g, '-'), 'package');
     assert.throws(() => unpackTarball(bytes, dest), refused(pattern), name);

@@ -2,10 +2,11 @@
 // preflight.md §4.2): gzip through node:zlib, then the tar headers, in memory. It is given bytes whose SHA-512 the
 // caller has already checked against the pin, so what it guards against is not tampering but a package shape cua will
 // not write: only regular files and directories under the package's one top directory (npm's `package/`, which is
-// stripped) are accepted. A link of either kind, a device, a FIFO, an absolute path, a path with `..`, `.` or an empty
-// part, a member outside the top directory, a duplicate (or a path that is both a file and a directory), a header
-// whose checksum fails, a body cut short, or a size past the bounds refuses the whole package, and the whole archive is
-// read before anything is written. Nothing is followed, since nothing but files and directories is ever written; no
+// stripped) are accepted. A link of either kind, a device, a FIFO, an absolute path, a path with `..`, `.`, an empty
+// part or a NUL, a member outside the top directory, a duplicate (the top directory's own header included, or a path
+// that is both a file and a directory), a header whose checksum fails, a body cut short, an end that is not two zero
+// blocks with only zeros after them, or a size past the bounds refuses the whole package, and the whole archive is
+// read and checked before anything is written. Nothing is followed, since nothing but files and directories is ever written; no
 // `tar` and no package script runs.
 //
 // Pax extended headers (`x`) supply a member's path or size; global ones (`g`) and the GNU long name (`L`) are read
@@ -60,6 +61,7 @@ function paxRecords(body) {
 }
 
 function safeParts(path) {
+  if (path.includes('\0')) refuse(`a NUL inside the path ${JSON.stringify(path)}`);
   if (path.startsWith('/')) refuse(`an absolute path ${JSON.stringify(path)}`);
   const parts = path.replace(/\/$/, '').split('/');
   if (parts.some(part => part === '' || part === '.' || part === '..')) refuse(`an unsafe path ${JSON.stringify(path)}`);
@@ -80,6 +82,7 @@ export function readTarball(bytes, {maxMemberBytes = MAX_MEMBER_BYTES, maxTotalB
   // member once and implied any number of times, and a file only once and never a directory.
   const seen = new Map();
   let top = null;
+  let topSeen = false;
   let total = 0;
   let pax = {};
   let longName = null;
@@ -93,9 +96,15 @@ export function readTarball(bytes, {maxMemberBytes = MAX_MEMBER_BYTES, maxTotalB
   while (true) {
     if (at + BLOCK > tar.length) refuse('the archive is truncated before its end');
     const header = tar.subarray(at, at + BLOCK);
-    if (header.every(byte => byte === 0)) break;
+    if (header.every(byte => byte === 0)) {
+      // The end: a second zero block, and nothing after it but the zeros that pad the last record.
+      if (at + 2 * BLOCK > tar.length || !tar.subarray(at + BLOCK).every(byte => byte === 0)) refuse('the archive does not end with two zero blocks and nothing after them');
+      if (Object.keys(pax).length || longName !== null) refuse('the archive ends after an extended header, before its member');
+      break;
+    }
     if (!checksumOk(header)) refuse('a header checksum fails');
     const flag = String.fromCharCode(header[156] || 0x30);
+    if (pax.size !== undefined && !/^\d+$/.test(pax.size)) refuse('a pax size is malformed');
     const size = pax.size !== undefined ? Number(pax.size) : number(header, 124, 12, 'size');
     if (!Number.isSafeInteger(size) || size < 0) refuse('a member size is malformed');
     if (size > maxMemberBytes) refuse(`a member of ${size} bytes passes the ${maxMemberBytes}-byte bound`);
@@ -106,7 +115,7 @@ export function readTarball(bytes, {maxMemberBytes = MAX_MEMBER_BYTES, maxTotalB
 
     if (flag === 'x') { pax = paxRecords(body); continue; }
     if (flag === 'g') { paxRecords(body); continue; }
-    if (flag === 'L') { longName = body.toString('utf8').replace(/\0+$/, ''); continue; }
+    if (flag === 'L') { longName = body.toString('utf8').replace(/\0+$/, ''); safeParts(longName); continue; }
     if (REFUSED_TYPES[flag]) refuse(`${REFUSED_TYPES[flag]} ${JSON.stringify(text(header, 0, 100))}`);
     if (flag !== '0' && flag !== '5') refuse(`a member of type ${JSON.stringify(flag)}`);
 
@@ -121,6 +130,8 @@ export function readTarball(bytes, {maxMemberBytes = MAX_MEMBER_BYTES, maxTotalB
     if (parts[0] !== top) refuse(`a member outside the one top directory ${JSON.stringify(top)}: ${JSON.stringify(name)}`);
     if (parts.length === 1) {
       if (!isDir) refuse(`a file outside the top directory: ${JSON.stringify(name)}`);
+      if (topSeen) refuse(`a duplicate member ${JSON.stringify(name)}`);
+      topSeen = true;
       continue;
     }
     const path = parts.slice(1).join('/');

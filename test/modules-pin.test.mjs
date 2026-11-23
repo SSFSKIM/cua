@@ -142,3 +142,28 @@ test('a provenance already there is replaced only by a run whose checks all pass
   await assert.rejects(s.run({fetch: bad.fetch}));
   assert.equal(readFileSync(s.out, 'utf8'), 'previous\n');
 });
+
+// Fix wave 1: the bytes that are hashed are the bytes that are parsed, and what the registry sends is bounded.
+
+test('the deb is snapshotted first: one replaced after its hash is checked changes nothing the run reads', async t => {
+  const s = setup(t);
+  const other = fixtureDeb(s.dir, 'swapped', fixturePnpmLock({edit: specs => { specs['lev@3.0.0'].integrity = `sha512-${Buffer.alloc(64, 9).toString('base64')}`; return specs; }}));
+  const log = message => { if (message.includes('the pinned')) writeFileSync(s.debs[0], readFileSync(other.path)); };
+  const {provenance} = await s.run({log});
+  assert.equal(provenance.vendor[0].lockfileSha256, sha256Of(Buffer.from(s.yaml)), 'the lockfile read is the pinned deb\'s');
+});
+
+test('each tarball comes from its canonical URL itself, under a size cap: a redirect, or a body past the cap, is refused and nothing written', async t => {
+  const s = setup(t);
+  const asked = [];
+  await s.run({fetch: async (url, init) => { asked.push(init?.redirect); return s.modules.fetch(url, init); }});
+  assert.ok(asked.length && asked.every(redirect => redirect === 'error'), JSON.stringify(asked));
+  rmSync(s.out);
+  const moved = registry(s.modules.tarballs, () => new Response(null, {status: 301, headers: {location: 'https://example.invalid/'}}));
+  await assert.rejects(s.run({fetch: moved.fetch}), refused(/301/));
+  const endless = registry(s.modules.tarballs, () => new Response(new ReadableStream({pull(controller) { controller.enqueue(new Uint8Array(64 * 1024)); }})));
+  await assert.rejects(s.run({fetch: endless.fetch, maxTarballBytes: 1024 * 1024}), refused(/bound/));
+  const declared = registry(s.modules.tarballs, () => new Response('x', {headers: {'content-length': String(2 * 1024 * 1024)}}));
+  await assert.rejects(s.run({fetch: declared.fetch, maxTarballBytes: 1024 * 1024}), refused(/bound/));
+  assert.equal(existsSync(s.out), false);
+});

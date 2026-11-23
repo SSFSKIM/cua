@@ -244,6 +244,10 @@ export function pinnedClosure(lock, provenance, host) {
 
 // ---- the installed tree ----
 
+function pathExists(path) {
+  try { lstatSync(path); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+
 const RECORD_KEYS = ['schema', 'lock', 'platform', 'arch', 'packages', 'natives', 'source', 'installedAt'];
 
 function validRecord(record) {
@@ -263,8 +267,9 @@ function insidePackage(path, packages) {
 // this lock's and this host's and lists exactly the host's closure -> {root, moduleDir, record}. Anything else, nothing
 // there included, is null.
 export function readModuleTree(home, lock, host) {
-  const root = join(homeLayout(realHome(home)).modules, lock.hash);
-  if (!isRealDirectory(root)) return null;
+  const {modules} = homeLayout(realHome(home));
+  const root = join(modules, lock.hash);
+  if (!isRealDirectory(modules) || !isRealDirectory(root) || !isRegularFile(join(root, MODULE_RECORD_FILE))) return null;
   let record;
   try { record = JSON.parse(readFileSync(join(root, MODULE_RECORD_FILE), 'utf8')); } catch { return null; }
   if (!validRecord(record) || record.lock !== lock.hash || record.platform !== host.platform || record.arch !== host.arch) return null;
@@ -274,19 +279,48 @@ export function readModuleTree(home, lock, host) {
   return {root, moduleDir: join(root, 'node_modules'), record};
 }
 
-// The connection's check: every package's package.json and every native file, by a stat against the recorded size.
+function isRegularFile(path) {
+  try { return lstatSync(path).isFile(); } catch { return false; }
+}
+
+// The first directory on the way from the root down to `rel` (inclusive) that is not a real directory, or null. A link
+// anywhere on the way would take a check outside the tree, so none is followed. `known` caches directories found real.
+function notRealOnTheWay(root, rel, known) {
+  const parts = rel ? rel.split('/') : [];
+  for (let i = 1; i <= parts.length; i++) {
+    const sub = parts.slice(0, i).join('/');
+    if (known.has(sub)) continue;
+    if (!isRealDirectory(join(root, sub))) return sub;
+    known.add(sub);
+  }
+  return null;
+}
+
+// The connection's check: every package's package.json and every native file, by a stat against the recorded size,
+// each reached through real directories only.
 export function checkModuleTree(root, record) {
   const problems = [];
-  for (const {path} of record.packages) {
-    let stat;
-    try { stat = lstatSync(join(root, path, 'package.json')); } catch { stat = null; }
-    if (!stat?.isFile()) problems.push(`${path}/package.json is missing`);
-  }
-  for (const native of record.natives) {
-    let stat;
-    try { stat = lstatSync(join(root, native.path)); } catch { stat = null; }
-    if (!stat?.isFile()) problems.push(`${native.path} is missing`);
-    else if (stat.size !== native.size) problems.push(`${native.path} is ${stat.size} bytes, recorded as ${native.size}`);
+  const known = new Set();
+  const reachable = rel => {
+    const broken = notRealOnTheWay(root, rel, known);
+    if (broken) problems.push(`${broken} is not a real directory`);
+    return !broken;
+  };
+  if (!isRealDirectory(root)) problems.push(`${root} is not a real directory`);
+  else {
+    for (const {path} of record.packages) {
+      if (!reachable(path)) continue;
+      let stat;
+      try { stat = lstatSync(join(root, path, 'package.json')); } catch { stat = null; }
+      if (!stat?.isFile()) problems.push(`${path}/package.json is missing`);
+    }
+    for (const native of record.natives) {
+      if (!reachable(dirname(native.path))) continue;
+      let stat;
+      try { stat = lstatSync(join(root, native.path)); } catch { stat = null; }
+      if (!stat?.isFile()) problems.push(`${native.path} is missing or not a regular file`);
+      else if (stat.size !== native.size) problems.push(`${native.path} is ${stat.size} bytes, recorded as ${native.size}`);
+    }
   }
   if (problems.length) fail('layout_invalid', `the module tree ${root} is damaged: ${summary(problems)}`, {hint: moduleRecoveryHint(root)});
   return {packages: record.packages.length, natives: record.natives.length};
@@ -295,7 +329,8 @@ export function checkModuleTree(root, record) {
 // The digest of a package's payload: the SHA-256 of its files' sorted [path, size, sha256] list.
 const payloadDigest = files => sha256(JSON.stringify([...files].sort(byPath).map(f => [f.path, f.size, f.sha256])));
 
-// A package directory's regular files, skipping the nested packages under it (each is its own record entry).
+// A package directory's regular files, skipping the nested packages under it (each is its own record entry). Only real
+// directories are entered and only regular files read: a link, a FIFO or a device is reported, never opened.
 function packageFiles(root, path, nested, problems) {
   const files = [];
   const walk = rel => {
@@ -314,10 +349,13 @@ function packageFiles(root, path, nested, problems) {
   return files;
 }
 
-// The full check: every package's digest and file count recomputed from what is on disk, every native file's hash,
-// and nothing in the tree that the record does not account for.
+// The full check: every package's digest and file count recomputed from what is on disk, every native file found
+// against the record's complete list, and nothing in the tree that the record does not account for. Every file is read
+// once, by the walk; nothing is reached through a link.
 export function verifyModuleTree(root, record) {
   const problems = [];
+  if (!isRealDirectory(root)) fail('module_tree_invalid', `the module tree ${root} is not a real directory`, {hint: moduleRecoveryHint(root)});
+  const known = new Set();
   const paths = new Set(record.packages.map(p => p.path));
   const containers = new Set();
   for (const path of paths) {
@@ -331,35 +369,39 @@ export function verifyModuleTree(root, record) {
       const path = rel ? `${rel}/${entry.name}` : entry.name;
       if (!rel && path === MODULE_RECORD_FILE) continue;
       if (paths.has(path)) continue;
-      if (containers.has(path) && entry.isDirectory()) scan(path);
-      else problems.push(`${path} is not part of the installed tree`);
+      if (!containers.has(path)) problems.push(`${path} is not part of the installed tree`);
+      else if (entry.isDirectory()) scan(path);
+      else problems.push(`${path} is not a real directory`);
     }
   };
   scan('');
+  const found = new Map();  // every regular file the walk read, by its path in the tree
   for (const pkg of record.packages) {
-    if (!isRealDirectory(join(root, pkg.path))) { problems.push(`${pkg.path} is missing`); continue; }
+    const broken = notRealOnTheWay(root, pkg.path, known);
+    if (broken) { problems.push(`${broken} is missing or not a real directory`); continue; }
     const nested = new Set([...paths].filter(other => other.startsWith(`${pkg.path}/`)).map(other => other.slice(pkg.path.length + 1)));
     const files = packageFiles(root, pkg.path, nested, problems);
+    for (const file of files) found.set(`${pkg.path}/${file.path}`, file);
     if (files.length !== pkg.files || payloadDigest(files) !== pkg.digest) problems.push(`${pkg.path}'s files are not the ones installed`);
   }
+  const recorded = new Set();
   for (const native of record.natives) {
-    let bytes;
-    try { bytes = readFileSync(join(root, native.path)); } catch { problems.push(`${native.path} is missing`); continue; }
-    if (bytes.length !== native.size || sha256(bytes) !== native.sha256) problems.push(`${native.path} is not the file installed`);
+    recorded.add(native.path);
+    const file = found.get(native.path);
+    if (!file) problems.push(`${native.path} is missing or not a regular file`);
+    else if (file.size !== native.size || file.sha256 !== native.sha256) problems.push(`${native.path} is not the file installed`);
   }
+  for (const path of found.keys()) if (NATIVE_FILE.test(path) && !recorded.has(path)) problems.push(`${path} is a native file not recorded`);
   if (problems.length) fail('module_tree_invalid', `the module tree ${root} does not verify: ${summary(problems)}`, {hint: moduleRecoveryHint(root)});
   return {packages: record.packages.length, natives: record.natives.length};
 }
 
 // ---- the install ----
 
-function pathExists(path) {
-  try { lstatSync(path); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
-}
-
 // One tarball into `dest`: a local copy from `dir` at its pinned length, or a download bounded by it.
 async function acquire(pkg, dest, {dir, fetch}) {
-  if (!dir) return download({url: pkg.resolved, length: pkg.length}, dest, fetch);
+  // A redirect is refused: the canonical registry URL itself serves the bytes.
+  if (!dir) return download({url: pkg.resolved, length: pkg.length, redirect: 'error'}, dest, fetch);
   const local = join(dir, localTarballName(pkg.name, pkg.version));
   let stat;
   try { stat = statSync(local); } catch (error) { fail('archive_missing', `module tarball ${local} is not readable: ${error.code ?? error.message}`); }
@@ -376,6 +418,9 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
   const layout = homeLayout(real);
   const root = join(layout.modules, lock.hash);
   const answer = changed => ({root, moduleDir: join(root, 'node_modules'), lock: lock.hash, changed});
+  // Nothing is written or read through a link where modules/ or staging/ should be.
+  for (const dir of [layout.modules, layout.staging])
+    if (pathExists(dir) && !isRealDirectory(dir)) fail('target_occupied', `${dir} is a link or not a real directory; cua does not install through it`, {hint: 'move it aside yourself, then run install again'});
 
   const existing = readModuleTree(real, lock, host);
   if (existing) {
@@ -406,6 +451,7 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
       const dest = join(tree, pkg.path);
       if (pathExists(dest)) fail('tarball_invalid', `${pkg.path} would be written over files another package placed`);
       const {files} = unpackTarball(bytes, dest);
+      if (!files.some(file => file.path === 'package.json')) fail('tarball_invalid', `${pkg.name}@${pkg.version} has no package.json`);
       recorded.push({path: pkg.path, name: pkg.name, version: pkg.version, files: files.length, digest: payloadDigest(files)});
       for (const file of files) if (NATIVE_FILE.test(file.path)) natives.push({path: `${pkg.path}/${file.path}`, size: file.size, sha256: file.sha256});
     }

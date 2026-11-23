@@ -8,7 +8,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, truncateSync, writeFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {homeLayout} from '../src/runtime/layout.mjs';
@@ -234,18 +235,42 @@ test('a tarball whose bytes differ from its SHA-512, or longer than its pinned l
   }
 });
 
-test('a tarball the reader refuses fails the install: nothing placed, staging removed', async t => {
-  const linked = tarball([{name: 'package/package.json', data: '{}'}, {name: 'package/evil', type: 'symlink', linkname: '/etc'}]);
-  const bad = setup(t, {lock: lock => {
-    lock.packages['node_modules/beta'].integrity = integrityOf(linked);
+// A fixture whose beta 1.1.0 tarball is `bytes`, pinned as such in the lock and the provenance.
+function withBetaTarball(t, bytes) {
+  const s = setup(t, {lock: lock => {
+    lock.packages['node_modules/beta'].integrity = integrityOf(bytes);
     return lock;
   }, provenance: p => {
-    for (const target of p.targets) for (const pkg of target.packages) if (pkg.path === 'node_modules/beta') { pkg.integrity = integrityOf(linked); pkg.length = linked.length; }
+    for (const target of p.targets) for (const pkg of target.packages) if (pkg.path === 'node_modules/beta') { pkg.integrity = integrityOf(bytes); pkg.length = bytes.length; }
   }});
-  bad.pins.tarballs.set(tarballUrl('beta', '1.1.0'), linked);
+  s.pins.tarballs.set(tarballUrl('beta', '1.1.0'), bytes);
+  return s;
+}
+
+test('a tarball the reader refuses fails the install: nothing placed, staging removed', async t => {
+  const bad = withBetaTarball(t, tarball([{name: 'package/package.json', data: '{}'}, {name: 'package/evil', type: 'symlink', linkname: '/etc'}]));
   await assert.rejects(install(bad), expectCode('tarball_invalid', /link/));
   assert.equal(existsSync(join(homeLayout(bad.home).modules, bad.lock.hash)), false);
   assert.ok(stagingEmpty(bad.home));
+});
+
+test('a package published without its package.json fails the install: nothing placed, staging removed', async t => {
+  const bad = withBetaTarball(t, tarball([{name: 'package/index.js', data: 'module.exports = 1;\n'}]));
+  await assert.rejects(install(bad), expectCode('tarball_invalid', /package\.json/));
+  assert.equal(existsSync(join(homeLayout(bad.home).modules, bad.lock.hash)), false);
+  assert.ok(stagingEmpty(bad.home));
+});
+
+test('module tarballs come from their canonical URL itself: the fetch refuses redirects, and a redirect answered is refused', async t => {
+  const s = setup(t);
+  const options = [];
+  const {fetch} = registry(s.pins.tarballs);
+  await install(s, {fetch: async (url, init) => { options.push(init?.redirect); return fetch(url, init); }});
+  assert.ok(options.length && options.every(redirect => redirect === 'error'), JSON.stringify(options));
+  const moved = setup(t);
+  const elsewhere = registry(moved.pins.tarballs, () => new Response(null, {status: 302, headers: {location: 'https://example.invalid/x.tgz'}}));
+  await assert.rejects(install(moved, {fetch: elsewhere.fetch}), expectCode('download_failed', /302/));
+  assert.equal(existsSync(join(homeLayout(moved.home).modules, moved.lock.hash)), false);
 });
 
 test('--modules-dir takes local copies of the tarballs, each still checked against its length and SHA-512', async t => {
@@ -345,4 +370,71 @@ test('readModuleTree: null with nothing there, or with a tree whose record is no
   assert.equal(readModuleTree(s.home, s.lock, LINUX_X64), null, 'a record naming a file outside its packages');
   writeFileSync(join(root, 'install.json'), '{');
   assert.equal(readModuleTree(s.home, s.lock, LINUX_X64), null);
+});
+
+// ---- damaged trees stay inside the real tree ----
+
+test('a record whose natives list is empty or partial: the full check compares every native file found, and a reinstall refuses', async t => {
+  for (const [name, edit] of Object.entries({empty: natives => [], partial: natives => natives.slice(1)})) {
+    const s = setup(t);
+    const {root} = await install(s);
+    const written = record(root);
+    const edited = {...written, natives: edit(written.natives)};
+    writeFileSync(join(root, 'install.json'), JSON.stringify(edited, null, 2));
+    assert.ok(readModuleTree(s.home, s.lock, LINUX_X64), `${name}: the record still parses`);
+    assert.throws(() => verifyModuleTree(root, edited), expectCode('module_tree_invalid', /not recorded/), name);
+    await assert.rejects(install(s), expectCode('module_tree_invalid'), name);
+  }
+});
+
+test('a linked directory inside the tree: both checks report damage and read nothing through the link', async t => {
+  for (const linkAt of ['node_modules/@fx', 'node_modules/lev/prebuilds']) {
+    const s = setup(t);
+    const {root} = await install(s);
+    const written = record(root);
+    const moved = join(s.dir, 'moved');
+    renameSync(join(root, linkAt), moved);
+    symlinkSync(moved, join(root, linkAt));
+    assert.throws(() => checkModuleTree(root, written), expectCode('layout_invalid', /not a real directory/), linkAt);
+    assert.throws(() => verifyModuleTree(root, written), expectCode('module_tree_invalid'), linkAt);
+    await assert.rejects(install(s), expectCode('module_tree_invalid'), linkAt);
+  }
+});
+
+test('modules/ or staging/ that is a link is not followed: the install refuses and the read finds no tree', async t => {
+  for (const which of ['modules', 'staging']) {
+    const s = setup(t);
+    const outside = join(s.dir, `outside-${which}`);
+    mkdirSync(outside);
+    mkdirSync(s.home, {recursive: true});
+    symlinkSync(outside, join(s.home, which));
+    await assert.rejects(install(s), expectCode('target_occupied', /link|real directory/), which);
+    assert.deepEqual(readdirSync(outside), [], `${which}: nothing written through the link`);
+  }
+  const s = setup(t);
+  const {root} = await install(s);
+  const real = join(s.dir, 'real-modules');
+  renameSync(homeLayout(s.home).modules, real);
+  symlinkSync(real, homeLayout(s.home).modules);
+  assert.equal(readModuleTree(s.home, s.lock, LINUX_X64), null, 'a tree reached through a linked modules/ is not read');
+  assert.ok(root);
+});
+
+test('a FIFO in place of a native file or of the record: each check reports damage, and nothing hangs', {timeout: 20000}, async t => {
+  const s = setup(t);
+  const {root} = await install(s);
+  const written = record(root);
+  const native = join(root, 'node_modules/lev/prebuilds/linux-x64/lev.node');
+  rmSync(native);
+  assert.equal(spawnSync('mkfifo', [native]).status, 0);
+  assert.throws(() => checkModuleTree(root, written), expectCode('layout_invalid', /lev\.node/));
+  assert.throws(() => verifyModuleTree(root, written), expectCode('module_tree_invalid', /lev\.node/));
+  await assert.rejects(install(s), expectCode('module_tree_invalid'));
+
+  const other = setup(t);
+  const tree = await install(other);
+  rmSync(join(tree.root, 'install.json'));
+  assert.equal(spawnSync('mkfifo', [join(tree.root, 'install.json')]).status, 0);
+  assert.equal(readModuleTree(other.home, other.lock, LINUX_X64), null);
+  await assert.rejects(install(other), expectCode('target_occupied'));
 });

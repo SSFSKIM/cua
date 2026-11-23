@@ -172,6 +172,10 @@ jobs:
             rc=1
           fi
           exit "$rc"
+      - name: The null label slots per observation (#500)
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: if [[ -s "$RUNNER_TEMP/q433-evidence/rows.json" ]]; then node scripts/probe-500/nulls.mjs "$RUNNER_TEMP/q433-evidence/rows.json"; fi
       - name: Record setup failure when no runner evidence was produced
         if: ${{ !cancelled() && steps.qualification.outcome == 'skipped' }}
         shell: bash

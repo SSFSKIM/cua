@@ -107,18 +107,20 @@ async function main(){
         after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0,gap,prep=null,popupDelay=null;
       // #442: the page's truth and accessibility's live reading at the point, after the observation and before the click.
       const sig={};
+      // #500: each observation's value-free count of CFNull label slots (`timings.nullLabelSlots`; null on a head without it).
+      const nulls=[],noted=r=>{if(r?.reply?.result)nulls.push(r.reply.result.timings?.nullLabelSlots??null);return r;};
       try{
         const w=await e.attach();
         prep=await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
         s='observe';
-        observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
+        observed=noted(await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots}));
         // A cell whose page fills the node cap is prepared only once the browser's accessibility tree holds the filler
         // (Chrome for Testing builds it late: smoke run 44519774336 read 65 nodes): until an observation stops at the cap,
         // up to three more, a second apart. Each replaces the last, record included, and all come before the change.
         observeTries=1;
         for(const capCell=spec.twin==='cap'||spec.big==='cap';capCell&&observeTries<4&&observed.reply?.result?.timings?.nodeCapHit!==true;observeTries++){
           await pause(1000);
-          observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
+          observed=noted(await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots}));
         }
         const sky=observed.reply?.result;
         // What the walk read: its node count, what it cut (count and depth) and whether the node cap stopped it.
@@ -202,7 +204,7 @@ async function main(){
           try{sig.after=await platform.signals(placed.screen,{walks:false,seq:true});}catch{}
           // The engine's own frames after the change: one more observation on this connection.
           s='reobserve';
-          const re=await e.call('get_app_state',{app,includeScreenshot:false});
+          const re=noted(await e.call('get_app_state',{app,includeScreenshot:false}));
           if(Array.isArray(re.reply?.result?.nodes)){reobserved=true;after=findLink(re.reply.result.nodes,spec.after,{first:!!spec.twin||!!spec.list,role:controlRole(c.cell)});}
         }
         s='witness-end';witness=await platform.disarm();armed=false;
@@ -229,7 +231,7 @@ async function main(){
           reobserved,foundAfter:!!after}:null,
         ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
-        presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,
+        observations:{count:nulls.length,nullLabelSlots:nulls},presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,
         ...(spec.popup?{popupDelay,popped:read?.popped??null}:{}),
         // contentsfront: the observation's frame of F (a link reading "Close"), or none listed.
         ...(spec.front==='contents'?{frontFrame:sig.nodes?(sig.nodes.find(n=>n?.role==='AXLink'&&[n.title,n.description].includes('Close'))?.frame??'unlisted'):null}:{}),css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,

@@ -24,7 +24,10 @@ for (const host of ['cua', 'vendor']) test(`fake target extends only the ${host}
   assert.equal(launch.env[key], '/trusted/a:/trusted/b', 'does not mutate the production launch');
 });
 
-test('own host bootstrap imports the controlled target; a vendor-only grant reproduces kernel exit 1', {skip}, async t => {
+// The vendor-only grant was the pre-fix probe's launch. On the host M4 was written against, its failed bootstrap import
+// ended the kernel (exit 1, read on the next call); since #235/#236 the bootstrap fails with its own error and the
+// kernel stays, so every call keeps refusing the target until the selected host's roots include it.
+test('own host bootstrap imports the controlled target; a vendor-only grant is refused on every call', {skip}, async t => {
   const {fakeSkyLaunch} = await import('../scripts/probe/fake-sky-launch.mjs');
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-probe-trust-')));
   t.after(() => rmSync(root, {recursive: true, force: true}));
@@ -44,7 +47,9 @@ test('own host bootstrap imports the controlled target; a vendor-only grant repr
   assert.equal(failed.isError, true);
   const error = texts(failed).join('\n');
   assert.match(error, /Trusted RPC dependency must resolve within a configured trusted code path/);
-  assert.match(texts(await before.js('nodeRepl.write("ready")')).join('\n'), /exited\(code=1\)/);
+  const again = await before.js('nodeRepl.write("ready")');
+  assert.equal(again.isError, true);
+  assert.match(texts(again).join('\n'), /Trusted RPC dependency must resolve within a configured trusted code path/);
   const after = await startHost(t, {node, env: fakeSkyLaunch(original, target).env});
   const banner = await after.js('nodeRepl.write("banner")');
   assert.equal(banner.isError, false);

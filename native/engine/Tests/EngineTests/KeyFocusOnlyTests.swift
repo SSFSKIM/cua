@@ -51,22 +51,23 @@ final class KeyFocusOnlyTests: XCTestCase {
   }
 
   private func click(_ seam: GuardSeam, button: MouseButton = .left, count: Int = 1, pointer: PointerTarget,
-                     beforePosting: () throws -> Void = {}, meta: inout InputMeta) throws {
+                     beforePosting: () throws -> Void = {}, announce: () -> Void = {}, meta: inout InputMeta) throws {
     try deliverClick(ClickTarget(point: point, windowFrame: window, windowID: 41, pid: target), route: .activation, button: button, count: count,
                      activation: activation(seam), activations: activations, pointer: pointer, targetActive: { false },
-                     beforePosting: beforePosting, post: seam.system.post, meta: &meta)
+                     beforePosting: beforePosting, announce: announce, post: seam.system.post, meta: &meta)
   }
 
-  private func drag(_ seam: GuardSeam, pointer: PointerTarget, meta: inout InputMeta) throws {
+  private func drag(_ seam: GuardSeam, pointer: PointerTarget, announce: () -> Void = {}, meta: inout InputMeta) throws {
     let start = ClickTarget(point: point, windowFrame: window, windowID: 41, pid: target)
     try deliverPointer(to: target, route: .activation, activation: activation(seam), activations: activations, postsLeftMouseDown: true,
-                       pointer: pointer, post: seam.system.post, meta: &meta) {
+                       pointer: pointer, announce: announce, post: seam.system.post, meta: &meta) {
       dragEvents(from: start.point, to: CGPoint(x: 400, y: 500), window: start, flags: [])
     }
   }
 
-  private func refusal(_ noun: String) -> String {
-    "Another app is in front of \(app) while \(app) holds keyboard focus, so nothing was sent: a \(noun) sent now could bring \(app)'s window over the person's. Act on \(app) through its elements' own actions (performSecondaryAction, setValue) or keys (typeText, pressKey), or ask the person to bring \(app) to the front."
+  private func refusal(_ noun: String, app: String? = nil, keyFocus: Bool = true) -> String {
+    let app = app ?? self.app
+    return "Another app is in front of \(app)\(keyFocus ? " while \(app) holds keyboard focus" : ""), so nothing was sent: a \(noun) sent now could bring \(app)'s window over the person's. Act on \(app) through its elements' own actions (performSecondaryAction, setValue) or keys (typeText, pressKey), or ask the person to bring \(app) to the front."
   }
 
   private func record(keyFocus: pid_t?) -> NSDictionary {
@@ -90,18 +91,22 @@ final class KeyFocusOnlyTests: XCTestCase {
   /// right click (an element's; a coordinate one is refused earlier, #463) and a drag, into a view with no element route:
   /// refused with the sentence, nothing posted, `keyFocusOnly` with the readings in the meta, the route kept.
   func testAPointerIntoAnAppHoldingKeyFocusBehindAnotherIsRefusedWithNothingPosted() throws {
+    var announced = 0
+    let told = { announced += 1 }
     let scenes: [(String, String, (GuardSeam, inout InputMeta) throws -> Void)] = [
-      ("a click", "click", { seam, meta in try self.click(seam, pointer: self.pointer(), meta: &meta) }),
-      ("a double click", "click", { seam, meta in try self.click(seam, count: 2, pointer: self.pointer(), meta: &meta) }),
-      ("a right click", "click", { seam, meta in try self.click(seam, button: .right, pointer: self.pointer(), meta: &meta) }),
-      ("a drag", "drag", { seam, meta in try self.drag(seam, pointer: self.pointer(noun: "drag"), meta: &meta) }),
+      ("a click", "click", { seam, meta in try self.click(seam, pointer: self.pointer(), announce: told, meta: &meta) }),
+      ("a double click", "click", { seam, meta in try self.click(seam, count: 2, pointer: self.pointer(), announce: told, meta: &meta) }),
+      ("a right click", "click", { seam, meta in try self.click(seam, button: .right, pointer: self.pointer(), announce: told, meta: &meta) }),
+      ("a drag", "drag", { seam, meta in try self.drag(seam, pointer: self.pointer(noun: "drag"), announce: told, meta: &meta) }),
       ("a click into a web area with no element route", "click", { seam, meta in
-        try self.click(seam, pointer: self.pointer(.webArea), meta: &meta)
+        try self.click(seam, pointer: self.pointer(.webArea), announce: told, meta: &meta)
       }),
     ]
     for (name, noun, scene) in scenes {
       let seam = keyFocusOnly()
       var pointerMeta = meta(connection())
+      announced = 0
+      defer { XCTAssertEqual(announced, 0, "a refused pointer moves no cursor: \(name)") }
       XCTAssertThrowsError(try scene(seam, &pointerMeta), name) {
         let error = $0 as? EngineError
         XCTAssertEqual(error?.errorName, "backgroundClickRefused", name)
@@ -119,13 +124,14 @@ final class KeyFocusOnlyTests: XCTestCase {
   func testAWebAreaClickInSTakesItsElementRoute() throws {
     let seam = keyFocusOnly()
     var pointerMeta = meta(connection())
-    var pressed = 0
+    var pressed = 0, announced = 0
     try click(seam, pointer: pointer(.webArea) { meta in
       pressed += 1
       XCTAssertEqual(self.activations.holders(self.target), 0, "the never-activated lease is given back before the route")
       try deliverAction("AXPress", route: .action, perform: { _ in .success }, meta: &meta)
-    }, meta: &pointerMeta)
+    }, announce: { announced += 1 }, meta: &pointerMeta)
     XCTAssertEqual(pressed, 1)
+    XCTAssertEqual(announced, 0, "the refused pointer is never announced; the element route announces its own")
     XCTAssertEqual(seam.posts.count, 0, "cua posts nothing on the pointer's path")
     XCTAssertEqual(seam.holds, 0)
     XCTAssertEqual(pointerMeta.inputRoute, .action, "route 1")
@@ -135,7 +141,8 @@ final class KeyFocusOnlyTests: XCTestCase {
 
   /// The front changes after the activation's decision and before the events (the target frontmost at `activate`, so
   /// no activation runs; the person's app in front by the events): refused at the read just before them. The sentence
-  /// says what was read: the key-focus one while the target holds key focus, else that another app came in front.
+  /// describes the front read then, naming key focus only while the target holds it, and never asks for a retry (ruling
+  /// 1174: a retry joining a never-activated hold would meet the same refusal).
   /// `deliver` makes no Accessibility lookup on this path (the person's window is never read), so its front read is the
   /// last step before the events.
   func testTheFrontChangingBeforeTheEventsIsRefusedWithNothingPosted() throws {
@@ -149,8 +156,7 @@ final class KeyFocusOnlyTests: XCTestCase {
         seam.keyFocus = keyFocus
       }, meta: &pointerMeta)) {
         XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
-        XCTAssertEqual(($0 as? EngineError)?.message, keyFocus == target ? refusal("click")
-          : "Another app came in front of \(app) just before the click, so nothing was sent. Observe \(app) with get_app_state and try again.")
+        XCTAssertEqual(($0 as? EngineError)?.message, refusal("click", keyFocus: keyFocus == target), "never 'try again'")
       }
       assertNothingPosted(seam, pointerMeta, "key focus \(keyFocus)")
       XCTAssertEqual(seam.userWindowReads, 0, "no lookup between the read and the events")
@@ -181,6 +187,71 @@ final class KeyFocusOnlyTests: XCTestCase {
       XCTAssertEqual(seam.posts.count, 0, "no subtype 2 for an activation that never ran")
       XCTAssertEqual(activations.holders(target), 0)
     }
+  }
+
+  /// Ruling 1174, P1: the registry shares entries by serving process alone, so a pointer bound to app B can join a
+  /// never-activated entry made for app A on the same serving process. The front is judged against the pointer's own
+  /// bound app: A frontmost is another app in front of B (refused, nothing posted); B frontmost is B's own front (posted
+  /// alone, as on main).
+  func testACrossAppJoinerIsJudgedAgainstItsOwnBoundApp() throws {
+    let helper: pid_t = 990_005, appA: pid_t = 990_011, appB: pid_t = 990_012
+    for front in [appA, appB] {
+      let seam = GuardSeam(frontmost: front)
+      seam.keyFocus = helper
+      seam.targetAbove = false
+      seam.onMouseDown = { seam.targetAbove = true }
+      func made(_ bound: pid_t) -> FakeActivation {
+        FakeActivation(pid: helper, appPid: bound, window: AXUIElementCreateApplication(helper), windowFrame: window, windowID: 41, system: seam.system)
+      }
+      let holder = connection(id: 2)
+      var holdMeta = meta(holder)
+      try holdFocus(app: "a", pid: helper, connection: holder, activations: activations, activation: { made(appA) },
+                    beforeActivating: {}, meta: &holdMeta)
+      XCTAssertEqual(activations.activation(of: helper)?.activated, false, "A's hold exited early")
+      var pointerMeta = meta(connection())
+      let attempt = {
+        try deliverClick(ClickTarget(point: self.point, windowFrame: self.window, windowID: 41, pid: helper), route: .activation, button: .left,
+                         count: 1, activation: made(appB), activations: self.activations, pointer: self.pointer(), targetActive: { false },
+                         post: seam.system.post, meta: &pointerMeta)
+      }
+      if front == appA {
+        XCTAssertThrowsError(try attempt(), "A in front of B") {
+          XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
+        }
+        XCTAssertEqual(seam.posts.count, 0, "nothing posted into B behind A")
+        XCTAssertEqual(pointerMeta.wire["pointerRefusal"] as? NSDictionary,
+                       ["reason": "keyFocusOnly", "frontmostPid": Int(appA), "keyFocusPid": Int(helper), "keyFocusIsTarget": true] as NSDictionary)
+      } else {
+        try attempt()
+        XCTAssertEqual(seam.posts.map(\.kind), [.mouse(.leftMouseDown), .mouse(.leftMouseUp)], "B frontmost: posted alone")
+        XCTAssertNil(pointerMeta.wire["pointerRefusal"])
+      }
+      XCTAssertEqual(seam.holds, 0)
+      holder.endFocusHold()
+      XCTAssertEqual(activations.holders(helper), 0)
+    }
+  }
+
+  /// Ruling 1174, P2: a pointer joining a still-held never-activated entry once key focus has left the target is refused
+  /// with the current front described and the ways that work, never "try again", which would only meet the hold again.
+  func testAJoinerAfterKeyFocusLeftIsToldWhatWorksNotToRetry() throws {
+    let seam = keyFocusOnly()
+    let holder = connection(id: 2)
+    var holdMeta = meta(holder)
+    try holdFocus(app: "textedit", pid: target, connection: holder, activations: activations, activation: { self.activation(seam) },
+                  beforeActivating: {}, meta: &holdMeta)
+    seam.keyFocus = user
+    for attempt in 1...2 {
+      var pointerMeta = meta(connection())
+      XCTAssertThrowsError(try click(seam, pointer: pointer(), meta: &pointerMeta)) {
+        let message = ($0 as? EngineError)?.message ?? ""
+        XCTAssertEqual(message, refusal("click", keyFocus: false), "attempt \(attempt)")
+        XCTAssertFalse(message.contains("try again"))
+      }
+      XCTAssertEqual(pointerMeta.wire["pointerRefusal"] as? NSDictionary, record(keyFocus: user))
+    }
+    XCTAssertEqual(seam.posts.count, 0)
+    holder.endFocusHold()
   }
 
   // MARK: Where main's path stands

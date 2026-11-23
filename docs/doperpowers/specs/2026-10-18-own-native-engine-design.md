@@ -8067,6 +8067,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (#502, 2026-11-23): `popUpAwaitOpen` reads the control's kind through a local (`let kind = target.kind`), and
+  its local functions capture that, never `target`. Xcode 27.2 (Swift 6.4.2, 27B52) crashed `swift build -c release`
+  in the SIL pass CopyPropagation ("Found a leak due to a consuming post-dominance failure", "Found ownership
+  error?!") on the function's AXUIElement specialization, a leak of the `target` argument. Bisected: it is
+  `activatedNow` (declared in the poll loop and called from its `defer`) capturing `target`. Hoisting the kind into
+  `unconfirmed` and the restore note, with `activatedNow` left on `target`, still crashed; hoisting it there too fixed
+  it. Behaviour is unchanged, since `target` is an immutable struct. A restructure was chosen over `@_optimize(none)`,
+  which would leave the function unoptimized and the pattern free to recur. The code carries a comment so the hoist is not undone. Proven locally on
+  Xcode 27.2: the release and debug builds pass, and `swift test` runs 1659 tests (1 skipped, `CUA_304_TREES` unset)
+  with 0 failures. Hosted CI cannot see this class of failure yet: `engine-swift`'s `macos-latest` carries Xcode 26.x
+  only, and Xcode 27 exists only on the preview image `xcode-27`, which no ci-kit lane selects. Until a lane can reach
+  it, the local release build on Xcode 27.2 is the check (`tech-debt-tracker.md`).
+  Date/Author: 2026-11-23, cursor235's builder for #502.
+
 - Decision (#500, rulings 1083 and 1131, 2026-11-23, `fix/500-cfnull-label`): a label slot that answers kCFNull is
   unknown, never absent, and label comparisons are like with like. Found in #481's final review: `AttributeRead.decode`
   put a null slot in neither `unreadable` nor `absent`, so the record took a null title for an absent one and fell

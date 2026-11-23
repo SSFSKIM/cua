@@ -93,7 +93,7 @@ export const API_MANIFEST = {
       "capabilities": {
         "declarations": [
           {
-            "text": "capabilities: BrowserCapabilityCollection; // Browser-scoped optional capabilities advertised by the connected backend; discover IDs with `await browser.capabilities.list()`, then call `await (await browser.capabilities.get(id)).documentation()` for method details.",
+            "text": "capabilities: BrowserCapabilityCollection; // Browser-scoped optional capabilities advertised by the connected backend; discover IDs with `await browser.capabilities.list()`, then print `nodeRepl.write(await (await browser.capabilities.get(id)).documentation())` for method details.",
             "references": [
               "BrowserCapabilityCollection"
             ]
@@ -131,7 +131,7 @@ export const API_MANIFEST = {
       "documentation": {
         "declarations": [
           {
-            "text": "documentation(): Promise<string>; // Read browser guidance and the core API reference.",
+            "text": "documentation(): Promise<string>; // Return browser guidance and the core API reference as text; print it with `nodeRepl.write(await browser.documentation())`.",
             "references": []
           }
         ]
@@ -296,7 +296,7 @@ export const API_MANIFEST = {
       "capabilities": {
         "declarations": [
           {
-            "text": "capabilities: TabCapabilityCollection; // Tab-scoped optional capabilities advertised by the connected backend; discover IDs with `await tab.capabilities.list()`, then call `await (await tab.capabilities.get(id)).documentation()` for method details.",
+            "text": "capabilities: TabCapabilityCollection; // Tab-scoped optional capabilities advertised by the connected backend; discover IDs with `await tab.capabilities.list()`, then print `nodeRepl.write(await (await tab.capabilities.get(id)).documentation())` for method details.",
             "references": [
               "TabCapabilityCollection"
             ]
@@ -1725,7 +1725,7 @@ export const API_MANIFEST = {
       "get": {
         "declarations": [
           {
-            "text": "get(name: string): Promise<string>; // Read packaged documentation by its extensionless relative path.",
+            "text": "get(name: string): Promise<string>; // Return packaged documentation by its extensionless relative path, as text; print it with `nodeRepl.write(await agent.documentation.get(name))`.",
             "references": []
           }
         ],

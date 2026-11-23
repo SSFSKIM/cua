@@ -3,8 +3,9 @@
 // own sandbox, the scoped default): over `cua serve` on stdio it binds a gedit window by X11 window id, types a marker
 // into it, reads the marker back through the accessibility tree, takes a screenshot, ends the task and checks the
 // connection left nothing under $CUA_HOME/run. In the same session it checks that the kernel is confined (it cannot
-// read cua's private state or the secret store, nor connect to the X display, TCP or the session bus, while sky_linux in
-// the trusted worker drives the display), and that `cua.computer.launch_app` launches an application outside the
+// read cua's private state or the secret store, nor connect to the run's X server, its session bus or a TCP or Unix
+// listener of the fixture's, each first reached by a positive control: ./linux-confinement.mjs, #171 M6a; while the
+// engine in the trusted worker drives the display), and that `cua.computer.launch_app` launches an application outside the
 // sandbox (#115's supervisor-side launch): a harness-owned desktop entry running zenity with the run's marker, whose
 // process must start in this machine's PID namespace and outlive the call. And it checks that `CUA_REPL_HOST=vendor` is
 // refused on Linux with a sentence. Approvals (#117 M3: Linux asks per app, src/services/engine/policy.mjs): the
@@ -22,13 +23,15 @@
 //   engine.json; then cua doctor --json must say the default selected cua's engine. The report records the selection.
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
+import {helperFor} from '../../src/sandbox/linux.mjs';
 import {pinnedApprovals} from './lib.mjs';
+import {confinementStep} from './linux-confinement.mjs';
 import {selectionMode, selectionSteps} from './linux-selection.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
@@ -88,17 +91,19 @@ try {
   const seen = observed ? JSON.parse(observed) : null;
   step('type the marker and read it back from the accessibility tree', !typed.result?.isError && seen?.readBack === true, seen ?? resultText(typed).slice(0, 600));
 
-  // The kernel is confined: no private state, no store, no socket (X11, TCP, the bus), while the worker drives X above.
-  const xSocket = `/tmp/.X11-unix/X${(process.env.DISPLAY ?? ':0').replace(/^.*:/, '').split('.')[0]}`;
-  const confined = await session.js(`const fs = await import('node:fs'), net = await import('node:net');
+  // The kernel is confined, while the worker drives X above: it reads no private state and no store, and it connects to
+  // nothing (the shared confinement step, ./linux-confinement.mjs: the run's X server and session bus and two listeners
+  // of the fixture's own, each first reached by a positive control from here, and the kernel under the pinned helper).
+  const confined = await session.js(`const fs = await import('node:fs');
     const r = f => { try { f(); return 'ok'; } catch (e) { return e.code ?? 'error'; } };
-    const c = o => new Promise(done => { const s = net.connect(o); s.once('connect', () => { s.destroy(); done('ok'); }); s.once('error', e => done(e.code)); });
-    nodeRepl.write(JSON.stringify({state: r(() => fs.readdirSync(${JSON.stringify(join(home, 'state'))})), store: r(() => fs.readdirSync(${JSON.stringify(join(homedir(), '.config', 'claude-secrets'))})),
-      x11: await c({path: ${JSON.stringify(xSocket)}}), tcp: await c({host: '127.0.0.1', port: 22}), bus: await c({path: ${JSON.stringify(join(process.env.XDG_RUNTIME_DIR ?? '/run/user/0', 'bus'))}})}));`, 60_000);
+    nodeRepl.write(JSON.stringify({state: r(() => fs.readdirSync(${JSON.stringify(join(home, 'state'))})), store: r(() => fs.readdirSync(${JSON.stringify(join(homedir(), '.config', 'claude-secrets'))}))}));`, 60_000);
   const kernelSeen = /\{"state".*\}$/m.exec(resultText(confined))?.[0];
   const k = kernelSeen ? JSON.parse(kernelSeen) : null;
-  step('the kernel is confined: no private state or store, no X11, TCP or session-bus connect', !confined.result?.isError && !!k
-    && ['state', 'store'].every(key => ['EACCES', 'EPERM', 'ENOENT'].includes(k[key])) && ['x11', 'tcp', 'bus'].every(key => k[key] !== 'ok'), k ?? resultText(confined).slice(0, 600));
+  step('the kernel reads no private state and no store', !confined.result?.isError && !!k && ['state', 'store'].every(key => ['EACCES', 'EPERM', 'ENOENT'].includes(k[key])), k ?? resultText(confined).slice(0, 600));
+  const helper = helperFor({home, arch: process.arch}).path;
+  report.confinement = await confinementStep({session, env: process.env, dir, helper: existsSync(helper) ? realpathSync(helper) : helper, resultText});
+  step('the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper',
+    report.confinement.verdict.pass, report.confinement.verdict.problems);
 
   const shot = await session.js('await fixtureApp.getScreenshot();', 60_000);
   const image = (shot.result?.content ?? []).find(c => c.type === 'image');

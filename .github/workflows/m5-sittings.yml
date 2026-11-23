@@ -4,8 +4,9 @@ name: m5-sittings
 # only: a push of this file just registers it on its branch. `pilot` runs every sitting once in its smallest form, the
 # first hosted run after M4 merges. The engine is built on macos-latest and copied to each sitting's runner until #504
 # lets the xcode-27 image build it; sitting E builds and approves its own (macos-default-selection-hosted.sh), so it
-# always runs on macos-latest. TCC rows are written only by the kit's one guarded writer (scripts/hosted-sittings/tcc.mjs),
-# which refuses unless RUNNER_ENVIRONMENT=github-hosted (the design spec's Decision Log, O0, ruling 1111). No repository
+# always runs on macos-latest. By default C runs on xcode-27 (macOS 27) and A, B, D and F on macos-latest; `image`
+# overrides that for all but E. TCC rows are written only by the kit's one guarded writer (scripts/hosted-sittings/tcc.mjs),
+# which refuses unless RUNNER_ENVIRONMENT=github-hosted and the O0 entry is in the Decision Log (ruling 1111). No repository
 # secret is used; replayd's store is never written (ruling 1141). Each job uploads its output, whatever its result.
 on:
   push:
@@ -24,10 +25,10 @@ on:
         options: [full, pilot]
         default: full
       image:
-        description: The sittings' runner (E always takes macos-latest)
+        description: "The sittings' runner: default puts C on xcode-27 (macOS 27) and A, B, D, F on macos-latest; the builder and E always take macos-latest"
         type: choice
-        options: [macos-latest, xcode-27]
-        default: macos-latest
+        options: [default, macos-latest, xcode-27]
+        default: default
       flipped:
         description: This commit selects cua's engine by default on macOS (sitting E's lanes are then expected to pass)
         type: boolean
@@ -76,7 +77,7 @@ jobs:
       fail-fast: false
       matrix:
         sitting: ${{ fromJSON(inputs.sitting == 'all' && '["a","b","c","d","e","f"]' || format('["{0}"]', inputs.sitting)) }}
-    runs-on: ${{ matrix.sitting == 'e' && 'macos-latest' || inputs.image }}
+    runs-on: ${{ matrix.sitting == 'e' && 'macos-latest' || (inputs.image == 'default' && (matrix.sitting == 'c' && 'xcode-27' || 'macos-latest')) || inputs.image }}
     timeout-minutes: 360
     env:
       SITTING: ${{ matrix.sitting }}

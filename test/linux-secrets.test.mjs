@@ -15,7 +15,7 @@ import {fileStore} from '../src/secrets/store.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {LINUX_HOST_NOTES} from '../src/mcp/surface.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
-import {vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {helperFor} from '../src/sandbox/linux.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
@@ -51,7 +51,8 @@ test('a real Linux connection: Linux host notes, secrets_list lists the store, t
   // Linux runs cua's own host (#115 M3): the fake installed runtime's upstream (fake-upstream-process.mjs) stands in for
   // its supervisor, logging under CODEX_HOME; the own host's Node, the helper check and the user-namespace probe are
   // injected.
-  const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
+  // The vendor's engine, whose tree the fake install holds (#171 M6a: the selection resolves it once, at the open).
+  const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000', CUA_NATIVE_ENGINE: 'vendor'};
   const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
   const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
@@ -70,6 +71,9 @@ test('a real Linux connection: Linux host notes, secrets_list lists the store, t
   assert.equal(start.env.CUA_SECRETS_DIR, user.dir);
   assert.equal('CUA_SECRETS_UNAVAILABLE' in start.env, false);
   assert.equal(start.env.OAI_SKY_LINUX_BIN, join(root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
+  assert.equal(start.env.CUA_SKY_SERVICE, upstream.skyVendorService);
+  assert.ok(start.env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(join(root, 'cua_node/lib/node_modules')), 'the vendor service\'s own imports are trusted');
+  assert.equal(start.env.CUA_REPL_NODE_MODULE_DIRS, resolveRuntime({home, host: LINUX}).paths.moduleDir, 'cells import from cua\'s ModuleTree under the vendor\'s engine too');
   assert.equal(start.env.CUA_REPL_SANDBOX_HELPER, helperFor({home, arch: 'x64'}).path, 'cua\'s pinned sandbox helper, no Codex CLI');
   assert.equal(start.env.CUA_REPL_WORKER_NETWORK, 'enabled', 'the computer surface\'s worker reaches the display and the bus');
   assert.equal('CODEX_CLI_PATH' in start.env, false);

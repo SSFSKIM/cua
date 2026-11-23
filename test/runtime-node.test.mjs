@@ -292,8 +292,9 @@ test('a replaced bin/node is never run: not on reinstall, even when it prints th
   assert.deepEqual(probed, [], 'not run on reinstall');
   assert.deepEqual(managedNode(ctx.home), {missing: `${join(root, 'bin/node')} is not the binary its install record names`});
   const none = outcome(() => ownHostNode({ambient: {}, home: ctx.home, execPath: '/nonexistent', versionOf}));
-  assert.equal(none.code, 'repl_host_node');
-  assert.match(none.message, /the cua-installed Node \(.* is not the binary its install record names\)/);
+  // on Linux the managed Node is the only candidate but CUA_NODE, and without it the runtime is not installed (#171 M6a)
+  assert.equal(none.code, thisHost.platform === 'linux' ? 'runtime_not_installed' : 'repl_host_node');
+  assert.match(none.message, thisHost.platform === 'linux' ? /its Node is not installed \(.* is not the binary its install record names\)/ : /the cua-installed Node \(.* is not the binary its install record names\)/);
   assert.deepEqual(probed, [], 'the resolution never probes it either');
   assert.equal(existsSync(join(root, 'bin/node.ran')), false, 'the replaced binary never ran');
   // A symlink in its place, even to the recorded bytes elsewhere, is not the install either.

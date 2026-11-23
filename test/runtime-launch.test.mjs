@@ -13,6 +13,8 @@ import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, scratchUserHome, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {hashColor} from '../src/runtime/cursor-identity.mjs';
 import {STORE_RELATIVE, connectionSecrets} from '../src/secrets/store.mjs';
@@ -314,14 +316,16 @@ const TRIED = ['CUA_NODE (unset)', 'the node running cua /fixture/node22 (v22.23
 const withNode = () => NODE24;
 const withoutNode = () => { throw Object.assign(new CuaError('repl_host_node', 'cua\'s own REPL host needs Node 24 or later, and none was found'), {tried: TRIED}); };
 // `extra` is more of the caller's environment (a browser setting the selection must not read).
-// The engine inputs are fixed (no engine.json, no engine installed), so a machine's own settings never leak in.
+// The engine inputs are fixed (no engine.json; on macOS no engine installed, on Linux cua's at the minimum this cua
+// drives, without which a Linux computer session is refused since #171 M6a), so a machine's own settings never leak in.
+const LINUX_ENGINE_BIN = '/fixture/engine/linux/cua-engine';
+const ENGINE_INPUTS = {darwin: {config: () => ({}), installed: () => null}, linux: {config: () => ({}), installed: () => ({path: LINUX_ENGINE_BIN}), installedVersion: () => '0.4.3'}};
 const hostFor = (platform, surfaces, host, resolveOwnNode = withNode, extra = {}) => outcome(() => replHostFor({platform, surfaces,
-  ambient: host === undefined ? extra : {...extra, CUA_REPL_HOST: host}, resolveOwnNode, engine: {config: () => ({}), installed: () => null}}));
+  ambient: host === undefined ? extra : {...extra, CUA_REPL_HOST: host}, resolveOwnNode, engine: ENGINE_INPUTS[platform]}));
 // The vendor engine by default, as a macOS computer selection carries it.
 const DEFAULT_VENDOR_ENGINE = {engine: 'vendor', reason: 'default', status: 'pass'};
-// A Linux computer selection's: cua's engine is the default there (#171 M5), and with none installed (these fixed
-// inputs) the vendor's is kept with a warning.
-const DEFAULT_LINUX_ENGINE = {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
+// A Linux computer selection's: cua's engine is the default there (#171 M5), the installed one.
+const DEFAULT_LINUX_ENGINE = {engine: 'cua', reason: 'default', status: 'pass', bin: {path: LINUX_ENGINE_BIN, lookup: LINUX_ENGINE_BIN, source: 'installed'}};
 // A resolver that counts its calls, so a test can say whether (and how often) a selection asked for Node.
 const counted = resolve => { const fn = () => { fn.calls++; return resolve(); }; fn.calls = 0; return fn; };
 // Browser settings the host selection ignores: MAWS client mode, and a CUA_BROWSER_SERVICE #79 no longer reads.
@@ -385,13 +389,13 @@ test('with no Node 24 or later, a macOS session the table moves to cua\'s own ho
   // A CUA_NODE that is not an absolute path is an invalid setting, refused, not a missing Node.
   const invalid = () => { throw new CuaError('invalid_setting', 'CUA_NODE must be the absolute path of a Node executable'); };
   assert.equal(hostFor('linux', COMPUTER, undefined, invalid).code, 'invalid_setting');
-  // The default resolver is the production one: an implicit Linux session with an unusable CUA_NODE and no other Node.
+  // The default resolver is the production one: an implicit Linux session with an unusable CUA_NODE is refused, the node
+  // running cua and node on PATH being no candidates there (#171 M6a, F2a).
   const s = scratch();
   try {
     const old = fakeNode(realpathSync(s.dir), 'old/node', '22.23.2');
-    const selected = outcome(() => replHostFor({platform: 'linux', surfaces: COMPUTER, ambient: {CUA_NODE: old, PATH: dirname(old)}}));
-    assert.deepEqual(Number(process.versions.node.split('.')[0]) >= NODE_FLOOR ? selected.reason : selected.code,
-      Number(process.versions.node.split('.')[0]) >= NODE_FLOOR ? 'linux' : 'repl_host_node', 'the node running cua is the second candidate');
+    const selected = outcome(() => replHostFor({platform: 'linux', surfaces: BROWSER, ambient: {CUA_NODE: old, PATH: dirname(old)}, home: realpathSync(s.dir)}));
+    assert.equal(selected.code, 'repl_host_node', 'the node running cua is no candidate on Linux');
   } finally { s.cleanup(); }
 });
 
@@ -439,23 +443,23 @@ test('the own host\'s Node is the first of CUA_NODE, the running node and node o
   symlinkSync(v26, join(dir, 'linked-node'));
   const PATH = `relative/bin:${join(dir, 'empty')}:${dirname(onPath)}`;
 
-  assert.equal(ownHostNode({ambient: {CUA_NODE: v26, PATH}, execPath: v24}), v26, 'an explicit CUA_NODE that qualifies comes first');
-  assert.equal(ownHostNode({ambient: {CUA_NODE: join(dir, 'linked-node')}, execPath: v22}), v26, 'resolved to the real executable');
-  assert.equal(ownHostNode({ambient: {CUA_NODE: v22, PATH}, execPath: v24}), v24, 'then the node running cua');
-  assert.equal(ownHostNode({ambient: {CUA_NODE: '', PATH}, execPath: v22}), onPath, 'then node on PATH, skipping relative and empty entries');
-  assert.equal(outcome(() => ownHostNode({ambient: {PATH: `${dirname(oldOnPath)}:${dirname(onPath)}`}, execPath: v22})).code, 'repl_host_node', 'only the first node on PATH is a candidate, the one a shell would run');
+  assert.equal(ownHostNode({platform: 'darwin', ambient: {CUA_NODE: v26, PATH}, execPath: v24}), v26, 'an explicit CUA_NODE that qualifies comes first');
+  assert.equal(ownHostNode({platform: 'darwin', ambient: {CUA_NODE: join(dir, 'linked-node')}, execPath: v22}), v26, 'resolved to the real executable');
+  assert.equal(ownHostNode({platform: 'darwin', ambient: {CUA_NODE: v22, PATH}, execPath: v24}), v24, 'then the node running cua');
+  assert.equal(ownHostNode({platform: 'darwin', ambient: {CUA_NODE: '', PATH}, execPath: v22}), onPath, 'then node on PATH, skipping relative and empty entries');
+  assert.equal(outcome(() => ownHostNode({platform: 'darwin', ambient: {PATH: `${dirname(oldOnPath)}:${dirname(onPath)}`}, execPath: v22})).code, 'repl_host_node', 'only the first node on PATH is a candidate, the one a shell would run');
 
-  const none = outcome(() => ownHostNode({ambient: {CUA_NODE: broken, PATH: dirname(oldOnPath)}, execPath: v22}));
+  const none = outcome(() => ownHostNode({platform: 'darwin', ambient: {CUA_NODE: broken, PATH: dirname(oldOnPath)}, execPath: v22}));
   assert.equal(none.code, 'repl_host_node');
   for (const pattern of [/Node 24 or later/, new RegExp(`CUA_NODE ${broken} \\(no readable version\\)`), new RegExp(`the node running cua ${v22} \\(v22\\.23\\.2\\)`),
     new RegExp(`node on PATH ${dirname(oldOnPath)}/node \\(v23\\.11\\.1\\)`), /set CUA_NODE to the absolute path of a Node 24 or later/, /vendor/])
     assert.match(none.message, pattern);
-  const missing = outcome(() => ownHostNode({ambient: {CUA_NODE: join(dir, 'absent'), PATH: join(dir, 'empty')}, execPath: v22}));
+  const missing = outcome(() => ownHostNode({platform: 'darwin', ambient: {CUA_NODE: join(dir, 'absent'), PATH: join(dir, 'empty')}, execPath: v22}));
   assert.match(missing.message, /CUA_NODE .*absent \(not found\)/);
   assert.match(missing.message, /node on PATH \(not found\)/);
-  for (const bad of ['node', 'bin/node', '~/node']) assert.equal(outcome(() => ownHostNode({ambient: {CUA_NODE: bad}, execPath: v26})).code, 'invalid_setting', bad);
+  for (const bad of ['node', 'bin/node', '~/node']) assert.equal(outcome(() => ownHostNode({platform: 'darwin', ambient: {CUA_NODE: bad}, execPath: v26})).code, 'invalid_setting', bad);
   // The refusal carries the candidates it tried, for a selection that falls back to the vendor host to name them.
-  try { ownHostNode({ambient: {CUA_NODE: v22, PATH: dirname(oldOnPath)}, execPath: broken}); assert.fail('resolved'); } catch (error) {
+  try { ownHostNode({platform: 'darwin', ambient: {CUA_NODE: v22, PATH: dirname(oldOnPath)}, execPath: broken}); assert.fail('resolved'); } catch (error) {
     assert.deepEqual(error.tried, [`CUA_NODE ${v22} (v22.23.2)`, `the node running cua ${broken} (no readable version)`, `node on PATH ${dirname(oldOnPath)}/node (v23.11.1)`]);
   }
 });
@@ -482,7 +486,7 @@ test('the launch records the host it runs; an explicit cua host runs the own sup
   const resolveOwnNode = () => node;
   const implicit = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode, ...browserOnly});
   assert.deepEqual([implicit.replHost, implicit.command], [{host: 'cua', reason: 'browser_only'}, node], 'browser-only on macOS defaults to the own host');
-  const noNode = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode: () => ownHostNode({ambient: {}, execPath: join(dir, 'absent')}), ...browserOnly});
+  const noNode = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode: () => ownHostNode({platform: 'darwin', ambient: {}, execPath: join(dir, 'absent')}), ...browserOnly});
   assert.deepEqual([noNode.replHost, noNode.command], [{host: 'vendor', reason: 'own_host_node_unavailable'}, runtime.paths.node], 'and keeps the vendor host where no Node 24 resolves');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: 'node'}, ...browserOnly})).code, 'invalid_setting');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua'}})).code, 'repl_host_refused', 'macOS computer');
@@ -748,6 +752,7 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with the remed
   assert.equal(browserOnly.status, 'pass');
   assert.ok(browserOnly.detail.startsWith(`cua host (browser_only) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session;`), browserOnly.detail);
   assert.match(browserOnly.detail, /CUA_REPL_HOST=vendor/, 'names the rollback');
+  fakeInstalledEngine(s.dir, MIN_ENGINE_VERSION);   // a Linux computer session needs one since #171 M6a
   const linux = await row(LINUX, {CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0'}, withNode);
   assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux`), linux.detail);
   assert.match(linux.detail, /the vendor host is retired there, #115/);

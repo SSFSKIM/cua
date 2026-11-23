@@ -49,7 +49,9 @@ export function indexOfId(ax, id) {
   return elementLines(ax).find(l => lone.test(l.content))?.index ?? null;
 }
 // The value of the element `index` (its `Value: ` part, through the lines a multi-line value spans, up to the next
-// element line or the blank line before the trailer), or null when the line carries none.
+// element line or the blank line before the trailer), or null when the line carries none. cua's renderer prints a
+// value's breaks escaped on the one line (#526, ruling 1175: `\n`, `\r`, any other break `\uXXXX`); a value with a
+// break is a long part, so it runs to the line's end, and reads back with its breaks.
 export function valueOfIndex(ax, index) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
@@ -59,6 +61,8 @@ export function valueOfIndex(ax, index) {
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
   const value = parts.join('\n');
+  const escaped = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g;
+  if (parts.length === 1 && escaped.test(value)) return value.replace(escaped, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
   // A part after the value on its first line (only short parts follow a value; a long value moves last).
   return parts.length === 1 ? value.split(', ')[0] : value;
 }

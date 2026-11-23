@@ -160,3 +160,15 @@ test('a field\'s selection evidence is lengths and SHA-256 hashes only, with wha
   const embedded = new Function(`${text.EMBEDDED}\nreturn {fieldReading, selectionEvidence};`)();
   assert.deepEqual(embedded.selectionEvidence(field('alpha bold twoa'), 5, before), inserted);
 });
+
+test('#526: a value cua prints with its line breaks escaped reads back with its breaks, whole', () => {
+  // Ruling 1175: cua's renderer prints a value's breaks as `\n` and `\r` (any other break as `\uXXXX`) on the element's
+  // one line, where the vendor prints them raw. A value with a break is a long part, so it runs to the line's end.
+  const ax = 'Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ID: Notes, Value: one, two\\nthree\\r\\nfour\\u2028five\n\t2 button OK\n';
+  assert.equal(text.valueOfIndex(ax, 1), 'one, two\nthree\r\nfour five');
+  assert.deepEqual(text.elementLines(ax).map(l => l.index), [0, 1, 2]);
+  assert.equal(text.indexOfId(ax, 'Notes'), 1);
+  assert.deepEqual(text.fieldReading(ax, 1), {value: 'one, two\nthree\r\nfour five', selected: null});
+  // A one-line value with no break keeps being read up to its first `, `.
+  assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 standard window x\n\t1 slider (settable, float) Value: 3, Help: h\n', 1), '3');
+});

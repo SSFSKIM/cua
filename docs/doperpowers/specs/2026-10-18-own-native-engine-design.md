@@ -84,7 +84,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21) M3.4 — `scripts/accept/textedit.mjs` and `scripts/accept-native.mjs` (`--engine`; items 12 and 13 pinned to the vendor engine) (310f4f0b, review fixes d0da881d, bf16bb42; reviewed clean after two fix rounds).
   - [x] (2026-10-22 01:42Z) M3.5, Linux half — the parity suite with approvals on cua-linux at base 027179bc and head 10846dfd, each against #115's vendor control: head's one difference (`backend`) is also base's; nothing declared for M3 (`m3/linux/README.md`).
   - [x] (2026-10-22 11:23Z) M3.5 — Live: one hold on the mini (10:26:47–11:23Z, controller 98f153b8, rerun on fead3a16, build 0c363f8f approved at the hold start; evidence `m3/hold/`). Results: comparisons A, B and C PASS; acceptance 2 (`verify --engine cua --bind`, asked 1 then 0) and 9 PASS; `accept-native` item 8's live checks PASS after the attestation fix (Decision Log "M3 hold"); items 7 and 8's named suites 141/141 on the mini. Item 1's whole `npm test` on the mini FAILs on 11 environmental cases, so the hosted Node 24 gate is the unit-suite authority (evidence README). Acceptance 6 is M2b's (Decision Log "M3, acceptance 6").
-- [ ] M4 re-cut tasks (branch `feat/117-m4-recut` from main b1b15484; the M4/M5 pre-flight's T1 to T7; Decision Log "M4 re-cut"):
+- [x] (2026-11-23) M4 re-cut tasks, all reviewed clean, then the whole-branch review (reviewer-high) and its two fix rounds; M4 lands when its pull request's hosted gates are green (branch `feat/117-m4-recut` from main b1b15484; the M4/M5 pre-flight's T1 to T7; Decision Log "M4 re-cut"):
   - [x] (2026-11-23) T1 — Install on macOS, pending-only; builds beside the approved engine and `cua engine approve` promotes (ruling 1118) (bdf3f424, 058bb0e0, review fixes c021e44a, 06864a1f, 768dd996; reviewed clean after four rounds).
   - [x] (2026-11-23) T2 — The permission flow (2865f597, 16a27627, review fixes fda61df9, bcef401d; reviewed clean after three rounds).
   - [x] (2026-11-23) T3 — `accept-native`: item 14 in its owner form, #197's dependencies, the structured reporter, #196's bounded cleanup, the build-beside reinstall (215dea04, review fixes 47524e65, 7c24dda9; reviewed clean after three rounds).
@@ -8321,6 +8321,22 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   lines of 300 characters, so a compiler crash's assertion survives (H0's finding). The branch merged main at
   a08fa842 (#504's Xcode 27.2 fix, #493) rather than rebasing.
   Date/Author: 2026-11-23, M4 re-cut controller.
+- Decision (the whole-branch review's fixes; reviewer-high, a08fa842..eaaa47de, cross-task lens): approve claims the
+  pending build into `claimed/` before it waits for the running engine to stop, so a build published during the wait
+  stays pending for its own approval and is never promoted unseen; a claim left by a killed approve is put back by
+  the next approve or build. The approve lock is written whole to a temporary name and hard-linked to
+  `promoting.json`, so no approve reads an empty marker as a dead holder. A successful approve deletes `pending.json`
+  only while its build, identity and `builtAt` are still the claimed publication's. A rollback puts the previous bundle
+  back first; a promoted engine that refused the stop is reported truthfully (one of the restored bundle's build keeps
+  serving new sessions until it stops, since sessions check build, not signature) and recorded in `candidate.json
+  {pid, build}` when it can be, so the next build or approve stops it once idle; otherwise only `cua engine stop` is
+  offered. The input-source restore guard holds behind a probe launch with no outcome in the journal. An engine that
+  rejects this client's API version gets the install-then-approve remedy too. The bundle gate never prints a signer's
+  fingerprint. The README says the automatic Screen Recording recovery arrives with the 0.2.0 engine. Accepted: a
+  busy promoted engine of the same build re-signed under another identity serves new sessions until it stops (no
+  signing-identity check in the client protocol), and a build that rewrites `pending.json` between approve's
+  comparison and its unlink loses that record (the bundle survives; `tech-debt-tracker.md`).
+  Date/Author: 2026-11-23, M4 re-cut controller.
 - Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
   its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
   (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the
@@ -8437,3 +8453,28 @@ What the milestone taught:
 - A guard that reads "running" where it means "has the window I need" fails in exactly the state a closed fixture leaves behind. The windowless TextEdit case reappeared in verify after M3.4 had fixed it in the accept fixture.
 - A runbook's subset selection (`--items 7,8`) silently dropped a dependency (item 1); a selection should carry its dependencies, or refuse.
 - Holds move. The hold moved from 14:15Z to 10:26Z, and the controller was re-merged four times onto M2b's moving head. Keeping a gated controller per M2b head made each move a merge, a gate and a push.
+
+**M4 re-cut (feat/117-m4-recut, from main b1b15484, merged with main at a08fa842; 2026-11-23; nothing run live).** M4
+was ported by task from the closed `feat/117-m4` onto a main that had moved a month: T1 install, T2 the permission
+flow, T3 `accept-native`, T4 the hosted gate's bundle, T5 the window-frame probe with PR #199, T6 docs and the model
+rules, T7 the records and hold 10's evidence, then the engine's 0.2.0 and the whole-branch review. Every task was
+executor-built and reviewed to clean (T1 four rounds, T2 three, T3 three, T4 two, T5 four, T6 two, T7 one); the
+whole-branch review found eight cross-task defects and then three in their fixes, all fixed but two accepted risks.
+Proven here: the focused suites (1,990 tests, 0 failures, at the final head), `swift test` (1,702, 0 failures) and an
+Xcode 27.2 release build after #504. Owed: the hosted `engine-swift` and `sandbox-live` runs on the pull request, the
+download-proof evidence re-anchored after the squash, and acceptance 1 and 8 live, which M5 carries (sitting D, O1).
+
+What changed from M4 as built: install never approves and builds beside the approved engine (ruling 1118), so an
+update never takes away a working engine; `cua engine approve` promotes under an exclusive lock and rolls back; the
+harness and acceptance code fail closed wherever M4 inferred settlement or emptiness from an absent reading.
+
+Lessons:
+- A contract with a concurrent writer (the pending slot, the approve lock, a probe journal) needs its claim taken before
+  the wait, not checked after it: three review rounds each found the next interleaving until the claim moved first.
+- Absence is not evidence. An empty process table, a failed window read and a missing record each authorized an action
+  (a restore, a SIGTERM, a "restored") until the code required a positive reading.
+- Porting by task onto a moved main surfaced the later decisions as review findings (#235's cursor panel, #458's
+  exact window number, main's end_task generation); each port's report naming "main's later decision wins" made them
+  cheap to settle.
+- Parallel executors in one checkout worked when each owned disjoint paths and committed path-limited; one bare
+  `git reset` unstaged everyone's index, so the rule belongs in every brief.

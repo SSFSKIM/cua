@@ -60,6 +60,24 @@ import {chromeFacts} from '../profiles/chrome.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
 import {currentBrowserKeys, keysBeyondLaunch} from '../chrome/discovery.mjs';
+
+// profiles_list's keys as browser ids (#493), put on a tools/call as it reaches the runtime (lazy-runtime.mjs
+// `outgoing`): a first call held by the launch is stamped after the MAWS backends' hellos. With them, the keys whose
+// socket the runtime was not launched with (a profile bound since), which its browser service cannot dial: an optional
+// hint, left out, with a diagnostic, when its lookup fails, so the call is still delivered (the keys themselves are
+// read failure-free: a registry that cannot be read contributes none).
+export function browserKeysStamp({home, mawsKeys, launchPaths, diagnostics = () => {}}) {
+  return msg => {
+    const meta = msg.params?._meta;
+    if (msg.method !== 'tools/call' || meta === null || typeof meta !== 'object') return msg;
+    const keys = currentBrowserKeys(home, {mawsKeys: mawsKeys()});
+    let unreached = [];
+    try { unreached = keysBeyondLaunch(home, keys, launchPaths()); } catch (error) {
+      diagnostics(`the browser keys a relaunch would reach could not be told (${error.code ?? error.message}); the call goes without that hint`);
+    }
+    return {...msg, params: {...msg.params, _meta: {...meta, [BROWSER_KEYS_META]: keys, ...(unreached.length ? {[BROWSER_KEYS_UNREACHED_META]: unreached} : {})}}};
+  };
+}
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
 import {resolveCursorContext} from '../runtime/cursor-identity.mjs';
 
@@ -142,16 +160,9 @@ export async function openConnection({home, env = process.env, sessionId, input,
         diagnostics(`the stopped runtime's working directory could not be removed (${error.code ?? error.message}); the next launch reuses it and the connection's close retries removal`);
       }
     };
-    // profiles_list's keys as browser ids (#493), read as each call reaches the runtime: a first call held by the launch
-    // is stamped after the MAWS backends' hellos. With them, the keys whose socket the runtime was not launched with
-    // (a profile bound since), which its browser service cannot dial.
-    const stamp = msg => {
-      const meta = msg.params?._meta;
-      if (!serverSettings.surfaces.includes('browser') || msg.method !== 'tools/call' || meta === null || typeof meta !== 'object') return msg;
-      const keys = currentBrowserKeys(home, {mawsKeys: browserBackends?.keys() ?? null});
-      const unreached = keysBeyondLaunch(home, keys, launch?.env.BROWSER_USE_BACKEND_PATHS ?? '');
-      return {...msg, params: {...msg.params, _meta: {...meta, [BROWSER_KEYS_META]: keys, ...(unreached.length ? {[BROWSER_KEYS_UNREACHED_META]: unreached} : {})}}};
-    };
+    const stamp = serverSettings.surfaces.includes('browser')
+      ? browserKeysStamp({home, mawsKeys: () => browserBackends?.keys() ?? null, launchPaths: () => launch?.env.BROWSER_USE_BACKEND_PATHS ?? '', diagnostics})
+      : msg => msg;
     const upstream = lazyRuntime({start, stopped, diagnostics, outgoing: stamp,
       records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(','),
         host: hostIdentity({host: replHost.host, release: runtime.release})})});

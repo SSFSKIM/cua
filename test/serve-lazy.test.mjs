@@ -17,6 +17,7 @@ import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-ho
 import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
 import {serve, settingsFrom} from '../src/mcp/server.mjs';
 import {handshakeRecords, lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
+import {browserKeysStamp} from '../src/mcp/connection.mjs';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
@@ -809,6 +810,34 @@ test('lazyRuntime finishes a message as it leaves for the runtime: a held one wh
   assert.equal(second.params._meta.stage, 'running');
   runtime.text(second, 'next');
   await next.response;
+  h.client.eof();
+  await h.server.closed;
+});
+
+test('a held call is delivered with its keys when the unreached-keys lookup throws; only that hint is left out (#493)', async t => {
+  const dir = scratch();
+  t.after(dir.cleanup);
+  writeFileSync(join(dir.dir, 'file'), '');
+  const home = join(dir.dir, 'file', 'home');   // resolving it throws ENOTDIR, as a home gone unresolvable mid-launch would
+  const diagnostics = [];
+  const stamp = browserKeysStamp({home, mawsKeys: () => ({maws: 'maws:app-1'}), launchPaths: () => '', diagnostics: line => diagnostics.push(line)});
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const runtime = fakeUpstream();
+  const upstream = lazyRuntime({start: async () => { await gate; return runtime; }, records: {read: () => RECORD, write: () => {}}, outgoing: stamp});
+  const h = harness({upstream});
+  await h.client.request('initialize', INIT).response;
+  const held = h.client.call('js', {code: 'held'});
+  await tick(20);
+  release();
+  runtime.reply(await runtime.nextRequest('initialize'), RECORD.initialize);
+  const call = await runtime.nextCall('js');
+  assert.deepEqual(call.params.arguments, {code: 'held'});
+  assert.deepEqual(call.params._meta['cua/browserKeys'], {maws: 'maws:app-1'});
+  assert.equal(Object.hasOwn(call.params._meta, 'cua/browserKeysUnreached'), false);
+  assert.match(diagnostics.join('\n'), /could not be told \(ENOTDIR\)/);
+  runtime.text(call, 'held');
+  assert.equal(textOf(await held.response), 'held');
   h.client.eof();
   await h.server.closed;
 });

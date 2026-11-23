@@ -8131,6 +8131,19 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   Consequence for the hosted kits: after a build the bundle is in the slot until approve runs, so T4's gate and H0's
   step 1 read `bundlePath` from the build's answer or run approve first.
   Date/Author: 2026-11-23, M4 re-cut controller (T1, fix wave 1).
+- Decision (T1's fix wave 2, the promote made safe without a lock): a build never waits on an approve. Approve writes
+  `promoting.json {pid}` beside the bundle while it promotes; a promote is taken as cut short only when that pid is
+  gone or the marker is absent, and the next approve or build then recovers it by moving files only (the approved
+  build back first). The rollback parks the promoted bundle under the approving process's name, puts the previous
+  bundle back first, and returns the promoted one to the slot only if the slot is still free (a build published
+  meanwhile keeps it). A successful approve removes only an empty slot directory, and `pending.json` only while it
+  still names the promoted build. `cua engine approve` aborts on SIGINT through the same rollback as answering `n`.
+  A build that is already the approved one discards the slot only when the slot holds that same build and identity.
+  When the promoted engine refuses the rollback's stop (busy), the bundles still go back on disk, the answer carries
+  `candidateRunning {pid}` and the owner is told that it still holds the socket and to run `cua engine stop` once idle:
+  restoring the files is not restoring service. The answer's `rollback {previousRestored, pendingAgain,
+  candidateRunning}` replaces `restored`. A recycled pid of a killed approve delays recovery until that pid is gone.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1, fix wave 2).
 - Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
   its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
   (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the

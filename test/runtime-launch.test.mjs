@@ -1159,6 +1159,9 @@ test('the build pending beside the approved engine, read from the files in eithe
   assert.match(refusal().message, /a newer build \(dddddddddddd, version 0\.2\.0\) is pending beside it: approve it with `cua engine approve`/);
   bundleAt(slot, '0.1.5', PENDING_BUILD);
   assert.match(refusal().message, /`cua install --engine`/, 'a pending build below the minimum is no upgrade');
+  // The slot is authoritative: a re-signed copy of the approved build there (M4's builder stages one) is pending.
+  bundleAt(slot, '0.1.0', OLD_APP.build);
+  assert.deepEqual(read(), {build: OLD_APP.build, engineVersion: '0.1.0', bundlePath: slot, builtAt: null});
   rmSync(join(dir, 'pending'), {recursive: true});
   // Before ruling 1118: the build replaced the approved bundle at its path, and pending.json names it.
   bundleAt(join(dir, 'cua Engine.app'), '0.2.0', PENDING_BUILD);

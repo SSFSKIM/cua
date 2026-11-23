@@ -122,8 +122,15 @@ struct ElementData {
     children = elementList(values["AXChildren"])
     childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
     childrenLeaf = values["AXChildren"] == nil && absent.contains("AXChildren")
-    nonText = Set(StalePointLabelPart.allCases.map(\.attribute).filter { name in values[name].map { stringValue($0) == nil } ?? false })
+    nonText = Set(StalePointLabelPart.allCases.map(\.attribute).filter { name in values[name].map { !isTextValue($0) } ?? false })
   }
+}
+
+/// Whether a value is of a type `stringValue` reads as text, by its type alone: the contents are never touched (a text
+/// area's AXValue may be a whole document).
+private func isTextValue(_ value: CFTypeRef) -> Bool {
+  let type = CFGetTypeID(value)
+  return type == CFStringGetTypeID() || type == CFAttributedStringGetTypeID()
 }
 
 private func stringValue(_ value: CFTypeRef) -> String? {

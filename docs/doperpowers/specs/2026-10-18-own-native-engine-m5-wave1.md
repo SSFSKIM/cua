@@ -129,6 +129,16 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,
   watched at 120 s or more, no ci-gate, no TCC write beyond the kit's guard (ruling 1111). The cua side runs now on
   feat/117-m5's head; the vendor pair waits on T10's lane after H0. Run ids and results go into 420.md.
+- 2026-11-23, T8b (99a2e812b..213b3da02): the engine never read `CUA_ENGINE_SPIKE_ROUTE`; the service and harness
+  readers and the `route-ab` cell are removed, the engine's own `spikeRoute` argument stays for the M0 spike harness
+  (no product path reaches it), and hold 3's `route-ab` result files no longer validate but stay as record. The
+  pressKey row keeps one id (`…/pressKey.rk`) with its expected text chosen by the observed source (`rk` Latin, `가`
+  engaged Korean); a declaration of a pressKey row is refused in the expected file, and the summary fails the row where
+  a valid vendor sample reads otherwise (ruling 1119's "fails and cannot be declared"). The per-context rows are kept
+  out of the manifest and every verdict by their condition (so hold 3's unmarked rows are excluded too), runs mark them
+  `excluded`, and the summary has a "Not judged" section listing the plan's 54 per-context rows with the cause. Whether
+  2-Set's layout engages after refocus on a runner is T10's question; if it never does, the Korean rows stay NO
+  VERDICT.
 - 2026-11-23, T8a's review (7e948e006..7d71f26e2): ruling 1128's refusal is `concealedInputUnavailable` with a
   value-free meta word `concealedRefusal: inputSource | droppedCharacter`, which the service does not forward into
   the model-visible `cua/*` meta; the wrapper picks its fixed sentence by cause, an absent cause getting the

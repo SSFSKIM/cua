@@ -469,3 +469,32 @@ the row became `invalid`: no witness outcome and no oracle entry. Now the gate's
 - `CUA_NODE=/opt/homebrew/opt/node@26/bin/node node --test test/services-sky*.test.mjs test/services-engine-*.test.mjs
   test/spike-engine-service.test.mjs test/repl-host/trusted-worker.test.mjs` → `# tests 306  # pass 305  # fail 0
   # skipped 1` (the pre-existing hosted-only skip).
+
+## Fix wave 3
+
+The round-3 review found one Important gap. It is fixed on top of part 2's fix wave (`9bc53a9c1`). That wave's changes
+to `alertCheck`, the `hostedRunOf` call, `run-doubles.mjs` and `run.test.mjs` are kept.
+
+### The skipped branch accounts for its own before-read (`steps.mjs caseRow`)
+
+After a failed re-activation, `caseRow` closed its row window at the prepare's end, because the after-read fix sat
+below the early return. An alert activation that the watcher saw during the before-read, the read that prompted the
+re-activation, was then left unaccounted. The method row and its timing both said `activation`, but
+`result.complete` was false.
+
+The final before-read (the result of `userFront` or `drivenFront`) now goes through the row's `span` before
+`activated` is checked. The row's window therefore covers that read and the re-activation between it and the prepare.
+`accountActivations` checks the harness's steps first, so an activation of the app a harness step intended still goes
+to that step. Only another app's activation becomes the row's. The sample is NO VERDICT and the run stays complete
+(ruling 1141).
+
+### Commands and output
+
+- RED: the timing regression in `run-records.test.mjs` was extended. The watcher's stop now reports the alert's
+  activation at the end of that before-read, past the prepare's margin, and the test asserts `complete` and no
+  unaccounted activation. Command: `node --test --test-name-pattern="timing is skipped with it"
+  test/native-matrix/run-records.test.mjs` gave `["1 activation(s) fell in no step of the run: not accounted for"]`
+  (`false !== true`), `# pass 0  # fail 1`.
+- GREEN: the same command after the fix gave `# pass 1  # fail 0`.
+- `node --test test/native-matrix/*.test.mjs test/hosted-sittings/*.test.mjs` gave `# tests 505  # pass 505  # fail 0`.
+  The dot reporter printed nothing else.

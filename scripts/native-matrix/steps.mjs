@@ -225,7 +225,9 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     row.focusReadBy = verdict.by;
     if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
   }
-  const before = regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target);
+  // The row's window runs through the final before-read, so what it saw (an alert that prompted a re-activation) is
+  // the row's even when the act is then skipped; a harness step's own app keeps its precedence (./oracle.mjs).
+  const before = span(regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target));
   if (!activated(ctx, app)) {
     // The skipped act's timing is skipped with it, the case's readings its own, so no planned sample goes missing.
     const skipped = done({frontKey: {...skippedReadings(ctx, apps, app), before: keyReading(before)}});

@@ -105,19 +105,28 @@ test('a scene command that could not bring its app to the front: every sample it
 test('a case whose re-activation after its prepare did not take: its timing is skipped with it, the case\'s readings its own', async () => {
   const calls = [];
   const prepare = cellsOf('textedit', 'click', 'control').prepare;
-  let armed = false;
-  const {result} = await runWith({env: HOSTED, calls, plan: planOf('matrix', {scene: 'textedit'}), ops: steer((a, answer) => {
+  let armed = false, alertSeen = null;
+  const {result} = await runWith({env: HOSTED, calls, plan: planOf('matrix', {scene: 'textedit'}), ops: {...steer((a, answer) => {
     // After click.control's prepare the alert is front and key, and the activation that follows does not take it back.
-    if (a[0] === 'read' && a.includes('--with') && calls.at(-1)?.code.includes(prepare)) { armed = true; return {...answer, frontKey: {front: ALERT, key: ALERT}}; }
+    if (a[0] === 'read' && a.includes('--with') && calls.at(-1)?.code.includes(prepare)) {
+      armed = true;
+      if (alertSeen === null) alertSeen = answer.at[1];
+      return {...answer, frontKey: {front: ALERT, key: ALERT}};
+    }
     if (armed && a[0] === 'step' && a[1] === 'activate') { armed = false; return {...answer, frontKey: {front: ALERT, key: ALERT}}; }
     return answer;
-  })});
+  }),
+  // The watcher saw the alert come up during the before-read that prompted the re-activation (its end, past the
+  // prepare's margin): the row's, so the run stays complete and the sample is NO VERDICT (ruling 1141).
+  ...stopWith(() => ({activations: [{kind: 'activated', bundleId: ALERT, at: alertSeen}]}))}});
   const row = result.rows.find(r => r.id === 'textedit/frontmost/click.control' && r.sample === 1);
   assert.deepEqual([row.ok, row.invalid, row.frontKey.activate.front, row.frontKey.after], [false, undefined, false, null]);
   const timing = result.rows.filter(r => r.section === 'speed' && r.id === 'textedit/method.click.control');
   assert.equal(timing.length, 1, 'the timing row is there, once');
   assert.deepEqual([timing[0].ok, timing[0].frontKey], [false, row.frontKey]);
   assert.equal(sampleCause({...timing[0], hosted: true}).category, 'activation');
+  assert.equal(result.complete, true, JSON.stringify(result.problems));
+  assert.deepEqual(result.meta.activations.unaccounted, []);
 });
 
 test('the frontmost regime: a scene that is not front and key before its act is activated again, and the row reads the new check', async () => {
@@ -266,7 +275,6 @@ test('each speed sample reads front and key at its own call\'s boundaries, shari
 });
 
 test('an activation the front/key read after a measured call or a row saw is that call\'s or row\'s, never unaccounted', async () => {
-  const ALERT = 'com.apple.UserNotificationCenter';
   const at = (calls, code, index = 0) => calls.filter(c => c.code.includes(code))[index].at;
   // A speed sample's after-read: between the first getAXState sample's end and the second's start, past the calls'
   // margin. The sample's measure window runs to that read's end.

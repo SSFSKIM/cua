@@ -68,7 +68,7 @@ const headersFor = csp => ({'content-type': 'text/html; charset=utf-8', 'cache-c
 // COUNTERS_PATH, at every counted event and every input. Its CSP
 // is the shared one with only this script's hash added. The shared page stays byte-identical: every record so far was
 // taken on it.
-export const PAGE_VARIANTS = Object.freeze(['shared', 'counters', 'popup']);
+export const PAGE_VARIANTS = Object.freeze(['shared', 'counters', 'popup', 'pointerdown']);
 export const COUNTERS_PATH = '/counters';
 export const COUNTER_NAMES = Object.freeze(['windowFocus', 'windowBlur', 'textFocus', 'textBlur', 'mousedown', 'click']);
 export const COUNTERS_SCRIPT = "(() => { const c = {windowFocus: 0, windowBlur: 0, textFocus: 0, textBlur: 0, mousedown: 0, click: 0}; let seq = 0;"
@@ -113,6 +113,22 @@ export const POPUP_HTML = `<!doctype html>
 <body><main><button id="close" type="button">${POPUP_BUTTON}</button></main><script>${POPUP_CLOSE_SCRIPT}</script></body></html>
 `;
 
+// The pointerdown page (ruling 1168, #534; `scenes-mac.mjs up chrome --page pointerdown`, which only the native matrix's
+// run passes, ../plan.mjs MATRIX_SCENE_ARGS): the shared page with one line below every control, a button whose only
+// handler is `pointerdown` (no click handler) and a status beside it counting the pointer downs, so an element click is
+// judged by whether a pointer event reached the page (web UI kits open menus on pointerdown). The Electron fixture
+// carries the same line under its own flag (./electron/renderer.js). Its CSP is the shared one with this script's hash
+// added. Every other consumer (the renderer goldens, sitting B's native-mac suite, #187's slots) loads the shared page.
+export const POINTERDOWN = Object.freeze({variant: 'pointerdown', button: 'Pointer target', status: 'Pointer status', text: n => `Pointer downs: ${n}`});
+export const POINTERDOWN_LINE = `<p><button id="pointer" type="button">${POINTERDOWN.button}</button> <span id="pointer-status" role="status" aria-label="${POINTERDOWN.status}">${POINTERDOWN.text(0)}</span></p>\n`;
+export const POINTERDOWN_SCRIPT = "(() => { let downs = 0; const status = document.getElementById('pointer-status');"
+  + " document.getElementById('pointer').addEventListener('pointerdown', () => { downs += 1; status.textContent = 'Pointer downs: ' + downs; }); })();";
+const POINTERDOWN_HASH = createHash('sha256').update(POINTERDOWN_SCRIPT).digest('base64');
+export const POINTERDOWN_CSP = CSP.replace(`script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${POINTERDOWN_HASH}'`);
+const STATUS_LINE = `<p id="status" role="status" aria-label="Scene status">${PAGE_INITIAL.status}</p>\n`;
+export const POINTERDOWN_PAGE_HTML = PAGE_HTML.replace(STATUS_LINE, `${STATUS_LINE}${POINTERDOWN_LINE}`)
+  .replace(`<script>${SCRIPT}</script>`, `<script>${SCRIPT}</script><script>${POINTERDOWN_SCRIPT}</script>`);
+
 // What the server keeps of a counters beacon: its sequence, the textarea's length and each count, every one a
 // non-negative whole number, and whether the document had the focus (a boolean); anything else in the body is dropped.
 // -> {seq, length, counts, focused} or null.
@@ -132,8 +148,9 @@ export function countersRecord(text) {
 // there to answer, else 409), and serves the popup's document at POPUP_PATH. -> {url, port, close()}.
 export async function startScenePage({port = 0, onReady = null, page = 'shared', onCounters = null} = {}) {
   if (!PAGE_VARIANTS.includes(page)) throw new Error(`the page variant is ${PAGE_VARIANTS.join(' or ')}, not ${page}`);
-  const popup = page === 'popup', counters = page === 'counters' || popup;
-  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : PAGE_HTML, headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : CSP);
+  const popup = page === 'popup', counters = page === 'counters' || popup, pointerdown = page === 'pointerdown';
+  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : pointerdown ? POINTERDOWN_PAGE_HTML : PAGE_HTML;
+  const headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : pointerdown ? POINTERDOWN_CSP : CSP);
   let expectedHost, reported = false;
   const waiting = [];
   const server = createServer((req, res) => {

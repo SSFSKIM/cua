@@ -105,7 +105,8 @@ test('the cells that send a pointer: every click, drag and scroll call, by eleme
   // The acts that send one.
   for (const act of ['textedit click.element act', 'textedit click.control act', 'textedit scroll.down act', 'textedit drag.select act', 'textedit click.invalidIndex act',
     'openPanel click.cancel act', 'finder click.row act', 'finder scroll.down act', 'chrome click.checkbox act', 'chrome click.apply act', 'chrome drag.select act',
-    'electron click.button act', 'electron drag.select act', 'electron click.selection act', 'electron click.point act']) assert.ok(pointer.includes(act), act);
+    'electron click.button act', 'electron drag.select act', 'electron click.selection act', 'electron click.point act',
+    'chrome click.pointerdown act', 'electron click.pointerdown act']) assert.ok(pointer.includes(act), act);
   // The prepares that may: a focus click, a scroll back up, a row's harness click, the drag's verification clicks.
   for (const prepare of ['textedit pressKey.selectAll prepare', 'finder pressKey.down prepare', 'chrome typeText.replace prepare', 'electron click.point prepare',
     'textedit drag.select prepare', 'textedit performSecondaryAction.down prepare']) assert.ok(pointer.includes(prepare), prepare);

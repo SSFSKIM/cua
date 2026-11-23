@@ -142,6 +142,22 @@ test('a caret row (#258, #259) is equal only with the vendor\'s reading, even wh
   assert.equal(judged({vendor: {resolved: 9}}).methods.find(m => m.id === POINT).verdict, 'equal');
 });
 
+// Ruling 1168 (#534): the pointerdown cells are frontmost rows judged against the vendor's; cua's counter unchanged where
+// the vendor's rose blocks the sitting, and no declaration answers for it.
+test('ruling 1168: a pointerdown cell where cua\'s press reached no pointer handler and the vendor\'s did FAILs, declared or not', () => {
+  const missed = {ok: false, outcome: {pointerDownOnce: false, rose: 0}};
+  for (const id of ['chrome/frontmost/click.pointerdown', 'electron/frontmost/click.pointerdown']) {
+    const worse = judged({vendor: {resolved: 9}, cua: {tweak: set(id, missed)}});
+    assert.equal(worse.verdict, 'FAIL');
+    assert.ok(worse.blocking.includes(`method: ${id} is worse on cua`), worse.blocking.join('; '));
+    const declared = judged({vendor: {resolved: 9}, cua: {tweak: set(id, {...missed, outcome: {...missed.outcome, threw: 'The click could not be confirmed', errorName: 'clickUnconfirmed', unchanged: true}})},
+      departures: [{section: 'method', id, vendor: {answer: 'ok'}, cua: {answer: 'unconfirmed', errorName: 'clickUnconfirmed', sentence: 'The click could not be confirmed'}, decision: 'Decision Log, a made-up entry'}]});
+    assert.equal(declared.verdict, 'FAIL');
+    assert.equal(declared.methods.find(m => m.id === id).verdict, 'worse');
+  }
+  assert.equal(judged({vendor: {resolved: 9}}).methods.find(m => m.id === 'chrome/frontmost/click.pointerdown').verdict, 'equal');
+});
+
 // Ruling 1149: a full run whose lane attests another engine than its rows measure is no measurement of its side. The cua
 // side answered by the vendor's engine (state 1) would compare the vendor with itself: its rows are not judged, and the
 // missing proof names it, whatever the run says of itself.

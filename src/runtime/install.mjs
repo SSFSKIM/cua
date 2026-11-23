@@ -21,7 +21,7 @@
 // A linux pin lists nothing to signature-check; the archive hash is its trust root. On Linux the vendor's tree is a lane
 // of `cua install` kept for CUA_NATIVE_ENGINE=vendor (#171 M6a, src/runtime/linux-install.mjs), installed with
 // `activate: false`: the pointer names cua's own runtime there, and this install leaves it as it was. A runtimes/ that is
-// not a real directory blocks every release under it, and is refused as what stands in the way.
+// not a directory blocks every release under it, and is refused as what stands in the way.
 //
 // The archive's Chrome plugin (OpenAI's host for the ChatGPT extension) is not installed: #79 removed that route. A
 // release installed before keeps the chrome-plugin directory it was given; nothing reads or launches it.
@@ -72,8 +72,8 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
   assertHostSupports(manifest, host);
   const real = realHome(home, {create: true});
   const layout = homeLayout(real);
-  // A runtimes/ that is a file or a link blocks every release under it: named as what stands in the way.
-  if (existsAs(layout.runtimes) && !isRealDirectory(layout.runtimes)) occupied(layout.runtimes);
+  // A runtimes/ that is not a directory blocks every release under it: named as what stands in the way.
+  if (blocksDirectory(layout.runtimes)) occupied(layout.runtimes);
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);
@@ -194,8 +194,10 @@ function occupied(target) {
   return fail('target_occupied', `${target} exists and was not installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
 }
 
-function existsAs(path) {
-  try { lstatSync(path); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+// Whether something at `path` stands where a directory must be: a file, or a link that leads to none.
+function blocksDirectory(path) {
+  try { return !statSync(path).isDirectory(); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { lstatSync(path); return true; } catch { return false; }
 }
 
 export function assertTargetFree(target) {

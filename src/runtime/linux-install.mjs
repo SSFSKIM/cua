@@ -98,7 +98,7 @@ export async function installLinux({values, home, env = process.env, host = {pla
 
   // 6: cua's engine.
   const engine = await attempt(() => installEngine({home, pin: enginePin()}), 'linux_engine_install_failed');
-  say(engine.failed ? `cua's Linux engine was not installed: ${engine.failed.message} (${engine.failed.code})${requested.cua ? '' : '; only sessions on cua\'s engine need it, and this home selects the vendor\'s'}`
+  say(engine.failed ? `cua's Linux engine was not installed: ${engine.failed.message} (${engine.failed.code})${requested.cua ? '' : '; only sessions on cua\'s engine need it, and this home does not select it'}`
     : engine.changed ? `installed cua's Linux engine ${engine.version} (${engine.release}) at ${engine.path}`
       : `cua's Linux engine ${engine.version} (${engine.release}) is already installed and verified at ${engine.path}`);
 
@@ -122,7 +122,8 @@ export async function installLinux({values, home, env = process.env, host = {pla
   if (codexLeftovers && !codexLeftovers.failed) for (const line of describeRemoval(codexLeftovers)) say(line);
   else if (!codexLeftovers) for (const line of describeLeftovers(findCodexLeftovers({home, pins: pinsOf()}))) say(line);
 
-  const browser = commonFailed.length === 0 && !pointer.failed;
+  // The pointer selects nothing (§4.3): what opens follows the parts alone.
+  const browser = commonFailed.length === 0;
   const sessions = {browser, cua: browser && !engine.failed, vendor: browser && !vendor.failed};
   say(opensNow(sessions, node));
 
@@ -156,7 +157,7 @@ function movePointer(home, release, complete) {
 // The last line: which sessions open now.
 function opensNow({browser, cua, vendor}, node) {
   if (!browser) return 'opens now: nothing, since a common part is missing (above): every session needs it';
-  const head = node.skipped ? 'opens now, each with CUA_NODE (--no-node placed no Node): ' : 'opens now: ';
+  const head = node.skipped ? `opens now, each with CUA_NODE (${node.skipped === 'no_node' ? '--no-node placed no Node' : 'no Node is pinned here'}): ` : 'opens now: ';
   const vendorWords = 'the vendor\'s (CUA_NATIVE_ENGINE=vendor)';
   const computer = cua && vendor ? `computer sessions on cua's engine, and on ${vendorWords}`
     : cua ? `computer sessions on cua's engine; not on ${vendorWords}: its release is not installed`

@@ -25,6 +25,8 @@ private final class Node {
   /// Label attributes whose read fails, at the observation (for the walk's record) and now (the review of
   /// 7f6eb3dc..b2f00ad5, P2 2): an error, not an attribute the element lacks.
   var unreadable: Set<StalePointLabelPart> = []
+  /// Label slots that answer a value that is not text now (CFNull), which only a strict read tells from absence (#481).
+  var nullSlots: Set<StalePointLabelPart> = []
   /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
   var roleUnread = false
   var actionsUnread = false
@@ -93,7 +95,16 @@ private var reads: StalePointReads<Node> {
                                             }
                                           }, same: { $0 === $1 },
                                           // Destroyed, not merely a frame unread (#431's review of 849bcdad, finding 3).
-                                          gone: { $0.frame == nil })
+                                          gone: { $0.frame == nil },
+                                          // #481: a slot answering CFNull is unknown to the strict read, absent to the rest.
+                                          strictLabel: { node, part in
+                                            if node.unreadable.contains(part) || node.nullSlots.contains(part) { return .unreadable }
+                                            switch part {
+                                            case .title: return .text(node.title)
+                                            case .description: return .text(node.description)
+                                            case .value: return .text(node.value)
+                                            }
+                                          })
 }
 
 /// The reads an observation with a screenshot emits for `root`'s tree, every node walked but `skipped` ones (as `TreeWalk`
@@ -5356,9 +5367,9 @@ extension OtherControlOnTopTests {
   }
 
   /// No veil: the record takes A's text at the point, its recorded control A. The first hit is the list (main:
-  /// `nonInteractiveHit`), the corrected hit A: the node's own recorded control, passing #433's test, is pressed. A
-  /// relabelled since fails that test: main's route.
-  func testTheRoutePressesTheNodesOwnRecordedControl() {
+  /// `nonInteractiveHit`), the corrected hit A, the node's own recorded control: not routed (ruling 1127, #499), so main's
+  /// route, relabelled or not.
+  func testTheNodesOwnRecordedControlIsMainsRoute() {
     for relabelled in [false, true] {
       let page = Page(veiled: false)
       let (verdict, _, _) = judged(page, at: atText, corrected: { $0.a }) { page in
@@ -5368,8 +5379,8 @@ extension OtherControlOnTopTests {
       XCTAssertTrue(verdict.node?.element === page.aText)
       XCTAssertEqual(verdict.reason, .nonInteractiveHit)
       XCTAssertTrue(verdict.hit === page.list)
-      XCTAssertTrue(relabelled ? verdict.routeControl == nil : verdict.routeControl === page.a, "relabelled \(relabelled)")
-      XCTAssertEqual(verdict.routeControlSource, relabelled ? nil : .node, "the node's own recorded control")
+      XCTAssertNil(verdict.routeControl, "relabelled \(relabelled)")
+      XCTAssertNil(verdict.routeControlSource)
     }
   }
 
@@ -5469,12 +5480,28 @@ extension OtherControlOnTopTests {
   }
 }
 
-/// #481's fix wave (ruling 1123): the review of b1b15484..8351fb49 found three wrong presses, each a link relabelled "Open"
-/// to "Delete" during the 80 ms wait or a hold. The route's control qualifies by its own label-checked test on the
-/// corrected hit, and again on the route's gate after a wait or a focus hold; each shape answers as main (no press).
+
+/// #481's last waves (rulings 1123, 1127): the route presses only #433's control beneath (`beneath`), and checks it once,
+/// from its own fresh reads and nothing taken from any hit, as the last step before the press on every path
+/// (`routeDispatchCheck`, `pressAfterFinalCheck`'s `lastCheck`). Each shape that would press a changed control answers
+/// as main, nothing pressed.
 extension OtherControlOnTopTests {
-  /// P1a: A, #433's control beneath, kept before the wait with its label "Open", relabelled "Delete" during it; the
-  /// corrected hit names A, whose own named-candidate check fails. Not pressed: main's route.
+  /// The `overcontrol` route after a wait: the veil first, the corrected hit A's text, A routed as the control beneath.
+  private func routedBeneath() -> (page: Page, verdict: StalePointVerdict<Node>) {
+    let page = Page()
+    let verdict = judged(page, at: atLink, corrected: { $0.aText }) { $0.veil }.verdict
+    XCTAssertTrue(verdict.routeControl === page.a)
+    XCTAssertEqual(verdict.routeControlSource, .beneath)
+    return (page, verdict)
+  }
+
+  /// The refusal's sentence, from the route's check.
+  private func dispatchSentence(_ verdict: StalePointVerdict<Node>) -> String? {
+    routeDispatchRefusal(verdict, reads).flatMap { stalePointOutcome($0, ms: 0, reads: reads).refusal?.message }
+  }
+
+  /// P1a (ruling 1123): A, #433's control beneath, kept before the wait with its label "Open", relabelled "Delete" during
+  /// it; the corrected hit names A. Not routed: main's route.
   func testAControlBeneathRelabelledDuringTheWaitIsNotPressed() {
     let page = Page()
     let (verdict, _, _) = judged(page, at: atLink, corrected: { page in
@@ -5484,57 +5511,83 @@ extension OtherControlOnTopTests {
     XCTAssertFalse(verdict.refused, "\(verdict.reason)")
     XCTAssertEqual(verdict.hitCorrection, .changed)
     XCTAssertNil(verdict.routeControl)
-    XCTAssertNil(verdict.routeControlSource)
   }
 
-  /// P1b: the node's own recorded control A, relabelled "Delete" during the wait with its frame unreadable now; the
-  /// corrected hit lies in it. `underlyingRefusal`'s frame-unread pass reads no label; the route's test does: not pressed.
-  /// So with A's title unreadable now (unknown, never confirmed), and A's label unchanged it qualifies.
-  func testTheNodesOwnControlRelabelledWithItsFrameUnreadIsNotPressed() {
-    for (name, change) in [("relabelled", { (a: Node) in a.title = "Delete" }), ("title unreadable", { (a: Node) in a.unreadable = [.title] }),
-                           ("unchanged", { (_: Node) in })] as [(String, (Node) -> Void)] {
-      let page = Page(veiled: false)
-      let (verdict, _, _) = judged(page, at: atText, corrected: { page in
-        change(page.a)
-        page.a.frameUnread = true
-        return page.aText
-      }) { $0.list }
-      XCTAssertEqual(verdict.reason, .nonInteractiveHit, name)
-      XCTAssertEqual(verdict.hitCorrection, .changed, name)
-      if name == "unchanged" {
-        XCTAssertTrue(verdict.routeControl === page.a, name)
-        XCTAssertEqual(verdict.routeControlSource, .node, name)
-      } else {
-        XCTAssertNil(verdict.routeControl, name)
+  /// The `overcontrol` delivery still lands: the route's check passes on A unchanged, after the decision.
+  func testTheRoutesCheckPassesOnAnUnchangedControlBeneath() {
+    let (_, verdict) = routedBeneath()
+    XCTAssertNil(routeDispatchRefusal(verdict, reads))
+  }
+
+  /// P1c (ruling 1123): A relabelled "Delete" after the decision, during the route's wait or hold: refused before the
+  /// press, naming the new label (main's press verdict on the fresh check would take A as `hitAboveNode`).
+  func testTheRoutesControlRelabelledBeforeThePressIsRefused() {
+    let (page, verdict) = routedBeneath()
+    page.a.title = "Delete"
+    let refused = routeDispatchRefusal(verdict, reads)
+    XCTAssertEqual(refused?.reason, .relabelled)
+    XCTAssertTrue(refused?.underlyingRefused == true)
+    XCTAssertTrue(dispatchSentence(verdict)?.contains("that control now reads \"Delete\"") == true, dispatchSentence(verdict) ?? "nil")
+  }
+
+  /// The re-review of ad5e8400, (a): A's frame unreadable at the press. Nothing is taken from any hit (the fresh check's
+  /// first hit inside A no longer vouches): refused, with its own reason and sentence.
+  func testAControlWhoseFrameDoesNotReadAtThePressIsRefused() {
+    let (page, verdict) = routedBeneath()
+    page.a.frameUnread = true
+    XCTAssertEqual(routeDispatchRefusal(verdict, reads)?.reason, .frameUnread)
+    XCTAssertTrue(dispatchSentence(verdict)?.contains("that control has a position that could not be read") == true, dispatchSentence(verdict) ?? "nil")
+  }
+
+  /// (b): A's handle moved during a hold out of the recorded web area, into a toolbar at the same coordinates, its frame
+  /// and label unchanged: refused as having left the page.
+  func testAControlMovedOutOfTheWebAreaIsRefused() {
+    let (page, verdict) = routedBeneath()
+    let toolbar = Node("AXToolbar", CGRect(x: 0, y: 90, width: 600, height: 50))
+    page.window.add(toolbar)
+    page.a.reparent(to: toolbar)
+    XCTAssertEqual(routeDispatchRefusal(verdict, reads)?.reason, .otherWebArea)
+    XCTAssertTrue(dispatchSentence(verdict)?.contains("that control has left the page the screenshot showed") == true, dispatchSentence(verdict) ?? "nil")
+  }
+
+  /// (c): the held-activation path (the pointer refused, the element route entered with waited false, no hold of the
+  /// route's own): the route's check runs anyway, last before the press, and a refusal presses nothing. With a hold, it
+  /// runs after the hold and the final check. Unchanged, the press goes out.
+  func testTheRoutesCheckRunsOnEveryPathLastBeforeThePress() {
+    for holds in [false, true] {
+      for relabelled in [true, false] {
+        let (page, verdict) = routedBeneath()
+        var steps: [String] = []
+        let pressed = (try? pressAfterFinalCheck(holds: holds, hold: { steps.append("hold") }, finalCheck: { afterHold in
+          steps.append("final")
+          if afterHold, relabelled { page.a.title = "Delete" }  // relabelled during the hold
+        }, lastCheck: { _ in
+          steps.append("check")
+          if !holds, relabelled { page.a.title = "Delete" }  // or during the activation's own wait before the route
+          if let refused = routeDispatchRefusal(verdict, reads) { throw EngineError(name: "screenChangedSinceScreenshot", "\(refused.reason)") }
+        }, perform: { steps.append("press") })) != nil
+        let name = "holds \(holds), relabelled \(relabelled)"
+        XCTAssertEqual(pressed, !relabelled, name)
+        XCTAssertEqual(steps, (holds ? ["hold"] : []) + ["final", "check"] + (relabelled ? [] : ["press"]), name)
       }
     }
   }
 
-  /// P1c: the route's control A qualified at the decision, then relabelled "Delete" during the route's wait or focus
-  /// hold. The gate's fresh check takes the node A's text with the hit on A (`hitAboveNode`), which main's press verdict
-  /// accepts; the route's own test refuses before anything is pressed. Unchanged, the gate keeps.
-  func testTheRoutesControlRelabelledBeforeThePressIsRefused() {
-    for relabelled in [true, false] {
-      let page = Page(veiled: false)
-      let (nodes, frameless, members) = walkRecord(page.window)
-      let first = stalePointVerdict(at: atText, nodes: nodes, frameless: frameless, recorded: members, hit: page.list,
-                                    correctedHit: { WindowHit(element: page.aText, place: .observedWindow(inPopover: false)) }, reads: reads)
-      XCTAssertTrue(first.routeControl === page.a)
-      let gate = StalePointGate(first: first, firstMs: 0) { [self] in
-        StalePointRecheck(stalePointVerdict(at: atText, nodes: nodes, frameless: frameless, recorded: members, hit: page.a, reads: reads))
-      }
-      if relabelled { page.a.title = "Delete" }
-      XCTAssertEqual(stalePointPressVerdict(page.a, stalePointVerdict(at: atText, nodes: nodes, frameless: frameless, recorded: members,
-                                                                      hit: page.a, reads: reads), reads: reads).reason, .hitAboveNode,
-                     "main's press verdict on the fresh check")
-      let checked = gate.check(page.a, waited: true, now: { 0 }, reads: reads)
-      if relabelled {
-        XCTAssertEqual(checked.record.reason, .relabelled)
-        XCTAssertEqual(checked.refusal?.errorName, "screenChangedSinceScreenshot")
-        XCTAssertTrue(checked.refusal?.message.contains("now reads \"Delete\"") == true, checked.refusal?.message ?? "nil")
-      } else {
-        XCTAssertNil(checked.refusal)
-      }
+  /// A label that cannot be confirmed refuses with its own reason, never "is gone": a title read that fails, and a title
+  /// slot answering CFNull beside a recorded description (absent to every other read, which would fall through to the
+  /// description and confirm it).
+  func testAnUnknownLabelSlotRefusesWithItsOwnReason() {
+    for slot in ["unreadable", "CFNull"] {
+      let page = Page()
+      page.a.title = nil
+      page.a.description = "Open"
+      let verdict = judged(page, at: atLink, corrected: { $0.aText }) { $0.veil }.verdict
+      XCTAssertTrue(verdict.routeControl === page.a, slot)
+      if slot == "CFNull" { page.a.nullSlots = [.title] } else { page.a.unreadable = [.title] }
+      XCTAssertEqual(routeDispatchRefusal(verdict, reads)?.reason, .labelUnread, slot)
+      let sentence = dispatchSentence(verdict) ?? "nil"
+      XCTAssertTrue(sentence.contains("that control reads a label that could not be read"), "\(slot): \(sentence)")
+      XCTAssertFalse(sentence.contains("is gone"), slot)
     }
   }
 }

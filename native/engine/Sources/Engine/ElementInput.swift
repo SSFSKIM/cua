@@ -553,9 +553,23 @@ extension Engine {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
                                finalCheck: pressChecks(finalStalePointCheck(stalePoint, pressing: control), popUpPress, control),
+                               lastCheck: pressingCorrected == nil ? nil : routeDispatchGate(stalePoint, app: app),
                                tolerates: popUpPress.map { hook in { hook.tolerates($0) } }, meta: &meta)
       }
     }
+  }
+
+  /// #481 (ruling 1127): the corrected route's one check of the control it presses (`routeDispatchCheck`), from that
+  /// control's own fresh reads, as the last step before the press on every path (`pressAfterFinalCheck`'s `lastCheck`):
+  /// a failure throws its refusal with its record in the meta, nothing pressed.
+  func routeDispatchGate(_ stalePoint: StalePointGate<AXUIElement>?, app: ResolvedApp)
+    -> ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? {
+    stalePoint.map { gate in { afterHold, meta in
+      guard let refused = routeDispatchRefusal(gate.first, .live) else { return }
+      let outcome = stalePointOutcome(refused, ms: 0, afterActivation: afterHold, app: app.displayName, reads: .live)
+      meta.stalePoint = outcome.record
+      if let refusal = outcome.refusal { throw refusal }
+    } }
   }
 
   /// #296's last check of an element route's target, after its focus hold (`elementActionClick`'s `finalCheck`): only a
@@ -801,10 +815,11 @@ extension Engine {
   func elementActionClick(_ element: AXUIElement, owner: pid_t, action: String, route: InputRoute, point: CGPoint?, windowID: CGWindowID?,
                           app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                           finalCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil,
+                          lastCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil,
                           tolerates: ((AXError) -> Bool)? = nil, meta: inout InputMeta) throws {
     try pressAfterFinalCheck(holds: route == .activation, hold: {
       try holdElementFocus(element: element, owner: owner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
-    }, finalCheck: { afterHold in try finalCheck?(afterHold, &meta) }, perform: {
+    }, finalCheck: { afterHold in try finalCheck?(afterHold, &meta) }, lastCheck: { afterHold in try lastCheck?(afterHold, &meta) }, perform: {
       try guarding.checkInFlight()
       if let point { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point)) }
       try deliverAction(action, route: route, tolerates: tolerates, perform: { gatedPerform(element, $0) }, meta: &meta)

@@ -8195,6 +8195,60 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   requalifying. 1668 swift tests, 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #481.
 
+- Decision (#481, ruling 1127, the focused re-review of ad5e8400, 2026-11-23, the last wave; narrows the entries above):
+  **#481 routes `beneath` only, and checks the pressed control once, from its own fresh reads, as the last step before
+  the press on every path.** The re-review found three more wrong presses, all at the gate:
+  - (a) an unreadable-frame control qualified against the recheck's first hit;
+  - (b) a handle moved during a hold out of the recorded web area, into a toolbar at the same coordinates, passed on its
+    frame and label;
+  - (c) the held-activation path (waiting in `HeldActivations.acquire`, entering through `PointerRefused`) runs with
+    `waited` false, so nothing checked the label again.
+
+  It also found two P2s:
+  - a CFNull title slot decodes as absent, so the label fell through to the description;
+  - an unreadable label refused with "is gone".
+
+  The new shape:
+  1. **`beneath` only.** The node's own recorded control is no longer routed and answers as main (ticket #499).
+     `StalePointRouteControl` has one case.
+  2. **One check, `routeDispatchCheck`,** of the captured handle from its own fresh reads. Nothing is taken from any hit.
+     It requires, in order:
+     - a role read now that the route presses, else `nodeGone`;
+     - a readable frame (`frameUnread`) that holds the point (`frameMoved`);
+     - fresh ancestry still reaching the recorded web area (`otherWebArea`);
+     - the label confirmed against the record (`routeLabelCheck`). A failed read, or a slot answering anything but
+       text, refuses `labelUnread`. That includes CFNull, which only the strict read sees (`StalePointReads.strictLabel`,
+       `stalePointStrictLabelRead`); the other reads are unchanged. Another label refuses `relabelled`, naming the label
+       it reads now.
+
+     The decision runs the same check to choose the route.
+  3. **The check is the route's last step before the press** (`pressAfterFinalCheck`'s `lastCheck`), on every path
+     whether a hold ran or `waited` was set. Only `checkInFlight` (a state read) and the cursor's asynchronous announce
+     lie between it and `deliverAction`'s AXPress. The gate's earlier requalification and `routeQualification` are
+     removed, so there is one place.
+  4. **The refusal is #433's sentence for a control under an inert layer** (`controlUnderInertChanged`). Each reason has
+     its own wording:
+     - "has left the page the screenshot showed";
+     - "reads a label that could not be read, so it may have changed";
+     - "has a position that could not be read";
+     - "now reads \"…\"".
+
+  Proven offline (`OtherControlOnTopTests`):
+  - P1a still refuses the route;
+  - `overcontrol`'s check passes on an unchanged A, so its delivery stands;
+  - P1c refuses with the new label;
+  - (a) refuses `frameUnread`;
+  - (b) refuses `otherWebArea`;
+  - (c) the check runs on the path with no hold and on the held one, after the hold and final check, and a refusal
+    presses nothing;
+  - an unreadable title and a CFNull title beside a recorded description refuse `labelUnread`, never "is gone";
+  - the node's own control answers as main.
+
+  Scratch reproducers of (a), (b) and (c) at ad5e8400's gate each let the press go out there (3 assertions). Four
+  mutations each fail a test: the check skipped on the path without a hold, an unknown slot accepted, an unreadable
+  frame passing as if from a hit, and the web-area check dropped. 1672 swift tests, 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #481.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

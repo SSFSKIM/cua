@@ -100,6 +100,18 @@ or the owner is prepared and named in its gate's disposition file under
   still typed and the read-back reports the dropped character; how secret text should behave is with the design
   session. The spec's Text paragraph (S L158: a character the layout cannot type goes as a Unicode key event) needs
   the Chromium exception.
+- 2026-11-23, T8a's review (7e948e006..7d71f26e2): ruling 1128's refusal is `concealedInputUnavailable` with a
+  value-free meta word `concealedRefusal: inputSource | droppedCharacter`, which the service does not forward into
+  the model-visible `cua/*` meta; the wrapper picks its fixed sentence by cause, an absent cause getting the
+  input-source sentence (engines before 1128 refused only for the source) and an unknown one a neutral sentence. When
+  both causes apply the dropped character is named, since no input source would type it. "0 keys posted" is proven in
+  unit tests by the meta's start and end times staying null; live key and pasteboard counts are the qualification
+  kit's. #186's runner oracle (`judgeMidSwitch`) holds the sentence's "after N of M characters" to the field's
+  committed prefix and M to the request's length. #190's Chrome row matches the refusal whole, bare or in the server
+  error's envelope; the TextEdit and Finder notText/notSettable rows still match as substrings (pre-existing, left).
+  #420's own check is the `probe/420-qual` kit, specified in 420.md file by file from `origin/probe/414-qual`
+  (b7aebd311) and not built: building it is a probe branch and a hosted run, outside this wave. Its R3 declaration
+  needs the observed vendor/cua pair, which waits on H0's vendor witness.
 - 2026-11-23, ruling 1128 (#420, secret text): in a Chromium or Electron app, concealed text holding a character
   above U+FFFF is refused before the first key, nothing posted; the sentence names the cause and the remedy, never a
   character, position or length; `CONCEALED_REASON` is corrected so a refusal never blames the input source when that

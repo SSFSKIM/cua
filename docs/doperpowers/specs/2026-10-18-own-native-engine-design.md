@@ -7972,8 +7972,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Limits and costs: `siblingstack` (two recorded controls stacked at the point, the top one removed) keeps, a declared
   limit (spike #479); walking the web area for live controls was dropped (seconds on a 6,000-element page), and
   `elementFromPoint` through the extension is not used. 80 ms on every Chromium click on the two keep paths, again at
-  the element route's recheck. A Chromium correction slower than 80 ms keeps the veil's hit as main does (`hitCorrection`
-  `same` over a veil marks such rows). On Chromium, a new inert element at the point past a `nonInteractiveHit` (the
+  the element route's recheck (the cost and an early exit, #491). A Chromium correction slower than 80 ms keeps the
+  veil's hit as main does (`hitCorrection` `same` over a veil marks such rows; #480). `veilinto`'s link point is kept on
+  Chromium through `recordedHit` and `hitAboveNode`, on main and the fix alike, so the check never runs there (#490).
+  Evidence: `docs/evidence/2026-11-23-other-control-on-top/README.md`. On Chromium, a new inert element at the point past a `nonInteractiveHit` (the
   record proving it new) now refuses where main kept. The rule as measured refused 0 of 890 keep rows (README b7beb361).
   Proven offline (`OtherControlOnTopTests`, 7 tests): `slideover` on Chromium (first hit the veil or B's text, the
   80 ms hit B or its text, at the link and at the text) and Safari-like (B's text at once, no wait) refuse, with the

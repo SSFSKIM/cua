@@ -5,7 +5,8 @@ import XCTest
 /// #501 (rulings 1083, 1131): a batched read whose AXSubrole or AXRole slot holds kCFNull, injected where the reply is
 /// decoded (`AttributeRead.decode`, the fake source's `nullAttributes`). A null subrole is unread: a text-entry role with
 /// one is presumed a password field, as #405 presumes one whose subrole read failed, and another role is closed but not
-/// secure. A null role is unknown, never a known inert node.
+/// secure (#525: unless the role is never secure text entry, `neverSecureRoles`). A null role is unknown, never a known
+/// inert node.
 final class NullClassifyingSlotTests: XCTestCase {
   private let plaintext = "PLAINTEXT-null-subrole"
   private func el(_ id: Int) -> AXUIElement { Engine.element(id) }
@@ -24,9 +25,9 @@ final class NullClassifyingSlotTests: XCTestCase {
     return read
   }
 
-  /// A null subrole classifies as an unread one: closed and failed, secure on a text-entry role and not on another; a
-  /// non-null secure subrole or ordinary subrole classifies as before. Every reader of the classification follows it:
-  /// the read-back's class, paste's effect reading and the guarded read.
+  /// A null subrole classifies as an unread one: closed and failed, secure on a text-entry role and not on another (but
+  /// open on a role in `neverSecureRoles`, #525); a non-null secure subrole or ordinary subrole classifies as before.
+  /// Every reader of the classification follows it: the read-back's class, paste's effect reading and the guarded read.
   func testANullSubroleIsUnreadAndATextEntryRoleWithOneIsPresumedSecure() {
     for role in [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole] {
       let read = decoded(role: role, subrole: .some(nil))
@@ -36,11 +37,13 @@ final class NullClassifyingSlotTests: XCTestCase {
       XCTAssertEqual(focusedEffectReading(1, bound: { _ in true }, batch: { _, _ in read })?.secure, true, role)
       if case .closed = classifiedRead([kAXValueAttribute], request: { _ in read }) {} else { XCTFail("the guarded read: \(role)") }
     }
-    for role in [kAXButtonRole, kAXGroupRole, kAXStaticTextRole] {
+    for role in [kAXButtonRole, kAXStaticTextRole] {
       let read = decoded(role: role, subrole: .some(nil))
       XCTAssertEqual(valueClassification(read), ValueClassification(closed: true, secure: false, failed: true), role)
       XCTAssertEqual(readbackClass(read), .closed(.secure), role)
     }
+    // #525 (ruling 1166): a role never secure text entry (`neverSecureRoles`) is open (NeverSecureRoleTests).
+    XCTAssertEqual(valueClassification(decoded(role: kAXGroupRole, subrole: .some(nil))), ValueClassification())
     XCTAssertEqual(valueClassification(decoded(role: kAXTextFieldRole, subrole: "AXSecureTextField")),
                    ValueClassification(closed: true, secure: true))
     XCTAssertEqual(valueClassification(decoded(role: kAXTextFieldRole, subrole: "AXSearchField")), ValueClassification())

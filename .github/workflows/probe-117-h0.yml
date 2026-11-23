@@ -106,6 +106,7 @@ jobs:
           npm ci --no-audit --no-fund
           swiftc -O scripts/probe-117-h0/display.swift -o "$RUNNER_TEMP/h0-display"
           swiftc -O scripts/probe-117-h0/alert-windows.swift -o "$RUNNER_TEMP/h0-alert-windows"
+          node --test scripts/probe-117-h0/tcc.test.mjs
       - name: The loopback device (a user-mode sshd, as scripts/repl-parity/hosted/hosted.sh sets it up)
         shell: bash
         run: |

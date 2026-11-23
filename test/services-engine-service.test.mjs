@@ -425,18 +425,49 @@ test('intervention, entered and routeAdvice ride as cua/ meta on results and on 
   for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice', 'cua/delivery']) assert.equal(meta[key], null, key);
 });
 
-test('#212: a userIntervened error\'s interruption (its phase and what may have taken effect) rides as cua/interruption, with the engine\'s sentence; the next call carries none', async t => {
-  const interruption = {phase: 'inFlight', effects: ['focus', 'focusClick']};
-  const sentence = 'The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions. The action was stopped part-way. What may have taken effect: moving focus to the field; a click to focus the field. Nothing was undone.';
-  const {getApp, call, meta} = await session(t, {handlers: {
-    'execute:set_value': () => { throw new EngineFailure(-10016, sentence, 'userIntervened', {meta: {...INPUT_META, startedAt: null, endedAt: null, interruption}}); },
-    'execute:press_key': () => ({meta: INPUT_META}),
+// #212 (PR #218's act -> observe -> next-execution regression, ported): a userIntervened error's account rides as
+// cua/interruption, a snapshot of the interrupted action (its phase, what may have taken effect, its receipt, route,
+// interval and activation data) that stays standing through the rest of the execution: the advised getAXState in the
+// same cell, or a later action, clears every other cua/* key but not it. The next execution starts with none (the host
+// starts response meta fresh per execution; `call` here). Ordinary and concealed alike: the secret wrapper withholds
+// the engine's text, not the meta.
+for (const concealed of [false, true]) test(`#212: the interrupted action's snapshot survives the same cell's observation and a later action, and no next execution inherits it (concealed=${concealed})`, async t => {
+  const engineText = phase => `The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with \`get_app_state\` before sending more actions. ${phase === 'beforeAction' ? 'The requested input was refused before its first step.' : 'The action was stopped part-way. What may have taken effect: moving focus to the field; a click to focus the field. Nothing was undone.'}`;
+  let phase;
+  const effects = () => phase === 'beforeAction' ? [] : ['focus', 'focusClick'];
+  const {getApp, call, meta} = await session(t, {secrets: {fixture: 'private-value'}, handlers: {
+    'execute:set_value': () => { throw new EngineFailure(-10016, engineText(phase), 'userIntervened', {meta: {...INPUT_META, startedAt: null, endedAt: null,
+      ...(phase === 'beforeAction' ? {inputRoute: null, activationClick: undefined, activationClickKind: undefined, activationJoin: undefined, activationGuardMs: undefined} : {}),
+      interruption: {phase, effects: effects()}}}); },
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", receivedAt: 2000}}),
   }});
   const {app} = await getApp('TextEdit');
-  await assert.rejects(call(() => app.setValue(1, 'report.txt')), error => error.message === `Computer Use server error -10016: ${sentence}`);
-  assert.deepEqual(meta['cua/interruption'], interruption);
-  await call(() => app.pressKey('a'));
-  assert.equal(meta['cua/interruption'], null, 'none is left standing');
+  for (phase of ['inFlight', 'beforeAction']) {
+    const interrupted = phase === 'inFlight'
+      ? {phase, effects: effects(), inputRoute: 3, actionInterval: {startedAt: null, endedAt: null}, receivedAt: 990, hidIdleMs: 31000,
+        activationGuardMs: 41.5, activationClick: 'posted', activationClickKind: {kind: 'activationPoint'}, activationJoin: 'rearmed'}
+      : {phase, effects: [], inputRoute: null, actionInterval: {startedAt: null, endedAt: null}, receivedAt: 990, hidIdleMs: 31000,
+        activationGuardMs: null, activationClick: null, activationClickKind: null, activationJoin: null};
+    let caught;
+    await call(async () => {
+      await assert.rejects(app.setValue(1, concealed ? '{{secret:fixture}}' : 'report.txt'), error => { caught = error; return true; });
+      const at = `${phase}, concealed=${concealed}`;
+      if (concealed) {
+        assert.match(caught.message, phase === 'beforeAction' ? /it was refused before its first step; nothing was entered/ : /it was stopped part-way/, at);
+        assert.doesNotMatch(caught.message, /private-value|TextEdit\.app/, at);
+      } else assert.equal(caught.message, `Computer Use server error -10016: ${engineText(phase)}`, at);
+      assert.deepEqual(meta['cua/interruption'], interrupted, at);
+      await app.getAXState({emit: false});
+      assert.deepEqual(meta['cua/interruption'], interrupted, `${at}: the interrupted action survives the same cell's observation`);
+      assert.equal(meta['cua/inputRoute'], null, `${at}: every other cua/* key stays per call`);
+      assert.equal(meta['cua/receivedAt'], null, at);
+      await app.pressKey('a');
+      assert.deepEqual(meta['cua/interruption'], interrupted, `${at}: and a later action that was not interrupted`);
+      assert.equal(meta['cua/receivedAt'], 2000, at);
+    });
+    await call(() => app.getAXState({emit: false}));
+    assert.equal(meta['cua/interruption'], undefined, 'a new execution does not inherit an old interruption');
+  }
 });
 
 test('cua/settle rides on the observation whose settle hit its cap, and on no other', async t => {

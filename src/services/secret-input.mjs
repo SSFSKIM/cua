@@ -111,11 +111,12 @@ export function interventionKind(message) {
   return null;
 }
 // #212: with cua's engine's account of the request (`interruption`, ./engine/interruption.mjs readInterruption), what was
-// entered follows it instead: a refusal before the action did nothing; otherwise the account's phase and each step it
-// names, in the engine's fixed phrases, and the secret counts as possibly entered once its write or the action's own
+// entered follows it instead: a refusal before the action took none of the input's steps (not "did nothing": the
+// request's prologue may have re-enabled a Chromium app's accessibility); otherwise the account's phase and each step
+// it names, in the engine's fixed phrases, and the secret counts as possibly entered once its write or the action's own
 // input may have gone (or, stopped part-way, when no step is named), never "nothing was entered" beside a step.
 function interruptionOutcome({phase, effects}) {
-  if (phase === 'beforeAction' && effects.length === 0) return {entered: false, outcome: NOTHING_ENTERED};
+  if (phase === 'beforeAction' && effects.length === 0) return {entered: false, outcome: `it was refused before its first step; ${NOTHING_ENTERED}`};
   const entered = effects.some(effect => ENTERING_EFFECTS.includes(effect)) || (phase === 'inFlight' && effects.length === 0);
   const reached = effects.length ? `what may have taken effect: ${effects.map(effect => EFFECT_PHRASES[effect]).join('; ')}` : 'any step it had begun may have taken effect';
   const opening = phase === 'beforeAction' ? 'it was refused before its first step' : 'it was stopped part-way';

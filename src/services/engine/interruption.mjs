@@ -7,12 +7,12 @@
 export const EFFECT_PHRASES = Object.freeze({
   scroll: 'a scroll to bring the element into view',
   activation: 'the app\'s activation in the background',
-  activationClick: 'an activation click on its window',
+  activationClick: 'an activation click, at the window\'s activation point or just outside the window',
   focus: 'moving focus to the field',
   focusClick: 'a click to focus the field',
   value: 'the value written to the field',
   input: 'the action\'s own input, in part or whole',
-  activationRelease: 'the end of a held activation, which sends the app a deactivation',
+  activationRelease: 'the end of a held activation, which may have sent the app a deactivation',
 });
 // The effects after which a substituted value may be in the app: its write, or the action's own input.
 export const ENTERING_EFFECTS = Object.freeze(['value', 'input']);

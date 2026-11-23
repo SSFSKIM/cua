@@ -262,7 +262,7 @@ test('userIntervened after substitution says which of its two sentences the mode
 
 // #212 (PR #218's concealed case, re-cut): cua's engine names where an intervention stopped the request and what may
 // have taken effect (the meta's `interruption`). The wrapper withholds the engine's text, so it says the same in fixed
-// phrases of its own: a refusal before the action did nothing; a stop part-way, or a refusal that ended a held
+// phrases of its own: a refusal before the action took none of the input's steps; a stop part-way, or a refusal that ended a held
 // activation, names each step the engine reached, and "nothing was entered" is never said beside one. The secret counts
 // as possibly entered only once the value was written or the action's own input was posted.
 test('#212: userIntervened after substitution names what may have taken effect from the engine\'s interruption, in fixed phrases', async () => {
@@ -271,12 +271,12 @@ test('#212: userIntervened after substitution names what may have taken effect f
   const cases = [
     {label: 'refused before the action', interruption: {phase: 'beforeAction', effects: []}, nothing: true, entered: false, named: []},
     {label: 'stopped after the focus', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick', 'focus', 'focusClick']}, nothing: false, entered: false,
-      named: ['the app\'s activation in the background', 'an activation click on its window', 'moving focus to the field', 'a click to focus the field']},
+      named: ['the app\'s activation in the background', 'an activation click, at the window\'s activation point or just outside the window', 'moving focus to the field', 'a click to focus the field']},
     {label: 'stopped after the value write', interruption: {phase: 'inFlight', effects: ['focus', 'value']}, nothing: false, entered: true,
       named: ['moving focus to the field', 'the value written to the field']},
     {label: 'stopped part-way, no step named', interruption: {phase: 'inFlight', effects: []}, nothing: false, entered: true, named: []},
     {label: 'refused, a held activation ended', interruption: {phase: 'beforeAction', effects: ['activationRelease']}, nothing: false, entered: false,
-      named: ['the end of a held activation, which sends the app a deactivation']},
+      named: ['the end of a held activation, which may have sent the app a deactivation']},
     {label: 'an unknown effect is not repeated', interruption: {phase: 'inFlight', effects: ['focus', `leak ${value}`]}, nothing: false, entered: false,
       named: ['moving focus to the field']},
   ];
@@ -290,6 +290,7 @@ test('#212: userIntervened after substitution names what may have taken effect f
       assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions/, at);
       assert.equal(/nothing was entered/.test(error.message), nothing, at);
       assert.equal(/may have been partly entered/.test(error.message), entered, at);
+      if (nothing) assert.match(error.message, /it was refused before its first step; nothing was entered\./, at);
       if (!nothing) assert.match(error.message, interruption.phase === 'beforeAction' ? /refused before its first step/ : /stopped part-way/, at);
       if (!nothing && !entered) assert.match(error.message, /the secret was not entered/, at);
       for (const phrase of named) assert.ok(error.message.includes(phrase), `${at}: names ${phrase}`);

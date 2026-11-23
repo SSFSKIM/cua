@@ -63,7 +63,10 @@
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/interruption rides on a userIntervened error (#212: {phase "beforeAction" | "inFlight",
 //   effects}, where the intervention stopped the request and which of its steps may have taken effect, as the engine's
-//   message also says). cua/serviceMs is the wrapper's (src/services/sky.mjs).
+//   message also says, with the interrupted action's inputRoute, actionInterval, receivedAt, hidIdleMs and activation
+//   data); unlike every other key it is not reset per call, so the latest interruption stays standing through the
+//   rest of the execution (the observation its answer advises, in the same cell), and the host's fresh response meta
+//   per execution keeps it from the next. cua/serviceMs is the wrapper's (src/services/sky.mjs).
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
@@ -121,13 +124,13 @@ const FIELDS = {
   set_value: ['value', 'concealed'],
   type_text: ['text', 'concealed'],
 };
-// The keys a call sets only sometimes, reset at its start.
+// The keys a call sets only sometimes, reset at its start (all but cua/interruption, the execution's, #212).
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
   'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
-  'cua/overlayClick': null, 'cua/interruption': null,
+  'cua/overlayClick': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
@@ -147,7 +150,7 @@ const NOTE_CHARS = 500;
 // overlay closed, or why #452's refusal stood, {window, by, kind?, route?, confirmed?, refused?, row? {role, frame},
 // refusedBy? {role, reason}, ...}, #453).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick', 'interruption'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
@@ -207,6 +210,19 @@ function inputMeta(meta) {
     'cua/receivedAt': meta.receivedAt ?? null,
     'cua/hidIdleMs': meta.hidIdleMs ?? null,
     ...Object.fromEntries(OPTIONAL_INPUT_META.filter(key => meta[key] !== undefined).map(key => [`cua/${key}`, meta[key]])),
+    ...(meta.interruption ? {'cua/interruption': interruptedAction(meta)} : {}),
+  };
+}
+
+// The interrupted action as the execution keeps it (#212): the engine's account, and the action's own receipt, route,
+// interval and activation data, which the calls after it in the same execution reset under their per-call keys.
+function interruptedAction(meta) {
+  return {
+    ...meta.interruption,
+    inputRoute: meta.inputRoute ?? null, actionInterval: {startedAt: meta.startedAt ?? null, endedAt: meta.endedAt ?? null},
+    receivedAt: meta.receivedAt ?? null, hidIdleMs: meta.hidIdleMs ?? null,
+    activationGuardMs: meta.activationGuardMs ?? null, activationClick: meta.activationClick ?? null,
+    activationClickKind: meta.activationClickKind ?? null, activationJoin: meta.activationJoin ?? null,
   };
 }
 

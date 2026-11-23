@@ -8,8 +8,9 @@ import Foundation
 // AXPress, set_value, select_text, perform_secondary_action) likewise, its activation held across the interaction
 // (FocusHold.swift; the Decision Log's 2026-10-22 amendment of M2a's table); clicks by the ladder 1 → 3 → 4: route 1,
 // the element's own action, for a plain single left click on an element that advertises AXPick or AXPress and whose
-// clickable point does not land on a strict descendant of it, and route 3, the fake activation then the plain post, for
-// every synthesized click (an element without the action, any other button or count, every coordinate click) — or route
+// clickable point does not land on a strict descendant of it (nor, for a web page's text field, on the field itself:
+// #258), and route 3, the fake activation then the plain post, for every synthesized click (an element without the
+// action, any other button or count, every coordinate click) — or route
 // 4, the foreground assist, in its place for an app the owner's per-app override names (`routes: {<bundle id>: 4}` in
 // engine.json), and never otherwise. When route 3's guard has failed three actions in a row for an app, the refusal's
 // meta names the override (`routeAdvice`), so the owner learns of the case rather than the engine deciding it. A click
@@ -23,14 +24,15 @@ enum ElementClickPlan: Equatable {
   case synthesized(InputRoute)  // route 3 by default; 2 or 2′ only when forced
 }
 
-/// The clicks' ladder for an element (F §5.1 for the action's choice and the gate). `landsOnDescendant` answers whether
-/// the hit-test at the element's clickable point lands on a strict descendant of it (the gate); it is called only for a
-/// click route 1 could otherwise carry, and answers false when there is no point to hit-test. A menu-bar item, and the
-/// menu bar itself (a synthesized click at its midpoint lands on an item), is refused whatever the click or route,
-/// before anything is posted. A forced route (the spike's) skips the gate; a forced route 1
-/// needs an advertised action.
+/// The clicks' ladder for an element (F §5.1 for the action's choice and the gate). `hit` answers what the hit-test at
+/// the element's clickable point found relative to it, and `insideWebArea` whether the element lies in a web page; the
+/// gate (`elementClickGate`) reads them only for a click route 1 could otherwise carry (`hit` answers `.noAnswer` when
+/// there is no point to hit-test). A menu-bar item, and the menu bar itself (a synthesized click at its midpoint lands on
+/// an item), is refused whatever the click or route, before anything is posted. A forced route (the spike's) skips the
+/// gate; a forced route 1 needs an advertised action.
 func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role: String, actions: [String],
-                      synthesized: InputRoute = .activation, landsOnDescendant: () -> Bool) throws -> ElementClickPlan {
+                      synthesized: InputRoute = .activation, insideWebArea: () -> Bool = { false },
+                      hit: () -> HitRelation) throws -> ElementClickPlan {
   if role == "AXMenuBarItem" || role == "AXMenuBar" { throw menuBarItemUnsupported }
   let advertised = actions.first(where: { $0 == "AXPick" }) ?? actions.first(where: { $0 == "AXPress" })
   if let forced {
@@ -40,16 +42,42 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
     }
     return .action(advertised)
   }
-  if button == .left, count == 1, let advertised, !landsOnDescendant() { return .action(advertised) }
+  if button == .left, count == 1, let advertised, !elementClickGate(hit(), role: role, insideWebArea: insideWebArea) {
+    return .action(advertised)
+  }
   return .synthesized(synthesized)
+}
+
+/// The gate: whether a click route 1 could carry is synthesized at the element's clickable point instead, from what the
+/// hit-test there answered. A strict descendant sends any element's click there (cua's gate since M2a: the action would
+/// reach the container, not the control the point names). The element itself sends a text-entry role's click there when
+/// it lies in a web page (#258, the vendor's rule, F §18): the vendor's gate inside a web view looks for the element
+/// among the hit and its ancestors, so a page's text field is clicked where a person clicks it, which leaves a caret at
+/// the point, where its AXPress keeps an earlier selection. Every other role keeps its action on that hit, and
+/// `insideWebArea` is read only for a text-entry role hitting itself.
+func elementClickGate(_ hit: HitRelation, role: String, insideWebArea: () -> Bool) -> Bool {
+  switch hit {
+  case .descendant: return true
+  case .element: return webAreaEditableRoles.contains(role) && insideWebArea()
+  case .noAnswer, .ancestor, .other: return false
+  }
+}
+
+/// The vendor's `isInsideWebView` (F §18): the element or one of its ancestors is an AXWebArea, its parents read up to
+/// its window (`webAreaAncestry`); false where a parent or its role cannot be read first.
+func elementInsideWebArea<Element>(_ element: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> Bool {
+  if role(element) == "AXWebArea" { return true }
+  if case .success = webAreaAncestry(above: element, role: role, parent: parent) { return true }
+  return false
 }
 
 /// What an element click's result meta records of how it was carried (#188, meta `elementClick`): the plan, why the
 /// ladder chose it (`advertised`: a plain left click on an element advertising AXPick or AXPress whose point does not
-/// land on a strict descendant; `descendant`: the gate sent it to synthesis; `noAction`: the element advertises neither;
+/// land on a strict descendant; `descendant`: the gate sent it to synthesis; `webTextEntry`: the gate sent a web page's
+/// text field whose point hits the field itself to synthesis, #258; `noAction`: the element advertises neither;
 /// `notPlainLeft`: another button or count; `forced`: the spike's route), and what the hit-test at the element's point
 /// answered relative to it when one was taken (the gate's, or a synthesized click's reach check), against the owner's
-/// application element, where the vendor hit-tests under the element's window (F-helper-logic.md:79). So a click on a
+/// application element, as the vendor's gate does (F §18, correcting §5.1's "under the element's window"). So a click on a
 /// text field says whether an AXPress (which keeps the field's selection) or a posted click (which places a caret)
 /// carried it. Value-free: action names and enumeration words only.
 struct ElementClickRecord: Equatable {
@@ -59,7 +87,7 @@ struct ElementClickRecord: Equatable {
   /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
   /// AXFocused (#341: by the caret's AXSelectedTextRange write, AXFocused its fallback), with the caret placed at the
   /// point or not (`caret` says why not).
-  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
+  enum Reason: String { case advertised, descendant, webTextEntry, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
   var hit: HitRelation?
@@ -145,7 +173,7 @@ func elementClickRecord(_ plan: ElementClickPlan, forced: InputRoute?, button: M
   else if case .action = plan { reason = .advertised }
   else if !actions.contains("AXPick") && !actions.contains("AXPress") { reason = .noAction }
   else if button != .left || count != 1 { reason = .notPlainLeft }
-  else { reason = .descendant }
+  else { reason = hit == .element ? .webTextEntry : .descendant }
   return ElementClickRecord(plan: plan, reason: reason, hit: hit)
 }
 
@@ -267,7 +295,7 @@ func landsOnStrictDescendant<Element>(_ hit: Element?, of target: Element, paren
 }
 
 /// What the hit-test at an element's point answered, relative to the element: one ancestry classification serves both
-/// the gate (a strict descendant sends the click to synthesis) and the reach check of a synthesized click.
+/// the gate (`elementClickGate`) and the reach check of a synthesized click.
 enum HitRelation: Equatable {
   case noAnswer    // no answer (a timeout, a busy app)
   case element     // the element itself
@@ -557,7 +585,7 @@ func webAreaControl<Element>(_ hit: Element, role: (Element) -> String?, parent:
 /// advertises neither, or its actions could not be read.
 func webAreaAction(role: String, actions: [String]?) -> String? {
   guard let actions, case .action(let action)? = try? elementClickPlan(forced: nil, button: .left, count: 1, role: role, actions: actions,
-                                                                     landsOnDescendant: { false }) else { return nil }
+                                                                     hit: { .noAnswer }) else { return nil }
   return action
 }
 

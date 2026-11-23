@@ -927,8 +927,9 @@ test('the default io reads the venue from the runner record under $HOME, only on
   process.env.HOME = home;
   try {
     assert.equal('venueFrames' in fakeDevice(), false, 'the double leaves the venue to the default io');
+    const HOSTED_DEVICE = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'};
     await withRun(async run => {
-      const io = Object.assign(defaultIo(), fakeDevice());
+      const io = Object.assign(defaultIo(HOSTED_DEVICE), fakeDevice());
       assert.equal(io.venueFrames(), null, 'no runner record: no venue');
       assert.equal(io.venueTextEditView(), null, 'no runner record: the mini\'s document');
       assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: SCENES.electron.placement, from: 'scene'});
@@ -938,13 +939,21 @@ test('the default io reads the venue from the runner record under $HOME, only on
     // Unattested (a hand-made record, say on the mini): no venue, the mini's document byte for byte.
     fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify({venue}));
     await withRun(async run => {
-      const io = Object.assign(defaultIo(), fakeDevice());
+      const io = Object.assign(defaultIo(HOSTED_DEVICE), fakeDevice());
       assert.deepEqual([io.venueFrames(), io.venueTextEditView()], [null, null]);
       assert.equal(fs.readFileSync((await upScene('textedit', {run, io})).document, 'utf8'), textEditDocument().rtf);
     });
     fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify(attestedRecord(venue)));
+    // An attested record on a device whose own environment is not a hosted runner's (the mini's sshd session): no venue,
+    // the mini's frames and document byte for byte.
     await withRun(async run => {
-      const io = Object.assign(defaultIo(), fakeDevice());
+      const io = Object.assign(defaultIo({env: {}, platform: 'darwin'}), fakeDevice());
+      assert.deepEqual([io.venueFrames(), io.venueTextEditView()], [null, null]);
+      assert.equal(fs.readFileSync((await upScene('textedit', {run, io})).document, 'utf8'), textEditDocument().rtf);
+      assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: SCENES.electron.placement, from: 'scene'});
+    });
+    await withRun(async run => {
+      const io = Object.assign(defaultIo(HOSTED_DEVICE), fakeDevice());
       assert.deepEqual(io.venueFrames(), {electron});
       assert.deepEqual(io.venueTextEditView(), {width: 480, height: 792});
       assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: electron, from: 'venue'});

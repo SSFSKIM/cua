@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {guardCause} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import {main, parseTarget} from '../../scripts/hosted-sittings/guard-device.mjs';
+import {MOVE_REFUSED_OFF_HOSTED} from '../../scripts/hosted-sittings/runner.mjs';
 
 const UNC = 'com.apple.UserNotificationCenter';
 const rect = (x, y, width, height) => ({x, y, width, height});
 const alert = {ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: UNC, layer: 8, number: 90, name: null, bounds: rect(382, 118, 260, 348)};
 const textedit = (number, bounds) => ({ownerPid: 600, ownerName: 'TextEdit', ownerBundleId: 'com.apple.TextEdit', layer: 0, number, name: 'Untitled', bounds});
 const screen = {windows: [alert, textedit(7, rect(79, 31, 627, 677))], displays: [rect(0, 0, 1920, 1080)]};
-const io = (extra = {}) => ({screen: () => screen, frontmost: () => ({pid: 600, bundleId: 'com.apple.TextEdit'}),
+const io = (extra = {}) => ({env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', screen: () => screen, frontmost: () => ({pid: 600, bundleId: 'com.apple.TextEdit'}),
   focus: () => ({focusedApp: {pid: 600, bundleId: 'com.apple.TextEdit'}, focusedWindow: {pid: 600, bounds: rect(79, 31, 627, 677)}}), ...extra});
 
 test('a target: scene, pid, and for a shared process its one window', () => {
@@ -93,6 +94,21 @@ test('place: the target\'s window or the Open panel\'s moved by the frame probe 
   // A read-back off the frame does not match.
   const off = await main(['place', '--pid', '600', '--window', '7', '--frame', '700,31,627,677'], {io: io({frameProbe: () => ({readBack: rect(690, 31, 627, 677), matched: true, exitStatus: 0})})});
   assert.equal(off.matched, false);
+});
+
+// A move is a hosted-only write: the device checks its own environment before asking the probe. Off a GitHub-hosted
+// runner (the mini's ssh session) it is refused, nothing read or moved; the placement records it not moved, with why.
+test('place off a GitHub-hosted runner is refused before the probe is asked: not moved, with why', async () => {
+  for (const [env, platform] of [[{}, 'darwin'], [{RUNNER_ENVIRONMENT: 'self-hosted'}, 'darwin'], [{RUNNER_ENVIRONMENT: 'github-hosted'}, 'linux']]) {
+    const out = await main(['place', '--pid', '600', '--window', '7', '--frame', '700,31,627,677'],
+      {io: io({env, platform, screen: () => assert.fail('nothing read'), frameProbe: () => assert.fail('the probe is not asked')})});
+    assert.deepEqual(out, {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
+    const {placeWindows} = await import('../../scripts/hosted-sittings/alert-guard.mjs');
+    const finder = {scene: 'finder', number: 7, recorded: true, bounds: rect(500, 150, 600, 400)};
+    const [w] = (await placeWindows({alerts: [{number: 90, bounds: alert.bounds}], windows: [finder], displays: [rect(0, 0, 1920, 1080)]}, {move: () => out})).windows;
+    assert.deepEqual([w.moved, w.matched, w.readBack], [false, false, null]);
+    assert.match(w.reason, /the move was refused: a window is moved only on a GitHub-hosted runner/);
+  }
 });
 
 // Whether the reader is trusted where the runs reach the device (setup asks it over the loopback ssh): ax-state asked

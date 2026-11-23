@@ -1617,10 +1617,34 @@ table. The mini's document is byte for byte what it was.
   (the matrix's `textedit`, native-mac's `textedit/…`) as `view 480x792` and the new and scratch documents as
   `WidthInChars 60`.
 
-The device takes the view size, like the venue's frames, only from a runner record that attests a GitHub-hosted
-runner (`runnerProblems` empty): any other file at the record's path leaves the mini's frames and bytes. Declared gap
-(#560, P3): the read is not bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), so a complete hosted record
-copied onto another machine would still be taken; nothing copies one, and each VM is thrown away.
+The device takes the view size, like the venue's frames, only when two things hold. First, its own environment says
+it is a GitHub-hosted macOS runner (`isGithubHosted`, checked where the venue is read). Second, the runner record
+attests one (`runnerProblems` empty). Anything else leaves the mini's frames and bytes. The device is reached over the
+loopback ssh, whose sessions get only what `~/.ssh/environment` holds. So `loopback.sh` writes
+`RUNNER_ENVIRONMENT=github-hosted` there beside `PATH`, after its own guard on that variable; the mini's sshd never
+sets it. Declared gap (#560, P3): the read is not bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`). Since
+the environment check now comes first, a complete hosted record copied onto the mini would not be taken there either;
+only a copy onto another hosted runner would. Nothing copies one, and each VM is thrown away.
+
+The rule (#560's follow-up, the design session): every hosted-only write checks `RUNNER_ENVIRONMENT=github-hosted`
+itself where it writes (`isGithubHosted`, `assertGithubHosted`), never through the runner record alone. The direct
+checks:
+
+- **Setup** (`setup.mjs` `hostedSetup`, its first line) covers the loopback device, the harness checkout, the install,
+  the engine and the runner record's write. Its steps' own writers check again: `loopback.sh` (its first test, for
+  the sshd, `~/.ssh/environment` and `~/.bashrc`), the TCC rows (`tcc.mjs`), the approve (`approve.mjs`), the warm-ups
+  (`warm-up.mjs`), the display mode (`display-mode.mjs`), TextEdit's preferences and its saved state (`venue.mjs`
+  `writeTextEditDefaults`, `clearTextEditSavedState`), and the record (`runner.mjs` `runnerRecord`).
+- **The sittings' own** checks: `hosted-sittings.mjs` (a sitting's run, the scratch TextEdit document, the focus
+  probe's timing), `pin.mjs`, `onboarding.mjs` and accept-native's TextEdit guard (`isGithubHosted()`).
+- **On the device**: the venue's reads (`runner.mjs` `attestedVenue`: Chrome's and the fixture's launch frames,
+  Finder's `finderFrame`, the TextEdit RTF's view size) and every window move through the frame probe
+  (`guard-device.mjs` `placeWindow`, `matrix-device.mjs` `placeScene`). Off a hosted runner a move is refused before
+  anything is read: `{readBack: null, matched: false, refused}`, recorded as not moved with "the move was refused:
+  …", and the alert guard refuses what the window overlaps.
+
+The goldens recorder's `finderFrame` step (`goldens-device.mjs`) is not a hosted-only write: it pins Finder on the mini
+by design, at `FINDER_FRAME` there and at the venue's frame only where the venue is read. It is left as it is.
 
 Not proven: that TextEdit sizes the opened window from the view size. AppKit's reader taking it is shown here, and the
 window is TextEdit's to make. The next B and C runs must read the scene window about 505 wide and about 877 high, its

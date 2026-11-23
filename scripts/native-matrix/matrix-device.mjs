@@ -99,6 +99,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
+import {MOVE_REFUSED_OFF_HOSTED, isGithubHosted} from '../hosted-sittings/runner.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertBoundsOf, isPanelWindow} from './alert-guard.mjs';
@@ -224,8 +225,11 @@ export function sceneKeyWindow(scene, io) {
 
 // The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, or for `openPanel` the panel's window
 // numbered `window` (its service's pid read from the window list), moved by the frame probe and read back.
-// io: {state(), probe(args), screen()}. -> {requested, readBack, matched, exitStatus, pid?}.
+// io: {state(), probe(args), screen(), env?, platform?}. -> {requested, readBack, matched, exitStatus, pid?}. A move is
+// a hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by default) nothing is read
+// or asked of the probe: {readBack: null, matched: false, exitStatus: null, refused}.
 export function placeScene({scene, frame, window = null}, io) {
+  if (!isGithubHosted(io.env ?? process.env, io.platform ?? process.platform)) return {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED};
   let pid, number;
   if (scene === 'openPanel') {
     const shown = (io.screen()?.windows ?? []).find(w => isPanelWindow(w) && w.number === Number(window));

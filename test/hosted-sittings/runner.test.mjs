@@ -13,6 +13,9 @@ const ENGINE = {bundle: '/Users/runner/Library/Application Support/cua/engine/cu
 // The VM the setup ran on: its platform UUID and boot time, and the setup's own id.
 const MACHINE = {platformUuid: '5F2C1A9E-1D2B-4C3D-8E4F-0123456789AB', bootedAt: '2026-11-23T09:58:12.000Z'};
 const VM = {id: '3b1f0c8e-7d6a-4e2b-9c1d-5a4b3c2d1e0f', ...MACHINE};
+// The device's venue reads, on a GitHub-hosted macOS runner (its own environment, as loopback.sh hands it the sessions).
+const ON = {env: ENV, platform: 'darwin'};
+const framesOf = (r, at = ON) => venueFramesOf(r, at), viewOf = (r, at = ON) => venueTextEditViewOf(r, at);
 const record = (env = ENV, vm = VM) => runnerRecord(env, {install: INSTALL, engine: ENGINE, vm, now: () => Date.UTC(2026, 10, 23)});
 // The harness reads its own VM, the controller's; here it is the setup's unless a test says otherwise.
 const hostedRunOf = (r, env, options = {}) => hostedRunOfAny(r, env, {controllerVm: () => MACHINE, ...options});
@@ -97,24 +100,31 @@ test('the venue: kept in the record, handed out as its own block, its frames rea
   assert.deepEqual(runnerProblems(withVenue), []);
   assert.deepEqual(hostedRunOf(withVenue, ENV), {hosted: true, runner: record(), venue});
   assert.deepEqual(hostedRunOf(record(), ENV), {hosted: true, runner: record()}, 'a record with no venue gives none');
-  assert.deepEqual(venueFramesOf(withVenue), venue.frames);
+  assert.deepEqual(framesOf(withVenue), venue.frames);
   // A frame that is not one is dropped (that scene keeps its own); no record, or one with no venue, is no venue.
-  assert.deepEqual(venueFramesOf({...record(), venue: {frames: {chrome: {x: 1, y: 2, width: 0, height: 600}, electron: {x: 'a'}, finder: venue.frames.finder}}}), {finder: venue.frames.finder});
-  for (const none of [null, {error: 'not JSON'}, record()]) assert.equal(venueFramesOf(none), null);
+  assert.deepEqual(framesOf({...record(), venue: {frames: {chrome: {x: 1, y: 2, width: 0, height: 600}, electron: {x: 'a'}, finder: venue.frames.finder}}}), {finder: venue.frames.finder});
+  for (const none of [null, {error: 'not JSON'}, record()]) assert.equal(framesOf(none), null);
   // A record that does not attest a GitHub-hosted runner names no venue, whatever it holds: the mini's frames stay.
-  for (const unattested of [{venue}, {...withVenue, kind: 'self-hosted'}, {...withVenue, run: {id: 'x', attempt: '1'}}]) assert.equal(venueFramesOf(unattested), null);
+  for (const unattested of [{venue}, {...withVenue, kind: 'self-hosted'}, {...withVenue, run: {id: 'x', attempt: '1'}}]) assert.equal(framesOf(unattested), null);
 });
 
 // The TextEdit scene document's view size the venue declares (ruling 1169; ./venue.mjs TEXTEDIT_DOCUMENT_VIEW), which
 // the device's `up textedit` writes into the run's RTF: whole positive points, or none (the mini's document).
 test('the venue\'s TextEdit document view: whole positive points read by the device; anything else, or no venue, is none', () => {
   const view = {width: 480, height: 792};
-  assert.deepEqual(venueTextEditViewOf({...record(), venue: {frames: {}, textEditDocument: {view, sha256: {}}}}), view);
+  assert.deepEqual(viewOf({...record(), venue: {frames: {}, textEditDocument: {view, sha256: {}}}}), view);
   for (const bad of [{width: 0, height: 792}, {width: 480.5, height: 792}, {width: 480}, {width: '480', height: 792}, null]) {
-    assert.equal(venueTextEditViewOf({...record(), venue: {textEditDocument: {view: bad}}}), null, JSON.stringify(bad));
+    assert.equal(viewOf({...record(), venue: {textEditDocument: {view: bad}}}), null, JSON.stringify(bad));
   }
-  for (const none of [null, {error: 'not JSON'}, record(), {...record(), venue: {frames: {}}}]) assert.equal(venueTextEditViewOf(none), null);
+  for (const none of [null, {error: 'not JSON'}, record(), {...record(), venue: {frames: {}}}]) assert.equal(viewOf(none), null);
   // Unattested (no hosted attestation, as a hand-made record on the mini): none, so the mini's bytes are written.
-  assert.equal(venueTextEditViewOf({venue: {frames: {}, textEditDocument: {view}}}), null);
-  assert.equal(venueTextEditViewOf({...record(), kind: 'self-hosted', venue: {textEditDocument: {view}}}), null);
+  assert.equal(viewOf({venue: {frames: {}, textEditDocument: {view}}}), null);
+  assert.equal(viewOf({...record(), kind: 'self-hosted', venue: {textEditDocument: {view}}}), null);
+  // Off a GitHub-hosted runner (the mini, whose sshd hands a session no RUNNER_ENVIRONMENT), even an attested record
+  // names no venue: the device checks its own environment at the point of use, not the record alone.
+  const attested = {...record(), venue: {frames: {finder: {x: 22, y: 80, width: 800, height: 520}}, textEditDocument: {view}}};
+  assert.deepEqual([framesOf(attested).finder, viewOf(attested)], [{x: 22, y: 80, width: 800, height: 520}, view]);
+  for (const off of [{env: {}, platform: 'darwin'}, {env: {RUNNER_ENVIRONMENT: 'self-hosted'}, platform: 'darwin'}, {env: ENV, platform: 'linux'}]) {
+    assert.deepEqual([framesOf(attested, off), viewOf(attested, off)], [null, null], JSON.stringify(off));
+  }
 });

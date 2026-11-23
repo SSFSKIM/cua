@@ -186,7 +186,7 @@ export const FRAME_PROBE_SCENES = Object.freeze(['finder']);
 const sameRect = (a, b) => ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
 // Why a move the probe was asked for did not place the window, from its answer ({readBack, matched, exitStatus} or
 // {error}).
-const unplaced = answer => (answer?.error ? `the move failed: ${answer.error}`
+const unplaced = answer => (answer?.refused ? `the move was refused: ${answer.refused}` : answer?.error ? `the move failed: ${answer.error}`
   : `the frame probe did not place it (exit ${answer?.exitStatus ?? 'unknown'})${isRect(answer?.readBack) ? `: it read back at ${rectText(answer.readBack)}` : ': no read-back'}`);
 // The windows of one fresh reading (guardReading's) placed clear of its alerts: each window `select` keeps (every bounded
 // window by default) that overlaps an alert is moved by `move({scene, number, frame})` -> {readBack, matched, exitStatus}

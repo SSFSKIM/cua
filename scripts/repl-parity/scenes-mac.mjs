@@ -390,13 +390,14 @@ export function writeState(run, state) {
 }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-export const defaultIo = () => ({
+// `env`, `platform`: the device's own, which the venue's reads check (../hosted-sittings/runner.mjs venueFramesOf).
+export const defaultIo = ({env = process.env, platform = process.platform} = {}) => ({
   runningApps, appWindows, appWindowState, openApp, activateApp, showFolder, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(), windowOrder: ({skipPids}) => windowOrder({skipPids}), enginePids: () => enginePids(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
-  venueFrames: () => venueFramesOf(readRunnerRecord()), venueTextEditView: () => venueTextEditViewOf(readRunnerRecord()),
+  venueFrames: () => venueFramesOf(readRunnerRecord(), {env, platform}), venueTextEditView: () => venueTextEditViewOf(readRunnerRecord(), {env, platform}),
 });
 
 // What the refusal check reads on the device.

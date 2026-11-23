@@ -22,8 +22,10 @@ cp "$D/id_ed25519.pub" "$D/authorized_keys" && chmod 600 "$D/authorized_keys"
 printf 'hosted-macos %s\n' "$(cat "$SSHD/hostkey.pub")" > "$D/known_hosts"
 # sshd reads the environment of a session from ~/.ssh/environment only. The login shell is bash, which reads ~/.bashrc
 # for a command sshd runs, and the image's ~/.bashrc puts Homebrew's node first; the job's PATH is restored last
-# (hosted.sh's history).
+# (hosted.sh's history). RUNNER_ENVIRONMENT goes with it (this script refused anywhere else above): the device's
+# hosted-only uses check it themselves (the venue's reads, the frame probe's moves), and the mini's sshd never sets it.
 echo "PATH=$PATH" > "$HOME/.ssh/environment"
+echo "RUNNER_ENVIRONMENT=github-hosted" >> "$HOME/.ssh/environment"
 printf "export PATH='%s'\n" "$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")" >> "$HOME/.bashrc"
 cat > "$SSHD/sshd_config" <<EOF
 Port 2222

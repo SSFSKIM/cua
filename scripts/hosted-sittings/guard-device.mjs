@@ -31,6 +31,7 @@ import {defaultIo as liveIo} from '../native-matrix/live-device.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {guardReading, isPanelWindow} from './alert-guard.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from './key-window.mjs';
+import {MOVE_REFUSED_OFF_HOSTED, isGithubHosted} from './runner.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
@@ -71,8 +72,11 @@ export function readGuard({targets, key = false, keyWindow = false}, io) {
   return {...out, at: [from, Date.now()]};
 }
 
-// The window moved and read back (see the header). io: {screen(), frameProbe(args)}.
+// The window moved and read back (see the header). io: {screen(), frameProbe(args), env?, platform?}. A move is a
+// hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by default) nothing is read
+// or asked of the probe, and the answer says why (`refused`), which the placement records as a window not moved.
 export function placeWindow({pid = null, panel = false, window, frame}, io) {
+  if (!isGithubHosted(io.env ?? process.env, io.platform ?? process.platform)) return {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED};
   const number = Number(window);
   const shown = (io.screen()?.windows ?? []).find(w => w.number === number);
   if (panel) { if (!shown || !isPanelWindow(shown)) throw new Error(`--window names no Open panel window on screen (${window})`); }

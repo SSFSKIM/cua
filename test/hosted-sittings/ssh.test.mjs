@@ -37,3 +37,14 @@ test('loopback.sh writes that config pinned to the endpoint and the sshd\'s own 
   assert.doesNotMatch(script, /\.ssh\/config/);
   assert.doesNotMatch(script, /StrictHostKeyChecking no|UserKnownHostsFile \/dev\/null/);
 });
+
+// The device's hosted-only uses (the venue, the frame probe's moves) check RUNNER_ENVIRONMENT themselves, so the loopback
+// sessions must carry it: sshd hands a session only ~/.ssh/environment, which loopback.sh writes after its own guard
+// on that same variable. The mini's sshd has no such file of ours, so its sessions never carry it.
+test('loopback.sh hands the device sessions RUNNER_ENVIRONMENT=github-hosted, after refusing anywhere else', () => {
+  const script = readFileSync(new URL('../../scripts/hosted-sittings/loopback.sh', import.meta.url), 'utf8');
+  const guard = script.indexOf('[ "${RUNNER_ENVIRONMENT:-}" = github-hosted ]'), env = script.indexOf('RUNNER_ENVIRONMENT=github-hosted" >> "$HOME/.ssh/environment"');
+  assert.ok(guard >= 0 && env > guard, 'the variable is written to the sessions\' environment, after the guard');
+  assert.match(script, /^echo "PATH=\$PATH" > "\$HOME\/\.ssh\/environment"$/m);
+  assert.match(script, /^PermitUserEnvironment yes$/m);
+});

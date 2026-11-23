@@ -8,6 +8,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {main} from '../../scripts/native-matrix/matrix-device.mjs';
 import {writeState} from '../../scripts/repl-parity/scenes-mac.mjs';
+import {MOVE_REFUSED_OFF_HOSTED} from '../../scripts/hosted-sittings/runner.mjs';
 import {alertBoundsOf, clearFrame, contains, guardCause, isAlertWindow, isPanelWindow, MENU_BAR, overlaps, PANEL_SERVICE, sendsPointer} from '../../scripts/native-matrix/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../../scripts/native-matrix/live-checks.mjs';
 import {CASES} from '../../scripts/native-matrix/plan.mjs';
@@ -182,23 +183,30 @@ test('read --key-window <scene>: the scene app\'s own key window, read by ax-sta
   });
 });
 
+// The device's own environment on a GitHub-hosted runner, as loopback.sh hands it the sessions.
+const HOSTED_DEVICE = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'};
 test('place: the scene\'s recorded window moved by the frame probe and read back; a read-back off the frame does not match', async () => {
   await withRun(async dir => {
     const asked = [];
     const probe = back => args => { asked.push(args); return {pid: 501, window: 41, readBack: back, matched: true, exitStatus: 0}; };
     const to = rect(22, 100, 720, 560);
-    const out = await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {probe: probe(to)}});
+    const out = await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {...HOSTED_DEVICE, probe: probe(to)}});
     assert.deepEqual(out.answer, {requested: to, readBack: to, matched: true, exitStatus: 0});
     assert.deepEqual(asked, [['window-frame', '--pid', '501', '--window', '41', '--frame', '22,100,720,560']]);
-    assert.equal((await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {probe: probe(rect(22, 120, 720, 560))}})).answer.matched, false);
-    await assert.rejects(main(['place', '--run', dir, '--scene', 'chrome', '--frame', '0,0,1,1'], {io: {probe: probe(to)}}), /names no scene/);
-    await assert.rejects(main(['place', '--run', dir, '--scene', 'electron', '--frame', '0,0'], {io: {probe: probe(to)}}), /x,y,w,h/);
+    assert.equal((await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {...HOSTED_DEVICE, probe: probe(rect(22, 120, 720, 560))}})).answer.matched, false);
+    await assert.rejects(main(['place', '--run', dir, '--scene', 'chrome', '--frame', '0,0,1,1'], {io: {...HOSTED_DEVICE, probe: probe(to)}}), /names no scene/);
+    await assert.rejects(main(['place', '--run', dir, '--scene', 'electron', '--frame', '0,0'], {io: {...HOSTED_DEVICE, probe: probe(to)}}), /x,y,w,h/);
     // The Open panel: its window found by number on screen, the service's pid from the list.
     asked.length = 0;
     const screen = () => ({windows: [{ownerPid: 12, ownerName: 'Open and Save Panel Service', ownerBundleId: null, layer: 0, number: 77, name: null, bounds: rect(300, 100, 800, 500)}]});
-    const panel = await main(['place', '--run', dir, '--scene', 'openPanel', '--window', '77', '--frame', '679,100,800,500'], {io: {probe: probe(rect(679, 100, 800, 500)), screen}});
+    const panel = await main(['place', '--run', dir, '--scene', 'openPanel', '--window', '77', '--frame', '679,100,800,500'], {io: {...HOSTED_DEVICE, probe: probe(rect(679, 100, 800, 500)), screen}});
     assert.deepEqual(panel.answer, {requested: rect(679, 100, 800, 500), readBack: rect(679, 100, 800, 500), matched: true, exitStatus: 0, pid: 12});
     assert.deepEqual(asked, [['window-frame', '--pid', '12', '--window', '77', '--frame', '679,100,800,500']]);
-    await assert.rejects(main(['place', '--run', dir, '--scene', 'openPanel', '--window', '78', '--frame', '0,0,1,1'], {io: {probe: probe(to), screen}}), /no Open panel window/);
+    await assert.rejects(main(['place', '--run', dir, '--scene', 'openPanel', '--window', '78', '--frame', '0,0,1,1'], {io: {...HOSTED_DEVICE, probe: probe(to), screen}}), /no Open panel window/);
+    // Off a GitHub-hosted runner (the mini's session) the move is refused before anything is read or asked of the probe.
+    for (const off of [{env: {}, platform: 'darwin'}, {env: HOSTED_DEVICE.env, platform: 'linux'}]) {
+      const refused = await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {...off, probe: () => assert.fail('the probe is not asked'), screen: () => assert.fail('nothing read')}});
+      assert.deepEqual(refused.answer, {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
+    }
   });
 });

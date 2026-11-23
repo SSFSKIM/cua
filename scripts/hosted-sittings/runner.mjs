@@ -87,16 +87,23 @@ export const runnerKey = r => `${r.image.name} ${r.image.version}, run ${r.run.i
 // The attestation line a summary prints and compares (null off a hosted runner).
 export const runnerText = r => (r ? `GitHub-hosted ${runnerKey(r)}; the run's install ${r.install.release} at ${r.install.home}; its engine build ${String(r.engine.build).slice(0, 12)} (cua ${r.engine.engineVersion})` : null);
 
-// The venue a device's record names, only when the record attests a GitHub-hosted runner (runnerProblems: none, the
-// record setup writes on one): any other file at the record's path (a hand-made one, a copy on the mini) leaves every
-// scene and the TextEdit document as the mini's. -> the venue, or null.
-const attestedVenue = record => (runnerProblems(record).length === 0 ? record.venue ?? null : null);
+// The venue a device's record names, only when both hold: the device's own environment is a GitHub-hosted macOS
+// runner's (isGithubHosted, checked at the point of use: loopback.sh hands the device's ssh sessions
+// RUNNER_ENVIRONMENT, the mini's sshd never does) and the record attests one (runnerProblems: none, the record setup
+// writes there). Anything else (a hand-made record, an attested one read off a runner) leaves every scene and the
+// TextEdit document as the mini's. The read is not bound to the VM (#560). -> the venue, or null.
+const attestedVenue = (record, {env = process.env, platform = process.platform} = {}) =>
+  (isGithubHosted(env, platform) && runnerProblems(record).length === 0 ? record.venue ?? null : null);
+// Why a device refuses a window move (./guard-device.mjs placeWindow, ../native-matrix/matrix-device.mjs placeScene):
+// a move is a hosted-only write, so off a GitHub-hosted runner the frame probe is never asked.
+export const MOVE_REFUSED_OFF_HOSTED = 'a window is moved only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted): off one the frame probe is not asked';
 // The scene frames a device's record names (its venue's, ruling 1169): {scene: {x, y, width, height}} for each well-formed
 // frame, or null off a hosted runner (no record, an unattested one, or one with no venue), where every scene keeps its
 // own frame.
 const isFrame = f => Boolean(f) && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(f[k])) && f.width > 0 && f.height > 0;
-export function venueFramesOf(record) {
-  const frames = attestedVenue(record)?.frames;
+// `at`: the device's {env, platform}, process's by default.
+export function venueFramesOf(record, at) {
+  const frames = attestedVenue(record, at)?.frames;
   if (!frames || typeof frames !== 'object') return null;
   return Object.fromEntries(Object.entries(frames).filter(([, f]) => isFrame(f)).map(([scene, {x, y, width, height}]) => [scene, {x, y, width, height}]));
 }
@@ -104,8 +111,8 @@ export function venueFramesOf(record) {
 // `up textedit` writes into the run's RTF: {width, height} in whole positive points, or null (no venue, an unattested
 // record, or none declared), where the document keeps the mini's bytes.
 const isPoints = n => Number.isSafeInteger(n) && n > 0;
-export function venueTextEditViewOf(record) {
-  const view = attestedVenue(record)?.textEditDocument?.view;
+export function venueTextEditViewOf(record, at) {
+  const view = attestedVenue(record, at)?.textEditDocument?.view;
   return isPoints(view?.width) && isPoints(view?.height) ? {width: view.width, height: view.height} : null;
 }
 

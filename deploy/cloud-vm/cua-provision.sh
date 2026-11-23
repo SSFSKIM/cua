@@ -7,9 +7,12 @@
 #   CUA_REF      the git ref of CUA_REPO checked out at /opt/cua
 #   CUA_REPO     the repository (https://github.com/SSFSKIM/cua), or `upload`: a git bundle holding CUA_REF that the
 #                operator copies to /var/cache/cua/cua.bundle (the script waits up to CUA_DEB_WAIT seconds for it)
-#   CUA_DEB      where the pinned ChatGPT deb comes from: `pin` (the pin's own URL), an https URL (a mirror; the bytes
-#                must still match the pin), or `upload` (the operator copies it to /var/cache/cua/upload.deb; the
-#                script waits up to CUA_DEB_WAIT seconds for it, then stops at that step)
+#   CUA_DEB      the vendor's ChatGPT deb, which only CUA_NATIVE_ENGINE=vendor needs (#171 M6a): `none` (the default:
+#                nothing is fetched or waited for; cua install still tries the pin's URL, and a device works without
+#                it), or, once cua's own runtime is installed and registered, `pin` (the pin's own URL), an https URL (a
+#                mirror; the bytes must still match the pin) or `upload` (the operator copies it to
+#                /var/cache/cua/upload.deb; the script waits up to CUA_DEB_WAIT seconds for it), then stops at that
+#                step where the deb cannot be had
 #   CUA_RELAY    optional wss:// relay URL: enrol the device there and install the agent as a systemd user unit
 #   CUA_EXTENSION      where Chrome force-installs cua's extension from: `hosted` (default), the self-hosted CRX named
 #                      by CUA_EXTENSION_URL's update manifest, or `store` (the Chrome Web Store listing)
@@ -19,12 +22,110 @@
 # a credential: a relay enrolment's client credential goes only to /root/cua-enrollment.json (0600).
 set -euo pipefail
 
+# ---- cua and its registration (steps 8 and 9 below run these). test/deploy-cloud-vm.test.mjs sources this file, which
+# returns before step 1, and runs them with stub cua, curl, as_user, log and stop_early. ----
+checkout=/opt/cua cache=/var/cache/cua
+EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb   # cua's own extension (CUA_EXTENSION_ID, src/chrome/extension.mjs)
+
+# cua install, then its one-line summary; a failed install stops here. Plain, it installs cua's own runtime (its module
+# tree, sandbox helper and Node) and cua's engine, and tries the vendor's tree from the pin's URL, which a working
+# device does not need (#171 M6a); `vendor_placed` says whether that tree is in place.
+install_cua() {
+  local out code=0
+  log "cua install${1:+ $*}"
+  out="$(as_user cua install "$@" --json)" || code=$?
+  jq -c '{ok, release, changed, sessions}' <<<"$out" || printf '%s\n' "$out"
+  vendor_placed="$(jq -r 'if .vendor.release then 1 else 0 end' <<<"$out" 2>/dev/null || echo 0)"
+  ((code == 0)) || stop_early "cua install${1:+ $*} failed (exit $code): $(jq -r '.error.message // "see its output above"' <<<"$out" 2>/dev/null || echo 'see its output above'); run cua-provision.sh again"
+}
+
+# Register cua's Chrome host (io.github.ssfskim.cua names the launcher in cua's home), then the profile `me`, bound to
+# the extension's live host where it comes up (`bound`; the checklist keeps the bind where it does not).
+register_cua() {
+  local profile_dir="$home/.config/google-chrome/Default" added
+  as_user cua chrome register
+  log "waiting for Chrome's Default profile and the extension"
+  for _ in $(seq 60); do
+    [[ -d "$profile_dir/Extensions/$EXTENSION_ID" || -d "$profile_dir/Local Extension Settings/$EXTENSION_ID" ]] && break
+    sleep 5
+  done
+  if [[ -d "$profile_dir" ]]; then
+    added="$(as_user cua profiles add me --chrome-profile Default 2>&1)" || grep -q profile_exists <<<"$added" || { echo "$added" >&2; exit 1; }
+    echo "$added"
+  else
+    log "Chrome's Default profile does not exist yet (is the desktop up?); cua profiles add me waits for a re-run"
+  fi
+  # The extension starts cua's host by itself (it retries every 5 s until the registration is there), and the host
+  # listens on a socket in cua's home. Binding `me` needs that live host and nothing from the owner.
+  log "waiting for the extension's host, then cua profiles bind me"
+  # shellcheck disable=SC2016  # $HOME expands in the user's shell
+  for _ in $(seq 45); do as_user sh -c 'ls "$HOME"/.local/share/cua/chrome/b/*.sock' >/dev/null 2>&1 && break; sleep 2; done
+  bound=0
+  if as_user cua profiles bind me; then bound=1; fi
+}
+
+# "release url sha256" of the vendor's pin for this host (cua's own selection).
+pin_of_host() {
+  as_user node --input-type=module -e "
+    import {loadPins, selectPin} from '$checkout/src/runtime/manifest.mjs';
+    const p = selectPin(loadPins());
+    console.log([p.release, p.archive.url, p.archive.sha256].join(' '));"
+}
+
+# The pinned deb (`deb`): in $cache under the pin's file name, its SHA-256 checked against the pin before it is kept, from
+# where CUA_DEB says. Where it cannot be had, provisioning stops here, with cua's own runtime already working.
+fetch_deb() {
+  local release pin_url pin_sha up url
+  read -r release pin_url pin_sha <<<"$(pin_of_host)"
+  deb="$cache/${pin_url##*/}"
+  if [[ -f "$deb" ]] && ! echo "$pin_sha  $deb" | sha256sum -c --status; then
+    log "$deb does not match the pin's sha256; removing it"
+    rm -f "$deb"
+  fi
+  if [[ ! -f "$deb" ]]; then
+    case "$CUA_DEB" in
+      upload)
+        # The operator copies the deb to $cache/upload.deb (create-hetzner.sh --deb does, and touches upload.deb.failed
+        # when its copy fails); it becomes $deb once it matches this checkout's pin.
+        up="$cache/upload.deb"
+        log "waiting up to ${CUA_DEB_WAIT}s for $up (copied there by the operator)"
+        for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$up" || -e "$up.failed" ]] && break; sleep 5; done
+        if [[ -e "$up.failed" ]]; then rm -f "$up.failed"; stop_early "the copy of the deb to $up failed: copy it there again, then run cua-provision.sh again"; fi
+        [[ -f "$up" ]] || stop_early "no deb at $up: copy ${pin_url##*/} there, then run cua-provision.sh again"
+        echo "$pin_sha  $up" | sha256sum -c --status || { rm -f "$up"; stop_early "the uploaded $up does not match the sha256 of the pin for $release (removed)"; }
+        mv "$up" "$deb"
+        ;;
+      *)
+        url="$CUA_DEB"; [[ "$url" == pin ]] && url="$pin_url"
+        log "download $url"
+        curl -fL --retry 3 --silent --show-error -o "$deb.part" "$url" || { rm -f "$deb.part"; stop_early "could not download $url: cua's own runtime is installed and registered; copy the pinned deb to the VM's $cache/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again"; }
+        echo "$pin_sha  $deb.part" | sha256sum -c --status || { rm -f "$deb.part"; stop_early "$url does not match the pin's sha256 for $release (removed)"; }
+        mv "$deb.part" "$deb"
+        ;;
+    esac
+  fi
+  chmod 0644 "$deb"
+}
+
+# Steps 8 and 9: cua's own runtime and its registration, as under CUA_DEB=none; then, only where CUA_DEB asks for the
+# vendor's tree (for CUA_NATIVE_ENGINE=vendor) and cua install did not place it, the deb and the install that requires it.
+provision_cua() {
+  install_cua
+  register_cua
+  [[ "$CUA_DEB" != none ]] || return 0
+  if ((vendor_placed)); then log "the vendor's tree is in place (cua install fetched it from the pin's URL)"; return 0; fi
+  fetch_deb
+  install_cua --archive "$deb"
+}
+
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
+
 [[ $EUID == 0 ]] || { echo "cua-provision.sh runs as root" >&2; exit 1; }
 conf=/etc/cua-provision.conf
 # shellcheck source=/dev/null
 . "$conf"
-: "${CUA_USER:?} ${CUA_REF:?} ${CUA_REPO:?} ${CUA_DEB:?}"
-CUA_RELAY="${CUA_RELAY:-}" CUA_DEB_WAIT="${CUA_DEB_WAIT:-3600}"
+: "${CUA_USER:?} ${CUA_REF:?} ${CUA_REPO:?}"
+CUA_DEB="${CUA_DEB:-none}" CUA_RELAY="${CUA_RELAY:-}" CUA_DEB_WAIT="${CUA_DEB_WAIT:-3600}"
 CUA_EXTENSION="${CUA_EXTENSION:-hosted}" CUA_EXTENSION_URL="${CUA_EXTENSION_URL:-https://178-104-102-73.sslip.io/ext/update.xml}"
 
 state=/var/lib/cua-provision
@@ -36,7 +137,6 @@ log "start $(date -u +%FT%TZ): user $CUA_USER, ref $CUA_REF, deb $CUA_DEB, relay
 
 export DEBIAN_FRONTEND=noninteractive
 arch="$(dpkg --print-architecture)"   # amd64 or arm64
-EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb   # cua's own extension (CUA_EXTENSION_ID, src/chrome/extension.mjs)
 case "$CUA_EXTENSION" in
   hosted) extension_update_url="$CUA_EXTENSION_URL" ;;
   store) extension_update_url=https://clients2.google.com/service/update2/crx ;;
@@ -283,67 +383,9 @@ doctor() {
 }
 stop_early() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 0; }
 
-# 8. The pinned deb: the pin for this host (cua's own selection), in /var/cache/cua under the pin's file name, its
-# SHA-256 checked against the pin before it is kept. `cua install` checks length and hash again.
-pin="$(as_user node --input-type=module -e "
-  import {loadPins, selectPin} from '/opt/cua/src/runtime/manifest.mjs';
-  const p = selectPin(loadPins());
-  console.log([p.release, p.archive.url, p.archive.sha256].join(' '));")"
-read -r release pin_url pin_sha <<<"$pin"
-deb="/var/cache/cua/${pin_url##*/}"
-if [[ -f "$deb" ]] && ! echo "$pin_sha  $deb" | sha256sum -c --status; then
-  log "$deb does not match the pin's sha256; removing it"
-  rm -f "$deb"
-fi
-if [[ ! -f "$deb" ]]; then
-  case "$CUA_DEB" in
-    upload)
-      # The operator copies the deb to /var/cache/cua/upload.deb (create-hetzner.sh --deb does, and touches
-      # upload.failed when its copy fails); it becomes $deb once it matches this checkout's pin.
-      up=/var/cache/cua/upload.deb
-      log "waiting up to ${CUA_DEB_WAIT}s for $up (copied there by the operator)"
-      for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$up" || -e "$up.failed" ]] && break; sleep 5; done
-      if [[ -e "$up.failed" ]]; then rm -f "$up.failed"; stop_early "the copy of the deb to $up failed: copy it there again, then run cua-provision.sh again"; fi
-      [[ -f "$up" ]] || stop_early "no deb at $up: copy ${pin_url##*/} there, then run cua-provision.sh again"
-      echo "$pin_sha  $up" | sha256sum -c --status || { rm -f "$up"; stop_early "the uploaded $up does not match the sha256 of the pin for $release (removed)"; }
-      mv "$up" "$deb"
-      ;;
-    *)
-      url="$CUA_DEB"; [[ "$url" == pin ]] && url="$pin_url"
-      log "download $url"
-      curl -fL --retry 3 --silent --show-error -o "$deb.part" "$url"
-      echo "$pin_sha  $deb.part" | sha256sum -c --status || { rm -f "$deb.part"; echo "$url does not match the pin's sha256 for $release" >&2; exit 1; }
-      mv "$deb.part" "$deb"
-      ;;
-  esac
-fi
-chmod 0644 "$deb"
-
-# 9. cua: install the release (a no-op when it is installed), register cua's Chrome host (io.github.ssfskim.cua names
-# the launcher in cua's home), register the profile.
-log "cua install $release"
-as_user cua install --archive "$deb" --json | jq -c '{ok, release, source, changed}'
-as_user cua chrome register
-log "waiting for Chrome's Default profile and the extension"
-profile_dir="$home/.config/google-chrome/Default"
-for _ in $(seq 60); do
-  [[ -d "$profile_dir/Extensions/$EXTENSION_ID" || -d "$profile_dir/Local Extension Settings/$EXTENSION_ID" ]] && break
-  sleep 5
-done
-if [[ -d "$home/.config/google-chrome/Default" ]]; then
-  added="$(as_user cua profiles add me --chrome-profile Default 2>&1)" || grep -q profile_exists <<<"$added" || { echo "$added" >&2; exit 1; }
-  echo "$added"
-else
-  log "Chrome's Default profile does not exist yet (is the desktop up?); cua profiles add me waits for a re-run"
-fi
-# The extension starts cua's host by itself (it retries every 5 s until the registration is there), and the host
-# listens on a socket in cua's home. Binding `me` needs that live host and nothing from the owner; where it fails, the
-# checklist keeps it.
-log "waiting for the extension's host, then cua profiles bind me"
-# shellcheck disable=SC2016  # $HOME expands in the user's shell
-for _ in $(seq 45); do as_user sh -c 'ls "$HOME"/.local/share/cua/chrome/b/*.sock' >/dev/null 2>&1 && break; sleep 2; done
-bound=0
-if as_user cua profiles bind me; then bound=1; fi
+# 8 and 9. cua: its own runtime (cua install), its Chrome host and the profile `me`; then, where CUA_DEB asks for it,
+# the vendor's deb and `cua install --archive` (provision_cua, above).
+provision_cua
 
 # 10. Optional remote control: enrol with the relay once (the client credential to a root-only file, never printed),
 # move an existing enrolment to a changed relay URL, and run the agent as the user's systemd unit.

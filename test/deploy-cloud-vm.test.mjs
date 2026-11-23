@@ -1,6 +1,8 @@
 // deploy/cloud-vm/render.sh: the user data it prints is cloud-init.yaml with the parameters and cua-provision.sh filled
 // in, its inputs are refused unless plain, and it fits a provider's user-data limit. The VM side (cua-provision.sh) is
-// proven live (docs/evidence/2026-10-07-cloud-vm-provisioning.md); here only its shell syntax is checked.
+// proven live (docs/evidence/2026-10-07-cloud-vm-provisioning.md); here its shell syntax is checked, and its install
+// steps (#171 M6a, the pre-flight's §4.4: cua's own runtime first, the vendor's deb only when asked for) run with stub
+// `cua` and `curl`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
@@ -28,7 +30,7 @@ test('render.sh fills the conf and embeds cua-provision.sh (gzipped) byte for by
   assert.doesNotMatch(run.stdout, /^ *# /m);
   assert.doesNotMatch(run.stdout, /@[A-Z_]+@/);
   assert.equal(contentOf(run.stdout, '/etc/cua-provision.conf').toString(),
-    "CUA_USER='agent'\nCUA_REF='feat/x-1'\nCUA_REPO='https://github.com/SSFSKIM/cua'\nCUA_DEB='pin'\nCUA_RELAY='wss://1-2-3-4.sslip.io/ws'\n" +
+    "CUA_USER='agent'\nCUA_REF='feat/x-1'\nCUA_REPO='https://github.com/SSFSKIM/cua'\nCUA_DEB='none'\nCUA_RELAY='wss://1-2-3-4.sslip.io/ws'\n" +
     `CUA_EXTENSION='hosted'\nCUA_EXTENSION_URL='${DEFAULT_BASE_URL}update.xml'\n`);
   assert.match(run.stdout, /- path: \/usr\/local\/sbin\/cua-provision\.sh\n {4}encoding: gz\+b64\n/);
   assert.deepEqual(gunzipSync(contentOf(run.stdout, '/usr/local/sbin/cua-provision.sh')), readFileSync(`${dir}cua-provision.sh`));
@@ -41,9 +43,64 @@ test('render.sh: defaults, a mirror URL, and a local deb meaning the operator up
   const conf = run => contentOf(run.stdout, '/etc/cua-provision.conf').toString();
   const plain = render();
   assert.equal(plain.status, 0, plain.stderr);
-  assert.match(conf(plain), /^CUA_USER='cua'\nCUA_REF='main'\nCUA_REPO='https:\/\/github\.com\/SSFSKIM\/cua'\nCUA_DEB='pin'\nCUA_RELAY=''\nCUA_EXTENSION='hosted'\nCUA_EXTENSION_URL='https:\/\/178-104-102-73\.sslip\.io\/ext\/update\.xml'\n$/);
+  assert.match(conf(plain), /^CUA_USER='cua'\nCUA_REF='main'\nCUA_REPO='https:\/\/github\.com\/SSFSKIM\/cua'\nCUA_DEB='none'\nCUA_RELAY=''\nCUA_EXTENSION='hosted'\nCUA_EXTENSION_URL='https:\/\/178-104-102-73\.sslip\.io\/ext\/update\.xml'\n$/);
   assert.match(conf(render('--deb', 'https://mirror.example/chatgpt_26.928.40906_amd64.deb')), /CUA_DEB='https:\/\/mirror\.example\/chatgpt_26\.928\.40906_amd64\.deb'/);
   assert.match(conf(render('--deb', `${dir}cloud-init.yaml`)), /CUA_DEB='upload'/);
+  assert.match(conf(render('--deb', 'pin')), /CUA_DEB='pin'/);
+  assert.match(conf(render('--deb', 'none')), /CUA_DEB='none'/);
+});
+
+// The install steps of cua-provision.sh, sourced (it returns before its first step) and run with stubs: `cua` records
+// its arguments and answers `install --json` as told, `curl` fails as an unreachable server does, and as_user, log and
+// stop_early stand in for the root-only ones. Chrome's profile, its extension and its host's socket are there, so the
+// waits end at once.
+function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'download_failed'}}}, installExit = 0}) {
+  const scratch = mkdtempSync(join(tmpdir(), 'cua-provision-'));
+  t.after(() => rmSync(scratch, {recursive: true, force: true}));
+  const bin = join(scratch, 'bin'), home = join(scratch, 'home'), cache = join(scratch, 'cache'), log = join(scratch, 'calls.log');
+  mkdirSync(bin);
+  mkdirSync(cache);
+  mkdirSync(join(home, '.config', 'google-chrome', 'Default', 'Extensions', CUA_EXTENSION_ID), {recursive: true});
+  mkdirSync(join(home, '.local', 'share', 'cua', 'chrome', 'b'), {recursive: true});
+  writeFileSync(join(home, '.local', 'share', 'cua', 'chrome', 'b', 'h.sock'), '');
+  const stub = (name, body) => { writeFileSync(join(bin, name), `#!/usr/bin/env bash\nprintf '${name} %s\\n' "$*" >>'${log}'\n${body}\n`); chmodSync(join(bin, name), 0o755); };
+  stub('cua', 'if [[ "$1" == install ]]; then printf \'%s\\n\' "$CUA_INSTALL_JSON"; exit "$CUA_INSTALL_EXIT"; fi; exit 0');
+  stub('curl', 'echo "curl: (6) Could not resolve host" >&2; exit 6');
+  const script = `source '${dir}cua-provision.sh'
+cache='${cache}' home='${home}' CUA_DEB='${deb}' CUA_DEB_WAIT=5
+as_user() { HOME='${home}' "$@"; }
+log() { printf 'log %s\\n' "$*" >>'${log}'; }
+stop_early() { printf 'stop %s\\n' "$1" >>'${log}'; exit 0; }
+pin_of_host() { echo '26.928.40906-linux-x64 https://example.invalid/chatgpt_26.928.40906_amd64.deb ${'0'.repeat(64)}'; }
+provision_cua
+echo done >>'${log}'`;
+  const run = spawnSync('bash', ['-c', script], {encoding: 'utf8', env: {...process.env, PATH: `${bin}:${process.env.PATH}`, CUA_INSTALL_JSON: JSON.stringify(install), CUA_INSTALL_EXIT: String(installExit)}});
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  return {calls: readFileSync(log, 'utf8').split('\n').filter(line => /^(cua|curl|stop|done)\b/.test(line)), stdout: run.stdout, cache};
+}
+const REGISTERED = ['cua install --json', 'cua chrome register', 'cua profiles add me --chrome-profile Default', 'cua profiles bind me'];
+const noJq = spawnSync('jq', ['--version']).error ? 'jq is not installed here' : false;
+
+test('cua-provision.sh with CUA_DEB=none installs and registers cua\'s own runtime and fetches nothing', {skip: noJq}, t => {
+  const {calls, stdout} = provision(t, {deb: 'none'});
+  assert.deepEqual(calls, [...REGISTERED, 'done']);
+  assert.match(stdout, /^\{"ok":true,"release":null,"changed":null,"sessions":null\}$/m, 'cua install\'s summary line');
+});
+
+test('cua-provision.sh with CUA_DEB=pin and no reachable deb: the own runtime first, as under none, then the fetch, then the stop', {skip: noJq}, t => {
+  const {calls, cache} = provision(t, {deb: 'pin'});
+  assert.deepEqual(calls.slice(0, REGISTERED.length), REGISTERED);
+  assert.deepEqual(calls.slice(REGISTERED.length), [
+    `curl -fL --retry 3 --silent --show-error -o ${cache}/chatgpt_26.928.40906_amd64.deb.part https://example.invalid/chatgpt_26.928.40906_amd64.deb`,
+    'stop could not download https://example.invalid/chatgpt_26.928.40906_amd64.deb: cua\'s own runtime is installed and registered; copy the pinned deb to the VM\'s '
+      + `${cache}/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again`]);
+});
+
+test('cua-provision.sh: a vendor tree cua install already placed is not fetched again; a failed cua install stops before registering', {skip: noJq}, t => {
+  const placed = provision(t, {deb: 'pin', install: {ok: true, vendor: {release: '26.928.40906-linux-x64', changed: true}}});
+  assert.deepEqual(placed.calls, [...REGISTERED, 'done']);
+  const failed = provision(t, {deb: 'none', install: {ok: false, error: {code: 'download_failed', message: 'cua\'s module tree was not installed: could not fetch'}}, installExit: 1});
+  assert.deepEqual(failed.calls, ['cua install --json', 'stop cua install failed (exit 1): cua\'s module tree was not installed: could not fetch; run cua-provision.sh again']);
 });
 
 test('render.sh: the cua extension from the Store or a self-hosted update URL; the repository from a URL or an uploaded bundle', () => {

@@ -5,7 +5,7 @@
 # /usr/local/sbin/cua-provision.sh on it instead).
 #
 #   deploy/cloud-vm/create-hetzner.sh [--name cua-vm] [--arch x64|arm64] [--type <server type>] [--location nbg1]
-#       [--ssh-key macbook] [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb pin|<https URL>|<local file>]
+#       [--ssh-key macbook] [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<local file>]
 #       [--relay wss://<relay>/ws] [--extension hosted|store] [--extension-url <https URL>]
 #
 # --arch picks the type: cx23 (x64) or cax11 (arm64). --deb <local file> copies that deb (checked here against this
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 name=cua-vm arch=x64 type='' location=nbg1 ssh_key=macbook render_args=() deb='' repo=''
-usage() { echo "usage: $0 [--name <name>] [--arch x64|arm64] [--type <server type>] [--location <location>] [--ssh-key <name>] [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb pin|<https URL>|<file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
+usage() { echo "usage: $0 [--name <name>] [--arch x64|arm64] [--type <server type>] [--location <location>] [--ssh-key <name>] [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
 while (($#)); do
   (($# >= 2)) || usage
   case "$1" in
@@ -50,7 +50,7 @@ if [[ -n "$repo" && "$repo" != https://* ]]; then
   upload_src+=("$repo") upload_name+=(cua.bundle)
 fi
 # A local deb must be the pinned one for this architecture: check it here rather than after a 10-minute upload.
-if [[ -n "$deb" && "$deb" != pin && "$deb" != https://* ]]; then
+if [[ -n "$deb" && "$deb" != none && "$deb" != pin && "$deb" != https://* ]]; then
   read -r file want < <(node -e '
     const fs = require("fs"), dir = process.argv[1];
     const pins = fs.readdirSync(dir).filter(f => f.endsWith("-linux-" + process.argv[2] + ".json")).sort();

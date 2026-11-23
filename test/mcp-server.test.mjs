@@ -492,6 +492,30 @@ test('the engine notice rides the first work result only, after the runtime\'s o
   assert.equal(Object.hasOwn(plain._meta, 'cua/engineNotice'), false);
 });
 
+// An MCP tool error (isError: true) is a result, but not a successful one: it does not carry or use up the notice.
+test('a tool error neither carries nor consumes the engine notice: the next successful result, js_reset here, carries it, and the call after none', async () => {
+  const notice = 'cua: this session keeps the vendor engine: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  const h = harness({server: {engineNotice: notice}});
+  await initialized(h);
+  const failed = h.client.call('js', {code: 'boom'});
+  h.upstream.reply(await h.upstream.nextCall('js'), {content: [{type: 'text', text: 'Error: boom'}], isError: true});
+  const failedResult = (await failed.response).result;
+  assert.equal(failedResult.isError, true);
+  assert.deepEqual(failedResult.content, [{type: 'text', text: 'Error: boom'}]);
+  assert.equal(Object.hasOwn(failedResult._meta, 'cua/engineNotice'), false);
+  const reset = h.client.call('js_reset');
+  h.upstream.reply(await h.upstream.nextCall('js_reset'), {content: [{type: 'text', text: 'js kernel reset'}], isError: false});
+  const resetResult = (await reset.response).result;
+  assert.deepEqual(resetResult.content, [{type: 'text', text: 'js kernel reset'}, {type: 'text', text: notice}]);
+  assert.equal(resetResult._meta['cua/engineNotice'], notice);
+  const after = h.upstream.sent.length;
+  const next = h.client.call('js', {code: 'b'});
+  h.upstream.reply(await h.upstream.nextCall('js', {after}), {content: [{type: 'text', text: 'b'}], isError: false});
+  const nextResult = (await next.response).result;
+  assert.deepEqual(nextResult.content, [{type: 'text', text: 'b'}]);
+  assert.equal(Object.hasOwn(nextResult._meta, 'cua/engineNotice'), false);
+});
+
 test('the browser keys\' metadata is never the client\'s: the server drops it, and the connection stamps it as the call reaches the runtime (#493)', async () => {
   const {BROWSER_KEYS_META, BROWSER_KEYS_UNREACHED_META} = await import('../src/mcp/server.mjs');
   const service = await import('../src/browser-service/browsers.mjs');

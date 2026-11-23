@@ -47,7 +47,7 @@
 // - With `engineNotice` (one line: why a macOS computer session keeps the vendor engine while cua's is the default,
 //   and what to run; src/runtime/engine-notice.mjs, design ruling 1148), the connection's first js/js_reset result gets
 //   it as a text item after the runtime's own content and as `_meta['cua/engineNotice']`, the same string; later
-//   results do not. A JSON-RPC error is no result, so the notice waits for the next one.
+//   results do not. A JSON-RPC error, or a tool error (isError), is no successful result, so the notice waits for the next one.
 // - The idle stop (issue #107): with an upstream that can stop its runtime (src/mcp/lazy-runtime.mjs) and
 //   `runtimeIdleMs` > 0, a running runtime is stopped once no tool call of this machine's (js, js_reset, end_task,
 //   profiles_list's live check) has run for that long: the timer arms when the last such call completes (or the
@@ -278,10 +278,14 @@ export function createServer({
       restarted = false;
       // The engine attestation (#117): the launch's, unless the service set its own (cua's engine, from its ping).
       const engine = nativeEngine && !Object.hasOwn(result._meta ?? {}, 'cua/nativeEngine') ? {'cua/nativeEngine': nativeEngine} : {};
-      // The engine notice (ruling 1148), once: after the runtime's own content, so its items keep their places.
-      const notice = noticePending ? {[ENGINE_NOTICE_META]: noticePending} : {};
-      if (noticePending) result.content = [...(result.content ?? []), {type: 'text', text: noticePending}];
-      noticePending = null;
+      // The engine notice (ruling 1148), once, on a successful tool result (a tool error is a result too, and neither
+      // carries nor uses it up): after the runtime's own content, so its items keep their places.
+      const carries = Boolean(noticePending) && result.isError !== true;
+      const notice = carries ? {[ENGINE_NOTICE_META]: noticePending} : {};
+      if (carries) {
+        result.content = [...(result.content ?? []), {type: 'text', text: noticePending}];
+        noticePending = null;
+      }
       respond(msg.id, {...result, _meta: {...(result._meta ?? {}), ...engine, ...notice, 'cua/taskId': taskId}});
     }, error => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);

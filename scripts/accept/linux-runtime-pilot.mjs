@@ -9,10 +9,12 @@
 //   strace       does `strace -f` follow the helper's children? the traced smoke's kernel, under the helper, calling
 // Each answer is yes, no (its evidence was taken and failed), or unanswered (a step before it failed; the reason given).
 //
-//   node scripts/accept/linux-runtime-pilot.mjs --out <dir> [--leg <label>]   writes <dir>/pilot.json; exit 0 when all
-//                                                                            four answers are yes
-// <dir> becomes the artifact: labels, outcomes, counts and scratch paths. The raw strace file stays in <dir>/../scratch
-// and only its summary is kept. It refuses to start with CUA_SHIM_SANDBOX set, with no DISPLAY, or on display :0.
+//   node scripts/accept/linux-runtime-pilot.mjs --out <dir> [--leg <label>]   writes ARTIFACT_FILES into <dir>; exit 0
+//                                                                            only when every mandatory step passed and
+//                                                                            all four answers are yes (pilotVerdict)
+// <dir> holds only the projected reports (labels, outcomes, counts and scratch paths). Every raw stream, doctor's and
+// the install's output, the smokes' own reports and the strace file, stays in <dir>/../scratch. It refuses to start with
+// CUA_SHIM_SANDBOX set, with no DISPLAY, or on display :0.
 import {spawn} from 'node:child_process';
 import {mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, openSync, closeSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
@@ -57,17 +59,21 @@ export function pilotAnswers({environment, launcher, smoke, trace}) {
 
   if (userns && userns !== 'pass') answers.userns = no({'sandbox.userns': userns}, 'bubblewrap could not create its user namespace (doctor\'s sandbox.userns)');
   else if (!ancestors) answers.userns = unanswered(notRun('the smoke\'s confinement step'));
-  else {
-    const underBwrap = ancestors.some(a => a.comm === 'bwrap');
+  else if (!confinement.ancestry.kernel || confinement.ancestry.underServe !== true) {
+    answers.userns = unanswered(`the kernel that answered was not bound under this serve (${confinement.ancestry.reason ?? 'not its descendant'}), so no bwrap above it can be read`);
+  } else {
+    // bwrap certified by the executable read from /proc, above the kernel that answered, in this session.
+    const underBwrap = ancestors.some(a => typeof a.exe === 'string' && /(^|\/)bwrap$/.test(a.exe));
     const evidence = {'sandbox.userns': userns, kernelUnderBwrap: underBwrap};
-    answers.userns = underBwrap ? yes(evidence) : no(evidence, 'the kernel did not run under bubblewrap');
+    answers.userns = underBwrap ? yes(evidence) : no(evidence, 'the kernel that answered did not run under bubblewrap');
   }
 
   if (!typed) answers.a11y = unanswered(notRun('the smoke\'s typing step'));
   else {
     const evidence = {source: typed.detail?.source ?? null, readBack: typed.detail?.readBack ?? null, step: typed.status};
-    answers.a11y = evidence.source === 'at_spi' && evidence.readBack === true ? yes(evidence)
-      : no(evidence, evidence.source !== 'at_spi' ? `gedit's tree came from ${evidence.source ?? 'nowhere'}, not AT-SPI on the run's bus` : 'the marker was not read back once from the tree');
+    answers.a11y = typed.status !== 'PASS' ? no(evidence, `the typing step did not pass (${typed.status})`)
+      : evidence.source === 'at_spi' && evidence.readBack === true ? yes(evidence)
+        : no(evidence, evidence.source !== 'at_spi' ? `gedit's tree came from ${evidence.source ?? 'nowhere'}, not AT-SPI on the run's bus` : 'the marker was not read back once from the tree');
   }
 
   if (!confinement?.verdict) answers.confinement = unanswered(notRun('the smoke\'s confinement step'));
@@ -81,17 +87,49 @@ export function pilotAnswers({environment, launcher, smoke, trace}) {
   return answers;
 }
 
+// The steps the pilot must pass, every one, in its order; the four answers are diagnostic beside them.
+export const MANDATORY_STEPS = [
+  'preconditions',
+  'doctor\'s four environment rows pass',
+  'today\'s cua install',
+  'sandbox.launcher passes',
+  'the item 1 smoke, with the shared confinement step',
+  'the item 1 smoke under strace -f',
+  'strace -f followed the helper\'s children into the kernel',
+];
+
+/** The pilot's own judge: every mandatory step ran and passed, and all four answers are yes. `{pass, problems}`. */
+export function pilotVerdict({steps = [], answers = {}}) {
+  const problems = [];
+  for (const name of MANDATORY_STEPS) {
+    const step = steps.find(s => s.name === name);
+    if (!step) problems.push(`${name} did not run`);
+    else if (step.status !== 'PASS') problems.push(`${name} is ${step.status}`);
+  }
+  for (const question of ['userns', 'a11y', 'confinement', 'strace']) {
+    const answer = answers[question]?.answer ?? 'missing';
+    if (answer !== 'yes') problems.push(`${question} is ${answer}`);
+  }
+  return {pass: problems.length === 0, problems};
+}
+
+// The artifact: these projected reports and nothing else; the raw streams stay in the run's scratch.
+export const ARTIFACT_FILES = ['pilot.json', 'smoke.json', 'smoke-traced.json'];
+
+/** A smoke's report projected for the artifact: its status and each step's name and status. */
+export const projectSmoke = report => (report ? {status: report.status, steps: (report.steps ?? []).map(s => ({name: s.name, status: s.status}))} : null);
+
 // --- the run ---------------------------------------------------------------------------------------------------------
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CLI = join(REPO, 'bin', 'cua.mjs');
 const SMOKE = join(REPO, 'scripts', 'accept', 'linux-native.mjs');
 
-// `command args` with its output to two files in `out`: {code, signal, seconds}. Killed at `minutes`.
-function run(out, label, command, args, minutes) {
+// `command args` with its raw output to two files in `scratch`: {code, signal, seconds}. Killed at `minutes`.
+function run(scratch, label, command, args, minutes) {
   const started = Date.now();
-  const stdout = openSync(join(out, `${label}.out`), 'w');
-  const stderr = openSync(join(out, `${label}.err`), 'w');
+  const stdout = openSync(join(scratch, `${label}.out`), 'w');
+  const stderr = openSync(join(scratch, `${label}.err`), 'w');
   return new Promise(done => {
     const child = spawn(command, args, {cwd: REPO, stdio: ['ignore', stdout, stderr]});
     const timer = setTimeout(() => child.kill('SIGTERM'), minutes * 60_000);
@@ -105,7 +143,6 @@ function run(out, label, command, args, minutes) {
 }
 const readJson = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
 const statuses = report => Object.fromEntries((report?.checks ?? []).map(c => [c.name, c.status]));
-const smokeSummary = report => (report ? {status: report.status, steps: report.steps.map(s => ({name: s.name, status: s.status}))} : null);
 
 async function main() {
   const option = name => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
@@ -126,42 +163,47 @@ async function main() {
     if (!record('preconditions', process.platform === 'linux' && process.env.CUA_SHIM_SANDBOX === undefined && /^:\d+/.test(display) && !/^:0(\.\d+)?$/.test(display),
       {display, sandbox: process.env.CUA_SHIM_SANDBOX ?? '(unset: scoped)'})) return;
 
-    const doctor1 = await run(out, 'doctor-environment', process.execPath, [CLI, 'doctor', '--json'], 3);
-    environment = environmentVerdict(readJson(join(out, 'doctor-environment.out')));
+    const doctor1 = await run(scratch, 'doctor-environment', process.execPath, [CLI, 'doctor', '--json'], 3);
+    environment = environmentVerdict(readJson(join(scratch, 'doctor-environment.out')));
     report.environment = environment;
     if (!record('doctor\'s four environment rows pass', environment.pass, {exit: doctor1.code, problems: environment.problems})) return;
 
-    const install = await run(out, 'install', process.execPath, [CLI, 'install'], 20);
+    const install = await run(scratch, 'install', process.execPath, [CLI, 'install'], 20);
     if (!record('today\'s cua install', install.code === 0, install)) return;
 
-    const doctor2 = await run(out, 'doctor-installed', process.execPath, [CLI, 'doctor', '--json'], 3);
-    const installed = readJson(join(out, 'doctor-installed.out'));
+    const doctor2 = await run(scratch, 'doctor-installed', process.execPath, [CLI, 'doctor', '--json'], 3);
+    const installed = readJson(join(scratch, 'doctor-installed.out'));
     launcher = rowVerdict(installed, 'sandbox.launcher');
     report.doctorRows = statuses(installed);
     if (!record('sandbox.launcher passes', launcher.pass, {exit: doctor2.code, launcher})) return;
 
-    const plain = await run(out, 'smoke', process.execPath, [SMOKE, '--selection', 'default'], 10);
-    smoke = readJson(join(out, 'smoke.out'));
-    report.smoke = smokeSummary(smoke);
+    const plain = await run(scratch, 'smoke', process.execPath, [SMOKE, '--selection', 'default'], 10);
+    smoke = readJson(join(scratch, 'smoke.out'));
+    report.smoke = projectSmoke(smoke);
     report.confinement = smoke?.confinement ?? null;
+    writeFileSync(join(out, 'smoke.json'), `${JSON.stringify(report.smoke, null, 1)}\n`);
     record('the item 1 smoke, with the shared confinement step', plain.code === 0 && smoke?.status === 'PASS', {exit: plain.code, signal: plain.signal, seconds: plain.seconds});
 
     const traceFile = join(scratch, 'smoke.strace');
-    const traced = await run(out, 'smoke-traced', 'strace', [...TRACE_ARGS, '-o', traceFile, '--', process.execPath, SMOKE, '--selection', 'default'], 25);
-    report.tracedSmoke = smokeSummary(readJson(join(out, 'smoke-traced.out')));
+    const traced = await run(scratch, 'smoke-traced', 'strace', [...TRACE_ARGS, '-o', traceFile, '--', process.execPath, SMOKE, '--selection', 'default'], 25);
+    report.tracedSmoke = projectSmoke(readJson(join(scratch, 'smoke-traced.out')));
+    writeFileSync(join(out, 'smoke-traced.json'), `${JSON.stringify(report.tracedSmoke, null, 1)}\n`);
     record('the item 1 smoke under strace -f', traced.code === 0 && report.tracedSmoke?.status === 'PASS', {exit: traced.code, signal: traced.signal, seconds: traced.seconds, trace: traceFile});
     if (existsSync(traceFile)) {
-      const summary = await summarizeTraceFile(traceFile, {helper: realpathSync(helperFor({home, arch: process.arch}).path), home: realpathSync(home)});
+      // The fixture runs from the checkout (run's cwd), the first process of the trace; both spellings of the home count.
+      const summary = await summarizeTraceFile(traceFile, {helper: realpathSync(helperFor({home, arch: process.arch}).path), home: [...new Set([home, realpathSync(home)])], cwd: REPO});
       trace = traceVerdict(summary);
       report.trace = {summary, verdict: trace};
       record('strace -f followed the helper\'s children into the kernel', trace.pass, {problems: trace.problems});
     }
   } finally {
     report.answers = pilotAnswers({environment, launcher, smoke, trace});
+    report.verdict = pilotVerdict(report);
     report.finishedAt = new Date().toISOString();
     writeFileSync(join(out, 'pilot.json'), `${JSON.stringify(report, null, 1)}\n`);
     for (const [q, a] of Object.entries(report.answers)) process.stderr.write(`pilot: ${q}: ${a.answer}${a.why ? ` (${a.why})` : ''}\n`);
-    process.exitCode = Object.values(report.answers).every(a => a.answer === 'yes') ? 0 : 1;
+    for (const problem of report.verdict.problems) process.stderr.write(`pilot: FAIL ${problem}\n`);
+    process.exitCode = report.verdict.pass ? 0 : 1;
   }
 }
 

@@ -10,11 +10,14 @@
 //   node scripts/accept/linux-trace.mjs <trace> --helper <pinned helper path> --home <CUA_HOME>   JSON summary and verdict
 
 import {createReadStream} from 'node:fs';
+import {posix} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 
 /** strace's options for a fixture's traced run, before `-o <file> -- <command>`. */
-export const TRACE_ARGS = ['-f', '-qq', '-s', '4096', '--pidns-translation', '-e', 'trace=%file,%process'];
+// -y decodes each descriptor, AT_FDCWD included, to its path, so a relative path resolves against its base; fchdir,
+// which takes a descriptor, is traced beside the file calls so the working directory is followed.
+export const TRACE_ARGS = ['-f', '-qq', '-y', '-s', '4096', '--pidns-translation', '-e', 'trace=%file,%process,fchdir'];
 
 const LINE = /^(\d+)\s+(.*)$/;
 const FORKS = /^(?:clone3?|fork|vfork)\(/;
@@ -30,23 +33,79 @@ const KERNEL = /src\/repl-host\/kernel\.mjs"/;
 // The program an exec line names: its first quoted string (execveat's directory comes first, as a number).
 const program = call => /"((?:[^"\\]|\\.)*)"/.exec(call)?.[1] ?? null;
 
-/** A streaming reader: `line(text)` for each line of the trace, then `summary()`. */
-export function traceReader({helper, home}) {
+// -y's decoding: a descriptor (or AT_FDCWD) followed by the path it stands for, `3</usr/lib>`.
+const STRING = '"((?:[^"\\\\]|\\\\.)*)"';
+const DIRFD_PATH = new RegExp(`(AT_FDCWD|\\d+)(?:<([^>]*)>)?, ${STRING}`, 'g');
+const OPERAND_FD = /(?:^|[(\s])(\d+)<([^>]*)>(?!, ")/g;
+const FIRST_STRING = new RegExp(`^${STRING}`);
+const RETURN_FD = /\)\s+=\s+\d+<([^>]*)>/;
+const CWD_DECODED = /AT_FDCWD<([^>]*)>/;
+
+/**
+ * The paths a call names, each resolved: `{paths, unresolved}`. Its operands are its first argument when that is a
+ * string (open, stat, access, chdir, execve: never argv, never an output buffer), each string after a descriptor or
+ * AT_FDCWD (resolved against the path -y decoded for it), each decoded descriptor that is itself an operand (fchdir,
+ * an AT_EMPTY_PATH stat), and the path of the descriptor it returned. A relative path whose base is unknown is
+ * unresolved.
+ */
+function callPaths(call, cwd) {
+  const close = call.lastIndexOf(') = ');
+  const args = (close < 0 ? call : call.slice(0, close)).slice(call.indexOf('(') + 1);
+  const paths = [];
+  let unresolved = 0;
+  const take = (path, base) => {
+    if (path.startsWith('/')) paths.push(posix.resolve(path));
+    else if (typeof base === 'string' && base.startsWith('/')) paths.push(posix.resolve(base, path));
+    else unresolved += 1;
+  };
+  const first = FIRST_STRING.exec(args);
+  if (first) take(first[1], cwd);
+  for (const [, fd, decoded, path] of args.matchAll(DIRFD_PATH)) take(path, decoded ?? (fd === 'AT_FDCWD' ? cwd : undefined));
+  for (const [, , decoded] of args.matchAll(OPERAND_FD)) take(decoded, undefined);
+  const returned = close < 0 ? null : RETURN_FD.exec(call.slice(close));
+  if (returned) take(returned[1], undefined);
+  return {paths, unresolved};
+}
+
+/**
+ * A streaming reader: `line(text)` for each line of the trace, then `summary()`. `home` is the CUA_HOME (or a list of
+ * its spellings) whose `runtimes/` is counted; `cwd` is the first process's working directory, inherited by its
+ * children at each fork.
+ */
+export function traceReader({helper, home, cwd = null}) {
   const procs = new Map();
   const pending = new Map();
-  const runtimes = `${home.replace(/\/$/, '')}/runtimes/`;
-  const proc = pid => { if (!procs.has(pid)) procs.set(pid, {parent: null, execs: [], argv: [], calls: 0, runtimesCalls: 0}); return procs.get(pid); };
+  const roots = [home].flat().map(h => `${h.replace(/\/$/, '')}/runtimes`);
+  const inRuntimes = path => roots.some(root => path === root || path.startsWith(`${root}/`));
+  const proc = pid => {
+    if (!procs.has(pid)) procs.set(pid, {parent: null, execs: [], argv: [], calls: 0, runtimesCalls: 0, unresolved: 0, cwd: {path: procs.size === 0 ? cwd : null}});
+    return procs.get(pid);
+  };
   const finish = (pid, name, call) => {
     const p = proc(pid);
     const returned = TRANSLATED.exec(call) ?? RETURNED.exec(call);
     const value = returned ? Number(returned[1]) : null;
-    if (FORKS.test(`${name}(`) && value > 0) { proc(value).parent = pid; return; }
+    if (FORKS.test(`${name}(`)) {
+      if (value > 0) {
+        const child = proc(value);
+        child.parent = pid;
+        // CLONE_FS shares the working directory (threads); a fork copies it.
+        if (child.cwd.path === null) child.cwd = /CLONE_FS/.test(call) ? p.cwd : {path: p.cwd.path};
+      }
+      return;
+    }
+    const decodedCwd = CWD_DECODED.exec(call)?.[1];
+    if (decodedCwd) p.cwd.path = decodedCwd;
+    const {paths, unresolved} = callPaths(call, p.cwd.path);
+    if (paths.some(inRuntimes)) p.runtimesCalls += 1;
+    else if (unresolved) p.unresolved += 1;
+    if (value === 0 && name === 'chdir') p.cwd.path = paths[0] ?? null;
+    if (value === 0 && name === 'fchdir') p.cwd.path = paths[0] ?? null;
     if (EXEC.test(`${name}(`)) {
       if (value === 0) { p.execs.push(program(call)); p.argv.push(call); p.calls = 0; }
       return;
     }
     p.calls += 1;
-    if (call.includes(runtimes)) p.runtimesCalls += 1;
   };
   return {
     line(text) {
@@ -81,14 +140,18 @@ export function traceReader({helper, home}) {
         underServe: inServe(pid),
         callsAfterExec: p.calls,
       }));
+      const served = [...procs].filter(([pid]) => inServe(pid)).map(([, p]) => p);
+      const unresolved = served.reduce((n, p) => n + p.unresolved, 0);
       return {
         processes: procs.size,
         serve,
-        workers: nodeRunning(WORKER).map(([pid]) => pid),
+        workers: nodeRunning(WORKER).map(([pid]) => ({pid, underServe: inServe(pid)})),
         helpers,
         bwrap: [...procs].filter(([, p]) => p.execs.some(e => /(^|\/)bwrap$/.test(e))).map(([pid]) => pid),
         kernels,
-        runtimesCalls: [...procs].filter(([pid]) => inServe(pid)).reduce((n, [, p]) => n + p.runtimesCalls, 0),
+        // Measured: the serve's tree's calls that name a path under runtimes/, and the calls whose relative path could
+        // not be resolved; with any of those the count is incomplete, never a clean zero.
+        runtimes: {calls: served.reduce((n, p) => n + p.runtimesCalls, 0), unresolved, complete: unresolved === 0},
       };
     },
   };
@@ -112,11 +175,13 @@ export async function summarizeTraceFile(file, options) {
 export function traceVerdict(summary) {
   const problems = [];
   if (summary.serve === null) problems.push('the trace holds no cua serve exec');
-  if (!summary.workers.length) problems.push('the trace holds no trusted worker exec');
+  if (!summary.workers.some(w => w.underServe)) problems.push('the trace holds no trusted worker under the serve');
   if (!summary.kernels.length) problems.push('the trace holds no kernel exec: strace did not follow the helper\'s children');
   else {
-    const helped = summary.kernels.filter(k => k.underHelper);
-    if (!helped.length) problems.push('no kernel ran under the pinned helper in the trace');
+    const served = summary.kernels.filter(k => k.underServe);
+    const helped = served.filter(k => k.underHelper);
+    if (!served.length) problems.push('the trace holds no kernel under the serve');
+    else if (!helped.length) problems.push('no kernel ran under the pinned helper in the trace');
     else if (!helped.some(k => k.callsAfterExec > 0)) problems.push(`the kernel (${helped.map(k => k.pid).join(', ')}) made no call after its exec: the trace saw it start and nothing it did`);
   }
   return {pass: problems.length === 0, problems};

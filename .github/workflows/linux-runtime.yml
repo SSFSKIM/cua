@@ -97,7 +97,8 @@ jobs:
           node -e '
             const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
             const lines = [`### venue pilot, ${r.leg} (${r.arch}), ${process.env.COMMIT}`, "", "| step | status |", "|---|---|", ...r.steps.map(s => `| ${s.name} | ${s.status} |`),
-              "", "| question | answer | why |", "|---|---|---|", ...Object.entries(r.answers).map(([q, a]) => `| ${q} | ${a.answer} | ${a.why ?? ""} |`)];
+              "", "| question | answer | why |", "|---|---|---|", ...Object.entries(r.answers).map(([q, a]) => `| ${q} | ${a.answer} | ${a.why ?? ""} |`),
+              "", `verdict: ${r.verdict.pass ? "PASS" : "FAIL"}${r.verdict.problems.length ? ` (${r.verdict.problems.join("; ")})` : ""}`];
             process.stdout.write(lines.join("\n") + "\n");' "$RUN/artifact/pilot.json" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - name: Upload the pilot's report
@@ -105,6 +106,11 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: linux-runtime-pilot-${{ matrix.arch }}
-          path: ${{ env.RUN }}/artifact/
+          # The pilot's projected reports only (ARTIFACT_FILES, scripts/accept/linux-runtime-pilot.mjs); the raw streams
+          # stay in the run's scratch, which is never uploaded.
+          path: |
+            ${{ env.RUN }}/artifact/pilot.json
+            ${{ env.RUN }}/artifact/smoke.json
+            ${{ env.RUN }}/artifact/smoke-traced.json
           if-no-files-found: error
           retention-days: 30

@@ -8588,6 +8588,39 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   `controlDiffers` assertions pass on both. 1666 swift tests (1 skipped), 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #500.
 
+- Decision (#481, ruling 1130, 2026-11-23; restarts #481 from 88d9ead0 on main cdb36ad3, amends the ruling 1127 entry
+  above): **the route's label check compares like with like on #500's null-aware record.** The final review of 88d9ead0
+  parked #481 on one P1: the screenshot decoder dropped a CFNull title without marking it unknown, so the recorded
+  label fell through to the description. Example: a CFNull screenshot title, recorded description "Delete", live title
+  "Delete": `.beneath` reached the press. #500 (ruling 1131) now records such a part as null (`ScreenshotNode.labelsNull`,
+  `label(_:)`), and ruling 1130 lets #481 restart as a new attempt with one focused review.
+  - The branch merges main (no rebase). The single `routeDispatchCheck`, run as `pressAfterFinalCheck`'s `lastCheck`,
+    is unchanged in place and order.
+  - `routeLabelCheck` no longer takes the first non-empty label of each side. It reads the title and the description
+    (and an AXStaticText's value) part by part, through `ScreenshotNode.label` and `stalePointLabelPair`. A part null
+    on both sides is passed over. A part unread on either side, or null on one side only, refuses `labelUnread`. A part
+    whose words differ refuses `relabelled`, naming what it reads now. The route presses only when at least one part
+    was compared, read on both sides and not null, and every compared part agreed. A part absent on both sides counts
+    as compared, as in #500's `overlayLabelsAgree`. With no part compared, the check refuses `labelUnread`.
+  - The strict live read (`stalePointStrictLabelRead`) answers kCFNull as `.null`, as #500's read does, so a part null
+    on both sides passes. Any other non-text value is still unknown.
+  - Cost: a press now also refuses when a later part changed or went null while the first matched. Main's first-label
+    reading would have pressed there.
+
+  Proven offline (`OtherControlOnTopTests`):
+  - the parked P1 refuses `labelUnread`, both at the decision (not routed) and at the press. Its scratch reproducer at
+    88d9ead0 routed the control and let the dispatch check pass (2 assertions);
+  - every part null at the screenshot, now, or on both sides refuses;
+  - one part matched like with like, the other null on both sides, presses (title or description), and the same part
+    read otherwise is relabelled;
+  - a part null now that the screenshot read refuses, whether it is the first part or a later one.
+
+  On the merge, before this change, the like-with-like presses refused, a later part gone null pressed, and the strict
+  read answered CFNull unreadable. Removing the "at least one compared" rule fails the all-null test. The refusal
+  record's `ms: 0` and its dropped `rechecked` and `afterActivation` are #499's, not this attempt's. 1727 swift tests
+  (1 skipped), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #481.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

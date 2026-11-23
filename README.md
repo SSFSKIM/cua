@@ -1537,8 +1537,9 @@ has its computer sessions refused when they open (`engine_not_installed`, `engin
 sentence naming this cua's installer with `--engine`, and `cua doctor`'s `engine` row fails the same way. No session
 falls back to the vendor engine. A connection resolves its engine once, when it opens, and keeps it for every launch
 after (an install in between may still replace the file: cua's own Linux runtime, above). cua's service checks the
-version again each time it starts the engine: one older than this cua needs is refused there, with `cua-engine <found>
-is older than 0.4.4, which this cua needs; run cua install --engine`. `CUA_LINUX_ENGINE_BIN` names another engine file
+version again each time it starts the engine: one older than this cua needs is refused there, with ``cua-engine
+<found> is older than 0.4.4, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine` ``, where `<this
+cua>` is the checkout or plugin copy that runs the session. `CUA_LINUX_ENGINE_BIN` names another engine file
 in place of the installed one, for the development harnesses only: its `--version` is read once when a session opens
 and held to the same minimum.
 

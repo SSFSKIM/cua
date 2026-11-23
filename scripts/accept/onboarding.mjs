@@ -327,18 +327,27 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     const checkoutBuild = (deps.checkoutBuild ?? engineBuild)();
     require(expected.build === checkoutBuild, 'the selected approved engine build is not this checkout’s engineBuild; build and approve this checkout before the owner window');
     observations.checkoutBuild = checkoutBuild;
-    const before = await status();
-    require(before.approved === true && before.build === expected.build && before.approvedBuild === expected.build
-      && before.bundlePath === bundlePath && before.signature?.identityMatches === true,
-    'needs the approved engine at its fixed location, signed with the configured identity');
-    require(!before.status || (before.status.bundlePath === bundlePath && before.status.build === expected.build),
-      'the running engine is not the approved bundle/build; leave it alone');
-    require(!before.status || before.status.connections === 0, 'another session uses the engine; leave it alone', 'BLOCKED');
-    requireNothingPending(before);
-    require(await textEditStopped(), 'TextEdit must be quit before this owner window; existing documents are left alone', 'BLOCKED');
+    // What stopping the engine and the owner's revocation may disturb, read before the readiness question and again
+    // after it: the wait can last minutes, and an install, a session or TextEdit may start meanwhile.
+    const undisturbed = async () => {
+      const before = await status();
+      require(before.approved === true && before.build === expected.build && before.approvedBuild === expected.build
+        && before.bundlePath === bundlePath && before.signature?.identityMatches === true,
+      'needs the approved engine at its fixed location, signed with the configured identity');
+      require(!before.status || (before.status.bundlePath === bundlePath && before.status.build === expected.build),
+        'the running engine is not the approved bundle/build; leave it alone');
+      require(!before.status || before.status.connections === 0, 'another session uses the engine; leave it alone', 'BLOCKED');
+      requireNothingPending(before);
+      require(await textEditStopped(), 'TextEdit must be quit before this owner window; existing documents are left alone', 'BLOCKED');
+    };
+    await undisturbed();
     record(stage, 'PASS', 'approved engine verified; no live engine connection or TextEdit to disturb');
     log(observations.ownerWindow);
     await admit();
+    stage = 'preconditions after readiness';
+    require((deps.checkoutBuild ?? engineBuild)() === checkoutBuild, 'this checkout’s engineBuild changed during the readiness wait; nothing was stopped or changed');
+    await undisturbed();
+    record(stage, 'PASS', 'still the approved engine, with nothing pending, no live connection and no TextEdit, after the readiness wait');
     observations.ownerBudget.startedAt = now();
     ownerDeadline = observations.ownerBudget.deadlineAt = observations.ownerBudget.startedAt + minutes * 60_000;
     // Stop before the owner removes entries: the first model request must read fresh grants, not a cached process.

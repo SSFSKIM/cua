@@ -97,8 +97,8 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
 // `alone` must be exactly true, the caller's positive confirmation that the app holds no window but the fixture's; without
 // it nothing is signalled and a live recorded launch is returned as `leftRunning`. `pids` is read only to report which
 // processes running before are still there; it never selects anything to quit (null when they cannot be listed). When
-// `readWindows` is supplied (window-close.mjs's, `pids => windows | null`), it is asked for the recorded launch's pid
-// alone, and quitting requires both the caller's confirmed document close and that read succeeding with no window at
+// `readWindows` is supplied (window-close.mjs's, `(pids, {all}) => windows | null`), it is asked for the recorded launch's
+// pid alone, for every window whatever its size or alpha (all: an invisible window is still one), and quitting requires both the caller's confirmed document close and that read succeeding with no window at
 // all; a failed read signals nothing. The list is still reported
 // after an unconfirmed close, and the process identity is rechecked after the read. Off-screen windows can be restored
 // owner documents even at the run's own launch, so none is classified as internal (#196). Evidence is numbers/bounds only.
@@ -109,7 +109,7 @@ export async function cleanUpFixtureApp({name, bundle, run: started, alone = fal
   let windowCheck = null;
   if (live && readWindows) {
     let windows;
-    try { windows = await readWindows([started.launch.pid]); } catch { windows = null; }
+    try { windows = await readWindows([started.launch.pid], {all: true}); } catch { windows = null; }  // invisible ones too
     if (!Array.isArray(windows)) windows = null;
     const inventory = windows && windowInventory(windows);
     const foreign = windows?.some(w => w.ownerPid !== started.launch.pid);

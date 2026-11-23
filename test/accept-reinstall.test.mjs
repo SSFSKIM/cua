@@ -143,20 +143,32 @@ test('cua pinned: the approved bundle or approved.json touched, or an answer the
   }
 });
 
-// T1's builder discards a pending copy of the approved build with the approved identity while answering "nothing to do"
-// (engine.mjs buildEngine): that one removal is the contract. A different pending build must never disappear.
-test('cua pinned: a no-op reinstall may discard only a redundant pending copy of the approved build and identity', async t => {
+// T1's builder discards a pending copy of the approved build while answering "nothing to do" when the copy's actual
+// signature records as the approved bundle's (engine.mjs buildEngine): that one removal is the contract, and it is
+// judged by the same witness, the bundles' signatures as codesign reads them, never pending.json, which may be missing
+// or stale. A different pending build must never disappear. The signature reader is the fixture's: no codesign runs.
+const SIGNED = {kind: 'identity', sha1: 'F'.repeat(40), authority: 'Developer ID Application: Fixture'};
+test('cua pinned: a no-op reinstall may discard only a pending copy whose actual signature is the approved bundle\'s', async t => {
+  const stale = {build: APPROVED, identity: SIGNED.sha1, builtAt: '2026-11-23T00:00:00.000Z'};
   const cases = [
-    ['the approved build, the approved identity', APPROVED, 'f'.repeat(40), 'PASS'],
-    ['another build', OTHER, 'f'.repeat(40), 'FAIL'],
-    ['the approved build under another identity', APPROVED, 'adhoc', 'FAIL'],
-    ['the approved build with no pending.json to name its identity', APPROVED, null, 'FAIL'],
+    // [name, slot build, slot signature, pending.json, verdict]
+    ['the approved build, signed as the approved bundle', APPROVED, SIGNED, stale, 'PASS'],
+    ['the same copy with no pending.json at all', APPROVED, SIGNED, null, 'PASS'],
+    ['the same copy under a pending.json naming another identity', APPROVED, SIGNED, {...stale, identity: 'adhoc'}, 'PASS'],
+    ['a stale pending.json claiming the approved identity for an ad hoc copy', APPROVED, {kind: 'adhoc'}, stale, 'FAIL'],
+    ['the approved build under another identity', APPROVED, {...SIGNED, sha1: 'E'.repeat(40)}, stale, 'FAIL'],
+    ['a copy whose signature codesign could not read', APPROVED, {kind: 'unreadable', reason: 'timed out'}, stale, 'FAIL'],
+    ['an unsigned copy', APPROVED, null, null, 'FAIL'],
+    ['another build', OTHER, SIGNED, {...stale, build: OTHER}, 'FAIL'],
   ];
-  for (const [name, build, identity, status] of cases) {
-    const options = engineFixture(t);
+  for (const [name, build, slotSignature, record, status] of cases) {
+    const options = engineFixture(t, {identity: SIGNED.sha1});
     writeBundle(options.paths.pendingBundle, build);
-    if (identity) writeFileSync(options.paths.pending, JSON.stringify({build, identity, builtAt: '2026-11-23T00:00:00.000Z'}));
-    const checks = await reinstallCheck({...options, run: async () => {
+    if (record) writeFileSync(options.paths.pending, JSON.stringify(record));
+    const read = [];
+    const readSignature = bundle => { read.push(bundle); return bundle === options.paths.pendingBundle ? slotSignature : bundle === options.paths.bundle ? SIGNED : assert.fail(bundle); };
+    const checks = await reinstallCheck({...options, readSignature, run: async () => {
+      assert.ok(read.includes(options.paths.pendingBundle), 'the slot\'s signature is read before the reinstall');
       rmSync(options.paths.pendingDir, {recursive: true, force: true});
       rmSync(options.paths.pending, {force: true});
       return noOp(options.paths);
@@ -164,7 +176,14 @@ test('cua pinned: a no-op reinstall may discard only a redundant pending copy of
     const engine = named(checks, ENGINE_CHECK);
     assert.equal(engine.status, status, `${name}: ${engine.detail}`);
     if (status === 'PASS') assert.match(engine.detail, /redundant pending copy .* discarded/);
+    for (const secret of [SIGNED.sha1, 'E'.repeat(40), SIGNED.authority]) assert.ok(!JSON.stringify(checks).includes(secret), `${name}: no signing identity in the report`);
   }
+});
+
+test('cua pinned: with no pending slot before the reinstall, no signature is read', async t => {
+  const options = engineFixture(t);
+  const checks = await reinstallCheck({...options, readSignature: bundle => assert.fail(`read ${bundle}`), run: async () => noOp(options.paths)});
+  assert.equal(named(checks, ENGINE_CHECK).status, 'PASS');
 });
 
 test('cua pinned: the runtime tree is still compared, apart from the engine', async t => {

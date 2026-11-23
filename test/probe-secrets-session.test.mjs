@@ -69,7 +69,7 @@ input.on('close', () => { process.stderr.write(${JSON.stringify(sentinel)}); });
   const session = openSession({args: [server], env: {HOME: root, PATH: process.env.PATH}});
   session.name = 'failed-open';
   const terminate = session.terminate.bind(session);
-  session.terminate = () => terminate({budgetMs: 200});
+  session.terminate = () => terminate({budgetMs: 2000});  // it exits on EOF: a budget a loaded machine cannot lose
   t.after(() => session.terminate());
   await assert.rejects(sessions.openSecretSession(session), /"stage":"banner"/);
   const channels = [];
@@ -102,7 +102,9 @@ input.on('close', () => {
   const session = openSession({args: [server], env: {HOME: root, PATH: process.env.PATH}});
   session.name = failOpen ? 'failed-open' : 'ordinary';
   const terminate = session.terminate.bind(session);
-  session.terminate = () => terminate({budgetMs: 400});
+  // 1.5 s for the EOF exit, then 0.5 s for the SIGTERM handler: whether each leg is taken is what these tests judge, so
+  // neither may be lost to a loaded machine (the EOF-ignoring fixtures spend the first leg in full).
+  session.terminate = () => terminate({budgetMs: 2000});
   t.after(async () => { await session.terminate(); rmSync(root, {recursive: true, force: true}); });
   return session;
 }
@@ -126,7 +128,7 @@ test('intentional launch refusal preserves exit one without making teardown fail
   session.name = 'fail-closed store unreadable';
   session.expectedExitCode = 1;
   const terminate = session.terminate.bind(session);
-  session.terminate = () => terminate({budgetMs: 400});
+  session.terminate = () => terminate({budgetMs: 2000});
   t.after(async () => { await session.terminate(); rmSync(root, {recursive: true, force: true}); });
   const exit = await session.exited;
   const {refusedLaunchResult, STORE_UNREADABLE} = await import('../scripts/probe/fail-closed.mjs');
@@ -234,10 +236,15 @@ test('harvesting waits for inherited stdout and stderr after the parent exits', 
 
 test('held descendant pipes fail complete-harvesting evidence within a bound', async t => {
   const {session} = await inheritedPipesSession(t);
+  // Only the held session's drain is cut short; the healthy one drains on the production budget, as it would live.
+  const drain = session.drainStreams.bind(session);
+  session.drainStreams = () => drain({budgetMs: 20});
   const later = await fakeSession(t, {ignoreEof: false});
   await sessions.openSecretSession(later);
   const channels = [];
-  const outcomes = await sessions.finishSecretSessions([session, later], channels, {streamBudgetMs: 20});
+  let outcomes;
+  try { outcomes = await sessions.finishSecretSessions([session, later], channels); }
+  finally { session.drainStreams = drain; }  // the fixture's own cleanup waits for the released pipes in full
   assert.equal(outcomes[0].detail.streamsComplete, false);
   assert.deepEqual(outcomes.map(outcome => outcome.status), ['FAIL', 'PASS']);
   assert.equal(channels.length, 4, 'a held pipe does not skip later sessions');

@@ -63,3 +63,19 @@ test('readWindows fails closed on the probe\'s own failure, a malformed reading,
   }
   assert.deepEqual(await readWindows([7], {exec: exec(() => ({stdout: '{"at":1,"pid":7,"hidden":false,"windows":[]}'}))}), []);
 });
+
+// The default reading drops windows with no visible size or a zero alpha; cleanup, which may quit the app on an empty
+// list, asks for the unfiltered inventory (`windows <pid> --all`), and only the probe's answer that it is unfiltered
+// counts as one: a filtered list is never taken for it.
+test('readWindows({all: true}) asks for the unfiltered inventory and accepts only an answer that is one', async () => {
+  const seen = [];
+  const exec = stdout => async (file, args) => { seen.push(args.slice(1)); return {stdout}; };
+  const invisible = {ownerPid: 7, number: 71, bounds: {x: 0, y: 0, width: 0, height: 0}, onScreen: false};
+  assert.deepEqual(await readWindows([7], {all: true, exec: exec(JSON.stringify({at: 1, pid: 7, hidden: false, all: true, windows: [invisible]}))}),
+    [{ownerPid: 7, number: 71, onScreen: false, bounds: {x: 0, y: 0, width: 0, height: 0}}]);
+  assert.deepEqual(seen, [['windows', '7', '--all']]);
+  assert.equal(await readWindows([7], {all: true, exec: exec('{"at":1,"pid":7,"hidden":false,"windows":[]}')}), null, 'a filtered answer is no inventory');
+  seen.length = 0;
+  await readWindows([7], {exec: exec('{"at":1,"pid":7,"hidden":false,"windows":[]}')});
+  assert.deepEqual(seen, [['windows', '7']], 'the other callers keep the visible reading');
+});

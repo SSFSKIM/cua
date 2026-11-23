@@ -91,7 +91,7 @@ import {socketHolders} from './probe/lib.mjs';
 import {pinLane} from './probe/pinned-engine.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  acceptanceSelection, optInGaps, approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
+  acceptanceSelection, optInGaps, secretsProbeEvidence, approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, tapDiagnostics, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
@@ -190,8 +190,12 @@ const sanitize = text => String(text).split(home).join('$CUA_HOME').split(REPO).
 const sh = (command, args, opts = {}) => { try { return execFileSync(command, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts}); } catch (error) { return error.stdout ?? ''; } };
 
 // Every subprocess through ./accept/bounded-run.mjs: a hard time limit on its group, and a bounded drain of its pipes
-// after it exits. A run whose output did not complete is named in the next item's report as a failed check.
+// after it exits. Output that did not complete is never evidence. Where another item consumes a run's result (item 1's
+// suites, item 3's doctor, item 4's verify, the live secrets probe), the producer invalidates it itself, so the
+// producing item FAILs and every consumer cites the failure. Every other incomplete run is a failed check of the item
+// that ran it: the list is emptied when an item starts (startItem) and read by its addItem.
 const incompleteRuns = [];
+const startItem = () => { incompleteRuns.length = 0; };
 async function run(command, args, {cwd = REPO, ...options} = {}) {
   const r = await runBounded(command, args, {cwd, ...options});
   if (r.streamsIncomplete) incompleteRuns.push(`${command.split('/').at(-1)} ${args.slice(0, 2).map(arg => String(arg).split('/').at(-1)).join(' ')}`);
@@ -229,7 +233,9 @@ async function suites(cwd, {label}) {
   const diagnostics = tapDiagnostics(node.stdout);
   const failed = diagnostics.failures.map(failure => failure.name);
   // Skips declared not applicable on this host (lib.mjs DECLARED_SKIPS), judged against the suite's own environment.
-  const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv(), root: cwd})});
+  const verdict = node.streamsIncomplete
+    ? {status: 'FAIL', reason: `npm test's output did not complete (${ended(node)}): a process kept its pipes open after it exited, so its summary is not evidence`}
+    : suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv(), root: cwd})});
   out.push(check(`${label}npm test`, verdict.status,
     totals ? `${verdict.reason}; ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped, ${totals.todo} TODO in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) || /^# warnings [1-9]/m.test(node.stdout) ? '; output has warnings' : ''}` : `${ended(node)}; ${verdict.reason}${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
     {totals, diagnostics}));
@@ -261,7 +267,7 @@ async function item3() {
   const checks = [];
   const r = await run(process.execPath, [CLI, 'doctor', '--json'], {env: cuaEnv(engineEnv)});
   const doctor = parseJson(r.stdout);
-  state.doctor = doctor;
+  state.doctor = r.streamsIncomplete ? null : doctor;  // incomplete output is no evidence for item 2
   const status = name => doctor?.checks?.find(c => c.name === name)?.status ?? 'missing';
   const required = ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures'];
   const live = ['helper.live', 'helper.permissions', 'secrets.store'];
@@ -292,7 +298,7 @@ async function item4() {
   const checks = [];
   const r = await run(process.execPath, [join(REPO, 'verify.mjs'), ...engineFlag], {env: cuaEnv(), timeoutMs: 300_000});
   const report = parseJson(r.stdout.slice(r.stdout.indexOf('{')));
-  state.verify = report;
+  state.verify = r.streamsIncomplete ? null : report;  // incomplete output is no evidence for item 6
   checks.push(check('node verify.mjs', r.code === 0 && report?.problems?.length === 0 ? 'PASS' : 'FAIL',
     report ? `exit ${r.code}; tools ${report.tools?.join(', ')}; task ${report.task?.sameTaskAcrossCalls ? 'stable across calls' : 'unstable'}, end ${report.task?.end?.status}, repeat ${report.task?.repeatEnd}; problems: ${report.problems.length ? report.problems.map(sanitize).join('; ') : 'none'}` : `exit ${r.code}; no report`));
   // The tree by the host that served (allExecutablesExpected; allExecutablesRelocated is null on cua's own host), and
@@ -313,10 +319,9 @@ async function liveSecrets() {
   // On the pinned engine, which its servers select from the account's engine.json and approved engine although their
   // HOME is the probe's temporary store home; every result must attest it (ATTEST_STEP).
   const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-secrets.mjs'), '--report', reportFile], {env: cuaEnv(engineEnv), timeoutMs: 900_000});
-  const probe = existsSync(reportFile) ? parseJson(readFileSync(reportFile, 'utf8')) : null;
+  const report = existsSync(reportFile) ? parseJson(readFileSync(reportFile, 'utf8')) : null;
   rmSync(reportFile, {force: true});
-  if (!probe) return {missing: `scripts/probe-secrets.mjs wrote no report (${ended(r)}): ${sanitize(r.stderr.trim().split('\n').at(-1) ?? '')}`, steps: []};
-  return probe;
+  return secretsProbeEvidence({result: r, report, ended: ended(r), lastError: sanitize(r.stderr.trim().split('\n').at(-1) ?? '')});
 }
 
 async function liveTextEdit() {
@@ -574,21 +579,24 @@ const started = new Date();
 const runDirBefore = existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')) : [];
 if (wanted(14)) await item14();        // one continuous owner window, before any unattended work
 if (!options['fresh-onboarding'] || state.onboarding === 'PASS') {
-  if (wanted(1)) await item1();
-  if (wanted(3)) await item3();          // doctor first: item 2 reads its verification result
-  if (wanted(2)) await item2();
-  if (wanted(13)) await item13();        // before the other native items: it starts the session's helper itself and needs none running
-  if (wanted(4)) await item4();
+  // Each item's incomplete runs are its own (startItem); the shared live fixtures' are judged by their producers.
+  const one = async (id, item) => { if (wanted(id)) { startItem(); await item(); } };
+  await one(1, item1);
+  await one(3, item3);                   // doctor first: item 2 reads its verification result
+  await one(2, item2);
+  await one(13, item13);                 // before the other native items: it starts the session's helper itself and needs none running
+  await one(4, item4);
+  startItem();
   const probe = [6, 7].some(wanted) ? await liveSecrets() : null;
   const textedit = [5, 6, 8].some(wanted) ? await liveTextEdit() : null;
-  if (wanted(5)) await item5(textedit);
-  if (wanted(6)) await item6(probe, textedit);
-  if (wanted(7)) await item7(probe);
-  if (wanted(8)) await item8(textedit);
-  if (wanted(9)) item9();
-  if (wanted(10)) await item10();
-  if (wanted(11)) await item11();
-  if (wanted(12)) await item12();
+  await one(5, () => item5(textedit));
+  await one(6, () => item6(probe, textedit));
+  await one(7, () => item7(probe));
+  await one(8, () => item8(textedit));
+  await one(9, async () => item9());
+  await one(10, item10);
+  await one(11, item11);
+  await one(12, item12);
 } else {
   for (let id = 1; id <= 13; id++) if (wanted(id)) addItem(id, 'Unattended acceptance deferred', [
     check('owner window completed', 'BLOCKED', 'not run: the fresh-onboarding owner window did not pass; restore the grants with the owner before unattended work'),

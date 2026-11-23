@@ -24,6 +24,15 @@ export function acceptanceSelection(value) {
   return selected;
 }
 
+// The live secrets probe's evidence for items 6 and 7, from its run (bounded-run's result) and the report it wrote
+// (null: none). A probe whose output did not complete (a descendant held its pipes past the drain) may not have
+// finished, so whatever report it left proves nothing: missing, like no report at all, which both consumers FAIL on.
+export function secretsProbeEvidence({result, report, ended, lastError = ''}) {
+  if (result.streamsIncomplete) return {missing: `scripts/probe-secrets.mjs's output did not complete (${ended}): a process kept its pipes open after it exited, so its report is not evidence`, steps: []};
+  if (!report) return {missing: `scripts/probe-secrets.mjs wrote no report (${ended}): ${lastError}`, steps: []};
+  return report;
+}
+
 // The opt-ins without which an item reports a BLOCKED row (opt-in not requested), so it cannot PASS: the live TextEdit
 // fixture's items, the live secrets probe's item 6 (item 7 passes on its suites alone) and the owner's onboarding.
 export const ITEM_OPT_INS = {5: 'live-textedit', 6: 'live-secrets', 8: 'live-textedit', 14: 'fresh-onboarding'};

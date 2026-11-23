@@ -71,10 +71,14 @@ function fixture(over = {}) {
       if (over.otherConnection && phase === 'granted') value.status.connections = 2;
       if (over.finalGrantMissing && phase === 'all') value.status.inputMonitoring = false;
       if (over.initialMismatch && !owners) value.status.bundlePath = '/other/Engine.app';
+      // Changes made while the terminal waits for console readiness (after the first read, before any owner step).
+      const waited = readied && !owners;
+      if (over.connectionDuringReadiness && waited) value.status.connections = 1;
       // A build waiting beside the approved one (T1's pending slot): there from the start, or published by an install
       // while the owner grants Input Monitoring.
       const slot = {build: 'build-b', builtAt: null, bundlePath: '/fixture/pending/cua Engine.app'};
-      value.pending = (over.pendingBefore && !owners) || (over.pendingBeforeApprove && phase === 'all') ? slot : null;
+      value.pending = (over.pendingBefore && !owners) || (over.pendingDuringReadiness && waited)
+        || (over.pendingBeforeApprove && phase === 'all') ? slot : null;
       return value;
     },
     stop: async () => events.push('stop'),
@@ -82,7 +86,7 @@ function fixture(over = {}) {
     focus: async () => { events.push('focus'); activated = true; return !over.focusFailed; },
     frontmost: () => over.focusLost ? 'com.apple.finder' : 'com.apple.TextEdit',
     connect: () => ({...session}),
-    textEditStopped: async () => !(over.cleanupFailed && owners === 7),
+    textEditStopped: async () => !(over.cleanupFailed && owners === 7) && !(over.textEditDuringReadiness && readied && !owners),
     doctor: async () => {
       events.push(`doctor:${phase}`);
       return {engine: {permissions: {accessibility: true, screenRecording: phase !== 'ax', inputMonitoring: phase === 'granted' && over.listenAfterRelaunch === true}},
@@ -245,6 +249,24 @@ test('a build pending beside the approved engine is refused before stopping the 
   assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
   assert.match(report.checks.find(c => c.name === 'preconditions').detail, /pending beside the approved engine/);
   assert.deepEqual(f.events, []);
+});
+
+// The readiness wait can last minutes: what was true before it is re-read after "ready", before anything is stopped.
+test('a build published during the console-readiness wait is refused before stopping the engine or asking for revocation', async () => {
+  const f = fixture({pendingDuringReadiness: true}), report = await run(f);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  assert.match(report.checks.find(c => c.name === 'preconditions after readiness').detail, /pending beside the approved engine/);
+  assert.deepEqual(f.events, ['ready'], 'the engine is not stopped and no revocation is asked');
+  assert.equal(report.observations.ownerBudget.startedAt, null, 'the owner window never started');
+});
+
+test('a session or TextEdit started during the console-readiness wait is left alone', async () => {
+  for (const [flag, pattern] of [['connectionDuringReadiness', /another session/], ['textEditDuringReadiness', /TextEdit must be quit/]]) {
+    const f = fixture({[flag]: true}), report = await run(f);
+    assert.equal(report.status, 'BLOCKED', `${flag}: ${JSON.stringify(report)}`);
+    assert.match(report.checks.find(c => c.name === 'preconditions after readiness').detail, pattern);
+    assert.deepEqual(f.events, ['ready'], flag);
+  }
 });
 
 test('a build published beside the engine during the owner window stops the run before approve could promote it', async () => {

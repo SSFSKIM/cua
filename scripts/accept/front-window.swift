@@ -17,6 +17,10 @@
 //                   size, front to back, each with its `onScreen` (false for a minimized window, one on another Space, or
 //                   every window of a hidden app); `hidden` is NSRunningApplication's isHidden for the process (Cmd-H),
 //                   null when LaunchServices does not know the pid.
+//   windows <pid> --all
+//                   the same, with "all": true, and every layer-0 window of that process whatever its size or alpha
+//                   (bounds null when the window server gives none): the inventory of what remains, for the fixture's
+//                   cleanup, which must not take an invisible window for none.
 //   <window>        {"ownerPid", "number", "bounds": {"x", "y", "width", "height"}, "onScreen"}
 //
 // It reads no window titles: kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds, kCGWindowLayer, kCGWindowAlpha,
@@ -57,19 +61,21 @@ func frontmost() -> [String: Any]? {
 }
 
 // nil when the window server's list cannot be read: `windows <pid>` reports that as an error, never as no window.
-func windows(_ option: CGWindowListOption, owners: Bool = false) -> [[String: Any]]? {
+// visibleOnly (every caller but `windows <pid> --all`): only windows with a visible size and a nonzero alpha.
+func windows(_ option: CGWindowListOption, owners: Bool = false, visibleOnly: Bool = true) -> [[String: Any]]? {
   guard let list = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else { return nil }
   return list.compactMap { entry in
     guard (entry[kCGWindowLayer as String] as? Int) == 0,
           let pid = entry[kCGWindowOwnerPID as String] as? Int,
-          let number = entry[kCGWindowNumber as String] as? Int,
-          let boundsDictionary = entry[kCGWindowBounds as String] as? NSDictionary,
-          let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
-          bounds.width > 1, bounds.height > 1,
-          (entry[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
+          let number = entry[kCGWindowNumber as String] as? Int else { return nil }
+    let bounds = (entry[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+    if visibleOnly {
+      guard let bounds, bounds.width > 1, bounds.height > 1,
+            (entry[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
+    }
     var out: [String: Any] = [
       "ownerPid": pid, "number": number,
-      "bounds": ["x": Double(bounds.origin.x), "y": Double(bounds.origin.y), "width": Double(bounds.width), "height": Double(bounds.height)],
+      "bounds": bounds.map { ["x": Double($0.origin.x), "y": Double($0.origin.y), "width": Double($0.width), "height": Double($0.height)] } as Any? ?? NSNull(),
       "onScreen": (entry[kCGWindowIsOnscreen as String] as? Bool) ?? false,
     ]
     if owners {
@@ -114,11 +120,14 @@ case "order":
   emit(["at": now, "windows": (windows([.optionOnScreenOnly, .excludeDesktopElements], owners: true) ?? [])
     .filter { !skipped.contains($0["ownerPid"] as? Int ?? -1) }])
 case "windows":
-  guard arguments.count == 2, let pid = Int(arguments[1]), pid > 0 else { emit(["error": "usage: windows <pid>"], status: 2) }
+  let unfiltered = arguments.count == 3 && arguments[2] == "--all"
+  guard arguments.count == 2 || unfiltered, let pid = Int(arguments[1]), pid > 0 else { emit(["error": "usage: windows <pid> [--all]"], status: 2) }
   let hidden = NSRunningApplication(processIdentifier: pid_t(pid))?.isHidden
-  guard let all = windows([.optionAll, .excludeDesktopElements]) else { emit(["error": "the window list could not be read"], status: 3) }
-  emit(["at": now, "pid": pid, "hidden": hidden as Any? ?? NSNull(),
-        "windows": all.filter { ($0["ownerPid"] as? Int) == pid }])
+  guard let all = windows([.optionAll, .excludeDesktopElements], visibleOnly: !unfiltered) else { emit(["error": "the window list could not be read"], status: 3) }
+  var reading: [String: Any] = ["at": now, "pid": pid, "hidden": hidden as Any? ?? NSNull(),
+                                "windows": all.filter { ($0["ownerPid"] as? Int) == pid }]
+  if unfiltered { reading["all"] = true }
+  emit(reading)
 default:
-  emit(["error": "usage: front [--skip-pid <pid>]... | order [--skip-pid <pid>]... | windows <pid>"], status: 2)
+  emit(["error": "usage: front [--skip-pid <pid>]... | order [--skip-pid <pid>]... | windows <pid> [--all]"], status: 2)
 }

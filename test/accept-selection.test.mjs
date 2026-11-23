@@ -43,3 +43,14 @@ test('--live-textedit alone leaves item 6 BLOCKED for want of --live-secrets, as
   assert.deepEqual(lib.optInGaps(null, {'live-textedit': true, 'live-secrets': true}), [{item: 14, flag: '--fresh-onboarding'}]);
   assert.deepEqual(lib.optInGaps(lib.acceptanceSelection('1,7,8'), {'live-secrets': true}), [{item: 8, flag: '--live-textedit'}]);
 });
+
+// Items 6 and 7 consume the live secrets probe. A probe whose output did not complete (a descendant held its pipes)
+// may not have finished, so whatever report it left proves nothing: the evidence is missing, which both items FAIL on.
+test('an incomplete secrets-probe run is missing evidence for its consumers, whatever report it left', () => {
+  const report = {status: 'PASS', steps: [{name: 'x', status: 'PASS'}]};
+  const incomplete = lib.secretsProbeEvidence({result: {code: 0, streamsIncomplete: true}, report, ended: 'exit 0'});
+  assert.match(incomplete.missing, /did not complete/);
+  assert.deepEqual(incomplete.steps, []);
+  assert.equal(lib.secretsProbeEvidence({result: {code: 0, streamsIncomplete: false}, report, ended: 'exit 0'}), report);
+  assert.match(lib.secretsProbeEvidence({result: {code: 1, streamsIncomplete: false}, report: null, ended: 'exit 1', lastError: 'boom'}).missing, /wrote no report \(exit 1\): boom/);
+});

@@ -26,12 +26,15 @@ export function windowInventory(windows) {
 // A reading counts only when it is the probe's answer for that pid with its window list: the probe's own failure (its
 // exit 3 when the window server's list cannot be read), output that does not parse, or an answer naming another pid or
 // no list is a failed reading, never an empty one.
-const probeWith = exec => async pid => JSON.parse((await exec('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, 'windows', String(pid)])).stdout);
-export async function readWindows(pids, {exec = (file, args) => run(file, args, {timeout: 120_000}), probe = probeWith(exec)} = {}) {
+// `all`: the unfiltered inventory (`windows <pid> --all`), every layer-0 window whatever its size or alpha, which only
+// an answer marked all counts as; otherwise the windows with a visible size and alpha (onboarding's admission, the
+// close verdict).
+const probeWith = (exec, all) => async pid => JSON.parse((await exec('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, 'windows', String(pid), ...(all ? ['--all'] : [])])).stdout);
+export async function readWindows(pids, {all = false, exec = (file, args) => run(file, args, {timeout: 120_000}), probe = probeWith(exec, all)} = {}) {
   try {
     const readings = await Promise.all(pids.map(async pid => {
       const reading = await probe(pid);
-      if (reading?.pid !== pid || !Array.isArray(reading.windows)) throw new Error(`no window reading of pid ${pid}`);
+      if (reading?.pid !== pid || !Array.isArray(reading.windows) || (all && reading.all !== true)) throw new Error(`no window reading of pid ${pid}`);
       return reading;
     }));
     return readings.flatMap(reading => reading.windows.map(w => ({ownerPid: w.ownerPid, number: w.number, onScreen: w.onScreen === true, bounds: windowBounds(w)})));

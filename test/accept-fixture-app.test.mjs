@@ -133,8 +133,8 @@ test('a failed window probe keeps cleanup blocked and the process unsignalled', 
 // and a failed probe (FrontWindowProbe's exit 3) signals nothing.
 test('the pre-quit window read is of the recorded pid alone, and a failed probe there signals nothing', async () => {
   const asked = [];
-  const listed = await cleanup({readWindows: async pids => { asked.push(pids); return []; }});
-  assert.deepEqual(asked, [[42]], 'the recorded launch\'s pid, never a pgrep listing');
+  const listed = await cleanup({readWindows: async (pids, options) => { asked.push([pids, options]); return []; }});
+  assert.deepEqual(asked, [[[42], {all: true}]], 'the recorded launch\'s pid, never a pgrep listing, and every window it has, visible or not');
   assert.deepEqual(listed.quitCalls, [[42]]);
   const failing = async () => { throw Object.assign(new Error('Command failed'), {code: 3, stdout: '{"error":"the window list could not be read"}'}); };
   const {r, quitCalls} = await cleanup({readWindows: pids => readWindowList(pids, {exec: failing})});

@@ -42,29 +42,42 @@ test('an ordinary child resolves with its complete output', async () => {
     {code: 3, stdout: 'out', stderr: 'err', timedOut: false, streamsIncomplete: false});
 });
 
-// At accept-native's own boundary: item 1's npm test (a stand-in on PATH) leaves a descendant holding its pipes; the
-// run still ends, and the item carries the failed completeness check.
-test('accept-native reports a subprocess whose output did not complete as a failed check of its item', t => {
+// At accept-native's own boundary: item 1's npm test (a stand-in on PATH) leaves a descendant holding its pipes, after
+// printing `out`. The run still ends; the report is returned.
+function acceptWithHeldNpm(t, items, out = '') {
   const {dir, cleanup} = scratch();
   t.after(cleanup);
   const bin = join(dir, 'bin');
   mkdirSync(bin); mkdirSync(join(dir, 'home')); mkdirSync(join(dir, 'cua'));
   const holder = join(dir, 'holder.cjs');
   const pidFile = join(dir, 'holder.pid');
-  writeFileSync(holder, `${HOLDER}\nrequire('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));`);
-
+  writeFileSync(holder, `${HOLDER}\nrequire('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));\nprocess.stdout.write(${JSON.stringify(out)});`);
   writeFileSync(join(bin, 'npm'), `#!/bin/sh\nexec '${process.execPath}' '${holder}'\n`);
   chmodSync(join(bin, 'npm'), 0o700);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['NODE_TEST_CONTEXT', 'NODE_OPTIONS', 'CUA_NATIVE_ENGINE'].includes(key) && !key.startsWith('CUA_SHIM_')));
-  const r = spawnSync(process.execPath, [join(REPO, 'scripts/accept-native.mjs'), '--items', '1'], {encoding: 'utf8', timeout: 60_000,
+  const r = spawnSync(process.execPath, [join(REPO, 'scripts/accept-native.mjs'), '--items', items], {encoding: 'utf8', timeout: 60_000,
     env: {...env, PATH: `${bin}:${env.PATH}`, HOME: join(dir, 'home'), CUA_HOME: join(dir, 'cua'), CUA_SHIM_SURFACES: 'browser'}});
   try { end(Number(readFileSync(pidFile, 'utf8'))); } catch { /* never started */ }
-  const report = JSON.parse(r.stdout);
-  const checks = report.items[0].checks;
-  const incomplete = checks.find(c => c.name === 'subprocess output complete');
-  assert.equal(incomplete?.status, 'FAIL', JSON.stringify(checks));
-  assert.match(incomplete.detail, /npm test/);
+  return JSON.parse(r.stdout);
+}
+const COMPLETE_LOOKING = ['tests 1', 'suites 0', 'pass 1', 'fail 0', 'cancelled 0', 'skipped 0', 'todo 0', 'warnings 0'].map(line => `# ${line}\n`).join('');
+
+test('accept-native fails the item whose subprocess output did not complete', t => {
+  const report = acceptWithHeldNpm(t, '1');
+  const check = report.items[0].checks[0];
+  assert.equal(check.name, 'npm test');
+  assert.equal(check.status, 'FAIL', JSON.stringify(check));
+  assert.match(check.detail, /did not complete/);
   assert.equal(report.items[0].status, 'FAIL');
+});
+
+// The reproduced case: a complete-looking summary while a descendant holds the pipes. The suite verdict itself fails,
+// so item 7, which cites item 1's suites, cannot pass on it.
+test('incomplete suite output proves nothing downstream: --items 1,7 fails both', t => {
+  const report = acceptWithHeldNpm(t, '1,7', COMPLETE_LOOKING);
+  assert.deepEqual(report.summary, {1: 'FAIL', 7: 'FAIL'}, JSON.stringify(report.items));
+  assert.equal(report.items.find(i => i.id === 1).checks[0].status, 'FAIL');
+  assert.ok(report.items.find(i => i.id === 7).checks.every(c => c.status === 'FAIL' && /npm test was FAIL/.test(c.detail)));
 });
 
 test('a command that cannot start resolves with its error', async () => {

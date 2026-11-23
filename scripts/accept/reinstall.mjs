@@ -12,15 +12,18 @@ import {existsSync, readFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {diffSnapshots, snapshotTree} from './lib.mjs';
 import {engineDirectory, enginePaths, shortBuild} from '../../src/runtime/engine.mjs';
+import {readSignature as codesignSignature, recordedIdentity} from '../../src/runtime/engine-sign.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
 
 const RUNTIME = 'reinstall mutates nothing';
 const ENGINE = 'reinstall keeps the approved engine: a build only ever goes beside it';
 
-export async function reinstallCheck({runtimeRoot, cli, archivePath, env, run, platform = process.platform, engine = null, engineDir}) {
+// readSignature: the bundle's signature as codesign reads it (engine-sign.mjs's, the reader buildEngine uses).
+export async function reinstallCheck({runtimeRoot, cli, archivePath, env, run, platform = process.platform, engine = null, engineDir,
+  readSignature = codesignSignature}) {
   const cua = platform === 'darwin' && engine === 'cua';
   const paths = cua ? enginePaths(engineDir ?? engineDirectory(env.HOME || homedir())) : null;
-  const engineBefore = cua ? engineState(paths) : null;
+  const engineBefore = cua ? {...engineState(paths), ...slotWitness(paths, readSignature)} : null;
   const args = [cli, 'install', '--json', '--archive', archivePath, ...(engineBefore?.approvedRecord?.identity === 'adhoc' ? ['--engine-sign', 'adhoc'] : [])];
   const before = snapshotTree(runtimeRoot);
   const reinstall = await run(process.execPath, args, {env: {...env, CUA_NATIVE_ENGINE: cua ? 'cua' : 'vendor'}});
@@ -43,8 +46,7 @@ export async function reinstallCheck({runtimeRoot, cli, archivePath, env, run, p
 }
 
 // What the build-beside contract is judged by: the approved bundle's tree and approved.json's bytes, and the pending
-// slot's tree, build and recorded identity (pending.json's, when it names the slot's build). Files only; nothing is
-// launched or signed.
+// slot's tree and build. Files only; nothing is launched or signed.
 function engineState(paths) {
   const tree = path => (existsSync(path) ? snapshotTree(path) : null);
   const text = path => { try { return readFileSync(path, 'utf8'); } catch { return null; } };
@@ -52,11 +54,17 @@ function engineState(paths) {
   const approvedText = text(paths.approved);
   let approvedRecord = null;
   try { approvedRecord = JSON.parse(approvedText); } catch { /* absent or unreadable: judged below */ }
-  const slotBuild = build(paths.pendingBundle);
-  let pendingRecord = null;
-  try { pendingRecord = JSON.parse(text(paths.pending)); } catch { /* absent or unreadable: the slot's identity is unknown */ }
-  return {bundle: tree(paths.bundle), approvedText, approvedRecord, slot: tree(paths.pendingBundle), slotBuild,
-    slotIdentity: slotBuild !== null && pendingRecord?.build === slotBuild ? pendingRecord.identity ?? null : null};
+  return {bundle: tree(paths.bundle), approvedText, approvedRecord, slot: tree(paths.pendingBundle), slotBuild: build(paths.pendingBundle)};
+}
+
+// Before the reinstall, with a bundle in the pending slot: whether its actual signature records as the approved
+// bundle's, the witness buildEngine discards a redundant copy by (pending.json may be missing or stale, so it is not
+// read). Only the answer is kept: no signing identity reaches the report. Unsigned or unreadable records as nothing,
+// so it is never redundant. No slot, no codesign.
+function slotWitness(paths, readSignature) {
+  if (!existsSync(paths.pendingBundle)) return {slotSignedAsApproved: false};
+  const slot = recordedIdentity(readSignature(paths.pendingBundle));
+  return {slotSignedAsApproved: slot !== null && slot === recordedIdentity(readSignature(paths.bundle))};
 }
 
 const sameTree = (a, b) => (a === null || b === null ? a === b : diffSnapshots(a, b).same);
@@ -70,10 +78,10 @@ function engineCheck({installed, answer, before, after, paths}) {
   if (kept.length) return fail(`${kept.join(' and ')}: a build must leave the approved engine untouched`);
   const approved = shortBuild(before.approvedRecord.build);
   if (answer.pending === false) {
-    // The one slot change a no-op build makes: a pending copy of the approved build under the approved identity, which
-    // buildEngine discards as redundant. Its identity is pending.json's, so a slot without one is never taken as it.
+    // The one slot change a no-op build makes: a pending copy of the approved build signed as the approved bundle is,
+    // which buildEngine discards as redundant (judged by the signatures read before the reinstall).
     const redundant = before.slot !== null && after.slot === null && before.slotBuild === before.approvedRecord.build
-      && before.slotIdentity !== null && before.slotIdentity === before.approvedRecord.identity;
+      && before.slotSignedAsApproved;
     const slotKept = sameTree(before.slot, after.slot);
     const ok = answer.changed === false && answer.approved === true && answer.build === before.approvedRecord.build && answer.bundlePath === paths.bundle
       && (slotKept || redundant);

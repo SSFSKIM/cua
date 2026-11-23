@@ -45,7 +45,7 @@
       "scene": "*",
       "kind": "lineBreaks",
       "fault": "departure",
-      "decisionLog": "- Decision (2026-11-23, #526, ruling 1175, `fix/526-multiline-value` from 093c91e9)",
+      "decisionLog": "- Decision (2026-11-23, #526, rulings 1175 to 1177 and 1179, `fix/526-escape-product` from 3df1fecb)",
       "cause": "cua's departure (rulings 1175 and 1177): the vendor prints an attribute's line breaks raw (its TextEdit document value, and the flattened title, description and value it joins with \"\\n\" in flattenedString 0x10063eb80, such as Finder's \"go up\" row) and fences the selected text with three backticks whatever it holds, so a page or a document could put a line into the tree that reads as an element, a prompt-injection path. cua's renderer prints each break escaped (src/services/engine/render.mjs escapeLineBreaks: LF and CR as \\n and \\r, as the vendor's Linux rendering does, every other break as \\uXXXX) and fences the selected text with more backticks than its longest run (selectedTextFence). On a matched line, the header or a trailer, the vendor's text printed so is cua's, exactly; anything else there stays a difference. A rule, not an instance: no count."
     }
   ]

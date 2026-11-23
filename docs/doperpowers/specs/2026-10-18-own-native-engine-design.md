@@ -8883,9 +8883,10 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     optional (1172), its question now whether S occurs often enough for the refusal to cost runs (`pointerRefusal`
     counts it).
   Date/Author: 2026-11-23, cursor235's builder for #538.
-- Decision (2026-11-23, #526, ruling 1175, `fix/526-multiline-value` from 093c91e9): **a selectable element's flattened
-  title, description and value are joined one piece per line, as the vendor joins them; and cua prints every line break
-  inside an element's text escaped, where the vendor prints it raw (a declared departure).**
+- Decision (2026-11-23, #526, rulings 1175 to 1177 and 1179, `fix/526-escape-product` from 3df1fecb): **a selectable
+  element's flattened title, description and value are joined one piece per line, as the vendor joins them; cua prints
+  every line break inside an element's text escaped and fences the selected text past its longest backtick run, where
+  the vendor prints both raw (declared departures); and the harness reads that output on cua's lane.**
   - The cause is not a multi-line AXValue. M5 pilot B's Finder "go up" row (runs 45226949355 and 45274556933) is a
     selectable AXRow whose cells' static texts are flattened into it by transformation (1). The vendor's
     `UIElementTree.Item.flattenedString` (0x10063eb80, decompiled in the #117 Ghidra project) compactMaps the selector
@@ -8895,36 +8896,52 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     carries a raw LF there (the artifacts' bytes: `Value: Name\nDate Modified\nSize\nKind`, 0x0a each). The engine reads
     each attribute unaltered (Fetch.swift `stringValue`, capped at `maxValueLength` before any rendering), so nothing
     changes in Swift.
-  - The join rule: `flattenIntoSelectableAncestor` now builds each of the three from the node's and its descendants'
-    pieces, trimmed of Foundation's whitespacesAndNewlines (Z*, U+0009–U+000D, U+0085), empties dropped, joined by "\n".
-    No other transformation changes: (8) mergeTextOnlySiblings' join (FUN_100646f38) is still unread and keeps one
-    space.
-  - Ruling 1175, the departure: a raw break inside an attribute lets a page or a document put a line into the tree that
-    reads as an element (`[99] button Delete`, or a tab-indented `99 button Delete`), a path for prompt injection, and it
-    reaches every free-text field (title, Description, Help, Value, Details, Placeholder, ID, the role description, the
-    window title and app name), the vendor's raw TextEdit document included. cua does not copy it: the renderer escapes
-    the whole element text after the parts are ordered (`escapeLineBreaks`), so the long-part rule still reads the raw
-    text, LF and CR as `\n` and `\r` (the vendor's own Linux rendering, `linux-accessibility-tree.mjs`, escapes them so)
-    and VT, FF, U+001C–U+001E, NEL, LS and PS as `\uXXXX`; a backslash is left as it is, as on Linux. The header's
-    window title and app name are escaped the same way. A continuation indent was rejected: an element line is itself
-    tab-indented, so an indented continuation can still read as an element. The fenced selected-text trailer is printed
-    as before.
-  - Declared: the `lineBreaks` departure (`scene: "*"`, no count; `test/native-goldens/compare.mjs`), in the renderer
-    goldens' `expected.json` and the native-mac suite's `native-mac.json`: on a matched line or a focused-element
-    trailer, the vendor's text with its breaks escaped as cua escapes them must equal cua's. It is a rule rather than an
-    instance, so it carries no count and is never over-declared; anything else on such a line stays a difference.
-  - Consumers: `matrix-text.mjs` `valueOfIndex` reads cua's escaped value back with its breaks (the cells' read-backs
-    compare raw values on both engines); the other line readers (`elementLines`, `indexOfPart`, `indexOfId`,
-    `scenes-mac-text.mjs`, `live-checks.mjs` `vendorTextAreaIndex`, the diff renderer) read one line per element, which
-    the escape guarantees for cua's text. The recorded TextEdit goldens' `cua.txt` are re-pinned.
-  - Ruling 1176 accepts the cause, the join and the escaping, continuation indent rejected, and adds the model's side:
-    a value copied back from the tree would write a literal backslash-n. The first-call document says so in one
-    sentence, in `agent-cursor.md`'s paragraph on replacing a field's text and at the end of the
+  - The join rule: `flattenIntoSelectableAncestor` builds each of the three from the node's and its descendants' pieces,
+    trimmed of Foundation's whitespacesAndNewlines exactly as `CharacterSet.whitespacesAndNewlines` answers on macOS 27
+    (U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200B, U+2028, U+2029, U+202F, U+205F, U+3000), empties
+    dropped, joined by "\n". (8) mergeTextOnlySiblings' join (FUN_100646f38) is still unread and keeps one space.
+  - Ruling 1175, the escape: a raw break inside an attribute lets a page or a document put a line into the tree that
+    reads as an element (`[99] button Delete`, or a tab-indented `99 button Delete`), a path for prompt injection, in
+    every free-text field (title, Description, Help, Value, Details, Placeholder, ID, the role description, the window
+    title and app name), the vendor's raw TextEdit document included. The renderer escapes the whole element text after
+    the parts are ordered (`escapeLineBreaks`), so the long-part rule still reads the raw text: LF and CR as `\n` and
+    `\r` (the vendor's own Linux rendering escapes them so) and VT, FF, U+001C–U+001E, NEL, LS and PS as `\uXXXX`; a
+    backslash is left as it is, as on Linux. The header's window title and app name are escaped the same way. A
+    continuation indent was rejected: an element line is itself tab-indented.
+  - Ruling 1176, the model's side: a value copied back from the tree would write a literal backslash-n, so the
+    first-call document says, in one sentence, that breaks show as `\n` or `\r` (others `\uXXXX`) and that `setValue`
+    and `typeText` take real ones: in `agent-cursor.md`'s paragraph on replacing a field's text and at the end of the
     `macos/accessibility-tree` lookup, so the macOS core carries it with or without the lookups (the surface inventory's
-    "Table 3 amendment (2026-11-23, #526, ruling 1176)"; `test/cua-api/core-documentation.test.mjs`). Linux's tree text
-    is the vendor's own and escapes `\r`, `\n` and `\t` likewise, unmentioned in `core.md` and `linux-engine.md`; the
-    same pitfall exists there and is left to its own decision. The selected-text fence and the residues are their own
-    tickets.
+    "Table 3 amendment (2026-11-23, #526, ruling 1176)"). Linux's tree text is the vendor's own and escapes `\r`, `\n`
+    and `\t`, unmentioned in `core.md` and `linux-engine.md`: the same pitfall, left to its own decision.
+  - Ruling 1177 (#552, closed with #526): the selected text stays raw inside its fence, which is longer than the longest
+    run of backticks in it and at least three (`selectedTextFence`), so the text cannot close it.
+  - Declared in the judges: the `lineBreaks` departure (`scene: "*"`, no count, never over-declared;
+    `test/native-goldens/compare.mjs`, `scripts/repl-parity/native-mac-diff.mjs`, both expected files). Under it a
+    vendor item is keyed and compared by its text with its breaks escaped (index, depth and the parse's boundaries
+    kept, a numbered line holding a CR, LS or PS still its own item), and the header and every trailer by their text as
+    cua prints them, the fence included; it holds only on exact equality, never by a redacted length, and where the
+    vendor's text needs an escape or a longer fence only that form is cua's. The recorded TextEdit goldens' `cua.txt`
+    are re-pinned.
+  - Ruling 1179, the split: this entry's branch is the product part (the renderer, the documentation sentence, the
+    fence, the judges' departure) and the minimum harness support that has to travel with it. The ambiguity machinery
+    of a multi-line value followed by another part (the readers' `{ambiguous}`, the no-verdict cause and its mapping
+    through every runner and judge) is the reader ticket's, whose branch starts at `fix/526-multiline-value` 3cd20c39.
+  - The harness support, lane-aware and nothing more. The run's bind records the lane (`goldens-cells.mjs` `BIND(scene,
+    app, engine)`, `globalThis.__axRendering`; the matrix's run and the cursor sitting's sessions pass their engine).
+    `matrix-text.mjs` `valueOfIndex` decodes, on cua's lane only, a multi-line value that is its line's last part
+    (nothing `, ` after `Value: `), and only the escapes the renderer emits; every other value reads exactly as on main,
+    so a multi-line value followed by another part is cut at its first `, ` (the reader ticket's residue).
+    `scenes-mac-text.mjs` `indexOfTarget` ends a name at such an escape only on cua's lane, only in the `Value:` part
+    and only when that value ends its line; every other part and the vendor's lane match exactly as before.
+    `selectedTextOf` and `live-checks.mjs` `vendorSelectedText` read a fence of three backticks or more. Ruling 1182:
+    the reader errs only toward a false FAIL; a multi-line value that is not last on its line reads as main reads it and
+    fails a check, and is never found as a target, never a match (tests in `matrix-text.test.mjs`,
+    `scenes-mac.test.mjs` and `multiline-lanes.test.mjs`, which runs #187's and #188's cells and TextEdit's document
+    cells for real on both lanes).
+  - A declared limit (ruling 1182), the reader ticket's and #555's: the renderer leaves a literal backslash as it is,
+    so on cua's lane a page's literal `\n` text and a real break print alike and the decoder reads both as a break. No
+    current scene puts a backslash in a value.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

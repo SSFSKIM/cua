@@ -37,8 +37,9 @@ differ from the pinned record, and never modifies vendor files. Doctor's `runtim
 `helper.live` and `helper.permissions` stay BLOCKED until a native call, and the `engine` row warns until step 7 (no
 approved engine yet, so computer sessions keep the vendor's). `install` also tries to build cua's engine, the default
 (step 7); until step 7's Xcode and signing identity are in place that build fails with a warning that names the cause
-(Xcode missing or not selected, no signing identity, a compile error), says what sessions get until a build is approved
-(on a new Mac, the vendor engine), and gives the remedy. The install still succeeds.
+(Xcode missing or not selected, no signing identity, a compile error), says what sessions get meanwhile (on a new Mac,
+the vendor engine; where a setting selects cua's engine or host, the refusal a session would get, in its own words) and
+what makes them usable now, then how to retry the build. The install still succeeds.
 
 ### 2. Secrets (only if secret substitution will be used)
 

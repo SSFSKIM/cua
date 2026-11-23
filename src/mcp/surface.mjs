@@ -32,6 +32,12 @@ export function cuaNodeFrom(env) {
   return value;
 }
 
+// The host settings serve validates before any connection (server.mjs settingsFrom): an install's account of what a
+// session gets (install.mjs installMacosEngine) validates them the same way, so it never reports a session serve refuses.
+export function hostSettingsFrom(env) {
+  return {replHost: replHostFrom(env), cuaNode: cuaNodeFrom(env)};
+}
+
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
 // js_add_node_module_dir (it would widen what model code can import) stay private. Their search hints name the
 // platform the computer surface drives (`os`: macos, or linux on Linux).

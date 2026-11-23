@@ -872,20 +872,27 @@ const signatureText = ({kind, identityMatches, reason}) => (kind === null ? 'uns
     : identityMatches ? 'the configured identity' : 'an identity that is not the configured one'}`);
 // A build's outcome, as engine build and install say it.
 // A build that failed under the selection, without --engine (design ruling 1148): the install stands, and its warning
-// names the cause, the engine sessions keep until a build is approved, and the remedy, on one line; a compile error's
-// detail follows it.
+// says on one line the cause; what sessions get now, with what makes them usable now (a refusal's own remedy, Node, or
+// approving a build already pending, only where the engine is what they lack); then retrying this build. A compile
+// error's detail follows the line.
+const APPROVE_UNBLOCKS = ['engine_not_installed', 'engine_outdated'];
 function failedBuildRemedy(warning, release) {
+  const {serves, pending} = warning;
   const fix = buildFailureFix(warning);
-  const using = warning.pending ? 'to retry this build' : warning.serves.engine === 'cua' ? 'to use the new build' : 'to use cua\'s engine';
-  const now = warning.pending ? `build ${shortBuild(warning.pending.build)} (version ${warning.pending.engineVersion}), from an earlier build, is pending: \`cua engine approve\` with the owner at the console takes it now; ` : '';
-  return `${now}${using}, ${fix ? `${fix}, then ` : ''}run \`cua install --engine\`, then \`cua engine approve\` with the owner at the console; ${release} is installed and active`;
+  // An approved build sessions can use: it serves, or would but for the own host's Node (launch.mjs macosComputerHost).
+  const approved = serves.engine === 'cua' || serves.reason === 'own_host_node_unavailable' || serves.refused === 'repl_host_node';
+  const unblocks = serves.engine === 'cua' || APPROVE_UNBLOCKS.includes(serves.reason ?? serves.refused);
+  const now = !pending ? '' : `build ${shortBuild(pending.build)} (version ${pending.engineVersion}), from an earlier build, is pending${unblocks
+    ? ': `cua engine approve` with the owner at the console takes it now; ' : ' (`cua engine approve` with the owner at the console takes it); '}`;
+  const retry = pending ? 'to retry this build' : approved ? 'to use a newer build than the approved one' : 'to use cua\'s engine';
+  return `${now}${retry}, ${fix ? `${fix}, then ` : ''}run \`cua install --engine\`, then \`cua engine approve\` with the owner at the console; ${release} is installed and active`;
 }
-// What a macOS computer session gets meanwhile (installMacosEngine's `serves`).
+// What a macOS computer session gets meanwhile (installMacosEngine's `serves`): a refusal in its own words.
 const SERVES_WORDS = {
   own_host_node_unavailable: 'sessions keep the vendor engine, since cua\'s own host finds no Node 24 (`cua install` without --no-node places one), until it does',
 };
 function servesText({serves}) {
-  if (serves.refused) return `macOS computer sessions are refused (${serves.refused}) until a build is approved`;
+  if (serves.refused) return `macOS computer sessions are refused (${serves.refused}): ${serves.message}`;
   if (serves.engine === 'cua') return `sessions keep the approved build ${shortBuild(serves.build)} until a newer build is approved`;
   return SERVES_WORDS[serves.reason] ?? 'sessions keep the vendor engine until a build is approved';
 }

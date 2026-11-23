@@ -105,7 +105,7 @@ test('a failed build under the selection is reported and the install succeeds; w
       } else {
         assert.equal(answer.engine.status, 'warn');
         assert.equal(answer.engine.cause, error.code ? 'no signing identity is configured' : 'engine_install_failed');
-        assert.deepEqual(answer.engine.serves, {refused: 'engine_not_installed'}, 'CUA_NATIVE_ENGINE=cua with none approved: sessions are refused');
+        assert.equal(answer.engine.serves.refused, 'engine_not_installed', 'CUA_NATIVE_ENGINE=cua with none approved: sessions are refused');
         assert.match(refusal.hint, /run `cua install --engine`, then `cua engine approve` with the owner at the console; fixture is installed and active$/);
       }
     }
@@ -133,26 +133,45 @@ test('the install warning on a failed build names the cause, the engine sessions
   }
   const xcode = () => { throw new CuaError('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built'); };
   const APPROVED = {bundlePath: '/e/cua Engine.app', engineVersion: '0.3.0', build: 'b'.repeat(64)};
+  const earlier = {build: 'c'.repeat(64), engineVersion: '0.3.0', bundlePath: '/e/pending/cua Engine.app', builtAt: '2026-11-22T00:00:00.000Z'};
   const engineOf = async (options, args = ['--json']) => JSON.parse((await invoke(fixture(t, {build: async () => xcode(), ...options}).deps, args)).stdout).engine;
   const lineOf = async options => (await invoke(fixture(t, {build: async () => xcode(), ...options}).deps)).stdout.split('\n').find(text => text.startsWith('cua\'s engine'));
   // A previously approved build still serves (ruling 1118): the warning says so.
   assert.deepEqual((await engineOf({installed: () => APPROVED})).serves, {engine: 'cua', build: APPROVED.build});
-  assert.match(await lineOf({installed: () => APPROVED}), /^cua's engine was not built: Xcode is not installed \(no swift\) \(engine_build_failed\); sessions keep the approved build bbbbbbbbbbbb until a newer build is approved; to use the new build, install Xcode/);
+  assert.match(await lineOf({installed: () => APPROVED}), /^cua's engine was not built: Xcode is not installed \(no swift\) \(engine_build_failed\); sessions keep the approved build bbbbbbbbbbbb until a newer build is approved; to use a newer build than the approved one, install Xcode/);
   // One below the service's minimum does not serve: sessions keep the vendor engine.
   assert.deepEqual((await engineOf({installed: () => ({...APPROVED, engineVersion: '0.1.0'})})).serves, {engine: 'vendor', reason: 'engine_outdated'});
   // The effective outcome, as a session's selection gives it (launch.mjs replHostFor), not the bundle's eligibility alone.
   // An explicit selection of cua's engine with none approved: sessions are refused, never given the vendor engine.
+  // The refusal is carried as the session would give it: its own reason and remedy, not a bare code.
   for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {CUA_REPL_HOST: 'cua'}]) {
-    assert.deepEqual((await engineOf({env})).serves, {refused: 'engine_not_installed'}, JSON.stringify(env));
-    assert.match(await lineOf({env}), /; macOS computer sessions are refused \(engine_not_installed\) until a build is approved; to use cua's engine, install Xcode/, JSON.stringify(env));
+    const {serves} = await engineOf({env});
+    assert.equal(serves.refused, 'engine_not_installed', JSON.stringify(env));
+    assert.match(serves.message, /selects cua's own engine, and this Mac has no approved cua engine \(not built\)/, JSON.stringify(env));
+    assert.match(await lineOf({env}), /; macOS computer sessions are refused \(engine_not_installed\): .*selects cua's own engine, .*; to use cua's engine, install Xcode/, JSON.stringify(env));
   }
-  // A usable approved build, but no Node 24 for cua's own host (--no-node): the default serves the vendor engine.
+  // A usable approved build, but no Node 24 for cua's own host (--no-node): the default serves the vendor engine. Node is
+  // what makes sessions use the approved build now; this build's retry is only for a newer one.
   const noNode = () => { throw Object.assign(new CuaError('repl_host_node', 'no Node 24'), {tried: ['/usr/bin/node (v22.0.0)']}); };
   assert.deepEqual((await engineOf({installed: () => APPROVED, resolveOwnNode: noNode})).serves, {engine: 'vendor', reason: 'own_host_node_unavailable'});
-  assert.match(await lineOf({installed: () => APPROVED, resolveOwnNode: noNode}),
-    /; sessions keep the vendor engine, since cua's own host finds no Node 24 \(`cua install` without --no-node places one\), until it does; to use cua's engine, install Xcode/);
+  const nodeLine = await lineOf({installed: () => APPROVED, resolveOwnNode: noNode});
+  assert.match(nodeLine, /; sessions keep the vendor engine, since cua's own host finds no Node 24 \(`cua install` without --no-node places one\), until it does; to use a newer build than the approved one, install Xcode/);
+  assert.doesNotMatch(nodeLine, /to use cua's engine|until a build is approved/);
+  // The same with cua's own host asked for: sessions are refused for the Node, which approving another build cannot fix.
+  const hostEnv = {CUA_REPL_HOST: 'cua'};
+  const hostRefused = (await engineOf({env: hostEnv, installed: () => APPROVED, resolveOwnNode: noNode})).serves;
+  assert.equal(hostRefused.refused, 'repl_host_node');
+  assert.match(hostRefused.message, /runs on cua's own REPL host: no Node 24; or set CUA_REPL_HOST=vendor/);
+  const hostLine = await lineOf({env: hostEnv, installed: () => APPROVED, resolveOwnNode: noNode, pending: () => earlier});
+  assert.match(hostLine, /; macOS computer sessions are refused \(repl_host_node\): .*runs on cua's own REPL host: no Node 24; or set CUA_REPL_HOST=vendor .*; build cccccccccccc \(version 0\.3\.0\), from an earlier build, is pending \(`cua engine approve` with the owner at the console takes it\); to retry this build, install Xcode/);
+  assert.doesNotMatch(hostLine, /until a build is approved|takes it now/, 'approving does not unblock a refusal for the Node');
+  // A CUA_NODE serve refuses (not absolute) refuses sessions here too, though the selection alone would fall back.
+  const relative = await invoke(fixture(t, {build: async () => xcode(), env: {CUA_NODE: 'bin/node'}}).deps, ['--json']);
+  assert.equal(relative.status, 0, relative.stderr);
+  assert.deepEqual(JSON.parse(relative.stdout).engine.serves, {refused: 'invalid_setting', message: 'CUA_NODE must be the absolute path of a Node executable'});
+  assert.match(await lineOf({env: {CUA_NODE: 'bin/node'}}),
+    /; macOS computer sessions are refused \(invalid_setting\): CUA_NODE must be the absolute path of a Node executable; to use cua's engine, install Xcode/);
   // An earlier build pending that meets the minimum: approving it is the way now, apart from retrying this build.
-  const earlier = {build: 'c'.repeat(64), engineVersion: '0.3.0', bundlePath: '/e/pending/cua Engine.app', builtAt: '2026-11-22T00:00:00.000Z'};
   const withPending = await engineOf({pending: () => earlier});
   assert.deepEqual(withPending.pending, {build: earlier.build, engineVersion: '0.3.0'});
   assert.match(await lineOf({pending: () => earlier}),

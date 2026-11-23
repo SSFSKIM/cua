@@ -63,6 +63,7 @@ import {buildFailureCause} from './engine-build-failure.mjs';
 import {pendingEngine, pendingMeetsMinimum} from './engine-minimum.mjs';
 import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION} from '../services/engine/client.mjs';
 import {nativeEngineSetting, replHostFor} from './launch.mjs';
+import {hostSettingsFrom} from '../mcp/surface.mjs';
 
 // What unpacking a deb runs, and the package each comes from.
 const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
@@ -383,7 +384,9 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
 // session's first js result give it); `serves`, what a macOS computer session gets until a build is approved, as its own
 // selection decides it (launch.mjs replHostFor, with the approved engine and the own host's Node as they are now):
 // {engine: 'cua', build} (an approved build still serves), {engine: 'vendor', reason} (the default's fallback, or an
-// explicit vendor host), or {refused: code} (an explicit selection of cua's engine with none usable); and `pending`, a
+// explicit vendor host), or {refused: code, message} (the refusal a session would get, in its own words: an explicit
+// selection of cua's engine with none usable or no Node 24 for its host, or a host setting serve refuses, checked as
+// serve checks it, surface.mjs hostSettingsFrom); and `pending`, a
 // build from an earlier build still pending beside it that meets the minimum ({build, engineVersion}, which `cua engine
 // approve` takes now), else null. `home` (the cua home, where the own host's Node is found), `resolveOwnNode` and
 // `pending` are seams for tests, as `build` and `installed` are.
@@ -393,12 +396,13 @@ export async function installMacosEngine({explicit = false, sign, signWait, env 
   engine = {}, log = () => {}, home, resolveOwnNode, pending = dir => pendingEngine({dir})} = {}) {
   const serves = dir => {
     try {
+      hostSettingsFrom(env);
       const session = replHostFor({platform: 'darwin', surfaces: ['computer'], ambient: env, home, ...(resolveOwnNode ? {resolveOwnNode} : {}),
         engine: {...selection, installed: () => installed({dir, runSync: engine.runSync}), pending: () => pending(dir), buildFailure: () => null}});
       return session.engine?.engine === 'cua' ? {engine: 'cua', build: session.engine.app.build} : {engine: 'vendor', reason: session.reason};
     } catch (error) {
       if (!(error instanceof CuaError)) throw error;
-      return {refused: error.code};
+      return {refused: error.code, message: error.message};
     }
   };
   const approvable = dir => {

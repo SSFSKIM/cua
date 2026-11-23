@@ -211,9 +211,11 @@ node bin/cua.mjs install --engine     # or: node bin/cua.mjs engine build
 required (without it a failed build, such as one with no signing identity yet, is a warning and the rest of the install
 stands: it names the cause, such as Xcode missing or not selected, no signing identity or a compile error; says what a
 macOS computer session gets meanwhile, by the session's own selection: an approved build that still serves, the vendor
-engine (the default's fallback, also where no Node 24 runs cua's own host), or a refusal for an explicit selection of
-cua's engine; names a build from an earlier build still pending that `cua engine approve` takes now; and gives the
-remedy) and does not change the selection. A failed build is recorded
+engine (the default's fallback, also where no Node 24 runs cua's own host), or the refusal a session would get, in its
+own words (an explicit selection of cua's engine or host with none usable or no Node 24, or a `CUA_REPL_HOST` or
+`CUA_NODE` serve refuses); says what makes sessions usable now, as that refusal or the Node, and a build from an earlier
+build still pending, which `cua engine approve` takes, now where the engine is what sessions lack; and last, how to
+retry this build) and does not change the selection. A failed build is recorded
 beside the approved engine (`build-failed.json`) so sessions and `cua doctor` can name its cause; a build that succeeds,
 or an approve, removes the record. Install never approves: it sends no grant request,
 launches nothing and captures nothing, so an ordinary or CI install raises no permission dialog. The build goes into the
@@ -386,7 +388,8 @@ swift)` or `no signing identity is configured`); `build <id> built, awaiting app
 `repl.host` and `engine` rows open with the same reason and remedy, and an approved engine older than 0.2.0 is said the
 same way. The next connection after an approve drives cua's engine. A Mac with no runtime either refuses the macOS
 computer session (`runtime_not_installed`), giving the runtime's remedy and this same reason and remedy; it never starts
-half-installed. An explicit selection of an engine has no such line: it gets the engine it names or a refusal.
+half-installed. A device reached through cua's relay tells its client the same without its paths: `cua install` to run
+on the device first, then this line. An explicit selection of an engine has no such line: it gets the engine it names or a refusal.
 **The way back:** `CUA_NATIVE_ENGINE=vendor` in a session's environment, or `"engine": "vendor"` in
 `~/.config/cua/engine.json` for every session on the Mac, runs the vendor host and engine as before #117's M5; it
 stays until #117's M6 retires the vendor engine. Where `CUA_REPL_HOST=cua` is set, also unset it or set it to

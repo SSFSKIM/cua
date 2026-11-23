@@ -69,7 +69,7 @@ import {projectRoot} from '../secrets/project.mjs';
 import {connectionTarget} from './target.mjs';
 import {deviceDirectory} from '../remote/directory.mjs';
 import {
-  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, cuaNodeFrom, replHostFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withFeedbackNote, withHostNotes,
+  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, hostSettingsFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withFeedbackNote, withHostNotes,
 } from './surface.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -520,11 +520,10 @@ export function settingsFrom(env, {platform = process.platform, devices = false,
   const hostNotes = withFeedbackNote(env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices, inAppBrowser})), feedbackDir);
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  // CUA_REPL_HOST is checked here whatever the surfaces; which host a connection runs, or whether it refuses one, is
-  // the connection's resolution (src/mcp/connection.mjs).
-  replHostFrom(env);
-  // CUA_NODE likewise: only its form here; whether it names a Node 24 is the connection's resolution (launch.mjs ownHostNode).
-  cuaNodeFrom(env);
+  // CUA_REPL_HOST and CUA_NODE are checked here whatever the surfaces, CUA_NODE for its form only; which host a
+  // connection runs, whether it refuses one, and whether CUA_NODE names a Node 24 are the connection's resolution
+  // (src/mcp/connection.mjs, launch.mjs ownHostNode).
+  hostSettingsFrom(env);
   return {persist, hostNotes, feedbackDir, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env), platform,
     runtimeIdleMs: runtimeIdleFrom(env)};
 }

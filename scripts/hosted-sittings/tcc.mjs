@@ -43,7 +43,8 @@ export const O0_COMMIT = 'db775127652ebae5e0c7d90b5f5e2785f8e5711e';
 
 // Why `text` (the pinned spec) holds no O0 entry: its "## Decision Log" section, up to the next "## " heading, must hold
 // an entry of its own (a line starting "- ", with its indented continuation lines) whose text, whitespace-normalised,
-// begins with DECISION_MARKER. A quotation inside another entry, or the marker anywhere outside the section, is none.
+// begins with DECISION_MARKER. A quotation inside another entry, the marker anywhere outside the section, or an example
+// of the bullet in code (a fenced block, ``` or ~~~ at any indent, or a line indented as code) is none.
 // -> null when it holds one, else the problem.
 export function decisionEntryProblem(text) {
   const lines = String(text ?? '').split('\n');
@@ -51,7 +52,12 @@ export function decisionEntryProblem(text) {
   if (start < 0) return 'the pinned spec has no "## Decision Log" section';
   const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
   const entries = [];
+  let fence = null;
   for (const line of lines.slice(start + 1, end < 0 ? undefined : end)) {
+    // A fence opens on ``` or ~~~ (three or more) and closes on the same character, at least as long; inside it is code.
+    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) { if (mark && mark[0] === fence[0] && mark.length >= fence.length && !line.trim().slice(mark.length).trim()) fence = null; continue; }
+    if (mark) { fence = mark; entries.push(null); continue; }
     if (line.startsWith('- ')) entries.push(line.slice(2));
     else if (/^\s+\S/.test(line) && typeof entries.at(-1) === 'string') entries[entries.length - 1] += ` ${line}`;
     else if (!line.trim() || !/^\s/.test(line)) entries.push(null);

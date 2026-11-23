@@ -34,7 +34,7 @@ on:
         type: boolean
         default: false
       decision_commit:
-        description: "The full commit of the design spec whose Decision Log holds the owner's O0 entry (empty: the entry's own, db775127652ebae5e0c7d90b5f5e2785f8e5711e on docs/117-progress)"
+        description: "The full commit of the design spec whose Decision Log holds the owner's O0 entry (empty: the entry's own, db775127652ebae5e0c7d90b5f5e2785f8e5711e on docs/117-progress; any other must be reachable from docs/117-progress)"
         type: string
         default: ''
 permissions:

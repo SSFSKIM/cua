@@ -31,6 +31,10 @@ const GRANTS = [{client: CLIENTS.engine, bundle: '/Users/runner/Library/Applicat
 
 // Ruling 1137: every refusal gives zero store calls. Off the host the Decision Log is never read: the hosted guard comes first.
 const quoted = spec(`- Decision (2026-11-24, revoked): the entry "${DECISION_MARKER}" no longer holds.\n`);
+// An example of the bullet, not the bullet: inside a fence (``` or ~~~, at any indent) or as indented code.
+const fenced = spec(`${OTHER}\nAn example of the form:\n\n\`\`\`\n${O0}\`\`\`\n`);
+const tildes = spec(`${OTHER}\n  ~~~markdown\n${O0}  ~~~\n`);
+const indented = spec(`${OTHER}\nThe form:\n\n${O0.split('\n').map(line => (line ? `    ${line}` : line)).join('\n')}`);
 const outside = `## Notes\n\n${O0}\n## Decision Log\n\n${OTHER}`;
 const refusals = {
   'RUNNER_ENVIRONMENT unset': [{...HOSTED, env: {}, decisionLog: throwsIfCalled}, /refused: .*GitHub-hosted/],
@@ -39,6 +43,9 @@ const refusals = {
   'the O0 entry missing from the Decision Log': [{...HOSTED, decisionLog: () => ({sha: SHA, text: spec(OTHER)})}, /refused: .*O0.*no entry of its own/],
   'the marker quoted inside another entry': [{...HOSTED, decisionLog: () => ({sha: SHA, text: quoted})}, /refused: .*O0.*no entry of its own/],
   'the marker outside the Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: outside})}, /refused: .*O0.*no entry of its own/],
+  'the marker only in a ``` fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: fenced})}, /refused: .*O0.*no entry of its own/],
+  'the marker only in a ~~~ fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: tildes})}, /refused: .*O0.*no entry of its own/],
+  'the marker only in indented code': [{...HOSTED, decisionLog: () => ({sha: SHA, text: indented})}, /refused: .*O0.*no entry of its own/],
   'no Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: O0})}, /refused: .*no "## Decision Log" section/],
   'the pinned spec file missing': [{...HOSTED, decisionLog: () => null}, /refused: .*no pinned design spec/],
   'a pin that is not a full commit': [{...HOSTED, decisionLog: () => ({sha: 'db775127', text: WITH_O0})}, /refused: .*not a full commit/],
@@ -54,7 +61,8 @@ for (const [name, [where, message]] of Object.entries(refusals)) {
 test('the O0 entry must be an entry of the Decision Log section, as the spec wraps it', () => {
   assert.equal(decisionEntryProblem(WITH_O0), null);
   assert.equal(decisionEntryProblem(spec(`${O0}\n${OTHER}`)), null, 'wherever it sits among the entries');
-  for (const text of [spec(OTHER), quoted, outside]) assert.match(decisionEntryProblem(text), /no entry of its own/);
+  for (const text of [spec(OTHER), quoted, outside, fenced, tildes, indented]) assert.match(decisionEntryProblem(text), /no entry of its own/);
+  assert.equal(decisionEntryProblem(spec(`\`\`\`\nan example\n\`\`\`\n\n${O0}`)), null, 'the entry itself after a closed fence still counts');
   assert.match(decisionEntryProblem(spec(O0.replace('(O0; ruling 1111)', '(O0)'))), /no entry of its own/, 'the marker whole, never a prefix of it');
 });
 

@@ -7,7 +7,7 @@ import {pinDecision} from '../../scripts/hosted-sittings/pin.mjs';
 import {DECISION_SPEC, O0_COMMIT} from '../../scripts/hosted-sittings/tcc.mjs';
 
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: '/t'};
-function spies({present = false, fetched = O0_COMMIT} = {}) {
+function spies({present = false, fetched = O0_COMMIT, reviewed = []} = {}) {
   const calls = [], written = [];
   const git = args => {
     calls.push(args.join(' '));
@@ -15,6 +15,8 @@ function spies({present = false, fetched = O0_COMMIT} = {}) {
     if (args[0] === 'fetch') return '';
     if (args[0] === 'rev-parse') return `${fetched}\n`;
     if (args[0] === 'show') return '## Decision Log\n';
+    // `merge-base --is-ancestor <commit> <reviewed>`: true for the pairs `reviewed` names.
+    if (args[0] === 'merge-base') { if (!reviewed.includes(`${args[2]} ${args[3]}`)) throw new Error('not an ancestor'); return ''; }
     throw new Error(args.join(' '));
   };
   return {calls, written, deps: {env: HOSTED, platform: 'darwin', git, write: (path, text) => written.push([path, text])}};
@@ -29,11 +31,18 @@ test('by default the entry\'s own commit is fetched, checked and its spec writte
   assert.deepEqual(written, [[pin.file, '## Decision Log\n']]);
 });
 
-test('a commit already present is not fetched; a later commit may be named, in full only', () => {
-  const later = 'a'.repeat(40);
-  const {calls, deps} = spies({present: true});
+test('a commit already present is not fetched; a later commit may be named, in full only, and only from the reviewed branch', () => {
+  const later = 'a'.repeat(40), BRANCH = 'refs/remotes/origin/docs/117-progress';
+  const {calls, deps} = spies({present: true, reviewed: [`${later} ${BRANCH}`]});
   assert.equal(pinDecision({...deps, commit: later}).sha, later);
-  assert.ok(!calls.some(c => c.startsWith('fetch')));
+  assert.ok(!calls.some(c => c.startsWith('fetch -q --depth')));
+  assert.deepEqual(calls.filter(c => /^(fetch|merge-base)/.test(c)), [`fetch -q origin +refs/heads/docs/117-progress:${BRANCH}`, `merge-base --is-ancestor ${later} ${O0_COMMIT}`, `merge-base --is-ancestor ${later} ${BRANCH}`]);
+  // A commit on no reviewed source is refused before its spec is read; an ancestor of the default is reviewed.
+  const stray = spies({present: true});
+  assert.throws(() => pinDecision({...stray.deps, commit: 'c'.repeat(40)}), /not on a reviewed source/);
+  assert.ok(!stray.calls.some(c => c.startsWith('show')) && !stray.written.length);
+  const older = 'd'.repeat(40);
+  assert.equal(pinDecision({...spies({present: true, reviewed: [`${older} ${O0_COMMIT}`]}).deps, commit: older}).sha, older);
   assert.throws(() => pinDecision({...spies().deps, commit: 'db775127'}), /a full commit/);
   assert.throws(() => pinDecision({...spies({fetched: 'b'.repeat(40)}).deps}), /fetched b{40}, not db775127/);
 });

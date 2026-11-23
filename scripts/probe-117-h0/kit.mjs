@@ -304,6 +304,86 @@ await step('step4-scenes', async () => {
   return {preflight, up, desktopCapture: {code: shot.code, stderr: shot.stderr.slice(0, 200)}, display: json(sh(DISPLAY_TOOL, []).stdout)};
 });
 
+// ---- Ruling 1135 (ii): does replayd's capture confirmation close by itself? (H0_MODE=alert) ----
+// Observe only toward the alert: nothing here clicks, keys, dismisses or answers it, and no approval is recorded
+// anywhere. Rows (the guarded writer) and a relaunch for both copies, then for each copy in turn ONE capture (a bind and
+// one getScreenshot in a session), then the alert's window, the front app and the focused app sampled every 5 s for up to
+// 10 minutes or until it is gone. Then a second capture by the same copy (does it raise it again?), and last one
+// keystroke cell (the matrix's stand-in user, the probe's keystroke into the TextEdit scene, landing read by the focus
+// probe's value hash).
+const ALERT_TOOL = process.env.H0_ALERT_TOOL || join(process.env.RUNNER_TEMP ?? '/tmp', 'h0-alert-windows');
+const alertWindows = () => {
+  const r = sh(ALERT_TOOL, []);
+  const all = json(r.stdout)?.windows ?? null;
+  return all === null ? {error: r.stderr.slice(0, 200)} : {all, alert: all.filter(w => w.owner === 'UserNotificationCenter' && w.bounds[3] > 100)};
+};
+const focusedApp = () => { try { const f = runProbe(PATHS.bundle, ['focus']); return f.focusedApp?.bundleId ?? null; } catch (e) { return {error: err(e)}; } };
+async function sampleAlert(tag, {maxMs = 10 * 60_000, everyMs = 5_000} = {}) {
+  const started = Date.now();
+  const samples = [];
+  let firstSeenMs = null, goneMs = null;
+  while (Date.now() - started < maxMs) {
+    const w = alertWindows();
+    const present = Array.isArray(w.alert) ? w.alert.length > 0 : null;
+    const at = Date.now() - started;
+    samples.push({at, present, windows: w.alert ?? w.error, front: ssh('frontmost').out?.bundleId ?? null, key: focusedApp()});
+    if (present && firstSeenMs === null) firstSeenMs = at;
+    if (present === false && firstSeenMs !== null) { goneMs = at; break; }
+    if (present === false && firstSeenMs === null && at > 30_000) break;  // never appeared within 30 s
+    await sleep(everyMs);
+  }
+  writeFileSync(join(OUT, `alert-samples-${tag}.json`), JSON.stringify(samples, null, 2) + '\n');
+  const out = {firstSeenMs, goneMs, closedByItself: firstSeenMs === null ? null : goneMs !== null, sampledMs: Date.now() - started, samples: samples.length,
+    fronts: [...new Set(samples.map(x => x.front))], keys: [...new Set(samples.map(x => JSON.stringify(x.key)))]};
+  log(`alert ${tag}: seen at ${firstSeenMs} ms, gone at ${goneMs ?? 'never'} (sampled ${out.sampledMs} ms)`);
+  return out;
+}
+// One capture by the copy a session drives: the bind, then one getScreenshot (the bind's own reading is the engine's).
+async function oneCapture(name, env, bundle) {
+  const {s, opened} = await openServe(name, env);
+  const watch = watchCaptureAlerts();
+  const ready = await watch.ready;
+  const reply = opened.openError ? null : await s.js(`${b64}
+const __r = {h0: true};
+try { const __a = await cua.getApp(${JSON.stringify(bundle)}); __r.bound = true; const __s = await __a.getScreenshot({emit: false}); __r.shot = {bytes: __s.length}; } catch (e) { __r.error = String(e?.message ?? e); }
+nodeRepl.write(JSON.stringify(__r));`, 120_000);
+  await sleep(3000);
+  const alerts = await watch.stop();
+  opened.exit = await closeServe(s);
+  const out = {session: {attestation: opened.attestation, openError: opened.openError, elicitations: opened.elicitations.length}, cell: reply ? cellLine(reply) : null, scAlertLines: {watched: ready && alerts.intact, count: alerts.alerts}};
+  log(`${name}: ${JSON.stringify(out.cell)} SCAlert lines ${alerts.alerts}`);
+  return out;
+}
+async function alertMode() {
+  await step('alert-setup', async () => {
+    const rows = grantRows({client: ENGINE_BUNDLE_ID, bundle: PATHS.bundle, services: ['accessibility', 'screenRecording', 'inputMonitoring', 'postEvent']});
+    const vendorApps = (record.setup?.runtimeApps ?? []).filter(a => /sky|CUAService|computer/i.test(a.bundleId));
+    const vendorRows = vendorApps.flatMap(a => grantRows({client: a.bundleId, bundle: a.path, services: ['accessibility', 'screenRecording', 'inputMonitoring', 'postEvent']}));
+    const relaunch = await relaunchLS();
+    return {rows, vendorRows, idleVendor: skyProcesses(), relaunch, harnessApproval: harnessApproval(), before: alertWindows(), front: ssh('frontmost').out};
+  });
+  for (const [copy, env, bundle] of [['cua', {CUA_NATIVE_ENGINE: 'cua'}, SCENES.textedit], ['vendor', {CUA_NATIVE_ENGINE: 'vendor'}, SCENES.textedit]]) {
+    await step(`alert-${copy}-first`, async () => ({capture: await oneCapture(`a-${copy}-1`, env, bundle), alert: await sampleAlert(`${copy}-first`), shot: front(`alert-${copy}-after-first`)}));
+    await step(`alert-${copy}-second`, async () => ({capture: await oneCapture(`a-${copy}-2`, env, bundle), alert: await sampleAlert(`${copy}-second`, {maxMs: 60_000}), engine: copy === 'cua' ? engineGrants() : skyProcesses()}));
+  }
+  await step('alert-keystroke-cell', async () => {
+    const w = textEditWindow();
+    if (!w) return {skipped: 'no TextEdit scene window recorded'};
+    const alertBefore = alertWindows();
+    const activate = ssh(`activate textedit --run '${SCENE_RUN}'`);
+    const probe = args => { try { return runProbe(PATHS.bundle, args); } catch (e) { return {error: err(e)}; } };
+    const before = probe(['focus', '--window', w.spec]);
+    const keys = probe(['keystroke', '--user-pid', String(w.pid), '--user-bounds', w.spec.split(',').slice(1).join(','), 'h0alert']);
+    const after = probe(['focus', '--window', w.spec]);
+    const textChanged = before.valueHash && after.valueHash ? before.valueHash !== after.valueHash : null;
+    return {alertBefore, activate, before: {named: before.named, focusedApp: before.focusedApp?.bundleId ?? null, valueHash: before.valueHash}, keystroke: {exitStatus: keys.exitStatus, error: keys.error, aborted: keys.aborted ?? false},
+      after: {named: after.named, valueHash: after.valueHash}, textChanged, pass: keys.exitStatus === 0 && textChanged === true, shot: front('alert-keystroke')};
+  });
+  await step('teardown', async () => ({down: ssh(`down all --run '${SCENE_RUN}'`), stopped: stopEngine(), rowsAtEnd: readRows()}));
+  log('done (alert mode)');
+}
+if (process.env.H0_MODE === 'alert') { await alertMode(); process.exit(0); }
+
 // Part 1, step 1: the bundle at the approved location, its own TCC client through LaunchServices, no rows.
 await step('step1-bundle-no-rows', async () => {
   const launched = await launchLS();

@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: full (the kit) or label (sw_vers on the runner label only)
+        description: full (the kit), alert (ruling 1135 (ii), the capture confirmation observed only) or label (sw_vers on the runner label only)
         type: choice
-        options: [full, label]
+        options: [full, alert, label]
         default: full
       runner:
         description: Runner label (macos-latest, macos-26, macos-27, xcode-27, ...)
@@ -45,7 +45,7 @@ jobs:
           sw_vers
           system_profiler SPDisplaysDataType | sed -n '/Displays:/,$p' | head -20
   prebuild:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'full' && inputs.prebuild == 'yes'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode != 'label' && inputs.prebuild == 'yes'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -68,11 +68,12 @@ jobs:
           retention-days: 7
   full:
     needs: prebuild
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.mode == 'full' && (needs.prebuild.result == 'success' || needs.prebuild.result == 'skipped') }}
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.mode != 'label' && (needs.prebuild.result == 'success' || needs.prebuild.result == 'skipped') }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 75
     env:
       H0_LABEL: ${{ inputs.runner }}
+      H0_MODE: ${{ inputs.mode }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -104,6 +105,7 @@ jobs:
           sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m)"
           npm ci --no-audit --no-fund
           swiftc -O scripts/probe-117-h0/display.swift -o "$RUNNER_TEMP/h0-display"
+          swiftc -O scripts/probe-117-h0/alert-windows.swift -o "$RUNNER_TEMP/h0-alert-windows"
       - name: The loopback device (a user-mode sshd, as scripts/repl-parity/hosted/hosted.sh sets it up)
         shell: bash
         run: |

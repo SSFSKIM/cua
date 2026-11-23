@@ -542,3 +542,21 @@ test('#212\'s save sheet, hosted: a cleanup the alert holds too is reset with Te
   assert.deepEqual(stopped.result.meta.fixturesHeld, [{row: SAVE_SHEET, sample: 1, scene: 'textedit', reset: false, blockedBy: 'alert'}]);
   assert.equal(sampleCause({...rowOf(stopped.result, SAVE_SHEET), hosted: true}).category, 'alert', 'the row it kept stays missing proof');
 });
+
+// T8e review, Minor 2: a run stopped because a held fixture's reset was held too keeps every sample its plan still had
+// to take, NO VERDICT by the reset's cause, as a refused harness cell's run does; none vanishes from the counts.
+test('a held fixture whose reset is held stops the run with every planned sample after it recorded NO VERDICT, none missing', async () => {
+  const {manifestOf} = await import('../../scripts/native-matrix/manifest.mjs');
+  const plan = {...planOf('intervention-save-sheet'), launch: planOf('launch').launch};
+  const stuck = [];
+  const {result} = await runWith({plan, cellName: 'intervention-save-sheet', calls: stuck, cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: heldTyping(stuck, 'always')});
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.meta.fixturesHeld.map(f => [f.reset, f.blockedBy]), [[false, 'alert']]);
+  const planned = manifestOf({run: 1, samples: 2}, plan);
+  const have = new Set(result.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
+  assert.deepEqual(planned.filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`)), [], 'no planned sample vanished');
+  const unrun = result.rows.filter(r => r.section === 'launch');
+  assert.ok(unrun.length > 0 && unrun.every(r => sampleCause(r).category === 'alert' && /not run: the run stopped when a held fixture could not be reset/.test(r.alertGuard.detail)),
+    JSON.stringify(unrun));
+  assert.deepEqual(validateCellResult(result), []);
+});

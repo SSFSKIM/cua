@@ -65,7 +65,7 @@ import {CLOSE_PANEL, CLOSE_PANEL_KEY, findingCell, launchCell, launchCheckCell, 
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {probeCells} from './probe-run.mjs';
+import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
@@ -305,6 +305,10 @@ async function runOnce(options, io) {
     if (error instanceof AlertGuarded) {
       meta.alertGuardStop = {cause: error.guard.category, detail: error.guard.detail};
       recordUnrun(ctx, plan, error.guard);
+    } else if (error instanceof ResetBlocked) {
+      // A held fixture's reset the alert held, or the guard refused (./probe-run.mjs resetHeldFixture; T8e review, Minor
+      // 2): its samples after are NO VERDICT by that cause too, never missing.
+      recordUnrun(ctx, plan, error.guard, 'a held fixture could not be reset');
     }
     log(`run ${n} stopped: ${error.message}`);
   } finally {
@@ -495,9 +499,9 @@ async function placePanel(ctx) {
 // A run the alert guard stopped (a harness cell refused): every sample its plan still had to take recorded NO VERDICT by
 // the guard's cause, as an activation that did not take records its target's (skippedTarget), so the per-cell counts see
 // them (./manifest.mjs manifestOf, the rows the judge expects).
-function recordUnrun(ctx, plan, guard) {
+function recordUnrun(ctx, plan, guard, why = 'the alert guard refused a harness cell') {
   const have = new Set(ctx.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
-  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when the alert guard refused a harness cell (${guard.detail})`});
+  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when ${why} (${guard.detail})`});
   for (const {section, id, sample, expect} of manifestOf({run: ctx.n, samples: ctx.samples}, plan)) {
     if (have.has(`${section} ${id} ${sample}`)) continue;
     push(ctx, {section, id, engine: ctx.engine, sample, ok: false, ...(section === 'method' ? {regime: id.split('/')[1], expect} : {}), ...mark});
@@ -568,8 +572,11 @@ async function frontmostTarget(ctx, target, plan) {
 
 // The panel closed after its cases: by Escape under the key guard, and only when that did not close it (the key held,
 // skipped, or not taken by the out-of-process panel) by its Cancel, a click under the alert guard (ruling 1154), whose
-// refusal stops the run (runOnce records the samples it would still have taken).
-async function closePanel(ctx) {
+// refusal stops the run (runOnce records the samples it would still have taken). After the background pairing the user
+// window (Finder's) is in front, where the key guard would skip Escape: `activateFirst` brings TextEdit to the front
+// first, its cases done by then (T8e review, Minor 1).
+async function closePanel(ctx, {activateFirst = false} = {}) {
+  if (activateFirst) activate(ctx, 'textedit');
   let keyed = null;
   try { keyed = await sendKeys(ctx, CLOSE_PANEL_KEY, ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'}); } catch (error) {
     if (!(error instanceof AlertHeld)) throw error;
@@ -601,7 +608,7 @@ async function backgroundPairing(ctx, {driven, user}) {
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
   }
-  if (driven === 'openPanel') await closePanel(ctx);
+  if (driven === 'openPanel') await closePanel(ctx, {activateFirst: true});
 }
 
 // The speed ops, each the baseline's own cell (./manifest.mjs SPEED_OPS names them).

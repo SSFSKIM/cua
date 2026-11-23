@@ -390,9 +390,12 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   (`drop_cursor.settle.rest_ms`, since 0.4.4), and the engine's `drop_settles` counts;
   `--drop-no-settle` (measurement only) releases and judges as 0.4.0 did.
   Since 0.4.4 the settle's rest is the source's family's (#487): a drag named to a window that rests not at all (GTK 4)
-  whose path starts in Electron rests Electron's 30 ms between the two pings, and its floor's keepalives end those
-  30 ms early (`hold.floor_until_ms`), where 0.4.3 rested the named window's none; and a handle's end settles a take its hold saw at its first read, though the cursor watch had not read it yet
-  (#488), where 0.4.3 skipped the settle and answered the drop unconfirmed.
+  whose path starts in Electron rests Electron's 30 ms between the two pings, and its floor's keepalives are cut off
+  those 30 ms early (`hold.floor_until_ms`, the cutoff scheduled after the take, not when keepalives stopped: a path
+  whose steps outlast it sends none), where 0.4.3 rested the named window's none; and a handle's end settles a take its
+  hold saw at its first read, though the cursor watch had not read it yet (#488), where 0.4.3 skipped the settle and
+  answered the drop unconfirmed. A handle's settle keeps its record when the release read no cursor (`drop_cursor`
+  `{ "read": false }` with its `settle`), as a drag's does.
   With no request (or no accept) in time the drop is unconfirmed, never ok: `Pending from
   your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
   request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor

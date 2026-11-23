@@ -214,6 +214,15 @@ pub fn settles(
     on && pressed && !held_rest.is_zero() && (hold.at_first_read || hold.in_wait || watch_seen())
 }
 
+/// A handle's settle (`settle`, with its `rest_ms`) put in its `drop_cursor` record: beside the cursor's read when the
+/// release read one, else in a record that says none was read, as a drag's. A settle begun on the hold's first take
+/// whose last read then failed judges nothing, but its drop keeps its record (task 140's re-review).
+pub fn record_settle(cursor_record: &mut Option<Value>, settle: Value) {
+    if let Value::Object(record) = cursor_record.get_or_insert_with(|| json!({ "read": false })) {
+        record.insert("settle".into(), settle);
+    }
+}
+
 /// Why a handle's end runs no tail (ruling 998, confirmed by 1026), or None when it runs one. The tail is the drag's
 /// (`release_sync.rs`) for a Chrome source with a drag and drop under way at the agent's `end`: `form` its form (`off`
 /// restores the end of f9d1f86b, for A/B runs), `agent_end` the agent's `end` (the exit's, the idle bound's and a lost
@@ -1117,9 +1126,7 @@ impl Engine {
             let steps = cursor_read.as_ref().map_or(&[][..], |read| &read.steps[..]);
             let settled = settle.settled(steps, true);
             self.drop_settles.count(&settle, settled);
-            if let Some(Value::Object(record)) = cursor_record.as_mut() {
-                record.insert("settle".into(), settle.record(steps, true));
-            }
+            record_settle(&mut cursor_record, settle.record(steps, true));
             settled
         });
         if let (Some(Confirming::Cursor(true)), Some(read)) = (confirmed, &cursor_read) {
@@ -1686,6 +1693,26 @@ mod tests {
             !settles(true, true, Duration::ZERO, first, || true),
             "a family that does not rest"
         );
+    }
+
+    /// Task 140's re-review: a settle begun on the hold's first take whose last read failed (no take, so no read at the
+    /// release and no cursor record) still gets its drop's record, `{ "read": false }` with the settle and its
+    /// `rest_ms`, as a drag's; a record the release made keeps its read beside the settle.
+    #[test]
+    fn a_handle_s_settle_is_recorded_though_the_release_read_no_cursor() {
+        let settle = crate::drop_settle::Settle::interrupted(
+            crate::drop_settle::Sync::Unasked,
+            crate::drop_settle::SecondRest::Needless,
+            Duration::from_millis(30),
+        )
+        .record(&[], true);
+        let mut none = None;
+        record_settle(&mut none, settle.clone());
+        assert_eq!(none, Some(json!({ "read": false, "settle": settle })));
+        assert_eq!(none.unwrap()["settle"]["rest_ms"], json!(30));
+        let mut read = Some(json!({ "accepted": true }));
+        record_settle(&mut read, settle.clone());
+        assert_eq!(read, Some(json!({ "accepted": true, "settle": settle })));
     }
 
     #[test]

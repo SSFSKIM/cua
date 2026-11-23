@@ -725,7 +725,8 @@ fn drag_along(
             }
             // the floor after a take: what the path's steps left of it filled with motions, ending on the last sample
             let mut keepalives = 0;
-            // how long after the take its keepalives ran to, when they ran to a time (`--stats` `hold.floor_until_ms`)
+            // the cutoff the floor's keepalives were given, after the take (`--stats` `hold.floor_until_ms`): scheduled, not
+            // when they stopped, so a path whose steps outlasted it reads it though no keepalive was sent
             let mut floor_until = None;
             if let Some((at, _)) = taken
                 && !after_take.is_zero()

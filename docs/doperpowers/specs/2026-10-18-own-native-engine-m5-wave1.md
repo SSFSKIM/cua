@@ -161,6 +161,17 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `cua-shim.mjs:11`, adds `_meta.persist` to every accepted app approval, so remembering more would widen consent for
   no known client); 216.md names it as a client contract. The hosted witness is `scripts/approval-cycles.mjs`, twenty
   cycles, run in T10's pilot; Claude Code's own answering and a reconnect are O10's.
+- 2026-11-23, ruling 1144 (shared Unicode failures), for rows judged by an absolute expected string only: (1) per
+  paired sample (1116), a cua sample is `equal` only against its own paired vendor sample with the same failure and
+  the same read-back; the vendor passing any sample of the row while its cua pair fails makes the row FAIL. (2) The
+  same failure includes the answer: vendor ok with wrong text and cua ok with the same wrong text is equal, flagged a
+  shared false ok; cua refused or unconfirmed where the vendor gave a false ok is better, under the existing departure
+  kind; cua false ok where the vendor refused is FAIL. (3) Every shared-limit row needs a ticket, one per distinct
+  cause (a shared false ok P2 or higher, a shared honest refusal P3), which the design session registers; the judge's
+  report lists them under "shared limits (vendor has them too)", apart from departures, each naming its cause. (4)
+  Holds 3, 2a and 2b keep FAIL under their own rules; hold 3's `chrome/korean/typeText.lines` moves to shared limits
+  only on paired evidence, never by declaration. An unpaired sample has no verdict; NO VERDICT never counts toward a
+  pass. Built into the judge as T10a's fix.
 - 2026-11-23, T10a (527c85376; detail in `docs/evidence/2026-11-23-own-native-engine/judge.md`): one declaration
   mechanism, `scripts/native-matrix/expected/departures.json` (the Unicode expected file, its reader and the run's
   `applyDeclarations` removed); an entry `{section, id, vendor: {answer: 'ok'}, cua: {answer: 'refused'|'unconfirmed',

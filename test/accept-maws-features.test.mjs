@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, writeFileSync, existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {AFTER_END, ALERT, CHOOSER, CONFIRM, DOWNLOAD, FEATURE_STEPS, ISOLATION, PROFILES_ENTRY, STEPS, cell, featureDecision, UPLOAD_BYTES, VIEWPORT} from '../scripts/accept/maws-features.mjs';
+import {AFTER_END, ALERT, CHOOSER, CONFIRM, DOWNLOAD, FEATURE_STEPS, FIRST_USE, FIRST_USE_CHECKS, IGNORED_VISIBLE, ISOLATION, KEY_MISS, KEY_TAB, PROFILES_ENTRY, STEPS, VISIBILITY_LIMIT, cell, featureDecision, literalEnv, runLiteral, UPLOAD_BYTES, VIEWPORT} from '../scripts/accept/maws-features.mjs';
 import {REPORT_BODY} from '../scripts/accept/features-page.mjs';
+import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {parseFeatureResult} from '../scripts/accept/linux-chrome-features.mjs';
 
 const runCell = async (code, cua) => {
@@ -18,7 +19,7 @@ const runCell = async (code, cua) => {
 };
 
 test('the report keeps the spec\'s step order, and M3\'s four steps run in it', () => {
-  assert.deepEqual(STEPS, ['profiles', 'service', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation']);
+  assert.deepEqual(STEPS, ['profiles', 'service', 'firstUse', 'mawsKey', 'chromeKey', 'keyMiss', 'literalVendor', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation']);
   assert.deepEqual(Object.keys(FEATURE_STEPS), ['download', 'alert', 'confirm', 'chooser']);
   assert.ok(Object.values(FEATURE_STEPS).every(step => typeof step === 'function'));
   for (const code of [DOWNLOAD, ALERT, CONFIRM, CHOOSER('/tmp/x.txt')]) assert.match(code, /const fixtureTab = m\.tab;/);
@@ -94,4 +95,71 @@ test('the cells report what they saw: a thrown error is the step\'s error; isola
   };
   assert.deepEqual(await runCell(ISOLATION('maws:b'), cua), {mawsInstances: ['maws:a'], otherSelected: false, otherError: 'The Chrome instance is unavailable. (maws:b)'});
   assert.deepEqual(await runCell(AFTER_END, cua), {createdListed: true, popupListed: false});
+});
+
+test('#493\'s cells follow the first-use path literally and pass a key where an id goes; each tab is closed again', async () => {
+  const page = {url: 'http://127.0.0.1:9/', documentMarker: 'MARK'};
+  const calls = [];
+  const open = new Set();
+  const cua = {
+    getBrowser: async options => { calls.push(['getBrowser', options]); return {browserId: '1', documentation: async () => '# Selected Browser\n- Name: MAWS in-app browser (maws)\n- Type: extension'}; },
+    listBrowsers: async () => [{id: '1', metadata: {extensionInstanceId: 'maws:a'}}],
+    createBrowserTab: async (id, url, options) => {
+      calls.push(['createBrowserTab', id, url, options]);
+      const tab = {id: 7, playwright: {locator: () => ({textContent: async () => 'MARK'})}, close: async () => { open.delete('7'); }};
+      open.add('7');
+      return tab;
+    },
+    listTabs: async () => [...open].map(id => ({id})),
+  };
+  const used = await runCell(FIRST_USE(page), cua);
+  assert.deepEqual(used, {browserId: '1', instance: 'maws:a', named: '- Name: MAWS in-app browser (maws)', visible: {tabId: '7', closed: true, markerMatches: true}});
+  assert.equal(FIRST_USE_CHECKS.firstUse(used, `${IGNORED_VISIBLE}: browser 1 has no visibility capability`, 'maws:a'), true);
+  assert.equal(FIRST_USE_CHECKS.firstUse(used, 'no note', 'maws:a'), false, 'the ignored-visible line is required');
+  const keyed = await runCell(KEY_TAB('maws', page), cua);
+  assert.equal(FIRST_USE_CHECKS.key(keyed, 'maws:a'), true);
+  assert.deepEqual(calls, [['getBrowser', undefined], ['createBrowserTab', '1', page.url, {visible: true}], ['getBrowser', {id: 'maws'}], ['createBrowserTab', 'maws', page.url, undefined]]);
+  const miss = await runCell(KEY_MISS, {getBrowser: async () => { throw new Error('Browser is not available: iab. Browser ids: "1"; profiles_list keys: "maws".'); }});
+  assert.equal(FIRST_USE_CHECKS.miss(miss, ['maws']), true);
+  assert.equal(FIRST_USE_CHECKS.miss(miss, ['maws', 'personal']), false);
+});
+
+test('literalVendor: five separate js calls on a computer,browser serve with the default engine; the vendor host passes only with the declared visible limit', async () => {
+  const env = literalEnv({PATH: '/bin', CUA_NATIVE_ENGINE: 'cua', CUA_REPL_HOST: 'cua', CUA_BROWSER_BACKENDS: '/s.sock'});
+  assert.deepEqual(env, {PATH: '/bin', CUA_BROWSER_BACKENDS: '/s.sock', CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off'});
+  const page = {url: 'http://127.0.0.1:9/', documentMarker: 'MARK'};
+  const tagged = (body, extra = {}) => ({result: {content: [{type: 'text', text: `CUA_FEATURES_RESULT ${JSON.stringify(body)}`}], isError: false, ...extra}});
+  const withDoc = reply => ({...reply, result: {...reply.result, content: [{type: 'text', text: '# Selected Browser\n- Name: MAWS in-app browser (maws)\n- Type: extension'}, ...reply.result.content]}});
+  const vendorReplies = [
+    withDoc(tagged({detail: {browserId: '1', instance: 'maws:app-1'}})),
+    tagged({error: VISIBILITY_LIMIT}),
+    tagged({detail: {tabId: '7', markerMatches: true, closed: true}}),
+    tagged({detail: {tabId: '8', markerMatches: true, sameBrowser: true, closed: true}}),
+    tagged({detail: {selected: false, error: 'Browser is not available: iab. Browser ids: "1"; profiles_list keys: "maws".'}}),
+  ];
+  const fakeSession = replies => {
+    const sent = [];
+    return {sent, js: async (code, timeoutMs) => { sent.push({code, timeoutMs}); return replies[sent.length - 1]; },
+      call: async name => { sent.push({tool: name}); return {result: {structuredContent: {status: 'ended'}}}; }};
+  };
+  const vendor = fakeSession(vendorReplies);
+  const passed = await runLiteral({session: vendor, page});
+  assert.equal(passed.ok, true, JSON.stringify(passed.detail));
+  assert.equal(passed.detail.host, 'vendor');
+  assert.equal(passed.detail.calls.select.name, '- Name: MAWS in-app browser (maws)');
+  assert.equal(passed.detail.calls.visible.error, VISIBILITY_LIMIT);
+  assert.equal(vendor.sent.length, 6, 'five js calls, then end_task');
+  assert.deepEqual(vendor.sent.at(-1), {tool: 'end_task'});
+  assert.deepEqual(vendor.sent.slice(0, 5).map(({code}) => [/getBrowser\(\)/.test(code), /visible: true/.test(code), /createBrowserTab\("maws"/.test(code), /id: "iab"/.test(code)]),
+    [[true, false, false, false], [false, true, false, false], [false, false, false, false], [false, false, true, false], [false, false, false, true]]);
+  assert.ok(vendor.sent.slice(1, 4).every(({code}) => code.includes(page.url) && code.includes('await tab.close()')), 'every tab it opens is closed, and only the loopback page is opened');
+
+  const ownHost = vendorReplies.map(reply => ({...reply, result: {...reply.result, _meta: {'cua/replHost': {host: 'cua', version: REPL_HOST_VERSION}}}}));
+  assert.equal((await runLiteral({session: fakeSession(ownHost), page})).detail.host, 'cua');
+  assert.equal((await runLiteral({session: fakeSession(ownHost), page})).ok, false, 'not the host a MAWS session runs');
+  const opened = [...vendorReplies];
+  opened[1] = tagged({detail: {opened: true, tabId: '9', closed: true}});
+  const noLimit = await runLiteral({session: fakeSession(opened), page});
+  assert.equal(noLimit.ok, false, 'the vendor host is expected to throw the declared limit');
+  assert.equal(noLimit.detail.calls.visible.ok, false);
 });

@@ -42,13 +42,22 @@ const TITLES = {
 const approvedArgs = ctx => ['--approved-runtime', ctx.approvedRuntime, '--approved-engine', ctx.approvedEngine];
 const LANES = {vv: ['vendor', 'vendor'], vc: ['vendor', 'cua'], cc: ['cua', 'cua']};
 
+// Each A run needs the one before it to have passed: a run that stopped (the alert guard's refusal above all) may leave
+// its TextEdit running, its cleanup's ⌘Q refused while the alert holds the key (../native-baseline/macos.mjs), and the
+// next run refuses a running TextEdit at its preflight. The runs after it are SKIP, never failures of their own; the
+// stopped run's own status is the sitting's.
 function sittingA(ctx) {
   const runs = ctx.pilot ? 1 : 3, exp = `hosted-${ctx.runId}-a`, steps = [];
   for (let i = 1; i <= runs; i++) for (const [lane, [host, engine]] of Object.entries(LANES)) {
     steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${lane}/run-${i}/meta.json`, engine,
+      ...(steps.length ? {needs: [steps.at(-1).id]} : {}),
       argv: ['node', 'scripts/native-baseline.mjs', 'run', '--device', DEVICE, '--experiment', exp, '--host', host, '--engine', engine, ...approvedArgs(ctx), '--out', `${ctx.out}/${lane}/run-${i}`]});
   }
-  const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true,
+  // Each comparison needs every run of both its lanes: after a stop it is SKIP, the sitting staying the stop's NO VERDICT
+  // (the compare itself also prints NO VERDICT for a lane with no complete run, ../native-baseline.mjs compareDirs).
+  const lanesRuns = (...lanes) => steps.filter(s => lanes.some(lane => s.id.startsWith(`${lane}-`))).map(s => s.id)
+    .sort((a, b) => lanes.indexOf(a.split('-')[0]) - lanes.indexOf(b.split('-')[0]) || a.localeCompare(b));
+  const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true, needs: lanesRuns(left, right),
     argv: ['node', 'scripts/native-baseline.mjs', 'compare', mode, `${ctx.out}/${left}`, `${ctx.out}/${right}`, '--out', `${ctx.out}/comparison-${id.slice(-1)}.md`]});
   return [...steps, compare('compare-A', '--engines', 'vv', 'vc'), compare('compare-B', '--hosts', 'vc', 'cc'), compare('compare-C', '--end-to-end', 'vv', 'cc')];
 }
@@ -92,9 +101,13 @@ function sittingD(ctx) {
   const home = `${ctx.scratch}/cua-accept`, verify = engine => ['node', 'verify.mjs', '--engine', engine, '--bind', 'com.apple.TextEdit'];
   return [
     {id: 'scratch-install', label: 'the pinned runtime in accept-native\'s scratch home', kind: 'run', argv: ['node', 'bin/cua.mjs', 'install', '--json'], env: {CUA_HOME: home, CUA_NATIVE_ENGINE: 'vendor'}},
+    // Its report read by the `acceptance` check: an alert guard's refusal in the TextEdit fixture is NO VERDICT (ruling 1154).
     {id: 'accept-native', label: `accept-native --engine cua, items ${ACCEPT_NATIVE_ITEMS.join(', ')}`, kind: 'run', needs: ['scratch-install'], env: {CUA_HOME: home, XDG_CONFIG_HOME: acceptConfig(ctx)},
+      check: 'acceptance', record: `${ctx.out}/acceptance.json`, report: `${ctx.out}/acceptance.json`,
       argv: ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', ACCEPT_NATIVE_ITEMS.join(','), '--report', `${ctx.out}/acceptance.json`]},
-    {id: 'textedit-up', label: 'a scratch TextEdit document, the window verify --bind and the approval cycles bind', kind: 'fixture', argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`]},
+    // The document's windows placed clear of the alerts once it is up (rulings 1160, 1164), recorded beside the sitting.
+    {id: 'textedit-up', label: 'a scratch TextEdit document, the window verify --bind and the approval cycles bind', kind: 'fixture',
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'up', '--file', `${ctx.scratch}/verify-bind.txt`, '--record', `${ctx.out}/textedit-placement.json`]},
     {id: 'verify-cua', label: 'verify --engine cua --bind TextEdit (Acceptance 2)', kind: 'run', needs: ['textedit-up'], argv: verify('cua')},
     {id: 'verify-vendor', label: 'verify --engine vendor --bind TextEdit (Acceptance 9, attested)', kind: 'run', needs: ['textedit-up'], argv: verify('vendor')},
     {id: 'approval-cycles', label: `#216's approval cycles (${APPROVAL_CYCLES}) on cua's engine and host`, kind: 'run', needs: ['textedit-up'], env: {CUA_SHIM_SURFACES: 'computer,browser'},

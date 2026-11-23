@@ -89,7 +89,7 @@ try {
   }
   if (index === null) throw new Error("the action's target is not in the observation after 3 tries; nothing was clicked");
   const files = [await __write("before", ${j(laneFileName(scene, 'before'))}, before)];
-  await bound.click(index);
+  const clicked = await bound.click(index);
   const diff = await bound.getAXState({emit: false});
   if (!__aboutScene(diff, ${j(title)})) throw new Error("the observation right after the click is not of the scene window; nothing was kept");
   files.push(await __write("diff", ${j(laneFileName(scene, 'diff'))}, diff));
@@ -97,5 +97,9 @@ try {
   const later = await bound.getAXState({emit: false});
   if (!__aboutScene(later, ${j(title)})) throw new Error("the observation after the settle delay is not of the scene window; nothing was kept");
   files.push(await __write("later", ${j(laneFileName(scene, 'later'))}, later));
-  return {index, files};
+  // #528's diagnostics, value-free: what the click returned (its type and keys) and the focused element the diff right
+  // after it names (its index, never its line).
+  const focused = /\\nThe focused UI element is (\\d+)\\b/.exec(String(diff))?.[1];
+  const click = {returned: clicked === null ? "null" : typeof clicked, keys: clicked !== null && typeof clicked === "object" ? Object.keys(clicked).sort() : []};
+  return {index, files, click, focusAfterClick: {named: focused !== undefined, index: focused === undefined ? null : Number(focused)}};
 } catch (error) { await __discard(); throw error; }`);

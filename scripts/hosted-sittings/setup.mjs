@@ -16,8 +16,15 @@
 //   warm-up vendor      raised in setup, not in a run (ruling 1153; pilot A, run 45220897246), then a bounded,
 //                       watch-only wait for the alert to leave the front (./warm-up.mjs); each kept in `warmUps`. An
 //                       alert still in front, or a failed capture, is recorded and the setup goes on
-//   placement           the alert windows the warm-ups left, read once (ruling 1154), and where each scene window the
-//                       matrix places would go to clear them, the same size (../native-matrix/alert-guard.mjs clearFrame):
+//   display mode        the display switched from the image's 1024x768 to 1920x1080 for the session, once the warm-ups
+//                       raised their alerts at 1024x768 (ruling 1164; ./display-mode.mjs): the mode and the alert windows
+//                       before, the mode set (by size), the display read back, the alert windows read fresh after, and
+//                       the front and the window list watched across the switch. A prompt seen there (a new
+//                       UserNotificationCenter or System Settings window) is recorded and fails the setup, never
+//                       answered; a read-back that is not 1920x1080 fails it; alerts that moved with the display are
+//                       recorded. Kept in `modeSwitch`
+//   placement           the alert windows read fresh after the switch (ruling 1154), and where each scene window the
+//                       matrix places would go to clear them, the same size (./alert-guard.mjs clearFrame):
 //                       Chrome's and the Electron fixture's launch frames, Finder's pinned frame; TextEdit places its own,
 //                       so each run reads it at up. Kept in `placement`; each run of C places its windows by the same rule
 //                       from its own fresh reading (../native-matrix/run.mjs placeScenes), its meta recording where. A
@@ -41,7 +48,8 @@ import {engineToApprove, hostedApprove} from './approve.mjs';
 import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 import {DEVICE} from './plan.mjs';
 import {warmUp as warmUpCopy} from './warm-up.mjs';
-import {clearFrame, isAlertWindow} from '../native-matrix/alert-guard.mjs';
+import {clearFrame, isAlertWindow} from './alert-guard.mjs';
+import {switchDisplayMode} from './display-mode.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../repl-parity/scenes-mac-finder.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
@@ -81,18 +89,19 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
 // engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
-// exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), screen() (the window list and displays,
-// ../native-matrix/system-windows.swift), stopEngine() (src/runtime/engine.mjs stopEngine), write(path, record), log}.
-// -> {ok, steps: [{step, ok, detail}], approve, warmUps, placement, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
+// exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
+// switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), stopEngine()
+// (src/runtime/engine.mjs stopEngine), write(path, record), log}.
+// -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
   runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync,
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
-  approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}),
+  approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}), switchMode = () => switchDisplayMode({env, platform}),
   screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
   log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the hosted setup');
-  const report = {ok: false, steps: [], approve: null, warmUps: [], placement: null, engineStop: null, record: null, approved: null};
+  const report = {ok: false, steps: [], approve: null, warmUps: [], modeSwitch: null, placement: null, engineStop: null, record: null, approved: null};
   const run = (command, args, extra = {}) => {
     const result = exec(command, args, {env, ...extra});
     failIf(result.status !== 0, `${[command, ...args].join(' ')}: exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''}`);
@@ -149,6 +158,12 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       report.warmUps.push(done);
       return warmUpDetail(done);
     }]),
+    ['display mode', async () => {
+      const switched = await switchMode();
+      report.modeSwitch = switched.record;
+      failIf(!switched.ok, switched.detail);
+      return switched.detail;
+    }],
     ['placement', () => {
       let read = null;
       try { read = screen(); } catch { read = null; }

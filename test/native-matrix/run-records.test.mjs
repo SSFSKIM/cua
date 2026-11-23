@@ -151,7 +151,9 @@ test('the frontmost regime: a scene that is not front and key before its act is 
   const panelRow = panel.result.rows.find(r => r.id === 'openPanel/frontmost/click.cancel');
   assert.deepEqual(panelRow.frontKey.apps, [TEXTEDIT, 'com.apple.appkit.xpc.openAndSavePanelService']);
   const panelActivations = steps => matrixSteps(steps, 'step').filter(s => s[1] === 'activate' && s[2] === 'textedit').length;
-  assert.equal(panelActivations(panel.steps), panelActivations((await runWith({plan: planOf('method', {scene: 'openPanel'})})).steps), 'the panel\'s key elsewhere activates TextEdit no more');
+  // The baseline also closes its background pairing's panel with TextEdit activated first (T8e review, Minor 1): a panel
+  // the held ⌘O never opened in the alert's run.
+  assert.equal(panelActivations(panel.steps), panelActivations((await runWith({plan: planOf('method', {scene: 'openPanel'})})).steps) - 1, 'the panel\'s key elsewhere activates TextEdit no more');
 });
 
 test('the engine\'s own error name is recorded from the act\'s meta, not the plain Error the REPL hands the cell', async () => {

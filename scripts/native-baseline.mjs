@@ -337,10 +337,13 @@ async function runPrepared({device, out, host, engine, approvedEngine, approvedR
     if (r.timedOut) stop(`${what} timed out; no further input was sent (a prompt may be waiting on the device, never answered by the harness)`);
     return r;
   };
-  // `hold`: the rows are returned, not written, for a caller that validates the series afterwards.
-  const measure = async (op, n, code, {hold = false} = {}) => {
+  // `hold`: the rows are returned, not written, for a caller that validates the series afterwards. `before(sample,
+  // held)`: run before each sample's cell, outside its time (the alert guard's check, scripts/native-baseline/macos.mjs),
+  // which may refuse it by throwing; `held` is the series' rows taken and not yet written (none without `hold`).
+  const measure = async (op, n, code, {hold = false, before = null} = {}) => {
     const rows = [];
     for (let sample = 1; sample <= n; sample++) {
+      if (before) await before(sample, hold ? rows : []);
       const r = record(op, sample, guard(await js(warm, code), `${op} sample ${sample}`));
       rows.push(hold ? r : emit(r));
     }
@@ -463,7 +466,26 @@ export function summary(dir) {
 // failure (`UNDETERMINED AFTER TOP-UP ...`), or unproved under a declared gap (`UNPROVED ...`, not a pass). `declared`
 // replaces compare.mjs DECLARED_ENGINE_GAPS, for tests; the command line takes no declaration. -> 0 only on a PASS
 // verdict: an unproved series is reported from the comparison's list, never from this status.
+// A lane with no complete run to compare: none at all (a hosted sitting skips the runs after one the alert guard stopped,
+// scripts/hosted-sittings/plan.mjs), a run directory not whole, or only incomplete runs. -> why, or null when it has one.
+function noCompleteRun(dir) {
+  let runs;
+  try { runs = readRuns(dir); } catch (error) { return error.message; }
+  return runs.some(run => run.meta?.complete === true) ? null : `no complete run among ${runs.length} (${runs.map(run => run.name).join(', ')})`;
+}
+
 export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, lanes, topUp, declared} = {}) {
+  // Missing proof, never a failure: the comparison has nothing to judge on such a lane, and says which.
+  const missing = Object.entries({baseline: baselineDir, candidate: candidateDir, ...(topUp ? {'top-up baseline': topUp.baseline, 'top-up candidate': topUp.candidate} : {})})
+    .map(([side, dir]) => [side, dir, noCompleteRun(resolve(dir))]).filter(([, , why]) => why);
+  if (missing.length) {
+    const lines = missing.map(([side, dir, why]) => `the ${side} lane (${resolve(dir)}) has no complete run to compare: ${why}`);
+    const text = `# Comparison not made\n\n${lines.map(line => `- ${line}`).join('\n')}\n\nVERDICT: NO VERDICT\n`;
+    if (out) writeFileSync(resolve(out), text); else process.stdout.write(text);
+    for (const line of lines) console.error(`problem: ${line}`);
+    console.error('VERDICT: NO VERDICT');
+    return 1;
+  }
   const [baseline, candidate] = [baselineDir, candidateDir].map(dir => readRuns(resolve(dir)));
   const extra = topUp && {baseline: readRuns(resolve(topUp.baseline)), candidate: readRuns(resolve(topUp.candidate))};
   const options = {...(extra ? {topUp: extra} : {}), ...(declared ? {declared} : {})};

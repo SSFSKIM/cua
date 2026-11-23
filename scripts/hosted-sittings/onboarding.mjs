@@ -28,7 +28,10 @@
 // Rulings 1136 and 1141 around every cell (replayd's capture alert may stay up on a runner, and a window capture can
 // succeed behind it): TextEdit is activated and must take front and key first, or the cell is not sent; front and key
 // are read before and after it (`frontKey`, with scripts/probe/approval-cycles.mjs screenState's reading of a system
-// prompt), and the judge makes a failed activation, an alert or an unread sample NO VERDICT.
+// prompt), and the judge makes a failed activation, an alert or an unread sample NO VERDICT. The capture cell is held to
+// the shared alert guard's capture rule as well (rulings 1154, 1160, 1164; captureRefusal): read fresh once TextEdit took
+// front and key, a TextEdit window under an alert, or an unread screen, sends no capture; the refusal is in the call
+// (`alertGuard`) and the record (alertGuards, alertGuardCounts, alertGuardStop), and the judge makes it NO VERDICT.
 //
 // It never writes an operator's confirmation: it runs no `cua engine approve`, every CLI it runs has its input closed (a
 // product that waits for an operator reads end of input), and it declines every elicitation but the bound app's
@@ -55,7 +58,9 @@ import {doctorFacts, permissionGuidance, replyFacts} from '../accept/onboarding.
 import {ALERT_APPS, screenState} from '../probe/approval-cycles.mjs';
 import {isAppApproval, lsappinfoPid} from '../probe/lib.mjs';
 import {pinLane, selectLane} from '../probe/pinned-engine.mjs';
+import {captureCause, recordRefusal} from './alert-guard.mjs';
 import {assertGithubHosted} from './runner.mjs';
+import {textEditGuard} from './textedit-guard.mjs';
 import {CLIENTS, grantRows, revokeRows, SERVICES} from './tcc.mjs';
 
 const CUA = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -87,8 +92,18 @@ export const STAGES = Object.freeze([
 const BIND = `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});`;
 export const CALLS = Object.freeze([
   {id: 'accessibility', code: `${BIND}\nnodeRepl.write(JSON.stringify({onboarding: true, bound: true}));`},
-  {id: 'screenRecording', code: `${BIND}\nnodeRepl.write(JSON.stringify({onboarding: true, bytes: (await app.getScreenshot({emit: false})).length}));`},
+  {id: 'screenRecording', capture: true, code: `${BIND}\nnodeRepl.write(JSON.stringify({onboarding: true, bytes: (await app.getScreenshot({emit: false})).length}));`},
 ]);
+
+// Before a capture cell (rulings 1154, 1160, 1164; ./alert-guard.mjs captureCause, the rule every sitting shares): the
+// window capture of TextEdit's windows refused when an alert overlaps one of them (the vendor may crop a display capture
+// to the window, showing the alert) or the screen is unread; a capture of windows clear of every alert is exempt. `sc.capture()`
+// is the guard's fresh reading (./textedit-guard.mjs read). -> the cause, or null to send.
+function captureRefusal(sc) {
+  let read = null;
+  try { read = sc.capture(); } catch { read = null; }
+  return captureCause(read?.bounds ?? null, {kind: 'window', scenes: ['textedit']});
+}
 
 // `cua <args> --json` as the driver runs it: the given environment, its input closed. -> (args) -> {status, stdout, stderr}.
 export function cuaCli(env, {spawn = spawnSync} = {}) {
@@ -154,8 +169,10 @@ function localScreen() {
     try { return JSON.parse(spawnSync(probe[0], [...probe[1], 'front'], {encoding: 'utf8', timeout: 120_000}).stdout); } catch { return null; }
   };
   const pidOf = bundle => lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', bundle], {encoding: 'utf8', timeout: 5_000}).stdout ?? '');
+  let guard = null;
   return {
     activate: () => { spawnSync('/usr/bin/open', ['-b', TEXTEDIT_BUNDLE], {timeout: 15_000}); },
+    capture: () => (guard ??= textEditGuard()).read(),
     sample: () => ({front: localFrontmost(), keyOwnerPid: integer(front()?.topWindow?.ownerPid), appPid: pidOf(TEXTEDIT_BUNDLE), alertPids: ALERT_APPS.map(pidOf).filter(pid => pid !== null)}),
   };
 }
@@ -320,8 +337,13 @@ export async function runOnboarding({env = process.env, platform = process.platf
         if (uncertain) facts = {...unsent(call.id, ABANDONED), frontKey: null};
         else {
           const {sample, activate} = await activateApp();
+          // A capture cell under the shared alert guard's capture rule, read fresh once TextEdit took front and key.
+          const refused = activate.front && activate.key && call.capture ? captureRefusal(sc) : null;
           if (!activate.front || !activate.key) facts = {...unsent(call.id, 'activation'), frontKey: {activate, before: reading(sample), after: null}};
-          else {
+          else if (refused) {
+            recordRefusal(record, `${stage.id}/${call.id}`, refused);
+            facts = {...unsent(call.id, refused.category), alertGuard: {cause: refused.category, detail: refused.detail}, frontKey: {activate, before: reading(sample), after: null}};
+          } else {
             if (stage.relaunch === 'product' && index === 0) {
               // The retry bracketed: TextEdit already front and key, the baseline read, only its socket's allowance, the
               // engine's processes listed (no socket) as the cell is sent, its pid and connections read right after.

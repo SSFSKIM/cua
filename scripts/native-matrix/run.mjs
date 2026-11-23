@@ -65,8 +65,9 @@ import {CLOSE_PANEL, CLOSE_PANEL_KEY, findingCell, launchCell, launchCheckCell, 
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {probeCells} from './probe-run.mjs';
-import {clearFrame, guardCause} from './alert-guard.mjs';
+import {probeCells, ResetBlocked} from './probe-run.mjs';
+import {guardCause} from './alert-guard.mjs';
+import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
@@ -271,7 +272,7 @@ async function runOnce(options, io) {
       ctx.records[id] = ops.scenes(['up', id, '--run', run, ...extra]);
       ops.goldens(['steps', id, '--run', run, '--phase', 'setup']);
     }
-    placeScenes(ctx);
+    await placeScenes(ctx);
     // Finder's setup steps drove cua's engine socket: stopped, so the lane's engine is the one the lane launches.
     meta.engineStopAfterSetup = ops.goldens(['engine-stop']);
     ops.matrix(['compile', '--run', run]);
@@ -304,6 +305,10 @@ async function runOnce(options, io) {
     if (error instanceof AlertGuarded) {
       meta.alertGuardStop = {cause: error.guard.category, detail: error.guard.detail};
       recordUnrun(ctx, plan, error.guard);
+    } else if (error instanceof ResetBlocked) {
+      // A held fixture's reset the alert held, or the guard refused (./probe-run.mjs resetHeldFixture; T8e review, Minor
+      // 2): its samples after are NO VERDICT by that cause too, never missing.
+      recordUnrun(ctx, plan, error.guard, 'a held fixture could not be reset');
     }
     log(`run ${n} stopped: ${error.message}`);
   } finally {
@@ -463,43 +468,40 @@ function finishWatch(ctx) {
 // meta.placement keeps the alert windows' bounds and, per scene, where its window was (`from`) and where it was put
 // (`to`, `matched` the read-back), or why it stayed (`reason`); `unread` when the screen was not read, which places
 // nothing and leaves the guard to refuse what would overlap.
-function placeScenes(ctx) {
+const frameArg = frame => [frame.x, frame.y, frame.width, frame.height].join(',');
+// One placed window as the run's meta keeps it (../hosted-sittings/alert-guard.mjs placeWindows' entry, its scene and
+// number left to the key).
+const placedEntry = ({scene: _scene, number: _number, ...entry}) => entry;
+async function placeScenes(ctx) {
   const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
-  if (!bounds) { ctx.meta.placement = {unread: true}; return; }
-  const alerts = bounds.alerts.map(a => a.bounds), scenes = {};
   // The scenes' recorded windows: the ones up placed; a window a cell opens later is the guard's alone.
-  for (const {scene, bounds: from} of bounds.windows.filter(w => w.recorded && w.scene !== 'openPanel')) {
-    if (!from) continue;
-    const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
-    if (!moved) { scenes[scene] = {from, moved: false, ...(reason ? {reason} : {})}; continue; }
-    const placed = ctx.ops.matrix(['place', '--run', ctx.run, '--scene', scene, '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')])?.answer ?? null;
-    scenes[scene] = {from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null};
-  }
-  ctx.meta.placement = {alerts, scenes};
+  const placed = await placeWindows(bounds, {select: w => w.recorded && w.scene !== 'openPanel',
+    move: ({scene, frame}) => ctx.ops.matrix(['place', '--run', ctx.run, '--scene', scene, '--frame', frameArg(frame)])?.answer ?? null});
+  ctx.meta.placement = placed.unread ? {unread: true} : {alerts: placed.alerts, scenes: Object.fromEntries(placed.windows.map(w => [w.scene, placedEntry(w)]))};
 }
 
 // The Open panel, just opened, placed clear of the alerts as the scenes are (placeScenes): its window (the service's,
 // by its number) moved through the frame probe and read back, each opening kept in meta.placement.panel ({beforeRow,
 // number, from, to, moved, matched, readBack, pid} or why it stayed, or {beforeRow, unread}).
-function placePanel(ctx) {
+async function placePanel(ctx) {
   const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
   const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;
-  if (!bounds) { kept.push({beforeRow, unread: true}); return; }
-  const alerts = bounds.alerts.map(a => a.bounds);
-  for (const {number, bounds: from} of bounds.windows.filter(w => w.scene === 'openPanel' && w.bounds)) {
-    const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
-    if (!moved) { kept.push({beforeRow, number, from, moved: false, ...(reason ? {reason} : {})}); continue; }
-    const placed = device(ctx, ['place', '--scene', 'openPanel', '--window', String(number), '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')]);
-    kept.push({beforeRow, number, from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null, pid: placed?.pid ?? null});
-  }
+  const pids = new Map();
+  const placed = await placeWindows(bounds, {select: w => w.scene === 'openPanel', move: ({number, frame}) => {
+    const answer = device(ctx, ['place', '--scene', 'openPanel', '--window', String(number), '--frame', frameArg(frame)]);
+    pids.set(number, answer?.pid ?? null);
+    return answer;
+  }});
+  if (placed.unread) { kept.push({beforeRow, unread: true}); return; }
+  for (const w of placed.windows) kept.push({beforeRow, number: w.number, ...placedEntry(w), ...(w.moved ? {pid: pids.get(w.number) ?? null} : {})});
 }
 
 // A run the alert guard stopped (a harness cell refused): every sample its plan still had to take recorded NO VERDICT by
 // the guard's cause, as an activation that did not take records its target's (skippedTarget), so the per-cell counts see
 // them (./manifest.mjs manifestOf, the rows the judge expects).
-function recordUnrun(ctx, plan, guard) {
+function recordUnrun(ctx, plan, guard, why = 'the alert guard refused a harness cell') {
   const have = new Set(ctx.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
-  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when the alert guard refused a harness cell (${guard.detail})`});
+  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when ${why} (${guard.detail})`});
   for (const {section, id, sample, expect} of manifestOf({run: ctx.n, samples: ctx.samples}, plan)) {
     if (have.has(`${section} ${id} ${sample}`)) continue;
     push(ctx, {section, id, engine: ctx.engine, sample, ok: false, ...(section === 'method' ? {regime: id.split('/')[1], expect} : {}), ...mark});
@@ -546,7 +548,7 @@ async function openPanel(ctx, apps) {
   }
   if (opened === null) return {problem: 'the key guard did not send ⌘O'};
   if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
-  placePanel(ctx);
+  await placePanel(ctx);
   return null;
 }
 
@@ -570,8 +572,11 @@ async function frontmostTarget(ctx, target, plan) {
 
 // The panel closed after its cases: by Escape under the key guard, and only when that did not close it (the key held,
 // skipped, or not taken by the out-of-process panel) by its Cancel, a click under the alert guard (ruling 1154), whose
-// refusal stops the run (runOnce records the samples it would still have taken).
-async function closePanel(ctx) {
+// refusal stops the run (runOnce records the samples it would still have taken). After the background pairing the user
+// window (Finder's) is in front, where the key guard would skip Escape: `activateFirst` brings TextEdit to the front
+// first, its cases done by then (T8e review, Minor 1).
+async function closePanel(ctx, {activateFirst = false} = {}) {
+  if (activateFirst) activate(ctx, 'textedit');
   let keyed = null;
   try { keyed = await sendKeys(ctx, CLOSE_PANEL_KEY, ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'}); } catch (error) {
     if (!(error instanceof AlertHeld)) throw error;
@@ -603,7 +608,7 @@ async function backgroundPairing(ctx, {driven, user}) {
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
   }
-  if (driven === 'openPanel') await closePanel(ctx);
+  if (driven === 'openPanel') await closePanel(ctx, {activateFirst: true});
 }
 
 // The speed ops, each the baseline's own cell (./manifest.mjs SPEED_OPS names them).

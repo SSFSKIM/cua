@@ -66,7 +66,17 @@ async function resetHeldFixture(ctx) {
   held.entry.reset = !failed;
   // The guard's own cause when it refused the cleanup (./steps.mjs AlertGuarded: `alert` or `unread`), else the held key's.
   if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
-  if (failed) throw new Stop(`the ${held.scene} fixture ${held.entry.row} left (its cleanup held by the capture alert) could not be reset: ${String(failed.message ?? failed).slice(0, 300)}; the run stopped collecting evidence`);
+  if (!failed) return;
+  const reason = String(failed.message ?? failed).slice(0, 300);
+  const message = `the ${held.scene} fixture ${held.entry.row} left (its cleanup held by the capture alert) could not be reset: ${reason}; the run stopped collecting evidence`;
+  if (held.entry.blockedBy) throw new ResetBlocked(message, {category: held.entry.blockedBy, detail: `the ${held.scene} fixture ${held.entry.row}'s reset was held (${reason})`});
+  throw new Stop(message);
+}
+// A stop because a held fixture's reset was itself held by the alert or refused by the guard (`guard`: {category
+// 'alert' | 'unread', detail}): ./run.mjs runOnce records every sample its plan still had to take NO VERDICT by that
+// cause (recordUnrun), so none vanishes (T8e review, Minor 2).
+export class ResetBlocked extends Stop {
+  constructor(message, guard) { super(message); this.guard = guard; }
 }
 
 // One sample from up to PROBE_ATTEMPTS attempts. An attempt answers {row, retry?, lead?, oracle?, cleanup?, key}:

@@ -54,10 +54,11 @@ import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../pr
 import {TEXTEDIT_BUNDLE} from './lib.mjs';
 import {approvalLedger, ATTEST_STEP, AttestationRefusal, attestReplies} from './engine-lane.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
-import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
+import {awaitLaunch, CAPTURE_ALERT_APP, cleanUpFixtureApp} from './fixture-app.mjs';
 import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
+import {captureCause, keyCause, recordKeyUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -89,6 +90,14 @@ export const STEP = {
 export const OWN_STEPS = [STEP.preconditions, STEP.open, STEP.bindA, STEP.rebindA, STEP.type, STEP.closeA, STEP.bindB, STEP.closeDoc, STEP.closeB, STEP.teardown, STEP.quitApp,
   STEP.removeDoc, STEP.front, STEP.attest];
 export const SECRET_STEPS = [STEP.secretCreate, STEP.secretType, STEP.secretReadback, STEP.secretCleanup];
+// The checks accept-native draws from this fixture (scripts/accept-native.mjs items 5, 6 and 8): item 5's verdict and
+// one per own step, item 6's UI delivery one per secret step, item 8's approvals observation. Only these are left
+// unproven when the alert guard stops the fixture (scripts/hosted-sittings/checks.mjs `acceptance`).
+export const FIXTURE_VERDICT_CHECK = 'live TextEdit fixture verdict (own document)';
+export const uiDeliveryCheck = step => `UI delivery (optional, combined): ${step.slice('secret: '.length)}`;
+export const APPROVALS_CHECK = 'per-connection app approvals observed by behaviour';
+export const isFixtureCheck = (item, name) => (item === 5 ? name === FIXTURE_VERDICT_CHECK || OWN_STEPS.includes(name)
+  : item === 6 ? SECRET_STEPS.some(step => uiDeliveryCheck(step) === name) : item === 8 ? name === APPROVALS_CHECK : false);
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const sh = (command, args) => { try { return execFileSync(command, args, {encoding: 'utf8'}); } catch (error) { return error.stdout ?? ''; } };
@@ -172,10 +181,62 @@ export function createFixtureDocument(home) {
 // driven. `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored
 // key). `pauseFile` (CUA_PAUSE_FILE, scripts/mini-pause.mjs): every cell waits at its boundary while the mini's CI runner
 // is busy, and never aborts, the owner standing by; each pause is in the observations.
-export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost}) {
+// The alert guard's answer before a fixture key cell, from its one fresh reading (`guard.read({key: true})`,
+// scripts/hosted-sittings/textedit-guard.mjs): the key-cell premise A and C share (scripts/hosted-sittings/alert-guard.mjs
+// keyCause), the alert holding the key; with `captures` (a cell that captures TextEdit's window after typing, markerCell),
+// the capture rule too (captureCause, window kind). A key reading not taken refuses nothing: the cell goes unguarded
+// against the alert holding the key, which the key guard's front check cannot see, and is counted (recordKeyUnread).
+// -> the cause, or null to send.
+function fixtureRefusal(guard, {step, captures, observations}) {
+  let r = null;
+  try { r = guard.read({key: true}) ?? null; } catch { r = null; }
+  const cause = keyCause({key: r?.key ?? null}) ?? (captures ? captureCause(r?.bounds ?? null, {kind: 'window', scenes: ['textedit']}) : null);
+  if (!cause && !r?.key) recordKeyUnread(observations, step);
+  return cause;
+}
+
+// One key cell of the fixture: the pause wait first (a paused session's), then the alert guard's fresh reading (a
+// hosted runner's `guard`; none elsewhere), then the frontmost check and the cell with no pause between them
+// (./key-guard.mjs sendToPausedSession). A refusal sends nothing and is recorded in `observations` as every sitting
+// records it (recordRefusal: alertGuards, alertGuardCounts, alertGuardStop). -> {sent: true, result} | {sent: false,
+// refused, mark} | {sent: false, skipped} (the key guard's).
+export async function fixtureKeyCell({session, step, keys, code, stepMs, frontmost, guard = null, captures = false, observations}) {
+  let refused = null;
+  const out = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs],
+    refuse: guard ? () => (refused = fixtureRefusal(guard, {step, captures, observations})) : undefined});
+  return refused ? {sent: false, refused, mark: recordRefusal(observations, step, refused)} : out;
+}
+// What accept-native's report carries of the fixture's guard, for the hosted check and the sitting's record
+// (scripts/hosted-sittings/checks.mjs `acceptance`): the stop and the counts, and the key cells sent with their key
+// reading not taken; nothing when there are none.
+// STEP.front from the hand-back (./fixture-app.mjs restoreFront's {previous, before, after, restored}) and the front read
+// before the run. The capture alert in front after the hand-back, or before the run (never handed back to), is a system
+// prompt's, which rulings 1136 and 1141 make no verdict: BLOCKED naming it, whatever the guard refused. Any other front
+// not handed back is a failure. -> [status, detail].
+export function frontStep(front, frontBefore) {
+  if (front.restored) return ['PASS', `${front.previous} is frontmost${front.before === front.previous ? ' (it still was)' : ` again (it was ${front.before ?? 'unreadable'})`}`];
+  if (front.after === CAPTURE_ALERT_APP) return ['BLOCKED', `${CAPTURE_ALERT_APP} (replayd's capture alert) is in front after the hand-back to ${frontBefore ?? 'an unread front'}: a system prompt's front, no verdict (rulings 1136, 1141)`];
+  if (frontBefore === CAPTURE_ALERT_APP) return ['BLOCKED', `${CAPTURE_ALERT_APP} (replayd's capture alert) was in front before the run: nothing is handed back to a system prompt (rulings 1136, 1141); now ${front.after ?? 'unreadable'}`];
+  return frontBefore ? ['FAIL', `${frontBefore} was frontmost before the run; now ${front.after ?? 'unreadable'}`]
+    : ['BLOCKED', 'the frontmost application before the run could not be read, so there is nothing to hand back to'];
+}
+
+export const fixtureGuardRecord = observations => ({
+  ...(observations?.alertGuardStop ? {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts ?? null} : {}),
+  ...(observations?.keyUnread ? {keyUnread: observations.keyUnread} : {}),
+});
+
+// `guard` (a GitHub-hosted runner's only, scripts/hosted-sittings/textedit-guard.mjs; rulings 1154, 1160, 1164): the
+// document's TextEdit windows placed clear of replayd's alerts once it is open (observations.placement), and every cell
+// that types or presses a key refused when the alert holds the key, the marker cell also when its capture's window is
+// under an alert or the screen unread (fixtureKeyCell; the front is the key guard's): the step BLOCKED with its NO
+// VERDICT cause and the refusal's mark, nothing sent and no further input (observations.alertGuards, alertGuardCounts,
+// alertGuardStop, and keyUnread for the key cells guarded with their key reading not taken, which accept-native's report
+// carries to the hosted check and the sitting's record).
+export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost, guard = null}) {
   const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
-  const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
+  const record = (name, status, detail, extra = {}) => { steps.push({name, status, detail, ...extra}); return status === 'PASS'; };
   const ledger = approvalLedger({app: TEXTEDIT_BUNDLE});
   const observations = {elicitations: [], connections: ledger.connections(), pauses: [],
     ...(engine ? {engine: {engine: engine.engine, pinnedBy: engine.pinnedBy, expected: null, attested: 0}} : {})};
@@ -242,9 +303,14 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   // A cell that types or sends a key runs only while TextEdit is this Mac's frontmost application (#162,
   // ./key-guard.mjs); otherwise nothing is sent, the skip is recorded (observations.keySkipped) and the step fails, and
   // the fixture sends no further input. -> the cell's reply, or null when it was skipped.
-  const keyCell = async (session, step, keys, code) => {
-    // The pause wait (pausing()) comes first, then the check, then the cell with no pause between them.
-    const sent = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs]});
+  const keyCell = async (session, step, keys, code, {captures = false} = {}) => {
+    // The pause wait (pausing()) comes first, then the alert guard and the check, then the cell with no pause between.
+    const sent = await fixtureKeyCell({session, step, keys, code, stepMs, frontmost, guard, captures, observations});
+    if (sent.refused) {
+      guiStopped = `the alert guard refused ${step}: ${sent.refused.detail} (ruling 1154)`;
+      record(step, 'BLOCKED', `NO VERDICT ${sent.refused.category}: ${guiStopped}; nothing was sent and the fixture sent no further input`, sent.mark);
+      return null;
+    }
     if (sent.sent) return sent.result;
     (observations.keySkipped ??= []).push(sent.skipped);
     guiStopped = `${sent.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${sent.skipped.frontmost}, not TextEdit (#162)`;
@@ -332,6 +398,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     launched = await awaitLaunch({pids: textEditPids, before: textEditBefore, startedAt: runStartedAt});
     observations.textEdit.launch = {captured: Boolean(launched.launch), candidates: launched.candidates.length, waitedMs: launched.waitedMs, missed: launched.missed};
     await sleep(1000);  // let the document window come to the front
+    if (guard) { try { observations.placement = await guard.place(); } catch (error) { observations.placement = {error: error.message}; } }
     record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new RTF with a fixed placeholder and proportional regular font, in a directory created for this run under $CUA_HOME, opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
       : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
         : textEditBefore.length ? ' (already running)' : launched.missed ? ` (no new TextEdit pid within ${launched.waitedMs} ms of the open: a miss, so none is recorded as its own)` : ''}`);
@@ -340,7 +407,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     // and observe it.
     const a = await connect('connection A');
     if (await bind(a, 'connection A', STEP.bindA) && await bind(a, 'connection A', STEP.rebindA)) {
-      const typedReply = await keyCell(a, STEP.type, ['super+a', 'typeText'], markerCell(docName, marker));
+      const typedReply = await keyCell(a, STEP.type, ['super+a', 'typeText'], markerCell(docName, marker), {captures: true});
       const typed = typedReply ? cellJson(typedReply) : null;
       const assessment = assessReadback(typed, marker);
       if (typed) {
@@ -438,9 +505,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
                 : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]
                   : ['PASS', 'nothing to quit: no TextEdit started by the open was seen right after it'];
       record(STEP.quitApp, quitStatus, quitDetail);
-      record(STEP.front, app.front.restored ? 'PASS' : frontBefore ? 'FAIL' : 'BLOCKED', app.front.restored
-        ? `${app.front.previous} is frontmost${app.front.before === app.front.previous ? ' (it still was)' : ` again (it was ${app.front.before ?? 'unreadable'})`}`
-        : frontBefore ? `${frontBefore} was frontmost before the run; now ${app.front.after ?? 'unreadable'}` : 'the frontmost application before the run could not be read, so there is nothing to hand back to');
+      record(STEP.front, ...frontStep(app.front, frontBefore));
     }
     if (docDir) {
       rmSync(docDir, {recursive: true, force: true});  // created exclusively by this invocation (mkdtemp)

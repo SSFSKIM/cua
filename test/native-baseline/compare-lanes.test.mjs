@@ -14,6 +14,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {readRuns} from '../../scripts/native-baseline/summary.mjs';
 import {compareLanes, LANE_MODES, renderComparison} from '../../scripts/native-baseline/compare.mjs';
+import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/native-baseline.mjs', import.meta.url));
 const EVIDENCE = fileURLToPath(new URL('../../docs/evidence/2026-10-17-own-sandbox/m0/mini-vendor-computer', import.meta.url));
@@ -179,6 +180,24 @@ test('the CLI: compare --engines prints the comparison and the VERDICT line; one
   const reversed = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', vc, vv], {encoding: 'utf8'});
   assert.equal(reversed.status, 1);
   assert.match(reversed.stderr, /^VERDICT: NO VERDICT$/m);
+});
+
+// Sitting A after the alert guard stopped a run (scripts/hosted-sittings/plan.mjs chains the runs, so a lane may have
+// none, or only the stopped one): the comparison has nothing to judge on that lane, which is missing proof, never a
+// failure. The real CLI prints the VERDICT line the hosted check reads (scripts/hosted-sittings/checks.mjs `verdict`).
+test('the CLI: a lane with no complete run (none at all, or only one the guard stopped) is NO VERDICT naming it, never a crash the sitting reads as FAIL', t => {
+  const vv = dir(t, triple(VV));
+  const missing = join(mkdtempSync(join(tmpdir(), 'cua-m1b4-none-')), 'vc');
+  t.after(() => rmSync(join(missing, '..'), {recursive: true, force: true}));
+  const stopped = dir(t, [laneRun(REAL[0], {...VC, edit: meta => { meta.complete = false; meta.alertGuardStop = {cause: 'alert', detail: 'd', at: 'task.act'}; }})]);
+  for (const [candidate, why] of [[missing, /no run-\* directories|ENOENT/], [stopped, /no complete run/]]) {
+    const r = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', vv, candidate], {encoding: 'utf8'});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^VERDICT: NO VERDICT$/m, r.stderr);
+    assert.match(r.stderr, new RegExp(`the candidate lane \\(${candidate.replaceAll('/', '\\/')}\\) has no complete run to compare`));
+    assert.match(r.stderr, why);
+    assert.deepEqual(CHECKS.verdict({}, {exit: r.status, logText: () => r.stdout + r.stderr}), ['NO VERDICT', null]);
+  }
 });
 
 test('the committed triple is a valid source of rows: copied and summarised as it is, it stays a complete, attested triple', t => {

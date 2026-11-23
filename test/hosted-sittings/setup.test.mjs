@@ -20,7 +20,12 @@ const warmedUp = copy => ({copy, capture: {ok: true, engine: copy, bytes: 1, tex
 
 // The screen after the warm-ups (../native-matrix/system-windows.swift): no alert window unless a test gives one.
 const SCREEN = {windows: [], displays: [{x: 0, y: 0, width: 1920, height: 1080}]};
-function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN} = {}) {
+// The display mode switch as ./display-mode.mjs answers it (ruling 1164): 1024x768 to 1920x1080, no prompt.
+const MODE = (width, height, modeId) => ({width, height, modeId, pixelWidth: width, pixelHeight: height});
+const SWITCHED = {ok: true, detail: '1024x768 (mode 3) -> 1920x1080 (mode 10), read back 1920x1080; 0 alert windows, none moved; no prompt',
+  record: {before: {mode: MODE(1024, 768, 3), alerts: [], front: null}, set: MODE(1920, 1080, 10), readBack: {bounds: {x: 0, y: 0, width: 1920, height: 1080}, mode: MODE(1920, 1080, 10)},
+    after: {alerts: [], front: null}, promptSeen: [], recentred: [], watchedMs: 3000}};
+function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED} = {}) {
   const calls = [];
   const exec = (command, args, options = {}) => {
     const line = [command, ...args].join(' ');
@@ -41,6 +46,7 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     grant: grants => { calls.push({kind: 'grant', clients: grants.map(g => g.client)}); return {rows: [], missing}; },
     approve: ({home}) => { calls.push({kind: 'approve', home}); return {approved, summary: approved ? 'approved in two passes: pass 1 engine_capture_confirmation, pass 2 approved' : 'not approved: pass 1 engine_capture_confirmation, pass 2 engine_capture_confirmation'}; },
     warmUp: async copy => { calls.push({kind: `warm-up ${copy}`}); return warmUp ? warmUp(copy) : warmedUp(copy); },
+    switchMode: async () => { calls.push({kind: 'display mode'}); return switched; },
     screen: () => { calls.push({kind: 'screen'}); return screen(); },
     stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; },
     write: (path, record) => calls.push({kind: 'write', path, record}),
@@ -61,7 +67,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   const {calls, deps} = spies();
   const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
   assert.equal(report.ok, true, report.steps.map(s => `${s.step}: ${s.detail}`).join('\n'));
-  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'placement', 'engine stop', 'record']);
+  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'display mode', 'placement', 'engine stop', 'record']);
   const order = calls.map(c => (c.kind === 'exec' ? c.line.split(' ').slice(0, 3).join(' ') : c.kind === 'grant' ? `grant ${c.clients}` : c.kind));
   const at = needle => order.findIndex(o => o.startsWith(needle));
   assert.ok(at('sh scripts/hosted-sittings/loopback.sh') === 0);
@@ -80,7 +86,8 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.deepEqual(report.warmUps, [warmedUp('cua'), warmedUp('vendor')]);
   assert.match(report.steps.find(s => s.step === 'warm-up vendor').detail, /^capture made \(vendor's\), 2 SCAlert lines, com\.apple\.UserNotificationCenter in front after it; it left the front after 3000 ms$/);
   // Ruling 1154: the alert windows read once the warm-ups raised them, and where each planned scene window would go.
-  assert.ok(at('warm-up vendor') < at('screen') && at('screen') < at('engine-stop'));
+  assert.ok(at('warm-up vendor') < at('display mode') && at('display mode') < at('screen') && at('screen') < at('engine-stop'), 'the mode set after the warm-ups, the placement read after it');
+  assert.deepEqual(report.modeSwitch, SWITCHED.record);
   assert.deepEqual(report.placement.alerts, []);
   assert.deepEqual(Object.values(report.placement.scenes).map(p => p.moved), [false, false, false, false]);
   assert.deepEqual(report.engineStop, {wasRunning: true, pid: 2142, stopped: true});
@@ -174,4 +181,21 @@ test('a warm-up whose alert stays in front, or whose capture fails, is recorded 
     assert.equal(calls.filter(c => c.kind === 'warm-up vendor').length, 1, 'no retry');
     assert.equal(calls.at(-1).kind, 'write');
   }
+});
+
+// Ruling 1164: a prompt across the switch, or a read-back that is not 1920x1080, fails the setup before any placement,
+// engine stop or record; the mode switch's record is kept either way.
+test('the display mode: a failed switch stops the setup with its record kept; nothing after it runs', async () => {
+  const failed = {ok: false, detail: 'a prompt appeared across the switch (UserNotificationCenter window 95): recorded, never answered',
+    record: {...SWITCHED.record, promptSeen: [{number: 95, owner: 'UserNotificationCenter', layer: 8, bounds: {x: 800, y: 400, width: 300, height: 200}}]}};
+  const {calls, deps} = spies({switched: failed});
+  const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
+  assert.equal(report.ok, false);
+  assert.equal(report.steps.at(-1).step, 'display mode');
+  assert.match(report.steps.at(-1).detail, /a prompt appeared across the switch/);
+  assert.deepEqual(report.modeSwitch, failed.record);
+  assert.ok(!calls.some(c => ['screen', 'engine-stop', 'write'].includes(c.kind)));
+  // The warm-ups ran before the switch, at the image's 1024x768: one alert raised per copy, recorded as before.
+  assert.deepEqual(report.warmUps.map(w => w.copy), ['cua', 'vendor']);
+  assert.ok(calls.findIndex(c => c.kind === 'warm-up vendor') < calls.findIndex(c => c.kind === 'display mode'));
 });

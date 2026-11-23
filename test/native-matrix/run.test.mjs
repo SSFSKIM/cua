@@ -261,6 +261,23 @@ test('on a hosted run ⌘O held by the capture alert leaves every Open-panel row
   assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), [['super+o', true], ['super+o', true]]);
 });
 
+// T8e review, Minor 1: after the background pairing (openPanel@finder) Finder's user window is in front, where the key
+// guard skipped Escape and the panel's Cancel was clicked instead. TextEdit is activated first, its cases done by then,
+// so Escape goes and no click is needed.
+test('the Open panel closed after its background pairing: TextEdit activated first, Escape sent, no Cancel click', async () => {
+  // The lane wraps each cell, so the harness's two closing cells are told by their own calls.
+  const escape = code => code.includes('await __app.pressKey("Escape")'), cancel = code => code.includes('if (index !== null) await __app.click(index);');
+  const plan = {id: 'test', frontmost: [], speed: false, finding: false, background: [{driven: 'openPanel', user: 'finder'}], launch: []};
+  const r = await runWith({plan, cell: code => (code.includes('pressKey("super+o")') ? {opened: true} : escape(code) ? {closed: true} : null)});
+  assert.equal(r.result.complete, true, JSON.stringify(r.result.problems));
+  assert.ok(!r.result.meta.keySkipped.some(k => k.keys.includes('Escape')), JSON.stringify(r.result.meta.keySkipped));
+  assert.ok(r.calls.some(c => escape(c.code)), 'Escape was sent');
+  assert.ok(!r.calls.some(c => cancel(c.code)), 'no Cancel click');
+  // The activation of TextEdit after Finder's, between the pairing's last case and the Escape.
+  const activations = matrixSteps(r.steps, 'step').filter(a => a[1] === 'activate').map(a => a[2]);
+  assert.deepEqual(activations.slice(-2), ['finder', 'textedit']);
+});
+
 test('a key skipped with one of the run\'s windows in front leaves the row invalid; with another app in front the run stops', async () => {
   // The user window (Finder) is in front; a frontmost-regime key cell for TextEdit sees Finder: skipped, the row invalid.
   // The front/key readings say TextEdit took front and key, so it is the key guard's own reading that holds the keys back.

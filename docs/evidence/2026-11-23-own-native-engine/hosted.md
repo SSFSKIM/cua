@@ -1244,3 +1244,288 @@ anything is touched). The sitting's verdict is the check's, not the driver's exi
   A grant can name its services.
 - `plan.test.mjs`: D's `onboarding` step, in its place and its form.
 - `checks.test.mjs`: the `onboarding` check.
+
+## Hosted geometry (rulings 1160, 1164)
+
+Built on branch `m5/geometry`, off feat/117-m5 at 5e0aebc64. Nothing here ran on a runner. It is proven by unit tests
+with doubles only; the first hosted run is the evidence still owed.
+
+### What was built
+
+- **One shared alert guard**, `scripts/hosted-sittings/alert-guard.mjs`. T8e's rules moved out of the matrix so every
+  sitting uses the same code:
+  - `guardReading` turns a window list and the targets into bounds.
+  - `guardCause` applies the pointer rule. It refuses when a UserNotificationCenter window overlaps one of the target's
+    windows or an Open panel, or when UserNotificationCenter holds the front or the key. An unread reading is refused as
+    `unread`.
+  - `keyCause` applies the key rule: UserNotificationCenter holds the key. Every sitting's key cells share one premise:
+    the activation click cua's route 3 may synthesize around a keyed typeText, a paste or an element action is posted
+    to the target's pid and window only (`Activation.swift`). So a key cell is checked for the alert holding the key
+    (here) or the front (the key guard). An alert that only overlaps the target's windows does not stop a key cell.
+    When the key reading could not be taken, nothing refuses the cell, and it goes unguarded against the alert holding
+    the key: the key guard's front check cannot see UserNotificationCenter holding the key while the target is in
+    front. A, C and D keep this one premise. Each such cell is counted per cell and per side with `recordKeyUnread`
+    (`keyUnread: {cell: n}`), so a sitting shows how many key cells went unchecked.
+  - `captureCause` applies the capture rule. A screen or region capture that intersects an alert is refused as `alert`.
+    A window capture is refused only when its own window is overlapped.
+  - `clearFrame` makes the smallest move that clears the alerts, below the 25-point menu bar and with an 8-point margin.
+    `placeWindows` reads, moves and reads back each window. It records `{scene, number, from, moved, to, readBack,
+    matched}` or a reason.
+  - `guardMark` and `countGuards` give the row mark (`alertGuard: {cause, detail}`, `invalid`) and the per-cell
+    counts. `recordRefusal(record, cell, cause, extra)` writes a refusal into whatever record a sitting keeps, in one
+    shape for A, B, D and T3b: the per-cell entry in `alertGuards`, `alertGuardCounts`, and the first refusal as
+    `alertGuardStop: {cause, detail, at}`. It returns the row's mark.
+
+  `scripts/native-matrix/alert-guard.mjs` now re-exports these and keeps only the matrix's cell mapping.
+- **A device reader**, `scripts/hosted-sittings/guard-device.mjs`. It is a CLI and a module that runs on the device the
+  cell drives:
+  - `read --target <scene:pid:window[:only]> [--key]` returns `{bounds, front, key, keyWindow, at}`.
+  - `place --pid|--panel --window --frame` returns `{requested, readBack, matched}`.
+
+  It uses the matrix's `system-windows.swift`, compiled once into `~/Library/Caches/cua-harness/guard-device`, together
+  with `lsappinfo` for the front app and the live device's focus and window-frame probes. Sittings A and B call it
+  through their device (local, or the loopback for B). That way the reading is the target's own, and the same on both
+  sides.
+- **The display mode step** in setup (ruling 1164), in `scripts/hosted-sittings/display-mode.mjs`, plus a `set <w> <h>`
+  subcommand in `display-modes.swift`. Run without arguments, that script still lists the modes read-only.
+  - The step runs after the warm-ups, so each copy still raises its one alert at 1024x768. It runs before the engine
+    stop and the placement, and only on a GitHub-hosted runner.
+  - It reads the mode, the alerts and the front. It then sets 1920x1080 by size (1x, usable) through
+    `CGBeginDisplayConfiguration`, `CGConfigureDisplayWithDisplayMode` and `CGCompleteDisplayConfiguration(.forSession)`,
+    and reads the display back.
+  - For 3 s it watches the window list and the front, polling every 0.5 s. Then it reads the alerts fresh.
+  - These fail the setup:
+    - a new UserNotificationCenter or System Settings window, or System Settings in front;
+    - a read-back that is not the mode chosen: 1920x1080 in points and in pixels (1x), with the listing's mode id, which
+      the switch must also have answered;
+    - no 1920x1080 mode offered;
+    - a window list that could not be read before or after the switch, because a prompt across it would go unseen.
+
+    Nothing is answered or closed.
+  - Re-centred alerts are recorded. The placement step that follows reads its alerts fresh, after the switch. Chrome
+    keeps its size; a scene that cannot be cleared stays the guard's to refuse.
+- **The screen at the end.** After every step of a sitting, `hosted-sittings.mjs` reads the alert windows (number,
+  layer, bounds) and the display mode again. It records them in `sitting.json` as `screenAtEnd: {alerts, mode, bounds,
+  modeHeld}` and in `sitting.md` under "The screen at the end".
+- **#528's diagnostics** on sitting B's ACTION row, on both sides. They are value-free, and verdicts do not read them.
+  - `diagnostics.before`: the front app, the key owner and window, and the scenes-mac activate answer, which was
+    previously discarded. All are read just before the click.
+  - `diagnostics.click`: what `click` returned.
+  - `diagnostics.focusAfterClick`: the focused element's index from the diff's focus trailer, read right after the
+    click.
+
+  A failed action's row carries the same diagnostics, taken once the lane has answered.
+
+  The click's own route cannot be read from the cell. The service resets its per-call result meta at every call
+  (`src/services/engine/service.mjs` `PER_CALL`), so the ACTION cell's `_meta` holds the keys of the last observation
+  after the click. The row therefore keeps no route field. A per-cell route accumulator in the service would make the
+  route readable; that is a separate change and is not in this wave.
+- **T8e's review Minors.**
+  - `closePanel` now activates TextEdit before its Escape after the background pairing (`openPanel@finder`).
+  - `resetHeldFixture` throws `ResetBlocked`, a `Stop` that carries the guard's cause. When a reset is blocked, `runOnce`
+    records the fixture's unrun samples (`recordUnrun`, "a held fixture could not be reset").
+
+### How each sitting calls the module
+
+The sittings share the rules:
+
+- The guard reads the target's state fresh before every pointer event, key event or capture.
+- It never sends and judges afterwards, and a refused cell is not retried.
+- A refusal writes a row marked with `guardMark`, through `recordRefusal`. It counts per side per cell
+  (`alertGuardCounts`) and keeps the first refusal as `alertGuardStop: {cause, detail, at}`. In A, D and the matrix the
+  refusal stops the run. In B it ends only its scene, and the lane goes on to the next scene.
+- `checks.mjs` reads the stop as NO VERDICT. `record` and `observation` look at `meta.alertGuardStop` or the top-level
+  `alertGuardStop`.
+  - B's lane keeps its refusals apart from its problems (`guardRefused`). Its record is NO VERDICT only when the lane
+    has no error and no problem besides its refusals. If it has any other problem, it is FAIL, named, with the refusal
+    noted.
+  - The new `acceptance` check returns PASS on exit 0 and judges check by check. Items 5, 6 and 8 hold more than the
+    fixture: item 6 holds the secrets CLI, MCP `secrets_list` and the live probe, and item 8 holds the lifecycle
+    suites. In those items, only the checks the fixture itself produces may go unproven (`isFixtureCheck` in
+    `scripts/accept/textedit.mjs`): item 5's verdict and own steps, item 6's UI delivery and item 8's approvals
+    observation. Even those are excused only when BLOCKED. Every way the refusal leaves a fixture check unrun reads
+    BLOCKED: the refused step, an inventory check of a step never run, an approvals observation not made, and item
+    5's rollup of them. So a fixture check that FAILed ran and failed. An example is the typed text not being the marker
+    while the fixture went on to a refusal at the secret's key cell. Every other check must pass, and every other item
+    too. Anything else not passed is FAIL, named, with the refusal noted.
+
+`sitting.md` gains a section "The alert guard" (`guardTally` in `counts.mjs`). For every record the plan names, it
+lists per step and cell the refusals (NO VERDICT `alert`, NO VERDICT `unread`) and the key cells guarded with their key
+reading not taken (`key cells guarded unread`). The count is taken at the guard, before the front check. So it counts
+the key cells guarded unread, whether or not the front check then sent them. The matrix's `counts.md` adds a `key cells
+guarded unread` column per side beside its NO VERDICT `alert` column. A row's span (`row:<index>`) maps to that row's
+cell, and a harness key cell gets its own line.
+
+Known limit of this diagnostic: the matrix names a row's span by the number of rows recorded when the row began
+(`row:<index>`). A row that is never recorded, for example one a stop interrupts, leaves its index to the next row
+recorded. Its count can then be shown against that next row's cell. The total per side is right; the cell it is shown
+against may not be.
+
+STEP.front, the fixture's hand-back of the front, now accounts for the alert as well:
+- If UserNotificationCenter is in front after the hand-back, STEP.front is BLOCKED and names the alert, because
+  rulings 1136 and 1141 make a system prompt's front no verdict. This holds whether or not the guard refused anything.
+- If the alert was the front before the run, `restoreFront` does not open it. It leaves it alone, as it does an
+  unknown previous front, and STEP.front is BLOCKED, naming it.
+- Any other front not handed back stays FAIL.
+
+A and B also guard off hosted runners, on the mini and anywhere else, as the matrix does. The cost is one launch of
+the focus probe for each guarded cell, outside the cell's timing. D and T3b guard on a GitHub-hosted runner only.
+
+Per sitting:
+
+- **A (native-baseline, `scripts/native-baseline/macos.mjs`).**
+  - The device gains `guard({pid, key})` and `place({pid|panel, window, frame})`, each a `guard-device.mjs` call in the
+    checkout.
+  - TextEdit's window is placed after `setup.activate` and again after `setup.newDocument`. Each placement goes to
+    `meta.placement`.
+  - `setup.newDocument` and `task.close` run under the pointer guard: the cell may click the Open panel's New Document
+    button or the close sheet's Delete button. Key cells, the task's new document and typing among them, run under the
+    key guard. The screenshot measure runs under the capture guard (`measure(..., {before})`). If a capture refusal stops
+    the held screenshot series partway, the samples already taken are still written. They are marked invalid, because
+    the scratch guard after the series, which vouches for them, never runs. Only the refused sample carries the mark.
+  - A refusal stops the run, and `record` reads that stop as NO VERDICT. The cleanup that follows still quits TextEdit
+    as it does after any failure:
+    - If a scratch document was made, it presses ⌘Q from that document. The key guard applies, so the quit is refused
+      too while the alert holds the key. It is sent only with TextEdit in front and its scratch document in front of it.
+    - If no scratch document was made, it sends SIGTERM to the pid the run launched.
+
+    A TextEdit it cannot quit is left running, and the next run would refuse it at its preflight. So the plan chains
+    A's runs: each run needs the one before it to have passed. Each comparison (A, B, C) needs every run of both its
+    lanes. After a stop, the remaining runs and the comparisons are SKIP, never failures of their own, and the stopped
+    run's NO VERDICT is the sitting's.
+
+    As a second line of defence, `compareDirs` prints `VERDICT: NO VERDICT` when a lane has no complete run to compare,
+    naming the lane. That covers a missing directory, a run not whole, or only incomplete runs. It used to throw with
+    no VERDICT line, which the hosted check read as FAIL.
+- **B (repl-parity native-mac, `scripts/repl-parity/native-mac.mjs`).**
+  - After each scene's bring-up, the scene's window is placed (`meta.scenes[id].placement`).
+  - Each lane guards the ACTION cell before sending it, from its own fresh reading on its own device. Each lane decides
+    for itself; one lane's refusal sends or holds nothing on the other.
+  - A refusal writes the action row with its mark and diagnostics, and records `alertGuardStop` at `<scene>/action`.
+    It ends only that scene (`GuardRefused`, kept in `meta.guardRefused`, apart from `meta.problems`), and the lane
+    goes on to its next scene.
+  - `record` reads the lane as NO VERDICT only when its refusals are its only problems.
+  - B's diff needs both lanes to have passed. So when either lane has a refusal, the diff does not run, and the parity
+    of every other scene, the ones both lanes did record, goes unjudged until the sitting is re-run.
+- **C (the matrix).** The matrix already ran under T8e's guard. It now imports the shared module, and `placeScenes` and
+  `placePanel` go through `placeWindows`.
+- **D (accept-native, verify `--bind`, the approval cycles, T3b).**
+  - `textedit up` places the scratch document's windows clear of the alerts and records the placement in
+    `textedit-placement.json` (`textedit-guard.mjs`). verify `--bind`, #216's approval cycles and T3b's onboarding bind
+    that document.
+  - Those three send no pointer or key event of their own, only binds and observations of the placed window. Each step
+    is guarded differently:
+    - verify `--bind` runs only its own checks: the app running with a window on screen, and the approvals asked. It
+      takes no alert reading.
+    - #216's approval cycles activate TextEdit and require front and key before each bind. A system prompt in front or
+      key around a bind makes it NO VERDICT (rulings 1136 and 1141).
+    - T3b's onboarding samples front and key around each cell in the same way. Its capture cell also follows the
+      shared capture rule (`captureRefusal`, read once TextEdit has taken front and key). If TextEdit's window is under
+      an alert, or the screen is unread, no capture is sent. The call records `alertGuard`, the record keeps the
+      refusal through `recordRefusal`, and the judge returns NO VERDICT.
+  - accept-native's live TextEdit run is shared by items 5, 6 and 8. On a hosted runner it takes the guard, and its
+    document is placed after open (`observations.placement`).
+    - Each key cell (`fixtureKeyCell`) waits out any pause first. It then takes one fresh guard reading and is
+      refused when the alert holds the key (the key-cell premise). After that comes the front check, then the cell.
+      A key reading not taken is counted in `keyUnread`.
+    - The marker cell types and then captures TextEdit's window (`getScreenshot`). It is held to the capture rule as
+      well, with window kind, from the same reading. If TextEdit's window is under an alert, or the screen is unread,
+      the whole cell is refused before it is sent.
+    - A refusal sends nothing. The step is BLOCKED "NO VERDICT <cause>: …" and carries the mark. The observations
+      hold `alertGuards`, `alertGuardCounts` and `alertGuardStop`.
+  - The report carries `alertGuardStop`, `alertGuardCounts` and `keyUnread` (`fixtureGuardRecord`). D's step is judged
+    by the `acceptance` check on `acceptance.json`.
+
+### The setup record's shape
+
+`setup.json` gains `modeSwitch` between `warmUps` and `placement`:
+
+```
+modeSwitch: {
+  before:   {mode: {width, height, modeId, pixelWidth, pixelHeight}, alerts: [{number, layer, bounds}], front},
+  set:      {width, height, modeId, pixelWidth, pixelHeight} | null,
+  readBack: {bounds: {x, y, width, height}, mode},
+  after:    {alerts: [...], front},
+  promptSeen: [{number, owner, layer, bounds} | {front}],
+  recentred:  [{number, from, to}],
+  watchedMs
+}
+```
+
+The step's detail line reads, for example, "1024x768 (mode 3) -> 1920x1080 (mode 10), read back 1920x1080; 2 alert
+windows, none moved; no prompt". Off a hosted runner the step refuses before it reads anything. `placement` keeps its
+shape, and its alerts are now the fresh ones after the switch.
+
+### Tests
+
+These suites were run on this Mac:
+
+- `node --test` on `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`,
+  `test/accept-textedit-{cells,readback}`: 940/940.
+- `test/repl-parity`, `test/cursor-sitting`: 1039/1039.
+- `test/accept-{native-cli,scripts-load,key-guard,window-close,onboarding}`: 112/112.
+
+`swiftc -typecheck` passes on `display-modes.swift`. The mode switch was never run here.
+
+What the tests cover:
+
+- **New suites.** `alert-guard`, `guard-device`, `display-mode` and `textedit-guard`. The `display-mode` tests cover a
+  prompt seen, a read-back mismatch, re-centred alerts and the hosted-only refusal.
+- **`setup.test.mjs`.** The step's place in the order and a failing switch.
+- **Sitting A** (`native-baseline/run.test.mjs`) **and sitting B** (`repl-parity/native-mac-run.test.mjs`). Tests that
+  an overlapping alert refuses the pointer event on both sides, that the run records NO VERDICT alert, and that the
+  hosted check reads NO VERDICT. B also gets the ACTION diagnostics test.
+- **The Minors.** One test for each, in the matrix's `run.test.mjs` and `probe-run.test.mjs`. `run-records.test.mjs`
+  counts the extra TextEdit activation from Minor 1.
+
+### Review round 1
+
+Test counts after the review fixes:
+
+- `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`, `test/accept-textedit-{cells,readback}`:
+  948/948.
+- `test/repl-parity`, `test/cursor-sitting`: 1041/1041.
+- `test/accept-{native-cli,scripts-load,key-guard,window-close,onboarding,engine-lane}`: 123/123.
+
+New tests:
+
+- **`acceptance`.** A real FAIL in item 6 (secrets remove) or item 8 (a lifecycle observation) beside the fixture's
+  refusal is FAIL, named. So are a non-fixture check that is only BLOCKED, and an item with no checks.
+- **B's record.** A refusal alongside TextEdit's fixed state failing is FAIL, naming the TextEdit problem. Refusals
+  alone are NO VERDICT. A failed action's row keeps its diagnostics, and no route field is kept.
+- **A's plan.** Each run needs the run before it. After a stop the remaining runs are SKIP and the sitting is NO
+  VERDICT, exit 4.
+- **A's cleanup after a refusal.** With the alert holding the key, ⌘Q is refused and TextEdit is left running. With
+  the alert gone, ⌘Q is sent and TextEdit quits.
+- **A's held screenshot series.** Sample 1 is kept, marked invalid, and only sample 2 is refused.
+- **D.** The key-cell premise: an overlapping alert alone refuses no key cell. `fixtureKeyCell` reads the guard after
+  the pause, and its refusal reaches `fixtureGuardRecord` and then the `acceptance` check.
+- **Display mode.** A 2x read-back, another mode id, and a window list unread after the switch.
+- **T3b.** The capture cell under an alert, and with the screen unread.
+- **`recordRefusal`.** Its shape.
+
+### Review round 2
+
+Test counts after the fixes:
+
+- `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`, `test/accept-textedit-{cells,readback}`:
+  955/955.
+- `test/repl-parity`, `test/cursor-sitting`: 1041/1041.
+- `test/accept-{native-cli,scripts-load,key-guard,window-close,onboarding,engine-lane}`: 123/123.
+
+New tests:
+
+- **`acceptance`.** Item 5's type step FAILs, then a refusal comes at "secret: type the reference". The result is
+  FAIL, naming the type step.
+- **A's comparisons.** The real CLI, `native-baseline.mjs compare --engines`, run on a missing lane and on a lane
+  holding only a stopped run. Each prints `VERDICT: NO VERDICT` naming the lane, and the hosted `verdict` check reads
+  NO VERDICT. The plan test runs `runSitting` with a refused vv-1 in both the pilot and full forms, with no comparison
+  output faked. Only vv-1 runs, every other step is SKIP, and the sitting is NO VERDICT, exit 4.
+- **`keyUnread`.**
+  - The helper's shape.
+  - A counts its key cells guarded unread per cell (`task.act`, `task.close`, `quit`).
+  - The matrix counts them under the row's span, which `counts.md` maps to the row's cell.
+  - D counts them, through `fixtureKeyCell`.
+  - `guardTally` reads every record shape.
+- **D's marker cell.** It is refused unsent when TextEdit's window is under an alert or the screen is unread. A window
+  clear of every alert is exempt.

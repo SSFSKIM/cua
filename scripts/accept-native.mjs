@@ -94,7 +94,9 @@ import {
   acceptanceSelection, optInGaps, secretsProbeEvidence, approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, tapDiagnostics, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
-import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
+import {APPROVALS_CHECK, FIXTURE_VERDICT_CHECK, fixtureGuardRecord, OWN_STEPS, runTextEdit, SECRET_STEPS, uiDeliveryCheck} from './accept/textedit.mjs';
+import {isGithubHosted} from './hosted-sittings/runner.mjs';
+import {textEditGuard} from './hosted-sittings/textedit-guard.mjs';
 import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
@@ -324,9 +326,16 @@ async function liveSecrets() {
   return secretsProbeEvidence({result: r, report, ended: ended(r), lastError: sanitize(r.stderr.trim().split('\n').at(-1) ?? '')});
 }
 
+// On a GitHub-hosted runner (sitting D) the fixture's document is placed clear of replayd's alerts and every cell that
+// types or presses a key goes under the shared alert guard (rulings 1154, 1160, 1164): a refusal is the report's
+// alertGuardStop and alertGuardCounts (fixtureGuardRecord), which the hosted check reads as NO VERDICT when only the
+// fixture's own checks are left unproven (scripts/hosted-sittings/checks.mjs `acceptance`).
 async function liveTextEdit() {
   if (!options['live-textedit']) return null;
-  return runTextEdit({home, engine: pin, secret: callerSecret ?? Boolean(options['live-secrets']), forbid: value => forbidden.push(value)});
+  const result = await runTextEdit({home, engine: pin, secret: callerSecret ?? Boolean(options['live-secrets']), forbid: value => forbidden.push(value),
+    guard: isGithubHosted() ? textEditGuard() : null});
+  state.fixtureGuard = fixtureGuardRecord(result?.observations);
+  return result;
 }
 
 const NOT_REQUESTED = flag => check(`opt-in ${flag}`, 'BLOCKED', `not run: pass ${flag} to run it (never counted as a pass when skipped)`);
@@ -344,11 +353,12 @@ async function item5(textedit) {
   const o = textedit.observations;
   const checks = [
     // Its own steps only (anything else it recorded, an unexpected error say, included); the secret steps are item 6's.
-    (own => scenarioVerdict('live TextEdit fixture verdict (own document)', {status: rollup(own.map(x => x.status)), steps: own}, OWN_STEPS))(textedit.steps.filter(x => !SECRET_STEPS.includes(x.name))),
+    (own => scenarioVerdict(FIXTURE_VERDICT_CHECK, {status: rollup(own.map(x => x.status)), steps: own}, OWN_STEPS))(textedit.steps.filter(x => !SECRET_STEPS.includes(x.name))),
     ...OWN_STEPS.map(step => inventoryCheck(step, textedit.steps, [step])),
   ];
   addItem(5, 'Live native fixture: its own disposable TextEdit document', checks, {
     nativeHelper: o.nativeHelper, textEdit: o.textEdit, screenshot: o.screenshot, elicitations: o.elicitations, connections: o.connections, guiInputStopped: o.guiInputStopped,
+    ...(o.placement ? {placement: o.placement} : {}), ...(o.alertGuards ? {alertGuards: o.alertGuards} : {}),
     ...(o.engine ? {engine: o.engine} : {}),
     note: 'cold start of the pinned helper is not shown here: see item 9',
   });
@@ -408,7 +418,7 @@ async function item6(probe, textedit) {
   else checks.push(...probeChecks(probe, probePhasesFor(6)));
   if (textedit?.scenario === 'live-textedit-with-secret') {
     // The optional UI delivery counts only if it actually happened: each of its steps must have run and passed.
-    for (const step of SECRET_STEPS) checks.push(inventoryCheck(`UI delivery (optional, combined): ${step.slice('secret: '.length)}`, textedit.steps, [step]));
+    for (const step of SECRET_STEPS) checks.push(inventoryCheck(uiDeliveryCheck(step), textedit.steps, [step]));
   }
   const evidence = {
     ...(probe && !probe.missing ? {liveSecrets: {status: probe.status, key: probe.label, steps: probe.steps, runtimeFiles: probe.runtimeFiles,
@@ -450,7 +460,7 @@ async function item8(textedit) {
   else {
     // By behaviour (#117 M3): A's second bind asks nothing, B, a new connection, asks again.
     const observed = approvalObservation(textedit.observations.connections, {engine: textedit.observations.engine?.engine});
-    checks.push(check('per-connection app approvals observed by behaviour', observed.status, observed.detail));
+    checks.push(check(APPROVALS_CHECK, observed.status, observed.detail));
   }
   addItem(8, 'Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed', checks, state.lifecycle);
 }
@@ -613,6 +623,7 @@ const report = {
   release: state.doctor?.runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
   startedAt: started.toISOString(), finishedAt: new Date().toISOString(),
   summary: Object.fromEntries(items.map(i => [i.id, i.status])),
+  ...state.fixtureGuard,
   connectionDirectoriesLeft: runLeftovers.length,
   items,
 };

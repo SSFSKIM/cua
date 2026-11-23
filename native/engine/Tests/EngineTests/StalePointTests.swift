@@ -3203,7 +3203,8 @@ final class NonTextLabelSlotTests: XCTestCase {
     XCTAssertEqual(verdict(nullThen: [.title], nullNow: [.title], description: "Open"), .sameElement,
                    "a title null on both sides passes to the description, which agrees")
     XCTAssertTrue(screenChangedSinceScreenshot(was: "button", reason: .relabelled, now: nil, label: nil).message
-      .contains("the button it showed at this point no longer has a label that can be read"), "the sentence for a label unread")
+      .contains("the button it showed at this point is still there, but its label could not be verified against the screenshot"),
+      "the sentence for a label unverified")
   }
 
   /// #443's `controlDiffers` (ruling 1147): a numeric title then and absent now reads as none, as on main, so the
@@ -3227,6 +3228,123 @@ final class NonTextLabelSlotTests: XCTestCase {
     now.frame = control.frame
     now.unreadable = [.description]
     XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "no part read on both sides: no evidence")
+  }
+}
+
+/// #519 (ruling 1150, the re-review of 34818106..3a8276c6): #519 may only turn main's verdict into a refusal. It never
+/// changes which element is the target, and it never turns a refusal into a press.
+final class MonotoneLabelVerdictTests: XCTestCase {
+  private let point = CGPoint(x: 60, y: 120)
+
+  /// `reads` with every label read counted, by part.
+  private func counting(_ counts: Counts) -> StalePointReads<Node> {
+    var counted = reads
+    let label = counted.label!
+    counted.label = { node, part in
+      counts.parts[part, default: 0] += 1
+      return label(node, part)
+    }
+    return counted
+  }
+  private final class Counts { var parts: [StalePointLabelPart: Int] = [:] }
+
+  /// Finding (b): an AXStaticText's value is read now only where the record holds it as text that can give evidence, and
+  /// only after the parts before it settled nothing: never past a title read on both sides that agrees, never for a value
+  /// the record withheld or holds empty.
+  func testTheValueIsReadNowOnlyWhereItCanGiveEvidence() {
+    func judged(_ setUp: (Node) -> Void, now: (Node) -> Void) -> (StalePointReason, Int) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), title: "Save", value: "Save")
+      window.add(text)
+      setUp(text)
+      let nodes = recorded(window)
+      (text.unreadable, text.null, text.nonText) = ([], [], [])
+      now(text)
+      let counts = Counts()
+      let reason = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: counting(counts)).reason
+      return (reason, counts.parts[.value] ?? 0)
+    }
+    let settled = judged({ _ in }, now: { $0.unreadable = [.description]; $0.value = "Delete" })
+    XCTAssertEqual(settled.0, .sameElement, "the title agrees on both sides")
+    XCTAssertEqual(settled.1, 0, "the value is never read past a title that settled it")
+    let withheld = judged({ $0.unreadable = [.title, .value] }, now: { $0.value = "Secret" })
+    XCTAssertEqual(withheld.0, .relabelled, "nothing known agrees")
+    XCTAssertEqual(withheld.1, 0, "a value the record holds unknown is never read now")
+    let empty = judged({ $0.title = nil; $0.value = ""; $0.unreadable = [.description] }, now: { $0.value = "Secret" })
+    XCTAssertEqual(empty.1, 0, "a value the record holds empty can give no evidence, and is never read now")
+    // Main's verdicts on these four, recorded at 0d19fdfa: all kept (`sameElement`), the value never read. The head's are
+    // main's or refusals.
+    let needed = judged({ $0.title = nil; $0.unreadable = [.description] }, now: { $0.value = "Delete" })
+    XCTAssertEqual(needed.0, .relabelled, "a value read on both sides, past the unread description, changed")
+    XCTAssertEqual(needed.1, 1, "read once, where it can give evidence")
+  }
+
+  /// Finding (b): the value read now goes through #405's classification, the role and subrole in the same batch; a closed
+  /// or failed reply is unread, its value never decoded, compared or quoted.
+  func testTheValueReadNowIsClassifiedAndNeverQuotedClosed() {
+    XCTAssertEqual(stalePointClassifiedValueRead(.closed), .unreadable)
+    XCTAssertEqual(stalePointClassifiedValueRead(.failed), .unreadable)
+    func classified(_ values: [String: CFTypeRef]) -> StalePointLabelRead {
+      stalePointClassifiedValueRead(classifiedRead([kAXValueAttribute]) { names in
+        var read = AttributeRead()
+        for name in names { read.decode(name, values[name]) }
+        return read
+      })
+    }
+    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXValue": "Delete" as CFString]), .text("Delete"))
+    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXValue": nonTextLabelSlot]), .nonText)
+    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXSubrole": "AXSecureTextField" as CFString,
+                               "AXValue": "hunter2" as CFString]), .unreadable, "secure since: closed")
+    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXSubrole": nonTextLabelSlot, "AXValue": "hunter2" as CFString]),
+                   .unreadable, "its subrole unclassified: closed")
+    // Through the rule: a value read closed now, the record's value the label, refuses as unverified and quotes nothing.
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), value: "Save")
+    window.add(text)
+    let nodes = recorded(window)
+    text.value = "hunter2"
+    var closed = reads
+    let label = closed.label!
+    closed.label = { node, part in part == .value ? stalePointClassifiedValueRead(.closed) : label(node, part) }
+    let verdict = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: closed)
+    XCTAssertEqual(verdict.reason, .relabelled)
+    XCTAssertNil(verdict.labelNow, "never quoted")
+    let message = screenChangedSinceScreenshot(was: "text", reason: verdict.reason, now: nil, label: verdict.labelNow).message
+    XCTAssertFalse(message.contains("hunter2"))
+    XCTAssertTrue(message.contains("its label could not be verified against the screenshot"), "finding (c)")
+  }
+
+  /// Finding (d), a named exception (main's own verdict a wrong press): a unique button re-created in place, its title
+  /// numeric (or failed) at the observation, no title now, no description either side. Main's lenient match took the
+  /// replacement and the press gate passed it; its label is unverified, so the match is refused, the match itself
+  /// unchanged. A description read on both sides that agrees still verifies it.
+  func testARecreatedMatchWithAnUnverifiedLabelIsRefused() {
+    func judged(nonText: Set<StalePointLabelPart> = [], failed: Set<StalePointLabelPart> = [], description: String? = nil)
+      -> (StalePointVerdict<Node>, Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let button = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), description: description)
+      window.add(button)
+      (button.nonText, button.unreadable) = (nonText, failed)
+      let nodes = recorded(window)
+      button.destroy()
+      let again = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), description: description)
+      window.add(again)
+      return (stalePointVerdict(at: point, nodes: nodes, hit: again, reads: reads), again)
+    }
+    for (name, nonText, failed) in [("numeric", Set([StalePointLabelPart.title]), Set<StalePointLabelPart>()),
+                                    ("failed", [], [.title])] {
+      let (verdict, again) = judged(nonText: nonText, failed: failed)
+      XCTAssertTrue(verdict.refused, "a \(name) title then, none now: \(verdict.reason)")
+      XCTAssertNil(verdict.current, "no target")
+      XCTAssertTrue(stalePointPressVerdict(again, verdict, reads: reads).refused, "the press gate refuses too")
+      let agreeing = judged(nonText: nonText, failed: failed, description: "Open").0
+      XCTAssertFalse(agreeing.refused, "a \(name) title, the description agreeing: \(agreeing.reason)")
+      XCTAssertEqual(agreeing.identity, .recreated)
+    }
+    // Main's verdict on both, recorded at 0d19fdfa: kept (`sameElement`), the replacement the target: main's wrong press.
+    let whole = judged().0
+    XCTAssertFalse(whole.refused, "a label read whole: main's match (\(whole.reason))")
+    XCTAssertEqual(whole.identity, .recreated)
   }
 }
 
@@ -5449,6 +5567,24 @@ final class OtherControlOnTopTests: XCTestCase {
     XCTAssertEqual(relabelled.verdict.reason, .sameElement)
     XCTAssertFalse(relabelled.verdict.underlyingRefused)
     XCTAssertEqual(relabelled.verdict.hitCorrection, .changed)
+  }
+
+  /// #519 (ruling 1150): the candidate the corrected hit names, its label unverified now (its title failing, no
+  /// description), refuses as unverified, naming it. Main kept it as the control beneath; it is never left to the rule
+  /// below, which would keep the other candidate as the control beneath, a target main did not choose.
+  func testANamedCandidateWithAnUnverifiedLabelRefusesNamingIt() {
+    let page = Page()
+    let other = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Other")
+    page.list.children.insert(other, at: 2)
+    other.parent = page.list
+    let unread = judged(page, at: atLink, corrected: { $0.a }) { page in
+      page.a.unreadable = [.title]
+      return page.veil
+    }
+    XCTAssertTrue(unread.verdict.refused, "\(unread.verdict.reason)")
+    XCTAssertEqual(unread.verdict.reason, .relabelled)
+    XCTAssertTrue(unread.verdict.underlying?.element === page.a, "the named candidate")
+    // Main's verdict, recorded at 0d19fdfa: kept (`sameElement`), A the control beneath; 3a8276c6 kept the other link.
   }
 
   /// The last review, item 1: two controls beneath the veil; the front link A's box shrinks away from the point while its

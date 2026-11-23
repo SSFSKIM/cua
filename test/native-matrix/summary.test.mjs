@@ -76,9 +76,10 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
     return row;
   });
   return cellResult({cell: 'matrix', device, started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows, run),
-    meta: {run, samples, sitting: 's1', commit: 'c', os: '26.0', planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared'} : {}), ...meta}});
+    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared'} : {}), ...meta}});
 }
 const set = (id, patch) => rows => rows.map(r => (r.id === id ? {...r, ...patch} : r));
+const OS = Object.freeze({name: 'macOS', version: '26.0', build: '25A354'});
 // Three full runs per side unless given; `extra` results written beside them; `departures` the declared-departures
 // file's entries (none unless given).
 function judged({vendor = {}, cua = {}, runs = 3, extra = [], departures = []} = {}) {
@@ -434,7 +435,7 @@ test('speed and finding rest on the vendor too: a run whose vendor samples have 
   const row = speed.speed.find(s => s.id === 'textedit/getAXState');
   assert.deepEqual([row.beat, row.provisional], [null, true], 'not qualified: shown as sampled, never counted');
   assert.deepEqual(row.account.cua.noVerdict, {unpaired: 2});
-  assert.ok(renderSummary(speed).includes('| getAXState | 50.0 | 50.0 | 40.0 | 40.0 | -20% | not qualified (yes as sampled) |'), renderSummary(speed));
+  assert.ok(renderSummary(speed).includes('| getAXState | 50.0 | 50.0 | 40.0 | 40.0 | -20% | not qualified |'), renderSummary(speed));
   assert.ok(speed.missing.some(p => /do not qualify/.test(p)));
   const finding = judged({vendor: {resolved: 9, axMs: 50, tweak: invalidIn('finder/ids', 1)}, cua: {axMs: 40}});
   assert.equal(finding.findingVerdict, 'no-verdict');
@@ -711,7 +712,7 @@ test('a cell qualifies on common complete runs: three complete runs a side with 
 });
 
 test('a pair from two devices or two OS versions is not compared: no comparative finding comes from it', () => {
-  for (const cuaRun2 of [{device: 'other'}, {meta: {os: '26.1'}}]) {
+  for (const cuaRun2 of [{device: 'other'}, {meta: {os: {...OS, build: '25A362'}}}]) {
     const j = judgeEach({vendor: () => ({resolved: 9, axMs: 50}), cua: n => ({axMs: 40, ...(n === 2 ? {...cuaRun2, tweak: set(CLICK, {ok: false})} : {})})});
     assert.ok(j.missing.some(p => /^run 2's vendor and cua runs name more than one (device|OS)/.test(p)), j.missing.join('\n'));
     assert.ok(!j.blocking.includes(`method: ${CLICK} is worse on cua`), JSON.stringify(cuaRun2));
@@ -755,4 +756,46 @@ test('shared limits group each observation by its own cause and priority; a shar
     [['honest failure', 'P3', [[LINES, 1]]], ['shared false ok', 'P2 or higher', [[LINES, 2]]]]);
   const total = j.unicode.length;
   assert.ok(renderSummary(j).includes(`- **Korean and Unicode**: ${total - 1} of ${total} rows pass on cua, 1 a shared limit`), renderSummary(j));
+});
+
+// ---- round 3: the provenance fields' own validators, the user's value first, the speed diagnostics -------------------
+
+test('a pair\'s hold, commit and approved build are strings, and its OS a whole {name, version, build} compared field by field', () => {
+  const objects = judgeEach({vendor: () => ({resolved: 9, axMs: 50, meta: {sitting: {id: 's'}, commit: {sha: 'c'}, nativeEngine: {approved: {build: {sha: 'a'}}}}}),
+    cua: () => ({axMs: 40, meta: {sitting: {id: 's'}, commit: {sha: 'c'}, nativeEngine: {approved: {build: {sha: 'a'}}}}})});
+  assert.notEqual(objects.verdict, 'PASS');
+  for (const what of ['hold', 'commit', 'approved engine build']) assert.ok(objects.missing.some(p => p.startsWith(`run 1: a run records no ${what} `)), what);
+  const partial = judgeEach({vendor: () => ({resolved: 9, axMs: 50, meta: {os: {version: '26.0'}}}), cua: () => ({axMs: 40, meta: {os: {version: '26.0'}}})});
+  assert.ok(partial.missing.some(p => p.startsWith('run 1: a run records no OS ')), partial.missing.join('\n'));
+  assert.ok(partial.methods.every(m => m.account.pairs === 0));
+  const build = judgeEach({vendor: () => ({resolved: 9, axMs: 50}), cua: n => ({axMs: 40, ...(n === 1 ? {meta: {os: {...OS, build: '25A362'}}} : {})})});
+  assert.ok(build.missing.some(p => /^run 1's vendor and cua runs name more than one OS/.test(p)), build.missing.join('\n'));
+  // Key order is no difference.
+  assert.equal(judgeEach({vendor: () => ({resolved: 9, axMs: 50}), cua: () => ({axMs: 40, meta: {os: {build: OS.build, version: OS.version, name: OS.name}}})}).verdict, 'PASS');
+});
+
+test('a proven change of the user\'s value fails on its own, before any departure, pair or shared exception', () => {
+  const changed = {ok: false, outcome: {exact: false, length: 0, expectedLength: 5, hash: 'h0', userKept: false, unchanged: true,
+    threw: 'the text did not read back after typing', errorName: 'typeUnconfirmed'}};
+  const entry = departure({section: 'unicode', id: COMPOSING, cua: {answer: 'unconfirmed', errorName: 'typeUnconfirmed', sentence: 'the text did not read back'}});
+  const declared = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(COMPOSING, changed)}, departures: [entry]});
+  assert.ok(declared.blocking.includes(`unicode: ${COMPOSING} failed on cua`), declared.blocking.join('\n'));
+  const unpaired = judged({vendor: {resolved: 9, axMs: 50, tweak: set(COMPOSING, {invalid: 'x'})}, cua: {axMs: 40, tweak: set(COMPOSING, changed)}});
+  assert.ok(unpaired.blocking.includes(`unicode: ${COMPOSING} failed on cua`), 'no pair is needed to prove it');
+  // A refusal is better than a false ok only where the vendor's text was wrong: exact text with the user's value lost is
+  // no false ok.
+  const refused = {ok: false, outcome: {exact: false, length: 0, expectedLength: 5, hash: 'h0', userKept: true, unchanged: true, threw: 'the text did not read back', errorName: 'typeUnconfirmed'}};
+  const exact = {ok: false, outcome: {exact: true, length: 5, expectedLength: 5, hash: 'h5', userKept: false}};
+  const vendorExact = judged({vendor: {resolved: 9, axMs: 50, tweak: set(COMPOSING, exact)}, cua: {axMs: 40, tweak: set(COMPOSING, refused)}});
+  assert.ok(vendorExact.blocking.includes(`unicode: ${COMPOSING} failed on cua`), vendorExact.blocking.join('\n'));
+  assert.deepEqual(vendorExact.honest, []);
+});
+
+test('a speed row not qualified shows what its partial readings would give as a labelled diagnostic, never beside the official columns', () => {
+  const partial = (rows, run) => (run === 3 ? rows.map(r => (r.id === 'textedit/getAXState' && r.sample === 6 ? {...r, invalid: 'x'} : r)) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: partial}, cua: {axMs: 40}});
+  const text = renderSummary(j);
+  assert.ok(text.includes('| getAXState | 50.0 | 50.0 | 40.0 | 40.0 | -20% | not qualified |'), text);
+  assert.ok(text.includes('- getAXState (diagnostic, not counted): every eligible reading, partial runs included: vendor median 50.0, p95 50.0 (5); cua median 40.0, p95 40.0 (6); would beat: yes'), text);
+  assert.ok(!/as sampled/.test(text));
 });

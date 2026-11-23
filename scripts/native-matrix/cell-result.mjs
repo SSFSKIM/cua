@@ -26,7 +26,8 @@
 //   meta       optional, anything the cell keeps about its context (never screen content). A full matrix run's (cell
 //              'matrix', planId 'full') carries, among the rest, `hosted` (true on a GitHub-hosted runner: its judged
 //              rows then need their front/key readings, ./front-key.mjs) and `desktopMode` (the device mode it ran in,
-//              'shared' the default and the only one the matrix is judged in, R3)
+//              'shared' the default and the only one the matrix is judged in, R3). Its `os`, where a cell records one,
+//              is the OS it ran on, {name, version, build} each a non-empty string (isOsRecord), or null when unread
 //
 // Row (one judged sample):
 //   section    which part of the summary it feeds (SECTIONS): 'method' (part 4), 'speed' (part 5's speed), 'finding'
@@ -85,6 +86,9 @@ const ERROR_CHARS = 300;
 
 const isString = value => typeof value === 'string' && value.length > 0;
 const isTime = value => isString(value) && !Number.isNaN(Date.parse(value));
+// Whether a value is an OS record: {name, version, build}, each a non-empty string (a pair's OS is compared field by
+// field, ./summary.mjs).
+export const isOsRecord = os => os !== null && typeof os === 'object' && ['name', 'version', 'build'].every(k => isString(os[k]));
 const bounded = text => String(text).slice(0, ERROR_CHARS);
 
 // The cell's verdict from its rows: refused before anything ran; no-verdict without a valid row or when the cell did
@@ -147,6 +151,7 @@ export function validateCellResult(result) {
   if (!VERDICTS.includes(result.verdict)) out.push(`verdict is not one of ${VERDICTS.join(', ')}`);
   if (!Array.isArray(result.problems) || result.problems.some(p => typeof p !== 'string')) out.push('problems is not a list of sentences');
   if (result.judgesInterference !== undefined && result.judgesInterference !== true) out.push('judgesInterference is true or absent');
+  if (result.meta?.os !== undefined && result.meta.os !== null && !isOsRecord(result.meta.os)) out.push('meta.os is not {name, version, build}, each a non-empty string');
   if (!Array.isArray(result.rows)) return [...out, 'rows is not a list'];
   result.rows.forEach((row, i) => out.push(...rowProblems(row, `rows[${i}]`)));
   if (result.complete === false && ['pass', 'fail'].includes(result.verdict)) out.push(`an incomplete result cannot ${result.verdict === 'pass' ? 'pass' : 'fail'}: it is no-verdict`);

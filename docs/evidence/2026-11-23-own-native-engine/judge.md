@@ -433,3 +433,61 @@ All three holds still judge FAIL. Against the first fix wave (28122c80b):
 - The better case for a conservative answer on a fixed-string row needs `outcome.unchanged` or `outcome.effect` on
   Unicode rows, beside the engine's error name. Neither is recorded today; both are T10b′'s to add.
 - A frontmost pair whose case records a volatile count, such as `elements`, will read worse whenever both engines fail.
+
+## Round 3: provenance validators, the user's value first, speed diagnostics
+
+1. **The provenance fields' own validators.** Round 2's pair check accepted any non-empty object in every field. It now
+   validates each field by its own type:
+   - **Hold, commit and approved build** must each be a non-empty string again (`meta.sitting`, `meta.commit`,
+     `meta.nativeEngine.approved.build`). An object in any of them means the run "records no hold", "no commit" or
+     "no approved engine build", so its pair is not eligible.
+   - **The OS** has its own validator, `cell-result.mjs` `isOsRecord`: it needs `{name, version, build}`, each a
+     non-empty string. Pairs are compared field by field, so the order of the keys is no difference. The proof's
+     one-OS check uses the same key.
+   - **The result reader** (`validateCellResult`) now also refuses a `meta.os` that is present, not null and not such a
+     record. Every committed `native-matrix-cell-1` result conforms: 20 carry the full record and 13 carry none.
+2. **The user's value fails first.**
+   - In `judgeCell`, a cua sample with `outcome.userKept === false` is `worse` before anything else is considered: no
+     departure, pairing or shared exception answers for it. Before this, such a sample could read `declared` with a
+     departure, `no-verdict` with no pair, or `better`.
+   - The better case for a conservative answer now also needs the vendor's sample to read back other text
+     (`outcome.exact === false`). A vendor sample with exact text that failed only its user-value check is no false ok,
+     so a cua refusal beside it fails.
+3. **Minor: speed diagnostics.** The speed table's columns are official: they rest on the complete run pairs. An op that
+   does not qualify now reads "not qualified" in its beat column. Below its scene's table, a labelled line shows what
+   every eligible reading would give, partial runs included: "`- <op> (diagnostic, not counted): every eligible
+   reading, partial runs included: vendor median …, p95 … (n); cua …; would beat: yes|no`". The "yes as sampled" text
+   beside official columns from another set of runs is gone.
+
+**The old records.** Holds 3, 2a and 2b judge exactly as in round 2: FAIL, with the same blocking lists (diffed against
+8f4a72eb8's judge).
+
+### Tests (round 3)
+
+**RED,** before implementing:
+`node --test test/native-matrix/summary.test.mjs test/native-matrix/cell-result.test.mjs` gave `# pass 51`, `# fail 5`.
+The five failures were:
+
+- the reader's OS record;
+- hold, commit and build as objects, a partial OS, a different OS build, and reordered keys;
+- the user's value with a departure, with no pair, and beside exact vendor text;
+- the speed diagnostic line;
+- the existing speed-table test, changed to "not qualified".
+
+**GREEN:**
+
+- `node --test test/native-matrix/*.test.mjs`: `# tests 424`, `# pass 424`, `# fail 0`.
+- `node --test test/cursor-sitting/item-188.test.mjs test/cursor-sitting/item-187.test.mjs test/repl-parity/native-mac-run.test.mjs`:
+  `# tests 77`, `# pass 77`, `# fail 0`.
+
+The test fixture's `meta.os` is now a full record, `{name: 'macOS', version: '26.0', build: '25A354'}`, as the runs
+write it.
+
+### Decisions (round 3)
+
+- The OS record belongs in the reader as well as the pair check. The reader refuses a malformed record. Absent or null
+  stays allowed, since a run that read no OS records null; the pair check then makes such a run's pair ineligible.
+- A user-value change on cua fails even with no vendor pair, because the oracle's own reading proves it. This applies
+  in every mode, not only to the fixed-string rows.
+- For the speed rows, I kept the provisional beat and moved it into the labelled diagnostic, rather than dropping it.
+  It still tells the owner which way a cell that does not qualify leans.

@@ -70,7 +70,7 @@
 // another kind; else NO VERDICT when proof is missing; else OWNER when only the owner's calls remain; else PASS (the
 // declared departures listed beside it).
 import {stats} from '../native-baseline/summary.mjs';
-import {readCellResults} from './cell-result.mjs';
+import {isOsRecord, readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
 import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
@@ -133,24 +133,27 @@ const runsByNumber = full => {
 };
 
 // What keeps run `n`'s vendor and cua runs from being one pair: each engine's run there, one hold, one commit, one
-// approved engine build (the bundle every lane's probes run), one device and one OS, each recorded (a non-empty string,
-// the OS the record's {name, version, build}) on every run of the pair, since values absent on both sides are not one
-// shared value. -> [sentence].
+// approved engine build (the bundle every lane's probes run), one device and one OS, each recorded on every run of the
+// pair (a non-empty string; the OS a whole record, ./cell-result.mjs isOsRecord, compared field by field), since values
+// absent on both sides are not one shared value. -> [sentence].
+// An OS record by its fields, in one order. -> string.
+const osKey = os => JSON.stringify([os.name, os.version, os.build]);
 function pairProblems(n, list) {
   const out = [];
   const has = engine => list.some(({result}) => result.lanes[0]?.engine === engine);
   if (!has('cua')) out.push(`run ${n} has no cua full run: its samples cannot be compared with the vendor's`);
   if (!has('vendor')) out.push(`run ${n} has no vendor full run: its samples cannot be compared with cua's`);
-  const shared = (what, field, values, measured = 'in one hold') => {
-    if (values.some(v => !(typeof v === 'string' ? v : v !== null && typeof v === 'object' && Object.keys(v).length))) { out.push(`run ${n}: a run records no ${what} (${field}): its pair cannot be shown to share one`); return; }
-    const seen = [...new Set(values.map(v => JSON.stringify(v)))];
+  const shared = (what, field, values, {measured = 'in one hold', valid = v => typeof v === 'string' && v.length > 0, key = v => JSON.stringify(v)} = {}) => {
+    if (values.some(v => !valid(v))) { out.push(`run ${n}: a run records no ${what} (${field}): its pair cannot be shown to share one`); return; }
+    const seen = [...new Set(values.map(key))];
     if (seen.length > 1) out.push(`run ${n}'s vendor and cua runs name more than one ${what} (${seen.join(', ')}): a pair is measured ${measured}`);
   };
   shared('hold', 'meta.sitting', list.map(({result}) => result.meta?.sitting));
   shared('commit', 'meta.commit', list.map(({result}) => result.meta?.commit));
   shared('approved engine build', 'meta.nativeEngine.approved', list.map(({result}) => result.meta?.nativeEngine?.approved?.build));
-  shared('device', 'device', list.map(({result}) => result.device), 'on one device');
-  shared('OS', 'meta.os', list.map(({result}) => result.meta?.os), 'on one OS');
+  shared('device', 'device', list.map(({result}) => result.device), {measured: 'on one device'});
+  shared('OS', 'meta.os {name, version, build}', list.map(({result}) => result.meta?.os),
+    {measured: 'on one OS', valid: isOsRecord, key: osKey});
   return out;
 }
 
@@ -170,7 +173,7 @@ export function proofProblems(full) {
     if (seen.length > 1) missing.push(`the full runs name more than one ${what} (${seen.join(', ')}): one proof's runs are judged together`);
   };
   one('device', full.map(({result}) => result.device));
-  one('OS', full.map(({result}) => result.meta?.os));
+  one('OS', full.map(({result}) => (isOsRecord(result.meta?.os) ? osKey(result.meta.os) : result.meta?.os)));
   for (const [n, list] of runsByNumber(full)) missing.push(...pairProblems(n, list));
   for (const engine of ['vendor', 'cua']) {
     const mine = full.filter(({result}) => result.lanes[0]?.engine === engine);
@@ -475,8 +478,13 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     const list = j.speed.filter(s => s.scene === scene);
     if (!list.length) continue;
     out.push(`### ${scene}`, '', '| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |', '|---|---|---|---|---|---|---|');
-    for (const s of list) out.push(`| ${s.op} | ${ms(s.vendor?.median)} | ${ms(s.vendor?.p95)} | ${ms(s.cua?.median)} | ${ms(s.cua?.p95)} | ${s.deltaPct === null ? '-' : `${s.deltaPct > 0 ? '+' : ''}${s.deltaPct}%`} | ${s.beat !== null ? (s.beat ? 'yes' : '**no**') : s.provisional === null ? 'unmeasured' : `not qualified (${s.provisional ? 'yes' : 'no'} as sampled)`} |`);
+    for (const s of list) out.push(`| ${s.op} | ${ms(s.vendor?.median)} | ${ms(s.vendor?.p95)} | ${ms(s.cua?.median)} | ${ms(s.cua?.p95)} | ${s.deltaPct === null ? '-' : `${s.deltaPct > 0 ? '+' : ''}${s.deltaPct}%`} | ${s.beat !== null ? (s.beat ? 'yes' : '**no**') : s.provisional === null ? 'unmeasured' : 'not qualified'} |`);
     out.push('');
+    // What an op that does not qualify would give on every eligible reading, partial runs included: apart from the
+    // official columns, which rest on the complete run pairs only.
+    const side = st => `median ${ms(st.median)}, p95 ${ms(st.p95)} (${st.n})`;
+    const diagnostic = list.filter(s => s.beat === null && s.provisional !== null);
+    if (diagnostic.length) out.push(...diagnostic.map(s => `- ${s.op} (diagnostic, not counted): every eligible reading, partial runs included: vendor ${side(s.partial.vendor)}; cua ${side(s.partial.cua)}; would beat: ${s.provisional ? 'yes' : 'no'}`), '');
   }
 
   out.push('## Finding elements', '', '| scene | vendor resolved | cua resolved | vendor titled share | cua titled share | vendor ID count | cua ID count |', '|---|---|---|---|---|---|---|');

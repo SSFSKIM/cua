@@ -13,8 +13,9 @@
 //   its absolute expected string, the pressKey row) the same read-back with the user's value kept on both: such a
 //   sample is `shared` (a shared limit, the vendor has it too), listed apart; the vendor passing a sample whose cua pair
 //   failed fails the row; cua refusing or answering unconfirmed (its recorded engine name of that kind, its recorded
-//   effect allowing it) where the vendor answered ok with other text (a false ok) is better, listed with the
-//   departures. Anywhere else cua answering conservatively where the vendor answered ok needs a declared departure. An
+//   effect allowing it) where the vendor answered ok and read back other text (a false ok) is better, listed with the
+//   departures. A cua sample that proved the user's value changed (`outcome.userKept` false) fails before any of this:
+//   no departure, pair or shared failure answers for it. Anywhere else cua answering conservatively where the vendor answered ok needs a declared departure. An
 //   acceptance row (./unicode-plan.mjs isAcceptanceRow) is absolute: neither a shared limit nor a departure satisfies it.
 // - A declared departure (./departures.mjs) covers a cua sample that answered as declared beside the vendor's ok of the
 //   same run, the row's own effect check and interference reading holding on both sides; the cell is then `declared`.
@@ -86,6 +87,9 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
   const fixed = mode === 'absolute' || mode === 'pressKey';
   const outcomes = new Map(), notes = new Map();
   const failed = (c, v) => {
+    // A proven change of the user's value (the rows behind a user window) fails on its own: no departure, pair or
+    // shared failure answers for it.
+    if (c.outcome?.userKept === false) return 'worse';
     if (departure && !acceptance) {
       const {answered, effect} = answeredAs(departure, c);
       if (answered && !v) return 'unpaired';
@@ -97,8 +101,10 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     if (sameFailure(v, c, {readBack: fixed})) return fixed ? 'shared' : 'equal';
     if (!fixed) return 'worse';
     const vendorAnswer = answerOf(v), cuaAnswer = answerOf(c);
-    const conservative = ['refused', 'unconfirmed'].includes(cuaAnswer.kind) && conservativeEffect(cuaAnswer.kind, c) && c.outcome?.userKept !== false && held(c);
-    if (vendorAnswer.kind === 'ok' && conservative) { notes.set(c, {vendor: vendorAnswer, cua: cuaAnswer}); return 'honest'; }
+    // Better only than an actual false ok: the vendor answered ok and read back other text than expected (not exact text
+    // that failed only for the user's value).
+    const conservative = ['refused', 'unconfirmed'].includes(cuaAnswer.kind) && conservativeEffect(cuaAnswer.kind, c) && held(c);
+    if (vendorAnswer.kind === 'ok' && v.outcome?.exact === false && conservative) { notes.set(c, {vendor: vendorAnswer, cua: cuaAnswer}); return 'honest'; }
     return 'worse';
   };
   for (const c of cuaRows) {

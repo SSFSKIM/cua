@@ -131,4 +131,27 @@ final class NullClassifyingSlotTests: XCTestCase {
     XCTAssertNil(node?.actionable, "unknown, not inert")
     XCTAssertEqual(nodes.first { tree.id($0.element) == 3 }?.controlUnknown, true, "under a role unknown")
   }
+
+  /// The review of cdb36ad3..7574c058 (P2): an AXStaticText closed by its classification (here a null subrole) has its
+  /// value withheld, which the record keeps as unread, never as known absent. A datalist row whose value held its label,
+  /// its value gone before the click with its title, handle and frame unchanged, is refused `labelChanged`, not pressed;
+  /// and it is no repeat of itself, since its value was never compared.
+  func testAWithheldStaticTextValueIsUnreadInTheRecord() throws {
+    let tree = FakeTree()
+    tree.children = [0: [1], 1: [2]]
+    tree.frames = [0: CGRect(x: 0, y: 0, width: 400, height: 300), 1: CGRect(x: 0, y: 0, width: 400, height: 300),
+                   2: CGRect(x: 10, y: 40, width: 200, height: 20)]
+    tree.extra = [2: ["AXRole": kAXStaticTextRole as CFString, "AXValue": "Paris" as CFString]]
+    tree.nullAttributes = [2: [kAXSubroleAttribute]]
+    let nodes = screenshotNodes(walk(tree, Lineage(), recordsScreenshot: true).screenshotReads)
+    let row = try XCTUnwrap(nodes.first { tree.id($0.element) == 2 })
+    XCTAssertNil(row.value, "the value itself is never kept")
+    XCTAssertEqual(row.label(.value), .unreadable)
+    let stale = StalePointReads<AXUIElement>(role: { tree.extra[tree.id($0)]?["AXRole"] as? String ?? "AXGroup" },
+                                             frame: { tree.frames[tree.id($0)] }, parent: { _ in nil }, children: { _ in nil },
+                                             title: { "node \(tree.id($0))" }, description: { _ in nil }, value: { _ in nil },
+                                             same: { CFEqual($0, $1) }, gone: { _ in false })
+    XCTAssertEqual(overlayIdentityRefusal(row, shift: .zero, reads: OverlayReads(stale: stale, enabled: { _ in .enabled })), .labelChanged)
+    XCTAssertFalse(overlayDuplicate(row, of: row))
+  }
 }

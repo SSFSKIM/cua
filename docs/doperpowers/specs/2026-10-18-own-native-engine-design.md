@@ -8442,6 +8442,23 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   (1 skipped), 0 failures; the release build passes on Xcode 27.2.
   Date/Author: 2026-11-23, cursor235's builder for #501.
 
+- Decision (#501, the review of cdb36ad3..7574c058, 2026-11-23; amends the entry above): a value the read withheld is
+  unread in the stale-point record, never known absent.
+  (P2) A null subrole now closes an AXStaticText. `classifiedData` then drops its AXValue and that slot's status. So the
+  record kept the value as `.text(nil)`, which means absent. Take a datalist or omnibox row whose value held its label.
+  If that value vanished before the click, with the title, handle and frame unchanged, #453's `overlayLabelsAgree`
+  matched the two nils and pressed. Before #501 it refused. A failed subrole had the same gap on main.
+  - The fix: `screenshotLabelsUnknown` puts the value in `labelsUnread` whenever `ElementData.valueUnread` is set (a
+    closed classification, or a source that reads no values). It goes in `labelsUnread` only, not `labelsNull`: the
+    value was not read, which is different from a null slot. The text itself is still never kept.
+  - The other readers of the record's labels go through `ScreenshotNode.label` and now treat this as a failed read:
+    `overlayDuplicate` is no repeat, `relabelledLabel` keeps, and #431's twin search agrees. `controlDiffers` reads no
+    value. The lenient `stalePointLabelsAgree` ignores the value by design, as it does an unread one.
+  Proven by `NullClassifyingSlotTests.testAWithheldStaticTextValueIsUnreadInTheRecord`. On 7574c058 it fails with 3
+  assertions: the row's identity check passes, so the row would be pressed. With the fix it refuses `labelChanged`.
+  1714 swift tests (1 skipped), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #501.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

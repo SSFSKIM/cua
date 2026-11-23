@@ -11,7 +11,10 @@
 // either engine. Every key or typing act goes under the key guard (the user window's case, or the driven scene in
 // front), and every typing act between two alert checks, as the method rows' do. The probe's keys are a user's to the
 // engine: before the run drives a scene the probe typed into, it waits the debounce out and observes it (./steps.mjs
-// quiet).
+// quiet). Every attempt whose act was sent records its front/key readings (./front-key.mjs, `frontKey`): the activate step
+// that put its window in front, the reading just before the act and one after its check; an attempt whose activation
+// did not take front and key sends no act, its readings saying so. The background cells' oracle reads the window order
+// around the act too (#485).
 import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {
@@ -22,7 +25,9 @@ import {
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
 import {typeIntoList} from './plan.mjs';
-import {activate, alertCheck, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop, userFront, waitQuiet} from './steps.mjs';
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
+import {activate, activated, activationOf, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, push, quiet, read, readKey, sendKeys, skippedReadings, Stop, userFront,
+  waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
 const USER_HASH = sha256Hex(PROBE_TEXT);
@@ -95,10 +100,12 @@ const failed = (r, what) => (!r?.ok ? `${what} failed${r?.error ? `: ${String(r.
 const detectionOff = act => (act?.engine?.intervention === 'off' ? 'intervention detection is off on the engine (no Input Monitoring grant): the cell cannot be judged' : null);
 
 // The user window in front with its typing field emptied and focused, read back by the focus probe. -> {userWindow,
-// reading} or {invalid}.
+// reading}, {skipped} (its activation did not take front and key) or {invalid}.
 async function userField(ctx, span, user) {
   const front = activate(ctx, user);
   if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
+  const app = SCENES[user].bundleId;
+  if (!activated(ctx, app)) return {skipped: {frontKey: skippedReadings(ctx, [app], app)}};
   const prepared = span.add(await ctx.lane.js(emptyFieldCell(user)));
   const problem = failed(prepared, 'the user window\'s preparation') ?? (prepared.value?.ready ? null : `the user window's field was not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
@@ -133,38 +140,47 @@ async function concurrentAttempt(ctx, driven, {lead, id, key}) {
   const prepared = span.add(await ctx.lane.js(concurrentPrepareCell(driven)));
   const unprepared = failed(prepared, 'the driven scene\'s preparation') ?? (prepared.value?.ready ? null : `the driven scene was not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (unprepared) return span.end({invalid: unprepared});
+  const userApp = SCENES[user].bundleId, apps = [SCENES[driven].bundleId, userApp];
   const field = await userField(ctx, span, user);
+  if (field.skipped) return span.end({frontKey: {...field.skipped.frontKey, apps}});
   if (field.invalid) return span.end(precondition(field));
   const {userWindow} = field;
   alertCheck(ctx, `before ${id}`);
   let before = null;
   const probe = await withKeystroke(ctx, {window: userWindow, scene: user}, async scheduled => {
     before = await userFront(ctx, user, userWindow);
-    if (!before) return null;
+    if (!before.inFront || !activated(ctx, userApp)) return null;
     // Finder type-selects in its list, which cua's read-back answers typeUnconfirmed (./plan.mjs typeIntoList, #354).
     const typing = driven === 'finder' ? typeIntoList(CONCURRENT_TYPING[driven]) : `await __app.typeText(${j(CONCURRENT_TYPING[driven])});`;
     const act = scheduledActCell(driven, {at: scheduled - preMs, act: typing, tag: 'concurrent.act'});
     return span.add(await sendKeys(ctx, act, ['typeText'], {scene: driven, front: before, userWindow, kind: 'row', key}));
   });
   const act = probe.result;
-  if (!before) return span.end({invalid: 'the user window was not in front before the action'});
+  if (!activated(ctx, userApp)) return span.end({frontKey: {...skippedReadings(ctx, apps, userApp), before: keyReading(before)}});
+  if (!before.inFront) return span.end({invalid: 'the user window was not in front before the action'});
   if (!act) return span.end({invalid: 'the key guard did not send the action'});
   alertCheck(ctx, `after ${id}`);
   if (!act.ok) return span.end({invalid: 'the act cell failed', error: act.error});
-  const after = read(ctx, focusOf(userWindow));
+  const after = read(ctx, focusOf(userWindow), {windowOrder: true});
   const check = span.add(await ctx.lane.js(concurrentCheckCell(driven)));
+  const frontKey = {apps, activate: activationOf(ctx, userApp), before: keyReading(before), after: readKey(ctx)};
   const interval = intervalOf(ctx.engine, act);
   const postedAt = probe.answer?.postedAt;
   const userLanded = after.focus?.named === true && after.focus.valueHash === USER_HASH;
   const drivenLanded = check.ok && check.value?.ok === true;
-  const row = {ok: drivenLanded && userLanded && !act.value.threw, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {drivenLanded, userLanded, threw: act.value.threw, errorName: act.value.errorName, ...timing(interval, postedAt, act), ...(check.value?.outcome ?? {})},
+  const row = {ok: drivenLanded && userLanded && !act.value.threw, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
+    outcome: {drivenLanded, userLanded, threw: act.value.threw, errorName: errorNameOf(act), ...timing(interval, postedAt, act), ...(check.value?.outcome ?? {})},
     ...(check.ok ? {} : {error: check.error})};
   const why = probeProblem(probe.answer) ?? postValidity(postedAt, interval);
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
-  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid}});
+  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid,
+    ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
+// The window-order oracle's data for a background attempt (./oracle.mjs judgeInterference, #485): the order read before
+// and after its act, the driven app's windows the targets, the user window by its number before the act.
+const windowOrderOf = (before, after, targets, userWindow) => ({order: {before: before.windowOrder ?? null, after: after.windowOrder ?? null}, targets,
+  userWindow: {pid: userWindow.pid, number: before.reading?.topWindow?.number ?? null}});
 // Where the post fell in the interval, for the evidence. -> {intervalSource, intervalMs, postOffsetMs, late}.
 const timing = (interval, postedAt, act) => ({intervalSource: interval?.source ?? null, intervalMs: interval ? interval.to - interval.from : null,
   postOffsetMs: interval && Number.isFinite(postedAt) ? postedAt - interval.from : null, late: act?.value?.late ?? null});
@@ -181,12 +197,14 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   const span = spanOf(ctx, key);
   await quiet(ctx, driven);
   await quiet(ctx, user);
+  const userApp = SCENES[user].bundleId, apps = [SCENES[driven].bundleId, userApp];
   const field = await userField(ctx, span, user);
+  if (field.skipped) return span.end({frontKey: {...field.skipped.frontKey, apps}});
   if (field.invalid) return span.end(precondition(field));
   const {userWindow} = field;
   const keys = async (code, names) => {
     const front = await userFront(ctx, user, userWindow);
-    return front ? span.add(await sendKeys(ctx, code, names, {scene: driven, front, userWindow, kind: 'row', key})) : null;
+    return front.inFront ? span.add(await sendKeys(ctx, code, names, {scene: driven, front, userWindow, kind: 'row', key})) : null;
   };
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
   if (!opened?.ok || opened.value?.opened !== true) {
@@ -204,19 +222,24 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   let before = null, opening = null;
   const probe = await withKeystroke(ctx, {window: userWindow, scene: user}, async scheduled => {
     before = await userFront(ctx, user, userWindow);
-    if (!before) return null;
+    if (!before.inFront || !activated(ctx, userApp)) { before = before.inFront ? before : null; return null; }
     opening = span.add(await sendKeys(ctx, sheetOpenCell({at: scheduled - preMs}), ['super+w'], {scene: driven, front: before, userWindow, kind: 'row', key}));
     // A click, not a key: sent without the key guard, whose reading would sit between the two actions.
     return opening?.ok ? span.add(await ctx.lane.js(sheetFollowCell({followAt: scheduled + SHEET_FOLLOW_MS}))) : null;
   });
   const follow = probe.result;
+  if (before && !activated(ctx, userApp)) {
+    await closeUntitled(ctx, keys);
+    return span.end({frontKey: {...skippedReadings(ctx, apps, userApp), before: keyReading(before)}});
+  }
   if (!opening?.ok || !follow?.ok) {
     await closeUntitled(ctx, keys);
     const what = !before ? 'the user window was not in front before super+w' : !opening ? 'the key guard did not send super+w' : !opening.ok ? 'the opening cell failed' : 'the follow-up cell failed';
     return span.end({invalid: what, ...((opening?.error ?? follow?.error) ? {error: opening?.error ?? follow?.error} : {})});
   }
-  const after = read(ctx, focusOf(userWindow));
+  const after = read(ctx, focusOf(userWindow), {windowOrder: true});
   const check = span.add(await ctx.lane.js(sheetCheckCell()));
+  const frontKey = {apps, activate: activationOf(ctx, userApp), before: keyReading(before), after: readKey(ctx)};
   if (!check.ok || check.value?.closed !== true || check.value?.sceneInFront !== true) {
     // A refused follow-up leaves the sheet up, a refused opening the dirty untitled document: once the debounce it may
     // have started is out, the untitled document's own cleanup closes either (its sheet's Delete, or super+w and then
@@ -227,9 +250,9 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   const receivedAt = ctx.engine === 'cua' ? follow.engine?.receivedAt : value.clickAt;
   const userLanded = after.focus?.named === true && after.focus.valueHash === USER_HASH;
   const ok = !opening.value.threw && value.opened === true && value.clicked === true && !value.threw && check.value?.closed === true && check.value?.sceneInFront === true && userLanded;
-  const row = {ok, inputRoute: opening.route, inputRoutes: {opening: opening.route, followUp: follow.route}, inCellMs: opening.value.actMs, wallMs: opening.wallMs,
+  const row = {ok, inputRoute: opening.route, inputRoutes: {opening: opening.route, followUp: follow.route}, inCellMs: opening.value.actMs, wallMs: opening.wallMs, frontKey,
     outcome: {sheetOpened: value.opened === true, openingThrew: opening.value.threw, followUpRefused: refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED),
-      followUpThrew: value.threw, errorName: value.errorName, sheetClosed: check.value?.closed === true, userLanded, ...timing(interval, postedAt, opening),
+      followUpThrew: value.threw, errorName: errorNameOf(follow), sheetClosed: check.value?.closed === true, userLanded, ...timing(interval, postedAt, opening),
       receiptAfterPostMs: Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? receivedAt - postedAt : null}};
   // No sheet came up, so nothing was followed up: the opening's own outcome is the sample's, its receipt unneeded.
   const why = probeProblem(probe.answer) ?? detectionOff(opening) ?? detectionOff(follow) ?? postValidity(postedAt, interval)
@@ -237,7 +260,8 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: opening.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
   const routes = [opened.route, typed.route, opening.route, follow.route];
-  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: routes, scene: driven, userPid: userWindow.pid}});
+  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: routes, scene: driven, userPid: userWindow.pid,
+    ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
 // The untitled document closed after a variant that stopped part-way. Once the debounce a probe of this attempt may have
 // started is out (its keys can be the user's to TextEdit too), the cleanup goes behind the user window; when that does
@@ -259,19 +283,25 @@ const cleanupSeen = r => (!r ? 'not sent' : !r.ok ? `the cell failed: ${String(r
 
 // ---- intervention fires ---------------------------------------------------------------------------------------------
 
-// TextEdit in front, its document emptied and focused, the window the probe is gated on. -> {window} or {invalid}.
+// TextEdit in front, its document emptied and focused, the window the probe is gated on; the front and key read with the
+// focus just before the act (the probe's scheduling between them changes neither). -> {window, readings}, {skipped} (its
+// activation did not take front and key) or {invalid}.
 async function drivenInFront(ctx, span, scene) {
   const front = activate(ctx, scene);
   if (!front?.ok) return {invalid: `${scene} did not come to the front`};
+  const app = SCENES[scene].bundleId;
+  if (!activated(ctx, app)) return {skipped: {frontKey: skippedReadings(ctx, [app], app)}};
   const prepared = span.add(await ctx.lane.js(emptyFieldCell(scene)));
   const problem = failed(prepared, 'the preparation') ?? (prepared.value?.ready ? null : `not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
   const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
   if (!window) return {invalid: `${scene}'s window was not in front`};
-  const f0 = read(ctx, focusOf(window));
+  const f0 = read(ctx, focusOf(window), {frontKey: true});
   if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the document focused and empty', focus: f0.focus ?? null};
-  return {window};
+  return {window, readings: {apps: [app], activate: activationOf(ctx, app), before: keyReading(f0)}};
 }
+// An attempt's front/key readings, the one after its act read now.
+const readingsAfter = (ctx, readings) => ({...readings, after: readKey(ctx)});
 // A typing act on the scene in front, between two alert checks. -> the act's result, or null when the guard skipped.
 async function typing(ctx, span, scene, code, {key, when}) {
   alertCheck(ctx, `before ${when}`);
@@ -288,6 +318,7 @@ async function firesAttempt(ctx, {lead, id, key}) {
   const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const driven = await drivenInFront(ctx, span, scene);
+  if (driven.skipped) return span.end(driven.skipped);
   if (driven.invalid) return span.end(precondition(driven));
   const {window} = driven;
   const probe = await withKeystroke(ctx, {window, scene},
@@ -297,9 +328,10 @@ async function firesAttempt(ctx, {lead, id, key}) {
   const interval = intervalOf(ctx.engine, act), postedAt = probe.answer?.postedAt;
   const fired = refusedWith(act.value, USER_CHANGED);
   const base = {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {fired, errorName: act.value.errorName, message: act.value.message ?? null, entered: act.engine?.entered ?? null, ...timing(interval, postedAt, act)}};
+    outcome: {fired, errorName: errorNameOf(act), message: act.value.message ?? null, entered: act.engine?.entered ?? null, ...timing(interval, postedAt, act)}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? postValidity(postedAt, interval);
-  if (why) return span.end({...base, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
+  if (why) return span.end({...base, ok: false, invalid: why, frontKey: readingsAfter(ctx, driven.readings)},
+    {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   // The debounce out (no observation of TextEdit meanwhile, which would clear the flag): the next action refused with
   // nothing posted (the document's hash, read by the focus probe, unchanged), then a get_app_state, then the same action.
   await waitQuiet(ctx, scene);
@@ -310,9 +342,9 @@ async function firesAttempt(ctx, {lead, id, key}) {
   delete ctx.posted[scene];
   const again = await typing(ctx, span, scene, scheduledActCell(scene, {act: 'await __app.typeText("x");', tag: 'intervention.again'}), {key, when: `${id} again`});
   const landed = span.add(await ctx.lane.js(endsWithCell(scene, 'x')));
-  const outcome = {...base.outcome, refusedNext: next?.ok === true && refusedWith(next.value, USER_CHANGED), nextErrorName: next?.value?.errorName ?? null, nextMessage: next?.value?.message ?? null,
+  const outcome = {...base.outcome, refusedNext: next?.ok === true && refusedWith(next.value, USER_CHANGED), nextErrorName: errorNameOf(next), nextMessage: next?.value?.message ?? null,
     nothingPosted: h1 !== null && h1 === h2, requeried: requeried.ok === true, againLanded: again?.ok === true && !again.value.threw && landed.value?.landed === true};
-  return span.end({...base, ok: fired && outcome.refusedNext && outcome.nothingPosted && outcome.requeried && outcome.againLanded, outcome});
+  return span.end({...base, ok: fired && outcome.refusedNext && outcome.nothingPosted && outcome.requeried && outcome.againLanded, outcome, frontKey: readingsAfter(ctx, driven.readings)});
 }
 
 // ---- the pre-action refusal -----------------------------------------------------------------------------------------
@@ -324,17 +356,18 @@ async function preActionAttempt(ctx, {lead, id, key}) {
   const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const driven = await drivenInFront(ctx, span, scene);
+  if (driven.skipped) return span.end(driven.skipped);
   if (driven.invalid) return span.end(precondition(driven));
   const {window} = driven;
   const probe = await withKeystroke(ctx, {window, scene},
     scheduled => typing(ctx, span, scene, scheduledActCell(scene, {at: scheduled + delay, act: 'await __app.typeText("x");', tag: 'preaction.act'}), {key, when: id}));
   const act = probe.result;
   if (!act?.ok) return span.end({invalid: act ? 'the act cell failed' : 'the key guard did not send the action', ...(act?.error ? {error: act.error} : {})});
-  const after = read(ctx, focusOf(window));
+  const after = read(ctx, focusOf(window), {frontKey: true});
   const postedAt = probe.answer?.postedAt, receivedAt = ctx.engine === 'cua' ? act.engine?.receivedAt : act.value.callAt;
   const refused = refusedWith(act.value, STILL_INTERACTING), nothingPosted = after.focus?.named === true && after.focus.valueHash === USER_HASH;
-  const row = {ok: refused && nothingPosted, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {refused, errorName: act.value.errorName, message: act.value.message ?? null, nothingPosted, hidIdleMs: act.engine?.hidIdleMs ?? null,
+  const row = {ok: refused && nothingPosted, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey: {...driven.readings, after: keyReading(after)},
+    outcome: {refused, errorName: errorNameOf(act), message: act.value.message ?? null, nothingPosted, hidIdleMs: act.engine?.hidIdleMs ?? null,
       receiptAfterPostMs: Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? receivedAt - postedAt : null}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? receiptValidity({engine: ctx.engine, postedAt, receivedAt: act.engine?.receivedAt, callAt: act.value.callAt});
   // A receipt before the post is answered by a later call; one past the debounce by an earlier one.
@@ -364,6 +397,8 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   await quiet(ctx, scene);
   const front = activate(ctx, scene);
   if (!front?.ok) return span.end({invalid: `${scene} did not come to the front`});
+  const app = SCENES[scene].bundleId;
+  if (!activated(ctx, app)) return span.end({frontKey: skippedReadings(ctx, [app], app)});
   const keys = async (code, names) => span.add(await sendKeys(ctx, code, names, {scene, front: read(ctx), kind: 'row', key}));
   const cleanup = () => closeSaveSheet(ctx, keys);
   const unprepared = invalid => span.end({invalid}, {cleanup});
@@ -382,8 +417,10 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
     return span.end({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'})`,
       ...(observed ? {outcome: {observed}} : {})}, {cleanup});
   }
-  const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
+  const ready = read(ctx, null, {frontKey: true});
+  const window = userWindowOf(ready.reading, ctx.records[scene].pid);
   if (!window) return unprepared(`${scene}'s window was not in front`);
+  const readings = {apps: [app], activate: activationOf(ctx, app), before: keyReading(ready)};
   alertCheck(ctx, `before ${id}`);
   // A set_value posts no key, so it goes without the key guard, as the sheet variant's follow-up click does.
   const probe = await withKeystroke(ctx, {window, scene}, async scheduled => span.add(await ctx.lane.js(saveSheetActCell({at: scheduled - preMs}))));
@@ -392,6 +429,7 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   const check = act?.ok ? span.add(await ctx.lane.js(SAVE_SHEET_CHECK_CELL)) : null;
   if (!act?.ok) return span.end({invalid: 'the act cell failed', ...(act?.error ? {error: act.error} : {})}, {cleanup});
   if (!check?.ok) return span.end({invalid: 'the sheet could not be read after the act', ...(check?.error ? {error: check.error} : {})}, {cleanup});
+  const frontKey = readingsAfter(ctx, readings);
   const cua = ctx.engine === 'cua';
   const {value} = act, postedAt = probe.answer?.postedAt;
   const receivedAt = cua ? act.engine?.receivedAt : value.callAt;
@@ -405,9 +443,9 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   const files = Array.isArray(check.value?.destinationFiles) ? check.value.destinationFiles : null;
   const destinationEmpty = files !== null && files.length === 0;
   const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
-  const row = {ok: sheetOpen && destinationEmpty && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route,
+  const row = {ok: sheetOpen && destinationEmpty && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
     outcome: {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
-      threw: value.threw, errorName: value.errorName, message: value.message ?? null, leadMs: preMs,
+      threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, leadMs: preMs,
       postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt: Number.isFinite(receivedAt) ? receivedAt : null, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
       postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (cua ? responseWindowValidity(postedAt, receivedAt, value.endAt) : postValidity(postedAt, intervalOf(ctx.engine, act)));

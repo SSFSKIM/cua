@@ -9,13 +9,16 @@
 //            with the steps it states (`prepared`, ./plan.mjs) and its field's focus reading (`focus`) when it has them
 //   act      exactly one facade call, so the act's `_meta` carries that call's route; the device clock around it
 //            (`at`, attributing the activations watcher's events to the row) and the call's own time (`actMs`)
-//   check    observes and returns {ok, outcome}, or {invalid} when the case was not prepared
+//   check    observes and returns {ok, outcome}, or {invalid} when the case was not prepared; an outcome case whose act
+//            threw also records `effect` (its own check read the intended effect all the same) and `unchanged` (its
+//            target's watched state, ./plan.mjs WATCHED, read once the prepare was ready, read the same again), the
+//            readings the judge's conservative-answer rule needs (./answers.mjs conservativeEffect)
 // The cells reach the scene through `globalThis.__apps[<scene>]`, bound by path by the run (./goldens-cells.mjs BIND).
 import {cell} from '../native-baseline/cells.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {indexOfRowCell} from '../repl-parity/scenes-mac-text.mjs';
 import {EMBEDDED} from './matrix-text.mjs';
-import {SCENE_OF} from './plan.mjs';
+import {SCENE_OF, WATCHED} from './plan.mjs';
 
 const j = JSON.stringify;
 // The secondary action no element advertises: performing it resolves the element's index on either engine and does
@@ -60,11 +63,13 @@ const jpegSize = shot => {
 // The three cells of a case on the target `target` (a scene, 'openPanel' or 'windowless'). -> {prepare, act, check}.
 export function caseCells(target, c) {
   const head = prelude(SCENE_OF[target]);
+  const watched = WATCHED[target] && c.expect === 'outcome' ? `JSON.stringify((ax => (${WATCHED[target]}))(await observe()))` : null;
   return {
     prepare: cell(`${head}
 const __m = globalThis.__m = {ready: false, threw: null, prepared: []};
 const __r = await (async () => {${c.prepare}\n})();
 __m.ready = __r?.ready === true;
+${watched ? `if (__m.ready) __m.watched = ${watched};` : ''}
 const __prepared = [...__m.prepared, ...(Array.isArray(__r?.prepared) ? __r.prepared : [])].map(s => String(s).slice(0, 80));
 const __stated = {...(__m.ready && __m.focus ? {focus: __m.focus} : {}), ...(__prepared.length ? {prepared: __prepared} : {})};
 return __m.ready ? {ready: true, ...__stated} : {ready: false, reason: String(__r?.reason ?? "not ready").slice(0, 200), ...__stated};`),
@@ -81,8 +86,11 @@ return {actMs, at: [__from, Date.now()], threw: __m.threw !== null};`),
 const __m = globalThis.__m;
 if (!__m?.ready) return {invalid: "the case was not prepared"};
 const __r = await (async () => {${c.check}\n})();
-${c.expect === 'outcome' ? `// An outcome case whose action threw fails, whatever the state reads.
-if (__m.threw !== null) return {ok: false, outcome: {...(__r?.outcome ?? {}), threw: __m.threw, errorName: __m.errorName}};` : ''}
+${c.expect === 'outcome' ? `// An outcome case whose action threw fails, whatever the state reads; what it read is kept for the judge.
+if (__m.threw !== null) {
+  ${watched ? `const __unchanged = typeof __m.watched === "string" && ${watched} === __m.watched;` : ''}
+  return {ok: false, outcome: {...(__r?.outcome ?? {}), effect: __r?.ok === true, ${watched ? 'unchanged: __unchanged, ' : ''}threw: __m.threw, errorName: __m.errorName}};
+}` : ''}
 return __r;`),
   };
 }

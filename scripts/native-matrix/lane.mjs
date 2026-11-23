@@ -76,11 +76,16 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
 // (`cua/activationClick`: "posted", or why it was skipped) when the service passes them on; on the paste route its
 // value-free diagnostics (`cua/paste`, #187: which wait ended it, the read's time against ⌘V, the key focus at ⌘V); on
 // an element click its plan, the ladder's reason and the hit-test's answer (`cua/elementClick`, #188). An observation's
-// `cua/observation` names the focused element by index and role (#188), which ./plan.mjs focusVerdict reads.
-// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick, paste, elementClick}, each null when absent.
+// `cua/observation` names the focused element by index and role (#188), which ./plan.mjs focusVerdict reads. `cua/errorName`
+// is the engine's own name for the error a failed call threw (backgroundClickRefused, typeUnconfirmed, …), which the REPL's
+// boundary drops from the error a cell catches (the trusted worker returns a rejection's message alone, and the kernel
+// rejects with a plain Error): the rows record it as `outcome.errorName` where it is present (./steps.mjs errorNameOf).
+// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick, paste, elementClick,
+// interruption, errorName}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
   ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation'], ['activationGuardMs', 'cua/activationGuardMs'],
-  ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick'], ['interruption', 'cua/interruption']].map(([key, name]) => [key, meta?.[name] ?? null]));
+  ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick'], ['interruption', 'cua/interruption'],
+  ['errorName', 'cua/errorName']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
@@ -160,8 +165,14 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
       const at = [clock(), clock()];
       switch (args[0]) {
         case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry'};
-        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
-          ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {})};
+        case 'read': {
+          const also = args.includes('--with') ? args[args.indexOf('--with') + 1].split(',') : [];
+          return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
+            ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {}),
+            ...(also.includes('front-key') ? {frontKey: {front: front?.bundleId ?? null, key: front?.bundleId ?? null}} : {}),
+            ...(also.includes('window-order') ? {windowOrder: [front, ...Object.values(records).filter(r => r !== front)].filter(Boolean)
+              .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {})};
+        }
         case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
         case 'electron-counters': return {answer: {seq: 0, at: 0, counts: {appDidBecomeActive: 0, appDidResignActive: 0}}, at};
         case 'probe': {
@@ -185,7 +196,8 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
             'per-context': {perContext: args[args.indexOf('--value') + 1] === 'on'}, restore: {sourceRestored: true, perContextRestored: true}}[args[1]] ?? {}, at};
         case 'step':
           if (args[1] === 'activate') { front = records[args[2]] ?? front; focusHash = sha256Hex(''); }
-          return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at};
+          return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at,
+            ...(args[1] === 'activate' ? {frontKey: {front: front?.bundleId ?? null, key: front?.bundleId ?? null}} : {})};
         case 'alerts': return args[1] === 'baseline' ? {baseline: 0} : {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}}, at};
         case 'launched':
           if (args[1] === 'intent') return {at: clock(), pids: []};
@@ -212,7 +224,8 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
 export function dryConnect({log, engine, host, clock = Date.now}) {
   return () => {
     const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, threw: false,
-      targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}, typed: true, clicked: true, sceneInFront: true, landed: true, observed: true, hash: sha256Hex(''), length: 0};
+      targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}, typed: true, clicked: true, sceneInFront: true, landed: true, observed: true, hash: sha256Hex(''), length: 0,
+      target: 'scene-file-007', finderSelected: true, documentUnchanged: true};
     const meta = {'cua/nativeEngine': {engine, version: '0.0.0', build: engine === 'cua' ? 'd'.repeat(64) : '26.0-dry'}, ...(host === 'cua' ? {'cua/replHost': {host: 'cua'}} : {})};
     return {
       initialize: async () => ({serverInfo: {name: host === 'cua' ? 'cua-repl-host' : 'dry'}}),

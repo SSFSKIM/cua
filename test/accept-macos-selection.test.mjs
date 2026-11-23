@@ -12,6 +12,8 @@ import {FALLBACK_HOMES, HOMES, PRE_MINIMUM_VERSION, approvedHomeProblem, default
 import {FIXTURE_ENGINE} from '../scripts/probe/fixture-engine.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
+import {BUNDLE_ID} from '../src/runtime/engine-bundle.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/client.mjs';
 
 test('the homes: the default one with an approved engine at the minimum, and the three fallbacks of sitting E', () => {
   assert.deepEqual(Object.keys(HOMES), ['default', 'none', 'node', 'outdated']);
@@ -68,12 +70,13 @@ test('the default home passes only when doctor says the default selected cua\'s 
   assert.deepEqual(sittingVerdict(short), {pass: false, homes: {default: null, none: null, node: 'not run', outdated: null}});
 });
 
-test('the fixture lane records the synthetic bundle\'s inspection; the approved lane requires it to pass and names its failure apart from the selection', () => {
+test('the fixture lane records the synthetic bundle\'s inspection; the approved lane rejects a failed one, named apart from the selection', () => {
   const failedInspection = selected({status: 'fail', detail: 'the approved cua Engine.app at /x … but it is not cua\'s engine (bundle id io.github.ssfskim.cua.fixture-engine), so doctor does not launch it'});
   assert.equal(defaultHomeProblem(failedInspection), null, 'the fixture lane is a selection check');
   assert.equal(defaultHomeProblem(failedInspection, {lane: 'approved'}),
     'the default selected cua\'s engine on cua\'s host, but doctor\'s inspection of the approved bundle is fail: the approved cua Engine.app at /x … but it is not cua\'s engine (bundle id io.github.ssfskim.cua.fixture-engine), so doctor does not launch it');
-  assert.equal(defaultHomeProblem(selected(), {lane: 'approved'}), null);
+  assert.equal(defaultHomeProblem(selected(), {lane: 'approved'}), 'the approved lane judges the bundle against this checkout\'s engine build, and none was given');
+  assert.equal(defaultHomeProblem(selected(), {lane: 'approved', sourceBuild: 'b'.repeat(64)}), 'cua doctor --json reports no inspection of the approved bundle', 'a pass row alone is not the inspection');
   assert.equal(defaultHomeProblem(doctor('vendor', 'default', {status: 'skip'}), {lane: 'approved'}), 'the session selects vendor (default), not cua\'s engine by default', 'a wrong selection is named as one');
   assert.equal(sittingVerdict({default: failedInspection}, {lane: 'approved'}).homes.default.startsWith('the default selected cua\'s engine on cua\'s host, but doctor\'s inspection'), true);
   assert.equal(defaultHomeProblem(selected(), {lane: 'hosted'}), 'no lane hosted: fixture or approved');
@@ -125,4 +128,62 @@ test('the mode\'s verdict against production\'s selection: PASS since the macOS 
   assert.deepEqual(sittingVerdict(reports), {pass: true, homes: {default: null, none: null, node: null, outdated: null}});
   assert.deepEqual(Object.fromEntries(Object.entries(reports).map(([kind, report]) => [kind, [report.engine.selected, report.engine.reason]])),
     {default: ['cua', 'default'], none: ['vendor', 'engine_not_installed'], node: ['vendor', 'own_host_node_unavailable'], outdated: ['vendor', 'engine_outdated']});
+});
+
+// The approved lane on production doctor's own engine row: the bundle the hosted job builds (`--sign adhoc`) and
+// approves, inspected as doctor inspects it, launched to read its grants and stopped. Only the default engine is
+// injected (cua's), so the row is the one a default session gets wherever the flip stands; inspectEngine's facts are
+// the seam, each case changing one of them.
+const SOURCE = 'b'.repeat(64);
+const STATUS = {socket: '/runner/_temp/h/Library/Application Support/cua/engine/engine.sock', pid: 4242, bundlePath: BUNDLE, build: SOURCE,
+  accessibility: true, screenRecording: true, inputMonitoring: true, canPostHid: true, routes: {}, routeAdvice: [], cursor: 'on'};
+const HEALTHY = {bundlePath: BUNDLE, exists: true, engineVersion: MIN_ENGINE_VERSION, build: SOURCE, bundleId: BUNDLE_ID, signature: {kind: 'adhoc', identityMatches: null},
+  approved: true, approvedBuild: SOURCE, approvedAt: '2026-11-23T00:00:00Z', pending: null, running: false, status: STATUS, statusError: null, launch: {pid: 4242, stopped: true}};
+async function approvedDoctor(t, change = {}, {sourceBuild = SOURCE} = {}) {
+  const cuaHome = mkdtempSync(join(tmpdir(), 'cua-default-selection-'));
+  t.after(() => rmSync(cuaHome, {recursive: true, force: true}));
+  const facts = {...HEALTHY, ...change, status: change.status === null ? null : {...STATUS, ...change.status}};
+  const app = {bundlePath: BUNDLE, engineVersion: MIN_ENGINE_VERSION, build: SOURCE};
+  return inspectRuntime({home: cuaHome, env: {HOME: '/runner/home', PATH: '/usr/bin:/bin'}, host: {platform: 'darwin', arch: 'arm64'},
+    verifySignatures: async () => [], inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
+    inspectChrome: async () => [], inspectAgent: async () => [], resolveOwnNode: () => NODE24,
+    engine: {defaultEngine: 'cua', installed: () => app, pending: () => null, sourceBuild: () => sourceBuild, location: () => null, config: () => ({})},
+    inspectEngine: async () => facts, readEngineRecords: () => ({bundlePath: BUNDLE, exists: true, approved: {build: SOURCE, approvedAt: null}, pending: null})});
+}
+const engineRow = report => report.checks.find(check => check.name === 'engine');
+const approvedProblem = report => defaultHomeProblem(report, {lane: 'approved', sourceBuild: SOURCE});
+
+test('the approved lane on doctor\'s own row: a healthy ad-hoc bundle passes through the ad-hoc warning; an inspection failure, a missing grant or another warning fails', async t => {
+  const healthy = await approvedDoctor(t);
+  assert.equal(engineRow(healthy).status, 'warn', 'doctor warns on every ad-hoc signature');
+  assert.match(engineRow(healthy).detail, /signed ad hoc/);
+  assert.equal(approvedProblem(healthy), null);
+  assert.equal(sittingVerdict({default: healthy}, {lane: 'approved', sourceBuild: SOURCE}).homes.default, null);
+  assert.notEqual(defaultHomeProblem(healthy, {lane: 'approved', sourceBuild: 'c'.repeat(64)}), null);
+  assert.match(defaultHomeProblem(healthy, {lane: 'approved', sourceBuild: 'c'.repeat(64)}), /^the approved bundle is build b{64}, running build b{64}, not this checkout's \(c{64}\)$/);
+
+  // a failed inspection: a required grant missing, the socket answered by another build, no engine read
+  const noAccessibility = await approvedDoctor(t, {status: {accessibility: false}});
+  assert.equal(engineRow(noAccessibility).status, 'fail');
+  assert.match(approvedProblem(noAccessibility), /^the default selected cua's engine on cua's host, but doctor's inspection of the approved bundle is fail: .*Accessibility not granted/);
+  const otherBuild = await approvedDoctor(t, {running: true, launch: null, status: {build: 'd'.repeat(64)}});
+  assert.match(approvedProblem(otherBuild), /inspection of the approved bundle is fail: .*is not this bundle/);
+  const unread = await approvedDoctor(t, {launch: null, status: null});
+  assert.match(approvedProblem(unread), /inspection of the approved bundle is fail: .*grants are unread/);
+
+  // a warning other than the ad-hoc signature's
+  const noInputMonitoring = await approvedDoctor(t, {status: {inputMonitoring: false}});
+  assert.equal(engineRow(noInputMonitoring).status, 'warn');
+  assert.equal(approvedProblem(noInputMonitoring), 'cua Engine lacks Input Monitoring, which the hosted approval grants');
+  const replaced = await approvedDoctor(t, {launch: {pid: 4242, replaced: true, detail: 'pid 5151 answered'}});
+  assert.equal(engineRow(replaced).status, 'warn');
+  assert.equal(approvedProblem(replaced), 'doctor\'s launch of the approved bundle did not end cleanly: pid 5151 answered');
+  const unstopped = await approvedDoctor(t, {launch: {pid: 4242, error: 'kill: no such process'}});
+  assert.equal(approvedProblem(unstopped), 'doctor\'s launch of the approved bundle did not end cleanly: kill: no such process');
+  const advised = await approvedDoctor(t, {status: {routeAdvice: ['com.apple.TextEdit']}});
+  assert.equal(engineRow(advised).status, 'warn');
+  assert.equal(approvedProblem(advised), 'doctor\'s engine row warns, route 3 advice for com.apple.TextEdit');
+  const identity = await approvedDoctor(t, {signature: {kind: 'identity', identityMatches: false}});
+  assert.equal(engineRow(identity).status, 'warn');
+  assert.match(approvedProblem(identity), /^doctor's engine row warns, and the bundle is not signed ad hoc \(the one warning this lane expects\): /);
 });

@@ -9,12 +9,15 @@
 //       the two window readers (scripts/accept/front-window.swift, ./system-windows.swift) compiled once into the run
 //       directory and reused by every read after (an interpreted read costs seconds)
 //   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>] [--approved-runtime <home> --approved-engine <bundle>]
-//        [--electron-mode latest]
+//        [--electron-mode latest] [--with front-key,window-order]
 //       the oracle's reading (./oracle.mjs ownedReading): the frontmost application and the top on-screen window, the
 //       run's processes by pid and any other application by bundle id only; whether the activation watcher <pid> still
 //       runs (`watch-activations` of the approved bundle), so a row's coverage is proven at both its ends; with --focus,
 //       the approved bundle's `--probe focus` naming that window (one of the run's); with --electron-mode, the Electron
-//       fixture's accessibility mode as its record last showed it, {enabled, at} or null (read after the window closes)
+//       fixture's accessibility mode as its record last showed it, {enabled, at} or null (read after the window closes);
+//       with front-key, the front and key applications' bundle ids (./front-key.mjs: the key from the focus probe, the
+//       --focus one when given, else one naming no window); with window-order, every on-screen window front to back, the
+//       run's own by pid and number, any other by bundle id and layer only (the window-order oracle, #485)
 //   electron-mode --run <dir>
 //       the Electron fixture's whole accessibility record (its app.isAccessibilitySupportEnabled readings, written to
 //       the scene's user-data directory: fixtures/electron/main.js), each line kept as {at, enabled, source} only
@@ -24,7 +27,8 @@
 //       did-resign-active, the window's, the page's and the text field's focus and blur), read from the scene's user-data
 //       directory -> {answer: {seq, at, counts} | null, at}; null while no Electron scene is up or it wrote none
 //   step <scenes-mac.mjs arguments>
-//       one scenes command (activate, down) timed on the device clock -> {answer, at}
+//       one scenes command (activate, down) timed on the device clock -> {answer, at}; an activation also answers its own
+//       check (activationCheck), `frontKey` {front, key}: the bundle ids then front and key, inside the step's window
 //   alerts baseline|check --run <dir>
 //       the paste rows' system-alert watch (./live-checks.mjs alertWatch, the live paste check's): the screen's windows
 //       at the baseline kept in the run directory (numbers and owners only), then each check against it -> {abort, export}
@@ -49,7 +53,7 @@
 //       journal names quit as it appears until none has appeared for 3 s, then the intents cleared; one still appearing
 //       after 20 s keeps its intent -> {quit, remaining, pending, waitedMs}. The run and `native-matrix.mjs cleanup`
 //       call it after the recovery, so a controller that died before the launched app appeared never strands it.
-//   probe keystroke --run <dir> --window <pid,x,y,w,h> --text <letters> --lead <ms> [--mode ansiKeys]
+//   probe keystroke --run <dir> --window <pid,x,y,w,h> --text <letters, digits, inner dashes> --lead <ms> [--mode ansiKeys]
 //   probe input-source --run <dir> --source <id> --lead <ms>
 //       a scheduled probe (UserProbe's `keystroke --at`, `input-source --at`) launched now with its time `--lead` ms
 //       ahead on this clock, and not awaited: the action it must fall inside is sent meanwhile. A keystroke is gated on
@@ -147,20 +151,27 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // panel, #235, which never takes a key or the front) are passed over, as the keystroke probe's gate and the composition
 // guard pass over them: the processes running from `approvedEngine` (bundlePids, read before the reading opens) are
 // skipped by the front-window probe, so a transient ordering never makes the panel the oracle's front window.
+// With `frontKey`, the front application (the front-window probe's lsappinfo reading) and the key one (the system-wide
+// focused application, the focus probe's), each a bundle id or null when unread (./front-key.mjs). With `windowOrder`,
+// the on-screen windows front to back (windowOrderOf). Both inside the reading's `at`.
 // io: {enginePids(bundles), frontWindow({skipPids}), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids),
-// electronRecord()}.
-export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false}, io) {
+// electronRecord(), windows()}.
+export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false, frontKey = false, windowOrder = false}, io) {
   const skipPids = approvedEngine ? io.enginePids([approvedEngine]) : [];
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
   const raw = io.frontWindow({skipPids});
   const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
   const unownedTop = out.reading.topWindow?.owned === false ? {pid: raw.topWindow.ownerPid} : null;
+  let report = null;
   if (focus !== null) {
     if (!/^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/.test(focus)) throw new Error('--focus needs pid,x,y,w,h');
     if (!owned.includes(Number(focus.split(',')[0]))) throw new Error('--focus names a window of a process the run does not own');
-    out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned, windowOf(focus));
+    report = io.probe(['focus', '--window', focus]);
+    out.focus = ownedFocus(report, owned, windowOf(focus));
   }
+  if (frontKey) out.frontKey = {front: bundleOf(raw?.frontmost?.bundleId), key: keyOf(report ?? unnamedFocus(io))};
+  if (windowOrder) out.windowOrder = windowOrderOf(io.windows(), owned, skipPids);
   const at = [from, Date.now()];
   if (unownedTop) out.reading.topWindow.engine = engineOwns(unownedTop.pid, [approvedRuntime, approvedEngine], io);
   if (electronMode) {
@@ -168,6 +179,35 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
     out.electronMode = latest && {enabled: latest.enabled, at: latest.at};
   }
   return {...out, at};
+}
+
+// A bundle id as it may leave the device, or null.
+const bundleOf = value => (typeof value === 'string' && value.length > 0 && value.length <= 255 ? value : null);
+// The focus probe naming no window: the system-wide focused application, or null when the probe failed.
+const unnamedFocus = io => { try { return io.probe(['focus']); } catch { return null; } };
+const keyOf = report => bundleOf(report?.focusedApp?.bundleId);
+// The on-screen windows front to back (./system-windows.swift, every layer) as they may leave the device: the run's own
+// by pid, number, bundle id and layer; any other application's by its bundle id and layer only, never its pid, number,
+// bounds or title; the engine under test's own windows (`skipPids`: the agent cursor's panel) passed over, as the front
+// window's reading passes them. -> [{owned, pid?, number?, bundleId, layer}].
+export function windowOrderOf(windows, owned, skipPids = []) {
+  const mine = new Set(owned), skip = new Set(skipPids);
+  return (windows ?? []).filter(w => !skip.has(w.ownerPid)).map(w => (mine.has(w.ownerPid)
+    ? {owned: true, pid: w.ownerPid, number: w.number ?? null, bundleId: bundleOf(w.ownerBundleId), layer: w.layer ?? 0}
+    : {owned: false, bundleId: bundleOf(w.ownerBundleId), layer: w.layer ?? 0}));
+}
+
+// The activate step's own check (./front-key.mjs `activate`; rulings 1136 and 1141): after the scenes command activated
+// `app`, the front and key applications read (bundle ids, null when unread), again up to `reads` times `waitMs` apart while
+// either is not `app`, since the system's focused application follows the front one asynchronously. -> {front, key}.
+export async function activationCheck(app, io, {reads = 4, waitMs = 250} = {}) {
+  let seen = {front: null, key: null};
+  for (let n = 0; n < reads; n++) {
+    if (n) await io.sleep(waitMs);
+    seen = {front: bundleOf(io.frontWindow({})?.frontmost?.bundleId), key: keyOf(unnamedFocus(io))};
+    if (seen.front === app && seen.key === app) break;
+  }
+  return seen;
 }
 
 // The Electron fixture's accessibility record, parsed (./residue-checks.mjs parseAccessibilityRecord) and kept to its
@@ -230,7 +270,8 @@ export function probeStart({kind, window, text, mode, id, lead}, io) {
     if (!WINDOW_ARG.test(window ?? '')) throw new Error('--window needs pid,x,y,w,h');
     const [pid, ...bounds] = window.split(',');
     if (!ownedPids(io.state(), io.launched()).includes(Number(pid))) throw new Error('--window names a window of a process the run does not own');
-    if (!/^[A-Za-z0-9]{1,16}$/.test(text ?? '')) throw new Error('--text is a few letters or digits');
+    // Letters and digits, dashes inside (Acceptance 3's witness types a run-owned file's name), never a leading one.
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,15}$/.test(text ?? '')) throw new Error('--text is a few letters or digits, dashes inside');
     if (mode !== undefined && mode !== 'ansiKeys') throw new Error('--mode is ansiKeys or absent');
     args = ['keystroke', ...(mode === 'ansiKeys' ? ['--ansi-keys'] : []), '--user-pid', pid, '--user-bounds', bounds.join(',')];
   } else if (kind === 'input-source') {
@@ -471,6 +512,8 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
+// The readings `read --with` adds.
+const READ_WITH = Object.freeze(['front-key', 'window-order']);
 const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
@@ -496,12 +539,21 @@ export async function main(argv, {io: given = {}} = {}) {
   const roots = {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null};
   switch (command) {
     case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir))};
-    case 'read':
+    case 'read': {
       if (flags['electron-mode'] !== undefined && flags['electron-mode'] !== 'latest') throw new Error('--electron-mode latest is the one reading');
-      return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest', ...roots}, io);
+      const also = flags.with === undefined ? [] : flags.with.split(',');
+      if (also.some(w => !READ_WITH.includes(w))) throw new Error(`--with names readings of ${READ_WITH.join(', ')}`);
+      return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest',
+        frontKey: also.includes('front-key'), windowOrder: also.includes('window-order'), ...roots}, io);
+    }
     case 'electron-mode': return electronModeRecord(io);
     case 'electron-counters': return timed(() => electronCountersIn(dir));
-    case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
+    case 'step': {
+      const from = Date.now();
+      const answer = await (io.scenes ?? scenesMain)(argv.slice(1));
+      const frontKey = positional[0] === 'activate' && SCENES[positional[1]] ? await activationCheck(SCENES[positional[1]].bundleId, io) : null;
+      return {answer, at: [from, Date.now()], ...(frontKey ? {frontKey} : {})};
+    }
     case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
     case 'launched':
       if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);

@@ -329,8 +329,13 @@ test('probe start and finish: a scheduled keystroke or switch launched on the ru
     assert.throws(() => probeStart({kind: 'keystroke', window: '99,0,25,900,700', text: 'qz', lead: 3000}, io), /does not own/, 'a keystroke is gated only on the run\'s own window');
     assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 90_000}, io), /--lead/);
     assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'q z', lead: 3000}, io), /text/);
+    // Acceptance 3's witness types a run-owned file's name (dashes inside it), never something the probe could read as a flag.
+    assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: '--at', lead: 3000}, io), /text/);
     assert.throws(() => probeStart({kind: 'focus', lead: 3000}, io), /keystroke or input-source/);
     assert.equal(launched.length, 4, 'nothing launched on a refusal');
+    probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'scene-file-007', lead: 1500}, io);
+    assert.equal(launched[4].at(-1), 'scene-file-007');
+    probeFinish(io);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
@@ -410,5 +415,71 @@ test('Electron\'s accessibility mode: a read given --electron-mode returns the f
     writeState(dir, {scenes: {}});
     assert.deepEqual(await main(['electron-mode', '--run', dir]), {records: null}, 'the scene is down: nothing to read');
     await assert.rejects(main(['read', '--run', dir, '--electron-mode', 'yes']), /--electron-mode latest/);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+// T10b′ (the M5 wave-1 record): the front/key readings (./front-key.mjs's contract) and the window order (#485).
+test('read: front and key as bundle ids when asked, the key from the focus probe (the --focus one reused), and nothing else of another app', () => {
+  const probed = [];
+  const io = {state: () => state, launched: () => [], watcherRuns: () => true,
+    frontWindow: () => ({at: 5, frontmost: {pid: 99, bundleId: 'com.apple.UserNotificationCenter'}, topWindow: {ownerPid: 7, number: 3, bounds, onScreen: true}}),
+    probe: args => { probed.push(args); return {focusedApp: {pid: 98, bundleId: 'com.example.key'}, focusedWindow: {pid: 98, bounds}, named: false, valueHash: null}; }};
+  const r = read({watcher: 900, frontKey: true}, io);
+  assert.deepEqual(r.frontKey, {front: 'com.apple.UserNotificationCenter', key: 'com.example.key'});
+  assert.deepEqual(probed, [['focus']], 'one focus probe, naming no window');
+  assert.doesNotMatch(JSON.stringify(r.frontKey), /98|99/, 'bundle ids only, never a pid');
+  probed.length = 0;
+  const both = read({watcher: 900, frontKey: true, focus: '7,0,25,900,700'}, io);
+  assert.deepEqual(probed, [['focus', '--window', '7,0,25,900,700']], 'the --focus probe\'s report serves the key too');
+  assert.equal(both.frontKey.key, 'com.example.key');
+  assert.equal('frontKey' in read({watcher: 900}, io), false, 'only when asked');
+  // Unreadable: null, never a guess.
+  const blind = read({frontKey: true}, {...io, frontWindow: () => ({at: 5, frontmost: null, topWindow: null}), probe: () => ({focusedApp: null})});
+  assert.deepEqual(blind.frontKey, {front: null, key: null});
+  assert.deepEqual(read({frontKey: true}, {...io, probe: () => { throw new Error('probe failed'); }}).frontKey.key, null, 'a failed probe reads nothing');
+});
+
+test('read: the window order front to back, the run\'s own windows by pid and number, any other by bundle id and layer only, the engine\'s own passed over', () => {
+  const windows = [
+    {ownerPid: 99, ownerName: 'Notification Center', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 501, name: 'secret', bounds},
+    {ownerPid: 50, ownerName: 'cua Engine', ownerBundleId: 'io.github.ssfskim.cua.engine', layer: 1000, number: 502, name: null, bounds},
+    {ownerPid: 7, ownerName: 'Finder', ownerBundleId: 'com.apple.finder', layer: 0, number: 3, name: 'run', bounds},
+    {ownerPid: 11, ownerName: 'TextEdit', ownerBundleId: 'com.apple.TextEdit', layer: 0, number: 4, name: 'doc', bounds},
+    {ownerPid: 98, ownerName: 'Other', ownerBundleId: 'com.example.other', layer: 0, number: 600, name: 'mine', bounds},
+  ];
+  const io = {state: () => state, launched: () => [], watcherRuns: () => true, windows: () => windows, enginePids: () => [50],
+    frontWindow: () => ({at: 5, frontmost: {pid: 7, bundleId: 'com.apple.finder'}, topWindow: {ownerPid: 7, number: 3, bounds, onScreen: true}})};
+  const r = read({windowOrder: true, approvedEngine: '/A/cua Engine.app'}, io);
+  assert.deepEqual(r.windowOrder, [
+    {owned: false, bundleId: 'com.apple.UserNotificationCenter', layer: 8},
+    {owned: true, pid: 7, number: 3, bundleId: 'com.apple.finder', layer: 0},
+    {owned: true, pid: 11, number: 4, bundleId: 'com.apple.TextEdit', layer: 0},
+    {owned: false, bundleId: 'com.example.other', layer: 0},
+  ]);
+  assert.doesNotMatch(JSON.stringify(r.windowOrder), /secret|mine|Notification Center|501|600|98|99/, 'nothing of another app\'s window but its bundle id and layer');
+  assert.equal('windowOrder' in read({}, io), false, 'only when asked');
+});
+
+test('the activate step\'s own check: front and key read after the scene\'s activation, a few times while the key lags, bundle ids only', async () => {
+  const {activationCheck, main} = await import('../../scripts/native-matrix/matrix-device.mjs');
+  let reads = 0;
+  const slept = [];
+  const io = {frontWindow: () => ({at: 5, frontmost: {pid: 11, bundleId: 'com.apple.TextEdit'}, topWindow: null}),
+    probe: () => ({focusedApp: {pid: 11, bundleId: ++reads < 3 ? 'com.apple.UserNotificationCenter' : 'com.apple.TextEdit'}}), sleep: ms => { slept.push(ms); }};
+  assert.deepEqual(await activationCheck('com.apple.TextEdit', io), {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'});
+  assert.equal(reads, 3, 'read again until the key followed the front');
+  reads = -100;
+  assert.deepEqual(await activationCheck('com.apple.TextEdit', io), {front: 'com.apple.TextEdit', key: 'com.apple.UserNotificationCenter'}, 'bounded: what the last read showed');
+  // The CLI: `step activate <scene>` answers the scenes command's answer, the check beside it, inside the step's window.
+  const dir = fs.realpathSync(tmp());
+  try {
+    reads = 10;
+    const out = await main(['step', 'activate', 'textedit', '--run', dir], {io: {...io, scenes: async args => ({scene: args[1], ok: true})}});
+    assert.deepEqual(out.answer, {scene: 'textedit', ok: true});
+    assert.deepEqual(out.frontKey, {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'});
+    assert.ok(out.at[0] <= out.at[1]);
+    const down = await main(['step', 'down', 'textedit', '--run', dir], {io: {...io, scenes: async () => ({down: true})}});
+    assert.equal('frontKey' in down, false, 'only an activation is checked');
+    await assert.rejects(main(['read', '--run', dir, '--with', 'front-key,titles']), /--with/);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

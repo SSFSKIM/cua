@@ -2,7 +2,7 @@
 // window found for the key guard, activations charged to the row whose action they fall in, and each row judged.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ACTIVATION_MARGIN_MS, accountActivations, judgeInterference, ownedReading, sameFront, userWindowOf} from '../../scripts/native-matrix/oracle.mjs';
+import {ACTIVATION_MARGIN_MS, accountActivations, judgeInterference, ownedReading, sameFront, targetAbove, userWindowOf} from '../../scripts/native-matrix/oracle.mjs';
 
 const bounds = {x: 10, y: 20, width: 800, height: 600};
 const raw = (pid, ownerPid = pid, b = bounds) => ({at: 1, frontmost: {pid, bundleId: pid === 7 ? 'com.apple.finder' : 'com.example.owner'}, topWindow: {ownerPid, number: 42, bounds: b, onScreen: true}});
@@ -101,4 +101,31 @@ test('the engine flag on an unowned top window is recorded, never judged', () =>
   const judged = engine => judgeInterference({before: unowned(false), after: unowned(engine), scene: 'textedit'});
   assert.deepEqual(judged(true), judged(false));
   assert.equal(userWindowOf(unowned(true), 7), null);
+});
+
+// #485 (ruling 1069): a background cell that leaves the target's window above the person's fails non-interference,
+// whatever the front and the top window read (an alert's window on top of both, say), read from the window order.
+test('the window order: the target\'s window above the person\'s fails the row; above an unrelated window, or below the person\'s, does not', () => {
+  const user = {owned: true, pid: 7, number: 3, bundleId: 'com.apple.finder', layer: 0};
+  const target = {owned: true, pid: 11, number: 4, bundleId: 'com.apple.TextEdit', layer: 0};
+  const alert = {owned: false, bundleId: 'com.apple.UserNotificationCenter', layer: 8};
+  const order = (before, after) => ({before, after});
+  const same = {before: finder, after: finder, scene: 'textedit', targets: ['com.apple.TextEdit'], userWindow: {pid: 7, number: 3}};
+  assert.equal(targetAbove([alert, user, target], ['com.apple.TextEdit'], {pid: 7, number: 3}), false);
+  assert.equal(targetAbove([alert, target, user], ['com.apple.TextEdit'], {pid: 7, number: 3}), true);
+  assert.equal(targetAbove(null, ['com.apple.TextEdit'], {pid: 7, number: 3}), null, 'unread: no verdict of its own');
+  assert.equal(targetAbove([target], ['com.apple.TextEdit'], {pid: 7, number: 3}), true, 'the person\'s window gone, any target window is above it');
+  const held = judgeInterference({...same, order: order([alert, user, target], [alert, user, target])});
+  assert.equal(held.ok, true);
+  assert.deepEqual(held.windowOrder, {before: false, after: false});
+  const raised = judgeInterference({...same, order: order([alert, user, target], [alert, target, user])});
+  assert.equal(raised.ok, false, 'front and top unchanged by the readings, the target raised under the alert above the person\'s window');
+  assert.deepEqual([raised.frontmost, raised.topWindow, raised.windowOrder], [true, true, {before: false, after: true}]);
+  // An out-of-process target (TextEdit's Open panel) is found by its service's bundle id.
+  const panel = {owned: false, bundleId: 'com.apple.appkit.xpc.openAndSavePanelService', layer: 0};
+  assert.equal(judgeInterference({...same, targets: ['com.apple.TextEdit', panel.bundleId], order: order([user, panel], [panel, user])}).ok, false);
+  // Unread after the act: the row fails, as a front it could not read would.
+  assert.equal(judgeInterference({...same, order: order([user, target], null)}).ok, false);
+  // No order given (a record from before the oracle read it): judged as before, the field absent.
+  assert.equal('windowOrder' in judgeInterference(same), false);
 });

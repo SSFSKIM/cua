@@ -83,9 +83,10 @@ export function frontKeyCause(frontKey, {hosted = false} = {}) {
 }
 
 // Why a judged row's sample has no verdict, from the row alone (the judge tags each full run's rows with `hosted` from
-// its meta). -> {category, detail?} | null.
+// its meta). A row the harness left invalid before it read anything (its prepare failed, say) carries no readings: its
+// own reason is why it has no verdict, not the readings it never needed. -> {category, detail?} | null.
 export function sampleCause(row) {
-  const readings = frontKeyCause(row.frontKey, {hosted: row.hosted === true});
+  const readings = row.frontKey === undefined && row.invalid ? null : frontKeyCause(row.frontKey, {hosted: row.hosted === true});
   if (readings) return readings;
   if (row.invalid) return {category: 'invalid', detail: row.invalid};
   if ((row.section === 'speed' || row.section === 'finding') && row.ok !== true) return {category: 'unmeasured'};

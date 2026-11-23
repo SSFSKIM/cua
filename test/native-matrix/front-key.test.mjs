@@ -63,3 +63,10 @@ test('the shape: what does not conform is named, field by field', () => {
   for (const field of ['apps', 'activate.app', 'activate.front', 'activate.key', 'before.front', 'before.key', 'after']) assert.ok(bad.some(p => p.includes(`frontKey.${field}`)), `${field}: ${bad.join('; ')}`);
   assert.deepEqual(frontKeyProblems(null), ['frontKey is not an object']);
 });
+
+test('a hosted sample the harness left invalid before anything was read keeps its own reason: no readings is not what kept its verdict', () => {
+  const row = {section: 'method', id: 'textedit/frontmost/click.control', engine: 'cua', sample: 1, ok: false, hosted: true};
+  assert.deepEqual(sampleCause({...row, invalid: 'not prepared: the field is not in the text'}), {category: 'invalid', detail: 'not prepared: the field is not in the text'});
+  assert.equal(sampleCause(row).category, 'unread', 'a sample with nothing to say why stays unread');
+  assert.equal(sampleCause({...row, invalid: 'x', frontKey: readings({before: {front: ALERT, key: ALERT}})}).category, 'alert', 'readings, when there are some, still come first');
+});

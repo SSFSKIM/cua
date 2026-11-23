@@ -132,3 +132,15 @@ test('a result\'s OS record (meta.os), when it carries one, names the OS, its ve
     assert.deepEqual(os(bad), ['meta.os is not {name, version, build}, each a non-empty string'], JSON.stringify(bad));
   }
 });
+
+// T10a's deferred item (the M5 wave-1 record): the judge trusts `ok: true` (./cell-verdict.mjs), so no row may say ok
+// against its own readings.
+test('a row may not say ok against its own reading: a changed user value, or a read-back other than expected', () => {
+  assert.deepEqual(rowProblems(row({ok: true, outcome: {exact: true, userKept: true}})), []);
+  assert.ok(rowProblems(row({ok: true, outcome: {exact: true, userKept: false}})).some(p => /row\.ok .*userKept/.test(p)));
+  assert.ok(rowProblems(row({ok: true, outcome: {exact: false}})).some(p => /row\.ok .*exact/.test(p)));
+  // Not ok with the text exact is an answer of its own: an unconfirmed one that still landed, a changed user value.
+  assert.deepEqual(rowProblems(row({ok: false, outcome: {exact: true, threw: 'unconfirmed', effect: true}})), []);
+  assert.deepEqual(rowProblems(row({ok: false, outcome: {exact: true, userKept: false}})), []);
+  assert.throws(() => writeCellResult(fs.mkdtempSync(join(tmpdir(), 'cell-')), base({rows: [row({ok: true, outcome: {exact: false}})]})), /does not conform: rows\[0\]\.ok/);
+});

@@ -3,7 +3,8 @@
 # pre-flight's §4 "M5: the default shown live", the cua row): on a GitHub-hosted runner, a disposable home under the
 # runner's temp directory gets the run's own engine, built from this checkout and approved there, and
 # scripts/accept/macos-default-selection.mjs --approved-home judges a default session on it: cua's engine on cua's own
-# host, doctor's inspection of the approved bundle passing, beside the three fallback homes. ci-kit gate
+# host, doctor's inspection of the approved bundle holding by its facts (this build, the socket's owner, the three
+# grants, a clean launch; the ad-hoc signature's warning expected), beside the three fallback homes. ci-kit gate
 # `default-selection-approved` (dispatch only). Prepared, not run: it needs M4's hosted bundle build and the hosted
 # approval (TCC rows for cua Engine, the relaunch and the two-pass `cua engine approve`, in H0's order), which T10b′
 # provides after M4 merges, given here as CUA_HOSTED_APPROVE, a command run with HOME set to the disposable home.

@@ -63,7 +63,7 @@ import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selec
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {activate, caseRow, device, focusOf, js, mark, PASTING, push, read, sendKeys, step, Stop, TEXTEDIT} from './steps.mjs';
+import {activate, activated, activationOf, caseRow, device, focusOf, js, keyReading, mark, PASTING, push, read, readKey, sendKeys, skippedReadings, step, Stop, TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
@@ -170,7 +170,11 @@ async function runOnce(options, io) {
   const meta = {run: n, host, engine, samples, sitting, planId: plan.id ?? 'full',
     plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding, concurrent: plan.concurrent ?? [],
       sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null},
-    elicitations: [], keySkipped: []};
+    elicitations: [], keySkipped: [],
+    // Where the run ran (./front-key.mjs): on a GitHub-hosted runner every judged sample needs its front/key readings.
+    // The serve the lane starts runs with a cleared environment (../native-baseline/remote.mjs), so cua's launcher
+    // takes its default desktop mode, the shared one.
+    hosted: (io.env ?? process.env).RUNNER_ENVIRONMENT === 'github-hosted', desktopMode: 'shared'};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
     // A narrowed cell is judged on its own (summary counts only the whole matrix's runs): its verdict judges the oracle.
@@ -214,12 +218,13 @@ async function runOnce(options, io) {
     if (interrupt.signal) throw new Stop(`interrupted by ${interrupt.signal}`);
   };
   // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
+  // activated: the last activate step and its own check (./steps.mjs step), the activate step a row's readings name.
   // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
   // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
   // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
   // accessibility record already exported (exportElectronMode).
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false, out: dryRun ? null : dir, electronExported: false};
+    watcher: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, out: dryRun ? null : dir, electronExported: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -498,6 +503,7 @@ async function backgroundPairing(ctx, {driven, user}) {
 async function speedCells(ctx, scene) {
   const selected = await js(ctx, 'measure', `select:${scene}`, selectCell(scene));
   const reason = !selected.ok ? `the selection failed: ${selected.error}` : !selected.value?.inFront ? 'the scene window was not the app\'s front window' : null;
+  let before = reason ? null : readKey(ctx);
   for (const [op, code] of [['getAXState', AX_FULL], ['getScreenshot', SCREENSHOT], ['listApps', LIST_APPS]]) {
     const series = [];
     for (let i = 1; i <= ctx.samples; i++) {
@@ -512,15 +518,28 @@ async function speedCells(ctx, scene) {
       const guard = await js(ctx, 'measure', `${scene}/scratch-guard`, SCRATCH_GUARD);
       if (!guard.ok || !guard.value?.scratchInFront) for (const row of series) row.invalid ??= 'the scene window left the front during the series';
     }
+    if (reason) continue;
+    const frontKey = seriesReadings(ctx, scene, before);
+    for (const row of series) row.frontKey = frontKey;
+    before = frontKey.after;
   }
+}
+
+// The front/key readings of a measured series (the speed cells', the finding cell's; ./front-key.mjs): the scene's own
+// activate step, the reading before the series' first call (`before`) and one after its last, read now.
+function seriesReadings(ctx, scene, before) {
+  const app = SCENES[scene].bundleId;
+  return {apps: [app], activate: activationOf(ctx, app), before, after: readKey(ctx)};
 }
 
 // The finding-elements cell of one scene: one row per target, the line measures and the ID count.
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
+  const before = readKey(ctx);
   const r = await js(ctx, 'measure', `${scene}/finding`, findingCell(scene));
   // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
-  const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {})};
+  const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {}),
+    frontKey: seriesReadings(ctx, scene, before)};
   if (!r.ok || r.value?.invalid) {
     push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
     return;
@@ -546,10 +565,13 @@ async function launchRow(ctx, {scene, user}) {
   if (scene === 'electron') exportElectronMode(ctx);
   const down = step(ctx, ['down', scene]);
   if (!down?.down) return push(ctx, {...row, invalid: `the scene could not be brought down first (${down?.reason ?? 'no answer'})`});
-  const before = read(ctx);
+  const before = read(ctx, null, {frontKey: true, windowOrder: true});
+  const userApp = SCENES[user].bundleId, apps = [SCENES[scene].bundleId, userApp];
+  if (!activated(ctx, userApp)) return push(ctx, {...row, frontKey: {...skippedReadings(ctx, apps, userApp), before: keyReading(before)}});
   const userWindow = userWindowOf(before.reading, ctx.records[user].pid);
   if (!userWindow) return push(ctx, {...row, invalid: `the user window (${user}) was not in front before the launch`});
   if (before.watcher !== true) return push(ctx, {...row, invalid: 'the activation watcher was not running before the launch'});
+  const readings = {apps, activate: activationOf(ctx, userApp), before: keyReading(before)};
   let from = null, to = null, recorded = null;
   try {
     const intent = ctx.ops.matrix(['launched', 'intent', scene, '--run', ctx.run]);
@@ -559,15 +581,17 @@ async function launchRow(ctx, {scene, user}) {
     [from, to] = act.at ?? [null, null];
     if (!act.ok) return push(ctx, {...row, invalid: 'the launch cell failed', error: act.error});
     Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(act.value.error ? {error: act.value.error} : {})});
-    const after = read(ctx, focusOf(userWindow));
+    const after = read(ctx, focusOf(userWindow), {windowOrder: true});
     const check = await ctx.lane.js(launchCheckCell(scene, app));
     to = check.at?.[1] ?? to;
+    row.frontKey = {...readings, after: readKey(ctx)};
     const outcome = {...(check.value?.outcome ?? {}), threw: act.value.threw, launched: recorded?.recorded === true};
     Object.assign(row, {ok: check.ok && check.value?.ok === true && !act.value.threw && recorded?.recorded === true, outcome, ...(check.ok ? {} : {error: check.error})});
     if (after.watcher !== true) return push(ctx, {...row, ok: false, invalid: 'the activation watcher was not running after the launch'});
     push(ctx, row);
     ctx.judged.set(key, {row, oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
-      launched: SCENES[scene].bundleId}});
+      launched: SCENES[scene].bundleId, order: {before: before.windowOrder ?? null, after: after.windowOrder ?? null}, targets: [SCENES[scene].bundleId],
+      userWindow: {pid: userWindow.pid, number: before.reading?.topWindow?.number ?? null}}});
     return row;
   } finally {
     if (from !== null) mark(ctx, 'row', key, [from, to ?? from]);

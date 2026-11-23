@@ -205,6 +205,8 @@ return {ok: lines && value === __m.before, outcome: {selected: typeof selected =
 // ---- TextEdit -----------------------------------------------------------------------------------------------------------
 
 const TEXT_AREA = 'indexOfPart(ax, "ID", "First Text View")';
+// The document's text view whether or not it holds text (TEXT_FIELDS.textedit).
+const TEXT_FIELDS_TEXTEDIT = 'indexOfId(ax, "First Text View")';
 const NOW_AREA = 'indexOfPart(now, "ID", "First Text View")';
 const textedit = [
   tree(`ax => { const value = valueOfIndex(ax, ${TEXT_AREA}) ?? ""; return {ok: plain(value).includes(${j(DOCUMENT[0])}), outcome: {document: plain(value).includes(${j(DOCUMENT[0])})}}; }`),
@@ -483,12 +485,27 @@ return {ok: refusedAs(${j(REFUSALS.noWindow)}) && unbound, outcome: {refused: __
 ];
 
 export const CASES = Object.freeze({textedit, finder, chrome, electron, openPanel, windowless});
+// The state an act on each target may change, as an expression over an observation `ax`: read once the prepare is ready
+// and again after an act that threw, so the row records whether the target stayed as prepared (`outcome.unchanged`, the
+// reading the judge's conservative-answer rule needs, ./answers.mjs conservativeEffect; ./matrix-cells.mjs caseCells).
+// One per target, covering every case on it (and the Unicode rows on its field), so no act changes what its row does
+// not watch. The values stay in the cell; only whether they compared equal leaves. The windowless app has no window to
+// read, so its refusal records none.
+const SCENE_FIELD = id => `valueOfIndex(ax, indexOfTarget(ax, ${j(id)}))`;
+export const WATCHED = Object.freeze({
+  textedit: `[selectedTextOf(ax), focusedIndexOf(ax), plain(valueOfIndex(ax, ${TEXT_FIELDS_TEXTEDIT}) ?? ""), scrollBarValueBeside(ax, ${TEXT_FIELDS_TEXTEDIT}), valueOfIndex(ax, indexOfPart(ax, "Description", "align center"))]`,
+  openPanel: '[panel(ax), inFront(ax)]',
+  finder: `[selectedIndexesOf(ax), focusedIndexOf(ax), showingOf(ax, ${LIST})]`,
+  chrome: `[selectedTextOf(ax), focusedIndexOf(ax), ${['Scene notes', 'Scene name', 'Scene option'].map(SCENE_FIELD).join(', ')}, elementLines(ax).filter(l => parentIndexOf(ax, l.index) === ${named('Scene status')}).map(l => l.content)]`,
+  electron: `[selectedTextOf(ax), focusedIndexOf(ax), selectedIndexesOf(ax), ${SCENE_FIELD('Fixture text')}, ${pressed}]`,
+  windowless: null,
+});
 // Each text scene's typing field, as an expression over the observation `ax` (the cases above find them so): TextEdit's
 // document, the Chrome page's textarea and the Electron fixture's text field. The probe cells and the Unicode matrix
 // (./probe-plan.mjs, ./unicode-plan.mjs) type into them.
 // TextEdit's typing field by its identifier, whether or not it holds text: emptied, its line's lone part is the bare
 // identifier (./matrix-text.mjs indexOfId), which TEXT_AREA's labelled part no longer matches.
-export const TEXT_FIELDS = Object.freeze({textedit: 'indexOfId(ax, "First Text View")', chrome: named('Scene notes'), electron: named('Fixture text')});
+export const TEXT_FIELDS = Object.freeze({textedit: TEXT_FIELDS_TEXTEDIT, chrome: named('Scene notes'), electron: named('Fixture text')});
 
 // What a target has no meaningful case for, on both engines alike, with the reason the method table prints.
 export const NOT_APPLICABLE = Object.freeze({
@@ -521,6 +538,12 @@ export const OWNER_OPTIONS = Object.freeze([
   {section: 'launch', id: 'textedit/background/launch@finder', option: 'TextEdit launch under the engine: provable in a scratch macOS user if wanted',
     reason: 'on the shared Mac its first observation\'s screenshot would capture the owner\'s restored TextEdit windows or, with none to restore, TextEdit\'s iCloud Open panel; isolating it would change the owner\'s TextEdit state'},
 ]);
+
+// Acceptance 3's cell (S L238): TextEdit's background click on its text view with Finder's window in front, which also
+// carries the keystroke witness (./steps.mjs caseRow, ./probe-plan.mjs WITNESS_PREPARE_CELL).
+export const ACCEPTANCE_3 = Object.freeze({target: 'textedit', user: 'finder', method: 'click', case: 'element'});
+export const isAcceptance3 = (target, regime, c, user) => regime === 'background' && target === ACCEPTANCE_3.target && user === ACCEPTANCE_3.user
+  && c.method === ACCEPTANCE_3.method && c.case === ACCEPTANCE_3.case;
 
 // A row's id: `<target>/<regime>/<method>.<case>`, and in the background regime `@<user>` after it (TextEdit and Finder
 // are each driven behind two user windows).

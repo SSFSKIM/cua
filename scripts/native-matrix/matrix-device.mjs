@@ -98,7 +98,7 @@ import {cpus, homedir, loadavg, uptime} from 'node:os';
 import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
-import {AX_STATE_SCRIPT, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
+import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertBoundsOf, isPanelWindow} from './alert-guard.mjs';
@@ -589,6 +589,9 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
+// The key-window reader for the run's directory (../hosted-sittings/key-window.mjs axStateReader: the sheet's bounds
+// forwarded when asked). -> axState(pid, bounds, sheet?).
+export const axStateOf = (dir, {exec = run, compile = compiled} = {}) => axStateReader(args => exec(compile(AX_STATE_SCRIPT, dir), args));
 // The readings `read --with` adds.
 const READ_WITH = Object.freeze(['front-key', 'window-order', 'alert-bounds']);
 const USAGE = 'usage: matrix-device.mjs compile|read|text-range|place|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
@@ -606,7 +609,7 @@ export async function main(argv, {io: given = {}} = {}) {
     enginePids: bundles => bundlePids(processTable(), bundles.flatMap(bundle => { try { return [bundle, fs.realpathSync(bundle)]; } catch { return [bundle]; } })),
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
     screen: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])),
-    axState: (pid, bounds) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['window', String(pid), bounds])),
+    axState: axStateOf(dir),
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,

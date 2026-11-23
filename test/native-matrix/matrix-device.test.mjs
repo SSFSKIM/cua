@@ -500,3 +500,14 @@ test('the activate step\'s own check: front and key read after the scene\'s acti
     await assert.rejects(main(['read', '--run', dir, '--with', 'front-key,titles']), /--with/);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
+
+// The matrix's adapter builds the same argv (re-review of 671c8f5bb): #212's save sheet is read through its parent only
+// when the sheet's bounds reach ax-state.
+test('the matrix device forwards the sheet\'s bounds to ax-state window: the argv it builds', async () => {
+  const {axStateOf} = await import('../../scripts/native-matrix/matrix-device.mjs');
+  const ran = [];
+  const axState = axStateOf('/run', {compile: (script, dir) => `${dir}/${script.split('/').at(-1)}.bin`, exec: (path, args) => { ran.push([path, ...args]); return '{"trusted":true}'; }});
+  axState(600, '262,127,603,505', '323,149,480,300');
+  axState(600, '262,127,603,505');
+  assert.deepEqual(ran, [['/run/ax-state.swift.bin', 'window', '600', '262,127,603,505', '323,149,480,300'], ['/run/ax-state.swift.bin', 'window', '600', '262,127,603,505']]);
+});

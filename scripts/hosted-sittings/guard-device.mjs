@@ -30,7 +30,7 @@ import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess} from '../accept/key-gua
 import {defaultIo as liveIo} from '../native-matrix/live-device.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {guardReading, isPanelWindow} from './alert-guard.mjs';
-import {AX_STATE_SCRIPT, ownKeyWindow} from './key-window.mjs';
+import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from './key-window.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
@@ -86,16 +86,17 @@ export function placeWindow({pid = null, panel = false, window, frame}, io) {
     exitStatus: out?.exitStatus ?? null, pid: shown.ownerPid};
 }
 
-export function defaultGuardIo({cache = GUARD_CACHE} = {}) {
+// `compile(script)` -> the compiled reader's path, `runTool(path, args)` -> its stdout: the doubles' seams.
+export function defaultGuardIo({cache = GUARD_CACHE, compile = script => compiled(script, cache), runTool = (path, args) => spawnSync(path, args, {encoding: 'utf8', timeout: 30_000}).stdout} = {}) {
   const live = liveIo(null);
-  const tool = script => { fs.mkdirSync(cache, {recursive: true, mode: 0o700}); return compiled(script, cache); };
+  const tool = script => { fs.mkdirSync(cache, {recursive: true, mode: 0o700}); return compile(script); };
   const windowsReader = () => tool(SYSTEM_WINDOWS_SCRIPT);
   return {
     screen: () => JSON.parse(spawnSync(windowsReader(), [], {encoding: 'utf8', timeout: 60_000}).stdout),
     frontmost: () => parseFrontmostProcess(spawnSync('/bin/sh', ['-c', FRONTMOST_PROCESS_SCRIPT], {encoding: 'utf8', timeout: 10_000}).stdout ?? ''),
     focus: () => live.probe(['focus']),
     frameProbe: args => live.probe(args),
-    axState: (pid, bounds) => JSON.parse(spawnSync(tool(AX_STATE_SCRIPT), ['window', String(pid), bounds], {encoding: 'utf8', timeout: 30_000}).stdout),
+    axState: axStateReader(args => runTool(tool(AX_STATE_SCRIPT), args)),
   };
 }
 

@@ -104,3 +104,19 @@ test('trust: the key-window reader\'s Accessibility grant, with why when it does
   assert.deepEqual(await main(['trust'], {io: io({axState: () => ({trusted: false})})}), {trusted: false, reason: 'the reader is not trusted for Accessibility'});
   assert.deepEqual(await main(['trust'], {io: io({axState: () => { throw new Error('swiftc failed'); }})}), {trusted: null, reason: 'the reader failed (swiftc failed)'});
 });
+
+// The sheet question reaches the reader live (re-review of 671c8f5bb): the production adapter's argv carries the sheet's
+// bounds when asked, and only then; the compiled reader is a double here, nothing is compiled or run.
+test('the device adapter forwards the sheet\'s bounds to ax-state window: the argv it builds', async () => {
+  const {defaultGuardIo} = await import('../../scripts/hosted-sittings/guard-device.mjs');
+  const {mkdtempSync, rmSync} = await import('node:fs');
+  const {tmpdir} = await import('node:os');
+  const {join} = await import('node:path');
+  const cache = mkdtempSync(join(tmpdir(), 'guard-cache-')), ran = [];
+  try {
+    const io = defaultGuardIo({cache, compile: () => '/cache/ax-state', runTool: (path, args) => { ran.push([path, ...args]); return '{"trusted":true,"sheet":true}'; }});
+    assert.deepEqual(io.axState(600, '262,127,603,505', '323,149,480,300'), {trusted: true, sheet: true});
+    io.axState(600, '262,127,603,505');
+    assert.deepEqual(ran, [['/cache/ax-state', 'window', '600', '262,127,603,505', '323,149,480,300'], ['/cache/ax-state', 'window', '600', '262,127,603,505']]);
+  } finally { rmSync(cache, {recursive: true, force: true}); }
+});

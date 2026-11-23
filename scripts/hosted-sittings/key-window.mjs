@@ -20,6 +20,11 @@
 import {fileURLToPath} from 'node:url';
 
 export const AX_STATE_SCRIPT = fileURLToPath(new URL('../cursor-sitting/ax-state.swift', import.meta.url));
+// ax-state.swift `window`'s arguments: the pid and the window's bounds, and the sheet's bounds when the reading asks
+// whether the front window is that window's sheet. Every device adapter builds its argv here (axStateReader), so the
+// sheet question reaches the reader live. execTool(args) -> the compiled reader's stdout.
+export const axStateWindowArgs = (pid, bounds, sheet = null) => ['window', String(pid), bounds, ...(sheet ? [sheet] : [])];
+export const axStateReader = execTool => (pid, bounds, sheet = null) => JSON.parse(execTool(axStateWindowArgs(pid, bounds, sheet)));
 
 const rectArg = b => [b.x, b.y, b.width, b.height].join(',');
 const sideOf = v => (['run', 'other', 'none'].includes(v) ? v : null);

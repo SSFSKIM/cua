@@ -89,15 +89,31 @@ export function accountActivations(activations, windows, {marginMs = ACTIVATION_
   return {byRow, accounted, unaccounted};
 }
 
+// Whether a window of the target (an entry of `order`, ./matrix-device.mjs windowOrderOf, whose bundle id is one of
+// `targets`) lies above the person's window (`userWindow` {pid, number}, the run's user window) in the window order,
+// front to back, at any layer; with the person's window not in the order, any target window is above it. -> true, false,
+// or null when the order was not read.
+export function targetAbove(order, targets, userWindow) {
+  if (!Array.isArray(order)) return null;
+  const at = order.findIndex(w => w?.owned === true && w.pid === userWindow?.pid && w.number === userWindow?.number);
+  return order.slice(0, at < 0 ? order.length : at).some(w => targets.includes(w?.bundleId));
+}
+
 // One row's oracle. `scene`: the driven scene (its family decides route 4's acceptance); `launched`: the bundle id a
 // launch-path row brought up, whose own activation is declared for the owner rather than counted as a pass; `focus`:
 // the `--probe focus` reading after the action, naming the user window (./matrix-device.mjs ownedFocus), which must
 // still be the focused application's focused window (the keyboard focus kept, Acceptance 3); null when not read.
-// -> {ok, frontmost, topWindow, focus, activations, route4, declared?}.
-export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, focus = null, userPid = null, accepted = OWNER_ACCEPTED}) {
+// `order` {before, after}: the window order read around the action (#485, ruling 1069), with `targets` the target's
+// bundle ids (the driven scene's, the Open panel's service, a launched app's) and `userWindow` {pid, number} the
+// person's window: a target window above the person's after the action fails the row, whatever the front and the top
+// window read (an alert's window above both, say), and so does an order unread after it; `before` is recorded beside it.
+// -> {ok, frontmost, topWindow, focus, activations, route4, windowOrder?: {before, after}, declared?}.
+export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, focus = null, userPid = null, accepted = OWNER_ACCEPTED,
+  order = null, targets = [], userWindow = null}) {
   const same = sameFront(before, after);
   const focusKept = focus === null ? null : focus.appOwned === true && focus.appPid === userPid && focus.named === true;
-  const frontmost = same.frontmost, topWindow = same.topWindow && focusKept !== false;
+  const windowOrder = order === null ? null : {before: targetAbove(order.before, targets, userWindow), after: targetAbove(order.after, targets, userWindow)};
+  const frontmost = same.frontmost, topWindow = same.topWindow && focusKept !== false && (windowOrder === null || windowOrder.after === false);
   const family = SCENES[scene]?.family ?? null;
   // One action's route, or every route of a row made of several actions (the sheet variant's).
   const route4 = (Array.isArray(inputRoute) ? inputRoute : [inputRoute]).includes(4);
@@ -107,7 +123,8 @@ export function judgeInterference({before, after, activations = [], inputRoute =
   const selfAccepted = own.length > 0 && accepted.selfActivating.includes(family);
   const ok = frontmost && topWindow && others.length === 0 && (own.length === 0 || selfAccepted) && (!route4 || route4Accepted);
   // Why the focus probe did not name the user window (./matrix-device.mjs ownedFocus), recorded and never judged.
-  const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, ...(focus?.unnamed ? {focusUnnamed: focus.unnamed} : {}), activations: activations.length, route4};
+  const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, ...(focus?.unnamed ? {focusUnnamed: focus.unnamed} : {}), activations: activations.length, route4,
+    ...(windowOrder ? {windowOrder} : {})};
   if (own.length && !selfAccepted && frontmost && topWindow && others.length === 0)
     return {...out, declared: {kind: 'self-activating', cause: `${launched} activated at its launch: the family's own activation, recorded for the owner's acceptance`}};
   if (route4Accepted) return {...out, declared: {kind: 'route4-accepted', cause: `route 4 on ${family}, a family the owner accepted`}};

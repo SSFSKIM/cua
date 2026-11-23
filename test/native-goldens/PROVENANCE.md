@@ -80,6 +80,25 @@ and Finder's own vocabulary. It is compared by full text like the other scenes, 
 normalized.
 <!-- /source -->
 
+## TextEdit's scene document on a hosted runner
+
+The TextEdit goldens were recorded on the mini's document, `cua-scene.rtf` as `scripts/repl-parity/scenes-mac.mjs`
+`textEditDocument()` writes it with no view size (the recording's checkout above writes the same bytes). On a
+GitHub-hosted runner the venue (ruling 1169, `scripts/hosted-sittings/venue.mjs` `TEXTEDIT_DOCUMENT_VIEW`) inserts
+TextEdit's own view size, `\vieww9600\viewh15840` (480 x 792 points), after the font table and changes nothing else,
+so its window opens left of replayd's alerts. The text and its attribute runs are the mini's: AppKit's `textutil`
+renders both files to the same text and the same HTML (`test/repl-parity/scenes-mac.test.mjs`). Both files, by sha256
+(`venue.mjs` `textEditDocumentPlan`, which every hosted venue record carries, and `test/hosted-sittings/venue.test.mjs`
+holds this table to it):
+
+| layout | the mini's (the recording's) | a hosted runner's |
+|---|---|---|
+| default | `e3703ac3a303696332910efb44330a6604f403849695ca011bfacf2a23ad4a76` | `dff8383ef0c0a5142279fd1d536a562bff45a4f06be68bbd5d603e270e988ffd` |
+| wide-page | `e228c76974983f74cbd27e31eefca527584ceb5eac25771eecab205446a391a3` | `f32e9d20e9a2c43fe0f76ebb08e70a0b7e14dbc3b2629e7c913a8af9248e08ef` |
+
+The goldens stay the mini's recording. A hosted document differs from the recording's only by the view size above,
+so its window's size is the one difference, and the venue record declares it.
+
 ## Expected differences
 
 `expected.json` declares every difference between cua's output and the vendor's. Each declaration gives its cause and

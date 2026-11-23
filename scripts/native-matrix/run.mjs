@@ -466,7 +466,7 @@ function finishWatch(ctx) {
 // The run's scene windows placed clear of the alert windows (ruling 1154; ./alert-guard.mjs clearFrame), so the alert
 // guard need not refuse their pointer cells: read once its scenes are up and set up, each window that overlaps an alert
 // moved, the same size, by the smallest move on its display, through the frame probe (./matrix-device.mjs place), and
-// read back. Both sides run it alike; the alerts stay put once raised (H0 (ii)), so both put each window in one place.
+// read back, where the probe can move it (Finder's: every other window is recorded where it was read, with why). Both sides run it alike; the alerts stay put once raised (H0 (ii)), so both put each window in one place.
 // meta.placement keeps the alert windows' bounds and, per scene, where its window was (`from`) and where it was put
 // (`to`, `matched` the read-back), or why it stayed (`reason`); `unread` when the screen was not read, which places
 // nothing and leaves the guard to refuse what would overlap.
@@ -482,9 +482,10 @@ async function placeScenes(ctx) {
   ctx.meta.placement = placed.unread ? {unread: true} : {alerts: placed.alerts, scenes: Object.fromEntries(placed.windows.map(w => [w.scene, placedEntry(w)]))};
 }
 
-// The Open panel, just opened, placed clear of the alerts as the scenes are (placeScenes): its window (the service's,
-// by its number) moved through the frame probe and read back, each opening kept in meta.placement.panel ({beforeRow,
-// number, from, to, moved, matched, readBack, pid} or why it stayed, or {beforeRow, unread}).
+// The Open panel, just opened, recorded against the alerts as the scenes are (placeScenes): the frame probe moves Finder
+// windows only, so its window (the service's, by its number) stays where it was read, each opening kept in
+// meta.placement.panel ({beforeRow, number, from, moved, reason?} (to, matched, readBack and pid should the probe ever
+// move it), or {beforeRow, unread}).
 async function placePanel(ctx) {
   const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
   const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;

@@ -6,10 +6,12 @@
 //   chrome      Chrome for Testing launched at the venue's frame (--window-position, --window-size), 800x760 here
 //   electron    the fixture launched at the venue's frame (its BrowserWindow's bounds, --cua-fixture-bounds), 720x560
 //   finder      the existing probe pins its window at the venue's frame (setup step `finderFrame`), 800x520
-//   textedit    TextEdit sizes its own windows from its preferences: WidthInChars, written to com.apple.TextEdit on the
-//               throwaway runner before any judged launch (writeTextEditDefaults); nothing in its preferences places a
-//               window (its binary names no frame autosave and its DocumentWindow nib carries none), so its origin stays
-//               AppKit's cascade, and each run reads the frame back. NSRequiresOpenUntitledWindowAtLaunch NO beside it
+//   textedit    TextEdit sizes its own windows: a new document from its preferences, WidthInChars, written to
+//               com.apple.TextEdit on the throwaway runner before any judged launch (writeTextEditDefaults); the parity
+//               scenes' document, an RTF opened as a file, from the view size the file carries (TEXTEDIT_DOCUMENT_VIEW,
+//               `\vieww`/`\viewh`, written by the device's `up`). Nothing in its preferences places a window (its binary
+//               names no frame autosave and its DocumentWindow nib carries none), so its origin stays AppKit's cascade,
+//               and each run reads the frame back. NSRequiresOpenUntitledWindowAtLaunch NO beside it
 //               (the parity scenes' launch argument, ../repl-parity/scenes-mac.mjs) skips the untitled document AppKit
 //               opens at launch, whose frame differed between a runner's first TextEdit launch and the next (pilot A,
 //               run 45272465181), so the documents the runs make are TextEdit's only windows
@@ -26,8 +28,9 @@
 // (../native-matrix/plan.mjs framedCells, and native-mac's scene trees). frameAsymmetry is the hosted record check's
 // symmetry rule: a pair whose sides stood on different frames is NO VERDICT, naming them (./checks.mjs `record`).
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {FINDER_FRAME} from '../repl-parity/scenes-mac-finder.mjs';
-import {SCENES} from '../repl-parity/scenes-mac.mjs';
+import {SCENES, TEXTEDIT_LAYOUTS, textEditDocument, textEditViewWords} from '../repl-parity/scenes-mac.mjs';
 import {framedCells} from '../native-matrix/plan.mjs';
 import {MENU_BAR, clearFrame, overlaps} from './alert-guard.mjs';
 import {assertGithubHosted} from './runner.mjs';
@@ -103,6 +106,26 @@ export function writeTextEditDefaults(writes, {env = process.env, platform = pro
   return {domain: TEXTEDIT_DOMAIN, writes: done, ok: done.every(w => w.matched)};
 }
 
+// ---- TextEdit's scene document ----------------------------------------------------------------------------------------
+
+// The parity scenes open the run's RTF as a file (../repl-parity/scenes-mac.mjs textEditDocument; sittings B and C), and
+// an opened RTF with no view size takes its paper's width: pilot B's (run 45274556933) stood at 213,78 627x877 on both
+// sides, Letter's 612 points and a 15-point scroller, its right edge 840 over alert 31 (830,188). WidthInChars sizes new
+// documents only. So on a hosted runner the document carries TextEdit's own saved view size (`\vieww`, `\viewh`), which
+// AppKit's RTF reader returns as NSViewSizeDocumentAttribute and TextEdit sizes the window from: the view, its text
+// padding (5 a side) and the scroller. 480 points wide: a window cascaded from the furthest origin read so far (242,
+// pilot A's new document; pilot B's was 213) one step of 30 further right ends at 242 + 30 + 480 + 25 = 777, left of the
+// strip's 822. The height is Letter's 792, which the 877-point window TextEdit opened unasked suggests it took (792 and
+// its bars), so the rows shown stay; the read-back says. The same plan reaches every side through the runner record.
+export const TEXTEDIT_DOCUMENT_VIEW = Object.freeze({width: 480, height: 792});
+const sha256 = text => createHash('sha256').update(text).digest('hex');
+// What the venue declares of the document: the view, its control words, and each layout's file as the mini writes it
+// (no view) and as a hosted runner does, by sha256. -> {document, view, controlWords, sha256: {layout: {mini, hosted}}}.
+export function textEditDocumentPlan(view = TEXTEDIT_DOCUMENT_VIEW) {
+  const sha = layout => ({mini: sha256(textEditDocument({layout}).rtf), hosted: sha256(textEditDocument({layout, view}).rtf)});
+  return {document: textEditDocument().name, view: {...view}, controlWords: textEditViewWords(view), sha256: Object.fromEntries(Object.keys(TEXTEDIT_LAYOUTS).map(layout => [layout, sha(layout)]))};
+}
+
 // ---- The record --------------------------------------------------------------------------------------------------------
 
 // Each scene's difference from the mini, why, and what rests on it. `framedCells` (the matrix's plan) gives the cells
@@ -118,14 +141,17 @@ const GROUNDING = {
   electron: 'window points on the fixture\'s size, unchanged at 720x560: its layout (ELECTRON_FIELD_LAYOUT, #259\'s point) holds as it is; only the origin moved',
   finder: 'element-addressed rows; the height is the mini\'s, so the same rows are visible',
   textedit: 'fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare\'s clicks proving each end',
+  textEditDocument: 'the window\'s size only: the file is the mini\'s with the view size inserted, so its text and attribute runs are the mini\'s (textutil\'s text and HTML of both files are equal, test/repl-parity/scenes-mac.test.mjs); the cells\' fractions and rows hold as for TextEdit\'s preferences; the wide page stays wider than the window (its 200% zoom)',
   openPanel: 'element-addressed (its Cancel, A\'s New Document): the frame decides only whether the guard refuses them',
 };
 const PANEL_CELLS = ['openPanel/frontmost/getAXState.panel', 'openPanel/frontmost/click.cancel', 'openPanel/background/getAXState.panel@finder', 'openPanel/background/click.cancel@finder',
   'native-baseline setup.newDocument (the panel at TextEdit\'s launch, where one shows: the mini\'s)'];
 const cellsOf = scene => [...framedCells(scene).map(c => c.id), NATIVE_MAC[scene]];
+const WIDE_PAGE_CELL = 'hscroll/textedit-wide-page/right (the wide-page layout: its page wider than the window)';
 
 // The venue block: the alert windows read fresh after the switch, the display, the frames the scenes launch at, TextEdit's
-// preferences as written and read back, and each difference from the mini's. `placed`: hostedFrames'. -> venue.
+// preferences as written and read back, its scene document's view (textEditDocumentPlan), and each difference from the
+// mini's. `placed`: hostedFrames'. -> venue.
 export function venueRecord({alerts, displays, placed, textEdit}) {
   const display = (displays ?? []).find(d => d.x === 0 && d.y === 0) ?? displays?.[0] ?? null;
   const fresh = alerts === null || alerts === undefined ? null : alerts.map(a => ({number: a.number ?? null, bounds: a.bounds ?? a}));
@@ -146,8 +172,13 @@ export function venueRecord({alerts, displays, placed, textEdit}) {
   differences.push({scene: 'textedit', mini: {WidthInChars: TEXTEDIT_DEFAULT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)'}, hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO'},
     reason: `${fresh === null ? 'the alert windows were unread after the mode switch' : `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}`}; at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session)`,
     grounding: GROUNDING.textedit, cells: cellsOf('textedit')});
+  const document = textEditDocumentPlan(), hashes = side => Object.fromEntries(Object.entries(document.sha256).map(([layout, h]) => [`sha256 ${layout}`, h[side]]));
+  differences.push({scene: 'textedit document', mini: {'view size': 'none: TextEdit takes the paper\'s width', ...hashes('mini')},
+    hosted: {'view size': `${document.view.width}x${document.view.height} (${document.controlWords})`, ...hashes('hosted')},
+    reason: `the scene's ${document.document}, opened as a file with no view size, stood at 213,78 627x877 on both sides (pilot B, run 45274556933): the paper's width, which WidthInChars does not change, its right edge 840 over alert 31; a view ${document.view.width} wide ends left of the strip's 822 from the cascade origins read so far, one step more; its origin is AppKit's cascade, read back by each run`,
+    grounding: GROUNDING.textEditDocument, cells: [...cellsOf('textedit'), WIDE_PAGE_CELL]});
   differences.push({scene: 'openPanel', mini: 'AppKit\'s: centred on the screen', hosted: placed.frames.openPanel, reason: why('openPanel'), grounding: GROUNDING.openPanel, cells: PANEL_CELLS});
-  return {alerts: fresh, display, frames: placed.frames, textEdit: textEdit ?? null, differences};
+  return {alerts: fresh, display, frames: placed.frames, textEdit: textEdit ?? null, textEditDocument: document, differences};
 }
 
 const frameCell = f => (f && typeof f === 'object' && 'x' in f ? rectText(f) : f && typeof f === 'object' ? Object.entries(f).map(([k, v]) => `${k} ${v}`).join(', ') : String(f ?? ''));
@@ -166,11 +197,12 @@ export function renderVenue(venue) {
 
 // The frames one side stood on, keyed alike on both sides of a pair: the venue it launched at (`venue:<scene>`) and every
 // window it read back, as each producer records its placement: the matrix's meta.placement ({scenes: {id: entry}, panel:
-// [entry]}), native-mac's meta.scenes[id].placement ({windows}) and the baseline's meta.placement ([{at, windows}]). An
-// entry's frame is where the window stood after placement: its read-back when it was moved, else where it was read. The
-// scratch document's record (`textedit up`, {placement: {windows}}) is read as one step.
+// [entry]}), native-mac's meta.scenes[id].placement ({windows}) and the baseline's meta.placement ([{at, windows}]). The
+// scratch document's record (`textedit up`, {placement: {windows}}) is read as one step. An entry's frame is where the
+// window was last read: its read-back when a move read one back, else where it was read before (a window not moved,
+// one the probe was not asked to move, one whose move read nothing back, pilot B's), so no window read is dropped.
 // -> {key: frame}.
-const standing = entry => (entry?.moved ? entry.readBack ?? null : entry?.from ?? null);
+const standing = entry => entry?.readBack ?? entry?.from ?? null;
 const numbered = (prefix, windows, out) => {
   const seen = {};
   for (const w of windows ?? []) {
@@ -192,19 +224,23 @@ export function sceneFrames(record) {
   return out;
 }
 // Recorded checks (1) and (2) of ruling 1169: where each step's TextEdit windows and Open panels stood (sceneFrames),
-// against what the venue planned (TextEdit: its width in characters and its right edge left of the alerts, its origin
-// being AppKit's; the panel: its saved frame) and whether an alert the venue read overlapped them. `records`: [{step,
-// record}]. -> [{step, window, planned, actual, overlap}].
+// against what the venue planned (TextEdit: the scene document's view size for the parity scenes' document, the matrix's
+// `textedit` and native-mac's `textedit/...`, its width in characters for a new or scratch document, and its right edge
+// left of the alerts, its origin being AppKit's; the panel: its saved frame) and whether an alert the venue read
+// overlapped them. `records`: [{step, record}]. -> [{step, window, planned, actual, overlap}].
 export function readBackRows(records, venue) {
   const alerts = (venue?.alerts ?? []).map(a => a.bounds ?? a);
   const width = venue?.differences?.find(d => d.scene === 'textedit')?.hosted?.WidthInChars ?? TEXTEDIT_WIDTH_IN_CHARS;
+  const view = venue?.textEditDocument?.view ?? null;
   const edge = alerts.length ? `left of x ${Math.min(...alerts.map(a => a.x))}` : 'no alert to keep left of';
+  const sceneDocument = window => view !== null && (window === 'textedit' || window.startsWith('textedit/'));
   const out = [];
   for (const {step, record} of records) {
     for (const [window, actual] of Object.entries(sceneFrames(record))) {
       const kind = /(?:^|\/)(textedit|openPanel)(?:#\d+)?$/.exec(window)?.[1];
       if (!kind) continue;
-      out.push({step, window, planned: kind === 'openPanel' ? venue?.frames?.openPanel ?? null : `WidthInChars ${width}, ${edge}`, actual, overlap: alerts.some(a => overlaps(a, actual))});
+      const planned = kind === 'openPanel' ? venue?.frames?.openPanel ?? null : sceneDocument(window) ? `view ${view.width}x${view.height}, ${edge}` : `WidthInChars ${width}, ${edge}`;
+      out.push({step, window, planned, actual, overlap: alerts.some(a => overlaps(a, actual))});
     }
   }
   return out;

@@ -68,29 +68,53 @@ test('a capture: a window capture of a window clear of every alert is exempt; a 
   assert.equal(captureCause(read, {scenes: ['textedit']}), null);
 });
 
-test('placement: each window under an alert moved clear by the module\'s clearFrame from the fresh reading, from, to and readBack recorded', async () => {
-  const read = guardReading([alertAt(CUA_ALERT, 90), alertAt(VENDOR_ALERT, 91), own(600, 7, TEXTEDIT_FRAME), own(410, 21, rect(1100, 600, 600, 400), 'com.apple.finder')],
-    [{scene: 'textedit', pid: 600}, {scene: 'finder', pid: 410, number: 21, only: true}], [DISPLAY]);
+test('placement: each Finder window under an alert moved clear by the module\'s clearFrame from the fresh reading, from, to and readBack recorded', async () => {
+  const finderUnder = rect(500, 150, 600, 400);
+  const read = guardReading([alertAt(CUA_ALERT, 90), alertAt(VENDOR_ALERT, 91), own(410, 20, finderUnder, 'com.apple.finder'), own(410, 21, rect(1100, 600, 600, 400), 'com.apple.finder')],
+    [{scene: 'finder', pid: 410}], [DISPLAY]);
   const moves = [];
   const placed = await placeWindows(read, {move: ({number, frame}) => { moves.push([number, frame]); return {readBack: frame, matched: true}; }});
   assert.deepEqual(placed.alerts, [CUA_ALERT, VENDOR_ALERT]);
   assert.deepEqual(placed.displays, [DISPLAY]);
-  const textedit = placed.windows.find(w => w.number === 7);
-  assert.equal(textedit.moved, true);
-  assert.deepEqual(textedit.from, TEXTEDIT_FRAME);
-  assert.ok(![CUA_ALERT, VENDOR_ALERT].some(a => overlaps(a, textedit.to)));
-  assert.deepEqual(textedit.readBack, textedit.to);
-  assert.equal(textedit.matched, true);
+  const finder = placed.windows.find(w => w.number === 20);
+  assert.equal(finder.moved, true);
+  assert.deepEqual(finder.from, finderUnder);
+  assert.ok(![CUA_ALERT, VENDOR_ALERT].some(a => overlaps(a, finder.to)));
+  assert.deepEqual(finder.readBack, finder.to);
+  assert.equal(finder.matched, true);
+  assert.equal('reason' in finder, false);
   assert.deepEqual(placed.windows.find(w => w.number === 21), {scene: 'finder', number: 21, from: rect(1100, 600, 600, 400), moved: false});
-  assert.deepEqual(moves.map(([n]) => n), [7], 'only the window under an alert is moved');
-  // A move whose read-back differs is kept as it read back; an unread screen places nothing.
-  const off = await placeWindows(read, {move: () => ({readBack: rect(0, 0, 1, 1), matched: false})});
-  assert.equal(off.windows.find(w => w.number === 7).matched, false);
+  assert.deepEqual(moves.map(([n]) => n), [20], 'only the window under an alert is moved');
+  // A move the probe did not complete: moved only when the window reads back somewhere else; why it is not placed.
+  const partly = (await placeWindows(read, {move: () => ({readBack: rect(0, 0, 600, 400), matched: false, exitStatus: 5})})).windows.find(w => w.number === 20);
+  assert.deepEqual([partly.moved, partly.matched, partly.readBack], [true, false, rect(0, 0, 600, 400)]);
+  assert.match(partly.reason, /the frame probe did not place it \(exit 5\)/);
+  const refused = (await placeWindows(read, {move: () => ({readBack: null, matched: false, exitStatus: 2})})).windows.find(w => w.number === 20);
+  assert.deepEqual([refused.moved, refused.matched, refused.readBack], [false, false, null]);
+  assert.match(refused.reason, /exit 2.*no read-back/);
+  const threw = (await placeWindows(read, {move: () => ({error: '--window 20 is not a window of pid 410 on screen'})})).windows.find(w => w.number === 20);
+  assert.deepEqual([threw.moved, threw.matched], [false, false]);
+  assert.match(threw.reason, /the move failed: --window 20 is not a window of pid 410/);
   assert.deepEqual(await placeWindows(null, {move: () => assert.fail('nothing is moved unread')}), {unread: true});
   // A window with no room on the display stays, with the reason.
-  const tight = guardReading([alertAt(rect(0, 0, 900, 700)), own(600, 7, rect(10, 30, 800, 600))], [{scene: 'textedit', pid: 600}], [rect(0, 0, 1000, 700)]);
+  const tight = guardReading([alertAt(rect(0, 0, 900, 700)), own(410, 7, rect(10, 30, 800, 600), 'com.apple.finder')], [{scene: 'finder', pid: 410}], [rect(0, 0, 1000, 700)]);
   const stuck = await placeWindows(tight, {move: () => assert.fail('no frame to move to')});
   assert.match(stuck.windows[0].reason, /no 800x600 frame/);
+});
+
+// Pilot B (run 45274556933) recorded TextEdit's window `moved: true, readBack: null, matched: false`: the engine's frame
+// probe moves Finder windows only (WindowFrameProbe.swift refuses every other process), so no other window is offered
+// to it. Such a window is recorded where it was read, not moved, with why; the guard then refuses what it overlaps.
+test('placement: a window the frame probe cannot move (TextEdit\'s, the Open panel\'s) is not offered to it, and stays recorded where it was read, with why', async () => {
+  const panel = {ownerPid: 12, ownerName: 'Open', ownerBundleId: PANEL_SERVICE, layer: 0, number: 55, name: 'Open', bounds: rect(300, 150, 800, 500)};
+  const read = guardReading([alertAt(CUA_ALERT, 90), alertAt(VENDOR_ALERT, 91), own(600, 66, TEXTEDIT_FRAME), panel], [{scene: 'textedit', pid: 600}], [DISPLAY]);
+  const placed = await placeWindows(read, {move: () => assert.fail('the frame probe moves Finder windows only')});
+  assert.deepEqual(placed.windows.map(w => [w.scene, w.number, w.moved]), [['textedit', 66, false], ['openPanel', 55, false]]);
+  const textedit = placed.windows[0];
+  assert.deepEqual(textedit.from, TEXTEDIT_FRAME);
+  assert.equal('to' in textedit || 'readBack' in textedit || 'matched' in textedit, false, 'nothing was asked, so nothing was read back');
+  assert.match(textedit.reason, /the frame probe moves Finder windows only: the textedit window stays where it was read/);
+  assert.match(placed.windows[1].reason, /the openPanel window stays where it was read/);
 });
 
 test('the refusal\'s mark and the counts: per cell, by cause', () => {

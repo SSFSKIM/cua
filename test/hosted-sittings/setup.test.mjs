@@ -155,7 +155,9 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
   assert.equal(report.steps.find(s => s.step === 'placement').detail,
     '1 alert window; hosted frames: chrome 80,60 800x760 (no clear frame: kept), electron 22,100 720x560 (moved), finder 80,408 800x520 (moved), openPanel 22,80 720x440 (moved)');
   assert.deepEqual(report.venue.alerts, [{number: 90, bounds: alert.bounds}]);
-  assert.deepEqual(report.venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'openPanel']);
+  assert.deepEqual(report.venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'textedit document', 'openPanel']);
+  assert.match(scenes.textedit.reason, /the scenes' document by its view size \(480x792/);
+  assert.deepEqual(report.venue.textEditDocument.view, {width: 480, height: 792});
   // The Open panel's saved frame, in AppKit's coordinates on the 1920x1080 display.
   const writes = calls.filter(c => c.kind === 'exec' && c.line.startsWith('/usr/bin/defaults write')).map(c => c.line);
   assert.deepEqual(writes, ['/usr/bin/defaults write com.apple.TextEdit WidthInChars -int 60', '/usr/bin/defaults write com.apple.TextEdit NSRequiresOpenUntitledWindowAtLaunch -bool NO',

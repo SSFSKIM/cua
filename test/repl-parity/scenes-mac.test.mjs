@@ -3,6 +3,7 @@
 // definitions with fixed states, setup and teardown steps, action targets and ten finding-elements targets each, the
 // pairings of the non-interference and concurrent-use cells, and the refusal preconditions, judged on injected process,
 // window and preference reads. Nothing here launches an app, reads this Mac's windows or writes its preferences.
+import {spawnSync} from 'node:child_process';
 import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -307,6 +308,16 @@ test('up records the run\'s own launch with its window; a second up of the same 
   assert.deepEqual(preflight({run, io}).refusals, []);
 }));
 
+// Pilot B (run 45274556933): the vendor side's key-window reading found its recorded Electron window nowhere on screen
+// while the fixture's one window stood at the venue's frame. The fixture is Chromium: like Chrome for Testing (#187), it
+// can list a document-size window that is never shown ahead of the one it shows, so up records the window on screen.
+test('up electron records the window the fixture shows, passing over a document-size window it lists off screen', async () => withRun(async run => {
+  const io = fakeDevice(), list = io.appWindows;
+  io.appWindows = pid => [{number: 41, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: false}, ...list(pid)];
+  const record = await upScene('electron', {run, io});
+  assert.equal(record.window.number, 900);
+}));
+
 test('up electron takes extra switches after the fixture\'s own, kept in its record; anything else is refused before a launch', async () => withRun(async run => {
   const io = fakeDevice(), extra = ['--enable-features=SonomaAccessibilityActivationRefinements'];
   const record = await upScene('electron', {run, io, electronExtra: extra});
@@ -374,6 +385,68 @@ test('up textedit --layout wide-page: the same document in page layout, zoomed t
   assert.throws(() => textEditDocument({layout: 'narrow'}), /unknown TextEdit layout/);
   await assert.rejects(upScene('finder', {run, io, layout: 'wide-page'}), /textedit scene only/);
 }));
+
+// Ruling 1169's TextEdit document (scripts/hosted-sittings/venue.mjs TEXTEDIT_DOCUMENT_VIEW): on a hosted runner the
+// opened RTF carries TextEdit's own saved view size, so its window opens inside the strip clear of the alerts. The
+// control words change the view size only: the patched file is the original with `\viewwN\viewhN` inserted, in each
+// layout, and nothing else; with no view the bytes are the mini's.
+test('a view size adds TextEdit\'s own \\vieww and \\viewh (twips) to the document and nothing else, in each layout; none leaves the mini\'s bytes', () => {
+  const view = {width: 480, height: 792};
+  for (const layout of ['default', 'wide-page']) {
+    const original = textEditDocument({layout}), patched = textEditDocument({layout, view});
+    assert.ok(patched.rtf.includes('\\vieww9600\\viewh15840'), layout);
+    assert.equal(patched.rtf.replace('\\vieww9600\\viewh15840', ''), original.rtf, `${layout}: only the view size is inserted`);
+    assert.deepEqual(patched.lines, original.lines);
+    assert.equal(textEditDocument({layout, view: null}).rtf, original.rtf, `${layout}: no view, the mini's bytes`);
+  }
+  assert.match(textEditDocument({layout: 'wide-page', view}).rtf, /\\viewkind1\\viewscale200\\f0/, 'the zoom that makes the page wider than the window stays');
+  for (const bad of [{width: 0, height: 792}, {width: 480.5, height: 792}, {width: 480}, {width: '480', height: 792}]) {
+    assert.throws(() => textEditDocument({view: bad}), /view size/, JSON.stringify(bad));
+  }
+});
+
+// What the cells read of the document is its text and its attributes: native-mac's textedit tree (the text area's
+// AXValue, and the engine's valueMarkdown, which renders the bold line), the matrix's text fields (plan.mjs TEXT_FIELDS:
+// the selected text, the value, the description's alignment), the typing read-back and cursor-sitting's DOCUMENT_TEXT.
+// AppKit's own converter renders both files to plain text (the text) and to HTML (each run's font, size and bold): equal
+// outputs prove the view size changed none of what those cells read. What it does change, the window's size, is the
+// venue's declared difference. textutil is a command-line tool: no window, nothing launched.
+test('the patched document renders to the same text and attribute runs as the original, in each layout (AppKit\'s textutil)', {skip: process.platform !== 'darwin' && 'textutil is macOS\'s: the structural test above covers the bytes elsewhere'}, () => withRun(async run => {
+  const convert = (file, to) => {
+    const out = spawnSync('/usr/bin/textutil', ['-convert', to, '-stdout', file]);
+    assert.equal(out.status, 0, String(out.stderr));
+    return out.stdout.toString('utf8');
+  };
+  for (const layout of ['default', 'wide-page']) {
+    const original = join(run, `${layout}.rtf`), patched = join(run, `${layout}-view.rtf`);
+    fs.writeFileSync(original, textEditDocument({layout}).rtf);
+    fs.writeFileSync(patched, textEditDocument({layout, view: {width: 480, height: 792}}).rtf);
+    const text = convert(original, 'txt');
+    assert.equal(convert(patched, 'txt'), text, `${layout}: the text`);
+    assert.ok(text.startsWith(`${textEditDocument().lines[0]}\n`), `${layout}: the text is the document's`);
+    const html = convert(original, 'html');
+    assert.equal(convert(patched, 'html'), html, `${layout}: the attribute runs`);
+    assert.match(html, new RegExp(`<b>${TEXTEDIT_STYLED_LINE}</b>`), `${layout}: the bold line is an attribute run`);
+    // AppKit's reader takes the view size as a document attribute (its writer gives it back): TextEdit's to honour.
+    assert.match(convert(patched, 'rtf'), /\\vieww9600\\viewh15840/);
+    assert.doesNotMatch(convert(original, 'rtf'), /\\vieww/);
+  }
+}));
+
+test('up textedit on a hosted runner writes the venue\'s view size into the run\'s document and records it; off a runner, the mini\'s bytes', async () => {
+  await withRun(async run => {
+    const io = Object.assign(fakeDevice(), {venueTextEditView: () => ({width: 480, height: 792})});
+    const record = await upScene('textedit', {run, io, layout: 'wide-page'});
+    assert.equal(fs.readFileSync(record.document, 'utf8'), textEditDocument({layout: 'wide-page', view: {width: 480, height: 792}}).rtf);
+    assert.deepEqual(record.documentView, {view: {width: 480, height: 792}, from: 'venue'});
+  });
+  await withRun(async run => {
+    const io = Object.assign(fakeDevice(), {venueTextEditView: () => null});
+    const record = await upScene('textedit', {run, io});
+    assert.equal(fs.readFileSync(record.document, 'utf8'), textEditDocument().rtf);
+    assert.equal('documentView' in record, false);
+  });
+});
 
 test('up of each scene: TextEdit on the run\'s document in English, Chrome on the page with its own profile, Finder on the run\'s folder', async () => withRun(async run => {
   const io = fakeDevice();
@@ -852,14 +925,16 @@ test('the default io reads the venue from the runner record under $HOME; with no
     await withRun(async run => {
       const io = Object.assign(defaultIo(), fakeDevice());
       assert.equal(io.venueFrames(), null, 'no runner record: no venue');
+      assert.equal(io.venueTextEditView(), null, 'no runner record: the mini\'s document');
       assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: SCENES.electron.placement, from: 'scene'});
     });
     const electron = {x: 102, y: 100, width: 720, height: 560};
     fs.mkdirSync(join(home, '.local/share/cua-hosted'), {recursive: true});
-    fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify({venue: {frames: {electron}}}));
+    fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify({venue: {frames: {electron}, textEditDocument: {view: {width: 480, height: 792}}}}));
     await withRun(async run => {
       const io = Object.assign(defaultIo(), fakeDevice());
       assert.deepEqual(io.venueFrames(), {electron});
+      assert.deepEqual(io.venueTextEditView(), {width: 480, height: 792});
       assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: electron, from: 'venue'});
     });
   } finally {

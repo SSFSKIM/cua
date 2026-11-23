@@ -120,14 +120,16 @@ test('sitting D: the front handed back: the capture alert in front after it, or 
   assert.deepEqual(frontStep(front(null, 'com.apple.TextEdit', 'com.apple.TextEdit'), null)[0], 'BLOCKED');
 });
 
-test('sitting D: the document placed clear of the alerts by its pid, from, to and the read-back recorded', async () => {
+// The engine's frame probe moves Finder windows only (WindowFrameProbe.swift), so the document under an alert is not
+// offered to it: it is recorded where it was read, not moved, with why, and the guard refuses what the alert overlaps.
+test('sitting D: the document under an alert recorded where it was read, not moved (the frame probe moves Finder windows only), with why', async () => {
   const moves = [];
   const placed = await textEditGuard({pids: () => [600], io: io(rect(79, 31, 627, 677), {moves})}).place();
   assert.deepEqual(placed.alerts, [ALERT]);
   const [w] = placed.windows;
-  assert.deepEqual([w.scene, w.number, w.from, w.moved, w.matched], ['textedit', 7, rect(79, 31, 627, 677), true, true]);
-  assert.deepEqual(w.readBack, w.to);
-  assert.deepEqual(moves[0].slice(0, 5), ['window-frame', '--pid', '600', '--window', '7']);
+  assert.deepEqual([w.scene, w.number, w.from, w.moved], ['textedit', 7, rect(79, 31, 627, 677), false]);
+  assert.match(w.reason, /the frame probe moves Finder windows only/);
+  assert.deepEqual(moves, [], 'no move was asked');
   assert.ok(!JSON.stringify(placed).includes('verify-bind'), 'no title is kept');
 });
 

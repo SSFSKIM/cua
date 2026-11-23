@@ -16,9 +16,10 @@
 //   - a screen or region capture meeting an alert is NO VERDICT `alert`; a window capture of a window clear of every
 //     alert is exempt, and one of a window under an alert is NO VERDICT `alert` too, since the vendor may fall back to a
 //     display crop of the window's frame (F-helper-logic.md §15 item 3) (captureCause);
-//   - each runner places its windows clear of the alerts from a fresh reading after setup's mode switch, by the
+//   - each runner places its Finder windows clear of the alerts from a fresh reading after setup's mode switch, by the
 //     smallest move on the display (clearFrame, placeWindows), and records from, to and the read-back, alike on both
-//     sides. Nothing is re-placed mid-run: a window that lands under an alert later is the guard's to refuse.
+//     sides; every other window stands where its launch put it (ruling 1169's venue, ./venue.mjs) and is recorded
+//     where it was read. Nothing is re-placed mid-run: a window that lands under an alert later is the guard's to refuse.
 // Every refusal is kept per side (each run is one side) and per cell (countGuards), and reaches the sitting's hosted
 // check as NO VERDICT (./checks.mjs, `alertGuardStop`).
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
@@ -178,19 +179,36 @@ export function clearFrame(frame, alerts, displays) {
   return best ? {frame: best.frame, moved: true} : {frame: null, moved: false, reason: `no ${width}x${height} frame on the display clears the alert windows`};
 }
 
+// The scenes whose windows the runner's frame probe can move: the approved engine's `--probe window-frame` moves Finder
+// windows only and refuses every other process (native/engine/Sources/Engine/WindowFrameProbe.swift, exit 2), so no
+// other window is offered to it (ruling 1169 places those at launch or by their own preferences instead).
+export const FRAME_PROBE_SCENES = Object.freeze(['finder']);
+const sameRect = (a, b) => ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
+// Why a move the probe was asked for did not place the window, from its answer ({readBack, matched, exitStatus} or
+// {error}).
+const unplaced = answer => (answer?.error ? `the move failed: ${answer.error}`
+  : `the frame probe did not place it (exit ${answer?.exitStatus ?? 'unknown'})${isRect(answer?.readBack) ? `: it read back at ${rectText(answer.readBack)}` : ': no read-back'}`);
 // The windows of one fresh reading (guardReading's) placed clear of its alerts: each window `select` keeps (every bounded
-// window by default) that overlaps an alert is moved by `move({scene, number, frame})` -> {readBack, matched} (the
-// runner's frame probe), and recorded alike on both sides. -> {alerts, displays, windows: [{scene, number, from, moved,
-// to?, readBack?, matched?, reason?}]}, or {unread: true} when the screen was not read (nothing placed: the guard then
-// refuses what would overlap).
+// window by default) that overlaps an alert is moved by `move({scene, number, frame})` -> {readBack, matched, exitStatus}
+// | {error} (the runner's frame probe), when the probe can move it (FRAME_PROBE_SCENES), and recorded alike on both
+// sides. A window is `moved` only when it read back somewhere other than where it was read (`from`); one the probe was
+// not asked to move, or did not place, says why (`reason`), and stands where it was last read, for the guard to refuse
+// what an alert overlaps. -> {alerts, displays, windows: [{scene, number, from, moved, to?, readBack?, matched?,
+// reason?}]}, or {unread: true} when the screen was not read (nothing placed: the guard then refuses what would overlap).
 export async function placeWindows(bounds, {move, select = () => true}) {
   if (!Array.isArray(bounds?.alerts) || !Array.isArray(bounds?.windows)) return {unread: true};
   const alerts = bounds.alerts.map(a => a.bounds), placed = [];
   for (const w of bounds.windows.filter(w => isRect(w.bounds) && select(w))) {
     const {frame, moved, reason} = clearFrame(w.bounds, alerts, bounds.displays);
-    if (!moved) { placed.push({scene: w.scene, number: w.number, from: w.bounds, moved: false, ...(reason ? {reason} : {})}); continue; }
+    const entry = {scene: w.scene, number: w.number, from: w.bounds};
+    if (!moved) { placed.push({...entry, moved: false, ...(reason ? {reason} : {})}); continue; }
+    if (!FRAME_PROBE_SCENES.includes(w.scene)) {
+      placed.push({...entry, moved: false, reason: `the frame probe moves Finder windows only: the ${w.scene} window stays where it was read, under an alert`});
+      continue;
+    }
     const answer = await move({scene: w.scene, number: w.number, frame});
-    placed.push({scene: w.scene, number: w.number, from: w.bounds, to: frame, moved: true, readBack: answer?.readBack ?? null, matched: answer?.matched === true});
+    const readBack = isRect(answer?.readBack) ? answer.readBack : null, matched = answer?.matched === true;
+    placed.push({...entry, to: frame, moved: readBack !== null && !sameRect(readBack, w.bounds), readBack, matched, ...(matched ? {} : {reason: unplaced(answer)})});
   }
   return {alerts, displays: bounds.displays ?? null, windows: placed};
 }

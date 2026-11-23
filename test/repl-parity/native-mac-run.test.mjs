@@ -560,10 +560,12 @@ test('sitting B: under an overlapping alert a scene\'s action is refused on both
     assert.deepEqual(lane.meta.alertGuardStop, {cause: 'alert', detail: refused.alertGuard.detail, at: 'chrome/action'});
     assert.deepEqual(lane.meta.alertGuardCounts, {'chrome/action': {alert: 1, unread: 0}});
     assert.deepEqual(recordCheck(lane.meta, engine)[0], 'NO VERDICT');
-    // The placement tried first, from its own fresh reading: Chrome's window moved clear and read back.
+    // The placement read first, from its own fresh reading: the frame probe moves Finder windows only, so Chrome's
+    // window (launched at the venue's frame on a runner) is recorded where it stands, not moved, with why.
     const placed = lane.meta.scenes.chrome.placement.windows[0];
-    assert.deepEqual([placed.from, placed.moved, placed.matched], [under, true, true]);
-    assert.ok(lane.device.calls.some(c => c[0] === 'guard' && c[1] === 'place' && c.includes('--pid')));
+    assert.deepEqual([placed.from, placed.moved], [under, false]);
+    assert.match(placed.reason, /the frame probe moves Finder windows only: the chrome window stays where it was read/);
+    assert.ok(!lane.device.calls.some(c => c[0] === 'guard' && c[1] === 'place'), 'nothing asked of the probe');
   }
   assert.deepEqual(lanes[0].meta.scenes.chrome.placement, lanes[1].meta.scenes.chrome.placement, 'the same placement on both lanes');
   assert.deepEqual(lanes[0].meta.alertGuards, lanes[1].meta.alertGuards, 'the same refusal on both lanes');

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {assertGithubHosted, hostedRunOf as hostedRunOfAny, readRunnerRecord, runnerKey, runnerProblems, runnerRecord, runnerRecordPath, runnerText, venueFramesOf, vmIdentity} from '../../scripts/hosted-sittings/runner.mjs';
+import {assertGithubHosted, hostedRunOf as hostedRunOfAny, readRunnerRecord, runnerKey, runnerProblems, runnerRecord, runnerRecordPath, runnerText, venueFramesOf, venueTextEditViewOf, vmIdentity} from '../../scripts/hosted-sittings/runner.mjs';
 
 const ENV = {RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'macos26', ImageVersion: '20261117.0516.1', GITHUB_RUN_ID: '45144483807', GITHUB_RUN_ATTEMPT: '2'};
 const INSTALL = {home: '/Users/runner/Library/Application Support/cua', release: '26.928.40906-darwin-arm64'};
@@ -101,4 +101,15 @@ test('the venue: kept in the record, handed out as its own block, its frames rea
   // A frame that is not one is dropped (that scene keeps its own); no record, or one with no venue, is no venue.
   assert.deepEqual(venueFramesOf({venue: {frames: {chrome: {x: 1, y: 2, width: 0, height: 600}, electron: {x: 'a'}, finder: venue.frames.finder}}}), {finder: venue.frames.finder});
   for (const none of [null, {error: 'not JSON'}, record()]) assert.equal(venueFramesOf(none), null);
+});
+
+// The TextEdit scene document's view size the venue declares (ruling 1169; ./venue.mjs TEXTEDIT_DOCUMENT_VIEW), which
+// the device's `up textedit` writes into the run's RTF: whole positive points, or none (the mini's document).
+test('the venue\'s TextEdit document view: whole positive points read by the device; anything else, or no venue, is none', () => {
+  const view = {width: 480, height: 792};
+  assert.deepEqual(venueTextEditViewOf({venue: {frames: {}, textEditDocument: {view, sha256: {}}}}), view);
+  for (const bad of [{width: 0, height: 792}, {width: 480.5, height: 792}, {width: 480}, {width: '480', height: 792}, null]) {
+    assert.equal(venueTextEditViewOf({venue: {textEditDocument: {view: bad}}}), null, JSON.stringify(bad));
+  }
+  for (const none of [null, {error: 'not JSON'}, record(), {venue: {frames: {}}}]) assert.equal(venueTextEditViewOf(none), null);
 });

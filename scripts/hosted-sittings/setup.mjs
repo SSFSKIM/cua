@@ -26,7 +26,8 @@
 //   placement           the alert windows read fresh after the switch (ruling 1154), and the venue (ruling 1169,
 //                       ./venue.mjs): each scene window's hosted frame, the hosted size at the mini's origin moved clear
 //                       of them by the shared clearFrame: Chrome for Testing's and the Electron fixture's launch frames,
-//                       Finder's pinned frame, the Open panel's saved frame. Kept in `placement` and `venue`, and in the
+//                       Finder's pinned frame, the Open panel's saved frame, and the view size the device's `up` writes
+//                       into the parity scenes' TextEdit document. Kept in `placement` and `venue`, and in the
 //                       runner's record, so every scene the device brings up on this runner is launched there, both
 //                       sides alike. A screen not read is recorded, the frames stay unplaced and the setup goes on
 //   textedit defaults   TextEdit's own preferences on this throwaway runner (./venue.mjs writeTextEditDefaults): its
@@ -62,7 +63,7 @@ import {DEVICE} from './plan.mjs';
 import {warmUp as warmUpCopy} from './warm-up.mjs';
 import {isAlertWindow} from './alert-guard.mjs';
 import {TARGET_MODE, switchDisplayMode} from './display-mode.mjs';
-import {TEXTEDIT_WIDTH_IN_CHARS, hostedFrames, textEditWrites, venueRecord, writeTextEditDefaults} from './venue.mjs';
+import {TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_WIDTH_IN_CHARS, hostedFrames, textEditWrites, venueRecord, writeTextEditDefaults} from './venue.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
@@ -88,7 +89,7 @@ function warmUpDetail({capture, captureAlerts, frontAfter, wait}) {
   return `${made}, ${lines}, ${frontName(frontAfter)} in front after it; ${left}`;
 }
 
-const TEXTEDIT_PLACED = `sized by its own preferences (WidthInChars ${TEXTEDIT_WIDTH_IN_CHARS}, no untitled document at launch, the textedit defaults step); its origin is AppKit's, read back by each run`;
+const TEXTEDIT_PLACED = `sized by its own preferences (WidthInChars ${TEXTEDIT_WIDTH_IN_CHARS}, no untitled document at launch, the textedit defaults step), the scenes' document by its view size (${TEXTEDIT_DOCUMENT_VIEW.width}x${TEXTEDIT_DOCUMENT_VIEW.height}, written into it by the device's up); its origin is AppKit's, read back by each run`;
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
 const rectText = r => `${r.x},${r.y} ${r.width}x${r.height}`;
 // The placement step's record from one screen read ({windows, displays}, or null unread): the alert windows read fresh,

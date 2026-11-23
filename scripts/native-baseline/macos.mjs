@@ -138,8 +138,9 @@ function captureGuard(ctx, op, sample, held) {
   const cause = captureCause(reading(ctx)?.bounds ?? null, {scenes: ['textedit']});
   if (cause) refuse(ctx, op, sample, cause, held);
 }
-// The run's windows placed clear of the alerts from a fresh reading (../hosted-sittings/alert-guard.mjs placeWindows),
-// kept in meta.placement with the step it followed (`at`).
+// The run's windows recorded against the alerts from a fresh reading (../hosted-sittings/alert-guard.mjs placeWindows:
+// only Finder's are moved, so TextEdit's and the panel's stand where they were read, with why), kept in meta.placement
+// with the step it followed (`at`).
 async function place(ctx, at) {
   const pid = ctx.meta.textEdit?.pid;
   const placed = await placeWindows(reading(ctx)?.bounds ?? null, {move: ({scene, number, frame}) => {

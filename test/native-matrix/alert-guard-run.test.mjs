@@ -186,14 +186,17 @@ test('the Unicode rows: a field\'s focus click the guard refused leaves its rows
   assert.deepEqual(result.problems, [], 'no refusal stopped the run');
 });
 
-// The Open panel under the pilots' alerts (pilot A: about x 382-671, y 118-511 on 1920x1080). `escape`: whether Escape
-// closes the panel; `placeable`: whether the frame probe moves its window.
-const PILOT = rect(382, 118, 289, 393), PANEL_AT = rect(300, 100, 800, 500);
+// The Open panel and the pilots' alerts (pilot A: about x 382-671, y 118-511 on 1920x1080). `escape`: whether Escape
+// closes the panel; `clear`: whether it opens clear of the alert (its saved frame, the venue's, honoured) or under it.
+// The frame probe moves Finder windows only, so the panel is never moved; the scenes stand where their launch put them
+// (the venue's frames), here clear of the alert.
+const PILOT = rect(382, 118, 289, 393), PANEL_AT = rect(300, 100, 800, 500), PANEL_SAVED = rect(679, 100, 720, 440), LAUNCHED = rect(679, 100, 800, 600);
 // The harness's own Cancel click (./matrix-cells.mjs CLOSE_PANEL), told from the case's.
 const HARNESS_CANCEL = 'if (index !== null) await __app.click(index);';
 const PANEL_PLAN = {id: 'test', frontmost: ['openPanel', 'electron'], speed: false, finding: false, background: [], launch: []};
-function panelRun({escape = true, placeable = true} = {}) {
-  let open = false, panelAt = PANEL_AT;
+function panelRun({escape = true, clear = true} = {}) {
+  let open = false;
+  const panelAt = clear ? PANEL_SAVED : PANEL_AT;
   const placed = [];
   const cell = code => {
     if (code.includes('pressKey("super+o")')) { open = true; return {opened: true}; }
@@ -202,40 +205,36 @@ function panelRun({escape = true, placeable = true} = {}) {
     return null;
   };
   const matrix = (base, a) => {
-    if (a[0] === 'place' && a[a.indexOf('--scene') + 1] === 'openPanel') {
-      placed.push(a);
-      const [x, y, width, height] = a[a.indexOf('--frame') + 1].split(',').map(Number), to = {x, y, width, height};
-      if (placeable) panelAt = to;
-      return {answer: {requested: to, readBack: placeable ? to : PANEL_AT, matched: placeable, exitStatus: 0, pid: 12}, at: [1, 2]};
-    }
+    if (a[0] === 'place') placed.push(a);
     const out = base(a);
     if (!isGuardRead(a)) return out;
     return {...out, alertBounds: {...out.alertBounds, alerts: [{number: 90, layer: 0, bounds: PILOT}],
-      windows: [...out.alertBounds.windows, ...(open ? [{scene: 'openPanel', number: 77, recorded: false, bounds: panelAt}] : [])]}};
+      windows: [...out.alertBounds.windows.map(w => ({...w, bounds: LAUNCHED})), ...(open ? [{scene: 'openPanel', number: 77, recorded: false, bounds: panelAt}] : [])]}};
   };
   return {cell, ops: {matrix}, placed};
 }
 
-test('the Open panel under the pilots\' alerts is placed clear after ⌘O, its Cancel sent, and closed by Escape under the key guard', async () => {
+test('the Open panel opened clear of the pilots\' alerts after ⌘O is recorded where it stands, its Cancel sent, and closed by Escape under the key guard', async () => {
   const calls = [];
   const {cell, ops, placed} = panelRun();
   const {result} = await runWith({plan: PANEL_PLAN, calls, cell, ops});
   assert.equal(result.complete, true, result.problems.join('; '));
-  assert.deepEqual(placed.map(a => [a[a.indexOf('--window') + 1], a[a.indexOf('--frame') + 1]]), [['77', '679,100,800,500']]);
-  assert.deepEqual(result.meta.placement.panel, [{beforeRow: 0, number: 77, from: PANEL_AT, to: rect(679, 100, 800, 500), moved: true, matched: true, readBack: rect(679, 100, 800, 500), pid: 12}]);
-  // The scenes went to the same column, clear of the alert.
-  assert.deepEqual(result.meta.placement.scenes.electron.to, rect(679, 100, 800, 600));
+  assert.deepEqual(placed, [], 'nothing is asked of the frame probe: the panel and the scenes stand clear');
+  assert.deepEqual(result.meta.placement.panel, [{beforeRow: 0, number: 77, from: PANEL_SAVED, moved: false}]);
+  assert.deepEqual(result.meta.placement.scenes.electron, {from: LAUNCHED, moved: false});
   assert.equal(rowOf(result, 'openPanel/frontmost/click.cancel').alertGuard, undefined);
   assert.ok(sent(calls, 'pressKey("Escape")') && !sent(calls, HARNESS_CANCEL), 'closed by key, its Cancel never clicked by the harness');
   assert.equal(rowOf(result, 'electron/frontmost/click.point').alertGuard, undefined, 'the targets after it ran');
 });
 
-test('a panel that cannot be placed nor closed by key: its Cancel refused stops the run, and every sample it planned after is NO VERDICT alert', async () => {
+test('a panel under the alert, which the frame probe cannot move, nor closed by key: its Cancel refused stops the run, and every sample it planned after is NO VERDICT alert', async () => {
   const calls = [];
-  const {cell, ops} = panelRun({escape: false, placeable: false});
+  const {cell, ops, placed} = panelRun({escape: false, clear: false});
   const {result} = await runWith({plan: PANEL_PLAN, calls, cell, ops});
   assert.equal(rowOf(result, 'openPanel/frontmost/click.cancel').alertGuard.cause, 'alert');
-  assert.equal(result.meta.placement.panel[0].matched, false);
+  assert.deepEqual(placed, []);
+  assert.deepEqual([result.meta.placement.panel[0].moved, result.meta.placement.panel[0].from], [false, PANEL_AT]);
+  assert.match(result.meta.placement.panel[0].reason, /the frame probe moves Finder windows only: the openPanel window stays where it was read/);
   assert.ok(!sent(calls, HARNESS_CANCEL), 'the harness\'s Cancel click refused, never sent');
   assert.equal(result.complete, false);
   assert.equal(result.meta.alertGuardStop.cause, 'alert');
@@ -258,7 +257,7 @@ test('a fixture whose cleanup the guard refused for an unread screen is kept blo
 
 // ---- placement --------------------------------------------------------------------------------------------------------
 
-test('placement: a scene window under an alert is moved clear before the lane connects, the same size, and the run\'s meta records it', async () => {
+test('placement: a Finder window under an alert is moved clear before the lane connects, the same size; every other scene window is recorded where it stands, its pointer cells refused', async () => {
   const placed = [];
   const frame = text => { const [x, y, width, height] = text.split(',').map(Number); return {x, y, width, height}; };
   const {result, steps} = await runWith({plan: METHOD, ops: {
@@ -277,11 +276,18 @@ test('placement: a scene window under an alert is moved clear before the lane co
   assert.ok(order.indexOf('matrix place') > order.lastIndexOf('goldens steps') && order.lastIndexOf('matrix place') < order.indexOf('goldens engine-stop'));
   const meta = result.meta.placement;
   assert.deepEqual(meta.alerts, [rect(500, 300, 300, 200)]);
+  assert.ok('finder' in meta.scenes && Object.keys(meta.scenes).length > 1, Object.keys(meta.scenes).join());
   for (const [scene, p] of Object.entries(meta.scenes)) {
     assert.deepEqual(p.from, rect(100, 100, 800, 600), scene);
-    assert.equal(p.moved, true, scene);
-    assert.deepEqual([p.to.width, p.to.height], [800, 600]);
+    if (scene === 'finder') {
+      assert.equal(p.moved, true, scene);
+      assert.deepEqual([p.to.width, p.to.height], [800, 600]);
+    } else {
+      assert.deepEqual([p.moved, 'to' in p], [false, false], scene);
+      assert.match(p.reason, /the frame probe moves Finder windows only/, scene);
+    }
   }
-  // Placed clear, the guard lets the pointer cells run.
-  assert.equal(rowOf(result, 'electron/frontmost/click.point').alertGuard, undefined);
+  assert.deepEqual(placed.map(a => a[a.indexOf('--scene') + 1]), ['finder'], 'only Finder\'s window is offered to the probe');
+  // The Electron window, not moved, stays under the alert: the guard refuses its pointer cells.
+  assert.equal(rowOf(result, 'electron/frontmost/click.point').alertGuard.cause, 'alert');
 });

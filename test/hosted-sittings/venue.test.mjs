@@ -3,13 +3,14 @@
 // size its windows and place its Open panel, the record that declares every frame differing from the mini's, and the
 // check that both sides of a pair stood on one frame.
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
-  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, readBackRows, renderReadBack, renderVenue, savedFrameString, sceneFrames,
-  textEditWrites, UNTITLED_AT_LAUNCH_KEY, venueRecord, writeTextEditDefaults,
+  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, readBackRows, renderReadBack, renderVenue, savedFrameString, sceneFrames,
+  textEditDocumentPlan, textEditWrites, UNTITLED_AT_LAUNCH_KEY, venueRecord, writeTextEditDefaults,
 } from '../../scripts/hosted-sittings/venue.mjs';
-import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
+import {SCENES, textEditDocument} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {CHROME_DRAG_POINTS, ELECTRON_FIELD_LAYOUT, NOT_APPLICABLE} from '../../scripts/native-matrix/plan.mjs';
 import {POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
@@ -19,6 +20,7 @@ const DISPLAY = rect(0, 0, 1920, 1080);
 // Pilot A's re-run (run 45252131587): the two capture alerts re-centred by the switch to 1920x1080.
 const ALERTS = [{number: 31, layer: 8, bounds: rect(830, 188, 260, 348)}, {number: 59, layer: 8, bounds: rect(893, 244, 260, 364)}];
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
+const sha256 = text => createHash('sha256').update(text).digest('hex');
 
 test('the mini\'s frames are the scenes\' own; the hosted sizes are the ruling\'s: Chrome 800x760, the fixture unchanged, Finder 800x520', () => {
   assert.deepEqual(MINI_FRAMES, {chrome: SCENES.chrome.placement, electron: SCENES.electron.placement, finder: FINDER_FRAME});
@@ -48,6 +50,29 @@ test('the hosted frames: each the hosted size at the mini\'s origin, moved clear
   const tight = hostedFrames([{number: 1, bounds: rect(0, 0, 1920, 1080)}], [DISPLAY]);
   assert.deepEqual(tight.frames.finder, rect(80, 80, 800, 520));
   assert.match(tight.scenes.finder.reason, /no 800x520 frame on the display clears the alert windows/);
+});
+
+// Pilot B (run 45274556933): the parity TextEdit scene, its RTF opened as a file, stood at 213,78 627x877 on both sides
+// (Letter paper's 612 points and a 15-point scroller: WidthInChars sizes new documents only), its right edge 840 over
+// alert 31. The venue declares the document's own view size instead. Its window is the view, TextEdit's padding (5 a
+// side) and the scroller; its origin is AppKit's cascade: 213 (pilot B) and 242 (pilot A's new document) read so far,
+// one cascade step of 30 more allowed. The sum must stay inside the strip's 822.
+test('TextEdit\'s scene document view: the window it makes stays inside the strip from any cascade origin read so far, one step more', () => {
+  assert.deepEqual(TEXTEDIT_DOCUMENT_VIEW, {width: 480, height: 792});
+  const furthest = Math.max(213, 242) + 30, chrome = 627 - 612 + 2 * 5;
+  assert.ok(furthest + TEXTEDIT_DOCUMENT_VIEW.width + chrome <= 830 - 8, `${furthest + TEXTEDIT_DOCUMENT_VIEW.width + chrome}`);
+  // The height is the paper's, as TextEdit took it unasked (877 = 792 and its bars), so the rows shown stay.
+  assert.equal(TEXTEDIT_DOCUMENT_VIEW.height, 792);
+  const plan = textEditDocumentPlan();
+  assert.deepEqual(plan.view, TEXTEDIT_DOCUMENT_VIEW);
+  assert.equal(plan.controlWords, '\\vieww9600\\viewh15840');
+  for (const layout of ['default', 'wide-page']) {
+    assert.deepEqual(plan.sha256[layout], {mini: sha256(textEditDocument({layout}).rtf), hosted: sha256(textEditDocument({layout, view: TEXTEDIT_DOCUMENT_VIEW}).rtf)}, layout);
+    assert.notEqual(plan.sha256[layout].mini, plan.sha256[layout].hosted);
+  }
+  // The goldens' provenance names both files' hashes, so the recording's document and the hosted one are told apart.
+  const provenance = readFileSync(new URL('../native-goldens/PROVENANCE.md', import.meta.url), 'utf8');
+  for (const [layout, {mini, hosted}] of Object.entries(plan.sha256)) assert.ok(provenance.includes(mini) && provenance.includes(hosted), `PROVENANCE.md names ${layout}'s hashes`);
 });
 
 test('TextEdit\'s preferences: its own domain only, its width in characters, the Open panel\'s saved frame in AppKit\'s coordinates and its size', () => {
@@ -113,7 +138,7 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
   assert.deepEqual(venue.frames, placed.frames);
   assert.deepEqual(venue.alerts, ALERTS.map(({number, bounds}) => ({number, bounds})));
   assert.deepEqual(venue.display, DISPLAY);
-  assert.deepEqual(venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'openPanel']);
+  assert.deepEqual(venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'textedit document', 'openPanel']);
   const chrome = venue.differences.find(d => d.scene === 'chrome');
   assert.deepEqual([chrome.mini, chrome.hosted], [MINI_FRAMES.chrome, rect(22, 60, 800, 760)]);
   assert.match(chrome.reason, /alert 31 \(830,188 260x348\), alert 59 \(893,244 260x364\)/);
@@ -132,6 +157,18 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
   assert.match(textedit.reason, /242,107 603x505/);
   assert.match(textedit.reason, /241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next/);
   assert.ok(textedit.cells.includes('textedit/frontmost/drag.select'));
+  // The scene document: its view size and both files' hashes, declared, the same plan every side's up reads.
+  assert.deepEqual(venue.textEditDocument, textEditDocumentPlan());
+  const document = venue.differences.find(d => d.scene === 'textedit document');
+  const {sha256: hashes} = textEditDocumentPlan();
+  assert.equal(document.mini['view size'], 'none: TextEdit takes the paper\'s width');
+  assert.deepEqual([document.mini['sha256 default'], document.mini['sha256 wide-page']], [hashes.default.mini, hashes['wide-page'].mini]);
+  assert.equal(document.hosted['view size'], '480x792 (\\vieww9600\\viewh15840)');
+  assert.deepEqual([document.hosted['sha256 default'], document.hosted['sha256 wide-page']], [hashes.default.hosted, hashes['wide-page'].hosted]);
+  assert.match(document.reason, /213,78 627x877 on both sides \(pilot B, run 45274556933\)/);
+  assert.match(document.grounding, /text and attribute runs are the mini's/);
+  assert.ok(document.cells.includes('textedit/frontmost/drag.select') && document.cells.some(c => /^native-mac textedit/.test(c)));
+  assert.ok(document.cells.some(c => c.startsWith('hscroll/textedit-wide-page/right')), 'the wide page\'s horizontal scroll rests on it too');
   const panel = venue.differences.find(d => d.scene === 'openPanel');
   assert.deepEqual(panel.hosted, rect(80, 80, 720, 440));
   assert.match(panel.mini, /centred/);
@@ -146,6 +183,8 @@ test('the venue renders for sitting.md: each difference with its frame, reason a
   assert.match(md, /^## The venue \(ruling 1169\)/);
   assert.match(md, /\| chrome \| 80,60 1000x760 \| 22,60 800x760 \|/);
   assert.match(md, /chrome\/frontmost\/drag\.select/);
+  const {sha256: hashes} = textEditDocumentPlan();
+  assert.match(md, new RegExp(`^\\| textedit document \\| view size none: TextEdit takes the paper's width, sha256 default ${hashes.default.mini}, sha256 wide-page ${hashes['wide-page'].mini} \\| view size 480x792 \\(\\\\vieww9600\\\\viewh15840\\), sha256 default ${hashes.default.hosted}, sha256 wide-page ${hashes['wide-page'].hosted} \\|`, 'm'));
   assert.match(renderVenue(null), /no venue recorded/);
 });
 
@@ -161,6 +200,19 @@ test('a side\'s frames from each record shape: the matrix\'s, native-mac\'s and 
   assert.deepEqual(sceneFrames(baseline(rect(256, 87, 503, 488), rect(257, 107, 520, 505))),
     {'setup.newDocument/textedit#1': rect(256, 87, 503, 488), 'setup.newDocument/textedit#2': rect(257, 107, 520, 505)});
   assert.deepEqual(sceneFrames({complete: true}), {});
+});
+
+// A window stands where it was last read: its read-back when a move read one back, else where it was read before. Pilot
+// B's records (run 45274556933) kept TextEdit's window as moved with no read-back, and the sitting's read-back table then
+// said no TextEdit window was read back, though the window stood at 213,78 627x877 on both sides.
+test('a side\'s frames keep every window read, where it was last read: a move with no read-back stands where it was read', () => {
+  const pilotB = {complete: false, scenes: {textedit: {placement: {alerts: [], windows: [{scene: 'textedit', number: 66, from: rect(213, 78, 627, 877), to: rect(195, 78, 627, 877), moved: true, readBack: null, matched: false}]}}}};
+  assert.deepEqual(sceneFrames(pilotB), {'textedit/textedit#1': rect(213, 78, 627, 877)});
+  const notMoved = {complete: true, placement: {alerts: [], scenes: {textedit: {from: rect(213, 78, 627, 877), moved: false, reason: 'the frame probe moves Finder windows only'}}}};
+  assert.deepEqual(sceneFrames(notMoved), {textedit: rect(213, 78, 627, 877)});
+  // A Finder move the probe left part done: where it read back.
+  const partly = {complete: true, placement: {alerts: [], scenes: {finder: {from: rect(700, 150, 800, 520), to: rect(22, 80, 800, 520), moved: true, readBack: rect(22, 150, 800, 520), matched: false}}}};
+  assert.deepEqual(sceneFrames(partly), {finder: rect(22, 150, 800, 520)});
 });
 
 test('symmetry: a pair whose sides stood on different frames names the scene and both frames; one frame, or a side not read, is none', () => {
@@ -183,12 +235,17 @@ test('the read-back of TextEdit and the Open panel per step: planned against act
     {step: 'matrix-cua-1', record: matrix(rect(22, 60, 800, 760))},
     {step: 'textedit up', record: scratch},
     {step: 'cc-1', record: null},
+    {step: 'native-mac vendor', record: parity(rect(213, 78, 505, 877))},
+    {step: 'matrix-vendor-1', record: {complete: true, meta: {placement: {alerts: [], scenes: {textedit: {from: rect(213, 78, 505, 877), moved: false}}}}}},
   ], venue);
   assert.deepEqual(rows, [
     {step: 'vc-1', window: 'setup.newDocument/textedit#1', planned: 'WidthInChars 60, left of x 830', actual: rect(241, 87, 520, 488), overlap: false},
     {step: 'vc-1', window: 'setup.newDocument/textedit#2', planned: 'WidthInChars 60, left of x 830', actual: rect(700, 107, 764, 505), overlap: true},
     {step: 'matrix-cua-1', window: 'openPanel#1', planned: rect(80, 80, 720, 440), actual: rect(80, 80, 720, 440), overlap: false},
     {step: 'textedit up', window: 'textedit#1', planned: 'WidthInChars 60, left of x 830', actual: rect(256, 87, 503, 488), overlap: false},
+    // The scene document, opened from the run's RTF: its view size, not WidthInChars, sizes its window.
+    {step: 'native-mac vendor', window: 'textedit/textedit#1', planned: 'view 480x792, left of x 830', actual: rect(213, 78, 505, 877), overlap: false},
+    {step: 'matrix-vendor-1', window: 'textedit', planned: 'view 480x792, left of x 830', actual: rect(213, 78, 505, 877), overlap: false},
   ]);
   const md = renderReadBack(rows);
   assert.match(md, /^\| vc-1 \| setup\.newDocument\/textedit#2 \| WidthInChars 60, left of x 830 \| 700,107 764x505 \| yes \|$/m);

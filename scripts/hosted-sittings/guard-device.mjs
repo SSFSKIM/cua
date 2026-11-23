@@ -8,7 +8,8 @@
 //       when the window list was unread), the displays, the front application's bundle id (lsappinfo), and with --key
 //       the key application's bundle id and whether its focused window is one of the targets' (the approved engine's
 //       `--probe focus`; null when unread); with --key-window the first target's app's own key window against its scene
-//       window (./key-window.mjs ownKeyWindow, the key-window requirement). -> {bounds, front, key, keyWindow?, ownKey?, at}
+//       window (./key-window.mjs ownKeyWindow, the key-window requirement): a shared process's (`only`) recorded window,
+//       else the process's frontmost on-screen window, the one a cell acts in. -> {bounds, front, key, keyWindow?, ownKey?, at}
 //   trust
 //       whether the key-window reader (../cursor-sitting/ax-state.swift) holds the Accessibility grant in this process's
 //       chain: ax-state asked about this process itself, which answers its grant before reading anything. Setup asks
@@ -61,7 +62,10 @@ export function readGuard({targets, key = false, keyWindow = false}, io) {
     out.keyWindow = owned ? {owned, bounds: report.focusedWindow.bounds ?? null} : {owned: false};
   }
   if (keyWindow && targets.length) {
-    out.ownKey = Array.isArray(screen?.windows) ? ownKeyWindow(screen.windows, targets[0], io.axState)
+    // A target's window number marks the guard's recorded window; the key-window reading names one only for a shared
+    // process (Finder's): a process the run launched acts in its frontmost window, whatever window up recorded.
+    const scene = targets[0].only ? targets[0] : {...targets[0], number: null};
+    out.ownKey = Array.isArray(screen?.windows) ? ownKeyWindow(screen.windows, scene, io.axState)
       : {scene: targets[0].scene, number: null, trusted: null, ok: false, reason: 'the window list was unread'};
   }
   return {...out, at: [from, Date.now()]};

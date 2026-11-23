@@ -92,7 +92,7 @@ import {windowTitleOf} from './scenes-mac-text.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
-import {readRunnerRecord, venueFramesOf} from '../hosted-sittings/runner.mjs';
+import {readRunnerRecord, venueFramesOf, venueTextEditViewOf} from '../hosted-sittings/runner.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const TEXTEDIT_BUNDLE_ID = 'com.apple.TextEdit';
@@ -113,10 +113,21 @@ const rtfLine = line => (line === TEXTEDIT_STYLED_LINE ? `{\\b ${line}}` : line)
 // TextEdit ignores the paper width (`\\paperw28800`, 1440 points in twips) for the page view and lays the page out on
 // its own paper size, which fits the window, its horizontal bar disabled (hold 1, 2026-10-21).
 export const TEXTEDIT_LAYOUTS = Object.freeze({default: '', 'wide-page': '\\paperw28800\\paperh15840\\viewkind1\\viewscale200'});
-export const textEditDocument = ({layout = 'default'} = {}) => {
+// `view` ({width, height} in whole points, or none): TextEdit's own saved view size (`\\viewwN\\viewhN`, twips, 20 a
+// point), which AppKit's RTF reader returns as NSViewSizeDocumentAttribute and TextEdit sizes the document's window from;
+// without it an opened RTF takes its paper's width. Only a hosted runner's venue asks for one (ruling 1169;
+// ../hosted-sittings/venue.mjs TEXTEDIT_DOCUMENT_VIEW): the words are inserted after the font table and nothing else
+// changes, so the text and its attribute runs are the mini's, and with no view the bytes are.
+const isPoints = n => Number.isSafeInteger(n) && n > 0;
+export const textEditViewWords = view => {
+  if (!isPoints(view?.width) || !isPoints(view?.height)) throw new Error(`a TextEdit view size is whole positive points {width, height}, not ${JSON.stringify(view)}`);
+  return `\\vieww${view.width * 20}\\viewh${view.height * 20}`;
+};
+export const textEditDocument = ({layout = 'default', view = null} = {}) => {
   if (!Object.hasOwn(TEXTEDIT_LAYOUTS, layout)) throw new Error(`unknown TextEdit layout ${layout}; one of ${Object.keys(TEXTEDIT_LAYOUTS).join(', ')}`);
+  const viewWords = view === null ? '' : textEditViewWords(view);
   return {name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],
-    rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}${TEXTEDIT_LAYOUTS[layout]}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`};
+    rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}${viewWords}${TEXTEDIT_LAYOUTS[layout]}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`};
 };
 
 // Finder's run-owned folder: 200 files named without an extension, so the owner's show-extensions setting cannot change
@@ -385,7 +396,7 @@ export const defaultIo = () => ({
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
-  venueFrames: () => venueFramesOf(readRunnerRecord()),
+  venueFrames: () => venueFramesOf(readRunnerRecord()), venueTextEditView: () => venueTextEditViewOf(readRunnerRecord()),
 });
 
 // What the refusal check reads on the device.
@@ -403,9 +414,10 @@ export function preflight({run, io = defaultIo()}) {
 }
 class Refused extends Error { constructor(list) { super(list.map(r => r.message).join('; ')); this.refusals = list; } }
 
-// A new document window of `pid` (one not in `before`), polled for up to `boundMs`. With `onScreenOnly` (Finder) only
-// an on-screen window counts and more than one is an error: the run's window must be the one its open showed, never
-// one of Finder's own off-screen windows nor a window someone opened beside it. -> {number, bounds}.
+// A new document window of `pid` (one not in `before`), polled for up to `boundMs`. With `onScreenOnly` (Finder, Chrome
+// for Testing and the Electron fixture) only an on-screen window counts and more than one is an error: the run's window
+// must be the one its open showed, never one of Finder's own off-screen windows, a document-size window a Chromium app
+// lists but never shows, nor a window someone opened beside it. -> {number, bounds}.
 async function awaitWindow(pid, {before = [], io, boundMs = 20_000, onScreenOnly = false}) {
   for (const t0 = io.now(); ;) {
     const fresh = documentWindows(io.appWindows(pid)).filter(w => !before.includes(w.number) && (!onScreenOnly || w.onScreen === true));
@@ -535,10 +547,12 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
   const frames = io.venueFrames?.() ?? null;
   let record;
   if (id === 'textedit') {
-    const doc = textEditDocument({layout}), dir = join(run, 'textedit'), file = join(dir, doc.name);
+    // On a hosted runner the venue's view size, so the opened document's window stands clear of the alerts (ruling 1169).
+    const view = io.venueTextEditView?.() ?? null;
+    const doc = textEditDocument({layout, view}), dir = join(run, 'textedit'), file = join(dir, doc.name);
     fs.mkdirSync(dir, {recursive: true, mode: 0o700});
     fs.writeFileSync(file, doc.rtf, {mode: 0o600});
-    record = {app: scene.app, document: file, ...(layout && layout !== 'default' ? {layout} : {}), ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io,
+    record = {app: scene.app, document: file, ...(layout && layout !== 'default' ? {layout} : {}), ...(view ? {documentView: {view, from: 'venue'}} : {}), ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io,
       awaitOne: pid => awaitOnlyWindow(pid, {io})})};
   } else if (id === 'finder') {
     const folder = join(run, 'finder', FINDER_FOLDER), pid = checked.finderPid;
@@ -586,8 +600,11 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
     const app = electronApp ?? io.buildElectron().appPath, userDataDir = join(run, 'electron-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});
     const launchFrame = launchFrameOf(id, frames);
+    // The window the fixture shows (it is Chromium: a document-size window it lists but never shows can come first, as
+    // Chrome's did in #187's slot; pilot B's vendor side recorded one, run 45274556933).
     record = {app, userDataDir, ...(electronExtra.length ? {extraArgs: [...electronExtra]} : {}), launchFrame,
-      ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir, extra: electronExtra, placement: launchFrame.frame}), io})};
+      ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir, extra: electronExtra, placement: launchFrame.frame}), io,
+        awaitOne: pid => awaitWindow(pid, {io, onScreenOnly: true})})};
   }
   record = {scene: id, bundleId: scene.bundleId, ...record};
   record.setup = setupSteps(id, record, frames?.finder ? {finderFrame: frames.finder} : {});

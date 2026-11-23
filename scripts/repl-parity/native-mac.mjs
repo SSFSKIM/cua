@@ -404,8 +404,9 @@ function guardRead(ctx, id, record, {key = false} = {}) {
   try { return ctx.ops.guard(['read', '--target', guardTarget(id, record), ...(key ? ['--key', '--key-window'] : [])]) ?? null; } catch { return null; }
 }
 // The scene's windows placed clear of the alerts once it is up and set up, from a fresh reading, by the shared rule
-// (placeWindows), alike on both lanes: kept in the scene's account (`placement`: from, to and the read-back per window).
-// Nothing is placed again during the scene.
+// (placeWindows: Finder's moved by the frame probe, every other window recorded where it was read, with why), alike on
+// both lanes: kept in the scene's account (`placement`: from, to and the read-back per window). Nothing is placed again
+// during the scene.
 async function placeScene(ctx, id, record) {
   ctx.checkpoint();
   ctx.meta.scenes[id].placement = await placeWindows(guardRead(ctx, id, record)?.bounds ?? null, {move: ({scene, number, frame}) => {

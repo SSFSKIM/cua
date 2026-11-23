@@ -53,6 +53,14 @@ test('read --key-window: the target app\'s own focused and main windows against 
   asked.length = 0;
   assert.equal((await main(['read', '--target', 'finder:410:21:only', '--key-window'], {io: two})).ownKey.number, 21);
   assert.deepEqual(asked, [[410, '22,80,800,520']]);
+  // A process the run launched names its recorded window for the guard (native-mac's target), but the window a cell acts
+  // in is its frontmost on-screen one: the recorded number is read only for a shared process (`only`). Pilot B's vendor
+  // side recorded an Electron window never shown (run 45274556933): its reading was "not on screen" beside the window.
+  const electron = {ownerPid: 700, ownerName: 'cua Electron Fixture', ownerBundleId: 'io.github.ssfskim.cua.fixture.electron', layer: 0, number: 106, name: 'x', bounds: rect(102, 100, 720, 560)};
+  asked.length = 0;
+  const shown = await main(['read', '--target', 'electron:700:41', '--key-window'], {io: io({axState, screen: () => ({...screen, windows: [...screen.windows, electron]})})});
+  assert.deepEqual([shown.ownKey.number, shown.ownKey.ok], [106, true]);
+  assert.deepEqual(asked, [[700, '102,100,720,560']]);
   // No --key-window: no reading taken. The scene window not on screen, an untrusted reader or a failed read: unread.
   assert.equal((await main(['read', '--target', 'textedit:600'], {io: io({axState: () => assert.fail('not asked')})})).ownKey, undefined);
   const gone = await main(['read', '--target', 'textedit:999', '--key-window'], {io: io({axState})});

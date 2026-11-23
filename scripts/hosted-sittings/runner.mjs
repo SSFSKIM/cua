@@ -95,6 +95,14 @@ export function venueFramesOf(record) {
   if (!frames || typeof frames !== 'object') return null;
   return Object.fromEntries(Object.entries(frames).filter(([, f]) => isFrame(f)).map(([scene, {x, y, width, height}]) => [scene, {x, y, width, height}]));
 }
+// The view size the venue gives TextEdit's scene document (./venue.mjs TEXTEDIT_DOCUMENT_VIEW), which the device's
+// `up textedit` writes into the run's RTF: {width, height} in whole positive points, or null (no venue, or none
+// declared), where the document keeps the mini's bytes.
+const isPoints = n => Number.isSafeInteger(n) && n > 0;
+export function venueTextEditViewOf(record) {
+  const view = record?.venue?.textEditDocument?.view;
+  return isPoints(view?.width) && isPoints(view?.height) ? {width: view.width, height: view.height} : null;
+}
 
 // meta.hosted and meta.runner, from the device's record (preflight's `runner`, null when it has none) and the
 // controller's environment; with the approved paths the harness was given, those must be the run's own install.

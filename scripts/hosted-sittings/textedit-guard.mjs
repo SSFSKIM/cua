@@ -6,8 +6,10 @@
 // keyCause): the activation click cua's route 3 may post around a keyed typeText or a paste goes to TextEdit's pid
 // only, so a key cell is refused when the alert holds the key, and by the key guard when TextEdit is not in front; the
 // fixture's marker cell, which captures TextEdit's window after typing, is held to the capture rule too
-// (scripts/accept/textedit.mjs fixtureKeyCell, from this guard's `read`). TextEdit's windows are placed clear of the
-// alerts once a document is up. The readings are this runner's own (./guard-device.mjs readGuard, placeWindow).
+// (scripts/accept/textedit.mjs fixtureKeyCell, from this guard's `read`). TextEdit's windows are recorded where they
+// stand once a document is up (placeWindows: the frame probe moves Finder windows only, so none of TextEdit's or the
+// panel's is moved; the guard refuses what an alert overlaps). The readings are this runner's own (./guard-device.mjs
+// readGuard, placeWindow).
 import {spawnSync} from 'node:child_process';
 import {placeWindows} from './alert-guard.mjs';
 import {defaultGuardIo, placeWindow, readGuard} from './guard-device.mjs';
@@ -21,7 +23,8 @@ export function textEditGuard({pids = runningTextEdits, io = defaultGuardIo()} =
   const read = ({key = false, keyWindow = false} = {}) => readGuard({targets: targets(), key, keyWindow}, io);
   return {
     read,
-    // Each window under an alert moved clear, by the pid that shows it (a TextEdit window) or as the Open panel's.
+    // Each window under an alert that the frame probe can move (FRAME_PROBE_SCENES: none of D's today) moved clear, by
+    // the pid that shows it or as the Open panel's; the others recorded where they stand.
     place: () => placeWindows(read().bounds, {move: ({scene, number, frame}) => {
       const asks = scene === 'openPanel' ? [{panel: true}] : pids().map(pid => ({pid}));
       let last = null;

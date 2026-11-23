@@ -792,13 +792,14 @@ test('sitting A: under an overlapping alert the scratch document\'s click is ref
     assert.deepEqual(r.meta.alertGuardCounts, {'setup.newDocument': {alert: 1, unread: 0}});
     assert.deepEqual(recordCheck(r.meta, engine)[0], 'NO VERDICT');
     assert.match(recordCheck(r.meta, engine)[1], /^alert: meta\.json stopped: the alert guard refused/);
-    // The placement tried first, from the same fresh reading: the window under the alert moved clear, read back.
+    // The placement read first, from the same fresh reading: the frame probe moves Finder windows only, so TextEdit's
+    // window under the alert is recorded where it was read, not moved, with why; nothing was asked of the probe.
     const [placed] = r.meta.placement;
     assert.equal(placed.at, 'setup.activate');
     assert.deepEqual(placed.windows[0].from, rect(79, 31, 627, 677));
-    assert.equal(placed.windows[0].moved, true);
-    assert.deepEqual(placed.windows[0].readBack, placed.windows[0].to);
-    assert.deepEqual(r.state.places, [{pid: TEXTEDIT_PID, window: 7, frame: placed.windows[0].to}]);
+    assert.equal(placed.windows[0].moved, false);
+    assert.match(placed.windows[0].reason, /the frame probe moves Finder windows only/);
+    assert.deepEqual(r.state.places ?? [], []);
   }
   assert.deepEqual(sides[0].state.guards, sides[1].state.guards, 'the same readings on both sides');
   assert.deepEqual(sides[0].meta.placement, sides[1].meta.placement, 'the same placement on both sides');

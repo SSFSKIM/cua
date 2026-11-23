@@ -148,9 +148,10 @@ client on another machine, see Remote control.
 ### cua's own macOS engine
 
 On macOS the computer surface runs cua's own engine by default: `cua Engine.app`, built from `native/engine/` (#117,
-`docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`). A session on it runs on cua's own REPL host (Node 24,
-Use) and needs an engine approved on this Mac at the version this cua drives (0.2.0) or later; until one is, the
-default keeps OpenAI's engine with a warning in `cua doctor` (Use, Native engine). `CUA_NATIVE_ENGINE=vendor` in the
+`docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`). A session on it runs on cua's own REPL host, which
+needs Node 24 (Use, REPL host: its table tells the default's fallbacks from an explicit selection's refusals), and needs
+an engine approved on this Mac at the version this cua drives (0.2.0) or later; until one is, the default keeps
+OpenAI's engine and says so (Use, Native engine: the first-run state). `CUA_NATIVE_ENGINE=vendor` in the
 server's environment, or `"engine": "vendor"` in `~/.config/cua/engine.json` (Configuration), keeps OpenAI's engine
 as the rollback, and a session on it is unaffected by everything below. The steps, in order: a signing identity once
 per Mac, a build, an approval with the owner at the console. The step list for a new Mac is
@@ -207,8 +208,11 @@ node bin/cua.mjs install --engine     # or: node bin/cua.mjs engine build
 
 `cua install` builds the engine, last, after the runtime and Node, when it is selected (`CUA_NATIVE_ENGINE`, else
 `engine.json`, else the default, cua's engine), or with `--engine` whatever selects; `--engine` makes the build
-required (without it a failed build, such as one with no signing identity yet, is reported and the rest of the install
-stands) and does not change the selection. Install never approves: it sends no grant request,
+required (without it a failed build, such as one with no signing identity yet, is a warning and the rest of the install
+stands: it names the cause, such as Xcode missing, no signing identity or a compile error, says which engine sessions
+keep until a build is approved, and gives the remedy) and does not change the selection. A failed build is recorded
+beside the approved engine (`build-failed.json`) so sessions and `cua doctor` can name its cause; a build that succeeds,
+or an approve, removes the record. Install never approves: it sends no grant request,
 launches nothing and captures nothing, so an ordinary or CI install raises no permission dialog. The build goes into the
 pending slot ("a new build is pending; cua engine approve to use it"); one that is already the approved build changes
 nothing. `cua engine build` does the same on its own. `--engine-sign adhoc` (`cua engine build --sign adhoc`) signs ad
@@ -360,6 +364,24 @@ engine approve`), or the way back below until it has one. An install never appro
 waits pending until the owner runs `cua engine approve` at the console. Meanwhile an approved build at or above the
 minimum stays in use (ruling 1118); only a Mac with no usable approved build (none, or one older than 0.2.0) keeps the
 vendor's engine by default until that approval, and refuses an explicit selection of cua's.
+
+**The first-run state.** Between the install that builds cua's engine and the owner's first `cua engine approve`, every
+Mac has no approved engine. That is normal, not a fault: macOS computer sessions use the vendor engine, and each
+connection says so once, at the end of its first `js` result and as `_meta['cua/engineNotice']` (the same string), in
+one line that gives the reason, then the remedy:
+
+```text
+cua: this session keeps the vendor engine: no approved cua engine (build 3f2a9c81d0e4 built, awaiting approve); to use it, run `cua engine approve` with the owner at the console
+```
+
+The reason is one of: `not built`; `build failed: <cause>` (the last build's, such as `Xcode is not installed (no
+swift)` or `no signing identity is configured`); `build <id> built, awaiting approve`; or a pending build older than
+0.2.0, which approving would not put in use. For anything but a build awaiting approve, the remedy is `cua install
+--engine`, then `cua engine approve` with the owner at the console (fixing a failed build's cause first). `cua doctor`'s
+`repl.host` and `engine` rows open with the same reason and remedy, and an approved engine older than 0.2.0 is said the
+same way. The next connection after an approve drives cua's engine. A Mac with no runtime either refuses the macOS
+computer session (`runtime_not_installed`), giving the runtime's remedy and this same reason and remedy; it never starts
+half-installed. An explicit selection of an engine has no such line: it gets the engine it names or a refusal.
 **The way back:** `CUA_NATIVE_ENGINE=vendor` in a session's environment, or `"engine": "vendor"` in
 `~/.config/cua/engine.json` for every session on the Mac, runs the vendor host and engine as before #117's M5; it
 stays until #117's M6 retires the vendor engine. Where `CUA_REPL_HOST=cua` is set, also unset it or set it to

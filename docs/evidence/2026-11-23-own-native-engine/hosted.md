@@ -82,6 +82,20 @@ paths come from the runner's record, so `plan` only works on a runner after setu
   - An exit counts only if the judge's report exists, so a build that fails is not an expected FAIL.
   - The same lane also runs alone as `ci-gate <sha> --gates default-selection-approved`.
 - **F** is PENDING until T12 (the MAWS build and both scripts).
+  - *The owner's Mac before F's approve (O1; ruling 1148).* After the flip's `cua install`, the Mac has cua's engine
+    built pending and nothing approved. That is the flip's normal first-run state, not a failure: every macOS computer
+    session uses the vendor engine until the owner runs `cua engine approve` at the console. Each connection says so
+    once, at the end of its first `js` result and in `_meta['cua/engineNotice']`, the same string:
+
+    ```text
+    cua: this session keeps the vendor engine: no approved cua engine (build <id> built, awaiting approve); to use it, run `cua engine approve` with the owner at the console
+    ```
+
+    With no build pending, the reason reads `not built` or `build failed: <cause>` (Xcode missing, no signing identity,
+    a compile error), and the remedy is `cua install --engine`, then `cua engine approve`. `cua doctor`'s `repl.host` and
+    `engine` rows open with the same reason and remedy. After the approve, the next connection drives cua's engine and
+    carries no line. A Mac with no vendor runtime either refuses the session (`runtime_not_installed`) with the same
+    reason and remedy; it never starts in a broken state.
 
 ## What each sitting needs from M4
 

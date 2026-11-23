@@ -18,7 +18,7 @@ that was set up that way moves with the README's "Moving a home off the ChatGPT 
 | 4 Extension in each Chrome profile | the cua extension from the Chrome Web Store once listed; until then load `extension/` unpacked | yes | `chrome.extension.<key>` PASS |
 | 5 Native host registration | `cua chrome register` | no | `chrome.host.registered` PASS |
 | 6 Register and bind the profile | `cua profiles add`, Chrome open on it, `cua profiles bind` | yes, for any pick | `profiles list`: ready |
-| 7 cua's engine and its permissions (native surface) | cua's engine (the default): a signing identity, `cua install --engine`, `cua engine approve`, then allow cua Engine's Accessibility, Screen & System Audio Recording and Input Monitoring. The vendor engine (the rollback, and the fallback until an engine is approved): allow Accessibility and Screen Recording when asked | yes: the grants, and for cua's engine its first sign's keychain prompt | `cua doctor`: `engine` PASS |
+| 7 cua's engine and its permissions (native surface) | cua's engine (the default): a signing identity, `cua install --engine`, `cua engine approve`, then allow cua Engine's Accessibility, Screen & System Audio Recording and Input Monitoring. The vendor engine (the rollback, and the fallback until an engine is approved): allow Accessibility and Screen Recording when asked | yes: the grants, and for cua's engine its first sign's keychain prompt | cua's engine: `cua doctor`'s `engine` PASS. The vendor engine: a first native call in a session works, then `helper.live` PASS (`engine` reads `skip` with the vendor engine selected, and `warn` while the default falls back to it) |
 | 8 Claude Code wiring | `claude mcp add …`, settings permissions and hook | no | `claude mcp list`: Connected |
 
 ## The steps
@@ -36,8 +36,9 @@ Requirements: Apple silicon, Node 22 or newer. `install` refuses an archive whos
 differ from the pinned record, and never modifies vendor files. Doctor's `runtime.*` and `sandbox` rows should PASS;
 `helper.live` and `helper.permissions` stay BLOCKED until a native call, and the `engine` row warns until step 7 (no
 approved engine yet, so computer sessions keep the vendor's). `install` also tries to build cua's engine, the default
-(step 7); until step 7's Xcode and signing identity are in place it reports that build as not installed, with the
-reason, and the rest of the install stands.
+(step 7); until step 7's Xcode and signing identity are in place that build fails with a warning that names the cause
+(Xcode missing, no signing identity, a compile error), says sessions keep the vendor engine until a build is approved,
+and gives the remedy. The install still succeeds.
 
 ### 2. Secrets (only if secret substitution will be used)
 
@@ -175,11 +176,22 @@ pending until `cua engine approve` puts it in place; the approved engine serves 
 the version this cua drives. Under the same identity the grants carry over, so that approval normally needs no one at
 the Mac.
 
-**Until an engine is approved, and as the rollback,** computer sessions run the vendor's engine. With no approved
-engine, or one older than this cua drives (0.2.0), the default keeps the vendor's engine and doctor's `engine` row
-warns, naming `cua engine approve` for a pending build that meets the minimum, else `cua install --engine` then
-`cua engine approve`. `CUA_NATIVE_ENGINE=vendor` for a session, or `"engine": "vendor"` in `~/.config/cua/engine.json`
-for the Mac, keeps the vendor's engine until #117's M6 retires it. On the vendor engine the first native call starts
+**Until an engine is approved, and as the rollback,** computer sessions run the vendor's engine. From step 1's
+install to step 4's approve this is every new Mac's normal state, not a fault: each session's first `js` result ends
+with one line (also in `_meta['cua/engineNotice']`), and doctor's `repl.host` and `engine` rows warn with the same
+words, the reason first, then the remedy:
+
+- *No approved engine.* The reason is `not built`, `build failed: <cause>` (the last build's), `build <id> built,
+  awaiting approve`, or a pending build older than 0.2.0. The remedy is `cua engine approve` with the owner at the
+  console for a build awaiting approve; otherwise `cua install --engine`, then `cua engine approve` (a failed build's
+  cause fixed first: a pending build older than the minimum would not be used if approved).
+- *An approved engine older than this cua drives (0.2.0).* The reason names its version. The remedy is `cua engine
+  approve` when a build at or above the minimum is pending beside it, else `cua install --engine`, then `cua engine
+  approve`.
+
+With no runtime installed either (step 1 not done), a computer session is refused with the runtime's remedy and the
+same engine reason and remedy. `CUA_NATIVE_ENGINE=vendor` for a session, or `"engine": "vendor"` in
+`~/.config/cua/engine.json` for the Mac, keeps the vendor's engine until #117's M6 retires it, with no such line. On the vendor engine the first native call starts
 the pinned helper through LaunchServices; it shows its own "Enable ChatGPT Computer Use" window and then macOS asks for
 Accessibility and Screen Recording, attributed to the helper, which a person allows once in System Settings. A
 browser-only machine still needs the runtime to start for the listing launch, but the Chrome acceptance ran without
@@ -192,12 +204,16 @@ claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -- node ~/
 claude mcp list
 ```
 
-That keeps the default, cua's own engine where one is approved (step 7), else the vendor engine with a warning. To
-keep the vendor engine (the rollback), add `-e CUA_NATIVE_ENGINE=vendor` before `--` in the command above for this
-server, or set `"engine": "vendor"` in `~/.config/cua/engine.json` for every session of the account; the variable wins
-over the file. Configuring `signingIdentity` selects nothing for `serve`. An explicit selection of cua's engine
-(`CUA_NATIVE_ENGINE=cua` or `"engine": "cua"`) with no approved engine this cua drives is refused, naming `cua install
---engine` and `cua engine approve`.
+That keeps the default, cua's own engine where one is approved (step 7), else the vendor engine with the line step 7
+describes. cua's engine also needs Node 24 for cua's own REPL host; where none is found the default keeps the vendor
+host and engine, and an explicit selection is refused: the README's REPL host table (under Use) tells the default's
+fallbacks, an explicit selection's `repl_host_node` and `CUA_REPL_HOST=vendor` apart. To keep the vendor engine (the
+rollback), add `-e CUA_NATIVE_ENGINE=vendor` before `--` in the command above for this server, or set `"engine":
+"vendor"` in `~/.config/cua/engine.json` for every session of the account; the variable wins over the file.
+Configuring `signingIdentity` selects nothing for `serve`. An explicit selection of cua's engine (`CUA_NATIVE_ENGINE=cua`
+or `"engine": "cua"`) with no approved engine this cua drives is refused: with none approved (`engine_not_installed`),
+naming `cua install --engine` and then `cua engine approve`; with one older than 0.2.0 (`engine_outdated`), naming
+`cua engine approve` alone when a build at or above the minimum is already pending, else both.
 
 `~/.claude.json` is per machine; run this on each. Two hand-made parts of `~/.claude/settings.json` also have to be
 copied: the `mcp__cua_repl__*` permission entries, and the `Elicitation` hook matched to `cua_repl` that runs

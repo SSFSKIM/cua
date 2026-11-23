@@ -38,9 +38,9 @@
 //               the complete run pairs (./cell-verdict.mjs).
 
 export const NO_VERDICT_CAUSES = Object.freeze({
-  unread: 'front/key readings missing (hosted) or unread',
+  unread: 'front/key readings missing (hosted) or unread, or the alert guard could not read the alert windows\' bounds',
   activation: 'the activate step did not take front and key',
-  alert: 'an app other than the cell\'s front or key (an alert)',
+  alert: 'an app other than the cell\'s front or key (an alert), or the alert guard refused the cell unsent (an alert over the run\'s window, or holding the front or key)',
   invalid: 'the harness\'s own invalid reason',
   unmeasured: 'a speed or finding sample not measured (no numeric duration)',
   unpaired: 'no vendor sample with a verdict from the same eligible run (ruling 1116); for speed and finding, outside the complete run pairs',
@@ -86,9 +86,11 @@ export function frontKeyCause(frontKey, {hosted = false} = {}) {
 // its meta). A row the harness left invalid before it read anything (its prepare failed, say) carries no readings: its
 // own reason is why it has no verdict, not the readings it never needed. A row whose guarded key replayd's capture alert
 // held (`alertHeld`: {keys, front}, ./steps.mjs AlertHeld) is `alert` by that mark alone: the guard saw the alert in
-// front, so the act never ran, whatever a later reading shows. -> {category, detail?} | null.
+// front, so the act never ran, whatever a later reading shows. So is a row the alert guard refused (`alertGuard`: {cause,
+// detail}, ./steps.mjs AlertGuarded; ruling 1154), by its own cause, `alert` or `unread`. -> {category, detail?} | null.
 export function sampleCause(row) {
   if (row.alertHeld) return {category: 'alert', detail: `${row.alertHeld.front} in front at the key guard; ${row.alertHeld.keys.join(', ')} held`};
+  if (row.alertGuard) return {category: row.alertGuard.cause, detail: `the alert guard: ${row.alertGuard.detail}`};
   const readings = row.frontKey === undefined && row.invalid ? null : frontKeyCause(row.frontKey, {hosted: row.hosted === true});
   if (readings) return readings;
   if (row.invalid) return {category: 'invalid', detail: row.invalid};

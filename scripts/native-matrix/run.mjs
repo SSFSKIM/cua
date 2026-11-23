@@ -8,9 +8,10 @@
 //   2. the approved home prepared under the admission (scripts/native-baseline/prepare.mjs, which stops the engine
 //      again), the serve's preflight for --host and --engine, the approved engine checked against --approved-engine and
 //      this checkout's build
-//   3. the plan's scenes up (scripts/repl-parity/scenes-mac.mjs) with Finder's setup steps, then the engine those steps
-//      used stopped, so the lane's engine is the one its first call launches; the window readers compiled once into the
-//      run directory, and the screen's windows kept as the paste rows' alert baseline (./matrix-device.mjs)
+//   3. the plan's scenes up (scripts/repl-parity/scenes-mac.mjs) with Finder's setup steps, each window that would
+//      overlap an alert window moved clear of it (placeScenes, ruling 1154), then the engine those steps used stopped,
+//      so the lane's engine is the one its first call launches; the window readers compiled once into the run directory,
+//      and the screen's windows kept as the paste rows' alert baseline (./matrix-device.mjs)
 //   4. the activation watcher started (`watch start`, its pid kept), the lane connected (./lane.mjs), every scene bound
 //      by path with its window brought to the front first, so the bind's text (getApp emits it) is the run's own window
 //   5. the frontmost regime: each target's app activated (a harness step), its speed cells (getAXState, getScreenshot,
@@ -64,8 +65,9 @@ import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selec
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {activate, activated, activationOf, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
-  TEXTEDIT} from './steps.mjs';
+import {clearFrame} from './alert-guard.mjs';
+import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
+  TEXTEDIT, guardLane} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
@@ -268,6 +270,7 @@ async function runOnce(options, io) {
       ctx.records[id] = ops.scenes(['up', id, '--run', run, ...extra]);
       ops.goldens(['steps', id, '--run', run, '--phase', 'setup']);
     }
+    placeScenes(ctx);
     // Finder's setup steps drove cua's engine socket: stopped, so the lane's engine is the one the lane launches.
     meta.engineStopAfterSetup = ops.goldens(['engine-stop']);
     ops.matrix(['compile', '--run', run]);
@@ -277,7 +280,7 @@ async function runOnce(options, io) {
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
-    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile});
+    ctx.lane = guardLane(ctx, await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile}));
     for (const id of scenes) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);
@@ -295,6 +298,9 @@ async function runOnce(options, io) {
     complete = true;
   } catch (error) {
     problems.push(error instanceof Stop ? `stopped: ${error.message}` : error.message);
+    // A harness cell (no row of its own: the Open panel's Cancel, a fixture's reset) the alert guard refused stops the
+    // run rather than click where an alert is: its proof is missing, not failed (../hosted-sittings/checks.mjs).
+    if (error instanceof AlertGuarded) meta.alertGuardStop = {cause: error.cause.category, detail: error.cause.detail};
     log(`run ${n} stopped: ${error.message}`);
   } finally {
     if (ctx.watcher !== null) finishWatch(ctx);
@@ -444,6 +450,29 @@ function finishWatch(ctx) {
   if (unaccounted.length) ctx.problems.push(`${unaccounted.length} activation(s) fell in no step of the run: not accounted for`);
 }
 
+// ---- the placement ------------------------------------------------------------------------------------------------------
+
+// The run's scene windows placed clear of the alert windows (ruling 1154; ./alert-guard.mjs clearFrame), so the alert
+// guard need not refuse their pointer cells: read once its scenes are up and set up, each window that overlaps an alert
+// moved, the same size, by the smallest move on its display, through the frame probe (./matrix-device.mjs place), and
+// read back. Both sides run it alike; the alerts stay put once raised (H0 (ii)), so both put each window in one place.
+// meta.placement keeps the alert windows' bounds and, per scene, where its window was (`from`) and where it was put
+// (`to`, `matched` the read-back), or why it stayed (`reason`); `unread` when the screen was not read, which places
+// nothing and leaves the guard to refuse what would overlap.
+function placeScenes(ctx) {
+  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
+  if (!bounds) { ctx.meta.placement = {unread: true}; return; }
+  const alerts = bounds.alerts.map(a => a.bounds), scenes = {};
+  for (const {scene, bounds: from} of bounds.windows) {
+    if (scene === 'openPanel' || !from) continue;
+    const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
+    if (!moved) { scenes[scene] = {from, moved: false, ...(reason ? {reason} : {})}; continue; }
+    const placed = ctx.ops.matrix(['place', '--run', ctx.run, '--scene', scene, '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')])?.answer ?? null;
+    scenes[scene] = {from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null};
+  }
+  ctx.meta.placement = {alerts, scenes};
+}
+
 // ---- the regimes --------------------------------------------------------------------------------------------------------
 
 // Every case of a target left invalid for one reason (its precondition could not be set up).
@@ -590,8 +619,15 @@ function measuredReadings(ctx, scene, before, after) {
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
   const before = readKeyAt(ctx);
-  let after = null;
-  const r = await measured(ctx, `${scene}/finding`, findingCell(scene), before, () => (after = readKeyAt(ctx)));
+  let after = null, r;
+  try { r = await measured(ctx, `${scene}/finding`, findingCell(scene), before, () => (after = readKeyAt(ctx))); } catch (error) {
+    if (!(error instanceof AlertGuarded)) throw error;
+    // Finder's cell scrolls its list back up first: the alert guard refused it, unsent, and each of its rows says so.
+    after = readKeyAt(ctx);
+    const refused = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ok: false, frontKey: measuredReadings(ctx, scene, before.reading, after.reading), ...error.row};
+    for (const id of [...SCENES[scene].targets.map(t => `target.${t.id}`), 'lines', 'ids']) push(ctx, {...refused, id: `${scene}/${id}`});
+    return;
+  }
   // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
   const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {}),
     frontKey: measuredReadings(ctx, scene, before.reading, after.reading)};

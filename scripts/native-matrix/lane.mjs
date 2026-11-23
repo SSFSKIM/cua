@@ -138,7 +138,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
   const step = (name, answer) => (...args) => { log(`dry: ${name} ${JSON.stringify(args.length === 1 ? args[0] : args)}`); return typeof answer === 'function' ? answer(...args) : answer; };
   const bounds = {x: 100, y: 100, width: 800, height: 600};
   // The scenes as up made them, and the last one activated in front: what the dry reads and key guard see.
-  const records = {};
+  const records = {}, placed = {};
   let front = null;
   // The scheduled probe pending, and the focused field's hash the focus probe reads: empty once a scene is activated
   // (each probe cell empties its field after one), the keystroke's text after its finish (an ANSI r composes ㄱ).
@@ -172,7 +172,15 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
             ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {}),
             ...(also.includes('front-key') ? {frontKey: {front: front?.bundleId ?? null, key: front?.bundleId ?? null}} : {}),
             ...(also.includes('window-order') ? {windowOrder: [front, ...Object.values(records).filter(r => r !== front)].filter(Boolean)
-              .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {})};
+              .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {}),
+            // No alert window, the scenes where they were put, one display.
+            ...(also.includes('alert-bounds') ? {alertBounds: {alerts: [], windows: Object.entries(records).map(([scene, r]) => ({scene, bounds: placed[scene] ?? r.window.bounds})),
+              displays: [{x: 0, y: 0, width: 1920, height: 1080}]}} : {})};
+        }
+        case 'place': {
+          const [x, y, width, height] = args[args.indexOf('--frame') + 1].split(',').map(Number);
+          placed[args[args.indexOf('--scene') + 1]] = {x, y, width, height};
+          return {answer: {requested: {x, y, width, height}, readBack: {x, y, width, height}, matched: true, exitStatus: 0}, at};
         }
         case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
         case 'electron-counters': return {answer: {seq: 0, at: 0, counts: {appDidBecomeActive: 0, appDidResignActive: 0}}, at};

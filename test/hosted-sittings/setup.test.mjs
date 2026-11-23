@@ -18,7 +18,9 @@ const UNC = {pid: 2596, bundleId: 'com.apple.UserNotificationCenter'};
 const warmedUp = copy => ({copy, capture: {ok: true, engine: copy, bytes: 1, textEdit: {pids: [4009], ended: true}}, captureAlerts: {watched: true, count: copy === 'vendor' ? 2 : 0},
   frontAfter: UNC, windowsAfter: [], wait: {cleared: true, waitedMs: 3000, polls: 4, seen: [UNC, {pid: 410, bundleId: 'com.apple.finder'}], front: {pid: 410, bundleId: 'com.apple.finder'}}, windowsAtEnd: []});
 
-function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null} = {}) {
+// The screen after the warm-ups (../native-matrix/system-windows.swift): no alert window unless a test gives one.
+const SCREEN = {windows: [], displays: [{x: 0, y: 0, width: 1920, height: 1080}]};
+function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN} = {}) {
   const calls = [];
   const exec = (command, args, options = {}) => {
     const line = [command, ...args].join(' ');
@@ -39,6 +41,7 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     grant: grants => { calls.push({kind: 'grant', clients: grants.map(g => g.client)}); return {rows: [], missing}; },
     approve: ({home}) => { calls.push({kind: 'approve', home}); return {approved, summary: approved ? 'approved in two passes: pass 1 engine_capture_confirmation, pass 2 approved' : 'not approved: pass 1 engine_capture_confirmation, pass 2 engine_capture_confirmation'}; },
     warmUp: async copy => { calls.push({kind: `warm-up ${copy}`}); return warmUp ? warmUp(copy) : warmedUp(copy); },
+    screen: () => { calls.push({kind: 'screen'}); return screen(); },
     stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; },
     write: (path, record) => calls.push({kind: 'write', path, record}),
     log: () => {},
@@ -58,7 +61,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   const {calls, deps} = spies();
   const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
   assert.equal(report.ok, true, report.steps.map(s => `${s.step}: ${s.detail}`).join('\n'));
-  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'engine stop', 'record']);
+  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'placement', 'engine stop', 'record']);
   const order = calls.map(c => (c.kind === 'exec' ? c.line.split(' ').slice(0, 3).join(' ') : c.kind === 'grant' ? `grant ${c.clients}` : c.kind));
   const at = needle => order.findIndex(o => o.startsWith(needle));
   assert.ok(at('sh scripts/hosted-sittings/loopback.sh') === 0);
@@ -76,6 +79,10 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.ok(at('approve') < at('warm-up cua') && at('warm-up cua') < at('warm-up vendor') && at('warm-up vendor') < at('engine-stop'));
   assert.deepEqual(report.warmUps, [warmedUp('cua'), warmedUp('vendor')]);
   assert.match(report.steps.find(s => s.step === 'warm-up vendor').detail, /^capture made \(vendor's\), 2 SCAlert lines, com\.apple\.UserNotificationCenter in front after it; it left the front after 3000 ms$/);
+  // Ruling 1154: the alert windows read once the warm-ups raised them, and where each planned scene window would go.
+  assert.ok(at('warm-up vendor') < at('screen') && at('screen') < at('engine-stop'));
+  assert.deepEqual(report.placement.alerts, []);
+  assert.deepEqual(Object.values(report.placement.scenes).map(p => p.moved), [false, false, false, false]);
   assert.deepEqual(report.engineStop, {wasRunning: true, pid: 2142, stopped: true});
   assert.match(report.steps.find(s => s.step === 'engine stop').detail, /^was running \(pid 2142\), stopped$/);
   const install = calls.find(c => c.kind === 'exec' && c.line.includes('install --json'));
@@ -88,6 +95,33 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.deepEqual(record.engine, {bundle: ENGINE, build: 'b'.repeat(40), engineVersion: '0.5.0'});
   assert.deepEqual(record.vm, {id: 'setup-1', platformUuid: '5F2C1A9E-1D2B-4C3D-8E4F-0123456789AB', bootedAt: '2026-11-23T09:58:12.000Z'}, 'the VM the setup ran on, under the setup\'s own id');
   assert.deepEqual(report.approved, {runtime: CUA_HOME, engine: ENGINE});
+});
+
+test('ruling 1154: a planned scene window under an alert is planned clear of it, the same size; unread, nothing is planned and the setup goes on', async () => {
+  const alert = {ownerPid: 2596, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 0, number: 90, name: null, bounds: {x: 750, y: 220, width: 420, height: 180}};
+  const {deps} = spies({screen: () => ({...SCREEN, windows: [alert]})});
+  const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
+  assert.equal(report.ok, true);
+  const {alerts, displays, scenes} = report.placement;
+  assert.deepEqual([alerts, displays], [[alert.bounds], SCREEN.displays]);
+  // The Electron fixture (140,100 720x560) and Finder's pinned frame (80,80 920x520) lie under it and fit beside it: the
+  // fixture left of it, Finder below it. Chrome's 1000x760 fits nowhere clear of it on 1920x1080: recorded, and the run's
+  // guard then refuses its pointer cells.
+  assert.deepEqual([scenes.electron.moved, scenes.electron.frame], [true, {x: 22, y: 100, width: 720, height: 560}]);
+  assert.deepEqual([scenes.finder.moved, scenes.finder.frame], [true, {x: 80, y: 408, width: 920, height: 520}]);
+  assert.deepEqual([scenes.chrome.moved, scenes.chrome.frame], [false, null]);
+  assert.match(scenes.chrome.reason, /no 1000x760 frame on the display clears the alert windows/);
+  // An alert far right: only Chrome's frame reaches it, and it moves left of it.
+  const right = await hostedSetup({...spies({screen: () => ({...SCREEN, windows: [{...alert, bounds: {x: 1010, y: 220, width: 420, height: 180}}]})}).deps, engineArchive: '/t/engine.tgz'});
+  assert.deepEqual(Object.fromEntries(Object.entries(right.placement.scenes).map(([id, p]) => [id, p.moved])), {chrome: true, electron: false, finder: false, textedit: false});
+  assert.deepEqual(right.placement.scenes.chrome.frame, {x: 2, y: 60, width: 1000, height: 760});
+  // TextEdit places its own document window: each run reads it once up and moves it there.
+  assert.deepEqual(scenes.textedit, {planned: null, moved: false, reason: 'placed by TextEdit at up: each run reads its window and moves it clear there'});
+  assert.equal(report.steps.find(s => s.step === 'placement').detail, '1 alert window; electron, finder planned clear of it; no clear frame for chrome');
+  const unread = await hostedSetup({...spies({screen: () => { throw new Error('swift exited 1'); }}).deps, engineArchive: '/t/engine.tgz'});
+  assert.equal(unread.ok, true);
+  assert.deepEqual(unread.placement, {unread: true});
+  assert.match(unread.steps.find(s => s.step === 'placement').detail, /unread/);
 });
 
 test('without an archive the engine is built on the runner', async () => {

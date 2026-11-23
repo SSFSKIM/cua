@@ -513,7 +513,9 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   const sharedRows = j.unicode.filter(r => r.verdict === 'shared').length;
   out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${sharedRows ? `, ${sharedRows} a shared limit` : ''}${notJudged}.`);
   const without = side => j.cells.reduce((n, c) => n + Object.values(c.account[side].noVerdict).reduce((a, b) => a + b, 0), 0);
-  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  // Ruling 1154: the alert's own count per side (by cell below, in NO VERDICT by cell).
+  const alerted = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.alert ?? 0), 0);
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {

@@ -5,6 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {guardCause, PANEL_SERVICE, sendsPointer} from './alert-guard.mjs';
 import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
@@ -54,9 +55,10 @@ export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
 const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
 // `electronMode`: the Electron fixture's accessibility mode as its record last showed it, read with the rest
 // (./matrix-device.mjs read --electron-mode); `frontKey`: the front and key applications' bundle ids (./front-key.mjs);
-// `windowOrder`: every on-screen window front to back (the window-order oracle, #485).
-export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false} = {}) => {
-  const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : [])];
+// `windowOrder`: every on-screen window front to back (the window-order oracle, #485); `alertBounds`: the alert guard's
+// reading of the alert windows and the run's own (./alert-guard.mjs).
+export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false, alertBounds = false} = {}) => {
+  const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : []), ...(alertBounds ? ['alert-bounds'] : [])];
   return ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
     ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : []), ...(also.length ? ['--with', also.join(',')] : [])]);
 };
@@ -99,13 +101,50 @@ export class AlertHeld extends Error {
   }
 }
 
+// A cell the alert guard refused (ruling 1154, ./alert-guard.mjs): nothing of it was sent, and it is never retried. Thrown
+// in the cell's place, it is an AlertHeld, so every place that makes a row of a held key makes one of it alike (the
+// readings around it the row's), its `row` mark (`alertGuard` {cause, detail}) making the sample NO VERDICT `alert` or
+// `unread` (./front-key.mjs sampleCause), with an invalid reason as a backstop. `reading`: the front and key the guard read.
+export const GUARD_INVALID = 'the alert guard refused the cell: nothing of it was sent';
+export class AlertGuarded extends AlertHeld {
+  constructor(cause, reading) {
+    super([], reading);
+    this.message = `nothing sent: ${cause.detail} (the alert guard, ruling 1154)`;
+    this.cause = cause;
+    this.row = {alertGuard: {cause: cause.category, detail: cause.detail}, invalid: GUARD_INVALID};
+  }
+}
+// The guard before a cell: refused when `cause` (./alert-guard.mjs guardCause) names one, kept in the run's meta
+// (`alertGuards`: {beforeRow, cause, detail}).
+function refuse(ctx, cause, reading) {
+  (ctx.meta.alertGuards ??= []).push({beforeRow: ctx.rows.length, cause: cause.category, detail: cause.detail});
+  throw new AlertGuarded(cause, reading);
+}
+// The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
+// sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over the run's
+// windows and the alert holding neither front nor key; else AlertGuarded, the cell unsent.
+export function guardLane(ctx, lane) {
+  return {...lane, js: async (code, timeoutMs) => {
+    if (sendsPointer(code)) {
+      const r = read(ctx, null, {frontKey: true, alertBounds: true});
+      const reading = keyReading(r), cause = guardCause(r?.alertBounds ?? null, reading);
+      if (cause) refuse(ctx, cause, reading);
+    }
+    return lane.js(code, timeoutMs);
+  }};
+}
+
 // A key cell sent only under the key guard: the driven scene's process in front, or (given `userWindow`) the run's
 // user window. A skip with one of the run's windows in front leaves the row invalid; any other front (the owner at the
 // Mac, an alert) stops the run, except on a hosted run with UserNotificationCenter in front while the alert watch holds
 // replayd's capture alert and nothing else: then AlertHeld, the key never sent, the device-clock window from the run's
 // last marked step through a read of front and key marked as the sample's (`kind` 'row'; else 'setup'), so the alert's
-// own activation is accounted to it. -> the cell's answer, or null when it was not sent.
+// own activation is accounted to it. Before all that, a key the alert holds is refused (the alert guard, ruling 1154:
+// AlertGuarded), the keys unsent: an alert with the key and some other app in front would take them.
+// -> the cell's answer, or null when it was not sent.
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
+  const seenKey = keyReading(front?.frontKey ? front : read(ctx, null, {frontKey: true}));
+  if (seenKey.key === CAPTURE_ALERT_PROCESS && seenKey.front !== CAPTURE_ALERT_PROCESS) refuse(ctx, guardCause(null, {key: seenKey.key}), seenKey);
   const target = guardOf(scene, ctx.records[scene]);
   const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
     send: () => js(ctx, kind, key, code, {apps: [SCENES[scene].bundleId]}),
@@ -143,8 +182,7 @@ export async function userFront(ctx, user, userWindow, {rekey = true} = {}) {
 
 // ---- the readings around a judged act (./front-key.mjs) -------------------------------------------------------------
 
-// The service that serves TextEdit's Open panel out of process: its window is the panel's.
-export const PANEL_SERVICE = 'com.apple.appkit.xpc.openAndSavePanelService';
+export {PANEL_SERVICE};
 // A target's app (a scene, the Open panel's TextEdit, the windowless app), by bundle id.
 export const bundleOf = target => (target === 'windowless' ? WINDOWLESS_BUNDLE_ID : SCENES[SCENE_OF[target] ?? target].bundleId);
 // The target's own windows' apps, for the window-order oracle (#485): its app's and, for the Open panel, its service's.
@@ -241,6 +279,7 @@ const presentMeta = meta => {
 // front and key skips the act, its readings saying so. An act that threw records the engine's own error name where its
 // meta carries it (errorNameOf). A caret case (#258, #259) reads the field's range on the device before the act and
 // after it (`caret` {before, after} on the row), and its reading joins the outcome and the row's `ok` (./caret.mjs).
+// A prepare or act the alert guard refused (./alert-guard.mjs, guardLane and sendKeys) is the row's NO VERDICT, unsent.
 export async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false, section = 'method', id = null, userValue = null, extra = {}} = {}) {
   await ctx.checkpoint();
   const scene = SCENE_OF[target];
@@ -258,7 +297,14 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     if (meta) (row.engineMeta ??= {})[phase] = meta;
   };
   const electron = scene === 'electron';
-  const prepared = span(await ctx.lane.js(cells.prepare));
+  let prepared;
+  try { prepared = span(await ctx.lane.js(cells.prepare)); } catch (error) {
+    if (!(error instanceof AlertGuarded)) throw error;
+    // The alert guard refused the prepare (a pointer it would send): nothing of the case sent, its timing with it.
+    const refused = done({...error.row});
+    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, ...error.row});
+    return refused;
+  }
   keep('prepare', prepared);
   if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
   if (Array.isArray(prepared.value?.prepared)) row.prepared = prepared.value.prepared;

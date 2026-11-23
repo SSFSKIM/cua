@@ -597,6 +597,20 @@ test('an alert front or key during a judged sample is NO VERDICT, never a pass: 
   assert.deepEqual(vendorAlert.methods.find(x => x.id === CLICK).account.cua.noVerdict, {unpaired: 1});
 });
 
+test('ruling 1154: a sample the alert guard refused is NO VERDICT alert on its own side; the report counts alert per side and per cell', () => {
+  const guarded = (rows, run) => (run === 1 ? set(CLICK, {ok: false, invalid: 'the alert guard refused the cell: nothing of it was sent',
+    alertGuard: {cause: 'alert', detail: 'alert window 90 (500,300 300x200) overlaps the textedit window (100,100 800x600)'}})(rows) : rows);
+  const unread = (rows, run) => (run === 2 ? set(CLICK, {ok: false, invalid: 'the alert guard refused the cell: nothing of it was sent',
+    alertGuard: {cause: 'unread', detail: 'the on-screen windows were not read: the alert windows\' bounds are unknown'}})(rows) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, hosted: true, tweak: guarded}, cua: {axMs: 40, hosted: true, tweak: (rows, run) => unread(guarded(rows, run), run)}});
+  const row = j.methods.find(x => x.id === CLICK);
+  assert.equal(row.verdict, 'no-verdict');
+  assert.deepEqual([row.account.vendor.noVerdict, row.account.cua.noVerdict], [{alert: 1}, {alert: 1, unread: 1}]);
+  const text = renderSummary(j);
+  assert.match(text, /^- \*\*NO VERDICT\*\*: 2 cua and 1 vendor sample\(s\) without a verdict; of them `alert` \(an alert in front or key, or the alert guard's refusal\): cua 1, vendor 1;/m);
+  assert.ok(text.includes(`| method ${CLICK} | **no verdict** |`) && text.includes('| alert 1 | alert 1, unread 1 | no |'), text);
+});
+
 test('an activate step that did not take front and key is NO VERDICT, not FAIL; a hosted sample without readings is NO VERDICT', () => {
   const failedActivate = {activate: {app: SCENE_APP, front: false, key: false}, before: {front: ALERT, key: ALERT}};
   const all = [1, 2, 3];

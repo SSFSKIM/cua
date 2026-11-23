@@ -19,7 +19,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {activate, activationOf, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
+import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
@@ -126,10 +126,18 @@ async function frontmostRows(ctx, field, rows, source) {
 // also ends a composition that selection did not reach, the switch being made with the field focused as in MAWS B2),
 // and only then is its field emptied, so nothing an earlier row left composes onto the probe's key. A composition still
 // open after all that shows as a field not reading exactly the jamo: the rows are invalid, never counted.
-// -> {userWindow}, {skipped: readings} (the user window's activation did not take front and key) or {invalid}.
+// -> {userWindow}, {skipped: readings} (the user window's activation did not take front and key), {held: the alert
+// guard's row mark} or {invalid}.
 async function behindUser(ctx, field, user) {
   await quiet(ctx, field);
   await quiet(ctx, user);
+  try { return await behindUserPrepared(ctx, field, user); } catch (error) {
+    // A field's focus click the alert guard refused (./steps.mjs AlertGuarded): no row of the group was sent.
+    if (!(error instanceof AlertGuarded)) throw error;
+    return {held: error.row};
+  }
+}
+async function behindUserPrepared(ctx, field, user) {
   const driven = await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field));
   if (!driven.ok || !driven.value?.ready) return {invalid: `the field was not prepared (${driven.error ?? driven.value?.reason ?? 'no reason'})`};
   const front = activate(ctx, user);
@@ -156,6 +164,7 @@ async function composingRows(ctx, field, rows) {
   const {user} = rows[0];
   const setup = await behindUser(ctx, field, user);
   if (setup.skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: setup.skipped}); return; }
+  if (setup.held) { for (const r of rows) push(ctx, {...rowBase(ctx, r), ...setup.held}); return; }
   if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid, setup.focus); return; }
   const {userWindow} = setup;
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
@@ -211,7 +220,12 @@ async function perContextRows(ctx, field, rows) {
     return;
   }
   const front = activate(ctx, field);
-  const driven = front?.ok ? await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field)) : null;
+  let driven;
+  try { driven = front?.ok ? await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field)) : null; } catch (error) {
+    if (!(error instanceof AlertGuarded)) throw error;
+    for (const r of rows) push(ctx, {...rowBase(ctx, r), ...error.row});
+    return;
+  }
   const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : 'the driven field was not prepared';
   const korean = engaged === null;
   const userFront = activate(ctx, user);
@@ -280,7 +294,11 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   let from = null, to = null;
   const span = x => { if (x?.at) { from ??= x.at[0]; to = x.at[1]; } return x; };
   const end = (row, extra = {}) => { if (from !== null) mark(ctx, 'row', key, [from, to]); return {row, ...extra}; };
-  const prepared = span(await ctx.lane.js(emptyFieldCell(field)));
+  let prepared;
+  try { prepared = span(await ctx.lane.js(emptyFieldCell(field))); } catch (error) {
+    if (!(error instanceof AlertGuarded)) throw error;
+    return end({...error.row});
+  }
   if (!prepared.ok || !prepared.value?.ready) return end({invalid: `not prepared: ${prepared.error ?? prepared.value?.reason ?? 'no reason'}`});
   alertCheck(ctx, `before ${r.id}`);
   const started = device(ctx, ['probe', 'input-source', '--source', KOREAN_2SET, '--lead', String(PROBE_LEAD_MS)]);

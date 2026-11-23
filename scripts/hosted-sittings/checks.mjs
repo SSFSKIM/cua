@@ -4,7 +4,8 @@
 //   record       a measurement (A's baseline runs, B's native-mac runs, C's matrix runs): its record (`record`,
 //                meta.json or result.json) complete passes whatever the exit, which is the run's own outcome and the
 //                judge's to read; a missing or incomplete record is a runtime error, except a run the capture alert
-//                stopped (its producer's incompleteCause 'alert', or a reset the alert held), which is NO VERDICT. Ruling 1149: the record's engine
+//                stopped (its producer's incompleteCause 'alert', a reset the alert held, or a harness cell the alert
+//                guard refused, ruling 1154), which is NO VERDICT. Ruling 1149: the record's engine
 //                attestations must be the side's (`engine`, sideAttestation): a side answered on another engine, the cua
 //                side on the vendor's above all (state 1), is NO VERDICT naming it, complete or not; a complete record
 //                that shows no engine is NO VERDICT too. The reader compares the engine's name only: the version and
@@ -66,6 +67,10 @@ const resetBlocked = (path, record) => (record.meta?.fixturesHeld ?? []).some(f 
 // 1141). -> the reason, or null for any other stop.
 const alertStopped = (path, record) => (record.incompleteCause?.cause === 'alert'
   ? `alert: ${path} stopped at ${record.incompleteCause.at} with ${record.incompleteCause.front?.bundleId} (pid ${record.incompleteCause.front?.pid}) in front (${firstProblem(record)})` : null);
+// A matrix run stopped because the alert guard refused a harness cell (../native-matrix/run.mjs `alertGuardStop`; ruling
+// 1154): it never clicked where the alert was, so its proof is missing, not failed. -> the reason, or null.
+const guardStopped = (path, record) => (record.meta?.alertGuardStop
+  ? `${record.meta.alertGuardStop.cause}: ${path} stopped: the alert guard refused a harness cell (${record.meta.alertGuardStop.detail})` : null);
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 // One of #212's records against the step (`run` {path, record}), by the step's precedence (`rank`): another engine
@@ -77,7 +82,7 @@ function recordFinding(step, {path, record}, exit) {
   const side = sideAttestation(step, record);
   if (answeredElsewhere(side)) return {rank: 0, status: 'NO VERDICT', reason: `${path}: ${side.reason}`};
   if (record.complete !== true) {
-    const held = resetBlocked(path, record);
+    const held = resetBlocked(path, record) ?? guardStopped(path, record);
     return held ? {rank: 1, status: 'NO VERDICT', reason: held} : {rank: 2, status: 'FAIL', reason: `runtime error: ${path} is incomplete (${firstProblem(record)})`};
   }
   return side ? {rank: 3, status: 'NO VERDICT', reason: `${path}: ${side.reason}`} : null;
@@ -92,7 +97,7 @@ export const CHECKS = Object.freeze({
     const side = sideAttestation(step, record);
     if (answeredElsewhere(side)) return ['NO VERDICT', side.reason];
     if (record.complete !== true) {
-      const held = resetBlocked(step.record, record) ?? alertStopped(step.record, record);
+      const held = resetBlocked(step.record, record) ?? alertStopped(step.record, record) ?? guardStopped(step.record, record);
       return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`];
     }
     if (side) return ['NO VERDICT', side.reason];

@@ -2,7 +2,11 @@
 // so a system alert that appears during a paste (a pasteboard-privacy prompt, a UserNotificationCenter alert) is seen
 // without touching it. Run with `swift scripts/native-matrix/system-windows.swift`; one JSON line out:
 //
-//   {"at": <unix ms>, "windows": [{"ownerPid", "ownerName", "ownerBundleId", "layer", "number", "name", "bounds"}]}
+//   {"at": <unix ms>, "windows": [{"ownerPid", "ownerName", "ownerBundleId", "layer", "number", "name", "bounds"}],
+//    "displays": [{"x", "y", "width", "height"}]}
+//
+// `displays`: each active display's bounds in the windows' global coordinates (CGDisplayBounds), so a window can be
+// placed on its display (the alert guard's avoidance, ./alert-guard.mjs clearFrame); null when none was read.
 //
 // `windows` is null when the window server answered no list at all: unread, which no caller may take for an empty
 // screen (the window-order oracle's after-read fails its row; the alert watch cannot clear a paste).
@@ -33,6 +37,15 @@ let windows: [[String: Any]]? = list?.compactMap { entry in
     "bounds": ["x": Double(bounds.origin.x), "y": Double(bounds.origin.y), "width": Double(bounds.width), "height": Double(bounds.height)],
   ]
 }
-let data = try! JSONSerialization.data(withJSONObject: ["at": now, "windows": windows.map { $0 as Any } ?? NSNull()], options: [.sortedKeys])
+var displayCount: UInt32 = 0
+var displayIds = [CGDirectDisplayID](repeating: 0, count: 16)
+let displays: [[String: Double]]? = CGGetActiveDisplayList(16, &displayIds, &displayCount) == .success && displayCount > 0
+  ? displayIds.prefix(Int(displayCount)).map { id in
+      let b = CGDisplayBounds(id)
+      return ["x": Double(b.origin.x), "y": Double(b.origin.y), "width": Double(b.width), "height": Double(b.height)]
+    }
+  : nil
+let data = try! JSONSerialization.data(withJSONObject: ["at": now, "windows": windows.map { $0 as Any } ?? NSNull(), "displays": displays.map { $0 as Any } ?? NSNull()],
+                                       options: [.sortedKeys])
 FileHandle.standardOutput.write(data)
 FileHandle.standardOutput.write("\n".data(using: .utf8)!)

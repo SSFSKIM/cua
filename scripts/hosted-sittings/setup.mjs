@@ -16,12 +16,19 @@
 //   warm-up vendor      raised in setup, not in a run (ruling 1153; pilot A, run 45220897246), then a bounded,
 //                       watch-only wait for the alert to leave the front (./warm-up.mjs); each kept in `warmUps`. An
 //                       alert still in front, or a failed capture, is recorded and the setup goes on
+//   placement           the alert windows the warm-ups left, read once (ruling 1154), and where each scene window the
+//                       matrix places would go to clear them, the same size (../native-matrix/alert-guard.mjs clearFrame):
+//                       Chrome's and the Electron fixture's launch frames, Finder's pinned frame; TextEdit places its own,
+//                       so each run reads it at up. Kept in `placement`; each run of C places its windows by the same rule
+//                       from its own fresh reading (../native-matrix/run.mjs placeScenes), its meta recording where. A
+//                       screen not read is recorded and the setup goes on
 //   engine stop         `cua engine stop` on the engine the approve and its warm-up left running, so every sitting
 //                       starts from a known engine state and no stray engine feeds a measured run or reads as a user of the approved home
 //                       (pilot A, run 45218179501); whether it was running and that it stopped are kept (`engineStop`)
 //   record              the runner's record, which every harness's preflight reads and attests (./runner.mjs)
 // Each step gates the next. It refuses off a GitHub-hosted macOS runner before running anything.
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {existsSync, mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
@@ -34,6 +41,9 @@ import {engineToApprove, hostedApprove} from './approve.mjs';
 import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 import {DEVICE} from './plan.mjs';
 import {warmUp as warmUpCopy} from './warm-up.mjs';
+import {clearFrame, isAlertWindow} from '../native-matrix/alert-guard.mjs';
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
+import {FINDER_FRAME} from '../repl-parity/scenes-mac-finder.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
@@ -49,23 +59,40 @@ function warmUpDetail({capture, captureAlerts, frontAfter, wait}) {
   return `${made}, ${lines}, ${frontName(frontAfter)} in front after it; ${left}`;
 }
 
+// The frames the matrix gives the scene windows it places (../repl-parity/scenes-mac.mjs), and TextEdit's, which it does not.
+const PLANNED_FRAMES = Object.freeze({chrome: SCENES.chrome.placement, electron: SCENES.electron.placement, finder: FINDER_FRAME, textedit: null});
+const TEXTEDIT_PLACED = 'placed by TextEdit at up: each run reads its window and moves it clear there';
+const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
+// The placement step's record from one screen read ({windows, displays}): the alert windows' bounds, the displays, and for
+// each scene its planned frame and where it would go. -> {alerts, displays, scenes: {id: {planned, frame, moved, reason?}}}.
+export function plannedPlacement(screen) {
+  const alerts = screen.windows.filter(isAlertWindow).map(w => w.bounds), displays = screen.displays ?? null;
+  const scenes = Object.fromEntries(Object.entries(PLANNED_FRAMES).map(([id, planned]) => {
+    if (!planned) return [id, {planned: null, moved: false, reason: TEXTEDIT_PLACED}];
+    const {frame, moved, reason} = clearFrame(planned, alerts, displays ?? []);
+    return [id, {planned, frame, moved, ...(reason ? {reason} : {})}];
+  }));
+  return {alerts, displays, scenes};
+}
+
 class StepFailed extends Error {}
 const failIf = (condition, detail) => { if (condition) throw new StepFailed(detail); };
 
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
 // engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
-// exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), stopEngine() (src/runtime/engine.mjs stopEngine),
-// write(path, record), log}.
-// -> {ok, steps: [{step, ok, detail}], approve, warmUps, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
+// exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), screen() (the window list and displays,
+// ../native-matrix/system-windows.swift), stopEngine() (src/runtime/engine.mjs stopEngine), write(path, record), log}.
+// -> {ok, steps: [{step, ok, detail}], approve, warmUps, placement, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
   runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync,
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
-  approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
+  approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}),
+  screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
   log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the hosted setup');
-  const report = {ok: false, steps: [], approve: null, warmUps: [], engineStop: null, record: null, approved: null};
+  const report = {ok: false, steps: [], approve: null, warmUps: [], placement: null, engineStop: null, record: null, approved: null};
   const run = (command, args, extra = {}) => {
     const result = exec(command, args, {env, ...extra});
     failIf(result.status !== 0, `${[command, ...args].join(' ')}: exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''}`);
@@ -122,6 +149,16 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       report.warmUps.push(done);
       return warmUpDetail(done);
     }]),
+    ['placement', () => {
+      let read = null;
+      try { read = screen(); } catch { read = null; }
+      if (!Array.isArray(read?.windows)) { report.placement = {unread: true}; return 'the window list was unread: nothing planned; each run reads its own'; }
+      report.placement = plannedPlacement(read);
+      const moved = Object.entries(report.placement.scenes).filter(([, p]) => p.moved).map(([id]) => id);
+      const stuck = Object.entries(report.placement.scenes).filter(([, p]) => p.planned && !p.moved && p.reason).map(([id]) => id);
+      const n = report.placement.alerts.length;
+      return `${n} alert window${n === 1 ? '' : 's'}; ${moved.length ? `${moved.join(', ')} planned clear of ${n === 1 ? 'it' : 'them'}` : 'no planned window under one'}${stuck.length ? `; no clear frame for ${stuck.join(', ')}` : ''}`;
+    }],
     ['engine stop', async () => {
       const stopped = await stopEngine();
       report.engineStop = {...stopped, stopped: true};

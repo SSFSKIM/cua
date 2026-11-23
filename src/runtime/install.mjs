@@ -37,8 +37,9 @@
 // $CUA_HOME/engine/linux/cua-engine with one rename. Unlike the helper, an engine of another version or a local build
 // there is replaced: a running engine keeps the file it started from.
 //
-// installMacosEngine is `cua install`'s macOS engine step (#117 M4; src/runtime/engine.mjs): cua's engine built and
-// signed at its one approved location when it is selected or asked for, and left pending for `cua engine approve`.
+// installMacosEngine is `cua install`'s macOS engine step (#117 M4; src/runtime/engine.mjs): cua's engine, when it is
+// selected or asked for, built and signed into the pending slot beside the approved engine, which keeps serving
+// untouched until `cua engine approve` promotes the pending build (ruling 1118).
 //
 // The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
 // always uses the production codesign check, the global fetch and the PATH.

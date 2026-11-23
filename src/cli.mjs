@@ -88,7 +88,8 @@ ${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build
                                                                pending), leaving the approved engine serving until engine
                                                                approve puts the build in place; signed with signingIdentity in
                                                                ~/.config/cua/engine.json or CUA_SIGNING_IDENTITY (ad hoc: CI only);
-                                                               over SSH the sign waits 45 s for the console's keychain prompt
+                                                               the sign waits 45 s for codesign, its keychain prompt at the
+                                                               console included, from a console terminal or over SSH
                                                                (--sign-wait or CUA_SIGN_WAIT_MS, up to 1800000: the attended
                                                                first sign on a Mac, e.g. 600000)
   engine approve [--foreground] [--json]                       put the pending build in place (stopping the engine; refused

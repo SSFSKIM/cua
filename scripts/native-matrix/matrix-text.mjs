@@ -56,7 +56,8 @@ export function indexOfId(ax, id) {
 // BIND): on cua's the escapes are decoded, on the vendor's the text is left as printed, so a vendor path like `\new`
 // keeps its backslash. On cua's lane a literal backslash-n in a value decodes as a break (#555): a check that must tell
 // them apart reads it with `decoded: false` and compares at the rendered form (renderedAs).
-// Where the value ends is read by the renderer's grammar [F §2.4; src/services/engine/render.mjs parts]: the labelled
+// A value without a line break ends at its first `, `, as before #526. Where a value with one ends is read by the
+// renderer's grammar [F §2.4; src/services/engine/render.mjs parts]: the labelled
 // parts in their order (Description, Rows, Columns, URL, Help, Value, Details, Placeholder, ID, Secondary Actions), the
 // short ones first and the long ones (100 characters or more, or a line break) after them, each group in that order.
 // So after a short value come short Details, Placeholder, ID or Secondary Actions, then long parts of any label; after
@@ -75,6 +76,10 @@ export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, d
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
   const rest = parts.join('\n'), cua = rendering === 'cua';
   const decode = t => (cua ? t.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16)))) : t);
+  // A value without a line break (no escape on cua's lane, no raw break on the vendor's) ends at its first `, `, as it
+  // did before #526: every cell read was written against that, and only parts that follow a value move there.
+  const broken = parts.length > 1 || (cua ? /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/.test(rest) : /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/.test(rest));
+  if (!broken) return rest.split(', ')[0];
   const long = t => { const d = decode(t); return d.length >= 100 || d.includes('\n'); };
   const ORDER = ['Description', 'Rows', 'Columns', 'URL', 'Help', 'Value', 'Details', 'Placeholder', 'ID', 'Secondary Actions'], VALUE = 5;
   const label = /^, (Description|Rows|Columns|URL|Help|Value|Details|Placeholder|ID|Secondary Actions): /;

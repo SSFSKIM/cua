@@ -181,7 +181,6 @@ test('#526 review 4: a value ends where the renderer\'s grammar says, on either 
   // A label the grammar never puts after Value is the value's text (the review's `second, Rows: unassigned`).
   assert.equal(text.valueOfIndex(ax('Value: first\nsecond, Rows: unassigned'), 1, {rendering: 'vendor'}), 'first\nsecond, Rows: unassigned');
   assert.equal(text.valueOfIndex(ax('Value: first\\nsecond, Rows: unassigned'), 1, {rendering: 'cua'}), 'first\nsecond, Rows: unassigned');
-  for (const rendering of ['vendor', 'cua']) assert.equal(text.valueOfIndex(ax('Value: second, Rows: unassigned'), 1, {rendering}), 'second, Rows: unassigned');
   // Where the grammar allows two readings, the reader says so rather than guess; the cell's known value settles it.
   const twice = text.valueOfIndex(ax('Value: 3, Details: a\\nb'), 1, {rendering: 'cua'});
   assert.deepEqual(twice, {ambiguous: true, candidates: ['3', '3, Details: a\nb']});
@@ -190,7 +189,7 @@ test('#526 review 4: a value ends where the renderer\'s grammar says, on either 
   assert.deepEqual(text.valueOfIndex(ax('Value: 3, Details: a\nb'), 1, {rendering: 'vendor'}), {ambiguous: true, candidates: ['3', '3, Details: a\nb']});
   assert.deepEqual(text.valueOfIndex(ax('Value: a\rb, Details: d'), 1, {rendering: 'vendor'}), {ambiguous: true, candidates: ['a\rb', 'a\rb, Details: d']});
   assert.deepEqual(text.valueOfIndex(ax('Value: a\\rb\\u2028c, ID: x'), 1, {rendering: 'cua'}), {ambiguous: true, candidates: ['a\rb c', 'a\rb c, ID: x']});
-  assert.deepEqual(text.fieldReading(ax('Value: 3, Details: d'), 1), {value: null, ambiguous: true, selected: null});
+  assert.deepEqual(text.fieldReading(ax('Value: 3, Details: a\nb'), 1), {value: null, ambiguous: true, selected: null});
   // A settable number's type settles its reading.
   assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 w\n\t1 ruler marker (settable, float) Value: 15.23809523809524, Secondary Actions: Delete\n', 1), '15.23809523809524');
 });
@@ -211,4 +210,18 @@ test('#552 (ruling 1177): the selected text is read inside a fence of any length
   assert.equal(text.selectedTextOf(ax('````')), 'a\n```\n[99] b');
   assert.equal(text.selectedTextOf('Window: "x", App: y.\n0 w\n\nSelected text: ```\nplain\n```\n\nnote'), 'plain');
   assert.equal(text.focusReading(ax('`````'), 1), 'masked');
+});
+
+test('#526: a value without a line break reads as before #526, ending at its first ", ", on either lane', () => {
+  const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 ${line}\n\t2 button OK\n`;
+  for (const rendering of ['vendor', 'cua', undefined]) {
+    assert.equal(text.valueOfIndex(ax('text field (settable) Value: x, Placeholder: p'), 1, {rendering}), 'x');
+    assert.equal(text.valueOfIndex(ax('color well Description: text color, Help: Click to choose the text color, Value: rgb 0 0 0 1, Secondary Actions: Show color panel'), 1, {rendering}), 'rgb 0 0 0 1');
+    assert.equal(text.valueOfIndex(ax('text field (settable) Value: second, Rows: unassigned'), 1, {rendering}), 'second');
+    assert.equal(text.valueOfIndex(ax('text field (settable) Value: one, two'), 1, {rendering}), 'one');
+    assert.equal(text.valueOfIndex(ax('text field (settable) Value: 3, Details: d'), 1, {rendering}), '3');
+  }
+  assert.deepEqual(text.fieldReading(ax('text field (settable) Value: 3, Details: d'), 1), {value: '3', selected: null});
+  // valueMatches stays available, and agrees with a single-line reading.
+  assert.equal(text.valueMatches(ax('text field (settable) Value: x, Placeholder: p'), 1, 'x'), true);
 });

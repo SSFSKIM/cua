@@ -8958,13 +8958,14 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     - Where the vendor's element line, header or trailer needs an escape or a longer fence, only that form is cua's:
       cua printing the vendor's raw form (a raw LF in the focused trailer, three backticks inside a three-backtick
       fence) is a difference, never accepted by the raw comparison first.
-    - `valueOfIndex` reads where the value ends by the renderer's grammar: the labelled parts in their order, short
-      before long, so only short Details, Placeholder, ID or Secondary Actions, then long parts, follow a short value,
-      and only long parts after Value follow a long one (`second, Rows: unassigned` is a value). Where the grammar
-      allows several readings, it answers `{ambiguous: true, candidates}` instead of a prefix; a settable number's type
-      in the flags settles it, and `valueMatches` settles it by the value a cell expects. `fieldReading` gives no value
-      for an ambiguous one. The matrix's existing reads compare a single reading, so an element whose value is followed
-      by such a part now fails visibly there rather than reading a guessed prefix.
+    - `valueOfIndex` reads where a value holding a line break ends by the renderer's grammar: the labelled parts in
+      their order, short before long, so only short Details, Placeholder, ID or Secondary Actions, then long parts,
+      follow a short value, and only long parts after Value follow a long one (`second, Rows: unassigned` inside a
+      multi-line value is the value's text). Where the grammar allows several readings, it answers `{ambiguous: true,
+      candidates}` instead of a prefix; a settable number's type in the flags settles it, and the helper `valueMatches`
+      settles it by the value a cell expects. A value without a break (no escape on cua's lane, no raw break on the
+      vendor's) ends at its first `, ` exactly as on main, so the cells' existing reads are unchanged (coordinator's
+      narrowing of the ambiguity, 2026-11-23); `fieldReading` gives no value only for an ambiguous multi-line one.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

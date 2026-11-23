@@ -5,18 +5,20 @@
 // attests (./runner.mjs). `pilot` is the pilot's smallest form of each sitting (one run a lane; the sittings that are
 // already one pass run whole).
 //
-// A step: {id, label, kind, argv, env?, needs?, expect?, report?, keep?, missing?, pending?}. Kinds, as ./run.mjs reads them:
-//   run       a measurement or a witness: it passes on exit 0
-//   verdict   a judge (compare, summary, diff): it passes on exit 0; in the pilot it is recorded, never a failure,
-//             since one run a lane has no verdict to give
-//   expect    passes on the exit status `expect` names (sitting E: 1 before the flip, 0 on it)
+// A step: {id, label, kind, argv, check?, record?, report?, observe?, lane?, pilotNoVerdict?, env?, needs?, expect?, keep?,
+// missing?, pending?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default, `expect` for an
+// expect step), with the files it reads: `record` (a run's), `report` (removed before the step runs). Kinds, as ./run.mjs
+// schedules them:
+//   run       a measurement or a witness
+//   verdict   a judge or its report (compare, summary, diff); `pilotNoVerdict`: in the pilot its NO VERDICT is expected
+//             (one run a lane) and left out of the sitting's exit
+//   expect    a step expected to exit as `expect` names (sitting E: 1 before the flip, 0 on it)
 //   fixture   puts up what a later step needs; cleanup takes it down whatever happened between
 //   cleanup   always runs once what it `needs` ran
 //   pilot     the pilot's own reading, run only in the pilot form
 //   pending   a step whose code is not built yet: named, never run
 // `needs`: the steps that must have passed first (else this one is skipped). `keep`: files a step writes elsewhere,
-// copied into the sitting's output after it. `report`: the file its judge writes, without which its exit is not the
-// judge's (a build that exits 1 is no expected FAIL). `missing`: why a step cannot run here (a failure, not run).
+// copied into the sitting's output after it. `missing`: why a step cannot run here (a failure, not run).
 export const DEVICE = 'hosted-macos';
 export const SITTINGS = Object.freeze(['a', 'b', 'c', 'd', 'e', 'f']);
 // accept-native's exact selection for sitting D: every item but 9, the release gates (PF §9: "accept-native item 9" is
@@ -42,10 +44,10 @@ const LANES = {vv: ['vendor', 'vendor'], vc: ['vendor', 'cua'], cc: ['cua', 'cua
 function sittingA(ctx) {
   const runs = ctx.pilot ? 1 : 3, exp = `hosted-${ctx.runId}-a`, steps = [];
   for (let i = 1; i <= runs; i++) for (const [lane, [host, engine]] of Object.entries(LANES)) {
-    steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run',
+    steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${lane}/run-${i}/meta.json`,
       argv: ['node', 'scripts/native-baseline.mjs', 'run', '--device', DEVICE, '--experiment', exp, '--host', host, '--engine', engine, ...approvedArgs(ctx), '--out', `${ctx.out}/${lane}/run-${i}`]});
   }
-  const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict',
+  const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true,
     argv: ['node', 'scripts/native-baseline.mjs', 'compare', mode, `${ctx.out}/${left}`, `${ctx.out}/${right}`, '--out', `${ctx.out}/comparison-${id.slice(-1)}.md`]});
   return [...steps, compare('compare-A', '--engines', 'vv', 'vc'), compare('compare-B', '--hosts', 'vc', 'cc'), compare('compare-C', '--end-to-end', 'vv', 'cc')];
 }
@@ -70,12 +72,13 @@ function sittingC(ctx) {
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
     argv: ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', ctx.approvedEngine, '--out', `${ctx.out}/focus-timing.json`]});
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
-    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
+    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
   }
   for (const engine of ['vendor', 'cua']) steps.push({id: `save-sheet-${engine}`, label: `#212's save-sheet cell (observation-only) on ${engine}`, kind: 'run',
+    check: 'observation', record: `${ctx.out}/save-sheet/${engine}/run-1/result.json`, observe: 'textedit/intervention.saveSheet',
     argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`)});
-  steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
-  steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});
+  steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
+  steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', pilotNoVerdict: true, argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});
   return steps;
 }
 
@@ -102,10 +105,10 @@ function sittingD(ctx) {
 function sittingE(ctx) {
   const expect = ctx.flipped ? 0 : 1;
   return [
-    {id: 'fixture', label: `the fixture lane: a selection check (expected ${expect ? 'FAIL before the flip' : 'PASS on the flip'})`, kind: 'expect', expect,
+    {id: 'fixture', label: `the fixture lane: a selection check (expected ${expect ? 'FAIL before the flip' : 'PASS on the flip'})`, kind: 'expect', expect, check: 'selection', lane: 'fixture',
       argv: ['node', 'scripts/accept/macos-default-selection.mjs', '--older-node', ctx.olderNode ?? '', '--out', `${ctx.out}/fixture.json`], report: `${ctx.out}/fixture.json`,
       ...(ctx.olderNode ? {} : {missing: 'no Node 22 in the runner\'s tool cache ($RUNNER_TOOL_CACHE/node/22.*)'})},
-    {id: 'approved', label: `the approved lane: the run's own engine approved in a disposable home (expected ${expect ? 'FAIL before the flip' : 'PASS on the flip'})`, kind: 'expect', expect,
+    {id: 'approved', label: `the approved lane: the run's own engine approved in a disposable home (expected ${expect ? 'FAIL before the flip' : 'PASS on the flip'})`, kind: 'expect', expect, check: 'selection', lane: 'approved',
       argv: ['sh', 'scripts/accept/macos-default-selection-hosted.sh'], env: {CUA_HOSTED_APPROVE: 'node scripts/hosted-sittings.mjs approve'},
       report: 'default-selection-approved-out/report.json', keep: ['default-selection-approved-out/report.json']},
   ];

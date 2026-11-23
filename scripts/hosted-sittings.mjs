@@ -12,16 +12,17 @@
 //       The hosted approval alone, under HOME (CUA_HOSTED_APPROVE, which sitting E's approved lane waits on). Prints its
 //       report. Exit 0 approved by the second pass, 3 not approved, 2 refused.
 //   node scripts/hosted-sittings.mjs run <a..f> --out <dir> [--pilot] [--flipped]
-//       The sitting's steps (scripts/hosted-sittings/plan.mjs) on this runner, then its report: sitting.json, summary.md
-//       (the step table, and for C the per-cell counts, and in the pilot what it read). --flipped: this commit selects
-//       cua's engine by default (sitting E's lanes are then expected to pass). Exit 0, 1 a step failed, 3 a full sitting
-//       holds a step not built yet, 2 usage or refused.
+//       The sitting's steps (scripts/hosted-sittings/plan.mjs) on this runner, each read by its own check
+//       (scripts/hosted-sittings/checks.mjs), then its report: sitting.json, sitting.md (the step table, and for C the
+//       per-cell counts, and in the pilot what it read; C's judge keeps its own summary.md). --flipped: this commit
+//       selects cua's engine by default (sitting E's lanes are then expected to pass). Exit 0 PASS, 1 a step failed,
+//       4 NO VERDICT, 5 a full sitting holds a step not built yet, 3 OWNER, 2 usage or refused.
 //   node scripts/hosted-sittings.mjs plan <a..f> --out <dir> [--pilot] [--flipped]     the steps, as JSON; runs nothing
 //   node scripts/hosted-sittings.mjs counts <dir>...                                   per-cell counts of result dirs
 //   node scripts/hosted-sittings.mjs focus-timing --approved-engine <bundle> --out <file>   the focus probe's cost
 //   node scripts/hosted-sittings.mjs textedit up --file <path> | down                  sitting D's scratch document
 import {spawnSync} from 'node:child_process';
-import {copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -66,7 +67,8 @@ async function runCommand(sitting, values) {
   const out = resolve(values.out);
   for (const dir of [join(process.env.RUNNER_TEMP, 'hosted-sittings-scratch'), ...plan.scratchDirs]) mkdirSync(dir, {recursive: true});
   const report = await runSitting(plan, {out, exec: (step, {logPath}) => execStep(step, {logPath, cwd: REPO}),
-    keep: (from, to) => { mkdirSync(dirname(to), {recursive: true}); copyFileSync(resolve(REPO, from), to); }, exists: path => existsSync(resolve(REPO, path))});
+    keep: (from, to) => { mkdirSync(dirname(to), {recursive: true}); copyFileSync(resolve(REPO, from), to); }, exists: path => existsSync(resolve(REPO, path)),
+    readJson: path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } }, remove: path => rmSync(resolve(REPO, path), {force: true})});
   const parts = [renderSitting(report)];
   if (plan.counts.length) {
     const {results, problems} = readResults(plan.counts.filter(existsSync));
@@ -81,7 +83,7 @@ async function runCommand(sitting, values) {
     }
   }
   writeJson(join(out, 'sitting.json'), report);
-  writeFileSync(join(out, 'summary.md'), parts.join('\n'));
+  writeFileSync(join(out, 'sitting.md'), parts.join('\n'));
   process.stdout.write(parts.join('\n'));
   return report.exit;
 }

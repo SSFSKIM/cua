@@ -1,17 +1,19 @@
-// A sitting's one job (scripts/hosted-sittings/run.mjs): the plan's steps in order, each step's status from its kind
-// and exit, a step whose needs did not pass skipped, a cleanup run whatever came between, and the sitting's exit: 1 on
-// any failure, 3 when a full sitting holds a step not built yet, else 0. Every step's command is a spy.
+// A sitting's one job (scripts/hosted-sittings/run.mjs): the plan's steps in order, each read by its own check
+// (./checks.test.mjs has the checks), a step whose needs did not pass skipped, a cleanup run whatever came between, and
+// the sitting's exit: 1 on any failure, 4 NO VERDICT, 5 when a full sitting holds a step not built yet, 3 OWNER, else 0.
+// Every step's command is a spy.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
 
 const plan = (steps, form = 'full') => ({sitting: 'x', title: 'a test sitting', proves: 'nothing', form, setup: true, counts: [], pilotReads: false, steps});
 const step = (id, kind = 'run', extra = {}) => ({id, label: id, kind, argv: ['node', `${id}.mjs`], ...extra});
-async function run(p, exits = {}) {
-  const ran = [], kept = [];
+async function run(p, exits = {}, {logs = {}, files = {}} = {}) {
+  const ran = [], kept = [], removed = [];
   const report = await runSitting(p, {out: '/w/out', exec: async s => { ran.push(s.id); return {exit: exits[s.id] ?? 0}; },
-    keep: (from, to) => kept.push([from, to]), now: () => 0, log: () => {}});
-  return {report, ran, kept};
+    keep: (from, to) => kept.push([from, to]), readText: path => logs[path.split('/').at(-1).replace(/\.log$/, '')] ?? '',
+    readJson: path => files[path] ?? null, exists: path => Object.hasOwn(files, path), remove: path => removed.push([path, ran.length]), now: () => 0, log: () => {}});
+  return {report, ran, kept, removed};
 }
 const statuses = report => Object.fromEntries(report.steps.map(s => [s.id, s.status]));
 
@@ -38,32 +40,39 @@ test('an expect step passes on the exit it names, a missing prerequisite is a fa
   assert.deepEqual(statuses(before.report), {fixture: 'PASS', approved: 'FAIL'});
   assert.match(before.report.steps[1].reason, /exit 0, expected 1/);
   assert.deepEqual(before.kept, [['default-selection-approved-out/report.json', '/w/out/approved/report.json']]);
-  const judged = await runSitting(plan([step('fixture', 'expect', {expect: 1, report: '/w/out/fixture.json'}), step('approved', 'expect', {expect: 1, report: 'r.json'})]),
-    {out: '/w/out', exec: async () => ({exit: 1}), exists: path => path === '/w/out/fixture.json', now: () => 0, log: () => {}});
-  assert.deepEqual(statuses(judged), {fixture: 'PASS', approved: 'FAIL'});
-  assert.match(judged.steps[1].reason, /no report at r\.json/);
+  const judged = await run(plan([step('summary', 'run', {check: 'report', report: '/w/out/summary.md'})]), {summary: 4}, {files: {'/w/out/summary.md': {}}});
+  assert.deepEqual(judged.removed, [['/w/out/summary.md', 0]], 'a step\'s report is removed before it runs, so the one read is its own');
+  assert.equal(statuses(judged.report).summary, 'PASS');
   const missing = await run(plan([step('fixture', 'expect', {expect: 1, missing: 'no Node 22 in the tool cache'})]));
   assert.deepEqual(missing.ran, []);
   assert.deepEqual([missing.report.steps[0].status, missing.report.steps[0].reason], ['FAIL', 'no Node 22 in the tool cache']);
 });
 
-test('a step not built yet: pending, never run; a full sitting holding one is incomplete (exit 3), a pilot is not', async () => {
+test('a step not built yet: pending, never run; a full sitting holding one is incomplete (exit 5), a pilot is not', async () => {
   const steps = [step('a'), step('t3b', 'pending', {argv: undefined, pending: 'T3b: not built'})];
   const full = await run(plan(steps));
   assert.deepEqual(full.ran, ['a']);
   assert.deepEqual(statuses(full.report), {a: 'PASS', t3b: 'PENDING'});
-  assert.deepEqual([full.report.verdict, full.report.exit], ['INCOMPLETE', 3]);
+  assert.deepEqual([full.report.verdict, full.report.exit], ['INCOMPLETE', 5]);
   const pilot = await run(plan(steps, 'pilot'));
   assert.deepEqual([pilot.report.verdict, pilot.report.exit], ['PASS', 0]);
 });
 
-test('in the pilot a verdict is recorded, never a failure: one run a lane has no verdict to give', async () => {
-  const steps = [step('m1'), step('summary', 'verdict'), step('reading', 'pilot')];
-  const pilot = await run(plan(steps, 'pilot'), {summary: 1, reading: 1});
-  assert.deepEqual(statuses(pilot.report), {m1: 'PASS', summary: 'INFO', reading: 'INFO'});
-  assert.equal(pilot.report.exit, 0);
-  const full = await run(plan(steps.slice(0, 2)), {summary: 1});
-  assert.deepEqual([statuses(full.report).summary, full.report.exit], ['FAIL', 1]);
+test('a judge\'s verdict is its own: NO VERDICT exits 4 and OWNER 3; in the pilot only a judge marked for it may give an expected NO VERDICT', async () => {
+  const judge = (id, extra = {}) => step(id, 'verdict', {check: 'verdict', ...extra});
+  const verdicts = {'compare-A': 'VERDICT: NO VERDICT\n', compare: 'VERDICT: OWNER\n', diff: 'VERDICT: FAIL\n'};
+  const nv = await run(plan([judge('compare-A')]), {'compare-A': 1}, {logs: verdicts});
+  assert.deepEqual([statuses(nv.report)['compare-A'], nv.report.verdict, nv.report.exit], ['NO VERDICT', 'NO VERDICT', 4]);
+  const owner = await run(plan([judge('compare')]), {compare: 3}, {logs: verdicts});
+  assert.deepEqual([owner.report.verdict, owner.report.exit], ['OWNER', 3]);
+  const pilot = await run(plan([judge('compare-A', {pilotNoVerdict: true}), step('reading', 'pilot')], 'pilot'), {'compare-A': 1, reading: 1}, {logs: verdicts});
+  assert.deepEqual(statuses(pilot.report), {'compare-A': 'NO VERDICT', reading: 'INFO'});
+  assert.equal(pilot.report.steps[0].expected, true);
+  assert.deepEqual([pilot.report.verdict, pilot.report.exit], ['PASS', 0], 'one run a lane: the comparison cannot pass, and says so');
+  const b = await run(plan([step('diff', 'verdict')], 'pilot'), {diff: 1});
+  assert.deepEqual([statuses(b.report).diff, b.report.exit], ['FAIL', 1], 'B\'s pilot is its full form: its diff keeps its real verdict');
+  const unmarked = await run(plan([judge('compare-A')], 'pilot'), {'compare-A': 1}, {logs: verdicts});
+  assert.equal(unmarked.report.exit, 4);
 });
 
 test('the report renders as the job summary: one line a step, its status, exit and time, then the verdict', async () => {

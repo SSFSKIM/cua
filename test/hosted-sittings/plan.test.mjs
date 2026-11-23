@@ -38,6 +38,9 @@ test('A: three runs of each lane, alternating vendor on vendor, cua on vendor, c
   assert.deepEqual(full.steps.filter(s => s.kind === 'verdict').map(s => s.argv.slice(3, 6)),
     [['--engines', '/w/out/vv', '/w/out/vc'], ['--hosts', '/w/out/vc', '/w/out/cc'], ['--end-to-end', '/w/out/vv', '/w/out/cc']]);
   assert.deepEqual(plan('a', {pilot: true}).steps.filter(s => s.kind === 'run').map(s => s.id), ['vv-1', 'vc-1', 'cc-1'], 'the pilot: one run a lane');
+  // Each run is read by its record (a runtime error apart from what it measured), each comparison by the verdict it printed.
+  assert.deepEqual(['vc-2'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record]), [['record', '/w/out/vc/run-2/meta.json']]);
+  assert.ok(full.steps.filter(s => s.kind === 'verdict').every(s => s.check === 'verdict' && s.pilotNoVerdict === true));
 });
 
 test('B: the native-mac pair on the run\'s install, its diff against the declared differences, and the preparation given back', () => {
@@ -48,6 +51,7 @@ test('B: the native-mac pair on the run\'s install, its diff against the declare
     [['native-mac', 'vendor', 'vendor', ...approved(p.steps[0])], ['native-mac', 'cua', 'cua', ...approved(p.steps[0])]]);
   assert.deepEqual(p.steps[3].argv, ['node', 'scripts/repl-parity.mjs', 'diff', '/w/out/vendor', '/w/out/cua', '--expected', 'scripts/repl-parity/expected/native-mac.json']);
   assert.equal(p.steps[4].kind, 'cleanup');
+  assert.deepEqual([p.steps[3].check, p.steps[3].pilotNoVerdict], [undefined, undefined], 'B\'s diff keeps its real verdict, in the pilot too');
   assert.deepEqual(ids(plan('b', {pilot: true})), ids(p), 'one pair is already its smallest form');
 });
 
@@ -69,6 +73,11 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
     [['summary', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/summary.md'], ['compare', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/comparison.md']]);
   assert.deepEqual(full.counts, ['/w/out/vendor', '/w/out/cua', '/w/out/save-sheet']);
   assert.equal(full.pilotReads, false);
+  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.report ?? null, s.observe ?? null, s.pilotNoVerdict ?? false]), [
+    ['record', '/w/out/cua/run-2/result.json', null, false],
+    ['observation', '/w/out/save-sheet/vendor/run-1/result.json', 'textedit/intervention.saveSheet', false],
+    ['report', '/w/out/summary.md', null, false],
+    ['verdict', null, null, true]]);
   const pilot = plan('c', {pilot: true});
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1'], 'the pilot: one run pair');
   assert.equal(pilot.steps[0].id, 'focus-timing', 'the pilot times the focus probe before anything else runs');
@@ -108,7 +117,8 @@ test('E: the default-selection mode\'s two lanes, each expected to fail before t
   assert.deepEqual(before.steps[1].keep, ['default-selection-approved-out/report.json']);
   assert.deepEqual(before.steps.map(s => s.report), ['/w/out/fixture.json', 'default-selection-approved-out/report.json'],
     'an expected FAIL counts only as the judge\'s: a build or approve that exits 1 before the judge ran is no witness of the flip');
-  assert.deepEqual(before.steps.map(s => [s.kind, s.expect]), [['expect', 1], ['expect', 1]]);
+  assert.deepEqual(before.steps.map(s => [s.kind, s.expect, s.check, s.lane]), [['expect', 1, 'selection', 'fixture'], ['expect', 1, 'selection', 'approved']],
+    'the expected red is the judge\'s own, on its fresh report showing the vendor\'s engine and host');
   assert.deepEqual(flip.steps.map(s => [s.kind, s.expect]), [['expect', 0], ['expect', 0]]);
   assert.match(plan('e', {olderNode: null}).steps[0].missing, /no Node 22/);
   assert.equal(before.setup, false, 'E builds and approves its own engine in a disposable home: no device setup');

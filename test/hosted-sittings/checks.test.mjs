@@ -106,7 +106,7 @@ test('#212\'s observation-only cell: every run asked for recorded complete, and 
   assert.match(reason, /no sample observed: activation 3/);
   assert.deepEqual(check('observation', step, 1, both(result([row({invalid: 'the untitled document did not open (not sent)'})]))),
     ['FAIL', 'driver failure: no observation recorded (the untitled document did not open (not sent))']);
-  assert.deepEqual(check('observation', step, 1), ['FAIL', `runtime error: no record at ${records[0]} (exit 1)`]);
+  assert.deepEqual(check('observation', step, 1), ['FAIL', `runtime error: no record at ${records[0]} (exit 1); also: runtime error: no record at ${records[1]} (exit 1)`]);
 });
 
 // Sitting E's homes (scripts/accept/macos-selection.mjs HOMES) as each ref selects them: before the flip the vendor's
@@ -120,6 +120,42 @@ const FLIP = {default: {selected: 'cua', reason: 'default', host: {host: 'cua', 
 const KINDS = ['default', 'none', 'node', 'outdated'];
 const preFlipHomes = () => Object.fromEntries(KINDS.map(kind => [kind, {mode: 'default', ...PRE_FLIP, problem: 'selects the vendor'}]));
 const flipHomes = () => Object.fromEntries(KINDS.map(kind => [kind, {mode: 'default', ...FLIP[kind], problem: null}]));
+
+// Every record is read before the step's status is chosen, so the order of the records changes nothing. The precedence:
+// another engine (NO VERDICT), then a reset the alert held (NO VERDICT), then a missing or incomplete run (FAIL), then a
+// complete run that shows no engine (NO VERDICT). The other records' findings stay in the reason.
+test('ruling 1149: #212\'s records are all read before the step\'s status; the precedence is the step\'s, whatever the records\' order', () => {
+  const cua = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)}, vendor = {engine: 'vendor', version: null, build: 'r'};
+  const [A, B] = ['/o/save-sheet/cua/run-1/result.json', '/o/save-sheet/cua/run-2/result.json'];
+  const observe = 'textedit/intervention.saveSheet';
+  const row = {section: 'intervention', id: observe, engine: 'cua', sample: 1, ok: false, invalid: 'observation only', outcome: {observed: {before: {count: 1, lines: [{index: 0}]}}}};
+  const attesting = (answer, extra = {}) => ({complete: true, rows: [row], ...extra, meta: {hosted: true, nativeEngine: {requested: 'cua', attested: [answer], unattested: 0}, ...extra.meta}});
+  const plain = attesting(cua, {complete: false, error: 'the run stopped'});
+  const held = attesting(cua, {complete: false, error: 'stopped: the reset was held', meta: {fixturesHeld: [{row: observe, sample: 1, scene: 'textedit', reset: false, blockedBy: 'alert'}]}});
+  const fellBack = attesting(vendor);
+  const bothOrders = (first, second) => [
+    check('observation', {records: [A, B], observe, engine: 'cua'}, 1, {...(first ? {[A]: first} : {}), ...(second ? {[B]: second} : {})}),
+    check('observation', {records: [A, B], observe, engine: 'cua'}, 1, {...(second ? {[A]: second} : {}), ...(first ? {[B]: first} : {})}),
+  ];
+  // An incomplete run beside one the alert held: NO VERDICT in either order, the other run named.
+  for (const [status, reason] of bothOrders(plain, held)) {
+    assert.equal(status, 'NO VERDICT');
+    assert.match(reason, /stopped: a fixture's cleanup the capture alert held could not be reset/);
+    assert.match(reason, /; also: runtime error: \/o\/save-sheet\/cua\/run-\d\/result\.json is incomplete \(the run stopped\)/);
+  }
+  // A missing record beside a run of the vendor's engine: NO VERDICT naming state 1, in either order, the missing one named.
+  for (const [status, reason] of bothOrders(null, fellBack)) {
+    assert.equal(status, 'NO VERDICT');
+    assert.match(reason, /the cua side is not measured: the cua side attested the vendor engine/);
+    assert.match(reason, /; also: runtime error: no record at \/o\/save-sheet\/cua\/run-\d\/result\.json \(exit 1\)/);
+  }
+  // An incomplete run beside a complete one showing no engine: the incomplete one's FAIL, in either order.
+  const unattested = {complete: true, rows: [row], meta: {hosted: true}};
+  for (const [status, reason] of bothOrders(plain, unattested)) {
+    assert.equal(status, 'FAIL');
+    assert.match(reason, /^runtime error: \/o\/save-sheet\/cua\/run-\d\/result\.json is incomplete \(the run stopped\); also: .*the record keeps no engine attestation/);
+  }
+});
 
 test('sitting E: the expected red is the judge\'s, on a fresh report in which every home selects as the pre-flip ref does; the flip shows cua\'s', () => {
   const step = {report: '/o/fixture.json', lane: 'fixture', expect: 1};

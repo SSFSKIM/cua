@@ -130,3 +130,13 @@ test('a process without MAWS backends never lists another process\'s client-mode
   assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, undefined);
   assert.equal(env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, undefined);
 });
+
+// ---- profiles_list keys as browser ids (#493) -----------------------------------------------------------------------
+
+test('the launch hands the service no keys: the proxy puts the current ones on each call instead', t => {
+  const f = fixture(t);
+  profiles(f.home, {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-personal', boundAt: 'x', route: 'cua'}});
+  const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-15.sock')];
+  for (const {env} of [browserLaunch(f), mawsLaunch(f, {hostPaths, defaultInstance: 'maws:app-1'})])
+    assert.deepEqual(Object.keys(env).filter(k => /KEYS/.test(k)), []);
+});

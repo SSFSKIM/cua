@@ -19,6 +19,7 @@ import {scratch} from './fixtures/runtime-fixture.mjs';
 const BUILD = 'a'.repeat(64);
 const OTHER_BUILD = 'c'.repeat(64);
 const BUNDLE = '/Users/someone/Library/Application Support/cua/engine/cua Engine.app';
+const PENDING = '/Users/someone/Library/Application Support/cua/engine/pending/cua Engine.app';
 const SOCKET = '/Users/someone/Library/Application Support/cua/engine/engine.sock';
 const APP = {bundlePath: BUNDLE, engineVersion: '0.4.0', build: BUILD};
 const IDENTITY = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
@@ -92,6 +93,17 @@ test('cua\'s engine selected, approved, already running and fully granted: pass,
   for (const part of ['version 0.4.0, build aaaaaaaaaaaa', 'signed by the configured identity', 'pid 4242', 'already running', 'left alone',
     'Accessibility granted', 'Screen Recording granted', 'Input Monitoring granted', '--probe keystroke', 'no route-4 override']) assert.ok(check.detail.includes(part), part);
   noIdentity({check, report});
+});
+
+// Design ruling 1118: a build goes beside the approved engine, which keeps serving; doctor shows both builds.
+test('a build pending beside the approved engine is shown with it: the approved one serves, and the row still passes', async () => {
+  const {row: check, report} = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({pending: {build: OTHER_BUILD, builtAt: 'then', bundlePath: PENDING}})});
+  assert.equal(check.status, 'pass', check.detail);
+  assert.match(check.detail, /the approved cua Engine\.app at .* \(version 0\.4\.0, build aaaaaaaaaaaa\)/);
+  assert.match(check.detail, /a new build cccccccccccc is pending beside it \(.*pending\/cua Engine\.app\): cua engine approve, with the owner at the console, puts it in place; this one serves until then/);
+  assert.deepEqual(report.pending, {build: OTHER_BUILD, builtAt: 'then', bundlePath: PENDING});
+  const vendor = await row({CUA_NATIVE_ENGINE: 'vendor'}, {records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: {build: OTHER_BUILD, builtAt: 'then', bundlePath: PENDING}})});
+  assert.match(vendor.row.detail, /approved\.json approves build aaaaaaaaaaaa at .*cua Engine\.app, and build cccccccccccc is pending beside it \(cua engine approve, with the owner at the console, puts it in place\)$/);
 });
 
 test('with no engine running doctor reports the one it launched and stopped, or left running for a session, or could not stop', async () => {
@@ -211,8 +223,8 @@ test('an engine.json the engine refuses to start with fails the row', async () =
 
 test('cua\'s engine preferred with no approved engine: refused sessions fail the row, the default\'s fallback warns; each names what to do; nothing is launched', async () => {
   const cases = [
-    [facts({exists: false, engineVersion: null, build: null, signature: {kind: null, identityMatches: null}, approved: false, approvedBuild: null, running: false, status: null}), /no bundle at .*cua Engine\.app: build it with cua engine build, then approve it with cua engine approve/],
-    [facts({approved: false, approvedBuild: null, pending: {build: BUILD, builtAt: 'then'}, running: false, status: null}), /\(build aaaaaaaaaaaa\) is pending approval: run cua engine approve with the owner at the console/],
+    [facts({exists: false, engineVersion: null, build: null, signature: {kind: null, identityMatches: null}, approved: false, approvedBuild: null, running: false, status: null}), /no bundle at .*cua Engine\.app: build it with cua install --engine, then approve it with cua engine approve \(the owner at the console\)/],
+    [facts({approved: false, approvedBuild: null, pending: {build: OTHER_BUILD, builtAt: 'then', bundlePath: PENDING}, running: false, status: null}), /the bundle at .*cua Engine\.app is not approved, and build cccccccccccc is pending beside it \(.*pending\/cua Engine\.app\): cua engine approve, with the owner at the console, puts it in place and approves it/],
     [facts({approved: false, approvedBuild: OTHER_BUILD, running: false, status: null}), /is build aaaaaaaaaaaa, but approved\.json approves build cccccccccccc: run cua engine approve/],
     [facts({approved: false, running: false, status: null}), /is not signed as approved\.json records: rebuild it with cua engine build, then cua engine approve/],
     [facts({approved: null, signature: {kind: 'unreadable', identityMatches: null, reason: 'codesign did not finish within 60 s'}, running: false, status: null}), /could not be read \(codesign did not finish within 60 s\), so it is not taken as approved/],
@@ -282,7 +294,7 @@ test('the vendor engine selected: skip, saying cua\'s engine is not selected, ho
   assert.equal(today.report.selected, 'vendor');
   assert.equal(today.report.reason, 'default');
   assert.deepEqual(today.report.preferred, {engine: 'vendor', reason: 'default'});
-  assert.match(today.row.detail, /^cua's engine is not selected: the default engine is the vendor's, so macOS computer sessions use the vendor's Codex Computer Use helper \(helper\.live\)\. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~\/\.config\/cua\/engine\.json, selects cua's own, which runs an approved engine: none is installed on this Mac \(cua engine build, then cua engine approve with the owner at the console\)$/);
+  assert.match(today.row.detail, /^cua's engine is not selected: the default engine is the vendor's, so macOS computer sessions use the vendor's Codex Computer Use helper \(helper\.live\)\. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~\/\.config\/cua\/engine\.json, selects cua's own, which runs an approved engine: none is installed on this Mac \(cua install --engine, then cua engine approve with the owner at the console\)$/);
   assert.deepEqual(today.report.permissions, {accessibility: null, screenRecording: null, inputMonitoring: null});
   const approved = await row({CUA_NATIVE_ENGINE: 'vendor'}, {records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: null})});
   assert.equal(approved.row.status, 'skip');
@@ -290,9 +302,9 @@ test('the vendor engine selected: skip, saying cua\'s engine is not selected, ho
   assert.match(approved.row.detail, /^cua's engine is not selected: CUA_NATIVE_ENGINE=vendor, so /);
   assert.match(approved.row.detail, /which runs an approved engine: approved\.json approves build aaaaaaaaaaaa at .*cua Engine\.app$/);
   assert.equal(approved.report.approvedBuild, BUILD);
-  const pending = await row({}, {config: {engine: 'vendor'}, records: () => ({bundlePath: BUNDLE, exists: true, approved: null, pending: {build: OTHER_BUILD, builtAt: 'then'}})});
+  const pending = await row({}, {config: {engine: 'vendor'}, records: () => ({bundlePath: BUNDLE, exists: true, approved: null, pending: {build: OTHER_BUILD, builtAt: 'then', bundlePath: PENDING}})});
   assert.match(pending.row.detail, /^cua's engine is not selected: "engine": "vendor" in ~\/\.config\/cua\/engine\.json, so /);
-  assert.match(pending.row.detail, /a bundle at .* is pending approval \(build cccccccccccc; cua engine approve\)$/);
+  assert.match(pending.row.detail, /build cccccccccccc is pending at .*pending\/cua Engine\.app \(cua engine approve, with the owner at the console, puts it in place\)$/);
   // The vendor engine with CUA_REPL_HOST=cua is the host's refusal (repl.host names it); the engine row says the vendor's is selected.
   const refusedHost = await row({CUA_REPL_HOST: 'cua'});
   assert.equal(refusedHost.row.status, 'skip');

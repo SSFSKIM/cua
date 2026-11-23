@@ -27,6 +27,48 @@ export function browserPreference(env) {
   return {extensionInstanceId, ...(Number.isSafeInteger(windowId) && windowId >= 0 ? {preferredWindowId: windowId} : {})};
 }
 
+// cua's addition (#493): the keys profiles_list names, as browser ids. The proxy puts the connection's keys on every call
+// it relays, read when the call is made (src/mcp/server.mjs, src/chrome/discovery.mjs currentBrowserKeys): request
+// metadata `cua/browserKeys`, {<key>: <extension instance id>}, the MAWS backends' keys (maws, maws-2, … once each said
+// hello; maws before its hello the marker `maws:`) and the registered Chrome profiles bound on cua's extension, never a
+// reserved MAWS key for Chrome while MAWS backends are configured. So a key rebound, or a MAWS backend connected, after
+// the runtime launched selects what profiles_list names now; a call without the metadata has no keys. A key selects the
+// listed extension browser carrying its instance; two listed browsers carrying one instance (two hosts serving one
+// profile or panel) are the same browser, and the first listed is taken. `maws` falls back as the unqualified default
+// does (src/services/browser.mjs): with its instance unknown or not listed, it is the first listed MAWS instance, so
+// cua.getBrowser() and cua.getBrowser({id: "maws"}) select the same browser. An id, a backend type or a family keeps
+// its meaning, and a backend type or family is never a key even when nothing answers to it: a profile registered under
+// such a name is selected by its extensionInstanceId, which a miss names.
+export const BROWSER_KEYS_META = 'cua/browserKeys';
+// The keys whose browser this runtime cannot reach (a profile bound after it launched: src/chrome/discovery.mjs
+// keysBeyondLaunch), which a miss says.
+export const BROWSER_KEYS_UNREACHED_META = 'cua/browserKeysUnreached';
+export const MAWS_KEY = 'maws';
+const isMawsInstance = id => typeof id === 'string' && id.startsWith('maws:');
+const isSelector = key => BACKEND_TYPES.includes(key) || FAMILIES.includes(key);
+// The keys a call's request metadata carries ({} without them).
+export function browserKeys(requestMeta) {
+  const keys = requestMeta?.[BROWSER_KEYS_META];
+  if (keys === null || typeof keys !== 'object' || Array.isArray(keys)) return {};
+  return Object.fromEntries(Object.entries(keys).filter(([, instance]) => typeof instance === 'string'));
+}
+const instanceOf = ({info}) => (info.type === 'extension' ? info.metadata?.extensionInstanceId : undefined);
+
+// The browser `key` selects among `browsers`, or undefined.
+function byKey(browsers, keys, key) {
+  if (isSelector(key) || !Object.hasOwn(keys, key)) return undefined;
+  return browsers.find(b => instanceOf(b) === keys[key]) ?? (key === MAWS_KEY ? browsers.find(b => isMawsInstance(instanceOf(b))) : undefined);
+}
+
+// The name the first-use documentation gives a browser: a MAWS backend is "MAWS in-app browser (<its key>)" (without
+// a key when no key carries its instance), every other browser its own name.
+export function documentedName({name, metadata}, keys) {
+  const instance = metadata?.extensionInstanceId;
+  if (!isMawsInstance(instance)) return name;
+  const key = Object.keys(keys).find(k => keys[k] === instance);
+  return key === undefined ? 'MAWS in-app browser' : `MAWS in-app browser (${key})`;
+}
+
 // A browser as list_browsers answers it (A_).
 export function browserListing(id, info) {
   return {
@@ -163,9 +205,22 @@ export class BrowserContext {
 
   list() { return this.getBrowsers(); }
 
+  // The keys of the call being served (see browserKeys).
+  keys() { return browserKeys(this.runtime.requestMeta); }
+  // Whether `key` names a profile this runtime cannot reach.
+  unreached(key) {
+    const listed = this.runtime.requestMeta?.[BROWSER_KEYS_UNREACHED_META];
+    return Array.isArray(listed) && listed.includes(key);
+  }
+
   async get(id) {
-    const browser = (await this.getBrowsers()).find(b => answersTo(b, id));
-    if (browser == null) throw serviceError('browser_not_found', id);
+    const browsers = await this.getBrowsers();
+    const keys = this.keys();
+    const browser = browsers.find(b => answersTo(b, id)) ?? byKey(browsers, keys, id);
+    if (browser == null) {
+      throw serviceError('browser_not_found', id, {ids: browsers.map(b => b.id), keys: Object.keys(keys).filter(key => byKey(browsers, keys, key) != null),
+        selectorKey: isSelector(id) && Object.hasOwn(keys, id) ? keys[id] : undefined, unreached: !isSelector(id) && this.unreached(id)});
+    }
     return browser;
   }
 

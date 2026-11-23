@@ -1,0 +1,294 @@
+{
+  "rawVerdict": "fail",
+  "complete": true,
+  "putBackOk": true,
+  "rows": [
+    {
+      "variant": "forced1",
+      "ok": false,
+      "invalid": null,
+      "inputRoute": 1,
+      "facade": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "ax": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "primerAx": null,
+      "release": {
+        "released": true,
+        "held": false,
+        "resignAdvanced": false,
+        "balanced": true,
+        "outstandingAtRelease": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      },
+      "connections": 1,
+      "sidecarsUnchanged": true
+    },
+    {
+      "variant": "forced3",
+      "ok": false,
+      "invalid": null,
+      "inputRoute": 3,
+      "facade": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "ax": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "primerAx": null,
+      "release": {
+        "released": true,
+        "held": false,
+        "resignAdvanced": false,
+        "balanced": true,
+        "outstandingAtRelease": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      },
+      "connections": 1,
+      "sidecarsUnchanged": true
+    },
+    {
+      "variant": "held3",
+      "ok": true,
+      "invalid": null,
+      "inputRoute": 3,
+      "facade": {
+        "fieldIndex": 5,
+        "focusedIndex": 5,
+        "focusedIsField": true,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "ax": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": true,
+        "focusedRead": true,
+        "focusedRole": "AXTextArea",
+        "selectedTextPresent": false,
+        "focusRead": null
+      },
+      "primerAx": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": false,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": true,
+        "focusedRole": "AXButton",
+        "selectedTextPresent": false,
+        "focusRead": null
+      },
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true,
+        "outstandingAtRelease": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      },
+      "connections": 1,
+      "sidecarsUnchanged": true
+    },
+    {
+      "variant": "natural",
+      "ok": false,
+      "invalid": null,
+      "inputRoute": 3,
+      "facade": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": true,
+        "selectedCount": 0
+      },
+      "ax": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": true,
+        "focusedRead": true,
+        "focusedRole": "AXTextArea",
+        "selectedTextPresent": true,
+        "focusRead": null
+      },
+      "primerAx": null,
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true,
+        "outstandingAtRelease": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      },
+      "connections": 1,
+      "sidecarsUnchanged": true
+    },
+    {
+      "variant": "natural-empty",
+      "ok": true,
+      "invalid": null,
+      "inputRoute": 3,
+      "facade": {
+        "fieldIndex": 5,
+        "focusedIndex": 5,
+        "focusedIsField": true,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "ax": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": true,
+        "focusedRead": true,
+        "focusedRole": "AXTextArea",
+        "selectedTextPresent": false,
+        "focusRead": null
+      },
+      "primerAx": null,
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true,
+        "outstandingAtRelease": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      },
+      "connections": 1,
+      "sidecarsUnchanged": true
+    }
+  ],
+  "interpretation": {
+    "selectedNatural": "AX and app-local focus identify field while facade trailer absent with selected text: selection masks trailer; repair/verify harness predicate first",
+    "emptyNatural": "Facade and raw field focus agree",
+    "forcedArms": "AXFocused flag alone disagrees with app-local read AXError -25212; not proof of keyboard focus",
+    "held3": "Primer focuses button; subsequent field click establishes field focus. Supports activation-lifetime distinction, not a natural plan tag",
+    "scope": "No typing/Tab/paste end-to-end repair or vendor comparison claimed"
+  }
+}

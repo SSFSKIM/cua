@@ -43,7 +43,39 @@ test('the close is read again while the window lingers, and judged on the last r
 
 test('readWindows lists every pid\'s windows by owner, number and whether on screen, and null when any reading fails', async () => {
   const probe = async pid => ({at: 1, pid, hidden: false, windows: [{ownerPid: pid, number: pid * 10, bounds: {x: 0, y: 0, width: 9, height: 9}, onScreen: pid === 7}]});
-  assert.deepEqual(await readWindows([7, 8], {probe}), [{...w(70, 7), onScreen: true}, {...w(80, 8), onScreen: false}]);
+  assert.deepEqual(await readWindows([7, 8], {probe}), [{...w(70, 7), onScreen: true, bounds: {x: 0, y: 0, width: 9, height: 9}}, {...w(80, 8), onScreen: false, bounds: {x: 0, y: 0, width: 9, height: 9}}]);
   assert.deepEqual(await readWindows([], {probe}), []);
   assert.equal(await readWindows([7], {probe: async () => { throw new Error('swift failed'); }}), null);
+});
+
+// FrontWindowProbe's `windows <pid>` exits 3 with {"error"} when the window server's list cannot be read: the reading
+// fails, never an empty list (the fixture's cleanup reads an empty list as "no document left" and may quit TextEdit).
+test('readWindows fails closed on the probe\'s own failure, a malformed reading, or a reading of another pid', async () => {
+  const exec = answer => async (file, args) => {
+    assert.equal(file, '/usr/bin/swift');
+    assert.deepEqual(args.slice(1), ['windows', '7']);
+    return answer();
+  };
+  const exited = () => { throw Object.assign(new Error('Command failed'), {code: 3, stdout: '{"error":"the window list could not be read"}\n'}); };
+  assert.equal(await readWindows([7], {exec: exec(exited)}), null);
+  for (const stdout of ['{"error":"the window list could not be read"}', '{"at":1,"pid":7}', '{"at":1,"pid":8,"windows":[]}', 'not json']) {
+    assert.equal(await readWindows([7], {exec: exec(() => ({stdout}))}), null, stdout);
+  }
+  assert.deepEqual(await readWindows([7], {exec: exec(() => ({stdout: '{"at":1,"pid":7,"hidden":false,"windows":[]}'}))}), []);
+});
+
+// The default reading drops windows with no visible size or a zero alpha; cleanup, which may quit the app on an empty
+// list, asks for the unfiltered inventory (`windows <pid> --all`), and only the probe's answer that it is unfiltered
+// counts as one: a filtered list is never taken for it.
+test('readWindows({all: true}) asks for the unfiltered inventory and accepts only an answer that is one', async () => {
+  const seen = [];
+  const exec = stdout => async (file, args) => { seen.push(args.slice(1)); return {stdout}; };
+  const invisible = {ownerPid: 7, number: 71, bounds: {x: 0, y: 0, width: 0, height: 0}, onScreen: false};
+  assert.deepEqual(await readWindows([7], {all: true, exec: exec(JSON.stringify({at: 1, pid: 7, hidden: false, all: true, windows: [invisible]}))}),
+    [{ownerPid: 7, number: 71, onScreen: false, bounds: {x: 0, y: 0, width: 0, height: 0}}]);
+  assert.deepEqual(seen, [['windows', '7', '--all']]);
+  assert.equal(await readWindows([7], {all: true, exec: exec('{"at":1,"pid":7,"hidden":false,"windows":[]}')}), null, 'a filtered answer is no inventory');
+  seen.length = 0;
+  await readWindows([7], {exec: exec('{"at":1,"pid":7,"hidden":false,"windows":[]}')});
+  assert.deepEqual(seen, [['windows', '7']], 'the other callers keep the visible reading');
 });

@@ -214,15 +214,21 @@ private func overlayLabelParts(_ role: String) -> [StalePointLabelPart] {
 
 /// Whether the row reads now each label part the record holds for it, part by part (an empty part counting as none, the
 /// live one cut by `bounded` as the record's was): a part that did not read at the observation, or does not read now, or
-/// reads otherwise, disagrees.
+/// reads otherwise, disagrees. #500 (ruling 1131): a part null then and now is passed over, like with like; null on one
+/// side only disagrees; and with every part passed over nothing was compared, which disagrees too (the review of
+/// 435420cc..17930e20, P1: a row null in all its parts is never pressed unchecked).
 func overlayLabelsAgree<Element>(_ node: ScreenshotNode<Element>, reads: StalePointReads<Element>) -> Bool {
   func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
+  var compared = false
   for part in overlayLabelParts(node.role) {
-    if node.labelsUnread.contains(part) { return false }
-    let recorded = part == .title ? node.title : part == .description ? node.description : node.value
-    guard case .text(let now) = reads.readLabel(node.element, part), text(recorded) == text(now.map(bounded)) else { return false }
+    let then = node.label(part)
+    if case .unreadable = then { return false }
+    let pair = stalePointLabelPair(then, reads.readLabel(node.element, part))
+    if pair == .next { continue }
+    guard case let .texts(recorded, now) = pair, text(recorded) == text(now.map(bounded)) else { return false }
+    compared = true
   }
-  return true
+  return compared
 }
 
 /// #453's identity of the row on its recorded handle, read now: alive, its recorded role, each recorded label part
@@ -370,12 +376,23 @@ let overlayRowContainerRoles: Set<String> = ["AXList", "AXGrid"]
 func overlayInert<Element>(_ node: ScreenshotNode<Element>) -> Bool { node.actionable == false && !node.pressRecorded }
 
 /// Whether a recorded node repeats the row (ruling 1083; the datalist option's inner text): the same role, the same
-/// recorded label parts, every one read, and a frame within `stalePointFrameTolerance` of the row's.
+/// recorded label parts (`overlayLabelParts`), every one read (#500, ruling 1131: or null on both, like with like, so
+/// long as at least one part was compared: a node null in all its parts is no repeat, the review of
+/// 435420cc..17930e20, P1), and a frame within `stalePointFrameTolerance` of the row's.
 func overlayDuplicate<Element>(_ node: ScreenshotNode<Element>, of row: ScreenshotNode<Element>) -> Bool {
   func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
-  return node.role == row.role && node.labelsUnread.isEmpty && row.labelsUnread.isEmpty && text(node.title) == text(row.title)
-    && text(node.description) == text(row.description) && text(node.value) == text(row.value)
-    && frameDistance(node.frame, row.frame) <= stalePointFrameTolerance
+  guard node.role == row.role, frameDistance(node.frame, row.frame) <= stalePointFrameTolerance else { return false }
+  var compared = false
+  for part in overlayLabelParts(row.role) {
+    switch stalePointLabelPair(node.label(part), row.label(part)) {
+    case .next: continue
+    case .unknown: return false
+    case let .texts(x, y):
+      guard text(x) == text(y) else { return false }
+      compared = true
+    }
+  }
+  return compared
 }
 
 /// The meta's `overlayClick` (#453, value-free): the overlay's window, the signal #452 found it by and its kind; then

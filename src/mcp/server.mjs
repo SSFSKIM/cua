@@ -37,8 +37,8 @@
 //   reaches the client again; an answer that arrives after its runtime stopped is remembered for its app and not
 //   forwarded.
 // - tools/list passes the runtime's tools through surface.mjs modelTools, which puts cua's rules ahead of the js
-//   description; on Linux their text rule follows `engine` ('vendor' | 'cua', the native engine the connection
-//   selected at its open; null without the computer surface, which keeps the vendor engine's rule).
+//   description; on either platform the computer rules follow `engine` ('vendor' | 'cua', the native engine the
+//   connection selected at its open; null without the computer surface, which keeps the vendor engine's rules).
 // - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
 //   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
 //   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).
@@ -73,6 +73,12 @@ import {runtimeIdleFrom} from './lazy-runtime.mjs';
 import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {approvalMemory} from './approval-memory.mjs';
+
+// The request metadata that carries profiles_list's keys to the browser service, and the keys whose browser the
+// running runtime cannot reach (src/browser-service/browsers.mjs; not imported, so this process loads none of the
+// service; a test keeps them equal).
+export const BROWSER_KEYS_META = 'cua/browserKeys';
+export const BROWSER_KEYS_UNREACHED_META = 'cua/browserKeysUnreached';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
@@ -136,11 +142,15 @@ export function createServer({
   const respond = (id, result) => write({jsonrpc: '2.0', id, result});
   const respondError = (id, code, message) => write({jsonrpc: '2.0', id, error: {code, message}});
 
-  // The turn metadata and the sandbox state, over whatever `_meta` the client sent.
-  const turnMeta = (taskId, callId, clientMeta) => withSandbox({
-    ...clientMeta, callId, threadId: sessionId, sessionId,
-    'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: clientModel ?? 'mcp-client'},
-  }, sandboxState);
+  // The turn metadata and the sandbox state, over whatever `_meta` the client sent, less the browser keys' metadata,
+  // which only the connection puts on a call as it reaches the runtime (src/mcp/connection.mjs).
+  const turnMeta = (taskId, callId, clientMeta) => {
+    const {[BROWSER_KEYS_META]: _, [BROWSER_KEYS_UNREACHED_META]: __, ...kept} = clientMeta ?? {};
+    return withSandbox({
+      ...kept, callId, threadId: sessionId, sessionId,
+      'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: clientModel ?? 'mcp-client'},
+    }, sandboxState);
+  };
 
   function upstreamRequest(method, params, {clientKey} = {}) {
     const id = ++nextUpstreamId;

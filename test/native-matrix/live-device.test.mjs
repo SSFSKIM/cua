@@ -6,9 +6,10 @@ import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
-import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
+import {reactivateApp} from '../../scripts/repl-parity/scenes-mac.mjs';
+import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal, pendingLaunches} from '../../scripts/native-matrix/live-checks.mjs';
 import {
   COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, probeBarrier, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
   probeStatus, saveFrontmost, saveInputSource,
@@ -390,6 +391,163 @@ test('saveFrontmost: a front app a dead run saved is kept (the current one may b
   assert.equal(JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8')).bundleId, 'com.apple.Terminal');
 });
 
+// Begin's device reads only; calls after the preflight mark anything a refused begin must not do.
+function beginIo(extra = {}) {
+  const calls = [];
+  return {calls, preflight: () => ({refusals: []}), gitState: () => ({commit: 'c1', dirty: false}),
+    engineCheck: () => ({ok: true, engine: {build: 'b'}, problems: []}),
+    frontmost: () => { calls.push('frontmost'); return {pid: 77, bundleId: 'com.apple.Terminal'}; },
+    finderWindows: () => { calls.push('finder'); return []; }, finderPreferences: () => ({ShowSidebar: true, ShowStatusBar: false, ShowPathbar: false}), finderSavedPreferences: () => null,
+    stop: async () => { calls.push('stop'); return {wasRunning: false}; }, ...extra};
+}
+
+function assertRecoveryRefusal(out, file) {
+  assert.ok(out.refusals.some(r => r.includes(file) && /recover --run/.test(r)), JSON.stringify(out));
+  assert.equal(Object.hasOwn(out, 'frontmost'), false, 'a refused begin claims no new front record');
+  assert.equal(Object.hasOwn(out, 'engineStop'), false);
+}
+
+test('begin: failed put-back retaining an old scene app refuses a new run without replacing its recovery record', async () => {
+  const run = scratch(), file = join(run, 'live-frontmost.json');
+  saveFrontmost(run, {pid: 600, bundleId: 'com.apple.TextEdit'});
+  const before = fs.readFileSync(file, 'utf8');
+  const cleanupIo = putBackIo(run);
+  const cleanup = await putBack({run, io: cleanupIo});
+  assert.equal(cleanup.ok, false);
+  assert.match(cleanup.steps['front-app'].reason, /scene app/);
+  assert.ok(!cleanupIo.order.some(c => c.startsWith('reactivate')));
+  const io = beginIo();
+  const out = await begin({run, commit: 'c1', io});
+  assertRecoveryRefusal(out, 'live-frontmost.json');
+  assert.ok(out.refusals.some(r => r.includes(run)), 'the recovery command identifies the retained run directory');
+  assert.deepEqual(io.calls, [], 'no new front/Finder reading or engine stop');
+  assert.equal(fs.readFileSync(file, 'utf8'), before, 'the only recovery record survives byte for byte');
+  assert.deepEqual(fs.readdirSync(run), ['live-frontmost.json']);
+});
+
+for (const [file, contents] of [
+  ['live-frontmost.json', JSON.stringify({pid: 88, bundleId: 'com.apple.Notes', savedAt: 'old'})],
+  ['live-frontmost.json', '{unreadable JSON'], ['live-frontmost.json', 'null'],
+  ['live-finder.json', JSON.stringify({windows: [42], keys: {ShowSidebar: false}, savedAt: 'old'})],
+  ['live-finder.json', '{unreadable JSON'],
+]) {
+  test(`begin: stale ${file} (${contents}) refuses without parsing or adopting it`, async () => {
+    const run = scratch(), path = join(run, file), io = beginIo();
+    fs.writeFileSync(path, contents);
+    const out = await begin({run, commit: 'c1', io});
+    assertRecoveryRefusal(out, file);
+    assert.deepEqual(io.calls, []);
+    assert.equal(fs.readFileSync(path, 'utf8'), contents);
+    assert.deepEqual(fs.readdirSync(run), [file]);
+  });
+}
+
+// The same records through recovery: one present but unusable (null, unreadable JSON, the wrong shape, a directory)
+// is kept and leaves the recovery not ok with what to do by hand, never ok while begin still refuses on it; the rest
+// of the put-back still runs.
+for (const [file, kind, make] of [
+  ['live-frontmost.json', 'null', path => fs.writeFileSync(path, 'null')],
+  ['live-frontmost.json', 'unreadable JSON', path => fs.writeFileSync(path, '{unreadable JSON')],
+  ['live-frontmost.json', 'no pid', path => fs.writeFileSync(path, JSON.stringify({bundleId: 'com.apple.Terminal'}))],
+  ['live-frontmost.json', 'a directory', path => fs.mkdirSync(path)],
+  ['live-finder.json', 'null', path => fs.writeFileSync(path, 'null')],
+  ['live-finder.json', 'unreadable JSON', path => fs.writeFileSync(path, '{unreadable JSON')],
+  ['live-frontmost.json', 'a dangling symlink', path => fs.symlinkSync(join(dirname(path), 'gone.json'), path)],
+  ['live-finder.json', 'a dangling symlink', path => fs.symlinkSync(join(dirname(path), 'gone.json'), path)],
+  ['live-finder.json', 'windows without keys', path => fs.writeFileSync(path, JSON.stringify({windows: []}))],
+  ['live-finder.json', 'one key of three', path => fs.writeFileSync(path, JSON.stringify({windows: [], keys: {ShowSidebar: true}}))],
+]) {
+  test(`recover: an unusable ${file} (${kind}) is kept and the recovery is not ok, as begin refuses on it`, async () => {
+    const run = scratch(), path = join(run, file);
+    make(path);
+    const io = putBackIo(run);
+    const out = await recover({run, io, bounds: SCALED});
+    assert.equal(out.ok, false, JSON.stringify(out));
+    assert.ok(out.manual?.includes(path), out.manual);
+    assert.match(out.manual, /kept/);
+    assert.ok(fs.lstatSync(path, {throwIfNoEntry: false}), 'the unusable record is kept');
+    assert.ok(io.order.includes('engine-stop'), 'the rest of the put-back still ran');
+    assertRecoveryRefusal(await begin({run, commit: 'c1', io: beginIo()}), file);
+  });
+}
+
+test('begin: an unreadable front record path is unresolved recovery, not permission to replace it', async () => {
+  const run = scratch(), file = join(run, 'live-frontmost.json'), io = beginIo();
+  // A directory cannot be read as a JSON file, even when the tests run with elevated file access.
+  fs.mkdirSync(file);
+  const out = await begin({run, commit: 'c1', io});
+  assertRecoveryRefusal(out, 'live-frontmost.json');
+  assert.deepEqual(io.calls, []);
+  assert.equal(fs.statSync(file).isDirectory(), true);
+  assert.deepEqual(fs.readdirSync(run), ['live-frontmost.json']);
+});
+
+for (const front of [null, {}, {bundleId: 'com.apple.Terminal'}, {pid: 0, bundleId: 'com.apple.Terminal'},
+  {pid: 77, bundleId: ''}, {pid: 600, bundleId: 'com.apple.TextEdit'}, {pid: 700, bundleId: 'com.apple.finder'}]) {
+  test(`begin: an unrestorable current front (${JSON.stringify(front)}) refuses before creating start state`, async () => {
+    const run = scratch(), io = beginIo({frontmost: () => front});
+    const out = await begin({run, commit: 'c1', io});
+    assert.ok(out.refusals.some(r => /front app/.test(r)), JSON.stringify(out));
+    assert.equal(Object.hasOwn(out, 'frontmost'), false);
+    assert.deepEqual(io.calls, []);
+    assert.deepEqual(fs.readdirSync(run), []);
+  });
+}
+
+test('begin: an unreadable current front refuses without saving state or stopping the engine', async () => {
+  const run = scratch(), io = beginIo({frontmost: () => { throw new Error('front read failed'); }});
+  const out = await begin({run, commit: 'c1', io});
+  assert.ok(out.refusals.some(r => /front app/.test(r)), JSON.stringify(out));
+  assert.equal(Object.hasOwn(out, 'frontmost'), false);
+  assert.deepEqual(io.calls, []);
+  assert.deepEqual(fs.readdirSync(run), []);
+});
+
+test('begin: clean metadata and put-back use the saved front record, and successful cleanup permits a new begin', async () => {
+  const run = scratch();
+  const begun = await begin({run, commit: 'c1', io: beginIo()});
+  const front = JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8'));
+  assert.deepEqual(begun.refusals, []);
+  assert.deepEqual(begun.frontmost, {bundleId: front.bundleId});
+  assert.equal(front.pid, 77);
+  assert.equal(fs.statSync(join(run, 'live-frontmost.json')).mode & 0o777, 0o600);
+  const reactivated = [];
+  const cleanup = await putBack({run, io: putBackIo(run, {reactivate: async saved => {
+    reactivated.push(saved); return {reactivated: true, inFront: true};
+  }})});
+  assert.equal(cleanup.ok, true);
+  assert.deepEqual(reactivated, [front]);
+  assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false);
+  assert.equal(fs.existsSync(join(run, 'live-finder.json')), false);
+  const next = await begin({run, commit: 'c1', io: beginIo({frontmost: () => ({pid: 88, bundleId: 'com.apple.Notes'})})});
+  assert.deepEqual(next.refusals, []);
+  assert.deepEqual(next.frontmost, {bundleId: 'com.apple.Notes'});
+  assert.equal(JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8')).pid, 88);
+});
+
+test('begin: an exited or replaced saved process is never reactivated and its failed put-back blocks the next run', async () => {
+  for (const running of [[], [{pid: 88, bundleId: 'com.apple.Terminal'}], [{pid: 77, bundleId: 'com.apple.Notes'}]]) {
+    const run = scratch(), file = join(run, 'live-frontmost.json');
+    await begin({run, commit: 'c1', io: beginIo()});
+    const before = fs.readFileSync(file, 'utf8'), activated = [];
+    const io = putBackIo(run, {frontmost: () => running[0] ?? null,
+      reactivate: front => reactivateApp(front, {io: {
+        runningApps: bundleId => running.filter(p => p.bundleId === bundleId),
+        activateProcess: app => { activated.push(app); return {activated: true}; },
+      }}),
+    });
+    const cleanup = await putBack({run, io});
+    assert.equal(cleanup.ok, false);
+    assert.match(cleanup.steps['front-app'].reason, /no longer running/);
+    assert.deepEqual(activated, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+    const nextIo = beginIo();
+    assertRecoveryRefusal(await begin({run, commit: 'c1', io: nextIo}), 'live-frontmost.json');
+    assert.deepEqual(nextIo.calls, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  }
+});
+
 // A put-back device: the scenes, the engine, the apps, Finder and the front app, every call in `order`.
 function putBackIo(run, extra = {}) {
   const order = [];
@@ -463,6 +621,21 @@ for (const bundleId of ['com.google.Chrome', 'com.anthropic.claudefordesktop']) 
     assert.ok(!out.plan.includes('finder-teardown'));
   });
 }
+
+test('putBack: a refused activation keeps the recovery record even when the front reading still matches', async () => {
+  const run = scratch(), file = join(run, 'live-frontmost.json');
+  saveFrontmost(run, {pid: 77, bundleId: 'com.apple.Terminal'});
+  const before = fs.readFileSync(file, 'utf8'), activated = [];
+  const io = putBackIo(run, {reactivate: front => reactivateApp(front, {io: {
+    runningApps: () => [], activateProcess: app => { activated.push(app); return {activated: true}; },
+  }})});
+  const out = await putBack({run, io});
+  assert.equal(out.ok, false);
+  assert.equal(out.steps['front-app'].ok, false);
+  assert.match(out.steps['front-app'].reason, /no longer running/);
+  assert.deepEqual(activated, []);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
 
 test('putBack: a scene app still running fails the apps check', async () => {
   const run = scratch();
@@ -571,7 +744,7 @@ test('putBack: after a failed step, a probe launch never resolved is waited for 
       signal: (pid, signal) => signals.push(signal)});
     return {io, signals, run};
   };
-  const exits = make(3);
+  const exits = make(6);
   const out = await putBack({run: exits.run, io: exits.io, bounds: SCALED});
   assert.deepEqual(exits.signals, [], 'a probe never identified is not signaled');
   assert.deepEqual(out.steps['input-source'].probeWait, {unresolved: 1, waited: true, remaining: 0});
@@ -658,7 +831,7 @@ test('recover: a probe whose pid was never resolved is waited for (any probe of 
 });
 
 // A probe device: the process table the probe appears in once launched, its output file written at the launch.
-function probeDevice({identified = true, exits = true, killable = true, alongside = [], journalAtLaunch = null} = {}) {
+function probeDevice({identified = true, answers = true, exits = true, killable = true, alongside = [], journalAtLaunch = null} = {}) {
   const launched = [], killed = [], atLaunch = [];
   let running = false, polls = 0;
   const probeRow = {pid: 900, ppid: 1, uid: process.getuid(), start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source current`};
@@ -666,7 +839,7 @@ function probeDevice({identified = true, exits = true, killable = true, alongsid
   return {launched, killed, atLaunch, options: {
     exec: (command, args) => {
       if (journalAtLaunch) atLaunch.push(fs.readFileSync(join(journalAtLaunch, JOURNAL_FILE), 'utf8'));
-      launched.push(args); running = true; fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return '';
+      launched.push(args); running = true; if (answers) fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return '';
     },
     table: () => [older, ...(running && identified ? [probeRow] : []), ...(running ? alongside : [])],
     alive: pid => pid === 900 && running && !(exits && ++polls > 2),
@@ -690,6 +863,26 @@ test('runProbe: journaled pending before its open, launched without -W, resolved
     runProbe(BUNDLE, ['input-source', 'current'], {...probeDevice(options).options, run: unresolved});
     assert.deepEqual(journalOf(unresolved).map(e => e.pid), [null, null], JSON.stringify(options));
   }
+});
+
+// LaunchServices has the request, but by the identification deadline no probe process was found and no final line was
+// written: the probe may still start after its launcher is gone. The journal marks the launch `unidentified`, which is
+// still pending, and only the probe's own final line (read by awaitProbe) or a person's `-` gives it an outcome.
+test('launchProbe: a launch neither identified nor answered by its deadline stays pending; recovery once its launcher has exited is not ok', async () => {
+  const run = scratch(), device = probeDevice({identified: false, answers: false});
+  const handle = launchProbe(BUNDLE, ['window-frame', '--pid', '402', '--window', '7', '--frame', '80,80,920,520'], {...device.options, run});
+  assert.equal(handle.pid, null);
+  assert.match(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8'), new RegExp(`\tunidentified\t-\t${handle.label}\n$`));
+  assert.deepEqual(pendingLaunches(journalOf(run)), [handle.label]);
+  // The launcher (this setup) is gone and nothing runs: an empty table is no outcome.
+  const out = await recover({run, io: recoveryIo(run, {rows: [], journal: journalOf(run)}).io, bounds: SCALED});
+  assert.equal(out.ok, false, JSON.stringify(out));
+  assert.equal(out.putBack, null);
+  assert.ok(out.manual.includes(handle.label), out.manual);
+  // The probe's own final line, when it comes, is its outcome.
+  fs.writeFileSync(handle.out, '{"matched":true}\n');
+  assert.deepEqual(awaitProbe(handle, device.options), {matched: true});
+  assert.deepEqual(pendingLaunches(journalOf(run)), []);
 });
 
 test('launchProbe and awaitProbe: the launch returns a handle another process can await (a JSON round trip), the answer read and the scratch removed', () => {
@@ -1065,6 +1258,38 @@ test('probeBarrier: a probe the run journaled that still runs, or a launch never
   assert.equal(probeBarrier(run, io({journal: unresolved, rows: [watcher]})), null, 'the watcher alone holds nothing');
 });
 
+// A launch journaled pending or `unidentified` with no outcome row may still start its probe (LaunchServices holds the
+// request), so an empty process table is no evidence: the restore guard holds, naming the manual step, as settleProbes does.
+test('probeBarrier: a launch with no outcome in the journal holds every restore even with no probe in the process table', () => {
+  const run = scratch();
+  const io = journal => ({journal: () => journal, processes: () => [], identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})});
+  for (const pending of [
+    [{kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}],
+    [{kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}, {kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}],
+  ]) {
+    const why = probeBarrier(run, io(pending));
+    assert.match(why ?? '', /input-source#c.*no outcome in the journal/);
+    assert.ok(why.includes(join(run, 'live-journal.tsv')), 'names the journal to resolve it in');
+  }
+  const settled = [{kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}, {kind: 'probe', pid: null, start: null, label: 'input-source#c'}];
+  assert.equal(probeBarrier(run, io(settled)), null, 'a launch over unidentified (its `-` row) holds nothing once no probe runs');
+});
+
+test('restoreInputSource behind a launch with no outcome in the journal restores nothing and keeps the owner\'s saved source', async () => {
+  const run = scratch();
+  const saved = join(run, 'input-source.json');
+  fs.writeFileSync(saved, JSON.stringify({source: {id: 'com.apple.keylayout.ABC'}, perContext: null}));
+  const probes = [];
+  const journal = [{kind: 'probe', pid: null, start: null, label: 'input-source#d', pending: true}];
+  const io = {savedInputSource: saved, probe: args => { probes.push(args); return {id: 'com.apple.keylayout.ABC'}; }, readPerContext: () => null, writePerContext: () => assert.fail('nothing is written'),
+    probeStuck: () => probeBarrier(run, {journal: () => journal, processes: () => [], identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})})};
+  const out = await restoreInputSource({io});
+  assert.equal(out.sourceRestored, false);
+  assert.match(out.skipped, /not restored: .*input-source#d/);
+  assert.deepEqual(probes, [], 'no probe selects a source behind it');
+  assert.ok(fs.existsSync(saved), 'the owner\'s saved source is kept');
+});
+
 // The agent cursor on screen (#235's spec, "The harness"): its panel is a new layer-0 window of the engine's, which the
 // alert watch leaves out with the engine's pids, as the matrix's alert check does, and which the composition guard's
 // front reading skips, as the keystroke probe's own gate does.
@@ -1085,4 +1310,135 @@ test('the cursor window of a process that is not the engine under test is still 
   const device = pasteDevice({cursor: true, enginePids: [], compose: KEYED});
   const out = await pasteRun(device);
   assert.equal(out.steps.pasteAlert, true, 'a new layer-0 window of another process aborts the section');
+});
+
+test('probe-only settlement after controller death stops only owned identities, without matrix put-back', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), command = `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame`;
+  const rows = [row(900, command), row(901, command, 'later start'), row(902, command), row(903, 'node another-controller')];
+  const journal = [900, 901].map(pid => ({kind: 'probe', pid, start: T, label: `window-frame#${pid}`}));
+  journal.push({kind: 'cli', pid: 903, start: T, label: 'controller'});
+  const device = recoveryIo(run, {rows, journal, onSignal: (pid, signal, alive) => { if (signal === 'SIGKILL') alive.delete(pid); }});
+  const out = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(out.ok, true);
+  assert.deepEqual(device.signals, ['SIGTERM 900', 'SIGKILL 900']);
+  assert.deepEqual(device.io.order, [], 'no matrix restoration: recording has different front/state records');
+  assert.deepEqual([...device.alive], [901, 902, 903]);
+});
+
+test('probe-only settlement never escalates to a reused PID, and preserves a stuck launch for later recovery', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame`);
+  const journal = [{kind: 'probe', pid: 900, start: T, label: 'window-frame#1'}];
+  const reused = recoveryIo(run, {rows: [probe], journal, onSignal: () => { probe.start = 'new process'; }});
+  assert.equal((await settleProbes({run, io: reused.io, bounds: SCALED})).ok, true);
+  assert.deepEqual(reused.signals, ['SIGTERM 900']);
+  probe.start = T;
+  const stuck = recoveryIo(run, {rows: [probe], journal});
+  assert.equal((await settleProbes({run, io: stuck.io, bounds: SCALED})).ok, false);
+  assert.deepEqual(stuck.signals, ['SIGTERM 900', 'SIGKILL 900']);
+  assert.equal(journal.length, 1, 'the recovery record survives failure');
+  stuck.alive.clear();
+  assert.equal((await settleProbes({run, io: stuck.io, bounds: SCALED})).ok, true);
+});
+
+test('an unidentified frame probe is waited for, never signaled; failure can recover on a later cleanup', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame`);
+  const journal = [{kind: 'probe', pid: null, start: null, label: 'window-frame#pending'}];
+  const device = recoveryIo(run, {rows: [probe], journal});
+  const blocked = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(blocked.ok, false);
+  assert.deepEqual(blocked.probeWait, {unresolved: 1, waited: true, remaining: 1});
+  assert.deepEqual(device.signals, []);
+  let polls = 0;
+  device.io.processes = () => ++polls < 8 ? [probe] : [];
+  const recovered = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.probeWait.waited, true);
+  assert.deepEqual(device.signals, []);
+});
+
+// A launch is journaled pending before LaunchServices runs; the probe may become visible only later, and a launcher that
+// died after its open handed the request off leaves nothing running that says so. Only the journal's own outcome row
+// resolves a pending launch: an empty process table is no evidence. One still pending at the bound is not settled, with
+// the manual step.
+const LAUNCHER = 700;
+const pendingLaunch = label => ({kind: 'probe', pid: null, start: null, label, pending: true});
+const setupCli = run => row(LAUNCHER, `node scripts/native-matrix/goldens-device.mjs steps finder --run ${run} --phase setup`);
+
+test('settleProbes: a pending launch whose probe becomes visible late is waited for, then stopped', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame --pid 402`);
+  const journal = [pendingLaunch('window-frame#late')];
+  let polls = 0, probeUp = false;
+  const device = recoveryIo(run, {rows: [], journal, onSignal: pid => { if (pid === 900) probeUp = false; }, extra: {
+    processes: () => {
+      if (++polls === 4) { probeUp = true; journal.push({kind: 'probe', pid: 900, start: T, label: 'window-frame#late'}); }
+      return [...(polls < 4 ? [setupCli(run)] : []), ...(probeUp ? [probe] : [])];
+    },
+    processRuns: pid => pid === 900 && probeUp}});
+  const out = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(out.ok, true, JSON.stringify(out));
+  assert.deepEqual(device.signals, ['SIGTERM 900'], 'the late probe is stopped, never trusted as absent');
+  assert.equal(out.launchWait.waited, true);
+  assert.deepEqual(out.launchWait.open, []);
+});
+
+test('settleProbes: a pending launch is never settled by an empty process table, whether its launcher runs, has gone, or its open is gone too', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const open = row(701, `/usr/bin/open -n -g --stdout /tmp/x/out.json --stderr /tmp/x/err.txt -a ${BUNDLE} --args --probe window-frame --pid 402`);
+  for (const processes of [() => [row(LAUNCHER, 'node scripts/native-matrix/live-device.mjs paste --run /r')], () => [], (() => { let polls = 0; return () => (++polls < 5 ? [open] : []); })()]) {
+    const run = scratch(), journal = [pendingLaunch('window-frame#a')];
+    const device = recoveryIo(run, {rows: [], journal, extra: {processes}});
+    const out = await settleProbes({run, io: device.io, bounds: SCALED});
+    assert.equal(out.ok, false, JSON.stringify(out));
+    assert.deepEqual(out.launchWait.open, ['window-frame#a']);
+    assert.match(out.manual, /probe launch \(window-frame#a\) has no outcome in the journal/);
+    assert.ok(out.manual.includes(join(run, JOURNAL_FILE)), 'the manual step names the journal a person resolves it in');
+    assert.deepEqual(device.signals, [], 'nothing unidentified is signaled');
+  }
+});
+
+test('settleProbes: this run\'s setup CLI still running fences settlement until it exits; another run\'s does not', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch();
+  let polls = 0;
+  const exits = recoveryIo(run, {rows: [], journal: [], extra: {processes: () => (++polls < 5 ? [setupCli(run)] : [])}});
+  const settled = await settleProbes({run, io: exits.io, bounds: SCALED});
+  assert.equal(settled.ok, true, JSON.stringify(settled));
+  assert.equal(settled.launchWait.waited, true);
+  const stays = recoveryIo(run, {rows: [setupCli(run)], journal: []});
+  const held = await settleProbes({run, io: stays.io, bounds: SCALED});
+  assert.equal(held.ok, false);
+  assert.match(held.manual, /setup steps/);
+  assert.deepEqual(stays.signals, [], 'an unjournaled CLI is waited for, never signaled');
+  const other = recoveryIo(run, {rows: [setupCli('/another/run')], journal: []});
+  assert.equal((await settleProbes({run, io: other.io, bounds: SCALED})).ok, true);
+});
+
+test('recover: a pending launch that resolves during its wait is stopped before the first restoration step', async () => {
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source ${ABC}`);
+  const journal = [pendingLaunch('input-source#late')];
+  let polls = 0, probeUp = false, device;
+  device = recoveryIo(run, {rows: [], journal, onSignal: pid => { device.io.order.push(`stop ${pid}`); if (pid === 900) probeUp = false; }, extra: {
+    processes: () => {
+      if (++polls === 4) { probeUp = true; journal.push({kind: 'probe', pid: 900, start: T, label: 'input-source#late'}); }
+      return probeUp ? [probe] : [];
+    },
+    processRuns: pid => pid === 900 && probeUp}});
+  const out = await recover({run, io: device.io, bounds: SCALED});
+  assert.deepEqual(device.signals, ['SIGTERM 900']);
+  assert.equal(device.io.order[0], 'stop 900', `the probe is stopped before any restoration: ${device.io.order.join(', ')}`);
+  assert.ok(device.io.order.length > 1, 'the put-back ran once the probe had exited');
+  assert.equal(out.launchWait.waited, true);
+});
+
+test('recover: a pending launch it cannot establish restores nothing', async () => {
+  const run = scratch();
+  const device = recoveryIo(run, {rows: [setupCli(run)], journal: [pendingLaunch('input-source#p')]});
+  const out = await recover({run, io: device.io, bounds: SCALED});
+  assert.equal(out.ok, false);
+  assert.equal(out.putBack, null);
+  assert.match(out.manual, /input-source#p/);
 });

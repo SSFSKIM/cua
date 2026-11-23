@@ -1,15 +1,18 @@
 // The device-side reads, launches and writes the macOS scenes need (./scenes-mac.mjs), run on the Mac that shows the
 // scenes; promoted in M1b from the M0 spike's scripts/spike/engine/scene-processes.mjs. Which processes run a bundle id
 // and which is frontmost (lsappinfo, which answers over ssh as it does at the console), a process's windows and the
-// front window (FrontWindowProbe, scripts/accept/front-window.swift: pids, window numbers and bounds, never a name),
+// front window (FrontWindowProbe, scripts/accept/front-window.swift: pids, window numbers and bounds, and for Finder's
+// activation check the owning process's name; never a window title),
 // `open` through LaunchServices, one recorded process put back in front (./activate-process.swift), the stop of a
 // process the run launched, and Finder's three window-chrome preference keys (./scenes-mac-finder.mjs). Nothing here reads a window title, an accessibility value, a process's environment or
 // any preference but those three keys, and nothing signals a process the run did not record at its launch.
 import {execFileSync} from 'node:child_process';
+import {realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {awaitLaunch, isSameLaunch, launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT, FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess} from '../accept/key-guard.mjs';
 import {FINDER_DOMAIN, FINDER_KEYS, parsePreference} from './scenes-mac-finder.mjs';
+import {installedEngine} from '../../src/runtime/engine.mjs';
 
 const run = (cmd, args, options = {}) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000, ...options});
 
@@ -34,7 +37,26 @@ export function frontmostProcess({exec = run} = {}) {
 const probe = (args, {exec = run} = {}) => JSON.parse(exec('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, ...args], {timeout: 120_000}));
 // FrontWindowProbe's frontmost application and top window. -> {at, frontmost: {bundleId, pid} | null, topWindow | null}.
 // `skipPids`: owners whose windows the reading passes over (the engine's own, ./front-window.swift --skip-pid).
-export const frontWindow = ({skipPids = [], ...options} = {}) => probe(['front', ...skipPids.flatMap(pid => ['--skip-pid', String(pid)])], options);
+const skipArgs = skipPids => skipPids.flatMap(pid => ['--skip-pid', String(pid)]);
+export const frontWindow = ({skipPids = [], ...options} = {}) => probe(['front', ...skipArgs(skipPids)], options);
+// One on-screen, layer-0 ordering for Finder's activation check, passing over `skipPids`' windows as frontWindow does.
+// Owner metadata stays on device until the scene exports only the prefix through its window (Chrome and Claude: name
+// only); no window titles are read.
+export const windowOrder = ({skipPids = [], ...options} = {}) => probe(['order', ...skipArgs(skipPids)], options).windows;
+// The approved engine's processes, by executable path under its bundle as recorded and as resolved: the resident engine,
+// whose agent cursor's panels are on-screen layer-0 windows of its own (#235), and its probes. [] when this Mac has no
+// approved engine. -> [pid].
+export function enginePids({installed = () => installedEngine(), exec = run} = {}) {
+  const bundle = installed()?.bundlePath;
+  if (!bundle) return [];
+  let real = bundle;
+  try { real = realpathSync(bundle); } catch {}
+  const prefixes = [...new Set([bundle, real])].map(path => `${path.replace(/\/+$/, '')}/`);
+  return exec('/bin/ps', ['-axo', 'pid=,command=']).split('\n').flatMap(line => {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+    return match && prefixes.some(prefix => match[2].startsWith(prefix)) ? [Number(match[1])] : [];
+  });
+}
 // A process's layer-0 windows, front to back. -> [{ownerPid, number, bounds, onScreen}].
 export const appWindows = (pid, options) => appWindowState(pid, options).windows;
 // The same reading with whether the app is hidden (Cmd-H; null when LaunchServices does not know the pid). -> {windows, hidden}.

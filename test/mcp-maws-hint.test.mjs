@@ -8,7 +8,7 @@ import {hostNotesFor, jsRulesFor, modelTools} from '../src/mcp/surface.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
-const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws), the pane the user watches; use it for any page, and it needs no profiles_list call. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
+const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws); its tabs show in the session\'s Browser panel, which the user watches. Use it for any page; it needs no profiles_list call. Where a browser id goes, "maws" or another profiles_list key works too; there is no "iab" browser, and visible does not apply: leave it out. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
 const CAP = 2048;
 const PLATFORMS = ['darwin', 'linux'];

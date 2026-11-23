@@ -1,0 +1,113 @@
+{
+  "rawVerdict": "pass",
+  "rawComplete": true,
+  "judged": "incomplete A/B proof: one mandatory forced sample invalid",
+  "putBackOk": true,
+  "rows": [
+    {
+      "sample": 1,
+      "variant": "forced1",
+      "route": 1,
+      "ok": true,
+      "invalid": null,
+      "effectMs": 543,
+      "release": null,
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "sample": 2,
+      "variant": "natural",
+      "route": 3,
+      "ok": true,
+      "invalid": null,
+      "effectMs": 443,
+      "release": null,
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "sample": 3,
+      "variant": "forced1",
+      "route": 1,
+      "ok": true,
+      "invalid": null,
+      "effectMs": 470,
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "sample": 4,
+      "variant": "natural",
+      "route": 3,
+      "ok": true,
+      "invalid": null,
+      "effectMs": 447,
+      "release": null,
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "sample": 5,
+      "variant": "forced1",
+      "route": null,
+      "ok": false,
+      "invalid": "the previous natural sample's hold was not shown released (held true, resigned since false, balanced true); nothing was sent",
+      "effectMs": null,
+      "release": {
+        "released": false,
+        "held": true,
+        "resignAdvanced": false,
+        "balanced": true
+      },
+      "interference": null
+    },
+    {
+      "sample": 6,
+      "variant": "natural",
+      "route": 3,
+      "ok": true,
+      "invalid": null,
+      "effectMs": 411,
+      "release": null,
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    }
+  ]
+}

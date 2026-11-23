@@ -918,6 +918,14 @@ final class TreeWalk {
     }
   }
 
+  /// A recorded node's unknown label parts (`screenshotLabelsUnknown`), its null ones counted in the observation's timings
+  /// as `nullLabelSlots` (#500, ruling 1131: value-free, so a measuring run sees how often an app answers kCFNull).
+  private func recordLabels(_ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
+    let labels = screenshotLabelsUnknown(role: data.role, data)
+    source.costs.count("nullLabelSlots", labels.null.count)
+    return labels
+  }
+
   /// The guard's record-only nodes under `parent`, depth first: in the record, with numbers outside the lineage, and in
   /// neither the tree nor the revision.
   private var nextRecordNumber = -1
@@ -927,13 +935,14 @@ final class TreeWalk {
       let number = nextRecordNumber
       nextRecordNumber -= 1
       let data = item.read.data
+      let labels = recordLabels(data)
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
                                                 actions: item.read.actions, childCount: data.children.count, children: data.children,
                                                 actionsRead: item.read.actionsRead, roleRead: !data.unreadable.contains(kAXRoleAttribute),
                                                 childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
-                                                labelsUnread: screenshotLabelsUnread(role: data.role, data.unreadable)))
+                                                labelsUnread: labels.unread, labelsNull: labels.null))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
   }
@@ -1123,13 +1132,14 @@ final class TreeWalk {
                                             frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count,
                                             recordedAt: revision.recordedAt)
     if !inMenu {
+      let labels = recordLabels(read.data)
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
                                                 actions: read.actions, childCount: read.data.children.count, children: read.data.children,
                                                 actionsRead: read.actionsRead, roleRead: !read.data.unreadable.contains(kAXRoleAttribute),
                                                 childrenRead: read.data.childrenRead, childrenLeaf: read.data.childrenLeaf,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
-                                                labelsUnread: screenshotLabelsUnread(role: read.data.role, read.data.unreadable)))
+                                                labelsUnread: labels.unread, labelsNull: labels.null))
     }
     attach(number, parent: parent, inMenu: inMenu)
     return number

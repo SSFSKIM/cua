@@ -115,3 +115,32 @@ came from xdotool's geometry are t17-fix3's off-window ends.
 - No cell's outcome could have moved, and none is rerun.
 - Task 132's cells and #512's (t14-floor `left`) take their coordinates from the engine's window geometry or the
   window-relative path, never from xdotool.
+
+## Fix wave 4: the judge holds incomplete records, and the named lane sends no input after a refused aim (`wave4/`, `pilot/w4-pilot-044`)
+
+**Constructed cases** (`wave4/constructed-rows.txt`, from `red-wave4.mjs`): each of the re-review's cases judged by
+1317cc35's code and by this branch's.
+
+| Case | at 1317cc35 | now |
+|---|---|---|
+| {before 19, after 19, entered 0, before_from 12, after_from 12}, settle removed | 0 fails | 1 |
+| x64 H8's stored H1 meta with its attestation removed | exempt, 0 fails | 1 |
+| the same meta as stored | 0 fails | 0 |
+| an aim of `{inside: true, park: {ok: true}}` alone | exercised | unproven `aim` |
+
+At 1317cc35 the new tests fail (`wave4/tests-red-at-1317cc35.txt`), and the refused-aim test cannot load there:
+`namedAim` did not exist as a function the drop could skip on.
+
+**Offline rejudge** (`wave4/rejudge-vs-1317cc35.jsonl`, `rejudge-summary.txt`): every stored drop-signals run under m4/
+and m5/ plus H9's, 218 runs and 153 judged. Against 1317cc35's judge, 0 runs moved. H8's and H9's counted runs carry
+verified attestations naming their digests.
+
+**The named runs regraded** (`wave4/named-regrade.jsonl`): the scene row's Electron window is given and the aim is read
+by its content.
+- `w3-pilot-043` and `w3-pilot-044`: 5 of 5 exercised and landed each, as before.
+- `w4-pilot-044`: this wave's live check on the pinned 0.4.4, a private display and 5 drops. At every drop, the top at
+  (530, 128) was the Electron window's frame holding the Electron window, so the drop went ahead. The parked chain is
+  frame > Electron. Each drop's count carries its own request ids (fresh/1, 3/4, 6/7, 9/10, 12/13). 5 of 5 exercised
+  and landed, at 30 ms.
+- H9's arm64 `dev/t487-named` (30 drops, the harness before wave 3, with xdotool's origin): 0 exercised. It has no aim
+  records, and its source never started. That is the offset that wave 3 found.

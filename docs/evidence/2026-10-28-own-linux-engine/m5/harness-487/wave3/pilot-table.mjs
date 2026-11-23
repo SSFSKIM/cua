@@ -19,8 +19,8 @@ for (const f of files) {
     const a = r.named?.aim ?? {};
     const s = r.drop_cursor?.settle;
     const c = r.settle_count;
-    console.log(`| ${r.i} | (${a.root?.x}, ${a.root?.y}) | ${a.park?.at ? `(${a.park.at.x}, ${a.park.at.y})` : '–'}${a.park?.ok ? '' : ' refused'} | ${(a.park?.chain ?? []).map(name).join(' > ') || 'root'} | ${a.source ? `${a.source.x},${a.source.y} ${a.source.w}x${a.source.h}` : '–'} | ${a.inside} | ${r.route} | ${r.drag_pacing?.family} rest ${r.drag_pacing?.rest_ms} | ${r.ok} | ${r.before?.press?.seq}→${r.after?.press?.seq} | ${r.outcome?.started} | ${r.hold?.taken} | ${c ? `${c.before}→${c.after} (${c.entered}; ${c.before_from}/${c.after_from})` : 'null'} | ${s ? s.rest_ms ?? 'absent' : '–'} | ${J.namedSourceUnproven(r).join(', ') || 'none: exercised'} |`);
+    console.log(`| ${r.i} | (${a.root?.x}, ${a.root?.y}) | ${a.park?.at ? `(${a.park.at.x}, ${a.park.at.y})` : '–'}${a.park?.ok ? '' : ' refused'} | ${(a.park?.chain ?? []).map(name).join(' > ') || 'root'} | ${a.source ? `${a.source.x},${a.source.y} ${a.source.w}x${a.source.h}` : '–'} | ${a.inside} | ${r.route} | ${r.drag_pacing?.family} rest ${r.drag_pacing?.rest_ms} | ${r.ok} | ${r.before?.press?.seq}→${r.after?.press?.seq} | ${r.outcome?.started} | ${r.hold?.taken} | ${c ? `${c.before}→${c.after} (${c.entered}; ${c.before_from}/${c.after_from})` : 'null'} | ${s ? s.rest_ms ?? 'absent' : '–'} | ${J.namedSourceUnproven(r, { electronWindow: scene.window }).join(', ') || 'none: exercised'} |`);
   }
-  const t = J.namedSourceTable(rows);
+  const t = J.namedSourceTable(rows, { electronWindow: scene.window });
   console.log(JSON.stringify(t.counts));
 }

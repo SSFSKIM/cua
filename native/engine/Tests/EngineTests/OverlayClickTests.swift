@@ -30,6 +30,11 @@ final class OverlayClickTests: XCTestCase {
     var null: Set<StalePointLabelPart> = []
     /// #519: label attributes whose slot holds a value that is no text (`nonTextLabelSlot`), then and now.
     var nonText: Set<StalePointLabelPart> = []
+    /// #520: its subrole reads AXSecureTextField now, so #405 classifies it closed and its value read now is unread.
+    var valueClosed = false
+    /// #520: its AXValue is unsupported now, which the batch answers with kCFNull (AXUIElement.h:228) and a single read
+    /// with kAXErrorAttributeUnsupported.
+    var valueUnsupported = false
     /// Held strongly (no child links, so no cycle): an overlay the record lacks still reads up to its window.
     var parent: Node?
     /// Whether the walk read AXPress among its actions.
@@ -57,6 +62,7 @@ final class OverlayClickTests: XCTestCase {
       if node.labelFails || node.gone { return .unreadable }
       if node.null.contains(part) { return stalePointLabelRead(kCFNull, .success) }
       if node.nonText.contains(part) { return stalePointLabelRead(nonTextLabelSlot, .success) }  // as main: none
+      if part == .value, node.valueUnsupported { return stalePointLabelRead(nil, .attributeUnsupported) }  // a single read's
       switch part {
       case .title: return .text(node.title)
       case .description: return .text(node.description)
@@ -71,6 +77,15 @@ final class OverlayClickTests: XCTestCase {
         guard node.nonText.contains(part), !node.labelFails, !node.gone else { return label(node, part) }
         during()
         return stalePointStrictLabelRead(nonTextLabelSlot, .success)
+      },
+      // #520: the value as the live seam reads it, one batch of the role, the subrole and AXValue.
+      classifiedValue: !strictReads ? nil : { node in
+        during()
+        let value: Any = node.labelFails || node.gone ? axErrorSlot(.cannotComplete)
+          : node.null.contains(.value) || node.valueUnsupported ? kCFNull as Any
+          : node.nonText.contains(.value) ? nonTextLabelSlot : node.value.map { $0 as CFString } ?? axErrorSlot(.noValue)
+        let subrole: Any = node.valueClosed ? "AXSecureTextField" as CFString : node.subrole.map { $0 as CFString } ?? axErrorSlot(.noValue)
+        return batchValueRead(role: (node.roleNow ?? node.role) as CFString, subrole: subrole, value: value)
       })
     return OverlayReads(stale: stale, enabled: { $0.enabled })
   }
@@ -178,7 +193,8 @@ final class OverlayClickTests: XCTestCase {
   /// Chromium's `<datalist>` popup at layer 999 as recorded: its AXWindow > AXGroup > AXScrollArea > AXGroup > AXList
   /// "Autofill" > the option's outer AXStaticText "apricot" (AXPress takes it) > an inner AXStaticText "apricot" at the same
   /// frame (Chromium ignores a press on it); the hit answers the inner text.
-  private func datalist() -> Scene {
+  /// `row` sets the option's labels (and its inner text's, alike) before the observation.
+  private func datalist(row: (Node) -> Void = { _ in }) -> Scene {
     var (_, nodes) = browser()
     let popup = Node("AXWindow", frame: CGRect(x: 95, y: 95, width: 440, height: 90))
     let root = Node("AXGroup", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: popup)
@@ -188,6 +204,8 @@ final class OverlayClickTests: XCTestCase {
     let apricot = Node("AXStaticText", value: "apricot", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: list)
     let apricotInner = Node("AXStaticText", value: "apricot", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: apricot)
     (apricot.press, apricotInner.press) = (true, true)
+    row(apricot)
+    row(apricotInner)
     let banana = Node("AXStaticText", value: "banana", frame: CGRect(x: 100, y: 140, width: 426, height: 40), parent: list)
     let at = append([popup, root, scroll, group, list, apricot, apricotInner], to: &nodes, under: 0, depth: 1)
     append([banana], to: &nodes, under: at[4], depth: 6)
@@ -688,13 +706,38 @@ final class OverlayClickTests: XCTestCase {
     guard case .deliver = decide(scene(innerNonText: false, rowNonText: false)) else { return XCTFail("every part read: a repeat") }
   }
 
+  /// #520 (ruling 1150): the row's value read now through #405's classification: an option whose element now classifies
+  /// closed is refused `labelChanged`, its value never compared or quoted. Main read the raw value and pressed.
+  func testARowWhoseValueNowClassifiesClosedIsRefused() {
+    let scene = datalist()
+    guard case .deliver = decide(scene) else { return XCTFail("read open: pressed") }
+    scene.row.valueClosed = true
+    XCTAssertEqual(refusal(decide(scene)), .labelChanged)
+  }
+
+  /// #520 (ruling 1152): an option whose title agrees and whose AXValue is unsupported now, which the batch answers with
+  /// kCFNull, classified open, is refused `labelChanged`: kCFNull is unread, never null. Recorded null, main's single read
+  /// answered none and refused too, where kCFNull taken for null would pass over the null/null pair and press. Recorded
+  /// absent, the record holds no evidence for the value, so it is not read and the row refuses; main pressed.
+  func testARowWhoseValueIsNowUnsupportedIsRefused() {
+    for recordedNull in [true, false] {
+      let scene = datalist { node in
+        node.title = "Apricot"
+        if recordedNull { node.null = [.value] } else { node.value = nil }
+      }
+      scene.row.null = []
+      scene.row.valueUnsupported = true
+      XCTAssertEqual(refusal(decide(scene)), .labelChanged, recordedNull ? "null then" : "absent then")
+    }
+  }
+
   /// #519 (rulings 1150, 1151): #453's strict reads only refuse the row already chosen; they never change which row is
   /// chosen. Every scene, a value that is no text in each label part of the row or of the node beside it (the inner text,
   /// else the neighbour row), then, now or both: decided as the head decides it, and as main did (the record's
   /// `labelsNonText` cleared, the reads not strict, so a non-text value reads as none, as main read it). The head's
   /// decision is main's, or a refusal naming the row main chose.
   func testANonTextPartNeverChangesTheChosenRow() {
-    let scenes: [(String, () -> Scene)] = [("omnibox", omnibox), ("datalist", datalist), ("permission", permission), ("popover", popover)]
+    let scenes: [(String, () -> Scene)] = [("omnibox", omnibox), ("datalist", { self.datalist() }), ("permission", permission), ("popover", popover)]
     var refusedOnly = 0
     for (name, build) in scenes {
       for other in [false, true] { for part in StalePointLabelPart.allCases { for (then, now) in [(true, false), (false, true), (true, true)] {

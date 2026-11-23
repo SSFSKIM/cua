@@ -33,3 +33,19 @@ func decodedLabels(role: String, title: String?, description: String?, value: St
   return DecodedLabels(title: data.title, description: data.description, value: data.value, unread: labels.unread, null: labels.null,
                        nonText: labels.nonText)
 }
+
+/// An error placeholder as a batched read answers one in a failed or absent attribute's slot.
+func axErrorSlot(_ code: AXError) -> Any { var code = code; return AXValueCreate(.axError, &code)! }
+
+/// #520: an AXStaticText's value read now as the live seam reads it (`stalePointClassifiedValueRead` over
+/// `classifiedRead`): one batch of the role, the subrole and AXValue, each slot as the app answers it, decoded by
+/// `AttributeRead.decode`; nil `slots` for a request that fails whole.
+func batchValueRead(role: Any = "AXStaticText" as CFString, subrole: Any = axErrorSlot(.noValue), value: Any?) -> StalePointValueRead {
+  stalePointClassifiedValueRead(classifiedRead([kAXValueAttribute]) { names in
+    guard let value else { return nil }
+    let slots: [String: Any] = [kAXRoleAttribute: role, kAXSubroleAttribute: subrole, kAXValueAttribute: value]
+    var read = AttributeRead()
+    for name in names { read.decode(name, slots[name]) }
+    return read
+  })
+}

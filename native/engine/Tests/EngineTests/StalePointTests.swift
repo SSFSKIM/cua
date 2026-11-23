@@ -27,6 +27,12 @@ private final class Node {
   var unreadable: Set<StalePointLabelPart> = []
   /// #500: label attributes whose read answers kCFNull, in the walk's batched read (its slot) and in a single read now.
   var null: Set<StalePointLabelPart> = []
+  /// #520: its subrole reads AXSecureTextField now (#405 classifies it closed), so its value read now is unread.
+  var secureNow = false
+  /// #520: the walk withheld its value (#405's classification closed it then, #501): unread in the record.
+  var valueWithheld = false
+  /// #520: how many times its value was read now (`StalePointReads.classifiedValue`).
+  var valueReads = 0
   /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
   var roleUnread = false
   var actionsUnread = false
@@ -97,7 +103,16 @@ private var reads: StalePointReads<Node> {
                                             }
                                           }, same: { $0 === $1 },
                                           // Destroyed, not merely a frame unread (#431's review of 849bcdad, finding 3).
-                                          gone: { $0.frame == nil })
+                                          gone: { $0.frame == nil },
+                                          // #520: as the live seam reads it, one batch of the role, the subrole and AXValue.
+                                          classifiedValue: { node in
+                                            node.valueReads += 1
+                                            let value: Any = node.unreadable.contains(.value) ? axErrorSlot(.cannotComplete)
+                                              : node.null.contains(.value) ? kCFNull as Any : node.value.map { $0 as CFString } ?? axErrorSlot(.noValue)
+                                            let subrole: Any = node.secureNow ? "AXSecureTextField" as CFString
+                                              : node.subrole.map { $0 as CFString } ?? axErrorSlot(.noValue)
+                                            return batchValueRead(role: node.roleUnread ? axErrorSlot(.cannotComplete) : node.role as CFString, subrole: subrole, value: node.frame == nil ? nil : value)
+                                          })
 }
 
 /// The reads an observation with a screenshot emits for `root`'s tree, every node walked but `skipped` ones (as `TreeWalk`
@@ -122,8 +137,8 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
                                     frame: node.frame, actions: node.actionsUnread ? [] : node.actions, childCount: children.count,
                                     children: children, actionsRead: !node.actionsUnread, roleRead: !node.roleUnread,
                                     childrenRead: !node.childrenUnread, subrole: node.subrole,
-                                    value: screenshotLabelValue(role: node.role, labels.value),
-                                    labelsUnread: labels.unread, labelsNull: labels.null))
+                                    value: node.valueWithheld ? nil : screenshotLabelValue(role: node.role, labels.value),
+                                    labelsUnread: node.valueWithheld ? labels.unread.union([.value]) : labels.unread, labelsNull: labels.null))
     // The width rule's visible subset, where the element offers one (#431's review: it may hold elements AXChildren
     // does not, and lack some it does).
     for child in node.visibleChildren ?? children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
@@ -2929,7 +2944,8 @@ final class UnreadableLabelTests: XCTestCase {
     let nodes = recorded(window)
     text.value = "Delete"
     text.unreadable = [.value]
-    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    // #520: a value the rule needs and cannot read now refuses the whole verdict: main kept it, though it may read Delete.
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .valueUnread)
     text.unreadable = [.description]
     XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
     text.unreadable = []
@@ -5472,5 +5488,203 @@ final class OtherControlOnTopTests: XCTestCase {
     XCTAssertEqual(decomove.reason, .controlGone)
     XCTAssertEqual(sleeps, [])
     XCTAssertEqual(rehits, 0)
+  }
+}
+
+/// #520 (rulings 1150, 1151, 1152): a static text's value read now goes through #405's classification, in one batch with
+/// its role and subrole (`StalePointReads.classifiedValue`), and only where the record holds evidence for it
+/// (`stalePointValueEvidence`). An unread value is never compared or quoted; where a consumer that chooses a target needed
+/// it, the whole verdict refuses (`valueUnread`), never another target. The fake reads the value through the real batch
+/// decoder (`batchValueRead`).
+final class ClassifiedValueTests: XCTestCase {
+  private let point = CGPoint(x: 60, y: 110)
+  private let secret = "hunter2 correct horse"
+
+  /// A text with no title or description, recorded reading "Open", whose subrole reads AXSecureTextField now and whose
+  /// value is a password: refused whole, the password never quoted. Main read it raw and refused `relabelled`, quoting it.
+  func testANowSecureStaticTextIsNeverQuoted() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), value: "Open")
+    window.add(text)
+    let nodes = recorded(window)
+    (text.value, text.secureNow) = (secret, true)
+    let refused = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads)
+    XCTAssertEqual(refused.reason, .valueUnread)
+    XCTAssertTrue(refused.refused)
+    XCTAssertNil(refused.labelNow)
+    let outcome = stalePointOutcome(refused, ms: 0, reads: reads)
+    XCTAssertEqual(outcome.refusal?.message,
+                   "The screen may have changed since the screenshot: the text of an element at this point cannot be read now, so the AXStaticText \"Open\" the screenshot showed there cannot be confirmed. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    XCTAssertEqual(outcome.record.wire["reason"] as? String, "valueUnread")
+    XCTAssertEqual(outcome.record.wire["verdict"] as? String, "refused")
+    // Open, the same change is main's: refused `relabelled`, the text read now quoted.
+    text.secureNow = false
+    let relabelled = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads)
+    XCTAssertEqual(relabelled.reason, .relabelled)
+    XCTAssertEqual(relabelled.labelNow, secret)
+  }
+
+  /// #442's refusal names the control on top by its labels read now: a static text that acts (AXPress) with no title or
+  /// description, recorded reading "Open", its value now a password behind a secure subrole, is named by its role alone.
+  /// Main quoted the raw value. Read open, its value is quoted as before.
+  func testTheControlOnTopNeverQuotesAnUnclassifiedValue() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let link = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Archive")
+    let top = Node("AXStaticText", CGRect(x: 300, y: 300, width: 120, height: 20), value: "Open")
+    top.actions = ["AXPress"]
+    window.add(link)
+    window.add(top)
+    let nodes = recorded(window)
+    let node = nodes.first { $0.element === link }!
+    var verdict = StalePointVerdict(reason: .otherControlOnTop, node: node, identity: .handle, current: link, hit: top, point: point,
+                                    nodes: nodes)
+    (verdict.onTop, verdict.onTopRole) = (top, "AXStaticText")
+    (top.value, top.secureNow) = (secret, true)
+    let message = stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message ?? ""
+    XCTAssertFalse(message.contains("hunter2"), message)
+    XCTAssertTrue(message.contains("the AXStaticText now lies on top at this point, over the AXLink \"Archive\""), message)
+    top.secureNow = false
+    XCTAssertTrue(stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message.contains("AXStaticText \"\(secret)\"") == true)
+    // A value the record held none of is not read for the sentence.
+    let blank = Node("AXStaticText", CGRect(x: 300, y: 340, width: 120, height: 20))
+    blank.actions = ["AXPress"]
+    window.add(blank)
+    let again = recorded(window)
+    blank.value = secret
+    (verdict.nodes, verdict.onTop) = (again, blank)
+    blank.valueReads = 0
+    XCTAssertFalse(stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message.contains("hunter2") == true)
+    XCTAssertEqual(blank.valueReads, 0)
+  }
+
+  /// Rule 3, evidence-only: a text recorded with the title "Open" and its value withheld (#405 closed it then), whose title
+  /// and description are gone now: its value is not read, so not compared or quoted, and the verdict refuses whole. Main
+  /// read the value and refused `relabelled`, quoting it.
+  func testAValueWithheldAtTheObservationIsNeverReadNow() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), title: "Open", value: secret)
+    text.valueWithheld = true
+    window.add(text)
+    let nodes = recorded(window)
+    XCTAssertNil(nodes.last?.value)
+    XCTAssertEqual(nodes.last?.label(.value), .unreadable, "withheld: unread in the record")
+    text.title = nil
+    text.valueReads = 0
+    let refused = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads)
+    XCTAssertEqual(refused.reason, .valueUnread)
+    XCTAssertEqual(text.valueReads, 0, "never read")
+    XCTAssertFalse(stalePointOutcome(refused, ms: 0, reads: reads).refusal?.message.contains("hunter2") == true)
+    // Recorded empty, the same.
+    let empty = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), title: "Open", value: "")
+    let other = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    other.add(empty)
+    let emptyNodes = recorded(other)
+    (empty.title, empty.value, empty.valueReads) = (nil, secret, 0)
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: emptyNodes, hit: empty, reads: reads).reason, .valueUnread)
+    XCTAssertEqual(empty.valueReads, 0)
+  }
+
+  /// #433's loop never moves on for an unread value: two recorded controls beneath an inert veil at the point, a text that
+  /// acts (deeper, the first judged) and a button. The text's value now reads otherwise: main refused it `relabelled` and
+  /// kept the point on the button, and the head does the same where the value reads open. Where its subrole reads secure
+  /// now, the head refuses the whole verdict, never the button.
+  func testAnUnreadValueBeneathAnInertLayerNeverPassesToTheNextControl() {
+    func scene(secure: Bool) -> (verdict: StalePointVerdict<Node>, button: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let row = Node("AXGroup", CGRect(x: 0, y: 90, width: 600, height: 50))
+      let wrap = Node("AXGroup", CGRect(x: 10, y: 95, width: 300, height: 40))
+      let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 200, height: 30), value: "Open")
+      text.actions = ["AXPress"]
+      let button = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Save")
+      let layer = CGRect(x: 0, y: 90, width: 600, height: 50)
+      let inner = Node("AXGroup", layer)
+      let veil = Node("AXGroup", layer, [Node("AXGroup", layer, [Node("AXGroup", layer, [inner])])])
+      window.add(row)
+      row.add(wrap)
+      wrap.add(text)
+      row.add(button)
+      window.add(veil)
+      let nodes = recorded(window)
+      XCTAssertEqual(underlyingTargets(of: deepestScreenshotNode(at: point, in: nodes)!, current: inner, at: point, in: nodes, reads)
+        .map(\.role), ["AXStaticText", "AXButton"])
+      (text.value, text.secureNow) = ("Delete", secure)
+      return (stalePointVerdict(at: point, nodes: nodes, hit: inner, reads: reads), button)
+    }
+    let open = scene(secure: false)
+    XCTAssertFalse(open.verdict.refused, "main's: the text relabelled, the button beneath kept")
+    XCTAssertTrue(open.verdict.underlying?.element === open.button)
+    let closed = scene(secure: true)
+    XCTAssertEqual(closed.verdict.reason, .valueUnread)
+    XCTAssertNil(closed.verdict.underlying, "never the button")
+    XCTAssertFalse(stalePointOutcome(closed.verdict, ms: 0, reads: reads).refusal?.message.contains("Delete") == true)
+  }
+
+  /// #296's re-created match never passes to another candidate for an unread value: the text "Open" re-created twice near
+  /// its frame, the nearer reading "Delete" now and the farther "Open". Main rejected the nearer and took the farther, as the
+  /// head does where the nearer's value reads open; where its subrole reads secure now, the whole verdict refuses.
+  func testAnUnreadValueNeverPassesTheReCreatedMatchToAnotherCandidate() {
+    func scene(secure: Bool) -> (verdict: StalePointVerdict<Node>, farther: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let page = Node("AXGroup", CGRect(x: 0, y: 50, width: 600, height: 300))
+      let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), value: "Open")
+      window.add(page)
+      page.add(text)
+      let (nodes, frameless, members) = walkRecord(window)
+      text.destroy()
+      let nearer = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), value: "Delete")
+      nearer.secureNow = secure
+      let farther = Node("AXStaticText", CGRect(x: 21, y: 100, width: 120, height: 20), value: "Open")
+      page.add(nearer)
+      page.add(farther)
+      return (stalePointVerdict(at: point, nodes: nodes, frameless: frameless, recorded: members, hit: page, reads: reads), farther)
+    }
+    let open = scene(secure: false)
+    XCTAssertEqual(open.verdict.identity, .recreated, "main's: the farther candidate")
+    XCTAssertTrue(open.verdict.current === open.farther)
+    let closed = scene(secure: true)
+    XCTAssertEqual(closed.verdict.reason, .valueUnread)
+    XCTAssertNil(closed.verdict.current, "never the farther candidate")
+  }
+
+  /// #305 at an element route's press (`stalePointPressVerdict`): the pressed element, a new text where the record's is
+  /// gone, matched by its role, frame and value. Read open, it is the recorded hit (main's); behind a secure subrole now,
+  /// the whole verdict refuses, its value never compared.
+  func testAnUnreadValueRefusesThePressVerdictWhole() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let page = Node("AXGroup", CGRect(x: 0, y: 50, width: 600, height: 300))
+    let field = Node("AXGroup", CGRect(x: 10, y: 90, width: 300, height: 60))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), value: "Open")
+    window.add(page)
+    page.add(field)
+    field.add(text)
+    let (nodes, frameless, members) = walkRecord(window)
+    let node = nodes.first { $0.element === field }!
+    let kept = StalePointVerdict(reason: .sameElement, node: node, identity: .handle, current: field, hit: field, point: point,
+                                 nodes: nodes, frameless: frameless, recorded: members)
+    text.destroy()
+    let again = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), value: "Open")
+    page.add(again)
+    XCTAssertEqual(stalePointPressVerdict(again, kept, reads: reads).reason, .recordedHit)
+    again.secureNow = true
+    XCTAssertEqual(stalePointPressVerdict(again, kept, reads: reads).reason, .valueUnread)
+  }
+
+  /// The live read (`stalePointClassifiedValueRead`): the slot decoded only where the same batch classifies the element
+  /// open; a closed, failed or unclassifiable reply, a failed slot and a kCFNull slot are unread.
+  func testTheValueReadIsClassifiedInItsOwnBatch() {
+    XCTAssertEqual(batchValueRead(value: "Open" as CFString), .text("Open"))
+    XCTAssertEqual(batchValueRead(value: NSAttributedString(string: "Open")), .text("Open"))
+    XCTAssertEqual(batchValueRead(value: axErrorSlot(.noValue)), .text(nil))
+    XCTAssertEqual(batchValueRead(value: axErrorSlot(.attributeUnsupported)), .text(nil))
+    XCTAssertEqual(batchValueRead(value: nonTextLabelSlot), .nonText)
+    XCTAssertEqual(batchValueRead(value: kCFNull as Any), .unread, "a batch's kCFNull may be an unsupported attribute")
+    XCTAssertEqual(batchValueRead(value: axErrorSlot(.cannotComplete)), .unread)
+    XCTAssertEqual(batchValueRead(value: nil), .unread, "the request failed")
+    XCTAssertEqual(batchValueRead(subrole: "AXSecureTextField" as CFString, value: secret as CFString), .unread)
+    XCTAssertEqual(batchValueRead(role: "AXSecureTextField" as CFString, value: secret as CFString), .unread)
+    XCTAssertEqual(batchValueRead(subrole: axErrorSlot(.cannotComplete), value: secret as CFString), .unread)
+    XCTAssertEqual(batchValueRead(subrole: kCFNull as Any, value: secret as CFString), .unread)
+    XCTAssertEqual(batchValueRead(subrole: nonTextLabelSlot, value: secret as CFString), .unread)
+    XCTAssertEqual(batchValueRead(role: axErrorSlot(.cannotComplete), value: secret as CFString), .unread)
   }
 }

@@ -282,6 +282,46 @@ func stalePointStrictLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePo
   return .nonText
 }
 
+/// #520: an AXStaticText's AXValue read now as a label part, through #405's classification (`stalePointClassifiedValueRead`).
+enum StalePointValueRead: Equatable {
+  /// Open: its text (a string or an attributed string's), or nil for an absence the slot stated (kAXErrorNoValue or
+  /// kAXErrorAttributeUnsupported), as main's single read answered both.
+  case text(String?)
+  /// Open: a value that is no text. Main's single read took it for none; the strict reads (#519) for unknown.
+  case nonText
+  /// Not read, so never compared, decoded or quoted: the reply classified the element closed (#405: a password field by
+  /// role or subrole, a role or subrole unread, null or no text), the request failed, the value's slot failed or held
+  /// kCFNull, or the record held no evidence to compare it with (`stalePointValueEvidence`). A batch may answer kCFNull
+  /// for an unsupported attribute (AXUIElement.h, `AXUIElementCopyMultipleAttributeValues`) where main's single read
+  /// answered kAXErrorAttributeUnsupported, none: the two cannot be told apart, so kCFNull is never taken for null.
+  case unread
+}
+
+/// #520 (rulings 1150, 1152): the reply of one batch of the role, the subrole and AXValue (`classifiedRead`) as the value
+/// read now: the slot is decoded only where the same reply classifies the element open.
+func stalePointClassifiedValueRead(_ read: GuardedRead) -> StalePointValueRead {
+  guard case .read(let read) = read else { return .unread }
+  if let value = read.values[kAXValueAttribute] { return labelText(value).map { .text($0) } ?? .nonText }
+  return read.absent.contains(kAXValueAttribute) ? .text(nil) : .unread
+}
+
+/// #520: whether the record holds evidence a node's AXValue read now could be compared with: an AXStaticText whose value
+/// slot held non-empty text, or kCFNull. A value withheld, failed, no text, empty or absent then is not read now.
+func stalePointValueEvidence<Element>(_ node: ScreenshotNode<Element>) -> Bool {
+  guard node.role == "AXStaticText" else { return false }
+  switch node.label(.value) {
+  case .null: return true
+  case .text(let text): return nonEmpty(text) != nil
+  default: return false
+  }
+}
+
+/// #520: whether a live value read that is unread decided a verdict (`StalePointReads.valueUnreadDecided`): main read the
+/// value raw there, so what main answered is unknown, and the whole verdict refuses (`StalePointReason.valueUnread`).
+final class StalePointUnreadValue {
+  var decided = false
+}
+
 /// The value the record keeps of an element (#298): an AXStaticText's, as the walk read it (a string, or an attributed
 /// string's text), cut by `bounded` as its labels are; nil for every other role, whose value (a field's text, a
 /// checkbox's state) is not its label.
@@ -569,10 +609,15 @@ enum StalePointReason: String, Equatable {
   /// the corrected hit lies in a live control the record holds elsewhere, moved over the point (`movedOverPoint`;
   /// `slideover`: button B slid over an unchanged link A under a veil).
   case otherControlOnTop
+  /// Refused (#520): a static text's value read now decided the verdict and is unread (`StalePointValueRead.unread`) where
+  /// main read it raw, so what main answered is unknown and the whole verdict refuses (`StalePointUnreadValue`), whichever
+  /// element main would have taken.
+  case valueUnread
 
   var refuses: Bool {
     self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
       || self == .newElementOverPoint || self == .relabelled || self == .appWindowOverPoint || self == .controlGone || self == .otherControlOnTop
+      || self == .valueUnread
   }
 }
 
@@ -648,8 +693,8 @@ struct StalePointReads<Element> {
   var children: (Element) -> [Element]?
   var title: (Element) -> String?
   var description: (Element) -> String?
-  /// The element's AXValue as text (#298), read only where the recorded node is an AXStaticText; a seam without one
-  /// reads none, so a value never counts.
+  /// A seam's AXValue as text (#298), which `readValue` takes where the seam has no `label` or `classifiedValue`; a seam
+  /// without one reads none, so a value never counts. Live reads the value only through `classifiedValue` (#520).
   var value: (Element) -> String? = { _ in nil }
   /// The element's AXEditableAncestor and its action names (#298's edited-text exemption), the names nil when their read
   /// failed and an empty list when it has none (`establishedActionNames`); a seam without them reads none, so no text
@@ -684,22 +729,56 @@ struct StalePointReads<Element> {
     case .value: return .text(value(element))
     }
   }
+
+  /// #520 (rulings 1150, 1152): an AXStaticText's AXValue read now as a label part, through #405's classification: live,
+  /// one batch of the role, the subrole and AXValue (`stalePointClassifiedValueRead`). A seam without it reads its strict
+  /// read, else `readLabel`, as an open classification's, a null or failed read unread (a batch cannot tell kCFNull from an
+  /// unsupported attribute).
+  var classifiedValue: ((Element) -> StalePointValueRead)? = nil
+  /// #520: where an unread value decided a verdict (`valueUnreadDecided`); each verdict gives its reads a fresh one
+  /// (`stalePointVerdict`, `stalePointPressVerdict`).
+  var unreadValue = StalePointUnreadValue()
+
+  func readValue(_ element: Element) -> StalePointValueRead {
+    if let classifiedValue { return classifiedValue(element) }
+    switch readStrictLabel(element, .value) {
+    case .text(let text): return .text(text)
+    case .nonText: return .nonText
+    case .null, .unreadable: return .unread
+    }
+  }
+
+  /// #520: the value of `element` read now for a comparison with `node`'s recorded one, only where the record holds
+  /// evidence (`stalePointValueEvidence`); otherwise unread, nothing read.
+  func liveValue(_ element: Element, recorded node: ScreenshotNode<Element>) -> StalePointValueRead {
+    stalePointValueEvidence(node) ? readValue(element) : .unread
+  }
+
+  /// #520: an unread value decided the verdict these reads serve, which then refuses whole (`StalePointReason.valueUnread`).
+  func valueUnreadDecided() { unreadValue.decided = true }
 }
 
 extension StalePointReads where Element == AXUIElement {
+  /// Live, AXValue is read only through `classifiedValue` (#520): the raw single reads (`label`, `strictLabel`) read the
+  /// title and the description, never the value.
   static var live: StalePointReads<AXUIElement> {
     StalePointReads(role: { attribute($0, kAXRoleAttribute) as? String }, frame: liveFrameRead,
                     parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                     title: { liveLabel($0, kAXTitleAttribute) }, description: { liveLabel($0, kAXDescriptionAttribute) },
-                    value: { liveLabel($0, kAXValueAttribute) }, editableAncestor: { elementAttribute($0, "AXEditableAncestor") },
+                    editableAncestor: { elementAttribute($0, "AXEditableAncestor") },
                     actions: { establishedActionNames(of: $0) },
                     label: { element, part in
+                      guard part != .value else { return .unreadable }
                       let read = copyAttribute(element, part.attribute)
                       return stalePointLabelRead(read.value, read.error)
                     }, same: { CFEqual($0, $1) }, gone: { copyAttribute($0, kAXRoleAttribute).error == .invalidUIElement },
                     strictLabel: { element, part in
+                      guard part != .value else { return .unreadable }
                       let read = copyAttribute(element, part.attribute)
                       return stalePointStrictLabelRead(read.value, read.error)
+                    },
+                    classifiedValue: { element in
+                      stalePointClassifiedValueRead(classifiedRead([kAXValueAttribute]) { fetchAttributes(element, $0) })
                     })
   }
 }
@@ -740,6 +819,25 @@ func stalePointLabelsAgree(recordedTitle: String?, recordedDescription: String?,
     return stalePointLabelWords(old) == stalePointLabelWords(new)
   }
   return true
+}
+
+/// #520: `stalePointLabelsAgree` against `node`'s record (#296's re-created match, #305's), the value read now (`value`,
+/// `StalePointReads.liveValue`) only where it decides: neither side has a title or a description, and the recorded value
+/// is non-empty. A value that is no text is none, as main's single read took it. Nil when the value decides and is unread:
+/// main read it raw, so whether they agree is unknown.
+func stalePointLiveLabelsAgree<Element>(_ node: ScreenshotNode<Element>, title: String?, description: String?,
+                                        value: () -> StalePointValueRead) -> Bool? {
+  func agrees(_ value: String?) -> Bool {
+    stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
+                          description: description, value: value)
+  }
+  guard nonEmpty(node.title) == nil, nonEmpty(title.map(bounded)) == nil, nonEmpty(node.description) == nil,
+        nonEmpty(description.map(bounded)) == nil, nonEmpty(node.value) != nil else { return agrees(nil) }
+  switch value() {
+  case .text(let text): return agrees(text)
+  case .nonText: return agrees(nil)
+  case .unread: return nil
+  }
 }
 
 /// A node's label (#298): its title if non-empty, else its description, else its value (which the record keeps, and
@@ -814,14 +912,38 @@ let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
 /// null on both sides is passed over, like with like, so an element whose title is always null is judged by its
 /// description; null on one side only is unknown, as a failed read is, the counterpart of each part a label is taken
 /// from included (the review of 435420cc..17930e20, P2); with every part passed over there is no label, and it keeps.
+/// #520: the value is read now through #405's classification, only where the record holds evidence
+/// (`StalePointReads.liveValue`), a value that is no text none, as main's single read took it. Where the rule consults it
+/// and it is unread, main read it raw and its answer is unknown: nil, and the whole verdict refuses
+/// (`StalePointReads.valueUnreadDecided`), so #433's loop never moves on to another control for it.
 func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
   guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
+  var valueUnread = false
+  let label = relabelledLabel(node, reads, valueUnread: &valueUnread)
+  guard !valueUnread else {
+    reads.valueUnreadDecided()
+    return nil
+  }
+  return label
+}
+
+private func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>,
+                                      valueUnread: inout Bool) -> String? {
   let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
   let element = node.element
   var live: [StalePointLabelPart: StalePointLabelRead] = [:]
   func readNow(_ part: StalePointLabelPart) -> StalePointLabelRead {
     if let read = live[part] { return read }
-    let read = reads.readLabel(element, part)
+    let read: StalePointLabelRead
+    if part == .value {
+      switch reads.liveValue(element, recorded: node) {
+      case .text(let text): read = .text(text)
+      case .nonText: read = .text(nil)
+      case .unread: (read, valueUnread) = (.unreadable, true)
+      }
+    } else {
+      read = reads.readLabel(element, part)
+    }
     live[part] = read
     return read
   }
@@ -830,7 +952,8 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
   for part in parts {
     let recorded = node.label(part)
     if recorded == .null {
-      guard readNow(part) == .null else { return nil }
+      // #520: the value is the last part, so the label recorded is none whatever it reads now: it is not read.
+      guard part != .value, readNow(part) == .null else { return nil }
       continue
     }
     guard case .text(let text) = recorded else { return nil }
@@ -1171,10 +1294,16 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
       stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
                             description: description, value: value)
     }
+    // #520: the value read now through #405's classification, where it decides; unread there, whether main took this
+    // candidate is unknown, and the whole verdict refuses rather than another candidate taken.
+    let agreed = stalePointLiveLabelsAgree(node, title: title, description: description) { reads.liveValue(candidate, recorded: node) }
     // #298's edited-text exemption: a text re-created in its recorded editable region (typed over) is matched without
     // its value, its title and description still compared.
-    guard agrees(value: node.value == nil ? nil : reads.value(candidate))
-            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else { continue }
+    guard agreed == true
+            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else {
+      if agreed == nil { reads.valueUnreadDecided() }
+      continue
+    }
     best = (candidate, frame, distance)
   }
   guard let best else { return nil }
@@ -1214,9 +1343,25 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
                                 correctedHit: (() -> WindowHit<Element>)? = nil,
                                 windowCheck: (WindowHit<Element>) -> StalePointVerdict<Element>? = { _ in nil },
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
+  var reads = reads
+  reads.unreadValue = StalePointUnreadValue()
   let kept = inertLayerVerdict(at: point, windowShift: windowShift, nodes: nodes, frameless: frameless, recorded: recorded, hit: first,
                                rehit: rehit, sleep: sleep, reads: reads)
-  return otherControlOnTopVerdict(kept, correctedHit: correctedHit, windowCheck: windowCheck, sleep: sleep, reads)
+  let verdict = otherControlOnTopVerdict(kept, correctedHit: correctedHit, windowCheck: windowCheck, sleep: sleep, reads)
+  guard reads.unreadValue.decided else { return verdict }
+  var refused = valueUnreadRefusal(of: kept)
+  (refused.hitCorrection, refused.correctedHitMs) = (verdict.hitCorrection, verdict.correctedHitMs)
+  return refused
+}
+
+/// #520: the whole verdict refused because an unread value decided it (`StalePointUnreadValue`): the recorded node at the
+/// point and the hit judged, nothing of what the unread value chose (an identity, a control beneath, a control on top).
+func valueUnreadRefusal<Element>(of verdict: StalePointVerdict<Element>) -> StalePointVerdict<Element> {
+  var refused = StalePointVerdict(reason: .valueUnread, node: verdict.node, hitRole: verdict.hitRole, hit: verdict.hit, gaps: verdict.gaps,
+                                  point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes, frameless: verdict.frameless,
+                                  recorded: verdict.recorded, webAreaReads: verdict.webAreaReads, newElementReads: verdict.newElementReads)
+  (refused.hitCorrection, refused.correctedHitMs) = (verdict.hitCorrection, verdict.correctedHitMs)
+  return refused
 }
 
 /// `stalePointVerdict` before #442's check: #296's verdict, #443's `controlGone`, then #433's check of the control beneath
@@ -1715,11 +1860,24 @@ func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowSh
   if !handles.isEmpty { return handles.lazy.filter { inPlace(live, $0) }.compactMap(carried).first }
   guard let role = reads.role(element) else { return nil }
   let (title, description) = (reads.title(element), reads.description(element))
-  let value = role == "AXStaticText" ? reads.value(element) : nil
-  for node in nodes where node.role == role && inPlace(live, node)
-    && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
-                             description: description, value: value)
-    && reads.frame(node.element) == nil && !recreatedRefused(element, of: node, nodes: nodes, frameless: frameless, recorded: recorded, reads) {
+  // #520: an AXStaticText's value read now once, where a node's comparison needs it, through #405's classification; unread
+  // there, whether main took the element for that node is unknown, and the whole verdict refuses.
+  var valueNow: StalePointValueRead?
+  func value(_ node: ScreenshotNode<Element>) -> StalePointValueRead {
+    guard role == "AXStaticText" else { return .text(nil) }
+    guard stalePointValueEvidence(node) else { return .unread }
+    if let valueNow { return valueNow }
+    let read = reads.readValue(element)
+    valueNow = read
+    return read
+  }
+  for node in nodes where node.role == role && inPlace(live, node) {
+    guard let agreed = stalePointLiveLabelsAgree(node, title: title, description: description, value: { value(node) }) else {
+      reads.valueUnreadDecided()
+      continue
+    }
+    guard agreed, reads.frame(node.element) == nil,
+          !recreatedRefused(element, of: node, nodes: nodes, frameless: frameless, recorded: recorded, reads) else { continue }
     if let by = carried(node) { return by }
   }
   return nil
@@ -1959,8 +2117,17 @@ struct StalePointRecord: Equatable {
 /// which itself passed (the `unrecordedDescendant` limit, its reason then that one), or a recorded node the screenshot
 /// showed at the point and still there (`recordedHit`, #305), or anything at a point no recorded node holds
 /// (`unrecorded`). Otherwise the verdict becomes `pressedOther`, refused.
+/// #520: where an unread value decided #305's check (`recordedHitAtPoint`), the whole verdict refuses `valueUnread`.
 func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVerdict<Element>,
                                      reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
+  var reads = reads
+  reads.unreadValue = StalePointUnreadValue()
+  let judged = pressVerdict(pressed, verdict, reads: reads)
+  return reads.unreadValue.decided ? valueUnreadRefusal(of: judged) : judged
+}
+
+private func pressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVerdict<Element>,
+                                   reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   guard !verdict.refused, let node = verdict.node, let current = verdict.current else { return verdict }
   if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
@@ -2204,6 +2371,15 @@ func otherControlOnTopRefusal(top: String, shown: String, afterActivation: Bool 
     "The screen changed since the screenshot: the \(top) now lies on top at this point, over the \(shown) the screenshot showed there, and a click would reach it. \(sent) Call getScreenshot for a new screenshot and aim again from what it shows.")
 }
 
+/// #520's refusal: the text of an element at the point, which the check needed, cannot be read now (it may have become a
+/// password field's), so what the screenshot showed there (`was`, its recorded name) cannot be confirmed. The same name as
+/// the guard's other refusals; nothing read now is named.
+func valueUnreadSinceScreenshot(was: String, afterActivation: Bool = false) -> EngineError {
+  let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
+  return EngineError(name: "screenChangedSinceScreenshot",
+    "The screen may have changed since the screenshot: the text of an element at this point cannot be read now, so the \(was) the screenshot showed there cannot be confirmed. \(sent) Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+}
+
 /// #316's rule W's refusal: the same name as the guard's other refusals, since the model's remedy is the same (a new
 /// screenshot first), with its own sentence, since no element of the screenshot's is at fault. Nothing was posted.
 func newWindowOverScreenshot(app: String) -> EngineError {
@@ -2230,6 +2406,10 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
   let record = StalePointRecord(verdict, ms: ms)
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
   if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app, afterActivation: afterActivation)) }
+  if verdict.reason == .valueUnread {
+    let was = verdict.node.map { stalePointName(role: $0.role, title: $0.title, description: $0.description, value: $0.value) } ?? "element"
+    return (record, valueUnreadSinceScreenshot(was: was, afterActivation: afterActivation))
+  }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
   if verdict.reason == .controlGone {
     let control = node.control.flatMap { control in (verdict.nodes + verdict.frameless).first { reads.same($0.element, control) } }
@@ -2243,9 +2423,14 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
     // What the screenshot showed there: #433's control beneath, else the node's recorded control, else the node.
     let shown = verdict.underlying
       ?? node.control.flatMap { control in (verdict.nodes + verdict.frameless).first { reads.same($0.element, control) } } ?? node
+    // #520: the value on top is quoted only as read through #405's classification, against a record of it that holds one.
+    func shownValue() -> String? {
+      guard verdict.onTopRole == "AXStaticText", let recorded = verdict.nodes.first(where: { reads.same($0.element, top) }),
+            case .text(let value) = reads.liveValue(top, recorded: recorded) else { return nil }
+      return value
+    }
     return (record, otherControlOnTopRefusal(
-      top: stalePointName(role: verdict.onTopRole, title: reads.title(top), description: reads.description(top),
-                          value: verdict.onTopRole == "AXStaticText" ? reads.value(top) : nil),
+      top: stalePointName(role: verdict.onTopRole, title: reads.title(top), description: reads.description(top), value: shownValue()),
       shown: stalePointName(role: shown.role, title: shown.title, description: shown.description, value: shown.value),
       afterActivation: afterActivation))
   }

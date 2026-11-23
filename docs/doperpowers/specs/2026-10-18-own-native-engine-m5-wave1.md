@@ -233,6 +233,20 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   host override unset), and a plain install stages a pending build that never approves itself. At integration: M4
   rewrites the same README and onboarding passages, so the flip needs a manual docs pass once M4 is on main; the
   project CLAUDE.md's first line goes stale at the flip (left for the owner).
+- 2026-11-23, T10b′ part 1 (6dbb41172..72f9246ea; detail in `docs/evidence/2026-11-23-own-native-engine/harness.md`):
+  the matrix records front and key around each judged act and the activate step's own check (re-read up to four
+  times 250 ms apart); an activation that does not take front and key skips every planned sample with that check
+  (NO VERDICT, cause activation), and generic invalid is kept for setup failures the check does not explain. Speed
+  samples read front and key at their own call boundaries. The engine's own error name crosses the REPL boundary as
+  `cua/errorName` (`src/services/sky.mjs`, darwin `handleRpc`; per call; a finite name set in
+  `src/services/engine/error-names.mjs` kept equal to the Swift sources by test); the vendor host's path is sound by
+  construction and the pilot verifies it. Acceptance 3's keystroke witness runs in
+  `textedit/background/click.element@finder` on both lanes; both probe gate failures are failed witnesses, not
+  invalid. #485's oracle reads window order before and after every background cell, keeps an unread order unread,
+  and needs the user's window present to prove the target stayed below; an unread order fails the row. The writer
+  refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
+  until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
+  `meta.hosted` comes from the runner's environment.
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

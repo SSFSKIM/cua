@@ -24,6 +24,18 @@ test('six sittings, A to F, each one plan for one job', () => {
   assert.throws(() => plan('g'), /no sitting g/);
 });
 
+// Ruling 1149: each run's check reads the engine its side attested, so every step that reads a run's record names the
+// engine of its side, the one the run pins; #216's witness is read by the verdict it prints, NO VERDICT kept as such.
+test('ruling 1149: every step that reads a run\'s record names the engine its side pins, and B\'s lanes are read by their records', () => {
+  for (const s of ['a', 'b', 'c']) for (const pilot of [false, true]) {
+    const reading = plan(s, {pilot}).steps.filter(step => ['record', 'observation'].includes(step.check));
+    assert.ok(reading.length > 0, s);
+    for (const step of reading) assert.equal(step.engine, argOf(step, '--engine'), `${s} ${step.id}`);
+  }
+  assert.deepEqual(plan('b').steps.slice(1, 3).map(s => [s.check, s.record, s.engine]), [['record', '/w/out/vendor/meta.json', 'vendor'], ['record', '/w/out/cua/meta.json', 'cua']]);
+  assert.equal(plan('d').steps.find(s => s.id === 'approval-cycles').check, 'verdict');
+});
+
 test('A: three runs of each lane, alternating vendor on vendor, cua on vendor, cua on cua, over the loopback device and the run\'s install; then comparisons A, B and C', () => {
   const full = plan('a');
   const runs = full.steps.filter(s => s.kind === 'run');

@@ -68,8 +68,12 @@ export function readReply(reply) {
 }
 
 // The session's dispatch: every scene a cell acts on checked by `guard` right before it goes (a key cell, its window on
-// top of the frontmost application too), the reply's engine attested; the first refusal or wrong engine stops every
-// later cell. `send(code)` answers the raw js reply. -> run(code, {keys}).
+// top of the frontmost application too), the reply's engine attested; the first refusal, wrong engine or result that
+// attests none (ruling 1149: every result the runtime answered, an error included) stops every later cell. A reply with
+// no result, or cua's own status error that no runtime answered (no `cua/taskId`: the connection lifecycle's rejection,
+// src/mcp/server.mjs rejectionResult, or a device link's failure, src/mcp/target.mjs failed), ran on no engine and has
+// nothing to attest. `send(code)` answers the raw js reply. -> run(code, {keys}).
+const ranOnNoEngine = result => !result || (result.isError === true && result.structuredContent?.status === 'error' && !Object.hasOwn(result._meta ?? {}, 'cua/taskId'));
 export function gate({name, engine, scenes, guard, send}) {
   let stopped = null;
   const records = Object.fromEntries(scenes.map(s => [s.id, s]));
@@ -81,7 +85,12 @@ export function gate({name, engine, scenes, guard, send}) {
       const problem = guard.problem(records[id]);
       if (problem) stop(`refused, nothing sent: ${problem}`);
     }
-    const dispatch = async () => readReply(await send(code));
+    let attestable = false;
+    const dispatch = async () => {
+      const reply = await send(code);
+      attestable = !reply?.timedOut && !ranOnNoEngine(reply?.result);
+      return readReply(reply);
+    };
     let answer;
     if (keys) {
       const record = records[keys];
@@ -90,6 +99,7 @@ export function gate({name, engine, scenes, guard, send}) {
       answer = sent.result;
     } else answer = await dispatch();
     if (answer.engine && answer.engine !== engine) stop(`the ${answer.engine} engine answered, not the pinned ${engine}`);
+    if (attestable && !answer.engine) stop(`a result attested no engine, not the pinned ${engine}`);
     return answer;
   };
 }

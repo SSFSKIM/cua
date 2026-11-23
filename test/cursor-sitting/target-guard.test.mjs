@@ -71,3 +71,23 @@ test('the gate refuses a scene the session did not bind, keys whose window is no
   await assert.rejects(keyed({ownerPid: 500, number: 78})(KEY_AFTER_INPUT('textedit', 'Right'), {keys: 'textedit'}), /key guard/);
   await assert.rejects(gate({name: 'a', engine: 'cua', scenes: [RECORD], guard: ok, send: async () => reply('vendor')})(ALIGN_TOGGLE), /the vendor engine answered/);
 });
+
+// Ruling 1149: every result is attested, not only a local session's first: a result naming no engine stops the session
+// as one naming another does (a device's included, whose first result the session does not check apart). What carries
+// no result has nothing to attest: no answer in the bound, a protocol error, the lifecycle's pre-dispatch rejection.
+test('ruling 1149: the gate stops at a result that attests no engine; a reply without a result passes as before', async () => {
+  const ok = {problem: () => null};
+  const run = send => gate({name: 'a', engine: 'cua', scenes: [RECORD], guard: ok, send});
+  const bare = {result: {content: [{type: 'text', text: 'CUA_NATIVE_BASELINE {"ok":true,"value":{}}'}], _meta: {}}};
+  await assert.rejects(run(async () => bare)(ALIGN_TOGGLE), /a result attested no engine, not the pinned cua; nothing more is sent on this session/);
+  const failedCell = {result: {content: [{type: 'text', text: 'Error: x'}], isError: true}};
+  await assert.rejects(run(async () => failedCell)(FIRST), /a result attested no engine/, 'an error result the runtime answered must attest too');
+  assert.equal((await run(async () => ({timedOut: true}))(FIRST)).ok, false);
+  assert.equal((await run(async () => ({error: {code: -32000, message: 'gone'}}))(FIRST)).ok, false);
+  const rejected = {result: {content: [{type: 'text', text: 'ending'}], isError: true, structuredContent: {status: 'error', code: 'task_ending'}}};
+  assert.equal((await run(async () => rejected)(FIRST)).ok, false, 'the lifecycle\'s pre-dispatch rejection ran on no engine');
+  const linkFailed = {result: {content: [{type: 'text', text: 'cua: bravo: the call failed'}], isError: true, structuredContent: {status: 'error', code: 'device_failed', device: 'bravo'}, _meta: {'cua/device': 'bravo'}}};
+  assert.equal((await run(async () => linkFailed)(FIRST)).ok, false, 'a device link\'s failure ran on no engine');
+  const answeredError = {...rejected, result: {...rejected.result, _meta: {'cua/taskId': 't1'}}};
+  await assert.rejects(run(async () => answeredError)(FIRST), /a result attested no engine/, 'a status error the runtime answered (cua/taskId) must attest');
+});

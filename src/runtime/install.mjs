@@ -394,11 +394,11 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
 // ...buildEngine's answer, approved: whether this build is the approved engine}.
 export async function installMacosEngine({explicit = false, sign, signWait, env = process.env, selection = {}, build = buildEngine, installed = installedEngine,
   engine = {}, log = () => {}, home, resolveOwnNode, pending = dir => pendingEngine({dir})} = {}) {
-  const serves = dir => {
+  const serves = (dir, failure = null) => {
     try {
       hostSettingsFrom(env);
       const session = replHostFor({platform: 'darwin', surfaces: ['computer'], ambient: env, home, ...(resolveOwnNode ? {resolveOwnNode} : {}),
-        engine: {...selection, installed: () => installed({dir, runSync: engine.runSync}), pending: () => pending(dir), buildFailure: () => null}});
+        engine: {...selection, installed: () => installed({dir, runSync: engine.runSync}), pending: () => pending(dir), buildFailure: () => failure}});
       return session.engine?.engine === 'cua' ? {engine: 'cua', build: session.engine.app.build} : {engine: 'vendor', reason: session.reason};
     } catch (error) {
       if (!(error instanceof CuaError)) throw error;
@@ -412,7 +412,7 @@ export async function installMacosEngine({explicit = false, sign, signWait, env 
   // A failed build (`dir`, the engine directory it built in) says its cause and what serves; a setting that cannot be
   // read, which refuses sessions as it refuses the build, says only itself.
   const reported = (error, dir) => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {}),
-    ...(dir ? {cause: buildFailureCause(error), serves: serves(dir), pending: approvable(dir)} : {})});
+    ...(dir ? {cause: buildFailureCause(error), serves: serves(dir, {code: error.code, cause: buildFailureCause(error), failedAt: new Date().toISOString()}), pending: approvable(dir)} : {})});
   if (!explicit) {
     let setting;
     try { setting = nativeEngineSetting({env, ...selection}); } catch (error) { return reported(classified(error, 'invalid_setting')); }

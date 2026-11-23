@@ -147,7 +147,7 @@ test('the install warning on a failed build names the cause, the engine sessions
   for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {CUA_REPL_HOST: 'cua'}]) {
     const {serves} = await engineOf({env});
     assert.equal(serves.refused, 'engine_not_installed', JSON.stringify(env));
-    assert.match(serves.message, /selects cua's own engine, and this Mac has no approved cua engine \(not built\)/, JSON.stringify(env));
+    assert.match(serves.message, /selects cua's own engine, and this Mac has no approved cua engine \(build failed: Xcode is not installed \(no swift\)\)/, JSON.stringify(env));
     assert.match(await lineOf({env}), /; macOS computer sessions are refused \(engine_not_installed\): .*selects cua's own engine, .*; to use cua's engine, install Xcode/, JSON.stringify(env));
   }
   // A usable approved build, but no Node 24 for cua's own host (--no-node): the default serves the vendor engine. Node is

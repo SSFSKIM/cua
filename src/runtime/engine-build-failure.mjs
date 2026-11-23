@@ -31,7 +31,7 @@ const PHRASES = [NO_SWIFT, XCODE_NOT_SELECTED, ...Object.values(BY_CODE)];
 const COMPILE = /^compile error(?: \(swift build exit (-?\d{1,4})\))?/;
 const SAFE_CODE = /^[A-Za-z0-9_]{1,64}$/;
 const compileError = exit => `compile error${exit ? ` (swift build exit ${exit})` : ''}`;
-const byCode = code => BY_CODE[code] ?? (SAFE_CODE.test(code ?? '') ? code : 'the build failed');
+const byCode = code => (typeof code === 'string' && Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : null) ?? (SAFE_CODE.test(code ?? '') ? code : 'the build failed');
 
 // A failed build's public cause, by what failed: swift missing, or a swift that cannot run for want of a selected
 // Xcode, means Xcode; a compile error by swift's exit status alone; a known code by its phrase; anything else by its

@@ -162,3 +162,11 @@ test('the failure record: written with the cause and the time, never the message
   writeFileSync(join(s.dir, 'file'), '');
   assert.doesNotThrow(() => recordBuildFailure({dir: join(s.dir, 'file', 'engine'), error: new Error('x')}), 'a record that cannot be written never masks the build\'s own error');
 });
+
+test('a recorded code that names an inherited property is no phrase: it reads as itself or as a failed build', () => {
+  for (const code of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    const cause = buildFailureCause(Object.assign(new CuaError('engine_sign_failed', 'x'), {code}));
+    assert.equal(typeof cause, 'string', code);
+    assert.ok(cause === code || cause === 'the build failed', `${code}: ${cause}`);
+  }
+});

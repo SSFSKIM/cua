@@ -33,6 +33,7 @@ import {compare, parse} from '../../test/native-goldens/compare.mjs';
 import {allowsAddedLines} from '../../test/native-goldens/goldens.mjs';
 import {LIST_BEARING_SCENES, SCENE_IDS} from './scenes-mac.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
+import {classifyAttestedRecord} from '../probe/lib.mjs';
 
 export const EXPECTED_FILE = fileURLToPath(new URL('./expected/native-mac.json', import.meta.url));
 export const GOLDENS = Object.freeze(['full', 'before', 'diff', 'settle']);
@@ -98,7 +99,18 @@ export function loadNativeMacRun(dir) {
   return {dir, meta, rows, row, text};
 }
 
-// Whether two runs may be compared: both complete runs of this suite on macOS, from one sitting (one hold, named by both
+// Ruling 1149: whether a run's kept attestations (meta.engineAttestation, ./native-mac.mjs) prove its engine: every
+// result its requested engine's, cua's at the approved version and the checkout's build, the vendor's at the run's
+// runtime release (laneAttestationProblem's rule, ./native-mac.mjs). -> null, or the gap (the cua lane answered by the
+// vendor's engine is state 1; scripts/probe/lib.mjs classifyAttestedRecord).
+function attestationGap(meta) {
+  if (!meta.engineAttestation) return 'it keeps no engine attestation (meta.engineAttestation)';
+  const expected = meta.engine === 'cua' ? {engine: 'cua', version: meta.approved?.engineVersion, build: meta.checkoutBuild} : {engine: meta.engine, build: meta.runtimeRelease};
+  return classifyAttestedRecord(meta.engineAttestation, expected).problem;
+}
+
+// Whether two runs may be compared: both complete runs of this suite on macOS whose attestations prove their engine
+// (attestationGap), from one sitting (one hold, named by both
 // runs; one device, the harness checkout at one commit, one approved engine, one vendor runtime) with the same cells
 // (one controller commit), each list-bearing scene read in one window frame on both (within FRAME_TOLERANCE_PT on every
 // edge: a list's visible rows follow its window's height, so two frames make the pair invalid, not a difference). With
@@ -108,6 +120,8 @@ export function checkPair(vendor, cua, {declarations = []} = {}) {
     if (run.meta.suite !== 'native-mac') throw new Error(`${run.dir} is not a native-mac run`);
     if (run.meta.complete !== true) throw new Error(`${run.dir} is an incomplete run${run.meta.error ? ` (${run.meta.error})` : ''}: rerun it`);
     if (run.meta.platform !== 'darwin') throw new Error(`${run.dir} is not a macOS run`);
+    const unproven = attestationGap(run.meta);
+    if (unproven) throw new Error(`${run.dir}'s lane is unproven: ${unproven}: rerun it`);
   }
   const [a, b] = [vendor.meta, cua.meta];
   if (a.engine === b.engine) { if (declarations.length) throw new Error('two runs of the same engine are a determinism check: same-engine runs take no expected differences'); }

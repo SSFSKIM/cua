@@ -9,14 +9,18 @@
 //                   on-screen window at the normal level (layer 0) with a visible size and alpha, from
 //                   CGWindowListCopyWindowInfo, front to back, passing over the windows of each skipped pid (the
 //                   engine's own: the agent cursor's display-wide panel, which never takes a key, #235).
+//   order [--skip-pid <pid>]...
+//                   {"at", "windows": [<window> with "ownerName", "ownerBundleId" and "layer"]}: every on-screen layer-0
+//                   window, front to back, as one snapshot (the Finder scene's activation guard), passing over the
+//                   skipped pids' windows as `front` does.
 //   windows <pid>   {"at", "pid", "hidden", "windows": [<window>]}: every layer-0 window of that process with a visible
 //                   size, front to back, each with its `onScreen` (false for a minimized window, one on another Space, or
 //                   every window of a hidden app); `hidden` is NSRunningApplication's isHidden for the process (Cmd-H),
 //                   null when LaunchServices does not know the pid.
 //   <window>        {"ownerPid", "number", "bounds": {"x", "y", "width", "height"}, "onScreen"}
 //
-// It reads no window names and no owner names: only kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds,
-// kCGWindowLayer, kCGWindowAlpha and kCGWindowIsOnscreen, none of which needs Screen Recording, and an app's isHidden, so
+// It reads no window titles: kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds, kCGWindowLayer, kCGWindowAlpha,
+// kCGWindowIsOnscreen and (only for `order`) kCGWindowOwnerName need no Screen Recording grant. App metadata is NSRunningApplication's, so
 // it never raises a permission dialog. Exit 0 with the JSON; exit 2 with {"error"} on a usage error.
 import AppKit
 import CoreGraphics
@@ -51,7 +55,7 @@ func frontmost() -> [String: Any]? {
   return ["pid": pid, "bundleId": bundleId as Any? ?? NSNull()]
 }
 
-func windows(_ option: CGWindowListOption) -> [[String: Any]] {
+func windows(_ option: CGWindowListOption, owners: Bool = false) -> [[String: Any]] {
   guard let list = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else { return [] }
   return list.compactMap { entry in
     guard (entry[kCGWindowLayer as String] as? Int) == 0,
@@ -61,11 +65,17 @@ func windows(_ option: CGWindowListOption) -> [[String: Any]] {
           let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
           bounds.width > 1, bounds.height > 1,
           (entry[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
-    return [
+    var out: [String: Any] = [
       "ownerPid": pid, "number": number,
       "bounds": ["x": Double(bounds.origin.x), "y": Double(bounds.origin.y), "width": Double(bounds.width), "height": Double(bounds.height)],
       "onScreen": (entry[kCGWindowIsOnscreen as String] as? Bool) ?? false,
     ]
+    if owners {
+      out["layer"] = 0
+      out["ownerName"] = entry[kCGWindowOwnerName as String] as? String ?? "unknown process"
+      out["ownerBundleId"] = NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier as Any? ?? NSNull()
+    }
+    return out
   }
 }
 
@@ -78,24 +88,34 @@ func emit(_ object: [String: Any], status: Int32 = 0) -> Never {
 
 let now = Int((Date().timeIntervalSince1970 * 1000).rounded())
 let arguments = Array(CommandLine.arguments.dropFirst())
-switch arguments.first ?? "front" {
-case "front":
+// `--skip-pid <pid>`, any number of times, after `front` or `order`: the owners whose windows the reading passes over.
+func skippedPids(_ command: String) -> Set<Int> {
   var skipped = Set<Int>()
   var rest = arguments.dropFirst()
   while let flag = rest.first {
     guard flag == "--skip-pid", rest.count >= 2, let pid = Int(rest[rest.startIndex + 1]), pid > 0 else {
-      emit(["error": "usage: front [--skip-pid <pid>]..."], status: 2)
+      emit(["error": "usage: \(command) [--skip-pid <pid>]..."], status: 2)
     }
     skipped.insert(pid)
     rest = rest.dropFirst(2)
   }
+  return skipped
+}
+
+switch arguments.first ?? "front" {
+case "front":
+  let skipped = skippedPids("front")
   let top = windows([.optionOnScreenOnly, .excludeDesktopElements]).first { !skipped.contains($0["ownerPid"] as? Int ?? -1) }
   emit(["at": now, "frontmost": frontmost() as Any? ?? NSNull(), "topWindow": top as Any? ?? NSNull()])
+case "order":
+  let skipped = skippedPids("order")
+  emit(["at": now, "windows": windows([.optionOnScreenOnly, .excludeDesktopElements], owners: true)
+    .filter { !skipped.contains($0["ownerPid"] as? Int ?? -1) }])
 case "windows":
   guard arguments.count == 2, let pid = Int(arguments[1]), pid > 0 else { emit(["error": "usage: windows <pid>"], status: 2) }
   let hidden = NSRunningApplication(processIdentifier: pid_t(pid))?.isHidden
   emit(["at": now, "pid": pid, "hidden": hidden as Any? ?? NSNull(),
         "windows": windows([.optionAll, .excludeDesktopElements]).filter { ($0["ownerPid"] as? Int) == pid }])
 default:
-  emit(["error": "usage: front [--skip-pid <pid>]... | windows <pid>"], status: 2)
+  emit(["error": "usage: front [--skip-pid <pid>]... | order [--skip-pid <pid>]... | windows <pid>"], status: 2)
 }

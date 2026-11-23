@@ -34,6 +34,10 @@ export const TEXTEDIT = [SCENES.textedit.bundleId];
 export function step(ctx, args) {
   const {answer, at} = ctx.ops.matrix(['step', ...args, '--run', ctx.run]) ?? {};
   mark(ctx, 'harness', args.join(':'), at, args[0] === 'activate' ? [SCENES[args[1]].bundleId] : []);
+  if (args[0] === 'activate' && answer?.windowOrder) {
+    (ctx.meta.activationGuards ??= []).push({scene: args[1], beforeRow: ctx.rows.length, at, ok: answer.ok,
+      ...(answer.reason ? {reason: answer.reason} : {}), windowOrder: answer.windowOrder, ...(answer.framePin ? {framePin: answer.framePin} : {})});
+  }
   return answer;
 }
 export const activate = (ctx, scene) => step(ctx, ['activate', scene]);

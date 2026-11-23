@@ -6,9 +6,13 @@
 // entry DECISION_LOG_ENTRY (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, recorded on docs/117-progress
 // db775127; ruling 1111, O0), which amends "TCC is never edited by automation" for GitHub-hosted runners alone. Every
 // write goes through tccWrite, whose guard throws before any access to a store or its directory unless
-// RUNNER_ENVIRONMENT=github-hosted on macOS and that entry is in the spec's Decision Log as git holds it (docs/117-progress,
-// else HEAD, else a shallow fetch of docs/117-progress; fail closed when none reads), as ruling 1137 asks and H0's kit did
-// (proven by test/hosted-sittings/tcc.test.mjs with a spy store), and every write cites that entry in the log.
+// RUNNER_ENVIRONMENT=github-hosted on macOS (checked first, before anything is read), and then unless that entry is an
+// entry of its own in the Decision Log section of the design spec pinned at preparation: the workflow's setup step (not
+// this writer) fetches the spec at a full commit (O0_COMMIT by default, where the entry was recorded on docs/117-progress;
+// the workflow may name a later one) and writes it to a run-owned file, named with its commit by
+// CUA_HOSTED_DECISION_FILE and CUA_HOSTED_DECISION_SHA. The writer runs no git and fetches nothing; a missing or
+// unreadable file refuses (ruling 1137; proven by test/hosted-sittings/tcc.test.mjs with a spy store). Every write cites
+// the entry and the pinned commit in the log and in its report.
 //
 // What H0 found (#175; scripts/probe-117-h0/README.md on probe/117-h0 56c08949), and so what this writes: the system
 // database's rows are honoured, at the client's next launch only (so the caller relaunches the engines after it,
@@ -18,8 +22,7 @@
 import {execFileSync} from 'node:child_process';
 import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {join} from 'node:path';
 import {assertGithubHosted} from './runner.mjs';
 
 export const SYSTEM_DB = '/Library/Application Support/com.apple.TCC/TCC.db';
@@ -32,20 +35,37 @@ export const SERVICES = Object.freeze({
 export const CLIENTS = Object.freeze({engine: 'io.github.ssfskim.cua.engine', vendor: 'com.openai.sky.CUAService'});
 export const DECISION_LOG_ENTRY = 'Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the owner\'s Macs (O0; ruling 1111)), docs/doperpowers/specs/2026-10-18-own-native-engine-design.md';
 
-// The entry as the spec words it (whitespace aside: the spec wraps it), which must be in its Decision Log.
+// The entry as the spec words it (whitespace aside: the spec wraps it): an entry of the Decision Log begins with it.
 export const DECISION_MARKER = 'Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the owner\'s Macs (O0; ruling 1111))';
 export const DECISION_SPEC = 'docs/doperpowers/specs/2026-10-18-own-native-engine-design.md';
-export const hasDecision = text => typeof text === 'string' && text.replace(/\s+/g, ' ').includes(DECISION_MARKER);
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+// The docs/117-progress commit that recorded the entry: the pin by default.
+export const O0_COMMIT = 'db775127652ebae5e0c7d90b5f5e2785f8e5711e';
 
-// The spec's text holding the entry, from docs/117-progress (where the Decision Log is kept), this checkout's HEAD, or a
-// shallow fetch of docs/117-progress (a ci-kit gate's checkout is one commit deep); null when none holds it.
-export function readDecisionLog({cwd = REPO} = {}) {
-  const git = args => { try { return execFileSync('/usr/bin/git', ['-C', cwd, ...args], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, timeout: 60_000}); } catch { return null; } };
-  for (const ref of ['origin/docs/117-progress', 'HEAD']) { const text = git(['show', `${ref}:${DECISION_SPEC}`]); if (hasDecision(text)) return text; }
-  if (git(['fetch', '-q', '--depth', '1', 'origin', 'docs/117-progress']) === null) return null;
-  const fetched = git(['show', `FETCH_HEAD:${DECISION_SPEC}`]);
-  return hasDecision(fetched) ? fetched : null;
+// Why `text` (the pinned spec) holds no O0 entry: its "## Decision Log" section, up to the next "## " heading, must hold
+// an entry of its own (a line starting "- ", with its indented continuation lines) whose text, whitespace-normalised,
+// begins with DECISION_MARKER. A quotation inside another entry, or the marker anywhere outside the section, is none.
+// -> null when it holds one, else the problem.
+export function decisionEntryProblem(text) {
+  const lines = String(text ?? '').split('\n');
+  const start = lines.findIndex(line => /^## Decision Log\s*$/.test(line));
+  if (start < 0) return 'the pinned spec has no "## Decision Log" section';
+  const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
+  const entries = [];
+  for (const line of lines.slice(start + 1, end < 0 ? undefined : end)) {
+    if (line.startsWith('- ')) entries.push(line.slice(2));
+    else if (/^\s+\S/.test(line) && typeof entries.at(-1) === 'string') entries[entries.length - 1] += ` ${line}`;
+    else if (!line.trim() || !/^\s/.test(line)) entries.push(null);
+  }
+  const found = entries.some(entry => entry !== null && entry.replace(/\s+/g, ' ').trim().startsWith(DECISION_MARKER));
+  return found ? null : 'the owner\'s yes (O0; ruling 1111) has no entry of its own in its Decision Log';
+}
+
+// The spec the setup step pinned: CUA_HOSTED_DECISION_FILE (a run-owned file holding the spec at the pinned commit) and
+// CUA_HOSTED_DECISION_SHA (that commit). -> {sha, text, file}, or null when the file is unnamed or cannot be read.
+export function pinnedDecisionLog(env = process.env) {
+  const file = env.CUA_HOSTED_DECISION_FILE;
+  if (!file) return null;
+  try { return {sha: env.CUA_HOSTED_DECISION_SHA ?? null, text: readFileSync(file, 'utf8'), file}; } catch { return null; }
 }
 
 const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000});
@@ -72,20 +92,26 @@ const STORE = {
 };
 
 // The one function that writes: the guard first, then the action against the store.
-function tccWrite(action, {env = process.env, platform = process.platform, decisionLog = readDecisionLog, store = STORE, log = line => process.stderr.write(`${line}\n`)} = {}) {
+// `decisionLog()`: the pinned spec, {sha, text} (pinnedDecisionLog), read only once the host is known to be a runner.
+function tccWrite(action, {env = process.env, platform = process.platform, decisionLog = () => pinnedDecisionLog(env), store = STORE, log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the TCC writer');
-  if (!hasDecision(decisionLog())) throw new Error(`the TCC writer: refused: the owner's yes (O0; ruling 1111) is not in ${DECISION_SPEC}'s Decision Log on docs/117-progress or HEAD`);
-  log(`hosted-sittings: writing TCC rows on a GitHub-hosted runner under the design spec's Decision Log entry: ${DECISION_LOG_ENTRY}`);
-  return action(store);
+  const refuse = why => { throw new Error(`the TCC writer: refused: ${why}`); };
+  const pinned = decisionLog();
+  if (!pinned || typeof pinned.text !== 'string') refuse(`no pinned design spec (CUA_HOSTED_DECISION_FILE, written by the setup step from ${DECISION_SPEC} at a pinned commit) could be read`);
+  if (!/^[0-9a-f]{40}$/.test(pinned.sha ?? '')) refuse(`the pin ${pinned.sha ?? '(none)'} is not a full commit (CUA_HOSTED_DECISION_SHA)`);
+  const problem = decisionEntryProblem(pinned.text);
+  if (problem) refuse(`${problem} (${DECISION_SPEC} at ${pinned.sha})`);
+  log(`hosted-sittings: writing TCC rows on a GitHub-hosted runner under the design spec's Decision Log at ${pinned.sha}, entry: ${DECISION_LOG_ENTRY}`);
+  return action(store, {entry: DECISION_LOG_ENTRY, commit: pinned.sha});
 }
 
 // Grants every service of SERVICES to each `{client, bundle}` (client one of CLIENTS, bundle the app whose designated
 // requirement the rows carry) in the system database, then reads the rows back. `deps`: {env, platform, decisionLog
-// (() -> the spec's text, or null), store, log, now}. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
+// (() -> {sha, text} | null, the pinned spec), store, log, now}. `decision`: the entry and the pinned commit. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
 export function grantRows(grants, {now = Date.now, ...deps} = {}) {
   if (!grants.length || grants.some(g => !Object.values(CLIENTS).includes(g.client) || typeof g.bundle !== 'string'))
     throw new Error('the TCC writer grants only cua\'s engine and the vendor\'s helper, each with its bundle');
-  return tccWrite(store => {
+  return tccWrite((store, decision) => {
     if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
     const at = Math.floor(now() / 1000);
     for (const {client, bundle} of grants) {
@@ -100,6 +126,6 @@ export function grantRows(grants, {now = Date.now, ...deps} = {}) {
     const allowed = (client, service) => read.some(([s, c, value]) => s === service && c === client && value === '2');
     const rows = clients.map(client => ({client, granted: Object.entries(SERVICES).filter(([, service]) => allowed(client, service)).map(([key]) => key)}));
     const missing = clients.flatMap(client => Object.entries(SERVICES).filter(([, service]) => !allowed(client, service)).map(([key]) => `${client} ${key}`));
-    return {decision: DECISION_LOG_ENTRY, rows, missing};
+    return {decision, rows, missing};
   }, deps);
 }

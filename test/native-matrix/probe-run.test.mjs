@@ -9,6 +9,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_PANEL_CONTROLS, SAVE_SHEET_AIM_MS, SAVE_SHEET_PRE_MS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
+import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
 // An engine refusal as a cell sees it: the REPL hands the cell a plain Error (src/repl-host/trusted-worker.mjs), so its
@@ -433,4 +434,61 @@ test('#212\'s save sheet: no act without the run\'s own destination; a file in i
   const unread = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
     cell: saveCells({check: {sheetOpen: true, nameWritten: true, destinationFiles: null}})});
   assert.match(rowOf(unread.result, SAVE_SHEET).invalid, /run's save folder could not be read/);
+});
+
+// I3 of T10b′ part 2's fix wave 2: on a hosted run, replayd's capture alert (UserNotificationCenter) may come to the front
+// after the scene's activation took and before a guarded key. The key stays blocked; the sample is recorded with the
+// readings that show the alert (NO VERDICT, ruling 1141), the alert's own activation inside the row's window, and the
+// run goes on. Off a runner, or with anything the alert watch does not hold, the run stops as before.
+const UNC = 'com.apple.UserNotificationCenter';
+// The device with the capture alert popping up after the probe section's first TextEdit activation (once the probe's
+// Latin source is selected), until the next activation; `held` the alert check's answer while it is up.
+function alertAfterActivation({held = true, activationAt = null} = {}) {
+  let armed = false, up = false, popped = false;
+  const check = () => (held && up ? {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: [420, 180]}]}}}
+    : up ? {abort: true, export: {alerts: [{bundleId: UNC, layer: 8, isAlertProcess: true}], keywords: [], unknown: {count: 0, windows: []}}} : null);
+  return {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'select') armed = true;
+    if (a[0] === 'step' && a[1] === 'activate') {
+      const answer = base(a);
+      up = armed && !popped && a[2] === 'textedit';
+      if (up) { popped = true; activationAt?.(answer.at[1] + 500); }
+      return answer;
+    }
+    if (a[0] === 'alerts' && a[1] === 'check') { const c = check(); return c ? {...c, at: base(a).at} : base(a); }
+    if (a[0] === 'read' && up) {
+      const r = base(a);
+      return {...r, reading: {...r.reading, frontmost: {pid: 77, bundleId: UNC, owned: false}, topWindow: null}, ...(r.frontKey ? {frontKey: {front: UNC, key: UNC}} : {})};
+    }
+    return base(a);
+  }};
+}
+
+test('#212\'s save sheet on a hosted run: the capture alert in front at the key guard is the sample\'s NO VERDICT, its key never sent, and the run goes on', async () => {
+  const calls = [];
+  let alertAt = null;
+  const device = alertAfterActivation({activationAt: at => { alertAt = at; }});
+  const {code, result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls, cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'},
+    ops: {...device, ...stopWith(() => ({activations: [{kind: 'activated', bundleId: UNC, at: alertAt}]}))}});
+  assert.equal(result.complete, true, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  const row = rowOf(result, SAVE_SHEET);
+  assert.deepEqual([row.ok, row.frontKey.activate, row.frontKey.before, row.frontKey.after],
+    [false, {app: 'com.apple.TextEdit', front: true, key: true}, {front: UNC, key: UNC}, {front: UNC, key: UNC}]);
+  assert.deepEqual(sampleCause({...row, hosted: true}), {category: 'alert', detail: UNC}, 'ruling 1141: the alert frontmost, NO VERDICT');
+  assert.equal(calls.filter(c => tagOf(c.code) === 'sheet.new').length, 0, 'the key stays blocked');
+  assert.deepEqual(result.meta.keySkipped.map(k => [k.keys.join('+'), k.front.bundleId, k.held]), [['super+n', UNC, true]]);
+  assert.deepEqual(result.meta.activations.unaccounted, [], 'the alert\'s activation is the row\'s');
+  assert.deepEqual(result.meta.alertsHeld.map(h => [h.count, h.windows]), [[1, [{bundleId: UNC, layer: 8, titled: null, size: [420, 180]}]]]);
+  assert.deepEqual([code, result.verdict], [1, 'no-verdict'], 'a cell with no verdict is no pass');
+});
+
+test('the capture alert at the key guard: off a runner, or not held by the alert watch, the run stops as before', async () => {
+  const off = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells(), ops: alertAfterActivation()});
+  assert.equal(off.result.complete, false);
+  assert.ok(off.result.problems.some(p => /not one of the run's windows/.test(p)), JSON.stringify(off.result.problems));
+  const unheld = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: alertAfterActivation({held: false})});
+  assert.equal(unheld.result.complete, false);
+  assert.ok(unheld.result.problems.some(p => /possible system alert/.test(p)), JSON.stringify(unheld.result.problems));
+  assert.equal(rowOf(unheld.result, SAVE_SHEET), undefined);
 });

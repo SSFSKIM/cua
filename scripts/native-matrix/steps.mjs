@@ -5,6 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
@@ -64,18 +65,40 @@ export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 
 // The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
 // the run untouched; only its sanitized export is kept. The engine under test's own windows (its roots) are not alerts.
 // On a hosted run replayd's capture alert is held, not a stop (./live-checks.mjs alertWatch `hosted`; rulings 1136, 1141):
-// a sample with it front or key is NO VERDICT by its front/key readings (./front-key.mjs).
+// a sample with it front or key is NO VERDICT by its front/key readings (./front-key.mjs). Each distinct held reading is
+// kept in the run's meta (`alertsHeld`: {when, count, windows, checks}), for the pilot to identify the alert by.
+// -> the check.
 export function alertCheck(ctx, when) {
   const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...engineRoots(ctx), ...(ctx.meta.hosted === true ? ['--hosted', 'yes'] : [])]);
   if (check?.abort !== false) {
     ctx.meta.alert = {when, ...(check?.export ?? {})};
     throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);
   }
+  const held = check.export?.held;
+  if (held?.count > 0) {
+    const windows = JSON.stringify(held.windows);
+    const seen = (ctx.meta.alertsHeld ??= []).find(h => JSON.stringify(h.windows) === windows);
+    if (seen) seen.checks += 1; else ctx.meta.alertsHeld.push({when, count: held.count, windows: held.windows, checks: 1});
+  }
+  return check;
 }
+
+// A guarded key held back on a hosted run because replayd's capture alert is in front (rulings 1136, 1141): the key is
+// never sent, and the sample it was for is recorded NO VERDICT by its readings (./front-key.mjs `alert`), the run going
+// on "alert up, scene activated first". `reading` is the front and key read when the guard held it. Thrown by sendKeys,
+// caught where the sample's row is made (caseRow, ./probe-run.mjs sampled, ./unicode-run.mjs, ./run.mjs openPanel).
+export class AlertHeld extends Error {
+  constructor(keys, reading) { super(`${keys.join(', ')} not sent: replayd's capture alert is in front (held, ruling 1141)`); this.reading = reading; }
+}
+// The invalid reason a held sample's row carries beside its readings, which decide it first.
+export const HELD_INVALID = 'the key guard held the action\'s keys: replayd\'s capture alert in front';
 
 // A key cell sent only under the key guard: the driven scene's process in front, or (given `userWindow`) the run's
 // user window. A skip with one of the run's windows in front leaves the row invalid; any other front (the owner at the
-// Mac, an alert) stops the run. -> the cell's answer, or null when it was not sent.
+// Mac, an alert) stops the run, except on a hosted run with UserNotificationCenter in front while the alert watch holds
+// replayd's capture alert and nothing else: then AlertHeld, the key never sent, the device-clock window from the run's
+// last marked step through a read of front and key marked as the sample's (`kind` 'row'; else 'setup'), so the alert's
+// own activation is accounted to it. -> the cell's answer, or null when it was not sent.
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
   const target = guardOf(scene, ctx.records[scene]);
   const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
@@ -83,7 +106,17 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
     ...(userWindow ? {userWindow} : {})});
   if (out.sent) return out.result;
   const seen = out.skipped.frontmost;
-  ctx.meta.keySkipped.push({keys, scene, front: seen === 'unreadable' ? 'unreadable' : {bundleId: seen.bundleId ?? null, owned: seen.owned === true}});
+  const skip = {keys, scene, front: seen === 'unreadable' ? 'unreadable' : {bundleId: seen.bundleId ?? null, owned: seen.owned === true}};
+  ctx.meta.keySkipped.push(skip);
+  if (ctx.meta.hosted === true && seen !== 'unreadable' && seen.owned !== true && seen.bundleId === CAPTURE_ALERT_PROCESS) {
+    const check = alertCheck(ctx, `at the key guard for ${keys.join(', ')}`);
+    if (!(check.export?.held?.count > 0)) throw new Stop(`${keys.join(', ')} not sent: UserNotificationCenter is in front and the alert watch holds no capture alert; the run stopped`);
+    skip.held = true;
+    const r = read(ctx, null, {frontKey: true});
+    const ends = ctx.windows.map(w => w.at[1]);
+    if (Array.isArray(r?.at)) mark(ctx, kind === 'row' ? 'row' : 'setup', key, [ends.length ? Math.max(...ends) : r.at[0], r.at[1]]);
+    throw new AlertHeld(keys, keyReading(r));
+  }
   if (seen === 'unreadable' || seen.owned !== true) throw new Stop(`${keys.join(', ')} not sent: the front is not one of the run's windows (#162); the run stopped`);
   return null;
 }
@@ -249,7 +282,14 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const after = options => (late ??= span(read(ctx, null, {frontKey: true, ...options})));
   const finish = extra => done({frontKey: {...readings, after: keyReading(after())}, ...extra});
   if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
-  const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
+  let act;
+  try { act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act)); } catch (error) {
+    if (!(error instanceof AlertHeld)) throw error;
+    // The capture alert took the front after the activation: the key unsent, the readings the row's (NO VERDICT).
+    const held = finish({invalid: HELD_INVALID});
+    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey: held.frontKey});
+    return held;
+  }
   if (act === null) return finish({invalid: 'the key guard did not send the action\'s keys'});
   keep('act', act);
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);

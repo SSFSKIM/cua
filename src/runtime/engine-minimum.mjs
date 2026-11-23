@@ -6,7 +6,9 @@
 // slot, `pending/cua Engine.app` beside the approved bundle, which `cua engine approve` promotes; or, before it, the
 // bundle at the approved path itself when pending.json names it and approved.json does not (a build that replaced the
 // approved one). pending.json naming a build neither bundle is gives the build with no version and no bundle: there is
-// nothing on disk to approve. A build that is approved.json's is not pending.
+// nothing on disk to approve. The slot is authoritative: whatever bundle it holds is pending, even approved.json's build
+// (a copy re-signed under another identity, which `cua engine build` stages with the same source hash). Only in the
+// layout before it is a build that is approved.json's not pending.
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {BUNDLE_NAME} from './engine-bundle.mjs';
@@ -26,7 +28,7 @@ export function pendingEngine({dir}) {
   const builtAt = build => (pending?.build === build ? pending.builtAt ?? null : null);
   const slot = join(dir, 'pending', BUNDLE_NAME);
   const inSlot = identityAt(slot);
-  if (inSlot?.build && inSlot.build !== approvedBuild) return {build: inSlot.build, engineVersion: inSlot.engineVersion, bundlePath: slot, builtAt: builtAt(inSlot.build)};
+  if (inSlot?.build) return {build: inSlot.build, engineVersion: inSlot.engineVersion, bundlePath: slot, builtAt: builtAt(inSlot.build)};
   if (typeof pending?.build !== 'string' || !pending.build || pending.build === approvedBuild) return null;
   const atApproved = join(dir, BUNDLE_NAME);
   const there = identityAt(atApproved);

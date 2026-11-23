@@ -1,14 +1,21 @@
 // The hosted kit's one TCC writer (scripts/hosted-sittings/tcc.mjs; ruling 1111, O0): off a GitHub-hosted macOS
-// runner it refuses before any access to a store, so the store here is a spy that must never be called. Nothing in this
-// file touches a real TCC database.
+// runner, or without the owner's O0 entry in the pinned design spec's Decision Log, it refuses before any access to a
+// store, so the store here is a spy that must never be called. Nothing in this file touches a real TCC database or git.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {CLIENTS, DECISION_LOG_ENTRY, DECISION_MARKER, grantRows, hasDecision, SERVICES, SYSTEM_DB} from '../../scripts/hosted-sittings/tcc.mjs';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {CLIENTS, DECISION_LOG_ENTRY, DECISION_MARKER, decisionEntryProblem, grantRows, O0_COMMIT, pinnedDecisionLog, SERVICES, SYSTEM_DB} from '../../scripts/hosted-sittings/tcc.mjs';
 
-// The Decision Log as the spec holds it (wrapped as the spec wraps it), and one without the O0 entry.
-const WITH_O0 = '## Decision Log\n\n- Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the\n  owner\'s Macs (O0; ruling 1111)): a kit that writes a TCC row refuses, before any write, unless …\n';
-const WITHOUT_O0 = '## Decision Log\n\n- Decision (2026-11-23, ruling 1141; amends O0a above): pre-recording replayd\'s approval does not prevent its alert.\n';
-const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', decisionLog: () => WITH_O0};
+// The spec as it holds the entry (wrapped as the spec wraps it, in its own Decision Log section), and the ways it may not.
+const O0 = '- Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the\n  owner\'s Macs (O0; ruling 1111)): a kit that writes a TCC row refuses, before any write, unless …\n  Date/Author: 2026-11-23, the owner.\n';
+const OTHER = '- Decision (2026-11-23, ruling 1141; amends O0a above): pre-recording replayd\'s approval does not prevent its alert.\n';
+const spec = log => `# Design\n\n## Progress\n\n- done\n\n## Decision Log\n\n${log}\n## Outcomes & Retrospective\n\n- none\n`;
+const WITH_O0 = spec(`${OTHER}\n${O0}`);
+const SHA = O0_COMMIT;
+const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', decisionLog: () => ({sha: SHA, text: WITH_O0})};
+const throwsIfCalled = () => { throw new Error('the Decision Log was read before the hosted guard'); };
 
 function spyStore({csreq = () => 'fade', rows = []} = {}) {
   const calls = [];
@@ -22,13 +29,19 @@ function spyStore({csreq = () => 'fade', rows = []} = {}) {
 const GRANTS = [{client: CLIENTS.engine, bundle: '/Users/runner/Library/Application Support/cua/engine/pending/cua Engine.app'},
   {client: CLIENTS.vendor, bundle: '/Users/runner/Library/Application Support/cua/runtimes/r/Codex Computer Use.app'}];
 
-// Ruling 1137: each of the four refusals gives zero store calls.
+// Ruling 1137: every refusal gives zero store calls. Off the host the Decision Log is never read: the hosted guard comes first.
+const quoted = spec(`- Decision (2026-11-24, revoked): the entry "${DECISION_MARKER}" no longer holds.\n`);
+const outside = `## Notes\n\n${O0}\n## Decision Log\n\n${OTHER}`;
 const refusals = {
-  'RUNNER_ENVIRONMENT unset': [{...HOSTED, env: {}}, /refused: .*GitHub-hosted/],
-  'a self-hosted runner': [{...HOSTED, env: {RUNNER_ENVIRONMENT: 'self-hosted'}}, /refused: .*GitHub-hosted/],
-  'not macOS': [{...HOSTED, platform: 'linux'}, /refused: .*GitHub-hosted/],
-  'the O0 entry missing from the Decision Log': [{...HOSTED, decisionLog: () => WITHOUT_O0}, /refused: .*O0.*not in/],
-  'the Decision Log unreadable': [{...HOSTED, decisionLog: () => null}, /refused: .*O0.*not in/],
+  'RUNNER_ENVIRONMENT unset': [{...HOSTED, env: {}, decisionLog: throwsIfCalled}, /refused: .*GitHub-hosted/],
+  'a self-hosted runner': [{...HOSTED, env: {RUNNER_ENVIRONMENT: 'self-hosted'}, decisionLog: throwsIfCalled}, /refused: .*GitHub-hosted/],
+  'not macOS': [{...HOSTED, platform: 'linux', decisionLog: throwsIfCalled}, /refused: .*GitHub-hosted/],
+  'the O0 entry missing from the Decision Log': [{...HOSTED, decisionLog: () => ({sha: SHA, text: spec(OTHER)})}, /refused: .*O0.*no entry of its own/],
+  'the marker quoted inside another entry': [{...HOSTED, decisionLog: () => ({sha: SHA, text: quoted})}, /refused: .*O0.*no entry of its own/],
+  'the marker outside the Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: outside})}, /refused: .*O0.*no entry of its own/],
+  'no Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: O0})}, /refused: .*no "## Decision Log" section/],
+  'the pinned spec file missing': [{...HOSTED, decisionLog: () => null}, /refused: .*no pinned design spec/],
+  'a pin that is not a full commit': [{...HOSTED, decisionLog: () => ({sha: 'db775127', text: WITH_O0})}, /refused: .*not a full commit/],
 };
 for (const [name, [where, message]] of Object.entries(refusals)) {
   test(`grantRows refuses before any store access: ${name}`, () => {
@@ -38,9 +51,24 @@ for (const [name, [where, message]] of Object.entries(refusals)) {
   });
 }
 
-test('the O0 entry is found as the spec wraps it, and nothing else stands for it', () => {
-  assert.equal(hasDecision(WITH_O0), true);
-  for (const text of [WITHOUT_O0, null, '', DECISION_MARKER.slice(0, -1)]) assert.equal(hasDecision(text), false);
+test('the O0 entry must be an entry of the Decision Log section, as the spec wraps it', () => {
+  assert.equal(decisionEntryProblem(WITH_O0), null);
+  assert.equal(decisionEntryProblem(spec(`${O0}\n${OTHER}`)), null, 'wherever it sits among the entries');
+  for (const text of [spec(OTHER), quoted, outside]) assert.match(decisionEntryProblem(text), /no entry of its own/);
+  assert.match(decisionEntryProblem(spec(O0.replace('(O0; ruling 1111)', '(O0)'))), /no entry of its own/, 'the marker whole, never a prefix of it');
+});
+
+test('the pinned spec is the file the setup wrote and the commit it names, read with no git', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-pinned-'));
+  try {
+    const file = join(dir, 'design.md');
+    writeFileSync(file, WITH_O0);
+    assert.deepEqual(pinnedDecisionLog({CUA_HOSTED_DECISION_FILE: file, CUA_HOSTED_DECISION_SHA: SHA}), {sha: SHA, text: WITH_O0, file});
+    assert.equal(pinnedDecisionLog({CUA_HOSTED_DECISION_FILE: join(dir, 'gone.md'), CUA_HOSTED_DECISION_SHA: SHA}), null);
+    assert.equal(pinnedDecisionLog({CUA_HOSTED_DECISION_SHA: SHA}), null);
+    assert.equal(pinnedDecisionLog({CUA_HOSTED_DECISION_FILE: file}).sha, null);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+  assert.equal(O0_COMMIT, 'db775127652ebae5e0c7d90b5f5e2785f8e5711e', 'where the O0 entry was recorded, on docs/117-progress');
 });
 
 test('on a GitHub-hosted macOS runner it writes the system database only: four services for each bundle id, then reads them back', () => {
@@ -57,8 +85,8 @@ test('on a GitHub-hosted macOS runner it writes the system database only: four s
       assert.ok(writes.some(c => c[2].includes(`'${service}', '${client}', 0, 2, 4, 1, X'fade'`)), `${service} for ${client}`);
   assert.deepEqual(report.rows, GRANTS.map(g => ({client: g.client, granted: Object.keys(SERVICES)})));
   assert.deepEqual(report.missing, []);
-  assert.equal(report.decision, DECISION_LOG_ENTRY);
-  assert.match(logged.join('\n'), /Decision Log.*TCC rows may be written by kits on GitHub-hosted runners only/);
+  assert.deepEqual(report.decision, {entry: DECISION_LOG_ENTRY, commit: SHA});
+  assert.match(logged.join('\n'), new RegExp(`Decision Log at ${SHA}.*TCC rows may be written by kits on GitHub-hosted runners only`), 'the write cites the pinned commit');
 });
 
 test('a row the database does not read back is reported missing', () => {

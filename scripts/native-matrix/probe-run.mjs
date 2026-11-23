@@ -26,8 +26,8 @@ import {
 import {requeryCell} from './matrix-cells.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
-import {activate, activated, activationOf, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, skippedReadings, Stop,
-  userFront, waitQuiet} from './steps.mjs';
+import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, HELD_INVALID, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
+  skippedReadings, Stop, userFront, waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
 const USER_HASH = sha256Hex(PROBE_TEXT);
@@ -65,7 +65,12 @@ async function sampled(ctx, base, attempt) {
   let lead = null;
   for (let n = 1; n <= PROBE_ATTEMPTS; n++) {
     await ctx.checkpoint();
-    const out = await attempt({lead, n, id: base.id, key: `row:${ctx.rows.length}:${n}`});
+    const key = `row:${ctx.rows.length}:${n}`, span = spanOf(ctx, key);
+    let out;
+    try { out = await attempt({lead, n, id: base.id, key, span}); } catch (error) {
+      if (!(error instanceof AlertHeld)) throw error;
+      out = span.end({invalid: HELD_INVALID, frontKey: heldReadings(ctx, base, error, span)});
+    }
     let cleanupFailed = null;
     if (out.retry && n < PROBE_ATTEMPTS) {
       cleanupFailed = await cleanedUp(out);
@@ -74,6 +79,8 @@ async function sampled(ctx, base, attempt) {
     const pushed = push(ctx, {...row, ...out.row, attempts: n, ...(retries.length ? {outcome: {...(out.row.outcome ?? {}), retries}} : {})});
     if (!pushed.invalid) ctx.judged.set(out.key, {row: pushed, oracle: out.oracle ?? null});
     cleanupFailed ??= await cleanedUp(out);
+    // A cleanup whose keys the capture alert held leaves what it would have closed; the run goes on (ruling 1141).
+    if (cleanupFailed instanceof AlertHeld) { pushed.outcome = {...(pushed.outcome ?? {}), cleanupHeld: cleanupFailed.message}; return pushed; }
     if (cleanupFailed) {
       pushed.outcome = {...(pushed.outcome ?? {}), cleanupFailed: String(cleanupFailed.message ?? cleanupFailed).slice(0, 500)};
       throw cleanupFailed;
@@ -82,10 +89,17 @@ async function sampled(ctx, base, attempt) {
   }
   return null;
 }
+// A sample whose guarded key the capture alert held (AlertHeld): the activate step in force for the row's own app, the
+// reading the guard held it on, and one read now, inside the attempt's window. -> the row's frontKey.
+function heldReadings(ctx, base, error, span) {
+  const app = SCENES[base.regime === 'background' ? base.user : base.scene].bundleId;
+  const apps = [...new Set([SCENES[base.scene].bundleId, ...(base.user ? [SCENES[base.user].bundleId] : [])])];
+  return {apps, activate: activationOf(ctx, app), before: error.reading, after: keyReading(span.add(read(ctx, null, {frontKey: true})))};
+}
 // An attempt's cleanup run. -> null, or what it threw.
 const cleanedUp = async out => { try { await out.cleanup?.(); return null; } catch (error) { return error; } };
 
-// The device-clock window of an attempt's cells, marked as one row window when it ends.
+// The device-clock window of an attempt's cells, marked as one row window when it ends (made by sampled, one an attempt).
 function spanOf(ctx, key) {
   let from = null, to = null;
   return {
@@ -132,9 +146,8 @@ async function withKeystroke(ctx, {window, scene, lead = PROBE_LEAD_MS}, during)
 
 // ---- concurrent use -------------------------------------------------------------------------------------------------
 
-async function concurrentAttempt(ctx, driven, {lead, id, key}) {
+async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   const user = 'textedit', preMs = lead ?? PRE_MS[driven];
-  const span = spanOf(ctx, key);
   await quiet(ctx, driven);
   await quiet(ctx, user);
   const prepared = span.add(await ctx.lane.js(concurrentPrepareCell(driven)));
@@ -192,9 +205,8 @@ const timing = (interval, postedAt, act) => ({intervalSource: interval?.source ?
 // intervention rule refused would show it. The row is judged by the oracle as concurrent use's is: the user window's
 // readings before the opening and after the follow-up, the watcher's liveness, every activation in the attempt and the
 // routes of all its driven actions (super+n, the typing, the opening and the follow-up).
-async function sheetAttempt(ctx, {lead, id, key}) {
+async function sheetAttempt(ctx, {lead, id, key, span}) {
   const driven = 'textedit', user = 'electron';
-  const span = spanOf(ctx, key);
   await quiet(ctx, driven);
   await quiet(ctx, user);
   const userApp = SCENES[user].bundleId, apps = [SCENES[driven].bundleId, userApp];
@@ -313,9 +325,8 @@ async function typing(ctx, span, scene, code, {key, when}) {
 // The probe types into TextEdit's document during a long typeText; the action must stop as userIntervened (the
 // user-changed sentence, `cua/entered` reported), the next action must be refused, with nothing posted, until a
 // get_app_state, and the same action must then land.
-async function firesAttempt(ctx, {lead, id, key}) {
+async function firesAttempt(ctx, {lead, id, key, span}) {
   const scene = 'textedit', preMs = lead ?? PRE_MS.textedit;
-  const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const driven = await drivenInFront(ctx, span, scene);
   if (driven.skipped) return span.end(driven.skipped);
@@ -351,9 +362,8 @@ async function firesAttempt(ctx, {lead, id, key}) {
 
 // The probe types into TextEdit's document and the harness's typeText follows at once: refused with the still-
 // interacting sentence and nothing posted (the document's hash the probe's text alone).
-async function preActionAttempt(ctx, {lead, id, key}) {
+async function preActionAttempt(ctx, {lead, id, key, span}) {
   const scene = 'textedit', delay = lead ?? PRE_ACTION_DELAY_MS;
-  const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const driven = await drivenInFront(ctx, span, scene);
   if (driven.skipped) return span.end(driven.skipped);
@@ -391,9 +401,8 @@ async function preActionAttempt(ctx, {lead, id, key}) {
 // folder is a failure whatever the timing, never retried. The vendor's lane never stops an action in flight: its row
 // records its answer and the sheet, valid when the post fell inside the call. Whatever happened, once the row is
 // recorded, the debounce is waited out, the sheet cancelled (Escape) and the untitled document closed (`cleanup`).
-async function saveSheetAttempt(ctx, {lead, id, key}) {
+async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const scene = 'textedit', preMs = lead ?? SAVE_SHEET_PRE_MS;
-  const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const front = activate(ctx, scene);
   const app = SCENES[scene].bundleId, skipped = notActivated(ctx, scene);

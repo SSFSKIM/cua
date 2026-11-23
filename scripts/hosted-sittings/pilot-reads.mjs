@@ -11,6 +11,10 @@
 //   focusProbe       the focus probe's cost, timed on the device (scripts/hosted-sittings/focus-timing.mjs)
 //   korean           whether 2-Set's layout engaged after each refocus (the Unicode matrix's post-refocus readings)
 //   vendorErrorNames the error names the vendor lane's thrown acts recorded (`cua/errorName` through the vendor host)
+//   captureAlert     replayd's capture alert as the hosted alert watch held it (each run's meta.alertsHeld): the hold is
+//                    by its owner (UserNotificationCenter) and a bound of two windows, never an identification, since
+//                    H0 read no title, text or size of its window (../native-matrix/live-checks.mjs alertWatch); the
+//                    held windows' readings (layer, whether a title was readable, size) are what a later wave pins it by
 // Bundle ids and the fixture's own panel structure only; nothing of a window the run does not own.
 import {PANEL_SERVICE} from '../native-matrix/steps.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
@@ -60,6 +64,11 @@ export function pilotReads(results, {focusTiming = null} = {}) {
     if ((row.engine ?? engineOf(result)) !== 'vendor' || typeof row.outcome?.errorName !== 'string') continue;
     vendorErrorNames[row.outcome.errorName] = (vendorErrorNames[row.outcome.errorName] ?? 0) + 1;
   }
+  const held = [];
+  for (const {result} of results) for (const h of result.meta?.alertsHeld ?? []) {
+    const same = held.find(k => JSON.stringify(k.windows) === JSON.stringify(h.windows));
+    if (same) same.checks += h.checks ?? 1; else held.push({count: h.count, windows: h.windows, checks: h.checks ?? 1});
+  }
   const reads = {
     openPanel,
     savePanel: observed.length ? {observed} : null,
@@ -68,9 +77,10 @@ export function pilotReads(results, {focusTiming = null} = {}) {
     focusProbe: focusTiming,
     korean: Object.keys(korean).length ? korean : null,
     vendorErrorNames: Object.keys(vendorErrorNames).length ? vendorErrorNames : null,
+    captureAlert: held.length ? {identified: false, held} : null,
   };
   const unread = [['openPanel', reads.openPanel.windowOrder], ['savePanel', reads.savePanel], ['focusedApps.chrome', reads.focusedApps.chrome], ['focusedApps.electron', reads.focusedApps.electron],
-    ['typeSelect', reads.typeSelect], ['focusProbe', reads.focusProbe], ['korean', reads.korean], ['vendorErrorNames', reads.vendorErrorNames]].filter(([, v]) => v === null).map(([k]) => k);
+    ['typeSelect', reads.typeSelect], ['focusProbe', reads.focusProbe], ['korean', reads.korean], ['vendorErrorNames', reads.vendorErrorNames], ['captureAlert', reads.captureAlert]].filter(([, v]) => v === null).map(([k]) => k);
   return {...reads, unread};
 }
 
@@ -81,7 +91,7 @@ export function renderPilotReads(reads) {
   const panel = reads.openPanel;
   out.push(`- **Open panel**: ${panel.windowOrder ? `the window order names ${panel.windowOrder}` : 'not read: the window order\'s service id is on no row (the oracle keeps only booleans)'}; the front/key ids on its rows (not the window order): ${panel.frontKey.join(', ') || 'none'} (the plan names ${panel.expected}).`);
   const sheet = reads.savePanel;
-  out.push(`- **Save panel** (#212, SAVE_PANEL_CONTROLS): ${sheet ? `${sheet.observed.length} observation(s) recorded; the first: ${sheet.observed[0].lines?.filter(l => l.id).map(l => `${l.id} (${l.head})`).join('; ') || 'no element carries an ID'}` : 'not read'}.`);
+  out.push(`- **Save panel** (#212, SAVE_PANEL_CONTROLS): ${sheet ? `${sheet.observed.length} observation(s) recorded; the first: ${[sheet.observed[0].after, sheet.observed[0].before].find(s => s?.lines?.length)?.lines.filter(l => l.id).map(l => `${l.id} (${l.head})`).join('; ') || 'no element carries an ID'}` : 'not read'}.`);
   for (const [scene, name] of [['chrome', 'Chrome for Testing'], ['electron', 'Electron fixture']]) {
     const f = reads.focusedApps[scene];
     out.push(`- **Focused app**, ${name}: ${f ? `read ${f.read.join(', ')}, the scene names ${f.expected}: ${same(f.matches)}` : 'not read'}.`);
@@ -92,6 +102,10 @@ export function renderPilotReads(reads) {
   out.push(`- **Focus probe** cost: ${probe ? `median ${probe.medianMs} ms, max ${probe.maxMs} ms over ${probe.samples} launches` : 'not read'}.`);
   out.push(`- **2-Set** after refocus: ${reads.korean ? Object.entries(reads.korean).map(([engine, k]) => `${engine} ${k.held} of ${k.of} engaged${k.read ? ` (else read ${k.read.join(', ')})` : ''}`).join('; ') : 'not read'}.`);
   out.push(`- **cua/errorName** on the vendor lane's thrown acts: ${reads.vendorErrorNames ? Object.entries(reads.vendorErrorNames).map(([name, n]) => `${name} ${n}`).join(', ') : 'not read'} (only \`Error\` means the name did not cross the vendor host).`);
+  const alert = reads.captureAlert;
+  const windowWords = w => `layer ${w.layer}, ${w.titled === null ? 'title unreadable' : w.titled ? 'titled' : 'untitled'}, ${w.size ? w.size.join(' × ') : 'size unread'}`;
+  out.push(`- **Capture alert** (replayd's, on UserNotificationCenter): held by its owner and a bound of two windows, not identified (H0 read no title, text or size of its window)${alert
+    ? `; held: ${alert.held.map(h => `${h.count} window${h.count === 1 ? '' : 's'} (${h.windows.map(windowWords).join('; ')}) at ${h.checks} check${h.checks === 1 ? '' : 's'}`).join(', ')}` : '; none held in this pilot'}.`);
   if (reads.unread.length) out.push('', `Not read in this pilot: ${reads.unread.join(', ')}.`);
   return out.join('\n') + '\n';
 }

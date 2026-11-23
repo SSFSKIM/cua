@@ -61,6 +61,9 @@ struct ElementData {
   /// #500 (ruling 1131): the attributes whose slot held kCFNull (`AttributeRead.null`): each decodes as none, and the
   /// stale-point record keeps the label's apart from a failed read and from an absence (`ScreenshotNode.labelsNull`).
   var null: Set<String> = []
+  /// Whether AXRole read: neither failed nor null (#501, ruling 1131), either of which decodes as AXUnknown and leaves the
+  /// node's role unknown (`ScreenshotNodeRead.roleRead`), never a known inert one.
+  var roleRead: Bool { !unreadable.contains(kAXRoleAttribute) && !null.contains(kAXRoleAttribute) }
   /// #390: read by a source that does not read AXValue (`ElementSource.readsValue` false), so `value` says nothing of the
   /// element's value; an identity made from it leaves the value out of its match. #405: so is a password field's.
   var valueUnread = false
@@ -231,11 +234,13 @@ struct ValueClassification: Equatable {
 }
 
 func valueClassification(_ read: AttributeRead) -> ValueClassification {
-  // A slot reported failed is failed, whatever else the reply put beside it.
+  // A slot reported failed is failed, whatever else the reply put beside it. A null role slot decodes as no role, which
+  // is an unreadable one here.
   let role = read.unreadable.contains(kAXRoleAttribute) ? nil
     : read.values[kAXRoleAttribute].flatMap { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
   let subrole: SubroleRead
-  if read.unreadable.contains(kAXSubroleAttribute) {
+  // #501 (rulings 1083, 1131): a null subrole slot is unread, as a failed one, never the absence `.none` says.
+  if read.unreadable.contains(kAXSubroleAttribute) || read.null.contains(kAXSubroleAttribute) {
     subrole = .failed
   } else if let value = read.values[kAXSubroleAttribute] {
     subrole = CFGetTypeID(value) == CFStringGetTypeID() ? .subrole(value as! String) : .failed

@@ -203,6 +203,28 @@ test('the launch path: the intent journaled before the act, the identity after i
   assert.throws(() => planOf('launch', {scene: 'textedit'}), /TextEdit launch under the engine: provable in a scratch macOS user if wanted/);
 });
 
+test('on a hosted run a key row whose guard finds the held capture alert in front is NO VERDICT by its readings, the key unsent', async () => {
+  const UNC = 'com.apple.UserNotificationCenter';
+  const plan = {id: 'test', frontmost: ['textedit'], speed: false, finding: false, background: [], launch: []};
+  let up = false, armed = false;
+  const selectAll = cellsOf('textedit', 'pressKey', 'selectAll');
+  const held = {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: null}]}}};
+  const r = await runWith({plan, env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: {matrix: (base, a) => {
+    // The alert comes up as TextEdit's activation for its select-all row is checked (that check took front and key), and stays.
+    if (a[0] === 'alerts' && a[1] === 'check') return up ? {...held, at: base(a).at} : base(a);
+    if (a[0] === 'read' && up) { const x = base(a); return {...x, reading: {...x.reading, frontmost: {pid: 77, bundleId: UNC, owned: false}}, ...(x.frontKey ? {frontKey: {front: UNC, key: UNC}} : {})}; }
+    if (a[0] === 'step' && a[1] === 'activate') { const x = base(a); up = armed; armed = false; return x; }
+    return base(a);
+  }}, cell: c => { if (c.includes(selectAll.prepare)) up = armed = true; return null; }});
+  const row = r.result.rows.find(x => x.id === 'textedit/frontmost/pressKey.selectAll');
+  assert.ok(row, JSON.stringify(r.result.problems));
+  assert.equal(r.result.complete, true, 'the run goes on');
+  assert.deepEqual(validateCellResult(r.result), []);
+  assert.deepEqual([row.ok, row.frontKey.before, row.frontKey.after], [false, {front: UNC, key: UNC}, {front: UNC, key: UNC}]);
+  assert.equal(row.invalid, 'the key guard held the action\'s keys: replayd\'s capture alert in front');
+  assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), [['super+a', true]]);
+});
+
 test('a key skipped with one of the run\'s windows in front leaves the row invalid; with another app in front the run stops', async () => {
   // The user window (Finder) is in front; a frontmost-regime key cell for TextEdit sees Finder: skipped, the row invalid.
   // The front/key readings say TextEdit took front and key, so it is the key guard's own reading that holds the keys back.

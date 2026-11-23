@@ -20,16 +20,26 @@ const PASSED = new Set(['PASS']);
 export const SITTING_EXITS = Object.freeze([['FAIL', 1], ['NO VERDICT', 4], ['INCOMPLETE', 5], ['OWNER', 3]]);
 const STATUSES = ['PASS', 'FAIL', 'NO VERDICT', 'OWNER', 'INFO', 'SKIP', 'PENDING'];
 
-// One step's command, its output teed to `logPath` and to this job's log. -> {exit, signal}.
-export function execStep(step, {logPath, cwd = process.cwd(), env = process.env} = {}) {
-  mkdirSync(dirname(logPath), {recursive: true});
-  const file = createWriteStream(logPath);
-  return new Promise(resolve => {
+// One step's command, its output teed to `logPath` and to this job's log (`echo`). It resolves only once the child has
+// closed and the log is flushed to disk, so a check reading the log straight after sees all of it; a log that cannot be
+// written is the step's runtime error. -> {exit, signal} | {exit: null, error}.
+export async function execStep(step, {logPath, cwd = process.cwd(), env = process.env, echo = process.stderr, openLog = path => createWriteStream(path)} = {}) {
+  let file;
+  try {
+    mkdirSync(dirname(logPath), {recursive: true});
+    file = openLog(logPath);
+    if (file.pending) await new Promise((opened, failed) => { file.once('open', opened); file.once('error', failed); });
+  } catch (error) { return {exit: null, signal: null, error: `the step's log ${logPath} could not be written (${error.code ?? error.message})`}; }
+  let logError = null;
+  file.on('error', error => { logError ??= error; });
+  const ended = await new Promise(resolve => {
     const child = spawn(step.argv[0], step.argv.slice(1), {cwd, env: {...env, ...step.env}, stdio: ['ignore', 'pipe', 'pipe']});
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { file.write(chunk); process.stderr.write(chunk); });
-    child.on('error', error => { file.end(`${error.message}\n`); resolve({exit: null, signal: null, error: error.message}); });
-    child.on('close', (code, signal) => { file.end(); resolve({exit: code, signal}); });
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { file.write(chunk); echo.write(chunk); });
+    child.on('error', error => { file.write(`${error.message}\n`); resolve({exit: null, signal: null, error: error.message}); });
+    child.on('close', (code, signal) => resolve({exit: code, signal}));
   });
+  await new Promise(resolve => { if (file.destroyed) resolve(); else file.end(resolve); });
+  return logError ? {exit: null, signal: null, error: `the step's log ${logPath} could not be written (${logError.code ?? logError.message})`} : ended;
 }
 
 const readJsonFile = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
@@ -82,12 +92,19 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
 }
 
 const seconds = ms => (ms === null ? '-' : `${Math.round(ms / 1000)} s`);
-// The report as the job summary's Markdown.
+const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// The report as the job summary's Markdown. A pilot that passed while a judge gave only its expected NO VERDICT, or with
+// steps still pending (F before its code is built), proved none of its acceptance: it says so in place of "Proves" and
+// PASS. Its exit stays the sitting's (0).
 export function renderSitting(report) {
-  const out = [`## Sitting ${report.sitting.toUpperCase()} (${report.form}): ${report.title}`, '', `Proves: ${report.proves}.`, '',
+  const expected = report.steps.filter(s => s.expected).length, pending = report.steps.filter(s => s.status === 'PENDING').length;
+  const unproved = report.form === 'pilot' && report.verdict === 'PASS' && (expected > 0 || pending > 0);
+  const why = [expected && `${counted(expected, 'judge')} gave the expected NO VERDICT`, pending && `${counted(pending, 'step')} pending`].filter(Boolean).join(', ');
+  const out = [`## Sitting ${report.sitting.toUpperCase()} (${report.form}): ${report.title}`, '',
+    unproved ? `Would prove: ${report.proves}. This pilot proves none of it: ${why}.` : `Proves: ${report.proves}.`, '',
     '| step | kind | status | exit | time | note |', '|---|---|---|---|---|---|'];
   for (const s of report.steps) out.push(`| ${[s.id, s.kind, s.status, s.exit ?? '-', seconds(s.ms)].join(' | ')} |${s.reason ? ` ${String(s.reason).replaceAll('|', '\\|')} ` : ' '}|`);
   const count = status => report.steps.filter(s => s.status === status).length;
-  out.push('', `**${report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
+  out.push('', `**${unproved ? 'PILOT COMPLETED WITHOUT ACCEPTANCE PROOF' : report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
   return out.join('\n') + '\n';
 }

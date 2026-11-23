@@ -9,7 +9,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {engineCheck} from '../src/runtime/doctor-engine.mjs';
+import {defaultPendingEngine, engineCheck} from '../src/runtime/doctor-engine.mjs';
+import {infoPlist} from '../src/runtime/engine-bundle.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {replHostFor} from '../src/runtime/launch.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
@@ -116,6 +117,30 @@ test('a build pending beside the approved engine is shown once with it: the appr
   const vendor = await row({CUA_NATIVE_ENGINE: 'vendor'}, {pending, records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: slot})});
   assert.equal(vendor.row.detail.split('cccccccccccc').length, 2, vendor.row.detail);
   assert.ok(vendor.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa at ${BUNDLE}; a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built then)`), vendor.row.detail);
+  // A stale approved.json (its bundle gone) with a build pending: still named once, and no remedy that contradicts it.
+  const stale = await row({CUA_NATIVE_ENGINE: 'vendor'}, {pending, records: () => ({bundlePath: BUNDLE, exists: false, approved: {build: BUILD, approvedAt: 'when'}, pending: slot})});
+  assert.equal(stale.row.detail.split('cccccccccccc').length, 2, stale.row.detail);
+  assert.ok(stale.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa, but no bundle is at ${BUNDLE}; a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built then)`), stale.row.detail);
+  const gone = await row({CUA_NATIVE_ENGINE: 'vendor'}, {records: () => ({bundlePath: BUNDLE, exists: false, approved: {build: BUILD, approvedAt: 'when'}, pending: null})});
+  assert.ok(gone.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa, but no bundle is at ${BUNDLE} (cua install --engine, then cua engine approve with the owner at the console)`), gone.row.detail);
+});
+
+// M4's builder stages a re-signed copy of the approved build (another identity, the same source hash) in the slot; the
+// slot is authoritative, so doctor's own reader names it though its build is approved.json's.
+test('a re-signed copy of the approved build in the pending slot is shown pending, read from the files', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const dir = join(s.dir, 'Library', 'Application Support', 'cua', 'engine');
+  const slot = join(dir, 'pending', 'cua Engine.app');
+  mkdirSync(join(slot, 'Contents'), {recursive: true});
+  writeFileSync(join(slot, 'Contents', 'Info.plist'), infoPlist({version: '0.4.0', build: BUILD}));
+  writeFileSync(join(dir, 'approved.json'), JSON.stringify({build: BUILD, identity: 'x', approvedAt: 'then'}));
+  writeFileSync(join(dir, 'pending.json'), JSON.stringify({build: BUILD, identity: 'y', builtAt: 'later'}));
+  const pending = defaultPendingEngine({env: {HOME: s.dir}});
+  assert.deepEqual(pending, {build: BUILD, engineVersion: '0.4.0', bundlePath: slot, builtAt: 'later'});
+  const {row: check} = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({pending: {build: BUILD, builtAt: 'later', bundlePath: slot}}), pending});
+  assert.equal(check.status, 'pass', check.detail);
+  assert.ok(check.detail.includes('a new build is pending; cua engine approve to use it (pending build aaaaaaaaaaaa, version 0.4.0, built later)'), check.detail);
 });
 
 test('with no engine running doctor reports the one it launched and stopped, or left running for a session, or could not stop', async () => {

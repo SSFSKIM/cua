@@ -282,16 +282,6 @@ func stalePointStrictLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePo
   return .nonText
 }
 
-/// #519 (ruling 1150): an AXStaticText's value read now as a strict label part, through #405's classified read
-/// (`classifiedRead`, the role and subrole in the same batch): a closed or failed reply is unread, its value never decoded,
-/// compared or quoted; else as `stalePointStrictLabelRead` reads a single value.
-func stalePointClassifiedValueRead(_ read: GuardedRead) -> StalePointLabelRead {
-  guard case .read(let read) = read, !read.unreadable.contains(kAXValueAttribute) else { return .unreadable }
-  if read.null.contains(kAXValueAttribute) { return .null }
-  guard let value = read.values[kAXValueAttribute] else { return .text(nil) }
-  return labelText(value).map { .text($0) } ?? .nonText
-}
-
 /// The value the record keeps of an element (#298): an AXStaticText's, as the walk read it (a string, or an attributed
 /// string's text), cut by `bounded` as its labels are; nil for every other role, whose value (a field's text, a
 /// checkbox's state) is not its label.
@@ -677,9 +667,9 @@ struct StalePointReads<Element> {
 
   func isGone(_ element: Element) -> Bool { gone?(element) ?? (frame(element) == nil) }
 
-  /// #519 (rulings 1146, 1150, 1151): a label part read now for the consumers that choose no target
-  /// (`ScreenshotNode.strictLabel`'s): a value that is no text `.nonText`, and an AXStaticText's value through #405's
-  /// classified read. A seam without it reads `readLabel`.
+  /// #519 (rulings 1146, 1151, 1152): a label part read now for the consumers that choose no target
+  /// (`ScreenshotNode.strictLabel`'s): main's single raw read, but a value that is no text `.nonText`. A seam without it
+  /// reads `readLabel`.
   var strictLabel: ((Element, StalePointLabelPart) -> StalePointLabelRead)? = nil
 
   func readStrictLabel(_ element: Element, _ part: StalePointLabelPart) -> StalePointLabelRead {
@@ -708,8 +698,6 @@ extension StalePointReads where Element == AXUIElement {
                       return stalePointLabelRead(read.value, read.error)
                     }, same: { CFEqual($0, $1) }, gone: { copyAttribute($0, kAXRoleAttribute).error == .invalidUIElement },
                     strictLabel: { element, part in
-                      // #519 (ruling 1150): a value is read only with the role and subrole that classify it (#405).
-                      guard part != .value else { return stalePointClassifiedValueRead(classifiedRead([kAXValueAttribute]) { fetchAttributes(element, $0) }) }
                       let read = copyAttribute(element, part.attribute)
                       return stalePointStrictLabelRead(read.value, read.error)
                     })

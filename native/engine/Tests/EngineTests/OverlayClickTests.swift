@@ -30,8 +30,6 @@ final class OverlayClickTests: XCTestCase {
     var null: Set<StalePointLabelPart> = []
     /// #519: label attributes whose slot holds a value that is no text (`nonTextLabelSlot`), then and now.
     var nonText: Set<StalePointLabelPart> = []
-    /// #519: its element now classifies closed (#405), so its value's strict read is unread.
-    var valueClosed = false
     /// Held strongly (no child links, so no cycle): an overlay the record lacks still reads up to its window.
     var parent: Node?
     /// Whether the walk read AXPress among its actions.
@@ -70,10 +68,6 @@ final class OverlayClickTests: XCTestCase {
       title: { $0.title }, description: { $0.description }, value: { $0.value }, label: label, same: { $0 === $1 }, gone: { $0.gone },
       // #519: the strict read (#453's) tells a value that is no text apart, as the live seam's does.
       strictLabel: !strictReads ? nil : { node, part in
-        if part == .value, node.valueClosed, !node.labelFails, !node.gone {
-          during()
-          return stalePointClassifiedValueRead(.closed)
-        }
         guard node.nonText.contains(part), !node.labelFails, !node.gone else { return label(node, part) }
         during()
         return stalePointStrictLabelRead(nonTextLabelSlot, .success)
@@ -692,17 +686,6 @@ final class OverlayClickTests: XCTestCase {
     XCTAssertEqual(refusal(decide(scene(innerNonText: false, rowNonText: true))), .actionableDescendant, "the option's title numeric")
     XCTAssertEqual(refusal(decide(scene(innerNonText: true, rowNonText: true))), .actionableDescendant, "numeric on both")
     guard case .deliver = decide(scene(innerNonText: false, rowNonText: false)) else { return XCTFail("every part read: a repeat") }
-  }
-
-  /// #519 (ruling 1150): the row's value read now through #405's classification: an option whose element now classifies
-  /// closed is refused `labelChanged`, its value never compared or quoted (main read the raw value and pressed).
-  func testARowWhoseValueNowClassifiesClosedIsRefused() {
-    let scene = datalist()
-    scene.row.valueClosed = true
-    XCTAssertEqual(refusal(decide(scene)), .labelChanged)
-    strictReads = false
-    defer { strictReads = true }
-    guard case .deliver = decide(scene) else { return XCTFail("main read the raw value and pressed") }
   }
 
   /// #519 (rulings 1150, 1151): #453's strict reads only refuse the row already chosen; they never change which row is

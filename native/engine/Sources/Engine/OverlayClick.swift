@@ -218,8 +218,7 @@ private func overlayLabelParts(_ role: String) -> [StalePointLabelPart] {
 /// side only disagrees; and with every part passed over nothing was compared, which disagrees too (the review of
 /// 435420cc..17930e20, P1: a row null in all its parts is never pressed unchecked). #519 (rulings 1146, 1151): read
 /// strictly (`ScreenshotNode.strictLabel`, `StalePointReads.readStrictLabel`), so a part whose value is no text, then or
-/// now, or an AXStaticText's value whose element now classifies closed, disagrees: the chosen row is refused, never another
-/// chosen.
+/// now, disagrees: the chosen row is refused, never another chosen.
 func overlayLabelsAgree<Element>(_ node: ScreenshotNode<Element>, reads: StalePointReads<Element>) -> Bool {
   func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
   var compared = false

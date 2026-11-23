@@ -9,29 +9,29 @@ import XCTest
 // `overlayLabelsAgree` and `overlayDuplicate`, #454's recorded title); every consumer that chooses a target reads labels
 // exactly as main did. Each is run here on every combination of label slots, recorded and read now, beside a frozen copy
 // of main's (0d19fdfa) own function over main's own encoding of the same slots: main recorded a non-text slot as an
-// absent one, read a non-text value now as none, and read a value whatever its element's classification. A kept
-// consumer's verdict is main's or a refusal; a reverted consumer's is main's exactly. The oracle is main's code verbatim
-// but for names and its file-private helpers inlined.
+// absent one and read a non-text value now as none. A kept consumer's verdict is main's or a refusal; a reverted
+// consumer's is main's exactly. The oracle is main's code verbatim but for names and its file-private helpers inlined.
+// It compares logical slots: each slot is handed to both sides through the same seam, so it says nothing of how a single
+// read and a batched read of the same attribute may answer differently (AXUIElement.h allows a batch to answer kCFNull
+// where a single read answers kAXErrorNoValue).
 
 /// One label slot as the app answers it.
 private enum Slot: CaseIterable {
   case absent, empty, open, delete, failed, null, nonText
   /// Recorded only: a value the observation withheld (#405, #501).
   case withheld
-  /// Read now only: a value whose element now classifies closed (#405).
-  case secure
 
   static let both: [Slot] = [.absent, .empty, .open, .delete, .failed, .null, .nonText]
   /// A smaller set for the static text's title and description, whose value multiplies the cases.
   static let few: [Slot] = [.absent, .open, .failed, .null, .nonText]
   static let recordedValue = both + [.withheld]
-  static let liveValue = both + [.secure]
+  static let liveValue = both
 
   var text: String? {
     switch self {
     case .empty: return ""
     case .open: return "Open"
-    case .delete, .secure: return "Delete"
+    case .delete: return "Delete"
     default: return nil
     }
   }
@@ -78,8 +78,8 @@ private func mainNode(_ element: Elem, _ slots: Slots) -> ScreenshotNode<Elem> {
   return node
 }
 
-/// The reads now as the head's live seam makes them: `label` as main's (`stalePointLabelRead`, a raw value), and the
-/// strict read: a non-text value `.nonText`, a value whose element classifies closed unread (`stalePointClassifiedValueRead`).
+/// The reads now as the head's live seam makes them: `label` as main's (`stalePointLabelRead`), and the strict read, main's
+/// single raw read but a non-text value `.nonText` (`stalePointStrictLabelRead`).
 private var headReads: StalePointReads<Elem> { StalePointReads<Elem>(
   role: { $0.role }, frame: { $0.frame }, parent: { _ in nil }, children: { _ in nil },
   title: { $0.live[.title]?.text }, description: { $0.live[.description]?.text }, value: { $0.live[.value]?.text },
@@ -97,13 +97,12 @@ private var headReads: StalePointReads<Elem> { StalePointReads<Elem>(
     case .failed: return stalePointStrictLabelRead(nil, .cannotComplete)
     case .null: return stalePointStrictLabelRead(kCFNull, .success)
     case .nonText: return stalePointStrictLabelRead(nonTextLabelSlot, .success)
-    case .secure: return stalePointClassifiedValueRead(.closed)
     case .absent: return stalePointStrictLabelRead(nil, .noValue)
     case let slot: return stalePointStrictLabelRead(slot.text! as CFString, .success)
     }
   }) }
 
-/// The reads now as main made them: a non-text value none, a value read whatever its element's classification.
+/// The reads now as main made them: a non-text value none.
 private var mainReads: StalePointReads<Elem> { StalePointReads<Elem>(
   role: { $0.role }, frame: { $0.frame }, parent: { _ in nil }, children: { _ in nil },
   title: { $0.live[.title]?.text }, description: { $0.live[.description]?.text }, value: { $0.live[.value]?.text },
@@ -289,7 +288,7 @@ final class LabelMonotonicityTests: XCTestCase {
   // Kept (ruling 1151): the consumers that refuse the target already chosen only add refusals.
 
   /// #453 `overlayLabelsAgree` (agreeing presses): the head agrees only where main agreed, and refuses some row main
-  /// pressed (a non-text part, a value now closed).
+  /// pressed (a non-text part).
   func testOverlayLabelsAgreeOnlyWhereMainAgreed() {
     var refused = 0
     for role in ["AXButton", "AXStaticText"] {

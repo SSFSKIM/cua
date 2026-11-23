@@ -57,25 +57,4 @@ final class NonTextLabelSlotTests: XCTestCase {
     XCTAssertEqual(stalePointStrictLabelRead(nil, .noValue), .text(nil))
     XCTAssertEqual(stalePointStrictLabelRead(nil, .cannotComplete), .unreadable)
   }
-
-  /// The strict read of an AXStaticText's value goes through #405's classification, the role and subrole in the same
-  /// batch: a closed or failed reply is unread, its value never decoded, compared or quoted.
-  func testTheStrictValueReadIsClassified() {
-    XCTAssertEqual(stalePointClassifiedValueRead(.closed), .unreadable)
-    XCTAssertEqual(stalePointClassifiedValueRead(.failed), .unreadable)
-    func classified(_ values: [String: CFTypeRef]) -> StalePointLabelRead {
-      stalePointClassifiedValueRead(classifiedRead([kAXValueAttribute]) { names in
-        var read = AttributeRead()
-        for name in names { read.decode(name, values[name]) }
-        return read
-      })
-    }
-    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXValue": "Delete" as CFString]), .text("Delete"))
-    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXValue": nonTextLabelSlot]), .nonText)
-    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXValue": kCFNull]), .null)
-    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXSubrole": "AXSecureTextField" as CFString,
-                               "AXValue": "hunter2" as CFString]), .unreadable, "secure since: closed")
-    XCTAssertEqual(classified(["AXRole": "AXStaticText" as CFString, "AXSubrole": nonTextLabelSlot, "AXValue": "hunter2" as CFString]),
-                   .unreadable, "its subrole unclassified: closed")
-  }
 }

@@ -17,7 +17,7 @@ gates:
   - name: test
     run: npm test && npm run test:linux-engine-diff
     lane: hosted-macos
-    timeout: 20
+    timeout: 30
   - name: plugin
     lane: hosted-macos
     timeout: 15

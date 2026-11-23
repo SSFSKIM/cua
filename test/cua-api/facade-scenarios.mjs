@@ -53,7 +53,12 @@ function browserFixture(ctx, f, {id = 'b1', tabs = [{id: 't1', title: 'One', url
       claimTab: async info => { log('user.claimTab', info); return tab(info.id); },
     },
     ...(nameSession ? {nameSession: async name => log('nameSession', name)} : {}),
-    ...(capabilities ? {capabilities: {get: async name => { log('capabilities.get', name); return {set: async value => log(`${name}.set`, value)}; }}} : {}),
+    // `capabilities`: true (visibility announced), 'none' (announced none: get throws as the client's Capabilities does), false (no capabilities object).
+    ...(capabilities ? {capabilities: {get: async name => {
+      log('capabilities.get', name);
+      if (capabilities === 'none') throw new Error(`Capability is not available: ${name}`);
+      return {set: async value => log(`${name}.set`, value)};
+    }}} : {}),
   };
 }
 
@@ -455,12 +460,26 @@ export const scenarios = [
   {name: 'browser: createBrowserTab refuses what the browser cannot do', run: async (f, ctx) => {
     const api = browserApi(ctx, f, {b1: {noNew: true}, b2: {noGoto: true, nameSession: false, capabilities: false}});
     return Promise.all([() => api.createBrowserTab(''), () => api.createBrowserTab('  '), () => api.createBrowserTab(5), () => api.createBrowserTab('b1'),
-      () => api.createBrowserTab('b2', undefined, {sessionName: 'x'}), () => api.createBrowserTab('b2', undefined, {visible: true}), () => api.createBrowserTab('b2', 'https://x.test/')].map(fn => ctx.settle(fn)));
+      () => api.createBrowserTab('b2', undefined, {sessionName: 'x'}), () => api.createBrowserTab('b2', 'https://x.test/')].map(fn => ctx.settle(fn)));
   }, check(record, assert) {
     const select = 'createBrowserTab requires a browser ID. Select one with cua.getBrowser().';
     assert.deepEqual(record.result, [rejected(select), rejected(select), rejected(select), rejected('Browser b1 does not support creating tabs.'), rejected('Browser b2 does not support sessionName.'),
-      rejected('Browser b2 does not support visibility control.'), rejected('Tab new1 does not support navigation.')]);
+      rejected('Tab new1 does not support navigation.')]);
     assert.ok(calls(record).some(([name]) => name === 'b2.new1.close'), 'the tab that cannot navigate is closed');
+  }},
+  {name: 'browser: createBrowserTab ignores visible on a browser without the visibility capability, opens the tab, and says so after its state (#493)',
+    differs: 'MAWS in-app browser first use (#493): the vendor refuses visible there, recommended by its own in-app browser text', run: async (f, ctx) => {
+    const api = browserApi(ctx, f, {b1: {capabilities: 'none'}, b2: {capabilities: false}});
+    const results = [];
+    for (const [id, visible] of [['b1', true], ['b2', false]]) results.push(await ctx.settle(async () => (await api.createBrowserTab(id, 'example.test', {visible})).id));
+    return results;
+  }, check(record, assert) {
+    assert.deepEqual(record.result, [{value: 'new1'}, {value: 'new1'}]);
+    assert.deepEqual(calls(record).filter(([name]) => /visib|tabs\.new|goto/.test(name) || name.endsWith('capabilities.get')),
+      [['b1.capabilities.get', 'visibility'], ['b1.tabs.new'], ['b1.new1.goto', 'https://example.test'], ['b2.tabs.new'], ['b2.new1.goto', 'https://example.test']], 'nothing is set');
+    assert.deepEqual(writes(record).filter(([name]) => name === 'cua.state'), [
+      ['cua.state', 'STATE new1'], ['cua.state', 'createBrowserTab ignored visible: true: browser b1 has no visibility capability, so its visibility is unchanged.'],
+      ['cua.state', 'STATE new1'], ['cua.state', 'createBrowserTab ignored visible: false: browser b2 has no visibility capability, so its visibility is unchanged.']]);
   }},
   {name: 'browser: getTab binds a managed tab by id or provider id, claims an unowned user tab, and emits its initial state', run: async (f, ctx) => {
     const api = browserApi(ctx, f, {b1: {tabs: [{id: 't1', title: 'One', url: 'https://one.test/'}], userTabs: [{id: 't1', providerTabId: 'p1'}, {id: 'u2', providerTabId: 'p2', url: 'https://two.test/'}]}});

@@ -270,11 +270,16 @@ test('a probe left pending is finished whatever the act did, and the run\'s keys
 const SAVE_SHEET = 'textedit/intervention.saveSheet';
 const TEXTEDIT = '/System/Applications/TextEdit.app';
 const STOPPED = `${REFUSED}${USER_CHANGED}${TEXTEDIT}'. Re-query the latest state with \`get_app_state\` before sending more actions. The action was stopped part-way. What may have taken effect: the value written to the field. Nothing was undone.`;
-const REFUSED_FIRST = `${REFUSED}${STILL_INTERACTING}${TEXTEDIT}'. Wait 5 seconds and retry. Nothing was done: the action was refused before its first step.`;
-// The act answered `threw` (null: it returned), received `receipt` ms after its `at`.
-const saveAct = (c, {threw = STOPPED, receipt = 5, interruption = {phase: 'inFlight', effects: ['value']}} = {}) => acted(c, {threw, errorName: threw ? 'Error' : null, interval: null,
-  meta: {'cua/receivedAt': atOf(c) + receipt, ...(threw ? {'cua/interruption': interruption} : {})}});
-const saveCells = ({act = saveAct, check = {sheetOpen: true, nameWritten: true}} = {}) => c => (tagOf(c) === 'savesheet.act' ? act(c) : tagOf(c) === 'savesheet.check' ? check : null);
+const REFUSED_FIRST = `${REFUSED}${STILL_INTERACTING}${TEXTEDIT}'. Wait 5 seconds and retry. The requested input was refused before its first step.`;
+// The act answered `threw` (null: it returned), received `receipt` ms after its `at`, its response `response` ms after
+// it. A stop before the write posts nothing of the action's own, so its interval is null: the post is judged against
+// the receipt and the response instead.
+const saveAct = (c, {threw = STOPPED, receipt = 5, response = 3_000, interruption = threw ? {phase: 'inFlight', effects: ['value']} : undefined} = {}) => ({
+  ...acted(c, {threw, errorName: threw ? 'Error' : null, interval: null, meta: {'cua/receivedAt': atOf(c) + receipt, ...(interruption ? {'cua/interruption': interruption} : {})}}),
+  endAt: atOf(c) + response});
+const saveCells = ({act = saveAct, check = {sheetOpen: true, nameWritten: true, destinationFiles: []}, destination = null, cleanup = null} = {}) => c => (
+  tagOf(c) === 'savesheet.act' ? act(c) : tagOf(c) === 'savesheet.check' ? check : tagOf(c) === 'savesheet.destination' ? destination
+    : tagOf(c) === 'sheet.cleanup' ? cleanup : null);
 
 test('#212\'s save sheet: super+n, the text typed and super+s under the key guard, set_value on the sheet\'s name field at the probe\'s time; a stop part-way naming what may have taken effect, the sheet still open, passes', async () => {
   const calls = [];
@@ -286,11 +291,24 @@ test('#212\'s save sheet: super+n, the text typed and super+s under the key guar
   assert.deepEqual({stopped: row.outcome.stopped, effectsNamed: row.outcome.effectsNamed, sheetOpen: row.outcome.sheetOpen, interruption: row.outcome.interruption},
     {stopped: true, effectsNamed: true, sheetOpen: true, interruption: {phase: 'inFlight', effects: ['value']}});
   assert.deepEqual([row.outcome.leadMs, row.outcome.postAfterReceiptMs], [SAVE_SHEET_PRE_MS, SAVE_SHEET_PRE_MS - 5]);
+  // The times the validity was judged on, kept: the post after the receipt and before the response; a stop before the
+  // write reports no action interval, and needs none.
+  const at = row.outcome.callAt;
+  assert.deepEqual([row.outcome.postedAt, row.outcome.receivedAt, row.outcome.endAt, row.outcome.postBeforeResponseMs, row.outcome.agree],
+    [at + SAVE_SHEET_PRE_MS, at + 5, at + 3_000, 3_000 - SAVE_SHEET_PRE_MS, true]);
+  assert.deepEqual(row.outcome.destinationFiles, []);
   const tags = calls.map(c => tagOf(c.code)).filter(Boolean);
-  assert.deepEqual(tags.filter(t => /^(sheet|savesheet)\./.test(t)), ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.act', 'savesheet.check', 'savesheet.cancel', 'sheet.cleanup']);
+  assert.deepEqual(tags.filter(t => /^(sheet|savesheet)\./.test(t)),
+    ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.destination', 'savesheet.act', 'savesheet.check', 'savesheet.cancel', 'sheet.cleanup']);
   const open = calls.find(c => tagOf(c.code) === 'savesheet.open').code, act = calls.find(c => tagOf(c.code) === 'savesheet.act').code;
   assert.match(open, /__app\.pressKey\("super\+s"\)/);
   assert.match(open, /saveAsNameTextField/);
+  // The sheet's destination set to a run-owned folder before the act, its Return only into the Go To field.
+  const destination = calls.find(c => tagOf(c.code) === 'savesheet.destination').code;
+  assert.match(destination, /mkdtempSync\(path\.join\(fs\.realpathSync\(os\.tmpdir\(\)\), "cua-212-save-"\)\)/);
+  assert.match(destination, /__app\.pressKey\("super\+shift\+g"\)/);
+  assert.ok(destination.indexOf('__named(ax) !== __name || !ax.includes(__dir)') < destination.indexOf('__app.pressKey("Return")'), 'the Return is guarded');
+  assert.match(calls.find(c => tagOf(c.code) === 'savesheet.check').code, /readdirSync\(globalThis\.__saveDir\)/);
   assert.ok(act.includes(`await __app.setValue(globalThis.__saveNameIndex, ${JSON.stringify(SAVE_NAME)});`), act);
   assert.doesNotMatch(act, /pressKey|click\(/, 'the act holds the set_value alone, so its meta is its own');
   assert.match(calls.find(c => tagOf(c.code) === 'savesheet.cancel').code, /__app\.pressKey\("Escape"\)/, 'the sheet is cancelled, never saved');
@@ -321,7 +339,7 @@ test('#212\'s save sheet: a refusal before the action, or a set_value that retur
     }})});
   const row = rowOf(result, SAVE_SHEET);
   assert.deepEqual([acts.length, row.attempts, row.ok], [2, 2, true]);
-  assert.match(row.outcome.retries[0], /refused before the action/);
+  assert.match(row.outcome.retries[0], /posted 5 ms before the request was received/);
   assert.equal(row.outcome.leadMs, SAVE_SHEET_PRE_MS + 5 + SAVE_SHEET_AIM_MS, 'the call moved earlier by the miss');
   // Never stopped: set_value returned every time.
   const quick = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: c => saveAct(c, {threw: null})})});
@@ -342,4 +360,73 @@ test('#212\'s save sheet is its own registered cell, not a row of the full matri
   assert.deepEqual(planOf('intervention-save-sheet').intervention, ['saveSheet']);
   assert.ok(!planOf('matrix').intervention.includes('saveSheet'));
   assert.throws(() => planOf('intervention-save-sheet', {scene: 'finder'}), /nothing to run/);
+});
+
+test('#212\'s save sheet: a stop whose probe posted after the response, or before the receipt, is invalid and retried, never a pass', async () => {
+  // The reviewer's case: the call's response came 6 ms before the post; the stop was not the probe's.
+  const after = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: c => saveAct(c, {response: SAVE_SHEET_PRE_MS - 6})})});
+  const row = rowOf(after.result, SAVE_SHEET);
+  assert.deepEqual([row.ok, row.attempts], [false, PROBE_ATTEMPTS]);
+  assert.match(row.invalid, /the probe posted 6 ms after the response/);
+  assert.equal(after.result.verdict, 'no-verdict');
+});
+
+test('#212\'s save sheet: the engine\'s structured phase must agree with its sentence; a disagreement fails the row', async () => {
+  const cases = [
+    {label: 'the sentence says part-way, the meta a refusal', act: c => saveAct(c, {interruption: {phase: 'beforeAction', effects: ['value']}})},
+    {label: 'the sentence says part-way, the meta has no account', act: c => saveAct(c, {interruption: null})},
+    {label: 'the meta says in flight, the sentence a refusal', act: c => saveAct(c, {threw: REFUSED_FIRST, interruption: {phase: 'inFlight', effects: []}})},
+  ];
+  for (const {label, act} of cases) {
+    const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act})});
+    const row = rowOf(result, SAVE_SHEET);
+    assert.deepEqual([row.ok, row.invalid, row.attempts, row.outcome.agree, row.outcome.stopped], [false, undefined, 1, false, false], label);
+    assert.equal(result.verdict, 'fail', label);
+  }
+});
+
+test('#212\'s save sheet: a sheet gone after a set_value that returned normally is recorded at once and never retried', async () => {
+  const acts = [];
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({act: c => { acts.push(c); return saveAct(c, {threw: null}); }, check: {sheetOpen: false, nameWritten: false, destinationFiles: []}})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.deepEqual([acts.length, row.attempts, row.ok, row.invalid, row.outcome.sheetOpen], [1, 1, false, undefined, false]);
+  assert.match(row.outcome.validity, /returned before the probe's event was seen/, 'why the timing alone would not have judged it, kept');
+  assert.equal(result.verdict, 'fail');
+});
+
+test('#212\'s save sheet: a cleanup that throws (a save that renamed the document) stops the run after the row is recorded, its failure reported apart', async () => {
+  const renamed = {closed: true, sceneInFront: false, front: 'other'};
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({check: {sheetOpen: false, nameWritten: true, destinationFiles: ['cua-212-intended.rtf']}, cleanup: renamed})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.ok(row, 'the row is recorded before the cleanup');
+  assert.deepEqual([row.ok, row.invalid, row.attempts, row.outcome.sheetOpen, row.outcome.destinationFiles], [false, undefined, 1, false, ['cua-212-intended.rtf']]);
+  assert.match(row.outcome.cleanupFailed, /untitled document could not be closed/);
+  assert.equal(result.complete, false);
+  assert.ok(result.problems.some(p => /^stopped: #212's save sheet's untitled document could not be closed/.test(p)), JSON.stringify(result.problems));
+  // A preparation that failed is recorded before its cleanup too.
+  const unprepared = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({destination: {ready: false, reason: 'the Save sheet was not up'}, cleanup: renamed})});
+  const invalid = rowOf(unprepared.result, SAVE_SHEET);
+  assert.match(invalid.invalid, /destination was not set to the run's folder \(the Save sheet was not up\)/);
+  assert.match(invalid.outcome.cleanupFailed, /could not be closed/);
+  assert.equal(unprepared.result.complete, false);
+});
+
+test('#212\'s save sheet: no act without the run\'s own destination; a file in it afterwards fails the row, never retried', async () => {
+  const calls = [];
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls,
+    cell: saveCells({destination: {ready: false, reason: 'the folder\'s path did not land in the Go To field'}})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.match(row.invalid, /destination was not set/);
+  assert.ok(!calls.some(c => tagOf(c.code) === 'savesheet.act'), 'nothing is sent toward the sheet');
+  assert.ok(calls.some(c => tagOf(c.code) === 'savesheet.cancel'));
+  const saved = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({check: {sheetOpen: true, nameWritten: true, destinationFiles: ['cua-212-intended.rtf']}})});
+  const committed = rowOf(saved.result, SAVE_SHEET);
+  assert.deepEqual([committed.ok, committed.invalid, committed.attempts, committed.outcome.destinationFiles], [false, undefined, 1, ['cua-212-intended.rtf']]);
+  const unread = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({check: {sheetOpen: true, nameWritten: true, destinationFiles: null}})});
+  assert.match(rowOf(unread.result, SAVE_SHEET).invalid, /run's save folder could not be read/);
 });

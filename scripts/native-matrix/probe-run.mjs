@@ -17,7 +17,7 @@ import {userWindowOf} from './oracle.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, MAY_HAVE_TAKEN_EFFECT,
   NEW_DOCUMENT_CELL, nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith,
-  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, scheduledActCell, SHEET_FOLLOW_MS,
+  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, scheduledActCell, SHEET_FOLLOW_MS,
   SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, STOPPED_PART_WAY, USER_CHANGED,
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
@@ -47,9 +47,12 @@ export async function probeCells(ctx, plan) {
   if (plan.intervention?.includes('saveSheet')) await sampled(ctx, PROBE_ROWS.saveSheet, a => saveSheetAttempt(ctx, a));
 }
 
-// One sample from up to PROBE_ATTEMPTS attempts. An attempt answers {row, retry?, lead?, oracle?, key}: `retry` when its
-// probe fell outside its window, `lead` the next attempt's aim. The kept row is judged by the oracle when it carries
-// one, else charged its activations.
+// One sample from up to PROBE_ATTEMPTS attempts. An attempt answers {row, retry?, lead?, oracle?, cleanup?, key}:
+// `retry` when its probe fell outside its window, `lead` the next attempt's aim, `cleanup` what it left to undo. The
+// kept row is recorded before its cleanup runs (#212: a cleanup can throw, and the row must outlast it), and a cleanup
+// that throws keeps the attempt it followed, its failure on the row's `outcome.cleanupFailed` and then thrown, so the
+// run stops with it among its problems. The kept row is judged by the oracle when it carries one, else charged its
+// activations.
 async function sampled(ctx, base, attempt) {
   const row = {...base, engine: ctx.engine, sample: ctx.n, ok: false};
   if (!ctx.latin) return push(ctx, {...row, invalid: 'the Latin input source was not selected and read back with the per-context preference off'});
@@ -58,13 +61,24 @@ async function sampled(ctx, base, attempt) {
   for (let n = 1; n <= PROBE_ATTEMPTS; n++) {
     await ctx.checkpoint();
     const out = await attempt({lead, n, id: base.id, key: `row:${ctx.rows.length}:${n}`});
-    if (out.retry && n < PROBE_ATTEMPTS) { retries.push(out.row.invalid); lead = out.lead; continue; }
+    let cleanupFailed = null;
+    if (out.retry && n < PROBE_ATTEMPTS) {
+      cleanupFailed = await cleanedUp(out);
+      if (!cleanupFailed) { retries.push(out.row.invalid); lead = out.lead; continue; }
+    }
     const pushed = push(ctx, {...row, ...out.row, attempts: n, ...(retries.length ? {outcome: {...(out.row.outcome ?? {}), retries}} : {})});
     if (!pushed.invalid) ctx.judged.set(out.key, {row: pushed, oracle: out.oracle ?? null});
+    cleanupFailed ??= await cleanedUp(out);
+    if (cleanupFailed) {
+      pushed.outcome = {...(pushed.outcome ?? {}), cleanupFailed: String(cleanupFailed.message ?? cleanupFailed).slice(0, 500)};
+      throw cleanupFailed;
+    }
     return pushed;
   }
   return null;
 }
+// An attempt's cleanup run. -> null, or what it threw.
+const cleanedUp = async out => { try { await out.cleanup?.(); return null; } catch (error) { return error; } };
 
 // The device-clock window of an attempt's cells, marked as one row window when it ends.
 function spanOf(ctx, key) {
@@ -331,14 +345,19 @@ async function preActionAttempt(ctx, {lead, id, key}) {
 
 // ---- #212's save sheet -----------------------------------------------------------------------------------------------
 
-// TextEdit in front: its untitled document opened (super+n) and typed into, its Save sheet opened (super+s), each under
-// the key guard; then set_value on the sheet's name field at the cell's time, the probe's keystroke aimed into TextEdit's
-// front window just after the engine receives it. cua's answer must be a stop part-way (the user-changed sentence and
-// the engine's "stopped part-way") that says what may have taken effect, and the sheet must still be open after the
-// settle: nothing committed it. A refusal before the action (the post came before the receipt) or a set_value that
-// returned first says nothing about a stop part-way: invalid, retried aimed from the receipt it measured. The vendor's
-// lane never stops an action in flight: its row records its answer and the sheet, valid when the post fell inside the
-// call. Whatever happened, the debounce is waited out, the sheet cancelled (Escape) and the untitled document closed.
+// TextEdit in front: its untitled document opened (super+n) and typed into, its Save sheet opened (super+s) and its
+// destination moved to a folder the run made, each under the key guard; then set_value on the sheet's name field at the
+// cell's time, the probe's keystroke aimed into TextEdit's front window just after the engine receives it. cua's answer
+// must be a stop part-way, said alike by its sentence (the user-changed sentence and "stopped part-way") and its
+// structured account (`cua/interruption`, phase inFlight), that says what may have taken effect; the sheet must still
+// be open after the settle and the run's folder empty: nothing committed it. A sentence and an account that disagree
+// fail the row. On cua's lane the sample is valid only when the probe posted after the engine received the request and
+// before the cell had its response (the times kept on the row; a stop before the write reports no action interval and
+// needs none). A post outside that window, a refusal before the action or a set_value that returned first says nothing
+// about a stop part-way: invalid, retried aimed from the receipt it measured. A sheet gone or a file in the run's
+// folder is a failure whatever the timing, never retried. The vendor's lane never stops an action in flight: its row
+// records its answer and the sheet, valid when the post fell inside the call. Whatever happened, once the row is
+// recorded, the debounce is waited out, the sheet cancelled (Escape) and the untitled document closed (`cleanup`).
 async function saveSheetAttempt(ctx, {lead, id, key}) {
   const scene = 'textedit', preMs = lead ?? SAVE_SHEET_PRE_MS;
   const span = spanOf(ctx, key);
@@ -346,7 +365,8 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   const front = activate(ctx, scene);
   if (!front?.ok) return span.end({invalid: `${scene} did not come to the front`});
   const keys = async (code, names) => span.add(await sendKeys(ctx, code, names, {scene, front: read(ctx), kind: 'row', key}));
-  const unprepared = async invalid => { await closeSaveSheet(ctx, keys); return span.end({invalid}); };
+  const cleanup = () => closeSaveSheet(ctx, keys);
+  const unprepared = invalid => span.end({invalid}, {cleanup});
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
   if (!opened?.ok || opened.value?.opened !== true) return unprepared(`the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`);
   alertCheck(ctx, `before ${id} typing`);
@@ -355,6 +375,10 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   if (!typed?.ok || typed.value?.typed !== true) return unprepared(`the untitled document's text was not typed (${typed?.error ?? typed?.value?.reason ?? 'not sent'})`);
   const sheet = await keys(SAVE_SHEET_OPEN_CELL, ['super+s']);
   if (!sheet?.ok || sheet.value?.opened !== true) return unprepared(`the Save sheet did not open (${sheet?.error ?? sheet?.value?.reason ?? 'not sent'})`);
+  const destination = await keys(SAVE_SHEET_DESTINATION_CELL, ['super+shift+g', 'typeText', 'Return']);
+  if (!destination?.ok || destination.value?.ready !== true) {
+    return unprepared(`the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'})`);
+  }
   const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
   if (!window) return unprepared(`${scene}'s window was not in front`);
   alertCheck(ctx, `before ${id}`);
@@ -363,25 +387,50 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   const act = probe.result;
   alertCheck(ctx, `after ${id}`);
   const check = act?.ok ? span.add(await ctx.lane.js(SAVE_SHEET_CHECK_CELL)) : null;
-  await closeSaveSheet(ctx, keys);
-  if (!act?.ok) return span.end({invalid: 'the act cell failed', ...(act?.error ? {error: act.error} : {})});
-  if (!check?.ok) return span.end({invalid: 'the sheet could not be read after the act', ...(check?.error ? {error: check.error} : {})});
+  if (!act?.ok) return span.end({invalid: 'the act cell failed', ...(act?.error ? {error: act.error} : {})}, {cleanup});
+  if (!check?.ok) return span.end({invalid: 'the sheet could not be read after the act', ...(check?.error ? {error: check.error} : {})}, {cleanup});
+  const cua = ctx.engine === 'cua';
   const {value} = act, postedAt = probe.answer?.postedAt;
-  const receivedAt = ctx.engine === 'cua' ? act.engine?.receivedAt : value.callAt;
-  const stopped = refusedWith(value, USER_CHANGED) && value.message.includes(STOPPED_PART_WAY);
+  const receivedAt = cua ? act.engine?.receivedAt : value.callAt;
+  // The sentence and the structured account, each saying whether the action was stopped part-way; on cua's lane both.
+  const said = refusedWith(value, USER_CHANGED) && value.message.includes(STOPPED_PART_WAY);
+  const inFlight = act.engine?.interruption?.phase === 'inFlight';
+  const agree = cua ? said === inFlight : null;
+  const stopped = said && (!cua || inFlight);
   const effectsNamed = stopped && value.message.includes(MAY_HAVE_TAKEN_EFFECT);
   const sheetOpen = check.value?.sheetOpen === true;
+  const files = Array.isArray(check.value?.destinationFiles) ? check.value.destinationFiles : null;
+  const destinationEmpty = files !== null && files.length === 0;
   const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
-  const row = {ok: sheetOpen && (ctx.engine === 'cua' ? effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {stopped, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, threw: value.threw,
-      errorName: value.errorName, message: value.message ?? null, leadMs: preMs, postAfterReceiptMs, late: value.late ?? null}};
-  const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (ctx.engine === 'cua' ? stopValidity(value, stopped) : postValidity(postedAt, intervalOf(ctx.engine, act)));
+  const row = {ok: sheetOpen && destinationEmpty && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route,
+    outcome: {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
+      threw: value.threw, errorName: value.errorName, message: value.message ?? null, leadMs: preMs,
+      postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt: Number.isFinite(receivedAt) ? receivedAt : null, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
+      postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null}};
+  const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (cua ? responseWindowValidity(postedAt, receivedAt, value.endAt) : postValidity(postedAt, intervalOf(ctx.engine, act)));
+  // Committed: a finding whatever the timing, recorded with why the timing alone would not have judged it; never retried.
+  if (!sheetOpen || files?.length) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why ?? (cua ? stopValidity(value, stopped) : null)}}, {cleanup});
+  if (files === null) return span.end({...row, ok: false, invalid: 'the run\'s save folder could not be read after the act'}, {cleanup});
   // The next call moved by the miss: the post aimed SAVE_SHEET_AIM_MS after the receipt.
   const next = postAfterReceiptMs === null ? preMs : Math.min(PROBE_LEAD_MS - 1_000, Math.max(-1_000, preMs - (postAfterReceiptMs - SAVE_SHEET_AIM_MS)));
-  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: next});
-  return span.end(row);
+  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: next, cleanup});
+  if (cua && !agree) return span.end(row, {cleanup});
+  const stop = cua ? stopValidity(value, stopped) : null;
+  if (stop) return span.end({...row, ok: false, invalid: stop}, {retry: true, lead: next, cleanup});
+  return span.end(row, {cleanup});
 }
-// Whether cua's answer says the probe's event came during the action. -> null, or why the sample says nothing.
+// cua's lane: the probe's post after the engine received the request and before the cell had its response. -> null,
+// or why the sample says nothing.
+function responseWindowValidity(postedAt, receivedAt, endAt) {
+  if (!Number.isFinite(postedAt)) return 'the probe printed no post time';
+  if (!Number.isFinite(receivedAt)) return 'the answer carried no cua/receivedAt';
+  if (!Number.isFinite(endAt)) return 'the cell recorded no response time';
+  if (postedAt < receivedAt) return `the probe posted ${receivedAt - postedAt} ms before the request was received`;
+  if (postedAt > endAt) return `the probe posted ${postedAt - endAt} ms after the response`;
+  return null;
+}
+// Whether cua's answer, its sentence and account agreeing, says the probe's event came during the action. -> null, or
+// why the sample says nothing.
 function stopValidity(value, stopped) {
   if (stopped) return null;
   if (refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED)) return 'the probe posted before the request was received: refused before the action, not stopped part-way';
@@ -389,7 +438,7 @@ function stopValidity(value, stopped) {
   return null;
 }
 // The Save sheet cancelled and the untitled document closed, once the probe's debounce is out, under TextEdit's own key
-// guard; the scene's document not in front again stops the run with what the cleanup saw.
+// guard; the scene's document not in front again (a save that renamed it, say) stops the run with what the cleanup saw.
 async function closeSaveSheet(ctx, keys) {
   await quiet(ctx, 'textedit');
   await keys(SAVE_SHEET_CANCEL_CELL, ['Escape']);

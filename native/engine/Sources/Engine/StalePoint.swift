@@ -179,7 +179,8 @@ struct ScreenshotNodeRead<Element> {
   /// Whether its action names were read (the review's finding 4): a failed read leaves `actions` empty, and the element
   /// not known to be inert.
   var actionsRead = true
-  /// Whether its AXRole read (#431's review of 849bcdad, finding 6): a failed read decodes as AXUnknown.
+  /// Whether its AXRole read (#431's review of 849bcdad, finding 6): a failed read decodes as AXUnknown, and so does a null
+  /// slot (#501, `ElementData.roleRead`).
   var roleRead = true
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).
@@ -228,11 +229,15 @@ func stalePointLabelPair(_ a: StalePointLabelRead, _ b: StalePointLabelRead) -> 
 }
 
 /// The label attributes the record keeps as unknown and, of them, those whose slot held kCFNull (#500), from the walk's
-/// data (`ElementData.unreadable`, `ElementData.null`; `screenshotLabelsUnread`). #519 (ruling 1146): a slot that held a
-/// value that is no text (`ElementData.nonText`) is unknown too, never absent; and never null, so no comparison passes
-/// over it, even where the other side's is no text as well.
+/// data (`ElementData.unreadable`, `ElementData.null`; `screenshotLabelsUnread`). A value the read withheld
+/// (`ElementData.valueUnread`: #405's classification closed the element, or the source reads no values) is unread too,
+/// never known absent (the review of cdb36ad3..7574c058, P2): its text is not kept, only that it is unknown. #519 (ruling
+/// 1146): so is a slot that held a value that is no text (`ElementData.nonText`); never null either, so no comparison
+/// passes over it, even where the other side's is no text as well.
 func screenshotLabelsUnknown(role: String, _ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
-  (screenshotLabelsUnread(role: role, data.unreadable.union(data.null).union(data.nonText)), screenshotLabelsUnread(role: role, data.null))
+  let withheld: Set<String> = data.valueUnread ? [kAXValueAttribute] : []
+  return (screenshotLabelsUnread(role: role, data.unreadable.union(data.null).union(withheld).union(data.nonText)),
+          screenshotLabelsUnread(role: role, data.null))
 }
 
 /// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the

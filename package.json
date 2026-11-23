@@ -25,6 +25,7 @@
     "runtime/releases/",
     "runtime/sandbox/",
     "runtime/engine/",
+    "runtime/modules/",
     "scripts/probe/lib.mjs",
     "scripts/probe/pinned-engine.mjs",
     "scripts/accept/window-close.mjs",

@@ -263,12 +263,18 @@ export async function download({url, length, maxLength}, dest, fetchImpl, onProg
   }
 }
 
-// `length` may be absent for an asset pinned by its hash alone.
-export async function verifyArchive(path, {length, sha256}) {
+// `length` may be absent for an asset pinned by its hash alone. An npm tarball (the ModuleTree, src/runtime/module-
+// tree.mjs) is pinned by its lock's `integrity`, a SHA-512 in base64 (`sha512-…`), in place of a SHA-256.
+export async function verifyArchive(path, {length, sha256, integrity}) {
   const size = statSync(path).size;
   if (length !== undefined && size !== length) fail('archive_length_mismatch', `archive is ${size} bytes; the pin expects ${length}`);
-  const hash = createHash('sha256');
+  const hash = createHash(integrity ? 'sha512' : 'sha256');
   await pipeline(createReadStream(path), hash);
+  if (integrity) {
+    const actual = `sha512-${hash.digest('base64')}`;
+    if (actual !== integrity) fail('archive_hash_mismatch', `archive SHA-512 is ${actual}; the pin expects ${integrity}`);
+    return;
+  }
   const actual = hash.digest('hex');
   if (actual !== sha256) fail('archive_hash_mismatch', `archive SHA-256 is ${actual}; the pin expects ${sha256}`);
 }

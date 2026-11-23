@@ -186,7 +186,7 @@ export function writeLinuxFixtureTree(root, {arch = 'x64', vendor = {}, omit = [
   symlinkSync('../lib/chatgpt/ChatGPT', join(root, 'usr/bin/chatgpt'));
 }
 
-function arArchive(members) {
+export function arArchive(members) {
   const field = (value, width) => String(value).padEnd(width, ' ');
   const parts = [Buffer.from('!<arch>\n')];
   for (const [name, data] of members) {

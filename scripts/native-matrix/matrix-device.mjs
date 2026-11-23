@@ -189,10 +189,12 @@ const keyOf = report => bundleOf(report?.focusedApp?.bundleId);
 // The on-screen windows front to back (./system-windows.swift, every layer) as they may leave the device: the run's own
 // by pid, number, bundle id and layer; any other application's by its bundle id and layer only, never its pid, number,
 // bounds or title; the engine under test's own windows (`skipPids`: the agent cursor's panel) passed over, as the front
-// window's reading passes them. -> [{owned, pid?, number?, bundleId, layer}].
+// window's reading passes them. A list the window server did not answer stays unread (null), never an empty screen.
+// -> [{owned, pid?, number?, bundleId, layer}] or null.
 export function windowOrderOf(windows, owned, skipPids = []) {
+  if (!Array.isArray(windows)) return null;
   const mine = new Set(owned), skip = new Set(skipPids);
-  return (windows ?? []).filter(w => !skip.has(w.ownerPid)).map(w => (mine.has(w.ownerPid)
+  return windows.filter(w => !skip.has(w.ownerPid)).map(w => (mine.has(w.ownerPid)
     ? {owned: true, pid: w.ownerPid, number: w.number ?? null, bundleId: bundleOf(w.ownerBundleId), layer: w.layer ?? 0}
     : {owned: false, bundleId: bundleOf(w.ownerBundleId), layer: w.layer ?? 0}));
 }
@@ -366,14 +368,16 @@ export function executablePaths(pids, {exec = execFileSync} = {}) {
 // io: {windows(), state(), launched(), executablePaths(pids), dir}; roots: the engine under test's (enginePids), for a check.
 export function alerts(action, io, {approvedRuntime = null, approvedEngine = null} = {}) {
   const file = join(io.dir, ALERT_BASELINE_FILE);
+  // An unread window list (./system-windows.swift) proves no screen free of alerts.
+  const read = () => { const windows = io.windows(); if (!Array.isArray(windows)) throw new Error('the on-screen windows could not be read: the alert watch has nothing to judge'); return windows; };
   if (action === 'baseline') {
-    const kept = io.windows().map(w => ({number: w.number}));
+    const kept = read().map(w => ({number: w.number}));
     fs.writeFileSync(file, `${JSON.stringify(kept)}\n`, {mode: 0o600});
     return {baseline: kept.length};
   }
   if (action !== 'check') throw new Error('alerts baseline|check');
   if (!fs.existsSync(file)) throw new Error('no alert baseline in the run directory: run alerts baseline first');
-  const windows = io.windows(), owned = ownedPids(io.state(), io.launched());
+  const windows = read(), owned = ownedPids(io.state(), io.launched());
   const others = [...new Set(windows.map(w => w.ownerPid))].filter(pid => Number.isInteger(pid) && !owned.includes(pid));
   const engine = enginePids(others, [approvedRuntime, approvedEngine], pids => (io.executablePaths ?? executablePaths)(pids));
   const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), windows, {runPids: [...owned, ...engine]});

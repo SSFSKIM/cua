@@ -91,12 +91,15 @@ export function accountActivations(activations, windows, {marginMs = ACTIVATION_
 
 // Whether a window of the target (an entry of `order`, ./matrix-device.mjs windowOrderOf, whose bundle id is one of
 // `targets`) lies above the person's window (`userWindow` {pid, number}, the run's user window) in the window order,
-// front to back, at any layer; with the person's window not in the order, any target window is above it. -> true, false,
-// or null when the order was not read.
+// front to back, at any layer. Only an order that holds the person's window, known by its number, proves a target stayed
+// below it. A known window gone from the order has any target window above it; with none, or with the person's window
+// not known (its number unread), the order proves nothing. -> true, false, or null when the order was not read or
+// proves nothing.
 export function targetAbove(order, targets, userWindow) {
-  if (!Array.isArray(order)) return null;
-  const at = order.findIndex(w => w?.owned === true && w.pid === userWindow?.pid && w.number === userWindow?.number);
-  return order.slice(0, at < 0 ? order.length : at).some(w => targets.includes(w?.bundleId));
+  if (!Array.isArray(order) || !Number.isInteger(userWindow?.pid) || !Number.isInteger(userWindow?.number)) return null;
+  const at = order.findIndex(w => w?.owned === true && w.pid === userWindow.pid && w.number === userWindow.number);
+  const above = order.slice(0, at < 0 ? order.length : at).some(w => targets.includes(w?.bundleId));
+  return at < 0 && !above ? null : above;
 }
 
 // One row's oracle. `scene`: the driven scene (its family decides route 4's acceptance); `launched`: the bundle id a
@@ -106,7 +109,8 @@ export function targetAbove(order, targets, userWindow) {
 // `order` {before, after}: the window order read around the action (#485, ruling 1069), with `targets` the target's
 // bundle ids (the driven scene's, the Open panel's service, a launched app's) and `userWindow` {pid, number} the
 // person's window: a target window above the person's after the action fails the row, whatever the front and the top
-// window read (an alert's window above both, say), and so does an order unread after it; `before` is recorded beside it.
+// window read (an alert's window above both, say), and so does an order unread after it or one that does not hold the
+// person's window (targetAbove null); `before` is recorded beside it.
 // -> {ok, frontmost, topWindow, focus, activations, route4, windowOrder?: {before, after}, declared?}.
 export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, focus = null, userPid = null, accepted = OWNER_ACCEPTED,
   order = null, targets = [], userWindow = null}) {

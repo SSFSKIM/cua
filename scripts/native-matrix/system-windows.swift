@@ -4,6 +4,9 @@
 //
 //   {"at": <unix ms>, "windows": [{"ownerPid", "ownerName", "ownerBundleId", "layer", "number", "name", "bounds"}]}
 //
+// `windows` is null when the window server answered no list at all: unread, which no caller may take for an empty
+// screen (the window-order oracle's after-read fails its row; the alert watch cannot clear a paste).
+//
 // `ownerName` (kCGWindowOwnerName) needs no permission; `name` (kCGWindowName) is present only where the reading
 // process may read titles (Screen Recording) and null otherwise, so nothing here raises a permission dialog. The caller
 // keeps only the windows it judges alerts; the baseline's names never leave the device.
@@ -12,8 +15,8 @@ import CoreGraphics
 import Foundation
 
 let now = Int((Date().timeIntervalSince1970 * 1000).rounded())
-let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
-let windows: [[String: Any]] = list.compactMap { entry in
+let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+let windows: [[String: Any]]? = list?.compactMap { entry in
   guard let pid = entry[kCGWindowOwnerPID as String] as? Int,
         let number = entry[kCGWindowNumber as String] as? Int,
         let boundsDictionary = entry[kCGWindowBounds as String] as? NSDictionary,
@@ -30,6 +33,6 @@ let windows: [[String: Any]] = list.compactMap { entry in
     "bounds": ["x": Double(bounds.origin.x), "y": Double(bounds.origin.y), "width": Double(bounds.width), "height": Double(bounds.height)],
   ]
 }
-let data = try! JSONSerialization.data(withJSONObject: ["at": now, "windows": windows], options: [.sortedKeys])
+let data = try! JSONSerialization.data(withJSONObject: ["at": now, "windows": windows.map { $0 as Any } ?? NSNull()], options: [.sortedKeys])
 FileHandle.standardOutput.write(data)
 FileHandle.standardOutput.write("\n".data(using: .utf8)!)

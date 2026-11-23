@@ -139,6 +139,10 @@ test('the alert watch: a baseline of window numbers, then an alert process or a 
     const flagged = alerts('check', io);
     assert.equal(flagged.abort, true);
     assert.doesNotMatch(JSON.stringify(flagged), /Allow paste/, 'no alert text leaves');
+    // The window server answered no list (./system-windows.swift's null): unread, never a screen free of alerts.
+    windows = null;
+    assert.throws(() => alerts('check', io), /could not be read/);
+    assert.throws(() => alerts('baseline', io), /could not be read/);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
@@ -458,6 +462,15 @@ test('read: the window order front to back, the run\'s own windows by pid and nu
   ]);
   assert.doesNotMatch(JSON.stringify(r.windowOrder), /secret|mine|Notification Center|501|600|98|99/, 'nothing of another app\'s window but its bundle id and layer');
   assert.equal('windowOrder' in read({}, io), false, 'only when asked');
+  // The window server answered no list (./system-windows.swift's null): the order stays unread, never an empty screen.
+  assert.equal(read({windowOrder: true}, {...io, windows: () => null}).windowOrder, null);
+  assert.deepEqual(read({windowOrder: true}, {...io, windows: () => []}).windowOrder, [], 'an empty list read is a reading');
+});
+
+test('system-windows.swift answers an unread list as null, not as an empty screen', () => {
+  const swift = fs.readFileSync(new URL('../../scripts/native-matrix/system-windows.swift', import.meta.url), 'utf8');
+  assert.doesNotMatch(swift, /as\? \[\[String: Any\]\]\) \?\? \[\]/, 'no failed read turned into []');
+  assert.match(swift, /"windows": windows\.map \{ \$0 as Any \} \?\? NSNull\(\)/);
 });
 
 test('the activate step\'s own check: front and key read after the scene\'s activation, a few times while the key lags, bundle ids only', async () => {

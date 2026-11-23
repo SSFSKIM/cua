@@ -9,7 +9,7 @@ import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {ACCEPTANCE_3, caseId, focusVerdict, isAcceptance3, methodTimingId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {probeProblem, WITNESS_FILES, WITNESS_LEAD_MS, WITNESS_PREPARE_CELL, witnessCheckCell} from './probe-plan.mjs';
+import {keystrokeGate, probeProblem, WITNESS_FILES, WITNESS_LEAD_MS, WITNESS_PREPARE_CELL, witnessCheckCell} from './probe-plan.mjs';
 
 // The acts that may paste (type_text's paste route included): each sent only between two alert checks.
 export const PASTING = Object.freeze(['paste', 'typeText']);
@@ -116,6 +116,15 @@ export const activated = (ctx, app) => { const a = activationOf(ctx, app); retur
 // The readings of a cell whose act was skipped because its activation did not take: what the check read after the
 // activate step, nothing after (./front-key.mjs: `after` null, the cause stays `activation`).
 export const skippedReadings = (ctx, apps, app) => ({apps, activate: activationOf(ctx, app), before: ctx.activated?.app === app ? ctx.activated.seen : {front: null, key: null}, after: null});
+// An activate step of `scene` whose check did not show its app front and key (whatever the scenes command answered:
+// its process never came to the front within its bound, or an alert kept the key): the readings the cells it was for
+// carry instead of an act (ruling 1141: NO VERDICT, never invalid). A command that answered not ok while the check shows
+// the app front and key (Finder in front with another of its windows above the run's, say) is the setup's own failure:
+// null, the caller's invalid. -> the skipped readings for `apps`, or null.
+export const notActivated = (ctx, scene, apps = [SCENES[scene].bundleId]) => {
+  const app = SCENES[scene].bundleId;
+  return activated(ctx, app) ? null : skippedReadings(ctx, apps, app);
+};
 // The engine's own name for the error an act threw (its result meta's `cua/errorName`, ./lane.mjs engineMetaOf), else
 // the name the cell caught (the REPL's plain Error on either engine, or none).
 export const errorNameOf = (act, caught = act?.value?.errorName ?? null) => act?.engine?.errorName ?? caught;
@@ -242,7 +251,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const kept = userValue === null ? null : oracleAfter?.focus?.named === true && oracleAfter.focus.valueHash === userValue;
   const outcome = {...(check.value?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept}), ...(witness ? {keystroke: witness.keystroke} : {})};
   if (Object.hasOwn(outcome, 'errorName')) outcome.errorName = errorNameOf(act, outcome.errorName);
-  const witnessed = !witness || Object.values(witness.keystroke).every(v => v === true);
+  const witnessed = !witness || (witness.keystroke.posted && witness.keystroke.finderSelected && witness.keystroke.documentUnchanged);
   const pushed = finish({ok: check.value?.ok === true && kept !== false && witnessed, outcome});
   ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
     ? {before: before.reading, after: oracleAfter.reading, focus: oracleAfter.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
@@ -254,10 +263,13 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
 
 // Acceptance 3's keystroke witness (S L238; ./probe-plan.mjs WITNESS_PREPARE_CELL), after TextEdit's background click
 // and its check, with the user window (the run's Finder window) in front: a keystroke probe gated on that window types a
-// run-owned file's name, which Finder's list must select, while TextEdit's document keeps its value. A probe that would
-// not post because the window was no longer in front is the witness failing (the front was taken); one that could not
-// post at all says nothing. The probe's keys are a user's to Finder: the run waits the debounce out before it drives
-// Finder again (quiet). -> {keystroke: {posted, finderSelected, documentUnchanged}} | {invalid}.
+// run-owned file's name, which Finder's list must select, while TextEdit's document keeps its value. A probe whose gate
+// held its keys because Finder's window was no longer in front, at its first gate or between its keys
+// (./probe-plan.mjs keystrokeGate), is the witness failing, the front taken: `posted` false and the gate's reason
+// recorded, the read-back still taken, and the row judged (its interference too). Only a fault of the probe itself
+// (no answer, a key event it could not make) says nothing: invalid. The probe's keys are a user's to Finder: the run
+// waits the debounce out before it drives Finder again (quiet).
+// -> {keystroke: {posted, gate?: {at, reason}, finderSelected, documentUnchanged}} | {invalid}.
 async function keystrokeWitness(ctx, span, userWindow) {
   const chosen = span(await ctx.lane.js(WITNESS_PREPARE_CELL));
   const file = chosen.ok ? chosen.value?.target : null;
@@ -265,9 +277,10 @@ async function keystrokeWitness(ctx, span, userWindow) {
   device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', file, '--lead', String(WITNESS_LEAD_MS)]);
   const finished = device(ctx, ['probe', 'finish']);
   ctx.posted[ACCEPTANCE_3.user] = ctx.now();
-  const problem = probeProblem(finished?.answer);
-  if (problem && finished?.answer?.aborted !== true) return {invalid: `the keystroke witness's probe did not post: ${problem}`};
+  const gate = keystrokeGate(finished?.answer);
+  const problem = gate ? null : probeProblem(finished?.answer);
+  if (problem) return {invalid: `the keystroke witness's probe failed: ${problem}`};
   const checked = span(await ctx.lane.js(witnessCheckCell(file)));
   if (!checked.ok) return {invalid: `the keystroke witness's read-back failed (${String(checked.error ?? '').slice(0, 160)})`};
-  return {keystroke: {posted: problem === null, finderSelected: checked.value?.finderSelected === true, documentUnchanged: checked.value?.documentUnchanged === true}};
+  return {keystroke: {posted: gate === null, ...(gate ? {gate} : {}), finderSelected: checked.value?.finderSelected === true, documentUnchanged: checked.value?.documentUnchanged === true}};
 }

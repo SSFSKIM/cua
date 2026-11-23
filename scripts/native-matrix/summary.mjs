@@ -306,7 +306,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     return [engine, {rows: list.length, ok: list.filter(r => r.interference.ok).length, route4: list.filter(r => r.interference.route4 && declared(r)?.kind !== 'route4-accepted').length,
       declared: list.filter(r => !r.interference.ok && declared(r)).map(r => ({id: r.id, ...declared(r)})),
       failed: list.filter(r => !r.interference.ok && !declared(r)).map(r => ({id: r.id, frontmost: r.interference.frontmost, topWindow: r.interference.topWindow, focus: r.interference.focus ?? null,
-        activations: r.interference.activations, route4: r.interference.route4}))}];
+        activations: r.interference.activations, route4: r.interference.route4, ...(r.interference.windowOrder ? {windowOrder: r.interference.windowOrder} : {})}))}];
   }));
 
   // The launch path, the probe cells and the Unicode matrix, each against its own outcome; the pressKey row by its rule.
@@ -437,6 +437,12 @@ export function methodTable(methods) {
 }
 
 // The device mode and venue line (R3: the matrix runs in the shared device mode, the default, and the report says so).
+// Why a row's window order failed it (./oracle.mjs judgeInterference: `after` must be false), or nothing when it held.
+function windowOrderReason(order) {
+  if (!order || order.after === false) return null;
+  return order.after === true ? 'a target window left above the user window' : 'the window order after the action proved nothing (unread, or without the user window)';
+}
+
 function desktopLine(d) {
   const parts = [];
   if (d.recorded.length) parts.push(`${d.recorded.map(([m]) => m).join(', ')}${d.recorded.every(([m]) => m === SHARED_MODE) ? ' (the default)' : ''}, recorded by ${d.unrecorded ? `${d.full - d.unrecorded} full run(s)` : 'every full run'}`);
@@ -494,7 +500,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push('## Not interfering', '', 'The background, launch, concurrent-use and behind-a-user-window Unicode rows with a verdict, by the oracle (the front app, the top window, the focus, activations, the route).', '');
   for (const engine of ['cua', 'vendor']) {
     const i = j.interference[engine];
-    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
+    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', windowOrderReason(f.windowOrder), f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
   }
   out.push('');
 

@@ -523,10 +523,30 @@ test('the finding scorer starts Finder\'s list at its first rows, scrolled back 
   assert.equal('showing' in chrome.value, false);
 });
 
-test('#354: a list\'s type-select keeps cua\'s typeUnconfirmed for an element that is not a text field as its expected difference; any other error still throws', async () => {
-  const typeSelect = CASES.finder.find(c => c.method === 'typeText' && c.case === 'typeSelect');
-  assert.equal(typeSelect.act, typeIntoList('scene-file-012'));
-  const act = new AsyncFunction('__app', '__m', `${typeSelect.act}\nreturn __m;`);
+test('#354: Finder\'s type-select case lets cua\'s typeUnconfirmed through, so the row records the answer, the selection it read and whether the list stayed as prepared', async () => {
+  const text = await import('../../scripts/native-matrix/matrix-text.mjs');
+  const finder = golden('finder', 'vendor.txt');
+  const selecting = name => withTrailer(finder, {selected: [`${text.rowIndexOfName(finder, name)} row (selected)`]});
+  const unconfirmed = Object.assign(new Error(`Computer Use server error -10005: The text was typed, but ${TYPE_UNCONFIRMED_NOT_TEXT}, so it is not confirmed.`), {errorName: 'typeUnconfirmed'});
+  const app = (typed, thrown) => fakeApp(finder, {
+    click: app => { app.ax = selecting('scene-file-001'); },
+    typeText: app => { if (typed) app.ax = selecting('scene-file-012'); if (thrown) throw thrown; },
+  });
+  // Typed and selected, then unconfirmed: the row fails as cua answered, its effect read all the same.
+  const landed = await runCase('finder', 'finder', app(true, unconfirmed), 'typeText', 'typeSelect');
+  assert.equal(landed.prepare.value.ready, true, JSON.stringify(landed.prepare));
+  assert.deepEqual([landed.act.value.threw, landed.check.value.ok], [true, false]);
+  assert.deepEqual({effect: landed.check.value.outcome.effect, unchanged: landed.check.value.outcome.unchanged, errorName: landed.check.value.outcome.errorName, only: landed.check.value.outcome.only},
+    {effect: true, unchanged: false, errorName: 'typeUnconfirmed', only: true});
+  // Unconfirmed with nothing selected: no effect, the list as prepared.
+  const inert = await runCase('finder', 'finder', app(false, unconfirmed), 'typeText', 'typeSelect');
+  assert.deepEqual([inert.check.value.outcome.effect, inert.check.value.outcome.unchanged], [false, true]);
+  // The vendor's success.
+  assert.equal((await runCase('finder', 'finder', app(true, null), 'typeText', 'typeSelect')).check.value.ok, true);
+});
+
+test('#354: concurrent use\'s typing into a list keeps cua\'s typeUnconfirmed for an element that is not a text field as its expected difference; any other error still throws', async () => {
+  const act = new AsyncFunction('__app', '__m', `${typeIntoList('scene-file-012')}\nreturn __m;`);
   const answering = message => ({typeText: async () => { if (message) throw new Error(`Computer Use server error -10005: ${message}`); }});
   const unconfirmed = `The text was typed, but ${TYPE_UNCONFIRMED_NOT_TEXT}, so it is not confirmed and some or all of it may have gone in.`;
   assert.deepEqual(await act(answering(unconfirmed), {}), {typeUnconfirmed: true});

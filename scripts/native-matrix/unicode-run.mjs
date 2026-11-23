@@ -19,8 +19,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {activate, activated, activationOf, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, push, quiet, read, readKey, sendKeys, skippedReadings,
-  Stop} from './steps.mjs';
+import {activate, activationOf, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
@@ -109,6 +108,8 @@ const options = r => ({section: 'unicode', id: r.id, extra: {condition: r.condit
 async function frontmostRows(ctx, field, rows, source) {
   await quiet(ctx, field);
   const front = activate(ctx, field);
+  const skipped = notActivated(ctx, field);
+  if (skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: skipped}); return; }
   if (!front?.ok) { for (const r of rows) invalidRow(ctx, r, `${field} did not come to the front (${front?.reason ?? 'no answer'})`); return; }
   const when = `${rows[0].condition}:${field}`;
   const why = source === KOREAN_2SET ? koreanIn(ctx, field, when) : establishSource(ctx, source, when) ? null : notHeld(source, field);
@@ -125,13 +126,15 @@ async function frontmostRows(ctx, field, rows, source) {
 // also ends a composition that selection did not reach, the switch being made with the field focused as in MAWS B2),
 // and only then is its field emptied, so nothing an earlier row left composes onto the probe's key. A composition still
 // open after all that shows as a field not reading exactly the jamo: the rows are invalid, never counted.
-// -> {userWindow} or {invalid}.
+// -> {userWindow}, {skipped: readings} (the user window's activation did not take front and key) or {invalid}.
 async function behindUser(ctx, field, user) {
   await quiet(ctx, field);
   await quiet(ctx, user);
   const driven = await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field));
   if (!driven.ok || !driven.value?.ready) return {invalid: `the field was not prepared (${driven.error ?? driven.value?.reason ?? 'no reason'})`};
   const front = activate(ctx, user);
+  const skipped = notActivated(ctx, user, [SCENES[field].bundleId, SCENES[user].bundleId]);
+  if (skipped) return {skipped};
   if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
   if (!useSource(ctx, ABC, `composing@${user}:end`)) return {invalid: `${notHeld(ABC, user)}: a composition left in the user window could not be ended`};
   const korean = koreanIn(ctx, user, `composing@${user}`);
@@ -152,6 +155,7 @@ async function behindUser(ctx, field, user) {
 async function composingRows(ctx, field, rows) {
   const {user} = rows[0];
   const setup = await behindUser(ctx, field, user);
+  if (setup.skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: setup.skipped}); return; }
   if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid, setup.focus); return; }
   const {userWindow} = setup;
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
@@ -242,9 +246,9 @@ async function midSwitchRow(ctx, r) {
   const field = r.field;
   await quiet(ctx, field);
   const front = activate(ctx, field);
+  const skipped = notActivated(ctx, field);
+  if (skipped) return push(ctx, {...rowBase(ctx, r), frontKey: skipped});
   if (!front?.ok) return invalidRow(ctx, r, `${field} did not come to the front`);
-  const app = SCENES[field].bundleId;
-  if (!activated(ctx, app)) return push(ctx, {...rowBase(ctx, r), frontKey: skippedReadings(ctx, [app], app)});
   if (!establishSource(ctx, ABC, `midSwitch:${field}`)) return invalidRow(ctx, r, notHeld(ABC, field));
   const retries = [];
   let preMs = PRE_MS.textedit;

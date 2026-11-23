@@ -110,6 +110,12 @@ test('the verdict: a worse method, a launch that failed, a lower finding measure
   assert.equal(judged().findingVerdict, 'parity');
   const interfering = judged({vendor: {resolved: 9}, cua: {tweak: set(BACK, {interference: {ok: false, frontmost: false, topWindow: true, activations: 1, route4: false}})}});
   assert.ok(interfering.blocking.includes(`not interfering: ${BACK} failed on cua`));
+  // #485: a row the window order failed keeps that reading in its failure, and the summary names the reason.
+  for (const [after, reason] of [[true, /a target window left above the user window/], [null, /window order after the action proved nothing/]]) {
+    const raised = judged({vendor: {resolved: 9}, cua: {tweak: set(BACK, {interference: {ok: false, frontmost: true, topWindow: true, activations: 0, route4: false, windowOrder: {before: false, after}}})}});
+    assert.deepEqual(raised.interference.cua.failed.find(f => f.id === BACK).windowOrder, {before: false, after});
+    assert.match(renderSummary(raised), reason);
+  }
   const slow = judged({vendor: {axMs: 40, resolved: 9}, cua: {axMs: 39}});
   assert.equal(slow.verdict, 'OWNER');
   assert.ok(slow.owner.some(o => /missed the 10% beat/.test(o)));

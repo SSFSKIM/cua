@@ -18,11 +18,13 @@ const JUDGMENT = {cells: [
     account: account({vendor: {1: {verdicts: 10, samples: 10}}, cua: {1: {verdicts: 7, samples: 10}}})},
   {section: 'speed', id: 'textedit/getAXState', verdict: 'no-verdict', qualifies: false, account: account({vendor: {}, cua: {}})},
 ]};
-const saveSheet = {path: 'c/save-sheet/cua/run-1/result.json', result: {cell: 'intervention-save-sheet', meta: {run: 1, hosted: true}, rows: [
+const UNC = 'com.apple.UserNotificationCenter';
+const HELD = {when: 'at the key guard for super+n', count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: [420, 180]}], checks: 3};
+const saveSheet = {path: 'c/save-sheet/cua/run-1/result.json', result: {cell: 'intervention-save-sheet', meta: {run: 1, hosted: true, alertsHeld: [HELD]}, rows: [
   {section: 'intervention', id: 'textedit/intervention.saveSheet', engine: 'cua', sample: 1, ok: true,
     frontKey: {apps: ['com.apple.TextEdit'], activate: {app: 'com.apple.TextEdit', front: true, key: true}, before: {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'}, after: {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'}}},
   {section: 'intervention', id: 'textedit/intervention.saveSheet', engine: 'cua', sample: 2, ok: false, invalid: 'the Save sheet\'s destination was not set',
-    outcome: {observed: {trailer: 'focused', count: 2, lines: [{index: 1, depth: 0, parent: null, id: 'saveAsNameTextField', head: 'text field Save As', focused: true}]}}},
+    outcome: {observed: {before: {trailer: 'none', count: 0, lines: []}, after: {trailer: 'focused', count: 2, lines: [{index: 1, depth: 0, parent: null, id: 'saveAsNameTextField', head: 'text field Save As', focused: true}]}}}},
 ]}};
 
 test('per cell: the runs every sample of which has a verdict, and each run\'s verdict samples, from the full runs and every other cell', () => {
@@ -76,7 +78,10 @@ test('the pilot reads what part 1 left unread on a runner, each from the rows th
     cua: [{sample: 1, run: 1, posted: true, finderSelected: true, documentUnchanged: true, gate: null}]});
   assert.deepEqual(reads.korean, {vendor: {held: 1, of: 1}, cua: {held: 0, of: 1, read: ['com.apple.keylayout.ABC / com.apple.keylayout.ABC']}});
   assert.deepEqual(reads.savePanel.observed.length, 1);
-  assert.equal(reads.savePanel.observed[0].lines[0].id, 'saveAsNameTextField');
+  assert.equal(reads.savePanel.observed[0].after.lines[0].id, 'saveAsNameTextField');
+  // The capture alert is held by its owner and a bound, never identified: its held readings are kept for that, and the
+  // limitation is said whether or not any was held.
+  assert.deepEqual(reads.captureAlert, {identified: false, held: [{count: 1, windows: HELD.windows, checks: 3}]});
   assert.deepEqual(reads.focusProbe, {samples: 5, medianMs: 640, maxMs: 910});
   assert.deepEqual(reads.vendorErrorNames, {Error: 1});
   assert.deepEqual(reads.unread, ['openPanel']);
@@ -84,6 +89,8 @@ test('the pilot reads what part 1 left unread on a runner, each from the rows th
   for (const heading of ['Open panel', 'Save panel', 'Focused app', 'Finder type-select', 'Focus probe', '2-Set', 'cua/errorName'])
     assert.ok(text.includes(heading), heading);
   assert.match(text, /Electron fixture: read com\.github\.Electron, the scene names .*: \*\*differs\*\*/);
+  assert.match(text, /\*\*Save panel\*\* \(#212, SAVE_PANEL_CONTROLS\): 1 observation\(s\) recorded; the first: saveAsNameTextField \(text field Save As\)\./);
+  assert.match(text, /\*\*Capture alert\*\*.*not identified.*; held: 1 window \(layer 8, title unreadable, 420 × 180\) at 3 checks\./);
   assert.match(text, /\*\*Open panel\*\*: not read: the window order's service id is on no row .*; the front\/key ids on its rows \(not the window order\): com\.apple\.appkit/);
 });
 
@@ -98,6 +105,7 @@ test('the focus probe is timed launch by launch, an unanswered launch timed and 
 
 test('a pilot without the rows names each question it could not read', () => {
   const reads = pilotReads([]);
-  assert.deepEqual(reads.unread, ['openPanel', 'savePanel', 'focusedApps.chrome', 'focusedApps.electron', 'typeSelect', 'focusProbe', 'korean', 'vendorErrorNames']);
+  assert.deepEqual(reads.unread, ['openPanel', 'savePanel', 'focusedApps.chrome', 'focusedApps.electron', 'typeSelect', 'focusProbe', 'korean', 'vendorErrorNames', 'captureAlert']);
   assert.match(renderPilotReads(reads), /Not read in this pilot: openPanel, savePanel/);
+  assert.match(renderPilotReads(reads), /\*\*Capture alert\*\*.*not identified.*; none held in this pilot\./);
 });

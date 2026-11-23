@@ -103,8 +103,13 @@ const alertProcessOf = w => {
 // no abort, so the run goes on "alert up, scene activated first" and a sample with it front or key is NO VERDICT
 // (./front-key.mjs). Any other alert, a pasteboard title, a new window or a third UserNotificationCenter window still
 // aborts, and an unread window list still stops the run (the device's check throws).
-// -> {abort, export: {alerts, keywords, unknown: {count, windows}, held?: {count, windows}}, readable: [{bundleId}]}.
-const CAPTURE_ALERT_PROCESS = 'com.apple.UserNotificationCenter';
+// The hold is bounded, not an identification: H0 read the alert's owner, its one window a capturing copy and its
+// persistence, never its window's title, text or size, and on the runner the reading process may not read titles at all
+// (./system-windows.swift: `name` null without Screen Recording). So any UserNotificationCenter window, up to the bound,
+// is held; each held window keeps whether its title was readable and non-empty (`titled`, null when unreadable; never
+// the title) and its size, which the pilot reads (scripts/hosted-sittings/pilot-reads.mjs) to identify it later.
+// -> {abort, export: {alerts, keywords, unknown: {count, windows}, held?: {count, windows: [{bundleId, layer, titled, size}]}}, readable: [{bundleId}]}.
+export const CAPTURE_ALERT_PROCESS = 'com.apple.UserNotificationCenter';
 const CAPTURE_ALERTS = 2;
 export function alertWatch(before, now, {runPids, hosted = false}) {
   const known = new Set((before ?? []).map(w => w.number));
@@ -113,12 +118,13 @@ export function alertWatch(before, now, {runPids, hosted = false}) {
     if (runPids.includes(w.ownerPid)) continue;
     const bundleId = alertProcessOf(w);
     const keyword = ALERT_KEYWORDS.find(k => String(w.name ?? '').toLowerCase().includes(k));
-    if (hosted && bundleId === CAPTURE_ALERT_PROCESS && !keyword) held.push({bundleId, layer: w.layer});
+    if (hosted && bundleId === CAPTURE_ALERT_PROCESS && !keyword)
+      held.push({bundleId, layer: w.layer, titled: typeof w.name === 'string' ? w.name.length > 0 : null, size: w.bounds ? [w.bounds.width, w.bounds.height] : null});
     else if (bundleId) alerts.push({bundleId, layer: w.layer, isAlertProcess: true});
     else if (keyword) keywords.push({keyword, layer: w.layer, isAlertProcess: false});
     else if (!known.has(w.number) && w.layer >= 0 && w.layer < ALERT_LAYER_BELOW) unknown.push({layer: w.layer, isAlertProcess: false});
   }
-  if (held.length > CAPTURE_ALERTS) alerts.push(...held.splice(0).map(a => ({...a, isAlertProcess: true})));
+  if (held.length > CAPTURE_ALERTS) alerts.push(...held.splice(0).map(a => ({bundleId: a.bundleId, layer: a.layer, isAlertProcess: true})));
   const readable = [...new Set(alerts.map(a => a.bundleId))].map(bundleId => ({bundleId}));
   return {abort: alerts.length + keywords.length + unknown.length > 0,
     export: {alerts, keywords, unknown: {count: unknown.length, windows: unknown}, ...(hosted ? {held: {count: held.length, windows: held}} : {})}, readable};

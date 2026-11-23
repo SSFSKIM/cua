@@ -275,11 +275,13 @@ test('alertWatch: system-alert processes are read by name; anything else new abo
 
 test('alertWatch on a hosted run: replayd\'s capture alert (UserNotificationCenter, one a copy) is held, not an abort; anything else still stops the run', () => {
   const w = (number, ownerPid, extra = {}) => ({number, ownerPid, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, name: null, ...extra});
-  const unc = (number, extra = {}) => w(number, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, ...extra});
+  const unc = (number, extra = {}) => w(number, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, bounds: {x: 1, y: 2, width: 420, height: 180}, ...extra});
   const before = [w(1, 10), w(3, 600)], runPids = [600];
   const held = alertWatch(before, [...before, unc(6)], {runPids, hosted: true});
   assert.equal(held.abort, false, 'rulings 1136/1141: alert up, scene activated first; its samples are NO VERDICT, the run goes on');
-  assert.deepEqual(held.export, {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: 'com.apple.UserNotificationCenter', layer: 8}]}});
+  assert.deepEqual(held.export, {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: 'com.apple.UserNotificationCenter', layer: 8, titled: null, size: [420, 180]}]}});
+  // What the pilot reads to identify the alert later: whether its window has a readable title (null: names unreadable), never the title.
+  assert.deepEqual(alertWatch(before, [...before, unc(6, {name: ''}), unc(7, {name: 'x'})], {runPids, hosted: true}).export.held.windows.map(h => h.titled), [false, true]);
   assert.equal(alertWatch(before, [...before, unc(6), unc(7)], {runPids, hosted: true}).abort, false, 'one alert for each copy: cua\'s engine and the vendor\'s helper');
   const three = alertWatch(before, [...before, unc(6), unc(7), unc(8)], {runPids, hosted: true});
   assert.equal(three.abort, true, 'more than the two copies\' alerts is not the known alert');

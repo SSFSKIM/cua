@@ -64,7 +64,7 @@ import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selec
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {activate, activated, activationOf, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
+import {activate, activated, activationOf, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
@@ -468,13 +468,18 @@ function skippedTarget(ctx, target, plan, frontKey) {
 }
 
 // The Open panel opened from the run's document (⌘O, under the key guard with TextEdit's process in front). -> null,
-// {skipped: readings} when TextEdit's activation did not take front and key (`apps` the cells' own), or {problem}.
+// {skipped: readings} when TextEdit's activation did not take front and key (`apps` the cells' own) or, on a hosted run,
+// replayd's capture alert held ⌘O (its readings, so the panel's rows are NO VERDICT; ruling 1141), or {problem}.
 async function openPanel(ctx, apps) {
   const front = activate(ctx, 'textedit');
   const skipped = notActivated(ctx, 'textedit', apps);
   if (skipped) return {skipped};
   if (!front?.ok) return {problem: `TextEdit did not come to the front (${front?.reason ?? 'no answer'})`};
-  const opened = await sendKeys(ctx, OPEN_PANEL, ['super+o'], {scene: 'textedit', front: read(ctx)});
+  let opened;
+  try { opened = await sendKeys(ctx, OPEN_PANEL, ['super+o'], {scene: 'textedit', front: read(ctx)}); } catch (error) {
+    if (!(error instanceof AlertHeld)) throw error;
+    return {skipped: {apps, activate: activationOf(ctx, SCENES.textedit.bundleId), before: error.reading, after: readKey(ctx)}};
+  }
   if (opened === null) return {problem: 'the key guard did not send ⌘O'};
   if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
   return null;

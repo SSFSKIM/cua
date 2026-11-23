@@ -63,6 +63,7 @@ export const allowsAddedLines = rules => rules.some(rule => rule.kind === 'added
 
 // The pinned rendering: compared byte for byte, rewritten with UPDATE_GOLDENS=1.
 export function pinned(scene, name, text) {
+  refuseLiveRecording(scene);
   const file = join(DIR, scene, name);
   if (process.env.UPDATE_GOLDENS === '1') fs.writeFileSync(file, text);
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;

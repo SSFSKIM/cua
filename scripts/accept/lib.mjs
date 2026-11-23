@@ -6,7 +6,12 @@ import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
 import {approvalsByBehaviour} from '../probe/lib.mjs';
+import {unmarked} from '../../test/native-goldens/live-guard.mjs';
 export {tapDiagnostics} from './tap-diagnostics.mjs';
+
+// The suites' environment: without this run's scratch home or any server setting, and without a live sitting's marker,
+// since the suites read the goldens' recordings offline as their own expected values (live-guard.mjs).
+export const suiteEnv = (env = process.env) => unmarked(Object.fromEntries(Object.entries(env).filter(([key]) => key !== 'CUA_HOME' && !key.startsWith('CUA_SHIM_'))));
 
 // The results an item consumes from others: item 1's npm test (every fromSuite claim), item 3's doctor (item 2's
 // verified tree) and item 4's verify (item 6's secrets_list).

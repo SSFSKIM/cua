@@ -285,9 +285,11 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   from the recording's 23c8b77691d0 only in a read-only accessibility record and two switches; with neither, its tree,
   window and page are the recording's, but the harness's `up` always passes `--cua-fixture-focus`, so a live Electron
   scene is key where the recording's was inactive. That is safe only while no live sitting reads the Electron recording
-  as an expected value, which is enforced: every sitting step carries `CUA_LIVE_SITTING`, under which the goldens'
-  readers refuse the Electron scene (`test/native-goldens/live-guard.mjs`). A later cell that needs it live takes a
-  hosted (English) re-record with it. Detail in `test/native-goldens/PROVENANCE.md`.
+  as an expected value, which is enforced: every sitting step's controller-side process carries `CUA_LIVE_SITTING`,
+  under which the goldens' readers refuse the Electron scene (`test/native-goldens/live-guard.mjs`); the unit suites a
+  step runs (sitting D's accept-native `npm test`, which compares the recording with itself offline) drop it, and the
+  device side reads no golden. A later cell that needs it live takes a hosted (English) re-record with it, run
+  unmarked (its `goldens.mjs check` reads every scene). Detail in `test/native-goldens/PROVENANCE.md`.
 - 2026-11-23, ruling 1168 (#534; the design session): sitting C gains `chrome/frontmost/click.pointerdown` and
   `electron/frontmost/click.pointerdown`. Each is a button whose only handler is `pointerdown`, sitting inline after
   Apply or "Fixture button" in matrix-only page variants (the shared page and fixture are unchanged, so sitting B and

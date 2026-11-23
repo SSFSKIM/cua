@@ -92,7 +92,7 @@ import {pinLane} from './probe/pinned-engine.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   acceptanceSelection, optInGaps, secretsProbeEvidence, approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, tapDiagnostics, personalText, researchTreeLines, MINI_LAYOUT_FILES,
+  suiteEnv, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, tapDiagnostics, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {APPROVALS_CHECK, FIXTURE_VERDICT_CHECK, fixtureGuardRecord, OWN_STEPS, runTextEdit, SECRET_STEPS, uiDeliveryCheck} from './accept/textedit.mjs';
 import {isGithubHosted} from './hosted-sittings/runner.mjs';
@@ -203,8 +203,6 @@ async function run(command, args, {cwd = REPO, ...options} = {}) {
   if (r.streamsIncomplete) incompleteRuns.push(`${command.split('/').at(-1)} ${args.slice(0, 2).map(arg => String(arg).split('/').at(-1)).join(' ')}`);
   return r;
 }
-// Suites run without this run's scratch home or any server setting in their environment.
-const suiteEnv = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CUA_HOME' && !key.startsWith('CUA_SHIM_')));
 const cuaEnv = extra => ({...process.env, CUA_HOME: home, ...extra});
 const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
 const seconds = ms => `${(ms / 1000).toFixed(1)} s`;

@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {refuseLiveRecording} from './live-guard.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = join(HERE, '../../docs/doperpowers/research/2026-10-18-own-native-engine/spike/sit2/u9');
@@ -63,6 +64,7 @@ export function rekey(shot) {
 
 // The content of one golden file as its source capture gives it (the tests guard each file against this).
 export function fromSource(scene, name) {
+  refuseLiveRecording(scene);
   const [lane, file] = FILES[name];
   const run = lane === 'cua' ? CUA_RUN : VENDOR_RUN[scene];
   const text = fs.readFileSync(join(SOURCE, lane, run, 'goldens', `${scene}.${file}`), 'utf8');

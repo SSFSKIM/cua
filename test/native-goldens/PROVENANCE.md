@@ -32,12 +32,17 @@ only: `app.isAccessibilitySupportEnabled()` and its change event), and reads two
 `--cua-fixture-focus` (the window made key once shown). Launched with neither switch, the fixture's tree, window and page
 are the recording's. The harness's `up` passes `--cua-fixture-focus` on every bring-up (ruling 1169's key-window
 requirement), so a live Electron scene is key where the recording's was shown inactive, and its focus-dependent content
-(the window's focused state, the focused-element line) can differ from these goldens.
+(the window's focused state, the focused-element line) can differ from these goldens; on a hosted runner its window
+also stands at the venue's origin (ruling 1169), not the recording's 140,100.
 
 They are not re-recorded (the design session): no live sitting reads the Electron recording as an expected value, and
-that is enforced, not argued: a live sitting's steps carry `CUA_LIVE_SITTING` (`scripts/hosted-sittings/run.mjs`), under
-which `goldens.mjs` `read` and `source.mjs` `fromSource` refuse the Electron scene (`live-guard.mjs`;
-`test/hosted-sittings/live-goldens.test.mjs`). A later cell that needs the recording live takes a hosted re-record with it.
+that is enforced, not argued: a live sitting's controller-side steps carry `CUA_LIVE_SITTING`
+(`scripts/hosted-sittings/run.mjs`), under which `goldens.mjs` `read` and `pinned`, `source.mjs` `fromSource` and
+`rekey.mjs` `fromSource` refuse the Electron scene (`live-guard.mjs`; `test/hosted-sittings/live-goldens.test.mjs`).
+The device side, reached over ssh without the marker, reads no golden; the unit suites a step runs (accept-native's
+`npm test`) compare the recording with itself offline and run unmarked. A later cell that needs the recording live
+takes a hosted re-record with it, run unmarked. These paragraphs sit in the installed block, so the re-record's
+`install` replaces them.
 
 Each scene's window frame in points, as cua's observations read it (Finder's one window holds every capture of its
 scene, so its frame is the same throughout), and how many attempts the fixed state took:

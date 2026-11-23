@@ -20,16 +20,26 @@ const PASSED = new Set(['PASS']);
 export const SITTING_EXITS = Object.freeze([['FAIL', 1], ['NO VERDICT', 4], ['INCOMPLETE', 5], ['OWNER', 3]]);
 const STATUSES = ['PASS', 'FAIL', 'NO VERDICT', 'OWNER', 'INFO', 'SKIP', 'PENDING'];
 
-// One step's command, its output teed to `logPath` and to this job's log. -> {exit, signal}.
-export function execStep(step, {logPath, cwd = process.cwd(), env = process.env} = {}) {
-  mkdirSync(dirname(logPath), {recursive: true});
-  const file = createWriteStream(logPath);
-  return new Promise(resolve => {
+// One step's command, its output teed to `logPath` and to this job's log (`echo`). It resolves only once the child has
+// closed and the log is flushed to disk, so a check reading the log straight after sees all of it; a log that cannot be
+// written is the step's runtime error. -> {exit, signal} | {exit: null, error}.
+export async function execStep(step, {logPath, cwd = process.cwd(), env = process.env, echo = process.stderr, openLog = path => createWriteStream(path)} = {}) {
+  let file;
+  try {
+    mkdirSync(dirname(logPath), {recursive: true});
+    file = openLog(logPath);
+    if (file.pending) await new Promise((opened, failed) => { file.once('open', opened); file.once('error', failed); });
+  } catch (error) { return {exit: null, signal: null, error: `the step's log ${logPath} could not be written (${error.code ?? error.message})`}; }
+  let logError = null;
+  file.on('error', error => { logError ??= error; });
+  const ended = await new Promise(resolve => {
     const child = spawn(step.argv[0], step.argv.slice(1), {cwd, env: {...env, ...step.env}, stdio: ['ignore', 'pipe', 'pipe']});
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { file.write(chunk); process.stderr.write(chunk); });
-    child.on('error', error => { file.end(`${error.message}\n`); resolve({exit: null, signal: null, error: error.message}); });
-    child.on('close', (code, signal) => { file.end(); resolve({exit: code, signal}); });
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { file.write(chunk); echo.write(chunk); });
+    child.on('error', error => { file.write(`${error.message}\n`); resolve({exit: null, signal: null, error: error.message}); });
+    child.on('close', (code, signal) => resolve({exit: code, signal}));
   });
+  await new Promise(resolve => { if (file.destroyed) resolve(); else file.end(resolve); });
+  return logError ? {exit: null, signal: null, error: `the step's log ${logPath} could not be written (${logError.code ?? logError.message})`} : ended;
 }
 
 const readJsonFile = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };

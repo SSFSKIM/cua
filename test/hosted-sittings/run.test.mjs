@@ -4,7 +4,11 @@
 // Every step's command is a spy.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {Writable} from 'node:stream';
+import {join} from 'node:path';
+import {execStep, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
 
 const plan = (steps, form = 'full') => ({sitting: 'x', title: 'a test sitting', proves: 'nothing', form, setup: true, counts: [], pilotReads: false, steps});
 const step = (id, kind = 'run', extra = {}) => ({id, label: id, kind, argv: ['node', `${id}.mjs`], ...extra});
@@ -82,4 +86,28 @@ test('the report renders as the job summary: one line a step, its status, exit a
   assert.match(text, /^\| a \| run \| FAIL \| 1 \| 0 s \| \|$/m);
   assert.match(text, /^\| b \| run \| SKIP \| - \| - \| needs a, which did not pass \|$/m);
   assert.match(text, /^\*\*FAIL\*\* \(exit 1\)/m);
+});
+
+// A real subprocess (I6 of fix wave 2): the step resolves only once its log is flushed, so the verdict it printed last is
+// read; a log that cannot be written is the step's runtime error, never a silent loss.
+test('a step\'s log is whole when the step resolves, its last line read straight after; a log that cannot be written is an error', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-sitting-log-'));
+  const quiet = {write: () => true};
+  try {
+    const script = 'const line = "x".repeat(1023) + "\\n"; for (let i = 0; i < 4096; i++) process.stdout.write(line); process.stdout.write("VERDICT: NO VERDICT\\n");';
+    const logPath = join(dir, 'logs', 'compare.log');
+    const result = await execStep({argv: [process.execPath, '-e', script]}, {logPath, echo: quiet});
+    assert.equal(result.exit, 0);
+    assert.match(readFileSync(logPath, 'utf8'), /VERDICT: NO VERDICT\n$/);
+    // A slow disk: every write lands 30 ms late; the step still resolves only once the last one has.
+    const landed = [];
+    const slow = () => new Writable({write(chunk, encoding, done) { setTimeout(() => { landed.push(String(chunk)); done(); }, 30); }});
+    const late = await execStep({argv: [process.execPath, '-e', 'console.log("one"); console.log("VERDICT: NO VERDICT")']}, {logPath: join(dir, 'logs', 'slow.log'), echo: quiet, openLog: slow});
+    assert.equal(late.exit, 0);
+    assert.match(landed.join(''), /VERDICT: NO VERDICT\n$/);
+    writeFileSync(join(dir, 'blocked'), '');
+    const failed = await execStep({argv: [process.execPath, '-e', 'console.log("VERDICT: PASS")']}, {logPath: join(dir, 'blocked', 'x.log'), echo: quiet});
+    assert.equal(failed.exit, null);
+    assert.match(failed.error, /log/);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 });

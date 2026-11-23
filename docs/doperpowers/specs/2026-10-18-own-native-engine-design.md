@@ -8240,6 +8240,36 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   Left out: #199's hold-4 runbook and its mini live plan (the venue is closed); the live proof is M5's pilot (T10), and
   #182 and #183 stay open until the pilot's Finder opens show the pin holding and a clean put-back.
   Date/Author: 2026-11-23, M4 re-cut controller (T5).
+- Decision (T7, records): M4's own Decision Log and Surprises entries are ported verbatim as the dated block "M4 on
+  feat/117-m4" (oldest-first, as this log runs), with its report and its evidence directory; hold 10's evidence is
+  committed under `docs/doperpowers/research/2026-10-18-own-native-engine/m2b/hold10/`. Every file was read for
+  owner content first. The design session ruled (2026-11-23, with ruling 1124 as precedent) that the bare account path
+  `/Users/new/` is not owner content, since it is already in 4,045 public files on main; the check stands for names,
+  emails, tokens, profile names or ids, non-fixture windows and images, and none were found, so all 47 and 103 files
+  are in. `.gitignore`'s `*.log` rule was overridden (`git add -f`) for hold 10's nine logs only.
+  Date/Author: 2026-11-23, M4 re-cut controller (T7).
+- Decision (T4, the hosted gate): `engine-swift` builds the real release bundle with `cua engine build --sign adhoc
+  --json` under a scratch home and verifies it in the pending slot with `scripts/engine-gate/verify-bundle.mjs`,
+  which reads the slot from the build's answer and prints one line per check (bundle id, `LSUIElement`, an ad hoc
+  signature with hardened runtime and no entitlements, `build` and version matching the source, `pending.json`,
+  nothing approved); it never approves or launches. The gate also runs on changes to `src/runtime/**`, `src/cli.mjs`,
+  `bin/cua.mjs`, `scripts/engine-gate/**` and the package files. `sandbox-live`'s install pins
+  `CUA_NATIVE_ENGINE=vendor`, so it needs and builds no engine and no fingerprint moves; it prints one public
+  `hosted-gate: download proof {...}` line, which the acceptance download-proof evidence is re-recorded from.
+  Date/Author: 2026-11-23, M4 re-cut controller (T4).
+- Decision (T3, `accept-native`; ported from feat/117-m4 at 4297d183, the last commit before M4.10): item 14 is the
+  capability-based fresh-onboarding check in its owner form ("the owner or an operator at the console"); M4.10's
+  coordinator gates over a remote channel are left out with the mini's venue. Item 14 refuses BLOCKED while a build
+  is pending beside the approved engine, before the owner window and again before approve, since approve would
+  promote it. Each cell records `cua/permission`, and `replyFacts` and `doctorFacts` are exported for T3b. #197:
+  missing dependencies refuse (exit 2); a missing opt-in does not, and `optInGaps` names such items on stderr and in
+  the report (`--live-textedit` alone reports item 6 BLOCKED); sitting D's exact selection resolves with its
+  dependencies and without item 9 (tested). The reinstall check follows ruling 1118: with cua's engine pinned it runs
+  install's engine step and fails unless the approved bundle and `approved.json` are untouched and either nothing
+  changed or a pending build sits at the answer's `bundlePath`. M4's `test/accept-inventory.test.mjs` is not ported:
+  it fails on main's tree, where 34 tracked files outside T3's paths carry the account home path. Main's later
+  `mcp-session.mjs` (`detached`) is kept beside M4's `drainStreams`.
+  Date/Author: 2026-11-23, M4 re-cut controller (T3).
 - Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
   its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
   (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the

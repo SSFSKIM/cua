@@ -104,6 +104,9 @@ test('B: the native-mac pair on the run\'s install, its diff against the declare
     [['native-mac', 'vendor', 'vendor', ...approved(p.steps[0])], ['native-mac', 'cua', 'cua', ...approved(p.steps[0])]]);
   assert.deepEqual(p.steps[3].argv, ['node', 'scripts/repl-parity.mjs', 'diff', '/w/out/vendor', '/w/out/cua', '--expected', 'scripts/repl-parity/expected/native-mac.json']);
   assert.equal(p.steps[4].kind, 'cleanup');
+  // The cua lane runs only after the vendor lane passed: a vendor lane that left the screen dirty (a scene it could not
+  // bring down, pilot B's Finder window) fails, and the next lane is never started into what it left.
+  assert.deepEqual(p.steps[2].needs, ['prepare', 'vendor']);
   assert.deepEqual([p.steps[3].check, p.steps[3].pilotNoVerdict], [undefined, undefined], 'B\'s diff keeps its real verdict, in the pilot too');
   assert.deepEqual(ids(plan('b', {pilot: true})), ids(p), 'one pair is already its smallest form');
 });

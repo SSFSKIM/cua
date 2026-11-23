@@ -1076,8 +1076,10 @@ test('a key Finder will not take back keeps the scene down false and the saved r
   io.windows[736] = [];
   const down = await downScene('finder', {run, io});
   assert.equal(down.down, false);
-  assert.deepEqual(down.preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar'], savedAt, visibleRestored: true});
-  assert.match(down.reason, /ShowSidebar/);
+  const {reason, ...preferences} = down.preferences;
+  assert.deepEqual(preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar'], savedAt, visibleRestored: true});
+  assert.equal(down.reason, reason);
+  assert.equal(io.writes.length, 3, 'written again each round, RESTORE_ROUNDS times');
   assert.ok(readSavedPreferences(io.savedPreferencesFile));
   assert.equal(exitCodeFor(down), 1);
   io.preferences.ShowSidebar = true;   // the owner, or Finder, put it back
@@ -1155,10 +1157,108 @@ test('activate says why the run\'s Finder window is not on top, and raises it on
   // The run's window off screen (minimized, another Space) or gone: opening the folder would open a new window, so no raise.
   io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
   const gone = await activateScene('finder', {run, io});
-  assert.match(gone.reason, /not in the on-screen layer-0 snapshot/);
+  assert.match(gone.reason, /not on screen/);
   assert.equal(gone.runWindow, null);
   assert.equal(io.calls.filter(c => c[0] === 'show').length, 2, 'no raise without the run\'s window on screen');
 }));
+
+// Pilot B (run 45285337366): the Finder scene's first take-down closed the run's window, its down failed on a key, and
+// the retry's teardown activated Finder (`open -a Finder`). Finder, with no window on screen, answered that reopen with
+// a new window of its own, which the take-down then left behind and the next lane's preflight refused. Finder is never
+// activated without the run's window on screen, so nothing of the harness can make a window that is not the run's.
+test('activate finder sends nothing while the run\'s window is not on screen: gone, minimized or on another Space', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  const mine = () => io.windows[736].find(w => w.number === finder.window.number);
+  mine().onScreen = false;
+  const off = await activateScene('finder', {run, io});
+  assert.deepEqual([off.ok, off.runWindow], [false, null]);
+  assert.match(off.reason, /the run's Finder window is not on screen.*not activated/);
+  io.windows[736] = io.windows[736].filter(w => w !== mine());
+  const gone = await activateScene('finder', {run, io});
+  assert.equal(gone.ok, false);
+  assert.match(gone.reason, /not on screen/);
+  assert.deepEqual(io.calls.filter(c => c[0] === 'activate' || c[0] === 'show'), [], 'Finder was neither activated nor asked to show a folder');
+  assert.equal(exitCodeFor(gone), 1);
+}));
+
+test('teardown steps for finder are none once the run\'s window is gone: nothing to toggle, nothing to close, nothing activated', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  recordVisibleState(io.savedPreferencesFile, {sidebar: true, statusBar: false, pathBar: false});
+  assert.deepEqual(teardownFor('finder', {run, io}).map(s => s.chrome ?? s.visibleState ?? s.pressKey ?? 'activate'), ['activate', 'sidebar', 'statusBar', 'pathBar', 'restored', 'super+w']);
+  io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
+  assert.deepEqual(teardownFor('finder', {run, io}), []);
+}));
+
+// The take-down's last word on Finder: once the run's window is gone, no window of Finder's may be on screen. The
+// preflight refused any at up, so one now is a window the run left (or the owner opened mid-run): the scene stays up,
+// named, and the next lane is never started into it. The harness never closes it: only the run's window is the run's.
+test('down finder stays false while Finder shows a window on screen that is not the run\'s, naming it', async () => withRun(async run => {
+  const io = fakeDevice();
+  await upScene('finder', {run, io});
+  io.windows[736] = [{number: 4, bounds: {x: 0, y: 0, width: 1000, height: 700}, onScreen: false},   // Finder's own off-screen window
+    {number: 212, bounds: {x: 60, y: 90, width: 920, height: 436}, onScreen: true}];
+  const left = await downScene('finder', {run, io});
+  assert.equal(left.down, false);
+  assert.deepEqual(left.residue, [212]);
+  assert.match(left.reason, /Finder has a window on screen that is not the run's \(212\).*close it/);
+  assert.ok(readState(run).scenes.finder, 'kept, so a later down finishes it');
+  assert.equal(exitCodeFor(left), 1);
+  io.windows[736] = io.windows[736].filter(w => w.number !== 212);
+  assert.equal((await downScene('finder', {run, io})).down, true);
+}));
+
+// Every Finder key the scene changes is written back and read back after a settle: Finder writes its own keys from its
+// process, later than the toggle that changed them, so a read straight after the write can pass while Finder's own
+// write is still to land, or fail while it is landing (pilot B's first take-down: ShowSidebar, right after the
+// teardown's toggle-back; its retry seconds later read back).
+const savedRecord = (io, saved) => {
+  fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: saved, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA}));
+};
+test('restore-finder reads each key back after a settle, writing again what Finder\'s own late write undid', async () => {
+  for (const saved of [true, false, null]) {
+    const runs = saved === true ? false : true;
+    // Finder's own write of the run's value lands once, after the restore's first write.
+    const io = fakeDevice({preferences: {ShowSidebar: runs, ShowStatusBar: null, ShowPathbar: null}});
+    savedRecord(io, saved);
+    let late = true;
+    const sleep = io.sleep;
+    io.sleep = async ms => { await sleep(ms); if (late && io.writes.length) { io.preferences.ShowSidebar = runs; late = false; } };
+    const out = await restoreFinder({io});
+    assert.equal(out.preferences.restored, true, `saved ${saved}`);
+    assert.deepEqual(io.writes, [['ShowSidebar', saved], ['ShowSidebar', saved]], `written again after Finder's late write (saved ${saved})`);
+    assert.equal(io.preferences.ShowSidebar, saved);
+    // A key that reads as the owner's at first, which Finder's pending write then changes, is caught by the settle.
+    const quiet = fakeDevice({preferences: {ShowSidebar: saved, ShowStatusBar: null, ShowPathbar: null}});
+    savedRecord(quiet, saved);
+    let pending = true;
+    const quietSleep = quiet.sleep;
+    quiet.sleep = async ms => { await quietSleep(ms); if (pending) { quiet.preferences.ShowSidebar = runs; pending = false; } };
+    assert.equal((await restoreFinder({io: quiet})).preferences.restored, true);
+    assert.deepEqual(quiet.writes, [['ShowSidebar', saved]]);
+  }
+});
+
+// A restore that does not read back fails loudly, naming each key and the owner's value, so a person can set it.
+test('a Finder key that does not read back fails naming the key and the owner\'s value, for a Boolean and an unset one', async () => {
+  for (const [saved, says] of [[true, /ShowSidebar: the owner's value is true \(defaults write com\.apple\.finder ShowSidebar -bool true\)/],
+    [false, /ShowSidebar: the owner's value is false \(defaults write com\.apple\.finder ShowSidebar -bool false\)/],
+    [null, /ShowSidebar: the owner's value is unset \(defaults delete com\.apple\.finder ShowSidebar\)/]]) {
+    await withRun(async run => {
+      const io = fakeDevice({preferences: {ShowSidebar: saved === true ? false : true, ShowStatusBar: null, ShowPathbar: null}, stuck: ['ShowSidebar']});
+      savedRecord(io, saved);
+      const out = await restoreFinder({io});
+      assert.equal(out.preferences.restored, false);
+      assert.match(out.preferences.reason, says);
+      assert.equal(exitCodeFor(out), 1);
+      const down = await downScene('finder', {run, io});
+      assert.equal(down.down, false);
+      assert.match(down.reason, says);
+    });
+  }
+});
 
 test('activate gives up after its bound when the process never comes to the front, without guessing', async () => withRun(async run => {
   const io = fakeDevice({activates: false});

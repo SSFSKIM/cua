@@ -350,7 +350,28 @@ test('restoreInputSource: nothing saved is nothing to restore; a restore that do
   stuck.io.savedInputSource = file;
   const out = await restoreInputSource({io: stuck.io});
   assert.equal(out.sourceRestored, false);
+  assert.ok(out.reason.includes(`the input source did not read back as the owner's, ${ABC}`), out.reason);
   assert.equal(fs.existsSync(file), true);
+});
+
+// Every preference the harness changes is restored and read back; one that does not read back fails naming the
+// preference and the owner's value, so a person can set it.
+test('restoreInputSource: the per-context preference read back as the owner\'s value, or failing with its name and that value', async () => {
+  for (const owner of [true, false]) {
+    const file = join(scratch(), 'input-source.json');
+    fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: owner}));
+    const held = fakeInput({perContext: !owner});
+    held.io.savedInputSource = file;
+    const ok = await restoreInputSource({io: held.io, keep: true});
+    assert.deepEqual([ok.perContextRestored, ok.reason], [true, undefined]);
+    const stuck = fakeInput({perContext: !owner});
+    stuck.io.writePerContext = value => { stuck.state.writes.push(value); };
+    stuck.io.savedInputSource = file;
+    const out = await restoreInputSource({io: stuck.io});
+    assert.equal(out.perContextRestored, false);
+    assert.ok(out.reason.includes(`the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) did not read back as the owner's value, ${owner ? 'on' : 'off'}`), out.reason);
+    assert.equal(fs.existsSync(file), true, 'the record stays for the put-back');
+  }
 });
 
 test('saveInputSource: the record is written owner-only and first wins', async () => {

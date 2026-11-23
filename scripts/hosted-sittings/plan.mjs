@@ -71,7 +71,9 @@ function sittingA(ctx) {
 function sittingB(ctx) {
   const parity = (...args) => ['node', 'scripts/repl-parity.mjs', ...args];
   // Each lane is read by its meta.json, its attestations included (its exit is 0 only when that record is complete).
-  const lane = engine => ({id: engine, label: `native-mac, ${engine} host and engine`, kind: 'run', needs: ['prepare'], check: 'record', record: `${ctx.out}/${engine}/meta.json`, engine,
+  // The cua lane runs only once the vendor lane passed: a lane that could not bring a scene down (a window it left,
+  // pilot B's Finder) fails, and the next lane is never started into what it left.
+  const lane = engine => ({id: engine, label: `native-mac, ${engine} host and engine`, kind: 'run', needs: engine === 'cua' ? ['prepare', 'vendor'] : ['prepare'], check: 'record', record: `${ctx.out}/${engine}/meta.json`, engine,
     ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/meta.json`} : {}),
     argv: parity('run', '--device', DEVICE, ...approvedArgs(ctx), '--suite', 'native-mac', '--host', engine, '--engine', engine, '--out', `${ctx.out}/${engine}`)});
   return [

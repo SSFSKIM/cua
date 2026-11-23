@@ -369,7 +369,7 @@ async function inputSections(ctx, plan) {
     try {
       const restored = device(ctx, ['source', 'restore']);
       ctx.meta.inputSource.restored = restored?.sourceRestored === true && restored?.perContextRestored === true;
-      if (!ctx.meta.inputSource.restored) ctx.problems.push(`the owner's input source and per-context preference were not restored after the input sections${restored?.skipped ? ` (${restored.skipped})` : ''}; the put-back tries again`);
+      if (!ctx.meta.inputSource.restored) ctx.problems.push(`the owner's input source and per-context preference were not restored after the input sections${restored?.skipped ? ` (${restored.skipped})` : restored?.reason ? `: ${restored.reason}` : ''}; the put-back tries again`);
     } catch (error) { ctx.problems.push(`the input source's restore failed: ${error.message}; the put-back tries again`); }
   }
 }

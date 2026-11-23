@@ -566,7 +566,12 @@ export async function restoreInputSource({io, keep = false}) {
   if (plan.write) io.writePerContext(plan.value);
   const perContextRestored = io.readPerContext() === (saved.perContext ?? null);
   if (sourceRestored && perContextRestored && !keep) fs.rmSync(io.savedInputSource, {force: true});
-  return {source, sourceRestored, perContextRestored, perContextWritten: plan.write === true, ...(plan.unrestorable ? {unrestorable: plan.unrestorable} : {})};
+  // A restore that did not read back names each preference and the owner's value, so a person can set it.
+  const owner = saved.perContext === true ? 'on' : saved.perContext === false ? 'off' : 'unset';
+  const reasons = [...(sourceRestored ? [] : [`the input source did not read back as the owner's, ${source} (select it in the menu bar's input menu)`]),
+    ...(perContextRestored ? [] : [`the per-context input preference (${PER_CONTEXT.join(' ')} TextInputGlobalPropertyPerContextInput) did not read back as the owner's value, ${owner} ("Automatically switch to a document's input source" in System Settings → Keyboard → Input Sources)`])];
+  return {source, sourceRestored, perContextRestored, perContextWritten: plan.write === true, ...(plan.unrestorable ? {unrestorable: plan.unrestorable} : {}),
+    ...(reasons.length ? {reason: reasons.join('; ')} : {})};
 }
 
 // ---- Begin and put back ----------------------------------------------------------------------------------------------

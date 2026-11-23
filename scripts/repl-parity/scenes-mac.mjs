@@ -33,8 +33,10 @@
 // engine and the key guard with the step's `guard`, scripts/accept/key-guard.mjs; Finder's `visibleState` and `chrome`
 // steps observe the run's window through the engine and toggle by what it shows, scripts/native-matrix/goldens-device.mjs); `fixedStateProblems` on the engine's
 // Skyshot of the scene window before anything of it is recorded; the cells; `teardown-steps <scene>` and those steps;
-// `down <scene>`, which stops the run's process or, for Finder, checks the run's window is gone and writes back any
-// preference the hiding still leaves changed (`restore-finder` does that alone, for a run that died).
+// `down <scene>`, which stops the run's process or, for Finder, checks the run's window is gone, that Finder shows no
+// other window on screen (one would be a window the run left), and writes back and reads back any preference the hiding
+// still leaves changed (`restore-finder` does that alone, for a run that died). Finder is never activated without the
+// run's window on screen: with none, Finder answers the activation by opening a window of its own (pilot B).
 //
 // Pairings for the non-interference cells: the user window of a cell is the scene window of another family (TextEdit ↔
 // Finder, Chrome ↔ TextEdit, Electron ↔ Finder), taken in both directions so every scene is driven in the background
@@ -85,7 +87,7 @@ import {
   showFolder, stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
-  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_FRAME, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
+  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_DOMAIN, FINDER_FRAME, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
   readSavedPreferences, saveOriginalPreferences, savedRecordDistrust,
 } from './scenes-mac-finder.mjs';
 import {windowTitleOf} from './scenes-mac-text.mjs';
@@ -629,6 +631,12 @@ const recordOf = (id, run) => {
 // its bounds; null when it is not among them), nothing guessed.
 export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
   const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
+  if (finder && !finderRunWindow(io, record)?.onScreen) {
+    const result = {scene: id, ok: false, frontmost: null, runWindow: null,
+      reason: 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one'};
+    fs.appendFileSync(join(run, 'activation-guards.jsonl'), JSON.stringify({at: io.now(), ...result}) + '\n', {mode: 0o600});
+    return result;
+  }
   io.activateApp(record.app);
   // The engine's own windows (the agent cursor's display-wide panel, #235, ordered above the window it acts in and never
   // key) are passed over, as every front reading of the harness passes over them; any other process's window counts.
@@ -670,6 +678,9 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
   return finish({scene: id, ok: false, frontmost, ...(blocker ? {blocker} : {}), ...(raised ? {raised} : {}), runWindow: place,
     reason: `the run's Finder is frontmost but its top window is not the run's window: ${reason}`});
 }
+// The run's Finder window among Finder's document windows as the device reads them now ({number, bounds, onScreen}),
+// or null when it is gone.
+const finderRunWindow = (io, record) => documentWindows(io.appWindows(record.pid)).find(w => w.number === record.window.number) ?? null;
 // The run's place among Finder's windows within that SAME on-screen ordering, never a second reading.
 const runWindowPlace = (windows, record) => {
   const shown = windows.filter(w => w.ownerPid === record.pid), order = shown.findIndex(w => w.number === record.window.number);
@@ -715,9 +726,12 @@ export async function reactivateApp(front, {io = defaultIo()} = {}) {
 
 // The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, the owner's saved visible
 // chrome. -> [step].
+// Once the run's Finder window is gone there is nothing to toggle or close, and activating Finder would open a window
+// of Finder's own (activateScene), so there are none.
 export function teardownFor(id, {run, io = defaultIo()}) {
   const record = recordOf(id, run);
   if (sceneOf(id).id !== 'finder') return teardownSteps(id, record);
+  if (!finderRunWindow(io, record)) return [];
   return teardownSteps(id, record, {visible: readSavedPreferences(io.savedPreferencesFile)?.visible ?? null});
 }
 
@@ -727,13 +741,26 @@ export function teardownFor(id, {run, io = defaultIo()}) {
 // so the next run's teardown restores it, and the output says so (`visibleRestored: false`, `visibleNote`).
 // -> {preferences: {restored, wrote, remaining, savedAt, visibleRestored?, visibleNote?}} (`saved: false` instead of
 // `savedAt` when nothing was saved), so the output says which run's record it restored.
+//
+// Finder writes its keys from its own process, later than the toggle that changed them, so a key can read as the
+// owner's straight after the write and then take Finder's late value, or read Finder's value while the restore's write
+// is landing (pilot B's first take-down: ShowSidebar, right after the teardown's toggle-back). So every key is read back
+// after a settle (RESTORE_SETTLE_MS) and written again where it differs, until one settled reading needs no write, for
+// at most RESTORE_ROUNDS rounds. A key that never reads back fails, naming the owner's value (`reason`).
+export const RESTORE_SETTLE_MS = 1000, RESTORE_ROUNDS = 3;
 export async function restoreFinder({io = defaultIo()} = {}) {
   const record = readSavedPreferences(io.savedPreferencesFile);
   if (!record) return {preferences: {restored: true, wrote: [], remaining: [], saved: false}};
-  const current = io.finderPreferences(), distrust = savedRecordDistrust(record, current);
-  const writes = preferenceWrites(current, record.saved);
-  for (const {key, value} of writes) io.writeFinderPreference(key, value);
-  const remaining = preferenceWrites(io.finderPreferences(), record.saved).map(w => w.key);
+  let current = io.finderPreferences();
+  const distrust = savedRecordDistrust(record, current), wrote = new Set();
+  for (let round = 1; ; round++) {
+    const writes = preferenceWrites(current, record.saved);
+    for (const {key, value} of writes) { io.writeFinderPreference(key, value); wrote.add(key); }
+    await io.sleep(RESTORE_SETTLE_MS);
+    current = io.finderPreferences();
+    if ((!writes.length && !preferenceWrites(current, record.saved).length) || round === RESTORE_ROUNDS) break;
+  }
+  const remaining = preferenceWrites(current, record.saved).map(w => w.key);
   // An untrusted record (savedRecordDistrust) has no visible state a teardown could restore: it ends once its keys are
   // back, and the owner is told to check the View menu. A trusted one with an unrestored visible state is kept.
   const visibleRestored = distrust ? false : record.visible ? Boolean(record.visibleRestoredAt) : null;
@@ -741,9 +768,10 @@ export async function restoreFinder({io = defaultIo()} = {}) {
   const visibleNote = distrust
     ? `Finder's windows may still draw a run's hidden chrome: the saved record ${distrust.replace(/^it /, '')}; set the sidebar, status bar and path bar in Finder's View menu as you had them (Finder reads the keys only at launch)`
     : 'Finder\'s windows may still draw the run\'s hidden chrome: no window was toggled back here, and Finder reads the keys only at launch; the record is kept, so the next Finder scene\'s teardown restores it (or set the parts back in Finder\'s View menu)';
-  return {preferences: {restored: !remaining.length, wrote: writes.map(w => w.key), remaining, savedAt: record.savedAt,
+  return {preferences: {restored: !remaining.length, wrote: [...wrote], remaining, savedAt: record.savedAt,
     ...(visibleRestored === null ? {} : {visibleRestored}),
-    ...(visibleRestored === false ? {visibleNote} : {})}};
+    ...(visibleRestored === false ? {visibleNote} : {}),
+    ...(remaining.length ? {reason: unrestored(remaining, record.saved)} : {})}};
 }
 
 // Brings one scene down: stops only what the run recorded at its launch. Finder: writes back what the hiding still
@@ -760,15 +788,21 @@ export async function downScene(id, {run, io = defaultIo()}) {
     if (id !== 'finder') return {scene: id, down: true, wasUp: false};
     const {preferences} = await restoreFinder({io});
     return {scene: id, down: preferences.restored, wasUp: false, ...(preferences.saved === false ? {} : {preferences}),
-      ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
+      ...(preferences.restored ? {} : {reason: preferences.reason})};
   }
   let result;
   if (id === 'finder') {
     const open = documentWindows(io.appWindows(record.pid)).some(w => w.number === record.window.number);
     const {preferences} = await restoreFinder({io});
     const kept = preferences.saved === false ? {} : {preferences};
-    if (open) result = {down: false, windowOpen: true, ...kept, reason: `the run's Finder window is still open; send the teardown steps (teardown-steps finder), then run down again${preferences.restored ? '' : `. ${unrestored(preferences)}`}`};
-    else result = {down: preferences.restored, ...kept, ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
+    // The preflight refused any window of Finder's on screen at up, so one now (the run's gone) is a window the run left
+    // or one opened during it: never closed here, since only the run's window is the run's.
+    const residue = open ? [] : refusingWindows(documentWindows(io.appWindows(record.pid))).map(w => w.number);
+    const reasons = [
+      ...(residue.length ? [`Finder has a window on screen that is not the run's (${residue.join(', ')}); close it, then run down finder again`] : []),
+      ...(preferences.restored ? [] : [preferences.reason])];
+    if (open) result = {down: false, windowOpen: true, ...kept, reason: [`the run's Finder window is still open; send the teardown steps (teardown-steps finder), then run down again`, ...reasons].join('. ')};
+    else result = {down: reasons.length === 0, ...kept, ...(residue.length ? {residue} : {}), ...(reasons.length ? {reason: reasons.join('. ')} : {})};
   } else {
     // Without a captured identity no browser is safe to signal; only absence can release an attempted launch's profile.
     const stopped = id === 'chrome' && record.launchAttempted && !record.pid
@@ -783,7 +817,9 @@ export async function downScene(id, {run, io = defaultIo()}) {
   return {scene: id, ...result};
 }
 
-const unrestored = ({remaining}) => `Finder's ${remaining.join(', ')} did not take the owner's saved value back; run restore-finder again, and if it persists set it in Finder's View menu`;
+// Why a restore did not hold: each key that did not read back, with the owner's value and the command that sets it.
+const ownerValue = (key, value) => (value === null ? `unset (defaults delete ${FINDER_DOMAIN} ${key})` : `${value} (defaults write ${FINDER_DOMAIN} ${key} -bool ${value})`);
+const unrestored = (remaining, saved) => `Finder's preferences did not read back as the owner's after the restore: ${remaining.map(key => `${key}: the owner's value is ${ownerValue(key, saved?.[key] ?? null)}`).join('; ')}; run restore-finder again, and if it persists set each as given (or in Finder's View menu)`;
 
 // The page server, detached from the command that starts it so it outlives the ssh session; it writes {url, port} into
 // the run directory once it listens, {port, at} once the page's load beacon arrives (PAGE_LOADED, read by

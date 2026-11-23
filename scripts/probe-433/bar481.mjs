@@ -49,6 +49,10 @@ for(const arg of process.argv.slice(2)){
     const inc=pairs.filter(p=>p.f.signals?.record?.complete===false);
     for(const [k,l] of Object.entries(Object.groupBy(inc,p=>unitKey(p.f))))
       console.log(`  incomplete record ${k}: main ${tally(l.map(p=>answer(p.m)))} | fix ${tally(l.map(p=>answer(p.f)))}; differ ${l.filter(p=>answer(p.m)!==answer(p.f)).length}, routeHit ${l.filter(p=>p.f.guard?.routeHit).length}`);
+    // Ruling 1106: kept fix rows whose corrected hit changed but whose route stayed main's (no routeHit), by outcome: the false
+    // oks the narrowing leaves (with the page's recipient).
+    const stayed=fix.filter(r=>r.guard?.verdict==='kept'&&r.guard?.hitCorrection==='changed'&&!r.guard?.routeHit);
+    console.log(`kept, hit corrected, route main's (no routeHit): ${stayed.length} (${tally(stayed.map(r=>`${unitKey(r)} ${r.click} > ${recipient(r)}`))})`);
     console.log(`incomplete-record rows ${inc.length} (unread ${pairs.filter(p=>p.f.signals?.record?.complete==null).length}); fix rows with routeHit corrected ${fix.filter(r=>r.guard?.routeHit==='corrected').length}`);
     if(lane!=='safari'){
       console.log('press parity (cell: main | fix [routeHit corrected n]):');

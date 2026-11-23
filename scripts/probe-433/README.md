@@ -1034,10 +1034,18 @@ What the kit adds for #481:
   6. Press parity per Chromium keep cell: what each head pressed, and where the page logged the click, with the fix's `routeHit` count.
   7. slideover's and decomove's fix answers, and `stalePoint.ms` per head.
 
+**Pilot (ruling 1106), before the counted runs:** `overcontrol` (the ticket's inert overlay over the recorded control) on CfT and Electron, cold and warm, 5 repetitions, main against the wave head. Two runs of 20 rows per lane each, about 25 minutes apiece. It decides whether #481's own case lands under the narrowing: pressed by handle, `routeHit: "corrected"`, and the click logged on the target.
+
+```sh
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$WAVE_SHA" -f mode=qualify -f reps=5 -f hits=cold -f lanes=cft,electron -f cells=overcontrol
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$WAVE_SHA" -f mode=qualify -f reps=5 -f hits=warm -f lanes=cft,electron -f cells=overcontrol
+```
+
 The bar:
 1. All of #442's keep rows land as on main or better, with no keep row worse or newly refused, and every reason change named.
 2. `overcontrol` lands on its target on CfT. No false ok is left in the keep cells, or each one left is named with its cause.
 3. Press parity on every Chromium keep cell, and `routeHit` present or not.
-4. Ruling 1105: every row whose node record is incomplete (`deepfront`, and any other cell where it applies) answers exactly as main does, with no `routeHit`. The deepfront tally is given per lane, cold and warm.
-5. Unchanged: slideover refuses as on 8feea998, decomove refuses `controlGone`, and #453's three delivering kinds (10 each, shared-behind) behave as on 45128593886.
-6. Cost: `stalePoint.ms` p50 / p95, main against fix, as #442's.
+4. Ruling 1106: per lane, the kept rows where the corrected hit changed but the route stayed main's (no `routeHit`), with their click outcome. These are the false oks the narrowing leaves.
+5. Ruling 1105: every row whose node record is incomplete (`deepfront`, and any other cell where it applies) answers exactly as main does, with no `routeHit`. The deepfront tally is given per lane, cold and warm.
+6. Unchanged: slideover refuses as on 8feea998, decomove refuses `controlGone`, and #453's three delivering kinds (10 each, shared-behind) behave as on 45128593886.
+7. Cost: `stalePoint.ms` p50 / p95, main against fix, as #442's.

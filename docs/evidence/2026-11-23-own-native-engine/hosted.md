@@ -1529,3 +1529,194 @@ New tests:
   - `guardTally` reads every record shape.
 - **D's marker cell.** It is refused unsent when TextEdit's window is under an alert or the screen is unread. A window
   clear of every alert is exempt.
+
+## Placement (ruling 1169)
+
+Pilot A's re-run (run 45252131587) showed what the switch to 1920x1080 does to the alerts. The two capture alerts
+re-centre at 830,188 260x348 (#31) and 893,244 260x364 (#59), and the strip from x 0 to 822 is clear of both. Ruling
+1169 places every scene window in that strip at launch. Nothing writes through Accessibility except Finder's existing
+frame probe. Both sides of every pair stand on one frame, and every frame that differs from the mini's is declared.
+Branch `m5/placement`. No hosted run has proven any of this yet: the frames below are computed from pilot A's alerts by
+the code, and the next sitting's setup reads them fresh.
+
+### The venue
+
+`scripts/hosted-sittings/venue.mjs` chooses the venue once, in setup's new `placement` step, after the mode switch.
+Each scene gets its hosted size at the mini's origin, moved by `clearFrame` (the shared rule:
+the smallest move clear of every alert, below the menu bar, 8 pt from an alert). An unread window list keeps the bases
+and says why. The venue goes into the runner record (`~/.local/share/cua-hosted/runner.json`, the device's hosted
+signal). So every `up` on the device takes the same frames, whichever driver calls it and whichever side runs. That makes
+the two sides symmetric by construction.
+
+With pilot A's alerts:
+
+| scene | mini | hosted | how it gets there |
+|---|---|---|---|
+| Chrome for Testing | 80,60 1000x760 | 22,60 800x600 (moved) | `--window-position` and `--window-size` at launch |
+| Electron fixture | 140,100 720x560 | 102,100 720x560 (moved) | `--cua-fixture-bounds` at launch |
+| Finder | 80,80 920x520 | 22,80 800x520 (moved) | the existing `WindowFrameProbe` pin, at the venue's frame |
+| TextEdit | its template | its template, 60 characters wide | `defaults write com.apple.TextEdit WidthInChars 60`, hosted only |
+| Open panel | where it last stood | 80,80 720x440 (not moved) | its own saved frame in TextEdit's domain, hosted only |
+
+Chrome and the fixture are launched at the frame. They are never moved after launch. Each scene's record keeps
+`launchFrame` (`{frame, from: 'venue' | 'scene'}`), and off a runner (no runner record) each scene keeps its own frame.
+
+### TextEdit
+
+TextEdit's window has no preference for its position. That was read from the readable binary and its nib, not
+assumed:
+
+- The binary's strings name `WidthInChars` and `HeightInChars` (the new-document size, in characters) and
+  `OpenPanelFollowsMainWindow` (a directory choice, not a frame). They hold no cascade, frame-autosave or
+  `setFrameUsingName` string.
+- `DocumentWindow.nib` holds `NSWindowRect {{309,1104},{494,357}}` against `NSScreenRect {{0,0},{2560,1578}}` and no
+  `NSFrameAutosaveName`.
+
+So the origin is AppKit's template and cascade, and only the size is TextEdit's to set. Setup's new `textedit
+defaults` step writes `WidthInChars 60` into `com.apple.TextEdit` on the runner only (`assertGithubHosted`; never the
+owner's defaults) and reads it back. A value not read back fails setup. The width comes from the mini's window: 627 pt
+at the default 75 characters, of which 242 + 20 are not text. At 60 characters that is 242 + 20 + ceil(627 x 60 / 75)
+= 764 pt, under 800. The height is left alone. `-ApplePersistenceIgnoreState YES` turns off window restoration only. It
+does not stop TextEdit reading `WidthInChars` for a new document. Neither launch argument names these keys.
+
+Uncertain until a hosted run reads it back: that TextEdit's template origin plus 764 pt clears x 822 on the runner's
+display. The record check's frame symmetry (below) shows any difference between the sides, and the alert guard refuses
+any cell whose window an alert overlaps.
+
+### The Open panel
+
+The Open panel is the one window the brief left to preferences or a NO VERDICT. Placing it needs no Accessibility write:
+
+- The dyld shared cache's strings include `NSNavPanelAutosaveName`, `NSNavPanelExpandedSizeForOpenMode` and
+  `NSNavPanelExpandedSizeForSaveMode`.
+- This Mac's `com.apple.TextEdit` and `com.apple.Preview` domains hold `NSWindow Frame NSNavPanelAutosaveName`. TextEdit's
+  value is `320 331 800 388 0 0 1440 875 `: the frame in AppKit's bottom-left coordinates, then the screen's visible
+  frame. They also hold `NSNavPanelExpandedSizeForOpenMode` as the string `{880, 448}`.
+
+On the runner, setup writes both keys for the panel's venue frame, 80,80 720x440: `80 560 720 440 0 0 1920 1055 ` and
+`{720, 440}`. Each opening is read back: C keeps it in `meta.placement.panel`, A in `meta.placement`.
+
+Not verified live: whether the out-of-process panel (its service, not TextEdit) honours a frame written before it
+opens. If it does not, the panel stands where the system puts it. The alert guard then refuses any panel cell under an
+alert (NO VERDICT `alert`), and the read-back says where the panel stood. The probe was not extended, as the brief
+asked.
+
+### Re-grounding
+
+Every layout that depends on a window's size is derived from the frame the run launched at, never from the mini's
+frame scaled by guess:
+
+- **Chrome's drag** (`plan.mjs` `CHROME_DRAG_POINTS`, `chromeDragLayout(frame)`). The page has no stylesheet (CSP
+  `style-src 'none'`). The user agent lays the notes field (rows 8, cols 60) out from the content area's top left, so
+  the drag's window points (24,192 to 200,237) are the same at 1000x760 and 800x600. Only `layout.window`, which turns
+  window points into the screenshot's pixels, follows the frame. `groundCase(target, case, frames)` grounds the case on
+  the venue's frame. The matrix's `caseRow` passes `meta.venue.frames`, and a test runs a hosted matrix with the drag
+  grounded at 800x600.
+- **Electron.** The size is unchanged, so `ELECTRON_FIELD_LAYOUT` is unchanged. A test asserts this.
+- **Finder.** The height is unchanged at 520, so the visible rows and every row-based cell are the same.
+- **TextEdit's drag** is in window fractions. It holds at any width.
+- **B's scenes** are launched at the venue's frames by the same `up`.
+
+`framedCells(scene)` lists the cells whose layout is tied to a frame, each with the kind of measure it uses (`window
+fractions`, `visible rows` or `window points`). The venue's record names them for each scene whose frame differs.
+
+Ruling 1168's pointerdown pair ("Pointer target" and "Pointer downs", inline after Apply) lies inside the hosted Chrome
+frame. In the mini's golden tree (`test/native-goldens/chrome/skyshot.json`, with an infobar, so its content area
+starts lowest), Apply's line is at y 375 to 397 in the window. The pair's line ends by x 523 even with every character
+taken at 9 pt, inside 800 less a 15 pt scrollbar. `venue.test.mjs` checks this from the golden.
+
+Finding: at 800x600 the scene page no longer fits its window. In the same golden tree, the Section heading ends 663 pt
+down the window (607 pt without the infobar), past 600. `NOT_APPLICABLE.chrome.scroll`'s reason ("the scene page fits
+its window") does not hold on the runner. Nothing judged depends on it: the cell is declared on both engines alike, and
+every focusable control ends by 579 pt, so no focus scrolls the page under the drag's window points. A hosted Chrome
+760 pt tall (22,60 800x760 clears the alerts, which start at x 830) would keep the reason true. That is the
+controller's call.
+
+### Declared venue differences
+
+`venueRecord` produces the `venue` block. It goes into setup's runner record, `setup.json`, every lane's `meta.venue`
+(A's `native-baseline` meta, B's and C's through `hostedRunOf`) and `sitting.json`. `renderVenue` prints it in
+`sitting.md` under "The venue (ruling 1169)". Its shape:
+`{alerts, display, frames, textEdit: {domain, writes, readBack, ok}, differences: [{scene, mini, hosted, reason,
+grounding, cells}]}`. Chrome, Electron and Finder are listed when their frame differs from the mini's. TextEdit and the
+Open panel are always listed.
+
+### Symmetry
+
+The `record` check reads each step's `pair` (A: `vc-i` with `vv-i`, and `cc-i` with `vc-i`; B: cua's meta with the
+vendor's; C: matrix run i on each side). It compares the frames each record actually stood on (`sceneFrames`: the
+venue's, each scene's read-back after a move, the Open panel's openings, A's windows). A pair whose sides differ is NO
+VERDICT, `venue: <record> and its pair <pair> did not stand on one frame (<the differences>)`.
+
+### The key-window requirement
+
+Pilot B's diagnostic run (45254955711) read the Electron fixture frontmost with no key window. TextEdit, Finder and
+Chrome each held their own. So before a click or key cell, the scene's app must hold the scene window as its own key
+window. That is not the same as being frontmost: a background cell still runs in the background.
+
+- **The reading.** `scripts/hosted-sittings/key-window.mjs` runs `scripts/cursor-sitting/ax-state.swift window <pid>
+  <x,y,w,h>` on the device, outside either engine. It reads the app's own `AXFocusedWindow` and `AXMainWindow` against
+  the scene window (`run`, `other` or `none`), and `AXFrontmost`. The attributes are the app's own
+  (`AXUIElementCreateApplication`), so a background app answers too. The engine's focus probe reads only the
+  system-wide focused application, which says nothing about a background app's key window. Extending the probe would
+  have been an engine change, so the harness reads it instead. The reader needs the Accessibility grant of the process
+  that runs it. On the hosted image `/bin/bash` holds it and its children inherit it (#282's evidence). Whether that
+  survives the loopback `sshd` chain is unverified.
+- **The rule** (`alert-guard.mjs` `keyWindowCause`). The cell passes when the scene window is the app's focused
+  window. A background app may hold no focused window and keep the scene window as its main window, the one it makes
+  key when activated, so that passes too. Anything else refuses the cell unsent, NO VERDICT `keyWindow`, naming
+  another key window or none. A reading not taken (an untrusted reader, a failed read, the scene window not on screen,
+  the window list unread) refuses nothing. The cell is sent and counted (`keyWindowUnread`), as a key cell's unread key
+  is.
+- **Where it applies.** It goes through the shared module in every sitting:
+  - A: `macos.mjs` `pointerGuard` and `keyGuard`, with `guard-device read --key-window`. The scratch document's
+    `setup.newDocument` is exempt, because a fresh TextEdit shows only its Open panel.
+  - B: `native-mac.mjs` `actionGuard`.
+  - C: `steps.mjs` `guardLane` for pointer cells and `sendKeys` for key cells, with `matrix-device read --key-window
+    <scene>`. Nothing is checked while TextEdit's Open panel is up (`ctx.panelOpen`, from ⌘O until the panel closes),
+    because the panel is then TextEdit's focused window, as its own cells need.
+  - D: `accept/textedit.mjs` `fixtureRefusal`.
+- **The counts.** `counts.md` gains, per cell and side, NO VERDICT `keyWindow` and the cells sent with their key window
+  unread. `sitting.md`'s guard tally gains the same per step and cell. The `observation` check counts `keyWindow` among
+  the causes that leave proof missing.
+- **The fixture.** After `showInactive`, the Electron fixture calls `window.focus()`, identically on both sides.
+  Electron's `focus()` makes the window key (`makeKeyAndOrderFront`) and asks for activation. In the matrix, scenes come
+  up before the activation watcher starts, so no row is charged for it. Whether the fixture takes the front at
+  bring-up on the mini is unverified.
+- **#528.** The native-mac action row keeps `focusAfterClick` on both sides, and the reading before the click now adds
+  `ownKey`.
+
+### Tests
+
+Focused suites on `m5/placement` after merging feat/117-m5 (eff6ce351):
+
+- `test/hosted-sittings`, `test/native-baseline`, `test/native-matrix`: 985/985.
+- `test/repl-parity`, `test/cursor-sitting`, `test/accept-textedit-{cells,readback}`,
+  `test/accept-{native-cli,scripts-load,key-guard}`: 1077/1077.
+- `test/accept-{window-close,onboarding,engine-lane,fixture-app}`: 126/126.
+
+New tests:
+
+- **`venue.test.mjs`.**
+  - The hosted frames for pilot A's alerts, and an unread list falling back to the bases.
+  - TextEdit's writes and their read-back. A write off a runner is refused.
+  - The saved-frame string.
+  - The venue record and its rendering.
+  - `sceneFrames` and `frameAsymmetry`.
+  - The pointerdown pair inside the hosted Chrome frame.
+- **Setup.** The `placement` and `textedit defaults` steps, the venue in the runner record, and `hostedRunOf` carrying
+  it.
+- **The matrix.**
+  - `groundCase` and `framedCells`.
+  - A hosted run whose Chrome drag is grounded at 800x600.
+  - `key-window-run.test.mjs`: the reading holds; no key window refuses click and key cells on both engines; a
+    background main window passes and another key window refuses; an unread reading is counted; nothing is read
+    while the Open panel is up.
+  - `matrix-device read --key-window`.
+- **The record check.** A pair standing on two frames is NO VERDICT.
+- **The scenes.** Launched at the venue's frames, and off a runner at their own. The pointerdown variants come up at
+  the venue's frames, with the fixture's switch beside its bounds.
+- **The key-window guard in A, B and D.** Refused when TextEdit holds no key window of its own, counted when unread.
+- **The counts.** `keyWindow` and `keyWindowUnread` per cell and side in `counts.md`, and per step in the guard
+  tally.
+- **The fixture.** Shown inactive, then focused once, with the bounds and page switches each read on its own.

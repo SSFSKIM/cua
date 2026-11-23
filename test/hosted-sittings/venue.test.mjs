@@ -3,6 +3,7 @@
 // size its windows and place its Open panel, the record that declares every frame differing from the mini's, and the
 // check that both sides of a pair stood on one frame.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
   HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, frameAsymmetry, hostedFrames, renderVenue, savedFrameString, sceneFrames,
@@ -11,6 +12,7 @@ import {
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {ELECTRON_FIELD_LAYOUT} from '../../scripts/native-matrix/plan.mjs';
+import {POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
 const rect = (x, y, width, height) => ({x, y, width, height});
 const DISPLAY = rect(0, 0, 1920, 1080);
@@ -159,4 +161,22 @@ test('symmetry: a pair whose sides stood on different frames names the scene and
   // A window one side did not read (its run stopped before it) is no difference: nothing to compare.
   assert.equal(frameAsymmetry(baseline(rect(256, 87, 503, 488)), baseline()), null);
   assert.equal(frameAsymmetry(matrix(rect(22, 60, 800, 600)), null), null);
+});
+
+// Ruling 1168's pointerdown pair ("Pointer target" and "Pointer downs", fixtures/scene-page.mjs POINTERDOWN_INLINE) sits
+// inline after Apply. The page has no stylesheet, so the user agent lays it out from the content area's top left, the
+// same in any window wide enough for its lines; the mini's golden tree (Chrome at 1000x760 with an infobar under its
+// toolbar, so its content area starts lowest) gives Apply's frame. The pair's width is bounded from above (each
+// character at most 9 pt, the button's padding and border 16 pt, two separating spaces 5 pt each), so its line neither
+// wraps nor leaves the hosted 800x600 window, scrollbar taken off.
+test('the pointerdown pair inline after Apply lies inside the hosted Chrome frame, by the mini\'s measured layout', () => {
+  const nodes = JSON.parse(readFileSync(new URL('../native-goldens/chrome/skyshot.json', import.meta.url), 'utf8')).nodes;
+  const win = nodes.find(n => n.role === 'AXWindow').frame, apply = nodes.find(n => n.role === 'AXButton' && n.title === 'Apply').frame;
+  const inWindow = {x: apply.x - win.x, y: apply.y - win.y, width: apply.width, height: apply.height};
+  const charsAtMost = 9, buttonChrome = 16, space = 5, scrollbar = 15;
+  const pairRight = inWindow.x + inWindow.width + space + (POINTERDOWN.button.length * charsAtMost + buttonChrome) + space + POINTERDOWN.text(999).length * charsAtMost;
+  const hosted = HOSTED_SIZES.chrome;
+  assert.deepEqual([hosted.width, hosted.height], [800, 600]);
+  assert.ok(pairRight <= hosted.width - scrollbar, `the pair's line ends by ${pairRight} pt`);
+  assert.ok(inWindow.y + inWindow.height <= hosted.height, `Apply's line ends ${inWindow.y + inWindow.height} pt down`);
 });

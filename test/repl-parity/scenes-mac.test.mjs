@@ -18,8 +18,8 @@ import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../s
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, enginePids, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
 import {FINDER_RECORD_SCHEMA, markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
-import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
-import {PAGE_CONTROLS, PAGE_HTML} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
+import {PAGE_CONTROLS, PAGE_HTML, POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
 const CFT = 'com.google.chrome.for.testing', TEXTEDIT = 'com.apple.TextEdit';
 
@@ -840,6 +840,20 @@ test('up on a hosted runner launches each scene at the venue\'s frame and record
     assert.ok(io.calls.at(-1)[1].args.includes('--window-size=1000,760'));
     assert.deepEqual(chrome.launchFrame, {frame: SCENES.chrome.placement, from: 'scene'});
     assert.deepEqual((await upScene('finder', {run, io})).setup.at(-1), {finderFrame: {x: 80, y: 80, width: 920, height: 520}});
+  });
+});
+// Ruling 1168's pointerdown variants (the matrix's MATRIX_SCENE_ARGS) come up at the venue's frames as the shared
+// scenes do: the variant is a page or a switch beside the frame, never instead of it.
+test('the matrix\'s pointerdown variants come up at the venue\'s frames: Chrome\'s page and the fixture\'s switch beside its bounds', async () => {
+  const venue = {chrome: {x: 22, y: 60, width: 800, height: 600}, electron: {x: 102, y: 100, width: 720, height: 560}};
+  await withRun(async run => {
+    const io = Object.assign(fakeDevice(), {venueFrames: () => venue});
+    const chrome = await upScene('chrome', {run, io, page: POINTERDOWN.variant});
+    assert.ok(io.calls[0][1].args.includes('--window-size=800,600') && io.calls[0][1].args.includes('--window-position=22,60'));
+    assert.deepEqual(chrome.launchFrame, {frame: venue.chrome, from: 'venue'});
+    const electron = await upScene('electron', {run, io, electronExtra: [POINTERDOWN_SWITCH]});
+    assert.deepEqual(io.calls.at(-1)[1].args, ['--cua-fixture-user-data=' + join(run, 'electron-user-data'), '--cua-fixture-bounds=102,100,720,560', POINTERDOWN_SWITCH]);
+    assert.deepEqual([electron.launchFrame, electron.extraArgs], [{frame: venue.electron, from: 'venue'}, [POINTERDOWN_SWITCH]]);
   });
 });
 test('teardown: Finder in front, each part brought back by observation to the owner\'s saved visible state, then the run\'s window closed', () => {

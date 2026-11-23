@@ -60,14 +60,17 @@ function recordAccessibility(file) {
 
 app.whenReady().then(() => {
   recordAccessibility(path.join(userData, 'cua-fixture-accessibility.jsonl'));
-  // Shown without activation, so bringing the scene up never takes the focus (the harness activates it when a cell needs it).
+  // Shown inactive (the harness activates it when a cell needs it), then made the app's key window (focus: AppKit's
+  // makeKeyAndOrderFront, with the activation it asks the system for), so the app holds its one window as its key
+  // window whenever it is activated: the key-window requirement before a click or key cell (ruling 1169's addition;
+  // pilot B read the fixture frontmost with no key window). Identical on both sides.
   const window = new BrowserWindow({
     ...bounds(), title: 'cua Electron fixture', show: false,
     webPreferences: {contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, preload: path.join(__dirname, 'preload.js')},
   });
   window.on('focus', () => counters.bump('windowFocus'));
   window.on('blur', () => counters.bump('windowBlur'));
-  window.once('ready-to-show', () => window.showInactive());
+  window.once('ready-to-show', () => { window.showInactive(); window.focus(); });
   const pointerdown = argument('cua-fixture-page') === 'pointerdown';
   window.loadFile(path.join(__dirname, 'index.html'), pointerdown ? {query: {page: 'pointerdown'}} : {});
 });

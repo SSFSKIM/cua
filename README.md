@@ -1090,7 +1090,7 @@ engine, below):
 - **cua's own engine, `cua-engine`** (#171; `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`): a
   static binary built from `native/linux-engine/` for x86-64 and arm64, with no shared libraries. The release workflow
   `.github/workflows/linux-engine.yml` builds it, tests it and attests its build provenance, and
-  `runtime/engine/linux-engine.json` pins its version (0.4.3), URLs and SHA-256s. `cua install` fetches the asset for
+  `runtime/engine/linux-engine.json` pins its version (0.4.4), URLs and SHA-256s. `cua install` fetches the asset for
   this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` installs or
   replaces it on its own. cua's own Linux service (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript
   runs for the computer surface. It is the default.
@@ -1275,13 +1275,13 @@ lack of `DISPLAY`.
 sessions, and `"engine": "cua"` in `~/.config/cua/engine.json` selects it for every session of the account; the
 variable wins over the file. `vendor` in either selects the vendor engine. With neither set, a session gets the default,
 which is cua's engine. The default takes the installed engine only when it is at least the version this cua needs
-(0.4.3), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its SHA-256 is the
+(0.4.4), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its SHA-256 is the
 file's. A home with no engine of cua's, with an older one, or with one its `install.json` does not match keeps the
 vendor engine, and `cua doctor`'s `engine` row warns, naming which (`engine_not_installed`, `engine_outdated`,
 `engine_unrecorded`) and that `cua install --engine` replaces it. A connection resolves its engine once, when it opens, and keeps it for every launch after.
 An explicit selection of cua's engine with none installed is refused (`engine_not_installed`, naming `cua install
 --engine`). cua's service checks the engine's version before a session's first request: one older than this cua needs
-is refused there, with `cua-engine <found> is older than 0.4.3, which this cua needs; run cua install --engine`, and `cua install
+is refused there, with `cua-engine <found> is older than 0.4.4, which this cua needs; run cua install --engine`, and `cua install
 --engine` fixes it. `CUA_LINUX_ENGINE_BIN` names another engine file in place of the installed one, for the
 development harnesses only.
 

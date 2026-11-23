@@ -189,8 +189,8 @@ test('cua\'s engine preferred but not in use: refused sessions fail, the default
 // Nothing is started for its report. An explicit selection of that engine is refused at its first request, and fails here.
 test('the default\'s fallback for an engine too old, or one its record does not match, warns naming why and cua install --engine', async () => {
   const PIN = {version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`, sha256: 'b'.repeat(64)};
-  // 0.3.0, 0.4.0 (the released plugin's pin) and 0.4.2 (the pin just below the minimum, 0.4.3)
-  for (const version of ['0.3.0', '0.4.0', '0.4.2']) {
+  // 0.3.0, 0.4.0 (M4's release) and 0.4.3 (the released plugin's pin, just below the minimum, 0.4.4)
+  for (const version of ['0.3.0', '0.4.0', '0.4.3']) {
     assert.ok(isOlder(version, MIN_ENGINE_VERSION), version);
     const older = await row({}, {read: facts({pinned: PIN, current: false, version, release: `linux-engine-v${version}`}), defaultEngine: 'cua'});
     assert.equal(older.row.status, 'warn', version);
@@ -250,10 +250,10 @@ test('the default capability read starts the engine as a session does, reads its
   await waitGone(engine.spawns()[0].pid);
   // An engine older than the service needs is refused before anything is spawned, with the service's sentence.
   engine.setVersion('cua-engine 0.3.0 (old)');
-  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.3\.0 is older than 0\.4\.3, which this cua needs; run cua install --engine$/});
+  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.3\.0 is older than 0\.4\.4, which this cua needs; run cua install --engine$/});
   assert.equal(engine.spawns().length, 1);
   // An engine that never answers is stopped at the deadline.
-  engine.setVersion('cua-engine 0.4.3 (fake0000)');
+  engine.setVersion('cua-engine 0.4.4 (fake0000)');
   engine.behave('export function answer() { return new Promise(() => {}); }');
   await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}, timeoutMs: 300}), {message: /^cua-engine did not answer capabilities within 0\.3 s$/});
   await waitGone(engine.spawns()[1].pid);

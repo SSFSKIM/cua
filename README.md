@@ -231,8 +231,10 @@ failure, `n`, Ctrl-C, or no capture after the relaunch), the previous bundle goe
 again, with two exceptions the command reports. A build published while the approval ran keeps the pending slot, and
 the one that failed is dropped: check what is pending (`cua engine status`, or doctor's `engine` row) before
 approving again. A promoted engine that a session connected to meanwhile refuses to stop and still holds the engine's
-socket, so sessions are refused until it stops: run `cua engine stop` once it is idle, and the next session launches
-the restored bundle. `--foreground` makes the first grant requests from a foreground launch, which may let macOS show its
+socket until it stops: sessions refuse it when its build differs from the restored bundle's, but a promoted copy of the
+same build (re-signed under another identity) keeps serving new sessions, since sessions check the build and not the
+signature. Either way, run `cua engine stop` once it is idle (the next `cua engine build` or `cua engine approve` also
+stops it then), and the next session launches the restored bundle. `--foreground` makes the first grant requests from a foreground launch, which may let macOS show its
 prompts; the printed steps still lead. A rebuild under the same identity keeps the grants, so its approval normally
 needs no one at the Mac.
 
@@ -248,7 +250,11 @@ answer any alert at the console, then run `cua engine approve` again from a term
 grant). Accessibility takes effect at once. Observing an app needs Screen Recording as a screenshot does: there is no
 text-only observation without it. macOS applies a Screen Recording grant only to a relaunched process, so after it is
 granted the next observation or screenshot relaunches the engine, when no other session holds it, and retries once;
-until then they fail with the sentence, which says a relaunch is pending. A selection of cua's engine with none
+until then they fail with the sentence, which says a relaunch is pending. That recovery and `cua/permission` arrive
+with the 0.2.0 engine: an older approved engine (0.1.0, which keeps serving while a 0.2.0 build waits pending) fails
+Screen Recording without naming the permission, so nothing relaunches it. On a Mac still serving one, after granting,
+approve the pending update (`cua engine approve`), or run `cua engine stop` once it is idle so the next session
+launches the engine afresh. A selection of cua's engine with none
 approved is refused before launch (`engine_not_installed`, naming `cua install --engine` and then `cua engine
 approve`); a pending build is not an approved one.
 

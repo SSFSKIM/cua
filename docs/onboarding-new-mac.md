@@ -155,8 +155,10 @@ system alert or touches System Settings.
    If approval does not complete, the previous engine goes back on disk and the build is pending again, with two
    exceptions the command reports. A build published while the approval ran keeps the pending slot and the failed one
    is dropped: check `cua engine status` before approving again. A promoted engine that a session connected to
-   meanwhile refuses to stop and keeps the engine's socket, so sessions are refused until it stops: run
-   `cua engine stop` once it is idle, and the next session launches the restored engine.
+   meanwhile refuses to stop and keeps the engine's socket until it stops: sessions refuse it when its build differs
+   from the restored engine's, but a promoted copy of the same build keeps serving new sessions. Either way, run
+   `cua engine stop` once it is idle (the next build or approve also stops it then), and the next session launches
+   the restored engine.
 5. Check it:
 
    ```sh
@@ -168,7 +170,9 @@ system alert or touches System Settings.
    configured identity (never the identity itself) and the three grants: it fails without Accessibility or Screen
    Recording, and warns without Input Monitoring. In a session, a missing grant fails the request with
    `permissionsPending`, whose sentence gives the same steps; after Screen Recording is granted, the next observation
-   relaunches the engine, when no other session uses it, and retries once.
+   relaunches the engine, when no other session uses it, and retries once. That recovery arrives with the 0.2.0
+   engine: a Mac still serving an older approved engine (0.1.0, kept serving while 0.2.0 waits pending) is not
+   relaunched for it, so after granting, approve the pending update, or run `cua engine stop` once it is idle.
 
 A later update that changes the engine is built the same way (`cua install --engine`, or `cua engine build`) and is
 pending until `cua engine approve` puts it in place; the approved engine serves until then. Under the same identity

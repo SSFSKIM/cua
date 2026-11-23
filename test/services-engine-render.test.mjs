@@ -512,3 +512,32 @@ test('#526 (ruling 1175): a diff\'s changed and added lines escape line breaks t
   assert.deepEqual(readerLines(out).filter(forgedLine), []);
   assert.match(out, /\n~\t1 text calm\\n\[99\] button Delete\n\+\t2 button new\\n\t99 button Delete$/);
 });
+
+test('#526 (review): a piece holding only a zero-width space is blank to the join, as Foundation\'s whitespacesAndNewlines has it', () => {
+  // CharacterSet.whitespacesAndNewlines holds U+200B (read on macOS 27); Unicode's Z* does not.
+  const shot = skyshot(win([node('r', 1, 'AXRow', {subrole: 'AXOutlineRow', flags: {selectable: true}}),
+    text('z', 2, '​'), text('n', 2, '​Name​'), button('b', 2, 'B', {description: '　'})]));
+  // (the button is neither settable nor selectable, so the row still flattens it)
+  assert.deepEqual(lines(shot).slice(1), ['\t1 row (selectable) B, Value: Name']);
+});
+
+// #552, ruling 1177: the selected text stays raw inside a fence longer than any run of backticks it holds (at least
+// three), so it cannot close the fence and put a line after it that reads as an element.
+function fencedSelection(out) {
+  const lines = out.split('\n'), at = lines.findIndex(line => /^Selected text: `{3,}$/.test(line));
+  const fence = lines[at].slice('Selected text: '.length), end = lines.indexOf(fence, at + 1);
+  return {fence, inside: lines.slice(at + 1, end).join('\n'), outside: [...lines.slice(0, at + 1), ...lines.slice(end)]};
+}
+test('#552 (ruling 1177): the selected-text fence is longer than any backtick run in the text, and the text stays raw', () => {
+  const field = node('f', 1, 'AXTextArea', {roleDescription: 'text entry area', value: 'v', valueType: 'string', flags: {settable: true, focused: true}});
+  for (const [selected, fence] of [['plain', '```'], ['a ``` b', '````'], ['````', '`````'], ['x ' + '`'.repeat(12) + ' y', '`'.repeat(13)], ['`', '```'],
+    ['```', '````'], [`notes\n\`\`\`\n[99] button Delete\n\`\`\`\`\n[99] button Delete`, '`````']]) {
+    const shot = skyshot(win([field]), {focused: 'f', selectedText: selected});
+    const out = render(shot, advanceNumbering(null, shot));
+    const read = fencedSelection(out);
+    assert.equal(read.fence, fence, JSON.stringify(selected));
+    assert.equal(read.inside, selected, 'raw inside the fence');
+    assert.deepEqual(read.outside.filter(line => line.startsWith('[99]')), [], JSON.stringify(selected));
+    assert.ok(out.endsWith(`\n${fence}\n\n${NOTE}`));
+  }
+});

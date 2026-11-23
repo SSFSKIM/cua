@@ -159,9 +159,16 @@ function truncationMarkers(skyshot) {
 // lines carry one tab [golden: Finder]; a blank line then the note follows selected elements [golden: Finder]. The same
 // blank line before the note after selected text is an inference: no golden has selected text, F §2.6 reads both
 // branches ending "then the note" in the one function, and the one branch pinned shows the blank line (B §6's block,
-// without it, is labelled a reading for the goldens to pin).
+// without it, is labelled a reading for the goldens to pin). The selected text is printed raw inside its fence, which is
+// cua's departure from the vendor's fixed three backticks (#552, ruling 1177; the spec's Decision Log, 2026-11-23,
+// #526): the fence is longer than the longest run of backticks in the text, and at least three, so the text cannot
+// close it and put a line after it that reads as an element.
+export const selectedTextFence = text => '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map(run => run[0].length + 1)));
 function trailer(presented, lineOf) {
-  if (presented.selectedText) return `\nSelected text: \`\`\`\n${presented.selectedText}\n\`\`\`\n\n${NOTE}`;
+  if (presented.selectedText) {
+    const fence = selectedTextFence(presented.selectedText);
+    return `\nSelected text: ${fence}\n${presented.selectedText}\n${fence}\n\n${NOTE}`;
+  }
   if (presented.selected.length) return `\nSelected:\n${presented.selected.map(node => `\t${lineOf(node)}`).join('\n')}\n\n${NOTE}`;
   if (presented.focused) return `\nThe focused UI element is ${lineOf(presented.focused)}`;
   return '';
@@ -331,8 +338,10 @@ function associateTitleUIElements(node) {
 // on lines of their own]; the element line prints the breaks escaped (escapeLineBreaks). The vendor's flattened role
 // words (`radio button` / `radio buttons`, `outline row` / `rows`, E §5.2's "<target> <separator> <container>" reading)
 // are not applied: B §5 and E leave their use an inference and no golden prints one, so the node keeps its own role word.
-// Foundation's whitespacesAndNewlines: Unicode's Z* categories, U+0009–U+000D and U+0085.
-const SWIFT_BLANK = /^[\p{Z}\t\n\v\f\r\u0085]+|[\p{Z}\t\n\v\f\r\u0085]+$/gu;
+// Foundation's whitespacesAndNewlines, as CharacterSet.whitespacesAndNewlines answers on macOS 27 (every scalar read
+// for #526): U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200B (the zero-width space included, which
+// Unicode's Z* leaves out), U+2028, U+2029, U+202F, U+205F and U+3000.
+const SWIFT_BLANK = /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200b\u2028\u2029\u202f\u205f\u3000]+|[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200b\u2028\u2029\u202f\u205f\u3000]+$/g;
 const flattenedString = pieces => pieces.filter(piece => typeof piece === 'string').map(piece => piece.replace(SWIFT_BLANK, ''))
   .filter(piece => piece !== '').join('\n') || null;
 function flattenIntoSelectableAncestor(node) {
@@ -469,7 +478,8 @@ function lineText(node, urls) {
 // linux-accessibility-tree.mjs), and every other character a reader may break a line at (VT, FF, the three information
 // separators, NEL, LS, PS) as `\uXXXX`. A backslash stays as it is, as the Linux rendering leaves it. Applied to the
 // whole element text after its parts are ordered, so the vendor's long-part rule still reads the raw text [F §2.4], and
-// to the header's window title and app name. The selected-text trailer is fenced and printed as it is.
+// to the header's window title and app name. The selected text stays raw inside a fence it cannot close (trailer,
+// ruling 1177).
 const LINE_BREAKS = /[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/g;
 export const escapeLineBreaks = text => text.replace(LINE_BREAKS, c => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
 

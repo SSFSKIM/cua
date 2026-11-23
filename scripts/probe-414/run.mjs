@@ -145,7 +145,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
         const r=await w.execute(method,extra?{...args,...extra}:args);
         if(method==='resolve_app'&&(r.result?.pid!==target.pid||r.result?.bundleIdentifier!==target.bundleIdentifier))weakReason();
         if(method==='type_text'){native=r;replyAtMs=Date.now();}
-        note(method==='type_text'?'ipc-type':'ipc-other',r,{literal:literal&&method==='type_text',surface:'ipc',baseline:head==='main'});
+        note(method==='type_text'?'ipc-type':'ipc-other',r,{literal:literal&&method==='type_text',surface:'ipc',baseline:head==='main',preRead:mode==='nonbmp-420'});
         if(r.error)throw protocol.serverError(r.error);
         return {result:r.result,engineMs:performance.now()-started};
       }};
@@ -163,7 +163,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
         if(originalHome==null)delete process.env.HOME;else process.env.HOME=originalHome;
         if(!literal)await store.remove(SLOT);
       }
-      const seen={literal,baseline:head==='main'};
+      const seen={literal,baseline:head==='main',preRead:mode==='nonbmp-420'};
       note('sky-result',rendered);note('sky-error',error,{...seen,surface:'sky-error'});note('forwarded',meta,{...seen,surface:'forwarded'});note('rendered-content',content);note('console',logged);
       const nativeMeta=native?.error?.meta??native?.result?.meta;
       const raw=nativeMeta?.typeReadback;

@@ -31,7 +31,10 @@ the same cells and is reported per cell, never gated. The gate: every fix row at
 success (a success answer over text that did not arrive), no privacy flag, no setup-invalid row.
 
 Privacy. Password-field and secret rows keep the strict #414 scan; the two fixed refusal sentences of ruling 1128 are
-admitted whole (`FIXED_REFUSALS`). The plain cells type non-secret text into a plain field, whose counts and excerpts
+admitted whole (`FIXED_REFUSALS`). On either head, a non-secret request refused before any read of the field
+(`secure`, `notTextField`, `noFocusedElement`) keeps its constant `pollMs:0`/`reads:0` (#414 admitted them on the
+baseline's `secure` refusal alone; run 45156583274 met them on Firefox's `notTextField`, #419, and one Safari
+`noFocusedElement`). The plain cells type non-secret text into a plain field, whose counts and excerpts
 the product may disclose: their strict-scan codes are reported as `plainDisclosures`, and only another row's value
 appearing on their surfaces is a privacy flag. `status.json` carries `nonbmp420`, per head and cell: counts, routes,
 answers, `nonBmpShape` labels and setup-invalid stages.

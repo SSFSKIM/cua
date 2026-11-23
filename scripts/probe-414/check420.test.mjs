@@ -116,3 +116,18 @@ test('the fixed refusal sentences are value-free and admitted whole, never as a 
   // A fixed sentence still carrying the value fails.
   assert.deepEqual(inspect({message:engine,x:'abcd\u{1f4a1}efg'},['abcd\u{1f4a1}efg']),['synthetic-value']);
 });
+test('a non-secret refusal before any read keeps its constant zero counters on both heads, and nothing else is admitted',()=>{
+  const text='abcd\u{1f4a1}efg',rb=o=>({confirmed:false,reason:'notTextField',snapshotMs:2,pollMs:0,reads:0,...o});
+  const at={ipc:r=>({error:{errorName:'typeUnconfirmed',meta:{typeReadback:r}}}),'sky-error':r=>({meta:{typeReadback:r}}),forwarded:r=>({'cua/typeReadback':r})};
+  for(const [surface,wrap] of Object.entries(at))for(const reason of ['notTextField','noFocusedElement','secure']){
+    assert.deepEqual(inspect(wrap(rb({reason})),[text],{literal:true,surface,preRead:true}),[],surface+' '+reason);
+    // Off nonbmp-420 the #414 rule stands: the baseline's secure refusal alone.
+    assert.equal(inspect(wrap(rb({reason})),[text],{literal:true,surface}).length>0,true);
+  }
+  const strict=r=>inspect(at.ipc(r),[text],{literal:true,surface:'ipc',preRead:true});
+  assert.notDeepEqual(strict(rb({reads:2})),[]);
+  assert.notDeepEqual(strict(rb({reason:'lengthMismatch'})),[]);
+  assert.notDeepEqual(strict(rb({actualLength:7})),[]);
+  assert.notDeepEqual(strict(rb({secure:true})),[]);
+  assert.notDeepEqual(inspect(at.ipc(rb()),[text],{literal:false,surface:'ipc',preRead:true}),[]);
+});

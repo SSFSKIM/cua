@@ -108,7 +108,8 @@ function embedded(s){
   }
   return [];
 }
-export function inspect(input,values,{literal=false,stringsOnly=false,surface=null,baseline=false,names=true}={}){
+const PRE_READ_REFUSALS=new Set(['secure','notTextField','noFocusedElement']);
+export function inspect(input,values,{literal=false,stringsOnly=false,surface=null,baseline=false,preRead=false,names=true}={}){
   const findings=new Set(),seen=new WeakSet();
   const needles=[...new Set(values.flatMap(v=>[v,Buffer.from(v).toString('hex'),Buffer.from(v).toString('base64').replace(/=+$/,''),...Array.from({length:Math.max(0,v.length-7)},(_,i)=>v.slice(i,i+8))]).map(x=>x.toLowerCase()))].filter(Boolean);
   function string(s,depth){
@@ -135,7 +136,10 @@ export function inspect(input,values,{literal=false,stringsOnly=false,surface=nu
         // The count of public units, at the exact production position of this surface.
         (enteredAt[surface]??[]).some(([where,key])=>at===where&&k===key)&&Number.isSafeInteger(x)&&x>=0&&x<=values[0]?.length||
         // The baseline's literal secure refusal alone carries its old, constant zero counters.
-        baseline&&inReadback&&['pollMs','reads'].includes(k)&&x===0&&readbackPaths.includes(at)&&v.reason==='secure'&&v.confirmed===false&&v.secure===undefined&&v.concealed===undefined);
+        // #420 (preRead): on either head, a non-secret request refused before any read of the field keeps those same constant
+        // zeros, which carry nothing of it (Firefox's notTextField, #419; a missing focus).
+        (baseline&&v.reason==='secure'||preRead&&PRE_READ_REFUSALS.has(v.reason))&&
+        inReadback&&['pollMs','reads'].includes(k)&&x===0&&readbackPaths.includes(at)&&v.confirmed===false&&v.secure===undefined&&v.concealed===undefined);
       if(exempt)continue;
       if(!stringsOnly&&x!==null&&x!==undefined&&forbidden.test(k))findings.add('private-key');
       if(!stringsOnly&&inReadback&&(!readbackKeys.has(k)||k===markerKey&&x!=='length'||k==='lateReply'&&x!==true||['secure','concealed','stoppedBeforeKey','keysUnconfirmed'].includes(k)&&typeof x!=='boolean'||k==='confirmed'&&typeof x!=='boolean'||k==='snapshotMs'&&!Number.isFinite(x)||k==='reason'&&(typeof x!=='string'||!/^[a-z][A-Za-z]{2,40}$/.test(x))))findings.add('readback-shape');

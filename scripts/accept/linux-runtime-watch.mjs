@@ -22,11 +22,13 @@ const replRole = ({exe, argv}) => {
 };
 
 /** An empty watch. */
-export const newWatch = () => ({samples: 0, maxSkyLinux: 0, engines: new Map(), sky: new Map(), replHost: new Map()});
+export const newWatch = () => ({samples: 0, maxSkyLinux: 0, engines: new Map(), engineProcesses: new Map(), sky: new Map(), replHost: new Map()});
 
 /**
- * One sample folded in: `entries`, each `{pid, ppid, state, exiting, comm, exe, argv, parent?: {argv, env}}` for the root's
- * process tree at that moment (`parent` read for engines only); a zombie (`state` Z) or an exiting process is skipped.
+ * One sample folded in: `entries`, each `{pid, ppid, state, exiting, starttime, comm, exe, argv, vanished?, parent?: {argv,
+ * env}}` for the root's process tree at that moment (`parent` read for engines only). A process that vanished ('gone' or
+ * 'exiting', sampleTree's word), a zombie or an exiting one is skipped: it has no executable to read. Every cua-engine
+ * sighting is recorded in `engineProcesses` with its pid, start time and executable, or why it was skipped.
  */
 export function foldSample(state, entries) {
   state.samples += 1;
@@ -37,7 +39,13 @@ export function foldSample(state, entries) {
     // A process that is exiting (PF_EXITING: its memory, and with it the executable's link, may already be gone) or has
     // exited and is not yet reaped (strace holds its children so) has no executable to read: it is judged by the
     // samples that saw it alive, and one seen only so (a version probe gone in a moment) by none.
-    if (entry.state === 'Z' || entry.exiting) continue;
+    const skipped = entry.vanished ?? (entry.state === 'Z' || entry.state === 'X' || entry.exiting ? 'exiting' : null);
+    if (isEngine(entry)) {
+      const seen = state.engineProcesses.get(entry.pid);
+      if (!skipped && (!seen || seen.skipped || seen.exe === null)) state.engineProcesses.set(entry.pid, {pid: entry.pid, starttime: entry.starttime ?? null, exe: entry.exe ?? null, skipped: null});
+      else if (skipped && !seen) state.engineProcesses.set(entry.pid, {pid: entry.pid, starttime: entry.starttime ?? null, exe: null, skipped});
+    }
+    if (skipped) continue;
     const parent = (entry.parent?.argv ?? []).join(' ');
     // An executable unread at one sample (the process was going) is filled by any sample that read it.
     const keep = (map, record) => { const seen = map.get(entry.pid); if (!seen) map.set(entry.pid, record); else if (seen.exe === null && record.exe !== null) map.set(entry.pid, record); };
@@ -53,7 +61,8 @@ export function foldSample(state, entries) {
 }
 
 /** The watch's record: `{samples, maxSkyLinux, engines, skyLinux, replHost}`, in the order each was first seen. */
-export const watchRecord = state => ({samples: state.samples, maxSkyLinux: state.maxSkyLinux, engines: [...state.engines.values()], skyLinux: [...state.sky.values()], replHost: [...state.replHost.values()]});
+export const watchRecord = state => ({samples: state.samples, maxSkyLinux: state.maxSkyLinux, engines: [...state.engines.values()], engineProcesses: [...state.engineProcesses.values()],
+  skyLinux: [...state.sky.values()], replHost: [...state.replHost.values()]});
 
 const sampled = watch => (watch.samples > 0 ? [] : ['the sampler took no samples']);
 const skySeen = watch => (watch.maxSkyLinux > 0 ? [`sky_linux was seen (${watch.maxSkyLinux} at once at most)`] : []);
@@ -97,22 +106,31 @@ export const nothingLaunchedProblems = watch => [...sampled(watch), ...watch.rep
 // ---- the sampler -------------------------------------------------------------------------------------------------------
 
 const read = path => { try { return readFileSync(path, 'utf8'); } catch { return null; } };
-const exeOf = pid => { try { return readlinkSync(`/proc/${pid}/exe`); } catch { return null; } };
-const argvOf = pid => (read(`/proc/${pid}/cmdline`) ?? '').split('\0').filter(Boolean);
 const ENV_KEYS = ['CUA_SKY_SERVICE', 'OAI_SKY_LINUX_BIN'];
-const envOf = pid => Object.fromEntries((read(`/proc/${pid}/environ`) ?? '').split('\0').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]).filter(([k]) => ENV_KEYS.includes(k)));
+const PROC = {list: () => readdirSync('/proc'), read, readlink: path => { try { return readlinkSync(path); } catch { return null; } }};
 
-/** The process tree under `root` now (root included), each entry as foldSample takes it. */
-export function sampleTree(root) {
+// A /proc/<pid>/stat line: its state, parent, whether it is exiting (the flags' PF_EXITING, 0x4), start time and comm.
+function parseStat(stat) {
+  const close = stat.lastIndexOf(')');
+  const fields = stat.slice(close + 2).split(' ');
+  return {state: fields[0], ppid: Number(fields[1]), exiting: (Number(fields[6]) & 0x4) !== 0, starttime: fields[19] ?? null, comm: stat.slice(stat.indexOf('(') + 1, close)};
+}
+
+/**
+ * The process tree under `root` now (root included), each entry as foldSample takes it (`io`, the /proc reads, a seam
+ * for tests). An executable that cannot be read is told apart (the coordinator's ruling on pilot 3): the stat is read
+ * again, and a process that has gone, or is now exiting, a zombie or dead, is `vanished` ('gone' or 'exiting'); one still
+ * alive keeps its unread executable, which no judge takes for an engine's.
+ */
+export function sampleTree(root, io = PROC) {
+  const argvOf = pid => (io.read(`/proc/${pid}/cmdline`) ?? '').split('\0').filter(Boolean);
+  const envOf = pid => Object.fromEntries((io.read(`/proc/${pid}/environ`) ?? '').split('\0').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]).filter(([k]) => ENV_KEYS.includes(k)));
   const table = new Map();
-  for (const name of readdirSync('/proc')) {
+  for (const name of io.list()) {
     if (!/^\d+$/.test(name)) continue;
-    const stat = read(`/proc/${name}/stat`);
+    const stat = io.read(`/proc/${name}/stat`);
     if (!stat) continue;
-    const close = stat.lastIndexOf(')');
-    const fields = stat.slice(close + 2).split(' ');
-    // fields[6] is the kernel's flags: PF_EXITING, 0x4.
-    table.set(Number(name), {state: fields[0], ppid: Number(fields[1]), exiting: (Number(fields[6]) & 0x4) !== 0, comm: stat.slice(stat.indexOf('(') + 1, close)});
+    table.set(Number(name), parseStat(stat));
   }
   const children = new Map();
   for (const [pid, {ppid}] of table) { if (!children.has(ppid)) children.set(ppid, []); children.get(ppid).push(pid); }
@@ -120,8 +138,14 @@ export function sampleTree(root) {
   const queue = table.has(root) ? [root] : [];
   while (queue.length) {
     const pid = queue.shift();
-    const {state, ppid, exiting, comm} = table.get(pid);
-    const entry = {pid, ppid, state, exiting, comm, exe: exeOf(pid), argv: argvOf(pid)};
+    const {state, ppid, exiting, starttime, comm} = table.get(pid);
+    const entry = {pid, ppid, state, exiting, starttime, comm, exe: io.readlink(`/proc/${pid}/exe`), argv: argvOf(pid)};
+    if (entry.exe === null) {
+      const again = io.read(`/proc/${pid}/stat`);
+      const now = again && parseStat(again);
+      if (!now || now.starttime !== starttime) entry.vanished = 'gone';
+      else if (now.state === 'Z' || now.state === 'X' || now.state === 'x' || now.exiting) entry.vanished = 'exiting';
+    }
     if (isEngine(entry) || isSky(entry)) entry.parent = {argv: argvOf(ppid), env: envOf(ppid)};
     entries.push(entry);
     queue.push(...(children.get(pid) ?? []));

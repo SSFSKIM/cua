@@ -200,7 +200,9 @@ const projectRun = run => run && ({label: run.label, exit: run.exit, signal: run
   ...(run.report?.imports?.comparison ? {imports: {comparison: run.report.imports.comparison}} : {}),
   ...(run.kind === 'browser' && run.report?.moduleRoot ? {witness: witnessOf(run.report, {root: real(run.report.moduleRoot),
     kernels: (run.trace?.summary?.kernels ?? []).filter(k => k.underServe && k.underHelper)})} : {}),
-  watch: run.watch && {samples: run.watch.samples, maxSkyLinux: run.watch.maxSkyLinux, engines: run.watch.engines.length, skyLinux: run.watch.skyLinux.length, replHost: run.watch.replHost.map(p => p.role)},
+  // Each cua-engine the sampler saw, with its start time, and whether it was skipped as vanished between two reads.
+  watch: run.watch && {samples: run.watch.samples, maxSkyLinux: run.watch.maxSkyLinux, engines: run.watch.engines.length, skyLinux: run.watch.skyLinux.length, replHost: run.watch.replHost.map(p => p.role),
+    engineProcesses: run.watch.engineProcesses ?? []},
   ...(run.trace ? {trace: {file: run.trace.file, processes: run.trace.summary?.processes ?? null, serve: run.trace.summary?.serve ?? null, workers: run.trace.summary?.workers ?? null,
     helpers: run.trace.summary?.helpers ?? null, kernels: run.trace.summary?.kernels?.map(k => ({...k, opened: k.opened?.length})) ?? null, runtimes: run.trace.summary?.runtimes ?? null,
     launched: run.trace.summary?.launched?.map(l => l.kind) ?? null}} : {})});

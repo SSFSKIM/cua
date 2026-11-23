@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {APPROVED_OLDER, CELLS, FIXTURE_STEPS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal,
   pinsChanged, refusalProblems, reinstallProblems, runVerdict, traceProblems, upgradeProblems, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
-import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, vendorEngineProblems, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
+import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, vendorEngineProblems, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
 
 const HOME = '/run/user/.local/share/cua';
 const ENGINE = `${HOME}/engine/linux/cua-engine`;
@@ -313,4 +313,46 @@ test('which parts the older cua shares with this one: the helper pin, the host\'
   const pins = (engine = 'e', node = '{"v":1}', helper = '{"h":1}') => ({helper, node, engine: {assets: {x64: {sha256: engine}}}});
   assert.deepEqual(pinsChanged({head: pins(), older: pins(), arch: 'x64'}), {sandboxHelper: false, node: false, engine: false});
   assert.deepEqual(pinsChanged({head: pins('e'), older: pins('d', null), arch: 'x64'}), {sandboxHelper: false, node: true, engine: true});
+});
+
+// Pilot 3's hosted failures (fix wave 1, the coordinator's ruling): a short-lived cua-engine read alive in /proc/<pid>/stat
+// and gone by its /proc/<pid>/exe. A stubbed /proc: each path's reads in turn (a list), or always the same value.
+const statLine = (pid, comm, state, ppid, {flags = 0, start = 4200} = {}) => `${pid} (${comm}) ${state} ${ppid} 0 0 0 -1 ${flags} ${Array(12).fill(0).join(' ')} ${start} 0`;
+function fakeProc(files) {
+  const reads = new Map(Object.entries(files).map(([path, v]) => [path, Array.isArray(v) ? [...v] : v]));
+  const next = path => { const v = reads.get(path); return Array.isArray(v) ? (v.length > 1 ? v.shift() : v[0]) ?? null : v ?? null; };
+  return {list: () => [...new Set(Object.keys(files).map(p => /^\/proc\/(\d+)\//.exec(p)?.[1]).filter(Boolean))], read: next, readlink: next};
+}
+const tree = engine => fakeProc({
+  '/proc/10/stat': statLine(10, 'node', 'S', 1), '/proc/10/exe': '/n/bin/node', '/proc/10/cmdline': 'node\0/repo/src/repl-host/trusted-worker.mjs\0', '/proc/10/environ': '',
+  '/proc/11/cmdline': '/h/engine/linux/cua-engine\0--version\0', ...engine,
+});
+
+test('the sampler tells a cua-engine gone between its stat and its exe from a live one: gone is skipped and recorded', () => {
+  const entries = sampleTree(10, tree({'/proc/11/stat': [statLine(11, 'cua-engine', 'S', 10), null], '/proc/11/exe': null}));
+  assert.equal(entries.find(e => e.pid === 11).vanished, 'gone');
+  const record = watched(entries);
+  assert.deepEqual(record.engines, []);
+  assert.deepEqual(record.engineProcesses, [{pid: 11, starttime: '4200', exe: null, skipped: 'gone'}]);
+});
+
+test('the sampler skips a cua-engine found exiting or a zombie when its exe could not be read', () => {
+  for (const second of [statLine(11, 'cua-engine', 'Z', 10), statLine(11, 'cua-engine', 'X', 10), statLine(11, 'cua-engine', 'S', 10, {flags: 0x4})]) {
+    const entries = sampleTree(10, tree({'/proc/11/stat': [statLine(11, 'cua-engine', 'S', 10), second], '/proc/11/exe': null}));
+    assert.equal(entries.find(e => e.pid === 11).vanished, 'exiting');
+    assert.deepEqual(watched(entries).engineProcesses, [{pid: 11, starttime: '4200', exe: null, skipped: 'exiting'}]);
+  }
+});
+
+test('negative control: a cua-engine still alive whose executable cannot be read fails cua\'s engine', () => {
+  const entries = sampleTree(10, tree({'/proc/11/stat': statLine(11, 'cua-engine', 'S', 10), '/proc/11/exe': null}));
+  assert.equal(entries.find(e => e.pid === 11).vanished, undefined);
+  const record = watched(entries);
+  assert.deepEqual(record.engineProcesses, [{pid: 11, starttime: '4200', exe: null, skipped: null}]);
+  assert.match(cuaEngineProblems(record, {engine: ENGINE}).join('; '), /cua-engine 11 ran null/);
+});
+
+test('a cua-engine read alive is recorded with its pid, start time and executable, and judged', () => {
+  const entries = sampleTree(10, tree({'/proc/11/stat': statLine(11, 'cua-engine', 'S', 10, {start: 77}), '/proc/11/exe': ENGINE}));
+  assert.deepEqual(watched(entries).engineProcesses, [{pid: 11, starttime: '77', exe: ENGINE, skipped: null}]);
 });

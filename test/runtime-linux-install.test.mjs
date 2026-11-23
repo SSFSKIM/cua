@@ -7,7 +7,7 @@ import {existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync
 import {join} from 'node:path';
 import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
 import {parsePin, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
-import {scratch, debFixture, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
+import {scratch, debFixture, fixturePin, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const noSignatures = async () => { throw new Error('no code-signature check may run for a linux pin'); };
@@ -131,4 +131,14 @@ test('a runtimes/ that is a file is refused as what stands in the way, and left 
     return true;
   });
   assert.equal(readFileSync(blocking, 'utf8'), 'not a directory');
+});
+
+// Fix wave 1 (b): macOS's install is as it was: that check is the Linux vendor lane's.
+test('on macOS a runtimes/ that is a file fails as it did, with the filesystem\'s own error', async t => {
+  const ctx = setup(t);
+  mkdirSync(ctx.home, {recursive: true});
+  writeFileSync(join(ctx.home, 'runtimes'), 'not a directory');
+  const darwin = {platform: 'darwin', arch: 'arm64'};
+  await assert.rejects(installRuntime({home: ctx.home, manifest: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), archivePath: ctx.archive.deb, host: darwin, verifySignatures: noSignatures}),
+    err => { assert.equal(err.code, 'EEXIST', err.message); return true; });
 });

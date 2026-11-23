@@ -72,8 +72,8 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
   assertHostSupports(manifest, host);
   const real = realHome(home, {create: true});
   const layout = homeLayout(real);
-  // A runtimes/ that is not a directory blocks every release under it: named as what stands in the way.
-  if (blocksDirectory(layout.runtimes)) occupied(layout.runtimes);
+  // On Linux, a runtimes/ that is not a directory blocks every release under it: named as what stands in the way.
+  if (manifest.platform === 'linux' && blocksDirectory(layout.runtimes)) occupied(layout.runtimes);
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);

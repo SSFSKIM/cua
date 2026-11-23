@@ -31,7 +31,9 @@ or the owner is prepared and named in its gate's disposition file under
 
 ## Progress
 
-- [ ] T9
+- [x] T9 — reviewed clean 2026-11-23 (e84ba7953, fix b709b776a). The combined tree with M4's re-cut (the pending
+  build named once, approval of a compatible pending build ending the fallback) and sitting E's third home are not yet
+  witnessed.
 - [ ] T8a
 - [ ] T8b
 - [ ] T8c

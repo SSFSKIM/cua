@@ -17,9 +17,12 @@
 //                so it is this run's) of `lane` holding an observation of every home (macos-selection.mjs HOMES),
 //                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
 //                on the flip cua's engine on cua's host in the default home and each fallback's own reason elsewhere
+//   onboarding   T3b's staged onboarding (sitting D): its record (`record`) judged stage by stage against M4's behaviour
+//                (./onboarding-judge.mjs); a missing or incomplete record is NO VERDICT, never a pass
 // deps: {exit, logText() (the step's log), readJson(path) (null when unreadable), exists(path)}. -> [status, reason].
 import {HOMES} from '../accept/macos-selection.mjs';
 import {sampleCause} from '../native-matrix/front-key.mjs';
+import {judgeOnboarding} from './onboarding-judge.mjs';
 
 const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert']);
 const VERDICT_LINE = /^VERDICT: (PASS|FAIL|NO VERDICT|OWNER)\b/gm;
@@ -76,6 +79,7 @@ export const CHECKS = Object.freeze({
     }
     return ['FAIL', `driver failure: no observation recorded (${rows.find(row => row.invalid)?.invalid ?? 'no reason recorded'})`];
   },
+  onboarding: (step, {exit, readJson}) => judgeOnboarding(readJson(step.record), {path: step.record, exit}),
   selection(step, {exit, readJson}) {
     if (exit !== step.expect) return ['FAIL', `exit ${exit}, expected ${step.expect}`];
     const report = readJson(step.report);

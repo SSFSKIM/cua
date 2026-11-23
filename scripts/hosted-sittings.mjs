@@ -25,6 +25,10 @@
 //   node scripts/hosted-sittings.mjs counts <dir>...                                   per-cell counts of result dirs
 //   node scripts/hosted-sittings.mjs focus-timing --approved-engine <bundle> --out <file>   the focus probe's cost
 //   node scripts/hosted-sittings.mjs textedit up --file <path> | down                  sitting D's scratch document
+//   node scripts/hosted-sittings.mjs onboarding --out <file>
+//       T3b's staged onboarding, sitting D's last step (scripts/hosted-sittings/onboarding.mjs): cua's engine's TCC rows
+//       set stage by stage, a relaunch at each, the product's answers recorded to <file>, which the sitting's check judges
+//       (scripts/hosted-sittings/onboarding-judge.mjs). Exit 0 every stage ran, 1 the run stopped (recorded), 2 refused.
 import {spawnSync} from 'node:child_process';
 import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -39,6 +43,7 @@ import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs'
 import {assertGithubHosted, readRunnerRecord} from './hosted-sittings/runner.mjs';
 import {execStep, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
+import {runOnboarding} from './hosted-sittings/onboarding.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
 
 const REPO = resolve(dirname(new URL(import.meta.url).pathname), '..');
@@ -157,7 +162,14 @@ async function main(argv) {
       return timing.answered ? 0 : 1;
     }
     case 'textedit': return textedit(positionals[0], values);
-    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down (see this file\'s header)');
+    case 'onboarding': {
+      if (!values.out) usage('onboarding --out <file>');
+      const record = await runOnboarding();
+      writeJson(resolve(values.out), record);
+      process.stdout.write(json({complete: record.complete, problem: record.problem, stages: record.stages.map(stage => stage.id)}));
+      return record.complete ? 0 : 1;
+    }
+    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down | onboarding (see this file\'s header)');
   }
   return 2;
 }

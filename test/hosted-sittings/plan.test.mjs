@@ -89,9 +89,9 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
   assert.equal(pilot.pilotReads, true);
 });
 
-test('D: accept-native\'s exact selection with both live flags on a scratch home and its own sentinel store; verify --bind on each engine; #216\'s twenty cycles; T3b last, pending', () => {
+test('D: accept-native\'s exact selection with both live flags on a scratch home and its own sentinel store; verify --bind on each engine; #216\'s twenty cycles; T3b\'s staged onboarding last, on the scratch document', () => {
   const p = plan('d');
-  assert.deepEqual(ids(p), ['scratch-install', 'accept-native', 'textedit-up', 'verify-cua', 'verify-vendor', 'approval-cycles', 'textedit-down', 'onboarding']);
+  assert.deepEqual(ids(p), ['scratch-install', 'accept-native', 'textedit-up', 'verify-cua', 'verify-vendor', 'approval-cycles', 'onboarding', 'textedit-down']);
   assert.deepEqual(ACCEPT_NATIVE_ITEMS, [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13], 'never item 9, the release gates');
   const accept = p.steps[1];
   assert.deepEqual(accept.argv, ['node', 'scripts/accept-native.mjs', '--engine', 'cua', '--live-textedit', '--live-secrets', '--items', '1,2,3,4,5,6,7,8,10,11,12,13', '--report', '/w/out/acceptance.json']);
@@ -102,14 +102,22 @@ test('D: accept-native\'s exact selection with both live flags on a scratch home
   assert.deepEqual(plan('a').scratchDirs, []);
   assert.deepEqual(accept.needs, ['scratch-install']);
   assert.deepEqual(p.steps.slice(3, 5).map(s => s.argv), [['node', 'verify.mjs', '--engine', 'cua', '--bind', 'com.apple.TextEdit'], ['node', 'verify.mjs', '--engine', 'vendor', '--bind', 'com.apple.TextEdit']]);
-  assert.equal(p.steps[6].kind, 'cleanup');
+  assert.equal(p.steps[7].kind, 'cleanup');
   const cycles = p.steps[5];
   assert.deepEqual(cycles.argv, ['node', 'scripts/approval-cycles.mjs', '--engine', 'cua', '--approve', 'com.apple.TextEdit', '--decline', 'com.apple.calculator', '--cycles', '20']);
   assert.deepEqual(cycles.needs, ['textedit-up'], 'the approved app\'s window is the kit\'s scratch document (approval-cycles.mjs waits for it)');
   assert.deepEqual(cycles.env, {CUA_SHIM_SURFACES: 'computer,browser'});
-  assert.equal(p.steps[7].kind, 'pending');
-  assert.match(p.steps[7].pending, /T3b/);
-  assert.deepEqual(plan('d', {pilot: true}).steps.find(s => s.id === 'approval-cycles').argv.at(-1), '20', 'the pilot runs the twenty-cycle witness #216 waits on');
+  // T3b: the last step that measures (it removes and restores cua's engine's rows), on the same scratch document, read
+  // by its record; the document's cleanup follows it.
+  const onboarding = p.steps[6];
+  assert.deepEqual([onboarding.kind, onboarding.check, onboarding.record, onboarding.report, onboarding.needs],
+    ['run', 'onboarding', '/w/out/onboarding.json', '/w/out/onboarding.json', ['textedit-up']], 'its record removed before it runs, so the one read is its own');
+  assert.deepEqual(onboarding.argv, ['node', 'scripts/hosted-sittings.mjs', 'onboarding', '--out', '/w/out/onboarding.json']);
+  assert.ok(!onboarding.pilotNoVerdict, 'its verdict counts in the pilot too');
+  assert.ok(!p.steps.some(s => s.kind === 'pending'), 'D has nothing left unbuilt');
+  const pilot = plan('d', {pilot: true});
+  assert.deepEqual(pilot.steps.find(s => s.id === 'approval-cycles').argv.at(-1), '20', 'the pilot runs the twenty-cycle witness #216 waits on');
+  assert.deepEqual(pilot.steps.filter(s => s.id === 'onboarding'), [onboarding], 'the pilot runs the stages once, as the full sitting does');
 });
 
 test('E: the default-selection mode\'s two lanes, each expected to fail before the flip and to pass on it', () => {

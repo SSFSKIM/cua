@@ -7,7 +7,9 @@
 // Chromium-family drag held until its page can take it, so a drag Chrome refused never answers as a plain one, and the
 // hold's notice beside the ok; 0.4.3: a long Chrome drag and a Chrome source's drag-handle end released on a tail that
 // refreshes Chrome's drop status at the path's end, for #459's drops on a position the path had left, which 0.4.2
-// answered ok under load; a residual is measured and bounded, not zero), or one whose version line it cannot read;
+// answered ok under load; a residual is measured and bounded, not zero; 0.4.4: an Electron drop's settle rests its
+// press source's family's rest, where 0.4.3 rested the named window's, none for GTK 4, so its accept could answer for
+// a place the pointer had left, #487), or one whose version line it cannot read;
 // nothing is spawned then. It spawns `<engine> server --desktop <mode>` and sends `capabilities` as the new process's
 // first request, keeping that process's answer. A request may carry a check of the report, made against the process the request is then written to. Requests
 // made while it starts wait for it, in call order.
@@ -27,7 +29,7 @@
 import {execFile, spawn} from 'node:child_process';
 import {heldRecordStdio} from './held-record.mjs';
 
-export const MIN_ENGINE_VERSION = '0.4.3';
+export const MIN_ENGINE_VERSION = '0.4.4';
 const STDERR_TAIL = 8192;
 const VERSION_TIMEOUT_MS = 5000;
 const REMEDY = 'run cua install --engine';

@@ -1,0 +1,2 @@
+step.sh 2026-11-23T11:15:20Z start L4d after 171 s quiet wait: load=0.98 9.10 10.21 stress-ng=none df=50G
+step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/m5/home-x64-044 --out /Users/new/.local/share/cua-171/m5/out-x64-h9

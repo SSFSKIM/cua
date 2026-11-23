@@ -1,0 +1,15 @@
+diff --git a/scripts/linux-engine-diff/drop-signals.mjs b/scripts/linux-engine-diff/drop-signals.mjs
+index edd3df32..66423b56 100644
+--- a/scripts/linux-engine-diff/drop-signals.mjs
++++ b/scripts/linux-engine-diff/drop-signals.mjs
+@@ -408,6 +408,10 @@ export const PLANS = {
+   // block by block (`blockPlan`)
+   't14-long-vendor': [['pinned', 'long-left', 100], ['newest', 'long-left', 100], ['cua', 'long-left', 100]],
+   't14-long-gate': [['cua', 'long-left', 30]],
++  // task 132 (development only, never pushed): t14-floor's cells at the candidate's counts, and Chrome's long-left
++  // as a handle (ruling 998)
++  't132-floor-q': [['cua', 'plain-long', 75], ['cua', 'left', 25], ['cua', 'inzone-out', 8]],
++  't132-handle-long': [['cua:handle', 'long-left', 100]],
+   // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
+   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
+   // the engine before T14 too, its failing first

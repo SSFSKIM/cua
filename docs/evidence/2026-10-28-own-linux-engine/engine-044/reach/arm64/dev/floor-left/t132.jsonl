@@ -1,0 +1,9 @@
+{"t":"2026-11-23T11:43:17.128Z","kind":"start","round":0,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"16.43 14.91 12.92"}
+{"t":"2026-11-23T11:44:50.011Z","kind":"end","round":0,"engine":"h9","code":0,"signal":null,"load":"16.67 15.47 13.32"}
+{"t":"2026-11-23T11:44:50.012Z","kind":"start","round":1,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"16.67 15.47 13.32"}
+{"t":"2026-11-23T11:46:24.504Z","kind":"end","round":1,"engine":"h9","code":0,"signal":null,"load":"16.83 15.89 13.69"}
+{"t":"2026-11-23T11:46:24.504Z","kind":"start","round":2,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"16.83 15.89 13.69"}
+{"t":"2026-11-23T11:47:57.537Z","kind":"end","round":2,"engine":"h9","code":0,"signal":null,"load":"17.12 16.25 14.02"}
+{"t":"2026-11-23T11:47:57.538Z","kind":"start","round":3,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"17.12 16.25 14.02"}
+{"t":"2026-11-23T11:49:28.858Z","kind":"end","round":3,"engine":"h9","code":0,"signal":null,"load":"17.34 16.54 14.34"}
+{"t":"2026-11-23T11:49:28.858Z","kind":"done","runs_failed_their_verdict":0}

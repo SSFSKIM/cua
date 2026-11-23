@@ -741,3 +741,56 @@ push.
 - **The ancestry check depends on fetching the branch.** In a shallow checkout, or one without credentials for a
   private repository, the branch fetch fails and any override is refused. This affects only the override; the
   default pin is unaffected.
+
+## Fix wave 4
+
+Round 4 returned two small O0 findings and two Minor ones. All four are fixed from `00dcbc17c`.
+
+### What changed
+
+- **I1: an override is checked only against a tip fetched in this run** (`29058c799`).
+  - `pin.mjs` first checks whether the override is in `O0_COMMIT`'s own history. That check needs no fetch.
+  - Otherwise it fetches `refs/heads/docs/117-progress` and reads that fetch's `FETCH_HEAD`. It then tests the
+    override's ancestry against that tip only, never against a tracking ref the checkout may already hold.
+  - If the fetch fails, any override outside `O0_COMMIT`'s history is refused, before the spec is read.
+  - The default pin is unchanged.
+  - New test: the fetch fails while a cached ref holds the candidate. The override is refused, and nothing is shown or
+    written.
+- **I1: a fenced heading no longer passes** (`29058c799`).
+  - `decisionEntryProblem` now marks fenced lines across the whole document first. The section's start, its end and
+    its entries are all read from lines outside fences.
+  - A document whose only `## Decision Log` heading and O0 bullet sit inside one fence now refuses with "no Decision
+    Log section". This case is in the zero-store-call table.
+  - The real spec at `db775127` still passes.
+- **Minor: a stop caused by a reset the alert blocked is labelled NO VERDICT** (`4130efedc`).
+  - `resetHeldFixture` records `blockedBy: 'alert'` when the retried cleanup was itself held.
+  - The `record` and `observation` checks read such a stopped record as NO VERDICT, with the fixture reason, so the
+    sitting exits 4.
+  - Any other incomplete record, including a reset that failed for another reason, stays FAIL.
+- **Minor: a held row's timing carries its mark** (`4130efedc`). In `caseRow`, the held method row's speed row now
+  copies `alertHeld` and the backstop, so it lands in `alert`.
+
+### TDD
+
+**RED**, all in one run:
+
+```
+node --test test/hosted-sittings/pin.test.mjs test/hosted-sittings/tcc.test.mjs test/hosted-sittings/checks.test.mjs test/native-matrix/probe-run.test.mjs test/native-matrix/run.test.mjs
+```
+
+pass 71, fail 5:
+
+| Test | Failure |
+|---|---|
+| `checks` `not ok 3` | the blocked reset read as FAIL |
+| `pin` `not ok 6` | the cached ref was trusted |
+| `tcc` `not ok 16` | the fenced heading was accepted |
+| `probe-run` `not ok 52` | no `blockedBy` |
+| `run` `not ok 66` | the timing row's `alertHeld` was undefined |
+
+**GREEN:** the same files pass 76/76.
+
+The focused suites at `4130efedc` pass 2135/2135, plain and with `RUNNER_ENVIRONMENT=github-hosted
+GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1`.
+
+I made no full `npm test`, hosted run, GUI action, TCC write or push.

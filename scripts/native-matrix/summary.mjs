@@ -427,8 +427,11 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // A judged cell with no counted cua sample is named; every cell that does not qualify is counted once and listed
   // under NO VERDICT by cell.
   const unproven = judgedCells.filter(c => c.verdict === 'no-verdict' && c.cua.valid === 0).map(c => {
-    const unpaired = (c.account.cua.noVerdict.unpaired ?? 0) > 0;
-    return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)' : 'has no valid cua sample'}`;
+    const causes = Object.keys(c.account.cua.noVerdict);
+    const unpaired = (c.account.cua.noVerdict.unpaired ?? 0) > 0, unreferenced = causes.length > 0 && causes.every(k => k === 'reference');
+    // Ruling 1168: where every sample's vendor pair could not be the reference, the missing proof is the vendor's.
+    return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
+      : unreferenced ? 'has no vendor sample that registered the pointerdown (ruling 1168)' : 'has no valid cua sample'}`;
   });
   const unqualified = cells.filter(c => !c.qualifies);
   const missing = [

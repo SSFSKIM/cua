@@ -127,16 +127,21 @@ export const POINTERDOWN_INLINE = ` <button id="pointer" type="button">${POINTER
 export const POINTERDOWN_SCRIPT = "(() => { let downs = 0; const status = document.getElementById('pointer-status');"
   + " document.getElementById('pointer').addEventListener('pointerdown', () => { downs += 1; status.textContent = 'Pointer downs: ' + downs; }); })();";
 const POINTERDOWN_HASH = createHash('sha256').update(POINTERDOWN_SCRIPT).digest('base64');
-// A variant built by replacing a part of the shared page: a part that is not there (the shared page changed) is an
-// error at load, never a variant silently equal to the shared page.
+// The variant is built by replacing parts of the shared page, and only when it is asked for (startScenePage's
+// 'pointerdown'), so a part that is not there (the shared page changed) stops the matrix's page loudly and never the
+// shared page's other consumers; it is never a variant silently equal to the shared page. `html` and `csp`: the page it
+// is built from (the shared one). -> {html, csp}.
 const inserted = (text, part, replacement) => {
-  if (!text.includes(part)) throw new Error(`the scene page has no ${JSON.stringify(part.slice(0, 60))} to build its variant from`);
+  if (!text.includes(part)) throw new Error(`the scene page has no ${JSON.stringify(part.slice(0, 60))} to build its pointerdown variant from`);
   return text.replace(part, replacement);
 };
-export const POINTERDOWN_CSP = inserted(CSP, `script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${POINTERDOWN_HASH}'`);
 const APPLY = '<button id="apply" type="button">Apply</button>';
-export const POINTERDOWN_PAGE_HTML = inserted(inserted(PAGE_HTML, APPLY, `${APPLY}${POINTERDOWN_INLINE}`),
-  `<script>${SCRIPT}</script>`, `<script>${SCRIPT}</script><script>${POINTERDOWN_SCRIPT}</script>`);
+export function pointerdownPage({html = PAGE_HTML, csp = CSP} = {}) {
+  return {
+    html: inserted(inserted(html, APPLY, `${APPLY}${POINTERDOWN_INLINE}`), `<script>${SCRIPT}</script>`, `<script>${SCRIPT}</script><script>${POINTERDOWN_SCRIPT}</script>`),
+    csp: inserted(csp, `script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${POINTERDOWN_HASH}'`),
+  };
+}
 
 // What the server keeps of a counters beacon: its sequence, the textarea's length and each count, every one a
 // non-negative whole number, and whether the document had the focus (a boolean); anything else in the body is dropped.
@@ -158,8 +163,9 @@ export function countersRecord(text) {
 export async function startScenePage({port = 0, onReady = null, page = 'shared', onCounters = null} = {}) {
   if (!PAGE_VARIANTS.includes(page)) throw new Error(`the page variant is ${PAGE_VARIANTS.join(' or ')}, not ${page}`);
   const popup = page === 'popup', counters = page === 'counters' || popup, pointerdown = page === 'pointerdown';
-  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : pointerdown ? POINTERDOWN_PAGE_HTML : PAGE_HTML;
-  const headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : pointerdown ? POINTERDOWN_CSP : CSP);
+  const variant = pointerdown ? pointerdownPage() : null;
+  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : pointerdown ? variant.html : PAGE_HTML;
+  const headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : pointerdown ? variant.csp : CSP);
   let expectedHost, reported = false;
   const waiting = [];
   const server = createServer((req, res) => {

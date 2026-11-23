@@ -14,7 +14,7 @@ import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {judgeMethod} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {departureProblems, usableDepartures} from '../../scripts/native-matrix/departures.mjs';
 import {POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
-import {CSP, PAGE_HTML, PAGE_VARIANTS, POINTERDOWN, POINTERDOWN_CSP, POINTERDOWN_INLINE, POINTERDOWN_PAGE_HTML, POINTERDOWN_SCRIPT, SCRIPT, startScenePage}
+import {CSP, PAGE_HTML, PAGE_VARIANTS, POINTERDOWN, POINTERDOWN_INLINE, POINTERDOWN_SCRIPT, pointerdownPage, SCRIPT, startScenePage}
   from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
@@ -51,6 +51,7 @@ const listenerTypes = el => Object.keys(el.listeners).sort();
 
 test('the Chrome page\'s pointerdown variant: the shared page plus the pair inline after Apply and its script; the shared page unchanged', async () => {
   assert.ok(PAGE_VARIANTS.includes(POINTERDOWN.variant));
+  const {html: POINTERDOWN_PAGE_HTML, csp: POINTERDOWN_CSP} = pointerdownPage();
   // The shared page is byte-identical (every record so far was taken on it): removing the pair and the script gives it back.
   assert.equal(createHash('sha256').update(PAGE_HTML).digest('hex'), '67d628ac5fbb8568140649e3ae68d0558e0940495b00275864a708b94b53ba84');
   assert.ok(POINTERDOWN_PAGE_HTML.includes(`<script>${POINTERDOWN_SCRIPT}</script>`) && POINTERDOWN_PAGE_HTML.includes(POINTERDOWN_INLINE), 'the variant carries its pair and its script');
@@ -72,6 +73,19 @@ test('the Chrome page\'s pointerdown variant: the shared page plus the pair inli
     assert.equal(served.headers.get('content-security-policy'), POINTERDOWN_CSP);
     assert.equal(await (await fetch(shared.url)).text(), PAGE_HTML);
   } finally { await page.close(); await shared.close(); }
+});
+
+test('the pointerdown variant is built only when asked for: a shared page without its anchors fails that build loudly, nothing else', async () => {
+  // A shared page that lost Apply's markup, its script, or the CSP's script hash: the variant's build throws, naming it.
+  assert.throws(() => pointerdownPage({html: PAGE_HTML.replace('<button id="apply" type="button">Apply</button>', '<button id="apply">Apply</button>')}), /no "<button id=\\"apply\\".*pointerdown variant/);
+  assert.throws(() => pointerdownPage({html: PAGE_HTML.replace(`<script>${SCRIPT}</script>`, '')}), /pointerdown variant/);
+  assert.throws(() => pointerdownPage({csp: "default-src 'none'"}), /pointerdown variant/);
+  // Loading the module built nothing (the import above succeeded whatever the variant would be), and the other variants
+  // never build it: the shared page's consumers are served as before.
+  const source = fs.readFileSync(join(ROOT, 'scripts/native-matrix/fixtures/scene-page.mjs'), 'utf8');
+  assert.deepEqual(source.match(/pointerdownPage\(\)/g), ['pointerdownPage()'], 'one call, startScenePage\'s pointerdown branch');
+  assert.match(source, /const variant = pointerdown \? pointerdownPage\(\) : null;/);
+  for (const page of ['shared', 'counters', 'popup']) { const served = await startScenePage({page}); await served.close(); }
 });
 
 test('the Chrome page\'s button counts pointer downs only: no click handler, the count in its status line', () => {

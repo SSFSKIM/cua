@@ -164,6 +164,12 @@ test('ruling 1168: a pointerdown cell where cua\'s press reached no pointer hand
     assert.deepEqual(cell.account.cua.noVerdict, {reference: 3});
     assert.notEqual(broken.verdict, 'PASS');
     assert.match(renderSummary(broken), new RegExp(`- method ${id}, run 1: the reference side did not register the pointerdown \\(the vendor's click: its count unchanged\\)`));
+    // The headline names the vendor's missing proof, never cua's.
+    assert.ok(broken.missing.includes(`method: ${id} has no vendor sample that registered the pointerdown (ruling 1168)`), broken.missing.join('\n'));
+    assert.ok(!broken.missing.some(p => p === `method: ${id} has no valid cua sample`));
+    // A cua sample of its own cause beside them keeps the general line.
+    const mixed = judged({vendor: {resolved: 9, tweak: set(id, missed)}, cua: {tweak: (rows, run) => set(id, run === 1 ? {...missed, invalid: 'not ready'} : missed)(rows)}});
+    assert.ok(mixed.missing.includes(`method: ${id} has no valid cua sample`), mixed.missing.join('\n'));
   }
   const both = judged({vendor: {axMs: 50, resolved: 9, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}, cua: {axMs: 40, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}});
   assert.equal(both.methods.find(m => m.id === 'chrome/frontmost/click.pointerdown').verdict, 'equal');

@@ -52,6 +52,9 @@ const INVALID_INDEX = 99999;
 export const REFUSALS = Object.freeze({
   notSettable: 'Cannot set a value for an element that is not settable',
   notText: 'Cannot select text for an element that does not support a settable selected text range',
+  // #190: select_text's second refusal (F-helper-logic.md §16.2), after the settability check passed and no unique
+  // match was found. Chromium answers a checkbox's selected text range settable, so this is the not-text refusal there.
+  textNotFound: 'Could not find the requested text to select in the element',
   invalidIndex: `${INVALID_INDEX} is an invalid element ID`,
   noWindow: '(noWindowsAvailable|timeoutReached)',
 });
@@ -415,8 +418,10 @@ return {ok: applied, outcome: {applied}};`},
   dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: {window: [1000, 760], from: [24, 192], to: [200, 237]}}),
   refusal({method: 'setValue', kase: 'notSettable', find: named('Apply'), act: 'await __app.setValue(__m.index, "x");', watch: `[valueOfIndex(ax, ${named('Scene name')}), focusedIndexOf(ax)]`,
     sentence: REFUSALS.notSettable}),
+  // The checkbox's selected text range reads settable in Chromium, so both engines refuse at the search, not the
+  // settability check (#190; hold 3, both engines, both runs).
   refusal({method: 'selectText', kase: 'notText', find: named('Scene option'), act: 'await __app.selectText(__m.index, "Scene");', watch: `[valueOfIndex(ax, ${named('Scene option')}), selectedTextOf(ax)]`,
-    sentence: REFUSALS.notText}),
+    sentence: REFUSALS.textNotFound}),
 ];
 
 // ---- The Electron fixture -----------------------------------------------------------------------------------------------

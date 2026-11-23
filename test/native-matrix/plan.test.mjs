@@ -260,6 +260,24 @@ test('a refused case passes only on the vendor\'s sentence with nothing changed'
   assert.equal((await runCase('textedit', 'textedit', invalid, 'click', 'invalidIndex')).check.value.ok, true);
 });
 
+// #190: Chromium answers a checkbox's AXSelectedTextRange settable, so the vendor's select_text passes its settability
+// check there and refuses at the search; hold 3 recorded that sentence from both engines in both runs. The Chrome row
+// expects it, exactly; TextEdit's and Finder's rows keep the settability refusal.
+test('selectText.notText expects each scene\'s own refusal sentence and no other', async () => {
+  const notFound = 'Could not find the requested text to select in the element';
+  const notSettable = 'Cannot select text for an element that does not support a settable selected text range';
+  const refuse = (scene, sentence) => fakeApp(golden(scene, 'vendor.txt'), {selectText: () => { throw new Error(`Computer Use server error -10005: ${sentence}`); }});
+  const check = async (scene, sentence) => (await runCase(scene, scene, refuse(scene, sentence), 'selectText', 'notText')).check.value;
+  const chrome = await check('chrome', notFound);
+  assert.equal(chrome.ok, true, JSON.stringify(chrome));
+  for (const other of [notSettable, 'Timed out waiting for the application to respond', 'The element did not accept the text selection.'])
+    assert.equal((await check('chrome', other)).ok, false, other);
+  for (const scene of ['textedit', 'finder']) {
+    assert.equal((await check(scene, notSettable)).ok, true, scene);
+    assert.equal((await check(scene, notFound)).ok, false, scene);
+  }
+});
+
 test('the app with no window: its bind refused with the vendor\'s sentence, nothing bound', async () => {
   const cells = caseCells('windowless', casesOf('windowless', 'getAXState', 'noWindow'));
   const once = async getApp => {

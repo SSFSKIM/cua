@@ -589,9 +589,8 @@ extension Engine {
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
-        // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`), or
-        // kept the point on #442's corrected hit (#481, `routeHitCorrected`): the route and the view it is classified by
-        // are read from that one.
+        // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
+        // route and the view it is classified by are read from that one.
         if case .recovered(let recovered) = stalePointRouteHit(pointerHit, stale.verdict, same: { CFEqual($0, $1) }) {
           pointerHit = recovered
           if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
@@ -606,12 +605,9 @@ extension Engine {
           return ["meta": meta.wire]
         }
         // #454: a kept point on an open menu's item is carried by the item's own action, or refused; never posted.
-        // #481: where the guard kept the point on #442's corrected hit, #454's and #458's decisions read that hit too
-        // (in the observed window, or #452's check on it would have refused), as the element route does.
-        let answeredHit = stale.verdict.routeHitCorrected ? stale.verdict.hit : latest.outcome.answered
         if stale.refusal == nil, forced == nil, button == .left, count == 1 {
           let reads = MenuItemReads<AXUIElement>.live(appPid: appPid)
-          let answered = answeredHit
+          let answered = latest.outcome.answered
           let decision = signposted("click.menuItem") {
             menuItemPoint(hit: answered, recorded: recordedMenuItems(stale.verdict), reads: reads) {
               let pids: Set<pid_t> = [appPid, answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid]
@@ -648,7 +644,7 @@ extension Engine {
           let shared = context.connection.desktop == .shared
           let leftToWebAreaRoute = button == .left && shared && pointer.view.mayBeWebArea
             && !ActivationSystem().believesItHasFocus(owner)
-          let answered = answeredHit
+          let answered = latest.outcome.answered
           let pressOwner = answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
           let pids: Set<pid_t> = [appPid, pressOwner]
           let frontmost = { frontmostPid().map(pids.contains) == true }
@@ -702,8 +698,12 @@ extension Engine {
                               context: context)
           }
           let checks = webAreaPopUp == nil ? nil : PopUpPressChecks()
+          // #481 (ruling 1106): where the guard kept the point on #442's corrected hit lying in the recorded control it
+          // vouches for, the route presses that control by its handle; the delivery's classification, #453, #454 and #458
+          // keep the action's own hit.
           let elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
-                                          appPid: appPid, guarding: guarding, context: context, stalePoint: gate, popUpPress: checks)
+                                          appPid: appPid, guarding: guarding, context: context, stalePoint: gate, popUpPress: checks,
+                                          corrected: stale.verdict.routeControl)
           if let target = webAreaPopUp, let checks, let elementRoute {
             // Decided: the press takes the pointer's place outright, whatever the activation would click (an Electron
             // page's in-window activation point included), never a posted click behind it.

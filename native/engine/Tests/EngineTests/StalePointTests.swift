@@ -5312,43 +5312,131 @@ final class OtherControlOnTopTests: XCTestCase {
   }
 }
 
-/// #481: on Chromium, a point the guard keeps after #442's re-hit answered another element is carried from that corrected
-/// hit: the element route (`stalePointRouteHit`, then `webAreaControl` and the press verdict), #454's and #458's decisions,
-/// and the meta (`hitRole`, `routeHit`). Everything else is main's.
+/// #481 (ruling 1106): the kept verdict keeps the action's own first hit; only where #442's corrected hit lies in the
+/// recorded control the verdict vouches for at the point does the element route press that control by its handle
+/// (`StalePointVerdict.routeControl`). Everything else is main's.
 extension OtherControlOnTopTests {
-  /// What the element route would press from the verdict: the hit it is built from (the action's own, or the one the
-  /// guard recovered), the control `webAreaControl` resolves it to, and the press verdict on that control; nil where the
-  /// route finds no control (main's `backgroundClickRefused`).
-  private func routed(_ verdict: StalePointVerdict<Node>, first: Node?) -> (hit: Node?, control: Node?, press: StalePointReason?) {
-    var hit = first
-    if case .recovered(let recovered) = stalePointRouteHit(first, verdict, same: { $0 === $1 }) { hit = recovered }
-    guard let hit, case .success(let resolved) = webAreaControl(hit, role: { $0.role }, parent: { $0.parent }, editable: { _ in false })
-    else { return (hit, nil, nil) }
-    return (hit, resolved.control, stalePointPressVerdict(resolved.control, verdict, reads: reads).reason)
+  /// What the element route would press: the corrected route's recorded control by its handle, or else main's control
+  /// resolved from the action's own hit (`webAreaControl`); with the press verdict on it. Nil: main's route finds no
+  /// control (`backgroundClickRefused`).
+  private func routed(_ verdict: StalePointVerdict<Node>, first: Node?) -> (control: Node?, press: StalePointReason?) {
+    var control = verdict.routeControl
+    if control == nil, let first,
+       case .success(let resolved) = webAreaControl(first, role: { $0.role }, parent: { $0.parent }, editable: { _ in false }) {
+      control = resolved.control
+    }
+    return (control, control.map { stalePointPressVerdict($0, verdict, reads: reads).reason })
   }
 
-  /// `overcontrol` on CfT: the first hit is the veil (the approximate group), the corrected hit A's text or A. The route is
-  /// built from the corrected hit and presses A, a recorded control in place at the point (#305); main's route, from the
-  /// veil, finds no control (`backgroundClickRefused`).
-  func testTheRouteIsCarriedFromTheCorrectedHit() {
+  /// `overcontrol` on CfT: the first hit is the veil (the approximate group), the corrected hit A's text or A, and A is
+  /// #433's control beneath, kept on its handle: the route presses A by its handle. The verdict keeps the veil as its hit
+  /// and `hitRole`; main's route from the veil finds no control.
+  func testTheRoutePressesTheControlBeneathTheCorrectedHitLiesIn() {
     for corrected in ["aText", "a"] {
       let page = Page()
       let (verdict, _, _) = judged(page, at: atLink, corrected: { corrected == "a" ? $0.a : $0.aText }) { $0.veil }
       XCTAssertFalse(verdict.refused, corrected)
       XCTAssertEqual(verdict.hitCorrection, .changed)
-      XCTAssertTrue(verdict.routeHitCorrected, corrected)
-      XCTAssertTrue(verdict.hit === (corrected == "a" ? page.a : page.aText), corrected)
-      XCTAssertEqual(verdict.hitRole, corrected == "a" ? "AXLink" : "AXStaticText")
-      let wire = StalePointRecord(verdict, ms: 0).wire
-      XCTAssertEqual(wire["routeHit"] as? String, "corrected")
-      XCTAssertEqual(wire["hitRole"] as? String, corrected == "a" ? "AXLink" : "AXStaticText")
+      XCTAssertTrue(verdict.routeControl === page.a, corrected)
+      XCTAssertTrue(verdict.hit === page.veil, "the verdict keeps the action's own hit")
+      XCTAssertEqual(verdict.hitRole, "AXGroup")
       let route = routed(verdict, first: page.veil)
-      XCTAssertTrue(route.control === page.a, "the route presses A from \(corrected)")
+      XCTAssertTrue(route.control === page.a)
       XCTAssertEqual(route.press, .recordedHit)
+      XCTAssertNil(StalePointRecord(verdict, ms: 0).wire["routeHit"], "stamped by the route, not by the guard")
     }
     let main = Page()
     XCTAssertNil(routed(StalePointVerdict<Node>(reason: .sameElement, hit: main.veil), first: main.veil).control,
                  "from the veil the route finds no control")
+    var record = StalePointRecord(StalePointVerdict<Node>(reason: .sameElement), ms: 0)
+    record.routeHit = "corrected"
+    XCTAssertEqual(record.wire["routeHit"] as? String, "corrected")
+  }
+
+  /// No veil: the record takes A's text at the point, its recorded control A. The first hit is the list (main:
+  /// `nonInteractiveHit`), the corrected hit A: the node's own recorded control, passing #433's test, is pressed. A
+  /// relabelled since fails that test: main's route.
+  func testTheRoutePressesTheNodesOwnRecordedControl() {
+    for relabelled in [false, true] {
+      let page = Page(veiled: false)
+      let (verdict, _, _) = judged(page, at: atText, corrected: { $0.a }) { page in
+        if relabelled { page.a.title = "Delete" }
+        return page.list
+      }
+      XCTAssertTrue(verdict.node?.element === page.aText)
+      XCTAssertEqual(verdict.reason, .nonInteractiveHit)
+      XCTAssertTrue(verdict.hit === page.list)
+      XCTAssertTrue(relabelled ? verdict.routeControl == nil : verdict.routeControl === page.a, "relabelled \(relabelled)")
+    }
+  }
+
+  /// The review of 02b5372a, P1-1: two candidates beneath the veil, #433 keeping the unchanged one (C), the corrected hit
+  /// naming the other (A), relabelled "Open" to "Delete": A failed #433's test, so it is not pressed; main's route.
+  func testARelabelledNamedCandidateIsNotPressed() {
+    let page = Page()
+    let other = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Other")
+    page.list.children.insert(other, at: 2)
+    other.parent = page.list
+    let (verdict, _, _) = judged(page, at: atLink, corrected: { $0.a }) { page in
+      page.a.title = "Delete"
+      return page.veil
+    }
+    XCTAssertFalse(verdict.refused)
+    XCTAssertTrue(verdict.underlying?.element === other)
+    XCTAssertTrue(verdict.hit === page.veil, "the action's own hit")
+    XCTAssertNil(verdict.routeControl)
+    XCTAssertNil(routed(verdict, first: page.veil).control, "main's route: no control from the veil")
+  }
+
+  /// P1-2: a new live button wrapped around a recorded decoration since, the record whole. The record takes the
+  /// decoration at the point, the first hit is the list (main: `nonInteractiveHit`), the corrected hit the decoration,
+  /// whose acting control is the new button: the record never held it, so it is not pressed; main's route.
+  func testANewButtonWrappedAroundARecordedDecorationIsNotPressed() {
+    let page = Page(veiled: false)
+    let decoration = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
+    page.list.add(decoration)
+    let (verdict, _, _) = judged(page, at: atLink, corrected: { _ in decoration }) { page in
+      let wrapper = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "New")
+      page.list.add(wrapper)
+      decoration.reparent(to: wrapper)
+      return page.list
+    }
+    XCTAssertTrue(verdict.node?.element === decoration)
+    XCTAssertEqual(verdict.reason, .nonInteractiveHit)
+    XCTAssertEqual(verdict.hitCorrection, .changed)
+    XCTAssertTrue(verdict.hit === page.list, "the action's own hit")
+    XCTAssertNil(verdict.routeControl)
+    XCTAssertNil(routed(verdict, first: page.list).control, "main's route: no control from the list")
+  }
+
+  /// P1-3: the re-hit lands in browser chrome newly exposed in the same window (a toolbar button over the point, outside
+  /// the recorded web area): never the route's; the verdict keeps the first hit, so the delivery's classification is
+  /// main's.
+  func testACorrectedHitInBrowserChromeIsNotTaken() {
+    let page = Page()
+    let chrome = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Extensions")
+    let (verdict, _, _) = judged(page, at: atLink, corrected: { _ in chrome }) { page in
+      let toolbar = Node("AXToolbar", CGRect(x: 0, y: 90, width: 600, height: 50))
+      page.window.add(toolbar)
+      toolbar.add(chrome)
+      return page.veil
+    }
+    XCTAssertFalse(verdict.refused, "\(verdict.reason)")
+    XCTAssertTrue(verdict.hit === page.veil)
+    XCTAssertNil(verdict.routeControl)
+    if case .recovered = stalePointRouteHit(page.veil, verdict, same: { $0 === $1 }) { XCTFail("the first hit stands") }
+    // Even the control beneath itself, moved into the window's chrome in place (its frame and label unchanged, so #433
+    // keeps it): the corrected hit lies outside the recorded web area, so the route stays main's.
+    let moved = Page()
+    let outside = judged(moved, at: atLink, corrected: { $0.a }) { page in
+      let toolbar = Node("AXToolbar", CGRect(x: 0, y: 90, width: 600, height: 50))
+      page.window.add(toolbar)
+      page.a.reparent(to: toolbar)
+      return page.veil
+    }.verdict
+    XCTAssertFalse(outside.refused, "\(outside.reason)")
+    XCTAssertTrue(outside.underlying?.element === moved.a)
+    XCTAssertNil(outside.routeControl)
   }
 
   /// Main's route where the re-hit named the same element (`same`), answered nothing (`none`, `popupwait`), or never ran
@@ -5371,45 +5459,9 @@ extension OtherControlOnTopTests {
     XCTAssertEqual(refused.reason, .otherControlOnTop)
     for (name, verdict, first) in [("same", same, page.veil), ("none", none, nonePage.veil), ("Safari", atOnce, safari.aText),
                                    ("refused", refused, slid.veil)] as [(String, StalePointVerdict<Node>, Node)] {
-      XCTAssertFalse(verdict.routeHitCorrected, name)
-      XCTAssertNil(StalePointRecord(verdict, ms: 0).wire["routeHit"], name)
+      XCTAssertNil(verdict.routeControl, name)
+      XCTAssertTrue(verdict.hit === first, "\(name): the action's own hit")
       if case .recovered = stalePointRouteHit(first, verdict, same: { $0 === $1 }) { XCTFail("\(name): the route keeps the first hit") }
     }
-    XCTAssertTrue(none.hit === nonePage.veil)
-    XCTAssertTrue(refused.hit === slid.veil, "a refusal carries the action's own hit")
-  }
-
-  /// Don't widen what is pressed: where the node's record is incomplete, the press verdict would let anything inside it
-  /// through (`unrecordedDescendant`, a declared limit that vouches for nothing), so the route keeps main's first hit.
-  /// Where the record is whole, an unrecorded control the corrected hit names (#482's shape) is not pressed: the press
-  /// verdict refuses it (`pressedOther`), where main's route from the veil found no control.
-  func testTheCorrectedHitNeverReachesWhatTheRecordDoesNotVouchFor() {
-    let cut = Page()
-    let hidden = Node("AXGroup", CGRect(x: 20, y: 100, width: 10, height: 10))
-    cut.veil.add(hidden)
-    let inside = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Inside")
-    let incomplete = judged(cut, at: atLink, skipping: [ObjectIdentifier(hidden)], corrected: { _ in inside }) { page in
-      page.veil.add(inside)
-      return page.veil
-    }.verdict
-    XCTAssertFalse(incomplete.refused, "\(incomplete.reason)")
-    XCTAssertEqual(incomplete.node?.subtreeRecorded, false)
-    XCTAssertEqual(incomplete.hitCorrection, .changed)
-    XCTAssertFalse(incomplete.routeHitCorrected, "an incomplete record keeps main's first hit")
-    XCTAssertTrue(incomplete.hit === cut.veil)
-    XCTAssertEqual(stalePointPressVerdict(inside, incomplete, reads: reads).reason, .unrecordedDescendant,
-                   "what the corrected hit would have pressed passes only by the limit")
-
-    let whole = Page()
-    let front = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
-    let unrecorded = judged(whole, at: atLink, corrected: { _ in front }) { page in
-      page.list.add(front)
-      return page.veil
-    }.verdict
-    XCTAssertFalse(unrecorded.refused, "#442 keeps a control the record lacks: \(unrecorded.reason)")
-    XCTAssertTrue(unrecorded.routeHitCorrected)
-    let route = routed(unrecorded, first: whole.veil)
-    XCTAssertTrue(route.control === front)
-    XCTAssertEqual(route.press, .pressedOther, "refused at the press, nothing pressed")
   }
 }

@@ -570,9 +570,10 @@ struct StalePointVerdict<Element> {
   /// #442: the delayed hit-test's own time, when its answer supplied the refusal (#452's window check on it), which the
   /// meta's `hitMs` then reports.
   var correctedHitMs: Double?
-  /// #481: the kept verdict's `hit` (and `hitRole`) is #442's corrected hit, which the route is carried from
-  /// (`routeTakesCorrectedHit`); the meta's `routeHit: "corrected"`. False: the action's own hit, as on main.
-  var routeHitCorrected = false
+  /// #481 (ruling 1106): the recorded control the element route presses by its handle, where the guard kept the point
+  /// and #442's corrected hit lies in it (`correctedRouteControl`); nil, the route is main's, from the action's own hit,
+  /// which the verdict keeps.
+  var routeControl: Element?
   var refused: Bool { reason.refuses }
 }
 
@@ -1198,15 +1199,16 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
       return over
     }
     hit = again.element
-    // #481: a point kept from here is carried from the corrected hit, not the approximate first one: the element route,
-    // #454's and #458's decisions (`routeHitCorrected`), and the meta's `hitRole`. Every refusal below is built from
-    // `kept`, so it keeps the action's own hit.
-    if correction == .changed, let corrected = again.element, routeTakesCorrectedHit(kept) {
-      (verdict.hit, verdict.hitRole, verdict.routeHitCorrected) = (corrected, reads.role(corrected), true)
-    }
   }
   guard let hit, let control = firstActing(from: hit, reads).element else { return verdict }
   let meant = CGPoint(x: point.x - kept.windowShift.dx, y: point.y - kept.windowShift.dy)
+  /// #481: a kept verdict, carrying the recorded control the route may press from the corrected hit.
+  func keptRouting(_ kept: StalePointVerdict<Element>) -> StalePointVerdict<Element> {
+    guard verdict.hitCorrection == .changed else { return kept }
+    var routed = kept
+    routed.routeControl = correctedRouteControl(control, hit: hit, node: node, kept, reads)
+    return routed
+  }
   // #433's candidates beneath the layer: the one the hit names, passing #433's test, is the control beneath. One that
   // fails it is left to the rule below (the last review: a front link shrunk away from the point while its text stays
   // there is what main keeps and lands on), never refused for #433's reason here.
@@ -1217,23 +1219,36 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
                                    recorded: kept.recorded, reads)
     if judged.refusal == nil {
       (verdict.underlying, verdict.underlyingIdentity) = (named, judged.identity)
-      return verdict
+      return keptRouting(verdict)
     }
   }
-  guard movedOverPoint(control, node: node, at: meant, kept, reads) else { return verdict }
+  guard movedOverPoint(control, node: node, at: meant, kept, reads) else { return keptRouting(verdict) }
   var refused = refusal(of: kept, reason: .otherControlOnTop, hitCorrection: verdict.hitCorrection)
   (refused.onTop, refused.onTopRole) = (control, reads.role(control))
   return refused
 }
 
-/// #481: whether the route may be carried from #442's corrected hit. What the element route presses must pass
-/// `stalePointPressVerdict`: the node as found or a control above it, a recorded control the screenshot showed at the
-/// point (#305), or anything inside a node whose children the record does not all hold (`unrecordedDescendant`, ruling
-/// 0a14b51f's declared limit, and #301's strips). That last vouches for nothing, so where the node's record is incomplete
-/// (or holds a strip of unrecorded children) the corrected hit could reach a control there that neither the record nor
-/// main's first hit would: the route keeps main's first hit (`deepfront`'s depth-cut front button stays main's).
-func routeTakesCorrectedHit<Element>(_ kept: StalePointVerdict<Element>) -> Bool {
-  kept.node?.subtreeRecorded == true && kept.gaps.isEmpty
+/// #481 (ruling 1106): the recorded control the element route presses by its handle from #442's corrected hit, or nil
+/// for main's route from the action's own first hit. Only the recorded control the verdict vouches for at the point, all
+/// of these holding:
+/// - the corrected hit's acting control (`control`, `firstActing`) is, by handle, #433's control beneath the inert layer
+///   that #433's test kept (handle, label, frame under the pointer; a named candidate that failed it is not), or else
+///   the node's own recorded control (`ScreenshotNode.control`) passing the same test (`underlyingRefusal`);
+/// - the corrected hit lies inside the node's recorded web area (#316's `liesIn`), so browser chrome the re-hit reaches
+///   in the same window never counts;
+/// - its role is one the element route presses (`webAreaPressableRoles`), so no walk from the hit is needed.
+/// A control the record lacks (a new wrapper, a front control the walk cut) can never qualify, nor one inside a node the
+/// record holds incompletely.
+func correctedRouteControl<Element>(_ control: Element, hit: Element, node: ScreenshotNode<Element>, _ kept: StalePointVerdict<Element>,
+                                    _ reads: StalePointReads<Element>) -> Element? {
+  guard let point = kept.point, let area = node.webArea, liesIn(hit, area, reads).inside,
+        let role = reads.role(control), webAreaPressableRoles.contains(role) else { return nil }
+  if kept.underlyingIdentity == .handle, let beneath = kept.underlying, reads.same(beneath.element, control) { return control }
+  guard let own = node.control, reads.same(own, control),
+        let recorded = kept.nodes.first(where: { reads.same($0.element, own) }) else { return nil }
+  let judged = underlyingRefusal(recorded, at: point, windowShift: kept.windowShift, hit: hit, nodes: kept.nodes, frameless: kept.frameless,
+                                 recorded: kept.recorded, reads)
+  return judged.refusal == nil && judged.identity == .handle ? control : nil
 }
 
 /// #442: a refusal of a kept verdict, carrying what it judged (#433's check included) and the hit's correction.
@@ -1816,9 +1831,10 @@ struct StalePointRecord: Equatable {
   /// #442: whether the guard took the hit again after `stalePointCorrectionMs` (Chromium, on its two keep paths), and
   /// whether that answer named the first one's element.
   let hitCorrection: StalePointHitCorrection?
-  /// #481: "corrected" when the route was carried from #442's corrected hit (`hitRole` then names it); absent, the
-  /// action's own first hit.
-  let routeHit: String?
+  /// #481: "corrected" when the element route pressed the recorded control #442's corrected hit lies in
+  /// (`StalePointVerdict.routeControl`); stamped by the route on whatever record stands when it ends, so a later check's
+  /// record keeps it. Absent: the route, if any, came from the action's own hit.
+  var routeHit: String?
 
   init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
@@ -1837,7 +1853,6 @@ struct StalePointRecord: Equatable {
     controlRole = verdict.reason == .controlGone ? verdict.node?.controlRole
       : verdict.reason == .otherControlOnTop ? verdict.onTopRole : nil
     hitCorrection = verdict.hitCorrection
-    routeHit = verdict.routeHitCorrected ? "corrected" : nil
     self.ms = ms
     self.rechecked = rechecked
   }
@@ -1884,7 +1899,6 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
                                    newElementReads: verdict.newElementReads)  // #330: and rule dL's reads on it
     (judged.underlying, judged.underlyingIdentity) = (verdict.underlying, verdict.underlyingIdentity)  // #433: the check ran
     judged.hitCorrection = verdict.hitCorrection  // #442: and the hit was taken again
-    judged.routeHitCorrected = verdict.routeHitCorrected  // #481: and the route came from the corrected hit
     return judged
   }
   // Inside a node the record holds incompletely, or under one of its strips whose children it lacks (#301).

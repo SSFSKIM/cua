@@ -8111,6 +8111,46 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   main or better, and `overcontrol` on CfT lands).
   Date/Author: 2026-11-23, cursor235's builder for #481.
 
+- Decision (#481, ruling 1106, the review of 02b5372a by reviewer-high, 2026-11-23; replaces the rule of the entry
+  above, StalePoint.swift `correctedRouteControl`, ElementInput.swift `webAreaPress`): **the kept verdict keeps the
+  action's own first hit. The element route presses, by its handle, only the recorded control the verdict vouches for
+  at the point, when #442's corrected hit lies in it.** The review found 3 P1 and 4 P2. Swapping the verdict's hit fed
+  every consumer, and each trusted it differently:
+  - a relabelled named candidate was pressed;
+  - a new button wrapped around a recorded decoration was pressed;
+  - a re-hit in newly exposed browser chrome reclassified the delivery;
+  - #454 and #458 got the element where `answered` belongs;
+  - #458's direct path validated the wrong element;
+  - `firstActing` and `webAreaControl` walk different roles;
+  - `routeHit` was lost after a later check.
+
+  The new rule: with `hitCorrection` `changed` and the point kept, `routeControl` is the corrected hit's acting control
+  when all of these hold:
+  - it is, by handle, either #433's control beneath, kept by #433's test (handle, label, frame under the pointer; a
+    named candidate that failed it is not), or the node's own recorded control (`ScreenshotNode.control`) passing the
+    same test. For a node that is an inert layer, `node.control` is nil, so #433's control beneath is its recorded
+    control at the point: `overcontrol`'s A;
+  - the corrected hit lies inside the node's recorded web area (#316's `liesIn`);
+  - its role is one the route presses (`webAreaPressableRoles`).
+
+  `webAreaPress` then presses that control by its handle, with no walk from the hit. Its press is still checked by the
+  stale-point gate. The route stamps `stalePoint.routeHit: "corrected"` on whatever record stands when it ends.
+  `hitRole` stays main's. The delivery classification, #453, #454 and #458 keep the first hit.
+
+  Ruling 1105's incomplete-record gate is dropped: a recorded control by handle never is an unrecorded descendant.
+  Proven offline (`OtherControlOnTopTests`):
+  - `overcontrol` presses A by its handle;
+  - the node's own recorded control is pressed, but not once relabelled;
+  - the three P1 shapes answer as main: the relabelled candidate, the wrapped button, and the chrome (a toolbar button,
+    and the control beneath moved into the toolbar);
+  - `same`, `none`, Safari and a refusal answer as main.
+
+  On 02b5372a's sources, the five new tests fail (19 assertions); `testTheRouteIsMainsOtherwise` passes there, as it
+  pins main. Five mutations each fail a test: no corrected route, any acting control taken, the web-area check dropped,
+  #433's test on the node's own control dropped, and a named candidate not required to pass. 1665 swift tests, 0
+  failures.
+  Date/Author: 2026-11-23, cursor235's builder for #481.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

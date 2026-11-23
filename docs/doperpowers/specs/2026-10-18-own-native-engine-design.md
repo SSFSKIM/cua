@@ -8883,6 +8883,41 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     optional (1172), its question now whether S occurs often enough for the refusal to cost runs (`pointerRefusal`
     counts it).
   Date/Author: 2026-11-23, cursor235's builder for #538.
+- Decision (2026-11-23, #526, ruling 1175, `fix/526-multiline-value` from 093c91e9): **a selectable element's flattened
+  title, description and value are joined one piece per line, as the vendor joins them; and cua prints every line break
+  inside an element's text escaped, where the vendor prints it raw (a declared departure).**
+  - The cause is not a multi-line AXValue. M5 pilot B's Finder "go up" row (runs 45226949355 and 45274556933) is a
+    selectable AXRow whose cells' static texts are flattened into it by transformation (1). The vendor's
+    `UIElementTree.Item.flattenedString` (0x10063eb80, decompiled in the #117 Ghidra project) compactMaps the selector
+    over the item and its subtree, trims each piece of `CharacterSet.whitespacesAndNewlines`, drops the empty ones and
+    joins with the small-string literal 0x0a; `transform` (0x1006473d0) calls it for the title, the description and
+    the value. cua's renderer joined with one space and did not trim (B §5 had the join "not read"). The vendor's text
+    carries a raw LF there (the artifacts' bytes: `Value: Name\nDate Modified\nSize\nKind`, 0x0a each). The engine reads
+    each attribute unaltered (Fetch.swift `stringValue`, capped at `maxValueLength` before any rendering), so nothing
+    changes in Swift.
+  - The join rule: `flattenIntoSelectableAncestor` now builds each of the three from the node's and its descendants'
+    pieces, trimmed of Foundation's whitespacesAndNewlines (Z*, U+0009–U+000D, U+0085), empties dropped, joined by "\n".
+    No other transformation changes: (8) mergeTextOnlySiblings' join (FUN_100646f38) is still unread and keeps one
+    space.
+  - Ruling 1175, the departure: a raw break inside an attribute lets a page or a document put a line into the tree that
+    reads as an element (`[99] button Delete`, or a tab-indented `99 button Delete`), a path for prompt injection, and it
+    reaches every free-text field (title, Description, Help, Value, Details, Placeholder, ID, the role description, the
+    window title and app name), the vendor's raw TextEdit document included. cua does not copy it: the renderer escapes
+    the whole element text after the parts are ordered (`escapeLineBreaks`), so the long-part rule still reads the raw
+    text, LF and CR as `\n` and `\r` (the vendor's own Linux rendering, `linux-accessibility-tree.mjs`, escapes them so)
+    and VT, FF, U+001C–U+001E, NEL, LS and PS as `\uXXXX`; a backslash is left as it is, as on Linux. The header's
+    window title and app name are escaped the same way. A continuation indent was rejected: an element line is itself
+    tab-indented, so an indented continuation can still read as an element. The fenced selected-text trailer is printed
+    as before.
+  - Declared: the `lineBreaks` departure (`scene: "*"`, no count; `test/native-goldens/compare.mjs`), in the renderer
+    goldens' `expected.json` and the native-mac suite's `native-mac.json`: on a matched line or a focused-element
+    trailer, the vendor's text with its breaks escaped as cua escapes them must equal cua's. It is a rule rather than an
+    instance, so it carries no count and is never over-declared; anything else on such a line stays a difference.
+  - Consumers: `matrix-text.mjs` `valueOfIndex` reads cua's escaped value back with its breaks (the cells' read-backs
+    compare raw values on both engines); the other line readers (`elementLines`, `indexOfPart`, `indexOfId`,
+    `scenes-mac-text.mjs`, `live-checks.mjs` `vendorTextAreaIndex`, the diff renderer) read one line per element, which
+    the escape guarantees for cua's text. The recorded TextEdit goldens' `cua.txt` are re-pinned.
+  Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective
 

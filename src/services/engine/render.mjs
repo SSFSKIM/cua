@@ -124,8 +124,9 @@ export function layout(skyshot, numbering) {
   const lineOf = node => elementLine({index: indexOf(node.token), depth: 0, text: lineText(node, urls)});
   // The placement line (#367) comes first among cua's lines after the tree, and stands alone in a diff with no change.
   const placement = placementLine(skyshot);
+  const title = escapeLineBreaks(presented.title), appName = escapeLineBreaks(presented.appName);
   return {
-    title: presented.title, appName: presented.appName, header: `Window: "${presented.title}", App: ${presented.appName}.`,
+    title, appName, header: `Window: "${title}", App: ${appName}.`,
     roots, lines, nodeCount: lines.length, placement, markers: [...(placement ? [placement] : []), ...truncationMarkers(skyshot)],
     trailer: trailer(presented, lineOf),
   };
@@ -323,18 +324,24 @@ function associateTitleUIElements(node) {
 }
 
 // (1) A selectable, unfocused node (not a table or table row) with no settable or selectable descendant takes its
-// subtree's titles, descriptions and string values, and keeps only its toggle descendants as children. The join is not
-// read [B §5]; one space. The vendor's flattened role words (`radio button` / `radio buttons`, `outline row` / `rows`,
-// E §5.2's "<target> <separator> <container>" reading) are not applied: B §5 and E leave their use an inference and no
-// golden prints one, so the node keeps its own role word.
+// subtree's titles, descriptions and string values, and keeps only its toggle descendants as children. Each of the three
+// is the vendor's flattenedString (UIElementTree.Item.flattenedString 0x10063eb80, read for #526): the node's and its
+// descendants' pieces, each trimmed of CharacterSet.whitespacesAndNewlines, the empty ones dropped, joined by "\n" (the
+// small-string literal 0x0a) [golden: M5 pilot B's Finder "go up" row, `Value: Name` then `Date Modified`, `Size`, `Kind`
+// on lines of their own]; the element line prints the breaks escaped (escapeLineBreaks). The vendor's flattened role
+// words (`radio button` / `radio buttons`, `outline row` / `rows`, E §5.2's "<target> <separator> <container>" reading)
+// are not applied: B §5 and E leave their use an inference and no golden prints one, so the node keeps its own role word.
+// Foundation's whitespacesAndNewlines: Unicode's Z* categories, U+0009–U+000D and U+0085.
+const SWIFT_BLANK = /^[\p{Z}\t\n\v\f\r\u0085]+|[\p{Z}\t\n\v\f\r\u0085]+$/gu;
+const flattenedString = pieces => pieces.filter(piece => typeof piece === 'string').map(piece => piece.replace(SWIFT_BLANK, ''))
+  .filter(piece => piece !== '').join('\n') || null;
 function flattenIntoSelectableAncestor(node) {
   if (!node.flags.selectable || node.flags.focused || node.role === 'AXTable' || node.subrole === 'AXTableRow') return;
   const below = descendants(node);
   if (below.some(child => child.flags.settable || child.flags.selectable)) return;
-  const joined = key => [node, ...below].map(each => each[key]).filter(value => typeof value === 'string' && value !== '').join(' ') || null;
-  node.title = joined('title');
-  node.description = joined('description');
-  node.value = [node, ...below].map(stringValue).filter(nonEmpty).join(' ') || null;
+  node.title = flattenedString([node, ...below].map(each => each.title));
+  node.description = flattenedString([node, ...below].map(each => each.description));
+  node.value = flattenedString([node, ...below].map(stringValue));
   node.valueType = node.value === null ? null : 'string';
   node.flags = {...node.flags, focusable: below.some(child => child.flags.focusable)};
   node.children = below.filter(child => child.valueType === 'boolean' || typeof child.value === 'boolean').map(child => ({...child, children: []}));
@@ -450,10 +457,21 @@ function filterActions(raw, context) {
 // ---------------------------------------------------------------------------------------------------------------------
 // The element line [B §6; F §2.4].
 
-// `text`: the non-empty pieces of [role word, flags, parts], joined by one space.
+// `text`: the non-empty pieces of [role word, flags, parts], joined by one space, its line breaks escaped.
 function lineText(node, urls) {
-  return [roleWord(node), flagsOf(node), parts(node, urls)].filter(Boolean).join(' ');
+  return escapeLineBreaks([roleWord(node), flagsOf(node), parts(node, urls)].filter(Boolean).join(' '));
 }
+
+// cua's departure from the vendor (#526, ruling 1175; the spec's Decision Log, 2026-11-23): the vendor prints an
+// attribute's line breaks raw, so a page or a document could put a line into the tree that reads as an element
+// (`[99] button Delete`, or `\t\t99 button Delete`). cua prints each break escaped, so nothing an element says starts a
+// line: LF and CR as `\n` and `\r`, as the vendor's own Linux rendering escapes them (src/cua-api/
+// linux-accessibility-tree.mjs), and every other character a reader may break a line at (VT, FF, the three information
+// separators, NEL, LS, PS) as `\uXXXX`. A backslash stays as it is, as the Linux rendering leaves it. Applied to the
+// whole element text after its parts are ordered, so the vendor's long-part rule still reads the raw text [F §2.4], and
+// to the header's window title and app name. The selected-text trailer is fenced and printed as it is.
+const LINE_BREAKS = /[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/g;
+export const escapeLineBreaks = text => text.replace(LINE_BREAKS, c => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
 
 // The width rule's partial children [B §6]: `(showing <lo-hi>, … of <count> items)`, present only with ranges.
 function detailText(node) {

@@ -43,3 +43,21 @@ test('its count is exact: two such lines need a count of 2', () => {
   assert.deepEqual(compare(two(100, 100), two(205, 205), {declared: [RULE]}).differences.map(d => d.kind), ['text']);
   assert.deepEqual(compare(two(100, 100), two(205, 205), {declared: [{...RULE, count: 2}]}).differences, []);
 });
+
+// #526 (ruling 1175): cua prints an attribute's line breaks escaped on the element's one line, where the vendor prints
+// them raw. The `lineBreaks` departure lets exactly that differ, on matched element lines and the focused trailer: the
+// vendor's text with its breaks escaped as cua's renderer escapes them is cua's. It is a rule, not an instance: it has
+// no count and is never over-declared.
+const BREAKS = {scene: '*', kind: 'lineBreaks', fault: 'departure', decisionLog: '- Decision (2026-10-18, verification call at authoring)', cause: 'test'};
+const multi = value => `Window: "w", App: A.\n0 standard window w\n\t1 text entry area (settable) Value: ${value}\n\t2 button OK\n\nThe focused UI element is 1 text entry area (settable) Value: ${value}`;
+
+test('#526: a lineBreaks departure absorbs the vendor\'s raw breaks against cua\'s escaped ones, and nothing else', () => {
+  const vendor = multi('a\nb\r\nc'), cua = multi('a\\nb\\r\\nc');
+  assert.deepEqual(compare(vendor, cua, {declared: [BREAKS]}).differences, []);
+  assert.deepEqual(compare(vendor, cua).differences.map(d => d.kind), ['text', 'trailer'], 'undeclared without it');
+  assert.deepEqual(compare(vendor, multi('a\\nb\\r\\nd'), {declared: [BREAKS]}).differences.map(d => d.kind), ['text', 'trailer'], 'another text');
+  assert.deepEqual(compare(vendor, multi('a b c'), {declared: [BREAKS]}).differences.map(d => d.kind), ['text', 'trailer'], 'breaks joined away');
+  // A golden with no break: nothing to absorb, and not over-declared.
+  assert.deepEqual(compare(cua, cua, {declared: [BREAKS]}).differences, []);
+  assert.deepEqual(compare(multi('a\nb'), multi('a\\nb'), {declared: [{...BREAKS, scene: 'textedit'}, BREAKS]}).differences, []);
+});

@@ -3,7 +3,7 @@ import XCTest
 @testable import Engine
 
 // #212, PR #218's review: a request refused before its action can still end a held activation (a menu span or a focus
-// hold) as it begins or as it unwinds, which sends the app a deactivation. The answer then cannot say nothing was done.
+// hold) as it begins or as it unwinds, which may send the app a deactivation. The answer then names that end.
 // The real execute lifecycle and span releases, only the method behind dispatch replaced (no permission prompt, no live
 // input): it refuses as the pre-action check does.
 final class ExecuteInterruptionTests: XCTestCase {
@@ -53,14 +53,14 @@ final class ExecuteInterruptionTests: XCTestCase {
     XCTAssertEqual(interruption(error).phase, "beforeAction")
     XCTAssertEqual(interruption(error).effects, ["activationRelease"])
     XCTAssertTrue(error?.message.hasPrefix("The user changed 'fixture'.") == true, error?.message ?? "")
-    XCTAssertFalse(error?.message.contains("Nothing was done") == true, "a deactivation was sent: \(error?.message ?? "")")
-    XCTAssertTrue(error?.message.contains("deactivation") == true, error?.message ?? "")
+    XCTAssertFalse(error?.message.contains("The requested input was refused before its first step.") == true, "a deactivation may have been sent: \(error?.message ?? "")")
+    XCTAssertTrue(error?.message.contains("which may have sent the app a deactivation") == true, error?.message ?? "")
     XCTAssertTrue((error?.wire["meta"] as? [String: Any])?["startedAt"] is NSNull, "the release is outside the action's interval")
 
     // The next request, with nothing held, does not inherit the earlier one's release.
     let next = refused(engine, connection, method: "set_value")
     XCTAssertEqual(interruption(next).effects, [])
-    XCTAssertTrue(next?.message.contains("Nothing was done") == true, next?.message ?? "")
+    XCTAssertTrue(next?.message.contains("The requested input was refused before its first step.") == true, next?.message ?? "")
   }
 
   func testAMenuSpanEndedBeforeTheRefusalAndOneEndedWhileItUnwindsAreBothNamed() throws {

@@ -208,13 +208,17 @@ final class Engine: @unchecked Sendable {
 
   /// `execute`, its request's whole lifecycle. #212: a userIntervened answer of a request that ended a held activation
   /// (a menu span or a focus hold), as it began or while it unwound, names that end among what may have taken effect,
-  /// read once every one of the request's own cleanups has run.
+  /// and so does one whose thread posted an activation or its click anywhere in the request, both read once every one
+  /// of the request's own cleanups has run.
   func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64, dispatch: MethodDispatch? = nil) throws -> Any {
     let released = connection.menuSpan.released + connection.focusHold.released
+    let activationPosts = ActivationPosts.reading
     do {
       return try executeRequest(params, connection, receivedAt, dispatch: dispatch ?? dispatchMethod)
-    } catch let error as EngineError where connection.menuSpan.released + connection.focusHold.released != released {
-      throw error.interrupted(adding: [.activationRelease])
+    } catch let error as EngineError where error.interruption != nil {
+      // Activation posts the method's meta could not see, made while the request joined or unwound a hold.
+      let ended: [InputEffect] = connection.menuSpan.released + connection.focusHold.released != released ? [.activationRelease] : []
+      throw error.interrupted(adding: ActivationPosts.effects(since: activationPosts) + ended)
     }
   }
 

@@ -26,7 +26,7 @@ final class InterruptionEffectsTests: XCTestCase {
     return (wrapped.message, detail?["phase"] as? String, detail?["effects"] as? [String] ?? [])
   }
 
-  func testThePreActionRefusalSaysNothingWasDoneUnderBothGuardConditions() {
+  func testThePreActionRefusalSaysTheInputWasRefusedBeforeItsFirstStepUnderBothGuardConditions() {
     for (now, sentence) in [(Int64(11), "The user is still interacting with 'fixture'. Wait 5 seconds and retry."),
                             (Int64(6_000), "The user changed 'fixture'. Re-query the latest state with `get_app_state` before sending more actions.")] {
       let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: now, latest: { AttributedEvent(sequence: 1, at: 10) })
@@ -35,12 +35,12 @@ final class InterruptionEffectsTests: XCTestCase {
         XCTAssertEqual(answer.phase, "beforeAction")
         XCTAssertEqual(answer.effects, [])
         XCTAssertTrue(answer.message.hasPrefix(sentence), "the vendor's sentence opens the answer: \(answer.message)")
-        XCTAssertTrue(answer.message.contains("Nothing was done"), answer.message)
+        XCTAssertTrue(answer.message.hasSuffix("The requested input was refused before its first step."), answer.message)
       }
     }
   }
 
-  func testAStopBeforeAnyStepSaysItStoppedPartWayWithoutClaimingNothingWasDone() {
+  func testAStopBeforeAnyStepSaysItStoppedPartWayWithoutClaimingTheInputWasRefused() {
     var latest: AttributedEvent?
     let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
     latest = AttributedEvent(sequence: 1, at: 11)
@@ -49,7 +49,7 @@ final class InterruptionEffectsTests: XCTestCase {
       XCTAssertEqual(answer.phase, "inFlight")
       XCTAssertEqual(answer.effects, [])
       XCTAssertTrue(answer.message.hasPrefix("The user changed 'fixture'."), answer.message)
-      XCTAssertFalse(answer.message.contains("Nothing was done"), "a stop part-way never claims nothing happened")
+      XCTAssertFalse(answer.message.contains("refused before its first step"), "a stop part-way never claims nothing happened")
       XCTAssertTrue(answer.message.contains("may have taken effect"), answer.message)
     }
   }
@@ -65,13 +65,12 @@ final class InterruptionEffectsTests: XCTestCase {
     XCTAssertThrowsError(try setElementValue("intended", on: Engine.element(1), role: kAXTextFieldRole, ax: ax.ops, meta: &metadata,
                                              focus: { meta in
                                                try focusingClick(&meta, acted: { marks += 1 }) { click in
-                                                 click.activationClick = .posted
                                                  click.posting { latest = AttributedEvent(sequence: 1, at: 11); return true }
                                                }
                                              }, checkInFlight: guarding.checkInFlight, acted: { marks += 1 })) { error in
       let answer = answered(error, metadata)
       XCTAssertEqual(answer.phase, "inFlight")
-      XCTAssertEqual(answer.effects, ["activation", "activationClick", "focusClick"], "the click is the focus's, not the action's input")
+      XCTAssertEqual(answer.effects, ["focusClick"], "the click is the focus's, not the action's input; no activation was posted")
       XCTAssertTrue(answer.message.contains("a click to focus the field"), answer.message)
       XCTAssertFalse(answer.message.contains("the value written"), answer.message)
     }
@@ -190,14 +189,14 @@ final class InterruptionEffectsTests: XCTestCase {
 }
 
 // The reported incident's shape (#212): a save sheet open, set_value on its name field, a user event at each point of
-// the action. Whatever point the intervention stops it at, and when it is not stopped at all, set_value performs no
-// accessibility action on any element (the sheet's default Save button above all), writes nothing but the name field's
-// focus and value, and posts no key: it has no step that commits a sheet. The focus fallback's click goes to the field
-// (`focusField` aims `focusFallbackClick` at the target element), here counted by its closure.
+// the action. The write accounting: whatever point the intervention stops it at, and when it is not stopped at all,
+// set_value performs no accessibility action on any element (the sheet's default Save button above all) and writes
+// nothing but the name field's focus and value; the value only when no stop came first. The focus fallback's click is
+// the closure's (here counted, not posted): where it lands is `focusField`'s, aimed at the target element.
 final class SaveSheetSetValueTests: XCTestCase {
   private enum Stop: CaseIterable { case none, atFocusWrite, atFocusClick, atValueWrite }
 
-  func testSetValueOnASaveSheetsNameFieldNeverCommitsTheSheetWhereverAnInterventionStopsIt() throws {
+  func testSetValueOnASaveSheetsNameFieldActsOnNoElementAndWritesOnlyFocusAndValueWhereverAnInterventionStopsIt() throws {
     for stop in Stop.allCases {
       let ax = FakeAX()
       let sheet = 10, field = 11, save = 12, cancel = 13
@@ -229,7 +228,9 @@ final class SaveSheetSetValueTests: XCTestCase {
                                 }
                               }
                             }, checkInFlight: guarding.checkInFlight, acted: {})
-        // The method's own check after the write (as a later step's would be): an event queued during the write stops here.
+        // The fixture's own check after the write, standing in for whatever step would come next (set_value has none
+        // after its write): it shows an event queued during the write is accounted as the write's effect. Not a
+        // production check.
         try guarding.checkInFlight()
       }
       if stop == .none {
@@ -250,5 +251,94 @@ final class SaveSheetSetValueTests: XCTestCase {
                      "\(stop): the name is written only when no stop came before the write")
       XCTAssertEqual(focusClicks, stop == .atFocusWrite ? 0 : 1, "\(stop): one click, to focus the field, and none after a stop")
     }
+  }
+}
+
+// #212: route 3's activation and its clicks are named from what the fake activation posted on the request's thread
+// (`ActivationPosts`), through the real FakeActivation and HeldActivations over the recorded guard seam: an activation
+// point's click delivered before the stop, none for a joiner sharing a consumed hold, and the inert click outside the
+// window when a joiner consumes a pointer holder's arm or a pointer hold unwinds.
+final class ActivationEffectsTests: XCTestCase {
+  private let target: pid_t = 990_001, user: pid_t = 990_002
+  private let window = CGRect(x: 80, y: 60, width: 610, height: 860)
+
+  private func meta() -> InputMeta {
+    InputMeta(ExecutionContext(connection: ConnectionState(id: 212, fd: -1), receivedAt: 10, hidIdleMs: 0, deadline: 100, lineage: nil))
+  }
+
+  private func activation(_ seam: GuardSeam, point: CGPoint, system: ActivationSystem? = nil) -> FakeActivation {
+    seam.activationPoint = point
+    return FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: system ?? seam.system)
+  }
+
+  /// The effects an in-flight stop answered with `meta` names.
+  private func effects(_ meta: InputMeta) -> [String] {
+    let wrapped = withMeta(userChanged("fixture", phase: .inFlight), meta)
+    return ((wrapped.wire["meta"] as? [String: Any])?["interruption"] as? [String: Any])?["effects"] as? [String] ?? []
+  }
+
+  func testAnActivationPointClickDeliveredBeforeTheStopIsNamedWithoutAnActionInterval() {
+    var metadata = meta()
+    var latest: AttributedEvent?
+    let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
+    let seam = GuardSeam(frontmost: user)
+    var system = seam.system
+    let post = system.post
+    system.post = { event, pid in
+      post(event, pid)
+      if event.type == .leftMouseDown { latest = AttributedEvent(sequence: 1, at: 11) }
+    }
+    let made = activation(seam, point: CGPoint(x: 110, y: 76), system: system)
+    let click = ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target)
+    XCTAssertThrowsError(try deliverClick(click, route: .activation, button: .left, count: 1, activation: made, targetActive: { false },
+                                          beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                                          post: system.post, meta: &metadata)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
+                   "the activation and its click went, then its deactivation; the action's own click never started")
+    XCTAssertEqual(effects(metadata), ["activation", "activationClick"])
+    XCTAssertNil(metadata.startedAt, "outside the action's interval")
+  }
+
+  func testAJoinerSharingAConsumedHoldNamesNoActivationAndNoClick() throws {
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    var first = meta()
+    let held = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {},
+                                    make: { self.activation(seam, point: CGPoint(x: -1, y: 1441)) }, meta: &first)
+    XCTAssertEqual(effects(first), ["activation", "activationClick"], "a new activation and its early inert click")
+    var joiner = meta()
+    let joined = try registry.acquire(pid: target, holder: ActivationHolder(connection: 2), beforeActivating: {},
+                                      make: { XCTFail("shared, not made"); return self.activation(seam, point: .zero) }, meta: &joiner)
+    XCTAssertEqual(joiner.activationJoin, .shared)
+    XCTAssertEqual(effects(joiner), [], "the joiner posted nothing")
+    _ = joined(); _ = held()
+  }
+
+  func testAnInertClickOutsideTheWindowOnAJoinOrAsAPointerHoldUnwindsIsNamed() throws {
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    var pointerMeta = meta()
+    let pointer = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), pointer: PointerHold(), beforeActivating: {},
+                                       make: { self.activation(seam, point: CGPoint(x: -1, y: 1441)) }, meta: &pointerMeta)
+    XCTAssertEqual(effects(pointerMeta), ["activation"], "a pointer holder's activation keeps its inert click")
+    var joiner = meta()
+    let joined = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {},
+                                      make: { XCTFail("shared, not made"); return self.activation(seam, point: .zero) }, meta: &joiner)
+    XCTAssertEqual(effects(joiner), ["activationClick"], "the joiner's inert click, with no activation of its own")
+    XCTAssertTrue(effects(joiner).isEmpty == false)
+    _ = joined(); _ = pointer()
+
+    // A pointer hold whose arm is still set unwinds: its release posts the kept inert click, then subtype 2.
+    let unwinding = GuardSeam(frontmost: user)
+    let alone = HeldActivations()
+    var held = meta()
+    let release = try alone.acquire(pid: target, holder: ActivationHolder(connection: 1), pointer: PointerHold(), beforeActivating: {},
+                                    make: { self.activation(unwinding, point: CGPoint(x: -1, y: 1441)) }, meta: &held)
+    let ending = meta()
+    _ = release()
+    XCTAssertEqual(unwinding.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+    XCTAssertEqual(effects(ending), ["activationClick"], "the click posted as the hold unwound")
   }
 }

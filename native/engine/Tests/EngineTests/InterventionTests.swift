@@ -99,11 +99,11 @@ final class InterventionRuleTests: XCTestCase {
     XCTAssertEqual(still.code, -10016)
     XCTAssertEqual(still.errorName, "userIntervened")
     XCTAssertEqual(still.message, "The user is still interacting with '/Applications/TextEdit.app'. Wait 5 seconds and retry."
-                   + " Nothing was done: the action was refused before its first step.")
+                   + " The requested input was refused before its first step.")
     let refused = userChanged("/Applications/TextEdit.app", phase: .beforeAction)
     XCTAssertEqual(refused.code, -10016)
     XCTAssertEqual(refused.message, "The user changed '/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions."
-                   + " Nothing was done: the action was refused before its first step.")
+                   + " The requested input was refused before its first step.")
     let changed = userChanged("/Applications/TextEdit.app")
     XCTAssertEqual(changed.code, -10016)
     XCTAssertEqual(changed.errorName, "userIntervened")

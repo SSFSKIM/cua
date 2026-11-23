@@ -69,13 +69,20 @@ func clickFlags(_ route: InputRoute, targetActive: Bool) -> CGEventFlags {
 
 /// The steps of one request that may have taken effect (#212, `InputEffect`), noted as the request takes them. A
 /// reference, so every copy of the request's meta (a focusing click's own, `focusingClick`) notes into the one record.
+/// Route 3's activation and its clicks are read from what the fake activations actually posted on the request's thread
+/// since the record began (`ActivationPosts`), not from the meta's records, which a shared join, an inert click on a
+/// join or one as a hold unwinds would misstate.
 final class InputEffects {
   private var counts: [InputEffect: Int] = [:]
+  private let activationPostsAtStart = ActivationPosts.reading
 
   func note(_ effect: InputEffect) { counts[effect, default: 0] += 1 }
 
-  /// The effects noted, in `InputEffect`'s order.
-  var reached: [InputEffect] { InputEffect.allCases.filter { counts[$0, default: 0] > 0 } }
+  /// The effects noted and the activation posts made, in `InputEffect`'s order.
+  var reached: [InputEffect] {
+    let posted = ActivationPosts.effects(since: activationPostsAtStart)
+    return InputEffect.allCases.filter { counts[$0, default: 0] > 0 || posted.contains($0) }
+  }
 
   /// Runs `body`, the input it posts noted as `effect` instead (a focusing click's events are the focus's, not the
   /// action's own input).
@@ -249,19 +256,7 @@ struct InputMeta {
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
   error.extra["meta"] = meta.wire
-  return error.interrupted(adding: meta.reachedEffects)
-}
-
-extension InputMeta {
-  /// The effects for an intervention's answer (#212): those noted, and route 3's activation from what its records say
-  /// (an activation that ran, or a new one acquired; its click, posted).
-  var reachedEffects: [InputEffect] {
-    var reached = effects.reached
-    let activated = activationClick != nil || [.fresh, .rearmed, .replacedSpent].contains(activationJoin)
-    if activated { reached.append(.activation) }
-    if activationClick == .posted { reached.append(.activationClick) }
-    return reached
-  }
+  return error.interrupted(adding: meta.effects.reached)
 }
 
 /// A synthesized click's delivery: under route 3 the fake activation first (nothing when the app already believes it has

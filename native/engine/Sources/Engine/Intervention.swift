@@ -19,9 +19,10 @@ import Foundation
 // action in flight stops at the first attributed event, between two of its events, failing "user changed".
 //
 // #212: both keep the vendor's sentence, and the answer adds which of the two it was and what may have taken effect
-// (`Interruption`, `InputEffect`): a refusal before the action did none of its steps; a stop part-way names the steps it
-// had taken (a scroll, an activation, a focus write or click, the value write, the action's own input), none undone. A
-// held activation ended by the request, as it began or unwound, is named too, since it sends the app a deactivation.
+// (`Interruption`, `InputEffect`): a refusal before the action took none of its input's steps; a stop part-way names the
+// steps it had taken (a scroll, an activation, a focus write or click, the value write, the action's own input), none
+// undone. A held activation ended by the request, as it began or unwound, is named too, since it may send the app a
+// deactivation.
 //
 // The tap needs Input Monitoring (the owner's decision of 2026-10-20, U5: without the grant a tap is created but receives
 // nothing). The engine never requests the grant: it reads the non-prompting preflight, and without it detection is off,
@@ -125,7 +126,8 @@ enum InputEffect: String, CaseIterable {
   case scroll
   /// The app activated in the background by route 3's fake activation (a held or a per-action one).
   case activation
-  /// That activation's click at the window's activation point.
+  /// An activation's own click: at the window's activation point, or the inert one just outside its frame (early, on a
+  /// join or as a hold unwinds), read from what was posted (`ActivationPosts`).
   case activationClick
   /// The field's focus written: AXFocused, or a WebKit field's caret or press (#324).
   case focus
@@ -135,7 +137,8 @@ enum InputEffect: String, CaseIterable {
   case value
   /// The action's own input: its events, or its accessibility action or write.
   case input
-  /// A held activation (a menu span or a focus hold) ended by the request, which sends the app a deactivation.
+  /// A held activation (a menu span or a focus hold) ended by the request, which may send the app a deactivation (none
+  /// when another holder keeps the activation).
   case activationRelease
 
   /// Its phrase in the answer, after "What may have taken effect: ".
@@ -143,26 +146,28 @@ enum InputEffect: String, CaseIterable {
     switch self {
     case .scroll: return "a scroll to bring the element into view"
     case .activation: return "the app's activation in the background"
-    case .activationClick: return "an activation click on its window"
+    case .activationClick: return "an activation click, at the window's activation point or just outside the window"
     case .focus: return "moving focus to the field"
     case .focusClick: return "a click to focus the field"
     case .value: return "the value written to the field"
     case .input: return "the action's own input, in part or whole"
-    case .activationRelease: return "the end of a held activation, which sends the app a deactivation"
+    case .activationRelease: return "the end of a held activation, which may have sent the app a deactivation"
     }
   }
 }
 
 /// A userIntervened answer's account of the request (#212): the vendor's sentence, the phase, and the effects the input
-/// meta reached. The message is the sentence then one fixed clause: nothing was done (a refusal before the action, with
-/// no effect), else the phase and what may have taken effect, none undone. Value-free: the app string is the request's.
+/// meta reached. The message is the sentence then one fixed clause: the requested input refused before its first step
+/// (a refusal before the action, with no effect), else the phase and what may have taken effect, none undone. Not
+/// "nothing was done": the request's prologue may have re-enabled a Chromium app's accessibility before the guard,
+/// which is no step of the input. Value-free: the app string is the request's.
 struct Interruption {
   let phase: InterruptionPhase
   let sentence: String
   var effects: [InputEffect] = []
 
   var message: String {
-    if phase == .beforeAction && effects.isEmpty { return "\(sentence) Nothing was done: the action was refused before its first step." }
+    if phase == .beforeAction && effects.isEmpty { return "\(sentence) The requested input was refused before its first step." }
     let opening = phase == .beforeAction ? "The action was refused before its first step." : "The action was stopped part-way."
     let reached = effects.isEmpty ? "Any step it had begun may have taken effect." :
       "What may have taken effect: \(effects.map(\.phrase).joined(separator: "; "))."

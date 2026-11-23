@@ -212,14 +212,11 @@ func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () thr
 /// included, and the method's interval spans the click's; its guard time, `pointUnconfirmed`, `routeAdvice` and its
 /// delivery guard's record (`delivery`, #324: without it the click's raise reads as one outside any hold, #315's misread)
 /// ride in the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
-/// #212: the click's events are noted as the focus's click, not the method's input, and its activation stays noted
-/// though a click that succeeded leaves its activation records out of the method's meta.
+/// #212: the click's events are noted as the focus's click, not the method's input (its activation's own posts are read
+/// as they went, `InputEffects`).
 func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout InputMeta) throws -> Void) throws {
   var clickMeta = meta
-  defer {
-    if clickMeta.startedAt != nil { acted() }
-    for effect in clickMeta.reachedEffects where effect == .activation || effect == .activationClick { clickMeta.effects.note(effect) }
-  }
+  defer { if clickMeta.startedAt != nil { acted() } }
   do {
     try meta.effects.posting(as: .focusClick) { try click(&clickMeta) }
   } catch {

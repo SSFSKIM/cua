@@ -427,6 +427,32 @@ private struct OpenHold {
   }
 }
 
+/// The fake activations' own posts made on the calling thread (#212): subtype 1, and the activation's clicks (at the
+/// window's activation point, or the inert one outside its frame, early, on a join or as a hold unwinds). A request runs
+/// on its connection's thread, so the change across a request is what that request posted, whichever holder's
+/// activation it ran, joined or released; a joiner that shares an activation and consumes no arm posts nothing.
+final class ActivationPosts {
+  var activations = 0
+  var clicks = 0
+
+  static var current: ActivationPosts {
+    let key = "cua.activationPosts"
+    if let posts = Thread.current.threadDictionary[key] as? ActivationPosts { return posts }
+    let posts = ActivationPosts()
+    Thread.current.threadDictionary[key] = posts
+    return posts
+  }
+
+  /// This thread's counts now, to read the effects since.
+  static var reading: (activations: Int, clicks: Int) { (current.activations, current.clicks) }
+
+  /// The effects posted on this thread since `since` (a `reading`).
+  static func effects(since: (activations: Int, clicks: Int)) -> [InputEffect] {
+    let now = current
+    return (now.activations > since.activations ? [.activation] : []) + (now.clicks > since.clicks ? [.activationClick] : [])
+  }
+}
+
 /// One action's fake activation of the app `pid` for its window.
 final class FakeActivation {
   let pid: pid_t
@@ -782,7 +808,7 @@ final class FakeActivation {
   /// click goes to the process alone: the agent cursor is told of an action's own events by its route (`announce`),
   /// never of this one.
   private func postActivation(_ planned: PlannedClick) {
-    post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
+    if post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue) { ActivationPosts.current.activations += 1 }
     activated = true
     epoch = realEpoch?()  // right after subtype 1: a real event from here on supersedes this activation
     activatedAt = system.now()
@@ -825,6 +851,7 @@ final class FakeActivation {
   private func postClick(at point: CGPoint) {
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
+    ActivationPosts.current.clicks += 1
     clickPostedAt = system.now()
   }
 

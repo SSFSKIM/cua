@@ -1,0 +1,13 @@
+time 2026-11-23T02:30:02Z
+hold-sittings: absent
+stress-ng: none
+owner chrome: 2546101 Mon Nov  2 20:16:10 2026 chrome
+load 0.33 0.20 0.12
+lock, last line: 2026-11-22T07:34:10Z release m5-t10-r3 status=0 load=2.88 2.46 1.57 render-host=none :: bash /Users/new/.local/share/cua-171/task110/scripts/proof.sh /Users/new
+pointer: x:142 y:130 screen:0 window:5912655
+/tmp/cua171-run-* present: []
+firefox on PATH (sitting.sh): /Users/new/.local/share/cua-171/task59/bin/firefox
+firefox version: Mozilla Firefox 159.0
+google-chrome: Google Chrome 156.0.8078.73 
+df /: 32G free
+gate leftovers: end check: clear 

@@ -1248,7 +1248,7 @@ unsettled, so L4d reruns as class A.
   twice the load.
 - H1 is the cross-check against its H6 record.
 - Item 9 and the doctor ran on the pinned asset.
-- x64's V5 is the owner-window sitting, outside this set.
+- x64's V5 is the owner-window sitting, outside this set. It ran on 11-23 and passes ("V5 at H8", below).
 
 It all ran on the #171 x64 VM (`dc-linux171-1e68`), on private displays only. The records are in `h8/`: `out/`
 holds the counted steps, and `scripts/` holds task 135's launchers, extracts, transcripts, scans and lock lines.
@@ -1393,6 +1393,79 @@ differs is tested with Fisher's exact test.
   transcripts (152 files). Of 6999 values, 6997 are the harness's own. The other 2 are the doctor's own device-mode
   word in its `engine` row, one in each transcript, as at H6. There are no window titles.
 
+### V5 at H8, on `:0` in the owner's window (GO 1087): PASS
+
+**V5 passes at H8 on 0.4.3**: "run valid; acceptance on the pinned release: every verdict PASS". All 52 verdict rows
+pass. The all-clear is clear, with no flag, no decoy connection and no leftover.
+- It ran once, 2026-11-23 02:30:03–03:07:44Z, in the owner's window (02:30–08:00Z). There was no stop, so none of the
+  plan's rerun or conditional slots was used.
+- The records are in `h8/zero/` (`V5.pinned-release/`, `zero.log.txt`) and `h8/zero-scripts/` (the launchers, the plan,
+  the precheck, the sitting's output and the reads after it).
+
+**The plan and the launch.**
+- The plan is `zero-scripts/v5-plan-h8.txt`, under rulings 1046, 1047, 1053 and 1054. It is task 123's H6 plan with
+  H8's facts:
+  - t129-x64 at 048140a2, clean;
+  - home-x64-043 on 0.4.3 (f1513e79…), holder h8-x64;
+  - the 55-min cap and the latest start at 07:00Z;
+  - a budget of one stop plus one whole rerun, then 823.3/831's two conditional slots, all inside 08:00Z.
+- The GO was ruling 1087, relayed by the controller.
+- `go-v5.sh first` waited for 02:30:00Z, then read the precheck and refused on any miss. The precheck
+  (`zero-precheck.out`, 02:30:02Z) found:
+  - no hold-sittings and no stress-ng;
+  - the owner's Chrome at pid 2546101, the load 0.33, and the pointer at 142,130;
+  - no `/tmp/cua171-run-*`, and `gate.mjs leftovers` clear;
+  - task 59's Firefox 159.0 first on PATH, and google-chrome 156.0.8078.73;
+  - 32G free.
+- **How it ran.** One hold of the host lock, holder h8-x64, 02:30:03–03:07:44Z (`lock-lines.txt`; `run-sitting.sh` →
+  `sitting-locked.sh` → `sitting.sh`). CUA_LOCK_MAX was 327 min, the minutes to 08:00Z less 2, and V5 was capped at
+  55 min. Only V5 ran.
+- **The command** was `gate.mjs print V5 --pinned home-x64-043 --out zero-x64-h8 --holder h8-x64`'s line, with only its
+  leading `locked.sh h8-x64` stripped (`zero-commands.txt`). Argument by argument, it is H6's line once the checkout,
+  home, out root and holder are placeholders (`compare-v5-line.txt`).
+- **wrap71 is exactly H8's** (ruling 1053).
+
+**The capture sidecar (rulings 1046, 1047, 1053, 1054).**
+- x64's narrowed copy ran beside the sitting, never as part of it: sha256 `03ee08bd…2d15e478` (`sidecar-sha256.txt`),
+  outside the repository. At a flag it would write only the lines naming the flagged peer inode or its path, plus
+  `owners.json` under 1047's rule.
+- **No flag came, so it captured nothing.** Its log reads "captured False", and it exited 0 on its stop file at
+  03:07:44Z.
+- Its two conditions before the window are recorded with their count-only outputs:
+  - (a) its synthetic test passed on the narrowed build, writing only lines that name the test's inode
+    (`narrow-check-test.txt`);
+  - (b) `classify-stop.py` reads MATCH on arm's stopped-2 capture narrowed the same way
+    (`narrow-filter-arm-stopped-2.txt`, `classify-stop-arm-stopped-2-narrowed.txt`, `narrow-check-arm-stopped-2.txt`).
+- The sidecar's sources, its test's records and any raw capture stay on the host, never committed. After M5 is
+  accepted, the captures are deleted (1054).
+
+**The verdict and the judges** (`v5-rows.txt`, `run/summary.md`):
+- **Rows:** 52 verdict rows, 52 pass, text restores 0/0/0.
+- **No exclusions:** no premise exclusion and no span-limited sample. H6's one span-limited sample,
+  `chrome_dnd_late_take_shared` 2/0, does not recur.
+- **Identification:** 94 adaptive holds identified, 0 unidentified.
+- **The hold canary**, relative (rulings 930, 932): draggable `chrome_dnd_short_in_front_shared` 9/9 held, largest wait
+  76.8 ms, median 50.3, against the plain control's largest 1.2 and a bar of 5. At H6: 88, 57.4 and 1.2.
+- **Kept traces and rejudge-audit** (`after-V5.txt`): 52 audit rows, each with its `kept_traces` file, none missing.
+  `rejudge-audit.mjs` reproduces the stored findings: moved 0, unkept 0, and foreign 0 stored and 0 now.
+- **settle-check** reads unknown, under rulings 834 and 843, as at H6.
+
+**The guard records** (`zero-V5.out`, `v5-status.txt`):
+- wrap71 took 15066 samples, with 0 flags, 0 decoy connections and no leftovers.
+- owner-diff's one difference is the owner's Chrome writing its profile's mtime, as in every sitting.
+- The pointer was restored to 142 130 and reads 142 130.
+- tmproot and `/tmp/cua171-run-*` were left empty. all-clear: clear. No hold-sittings was written.
+- The owner's Chrome kept pid 2546101 (started 11-02 20:16:10), read by ps only and never signalled. It appears in the
+  owner-check lines by class and geometry only.
+- wrap.out carries no `XGetWindowProperty` line this time. At H6 it carried one, ruled harmless (949).
+
+**The scans before the commit:**
+- token-shaped strings: 78 files in `zero/` and 35 in `zero-scripts/`, 0 hits;
+- key codes: 0 held-code rows and 0 raw minimized codes;
+- window titles: the structural scan (ruling 947; `:0`'s live titles are not read) covered 113 files. Of 395 values,
+  392 are the harness's own. The other 3 are quoted strings in `after-step.sh`'s own code, and none is a window
+  title.
+
 ## Corrections
 
 - **The local proof's summary log had false exits** (ruling 774). `scripts/proof-all.sh` wrote
@@ -1431,6 +1504,12 @@ differs is tested with Fisher's exact test.
     - the band, binding, late-take, L4d and H1 cross-check extracts, the identification counts and settle-check;
     - item 9's and the pinned home's doctor transcripts (`item9/`, `doctor-home/`);
     - the scans and the lock lines.
+  - `zero/` holds V5's `:0` sitting at H8 (`V5.pinned-release/`, `zero.log.txt`).
+  - `zero-scripts/` holds:
+    - its plan and launchers, the precheck records and the printed command with its comparison to H6's;
+    - the sitting's output, the reads after it (`after-V5.txt`, `v5-rows.txt`, `v5-status.txt`) and the lock lines;
+    - the stop classifier and the sidecar's narrowing checks, with their count-only outputs, and the sidecar's sha256;
+    - the scans.
 - `scripts/`: task 89's launchers and records as they ran.
   - The setup, the home, item 9 and its transcript.
   - The local proof and its logs (`proof/`).

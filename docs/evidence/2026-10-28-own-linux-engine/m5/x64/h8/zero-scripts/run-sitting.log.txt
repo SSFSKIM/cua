@@ -1,0 +1,2 @@
+2026-11-23T02:30:03Z run-sitting: cap 327m, hard stop 08:00Z, steps V5:55
+2026-11-23T03:07:44Z run-sitting exit 0

@@ -1,0 +1,10 @@
+flags in the run: 2, kinds ['outside-peer-connection', 'stop-sent']
+  yes the first flag is an outside-peer-connection
+  yes the flag names no peer pid (the peer outside the run, as the watchdog saw it)
+  yes the flagged process is a chrome
+  yes the peer inode has exactly one owner now
+  yes the owner is a chrome_crashpad
+  yes the owner's parent is wrap71 (its cmdline names wrap71.py)
+  yes the capture's ss lines show that owner holding the peer inode
+  yes the flagged chrome's ancestry passes through that wrap71
+MATCH: #432's known signature (ruling 1053)

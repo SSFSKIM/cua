@@ -1,0 +1,5 @@
+2026-11-23T01:13:59Z go-v5 first armed; waits for 02:30:00Z (SIDECAR=1)
+2026-11-23T02:30:03Z sidecar pid 842572 started, capture /Users/new/.local/share/cua-171/m5/capture-x64-h8
+2026-11-23T02:30:03Z precheck passed (load 0.33 0.20 0.12); launching V5
+2026-11-23T03:07:44Z run-sitting exit 0
+2026-11-23T03:07:44Z sidecar exit 0

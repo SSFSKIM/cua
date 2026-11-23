@@ -1,0 +1,5 @@
+kinds: {'meta': 1, 'begin': 1, 'scene-identity': 7, 'stub-check': 1, 'stub-check-foreground': 1, 'stub-check-in-front': 1, 'sample': 522, 'audit': 52, 'verdict': 52, 'prepare-faults': 1, 'text-restores': 1, 'end': 1}
+verdict rows: 52 by verdict: {'pass': 52}
+span-limited: []
+premise exclusions: []
+identification (adaptive holds): {'identified': 94}

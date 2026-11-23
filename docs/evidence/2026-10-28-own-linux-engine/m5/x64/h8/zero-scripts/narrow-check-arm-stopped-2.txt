@@ -1,0 +1,3 @@
+ring.txt: 30 sample headers, 2 lines; ss-at-flag.txt: 2 lines; owners.json narrowed counts {'ring_lines': 2, 'ss_at_flag_lines': 2, 'from': 'narrow-filter.py over the whole capture'}
+lines that name neither the inode nor the peer path: 0
+PASS: only lines naming the peer inode or its path were written

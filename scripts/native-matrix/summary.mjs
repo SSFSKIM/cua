@@ -31,7 +31,9 @@
 //   passed and the vendor did not; cua refusing where the vendor answered ok needs a declared departure. Background:
 //   the fixture's ground truth is the reference. Differs is
 //   judged on the row's own check (`ok`): cua answering ok with its effect verified where the vendor failed is better
-//   (S L225, "equal or better"); cua answering ok where the reference is a refusal fails its check.
+//   (S L225, "equal or better"); cua answering ok where the reference is a refusal fails its check. The caret rows of
+//   #258 and #259 (./caret.mjs) are frontmost rows whose two passes are equal only with the same reading of the field's
+//   range (./cell-verdict.mjs 'reading'), and no departure may name them.
 // - The declared departures (R3 as ruled 1108, ./departures.mjs): cua refused or answered unconfirmed where the vendor
 //   answered ok, the pair observed, each entry citing its Decision Log entry; listed under "What changes for a user".
 //   Everything else that differs fails; an entry of another kind is itself a failure; one no sample needed is named for
@@ -76,7 +78,7 @@ import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
 import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
-import {ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, TARGETS} from './plan.mjs';
+import {ENGINE_METHOD, isCaretRow, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
@@ -277,7 +279,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const methods = [];
   for (const [id, list] of groupBy(rows.filter(r => r.section === 'method'), r => r.id)) {
     const [target, regime] = id.split('/');
-    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(regime === 'frontmost' ? 'reference' : 'own', ...sides(list), options('method')(id))});
+    const mode = regime !== 'frontmost' ? 'own' : isCaretRow(id) ? 'reading' : 'reference';
+    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), options('method')(id))});
   }
   methods.sort((a, b) => a.id.localeCompare(b.id));
 

@@ -9,7 +9,8 @@
 //   row; speed and finding, compared; a declared departure) a cua sample with no eligible vendor sample with a verdict
 //   is `unpaired`: it has no verdict, never equal and never worse.
 // - Two failures are equal only as the same failure (./answers.mjs): the same answer, and on a frontmost method row
-//   every effect field its case recorded alike (`equal`). On a fixed-string row (ruling 1144: a Unicode row judged by
+//   every effect field its case recorded alike (`equal`). A caret row (#258, #259) asks the same of two passes: its
+//   reading is the field's range on the device, and the same reading is what "equal to the vendor's" means there. On a fixed-string row (ruling 1144: a Unicode row judged by
 //   its absolute expected string, the pressKey row) the same read-back with the user's value kept on both: such a
 //   sample is `shared` (a shared limit, the vendor has it too), listed apart; the vendor passing a sample whose cua pair
 //   failed fails the row; cua refusing or answering unconfirmed (its recorded engine name of that kind, its recorded
@@ -26,7 +27,7 @@
 // The verdicts: worse (a sample proven worse, or the pressKey row composing otherwise on the vendor), no-verdict (no
 // counted cua sample, or not qualified), declared, shared, better, equal.
 import {stats} from '../native-baseline/summary.mjs';
-import {answerOf, conservativeEffect, sameFailure} from './answers.mjs';
+import {answerOf, conservativeEffect, sameEffect, sameFailure} from './answers.mjs';
 import {answeredAs, vendorAnsweredOk} from './departures.mjs';
 import {sampleCause} from './front-key.mjs';
 
@@ -75,8 +76,10 @@ const VERDICTS = ['worse', 'equal', 'better', 'honest', 'declared', 'shared'];
 
 // One cell's verdict. `mode`: 'reference' (a frontmost method row), 'own' (its own outcome against ground truth or its
 // own measure: a background method row, a launch or probe row, the mid-switch row; the vendor's recorded beside it),
-// 'absolute' (a fixed-string Unicode row, ruling 1144) or 'pressKey' (a fixed-string row, and ruling 1119: the engines
-// must compose alike). `departure`: the row's declared departure, if any; `oracle(row)`: whether the non-interference
+// 'absolute' (a fixed-string Unicode row, ruling 1144), 'pressKey' (a fixed-string row, and ruling 1119: the engines
+// must compose alike) or 'reading' (a frontmost row judged by the device's reading of what the act did, the caret rows of
+// #258 and #259, ./caret.mjs: as 'reference', except that two passes are equal only with the same reading, every effect
+// field alike, since a caret elsewhere is a difference a model meets whether or not each side met its own check). `departure`: the row's declared departure, if any; `oracle(row)`: whether the non-interference
 // oracle judges the row; `pairable(run)`: whether the run's pair is one proof; `planned(run)`: the row's planned samples
 // in a run; `acceptance`: the row is an acceptance item's.
 // -> {verdict, vendor: {ok, valid, invalid}, cua: {…}, declared, shared: [sample], honest: [sample], routes, account,
@@ -111,7 +114,8 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     const own = causeOf(c);
     if (own) { outcomes.set(c, own); continue; }
     const v = vendorByRun.get(runOf(c))?.[0] ?? null;
-    if (passes(c)) outcomes.set(c, (mode === 'reference' || mode === 'pressKey') && !v ? 'unpaired' : v && !passes(v) && mode !== 'pressKey' ? 'better' : 'equal');
+    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? 'unpaired' : v && !passes(v) && mode !== 'pressKey' ? 'better'
+      : mode === 'reading' && !sameEffect(v, c) ? 'worse' : 'equal');
     else outcomes.set(c, failed(c, v));
   }
   const cuaCause = r => (VERDICTS.includes(outcomes.get(r)) ? null : outcomes.get(r));

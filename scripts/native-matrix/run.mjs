@@ -62,7 +62,7 @@ import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
-import {CASES, caseId, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
 import {activate, activated, activationOf, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT} from './steps.mjs';
@@ -450,7 +450,7 @@ function finishWatch(ctx) {
 const invalidCases = (ctx, target, regime, reason, user = null) => caseRows(ctx, target, regime, {invalid: reason}, user);
 // Every case of a target pushed with `extra` (its invalid reason, or the readings of an activation that did not take).
 const caseRows = (ctx, target, regime, extra, user = null) => {
-  for (const c of CASES[target]) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
+  for (const c of casesOf(target, regime)) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
     method: c.method, case: c.case, expect: c.expect, ...(user ? {user} : {}), ...extra});
 };
 // Every sample a frontmost target planned, skipped because its activation did not take front and key (./steps.mjs
@@ -460,7 +460,7 @@ const caseRows = (ctx, target, regime, extra, user = null) => {
 function skippedTarget(ctx, target, plan, frontKey, held = {}) {
   const scene = SCENE_OF[target], measured = {...frontKey, apps: [SCENES[scene].bundleId]};
   if (!plan.onlyMeasures) caseRows(ctx, target, 'frontmost', {frontKey, ...held});
-  if (plan.speed && !plan.onlyMeasures) for (const c of CASES[target]) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey, ...held});
+  if (plan.speed && !plan.onlyMeasures) for (const c of casesOf(target, 'frontmost')) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey, ...held});
   if (target === 'openPanel') return;
   if (plan.speed) for (const op of SPEED_OPS) for (let i = 1; i <= ctx.samples; i++)
     push(ctx, {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene, frontKey: measured});
@@ -501,7 +501,7 @@ async function frontmostTarget(ctx, target, plan) {
     if (plan.speed) await speedCells(ctx, scene);
     if (plan.finding) await findingRows(ctx, scene);
   }
-  if (!plan.onlyMeasures) for (const c of CASES[target]) await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
+  if (!plan.onlyMeasures) for (const c of casesOf(target, 'frontmost')) await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
   if (target === 'openPanel') await closePanel(ctx);
 }
 
@@ -528,7 +528,7 @@ async function backgroundPairing(ctx, {driven, user}) {
     const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
     if (skipped) caseRows(ctx, driven, 'background', {frontKey: skipped}, user);
     else if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
-    else for (const c of CASES[driven]) await caseRow(ctx, driven, 'background', c, {user, userWindow});
+    else for (const c of casesOf(driven, 'background')) await caseRow(ctx, driven, 'background', c, {user, userWindow});
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
   }

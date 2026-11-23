@@ -11,6 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-result.mjs';
+import {isCaretRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary} from '../../scripts/native-matrix/summary.mjs';
@@ -63,6 +64,8 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
       const [mc, user] = rest.split('@');
       Object.assign(row, {target, regime, method: mc.slice(0, mc.indexOf('.')), case: mc.slice(mc.indexOf('.') + 1), inputRoute: engine === 'cua' ? 3 : null, ...(user ? {user} : {})});
       if (regime === 'background') row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
+      // A caret row (#258, #259) carries the device's reading of the field, the same on both engines here.
+      if (isCaretRow(id)) row.outcome = {valueKept: true, range: {location: 25, length: 0}, collapsed: true, line: 2, column: 5};
     }
     if (section === 'launch' || section === 'concurrent' || (section === 'unicode' && id.split('/')[1].includes('@'))) {
       row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
@@ -122,6 +125,21 @@ test('the verdict: a worse method, a launch that failed, a lower finding measure
   const slow = judged({vendor: {axMs: 40, resolved: 9}, cua: {axMs: 39}});
   assert.equal(slow.verdict, 'OWNER');
   assert.ok(slow.owner.some(o => /missed the 10% beat/.test(o)));
+});
+
+// T8e: #258's and #259's caret rows are judged by the device's reading beside the vendor's: both passing their own check
+// with the caret elsewhere is worse, the same reading equal; every other frontmost row keeps the reference rule.
+test('a caret row (#258, #259) is equal only with the vendor\'s reading, even where both pass their own check', () => {
+  const POINT = 'electron/frontmost/click.point';
+  const elsewhere = {valueKept: true, range: {location: 26, length: 0}, collapsed: true, line: 2, column: 6};
+  const moved = judged({vendor: {resolved: 9}, cua: {tweak: set(POINT, {outcome: elsewhere})}});
+  assert.equal(moved.verdict, 'FAIL');
+  assert.ok(moved.blocking.includes(`method: ${POINT} is worse on cua`), moved.blocking.join('; '));
+  assert.equal(moved.methods.find(m => m.id === POINT).verdict, 'worse');
+  // Another frontmost row passing on both with other recorded fields stays equal.
+  const other = judged({vendor: {resolved: 9}, cua: {tweak: set('electron/frontmost/click.button', {outcome: {pressedOnce: true, extra: 1}})}});
+  assert.equal(other.methods.find(m => m.id === 'electron/frontmost/click.button').verdict, 'equal');
+  assert.equal(judged({vendor: {resolved: 9}}).methods.find(m => m.id === POINT).verdict, 'equal');
 });
 
 test('missing proof is NO VERDICT, never a pass: fewer than three runs, a missing row, a repeated sample, two sittings, two builds', () => {

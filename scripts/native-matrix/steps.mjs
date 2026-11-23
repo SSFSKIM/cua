@@ -5,6 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
@@ -238,7 +239,8 @@ const presentMeta = meta => {
 // the user window's in the background regime, likewise), the reading just before the act, and one after its check (and
 // after Acceptance 3's keystroke witness, which TextEdit's background click carries). An activation that did not take
 // front and key skips the act, its readings saying so. An act that threw records the engine's own error name where its
-// meta carries it (errorNameOf).
+// meta carries it (errorNameOf). A caret case (#258, #259) reads the field's range on the device before the act and
+// after it (`caret` {before, after} on the row), and its reading joins the outcome and the row's `ok` (./caret.mjs).
 export async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false, section = 'method', id = null, userValue = null, extra = {}} = {}) {
   await ctx.checkpoint();
   const scene = SCENE_OF[target];
@@ -267,6 +269,12 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     row.focusReadBy = verdict.by;
     if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
   }
+  // A caret case (#258, #259, ./caret.mjs): the field's range read on the device, outside either engine, before the act
+  // (it must be the one the prepare made, or nothing is sent) and after it, inside the row's window.
+  const rangeRead = () => span(ctx.ops.matrix(['text-range', '--scene', scene, '--run', ctx.run]))?.answer ?? null;
+  const caretBefore = c.caret ? rangeRead() : null;
+  const unprepared = c.caret ? caretPrepared(c.caret, caretBefore) : null;
+  if (unprepared) return done({invalid: `not prepared: ${unprepared}`, caret: {before: caretBefore}});
   // The row's window runs through the final before-read, so what it saw (an alert that prompted a re-activation) is
   // the row's even when the act is then skipped; a harness step's own app keeps its precedence (./oracle.mjs).
   const before = span(regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target));
@@ -300,21 +308,24 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
   if (!act.ok) return finish({invalid: 'the act cell failed', error: act.error});
   Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(electron ? {actAt: act.value.at ?? act.at} : {})});
+  if (c.caret) row.caret = {before: caretBefore, after: rangeRead()};
   const oracleAfter = regime === 'background' ? read(ctx, focusOf(userWindow), {electronMode: electron, windowOrder: true}) : null;
   const check = span(await ctx.lane.js(cells.check));
   keep('check', check);
   if (electron) row.electronMode = (oracleAfter ?? after({electronMode: true}))?.electronMode ?? null;
   if (!check.ok) return finish({invalid: 'the check cell failed', error: check.error});
   if (check.value?.invalid) return finish({invalid: check.value.invalid});
+  const caret = c.caret ? caretOutcome(c.caret, row.caret.after) : null;
+  if (caret?.invalid) return finish({invalid: caret.invalid});
   if (oracleAfter && oracleAfter.watcher !== true) return finish({invalid: 'the activation watcher was not running after the action'});
   const witness = isAcceptance3(target, regime, c, user) ? await keystrokeWitness(ctx, span, userWindow) : null;
   if (witness?.invalid) return finish({invalid: witness.invalid});
   // With `userValue`, the user window's field must also have kept that value (the focus probe's hash after the act).
   const kept = userValue === null ? null : oracleAfter?.focus?.named === true && oracleAfter.focus.valueHash === userValue;
-  const outcome = {...(check.value?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept}), ...(witness ? {keystroke: witness.keystroke} : {})};
+  const outcome = {...(check.value?.outcome ?? {}), ...(caret?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept}), ...(witness ? {keystroke: witness.keystroke} : {})};
   if (Object.hasOwn(outcome, 'errorName')) outcome.errorName = errorNameOf(act, outcome.errorName);
   const witnessed = !witness || (witness.keystroke.posted && witness.keystroke.finderSelected && witness.keystroke.documentUnchanged);
-  const pushed = finish({ok: check.value?.ok === true && kept !== false && witnessed, outcome});
+  const pushed = finish({ok: check.value?.ok === true && kept !== false && witnessed && caret?.ok !== false, outcome});
   ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
     ? {before: before.reading, after: oracleAfter.reading, focus: oracleAfter.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
       order: {before: before.windowOrder ?? null, after: oracleAfter.windowOrder ?? null}, targets: targetsOf(target),

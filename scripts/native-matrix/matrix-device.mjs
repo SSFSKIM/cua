@@ -18,6 +18,10 @@
 //       with front-key, the front and key applications' bundle ids (./front-key.mjs: the key from the focus probe, the
 //       --focus one when given, else one naming no window); with window-order, every on-screen window front to back, the
 //       run's own by pid and number, any other by bundle id and layer only (the window-order oracle, #485)
+//   text-range --run <dir> --scene <id>
+//       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
+//       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
+//       cells of #258 and #259, ./caret.mjs) -> {answer: {range, focused} | {error}, at}: offsets and booleans only
 //   electron-mode --run <dir>
 //       the Electron fixture's whole accessibility record (its app.isAccessibilitySupportEnabled readings, written to
 //       the scene's user-data directory: fixtures/electron/main.js), each line kept as {at, enabled, source} only
@@ -87,6 +91,7 @@ import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {fieldRange} from './caret.mjs';
 import {alertWatch, bundlePids} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
 import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from './fixtures/electron-fixture.mjs';
@@ -245,6 +250,15 @@ function engineOwns(pid, roots, io) {
 
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).
 export const isWatcher = (table, pid) => table.some(p => p.pid === pid && /\/cua-engine --probe watch-activations\b/.test(p.command));
+
+// The selected range of one of the run's scenes' text field, by the approved bundle's `--probe text-view` (the caret
+// cells of #258 and #259, ./caret.mjs fieldRange: the first text area of the scene's process, read outside either
+// engine). A probe that failed is the reading's error, never the command's. -> {range, focused} | {error}.
+export function textRange(scene, io) {
+  const pid = io.state().scenes?.[scene]?.pid;
+  if (!Number.isSafeInteger(pid)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
+  try { return fieldRange(io.probe(['text-view', '--pid', String(pid)])); } catch (error) { return {error: String(error.message).slice(0, 160)}; }
+}
 
 // ---- the scheduled probes -------------------------------------------------------------------------------------------------
 
@@ -519,7 +533,7 @@ function parse(argv) {
 }
 // The readings `read --with` adds.
 const READ_WITH = Object.freeze(['front-key', 'window-order']);
-const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|text-range|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -553,6 +567,7 @@ export async function main(argv, {io: given = {}} = {}) {
         frontKey: also.includes('front-key'), windowOrder: also.includes('window-order'), ...roots}, io);
     }
     case 'electron-mode': return electronModeRecord(io);
+    case 'text-range': return timed(() => textRange(flags.scene, io));
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {
       const from = Date.now();

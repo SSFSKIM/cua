@@ -440,6 +440,36 @@ return {ok: applied, outcome: {applied}};`},
 export const ELECTRON_FIELD_LAYOUT = Object.freeze({window: Object.freeze([720, 560]), from: Object.freeze([30, 69]), to: Object.freeze([300, 99])});
 // The fixture status's press count, or null.
 export const pressed = `(() => { const status = ${statusText(named('Fixture status'), '/Pressed \\d+ times?/')}; const m = /Pressed (\\d+) times?/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
+// #258 and #259's caret cases (T8e, ./caret.mjs): what the prepare makes in the field (`before`, the range the device
+// must read before the click) and, for #259, the point clicked (window points, the 2026-11-01 cell's: about five
+// characters into the drag's middle line) and the line it aims at (0-based). `lines` the field's value, for the
+// reading's line and column.
+const CARET_WORD = 'charlie';
+export const CARET = Object.freeze({
+  selection: Object.freeze({kind: 'selection', lines: FIELD_LINES, before: Object.freeze({location: FIELD_LINES.join('\n').indexOf(CARET_WORD), length: CARET_WORD.length})}),
+  point: Object.freeze({kind: 'point', lines: FIELD_LINES, before: Object.freeze({location: FIELD_LINES.join('\n').length, length: 0}),
+    at: Object.freeze([60, (ELECTRON_FIELD_LAYOUT.from[1] + ELECTRON_FIELD_LAYOUT.to[1]) / 2]), line: 2}),
+});
+// The field holding its value, the caret at the value's end; then #259's point in the screenshot's pixels.
+const caretAtEnd = `${observed}
+let now = ax, index = ${named('Fixture text')};
+if (index === null) return {ready: false, reason: "the field is not in the text"};
+${focusOn({clear: true})}
+if (plain(valueOfIndex(now, index)) !== ${FIELD_VALUE}) { await __app.setValue(index, ${FIELD_VALUE}); now = await observe(); }
+if (plain(valueOfIndex(now, index)) !== ${FIELD_VALUE}) return {ready: false, reason: "the field could not be given its value"};
+await __app.selectText(index, ${j(FIELD_LINES.at(-1).split(' ').at(-1))}, {selectionType: "cursor_after"}); now = await observe();
+if (selectedTextOf(now) !== null) return {ready: false, reason: "a selection is left in the field"};
+const size = jpegSize(await __app.getScreenshot({emit: false}));
+if (!size) return {ready: false, reason: "the screenshot's size could not be read"};
+const layout = ${j(ELECTRON_FIELD_LAYOUT)};
+if (Math.abs(size.height / size.width - layout.window[1] / layout.window[0]) > 0.03) return {ready: false, reason: "the screenshot is not the fixture window's shape"};
+const scale = size.width / layout.window[0];
+__m.index = index; __m.point = ${j(CARET.point.at)}.map(v => Math.round(v * scale));
+return {ready: true};`;
+// The click must leave the field's value as it was.
+const valueKept = `const ax = await observe();
+const kept = plain(valueOfIndex(ax, ${named('Fixture text')})) === ${FIELD_VALUE};
+return {ok: kept, outcome: {valueKept: kept}};`;
 const electron = [
   tree(`ax => ({ok: ${named('Fixture text')} !== null, outcome: {fixture: ${named('Fixture text')} !== null}})`),
   listApps('electron'),
@@ -472,6 +502,13 @@ return {ok: moved, outcome: {moved}};`},
   dragSelect({find: named('Fixture text'), value: FIELD_VALUE, layout: ELECTRON_FIELD_LAYOUT}),
   refusal({method: 'setValue', kase: 'notSettable', find: named('Fixture button'), act: 'await __app.setValue(__m.index, "x");', watch: `[${pressed}, valueOfIndex(ax, ${named('Fixture text')})]`,
     sentence: REFUSALS.notSettable}),
+  // #258 and #259 (T8e): a click into the field judged by where its caret is after it, read on the device (`caret`,
+  // ./caret.mjs; ./steps.mjs caseRow) and compared with the vendor's reading (./cell-verdict.mjs 'reading'). Frontmost
+  // only, as both were registered: in the background a web page takes no pointer, which is the declared refusal's
+  // question and not these gates'.
+  {method: 'click', case: 'selection', expect: 'outcome', regimes: ['frontmost'], caret: CARET.selection,
+    prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j(CARET_WORD)})}\nreturn {ready: true};`, act: 'await __app.click(__m.index);', check: valueKept},
+  {method: 'click', case: 'point', expect: 'outcome', regimes: ['frontmost'], caret: CARET.point, prepare: caretAtEnd, act: 'await __app.click(__m.point);', check: valueKept},
 ];
 
 // ---- The windowless app (the "app with no window" refusal) ------------------------------------------------------------
@@ -487,6 +524,8 @@ return {ok: refusedAs(${j(REFUSALS.noWindow)}) && unbound, outcome: {refused: __
 ];
 
 export const CASES = Object.freeze({textedit, finder, chrome, electron, openPanel, windowless});
+// A target's cases in one regime: every case but those that name other regimes (`regimes`, the caret cases').
+export const casesOf = (target, regime) => CASES[target].filter(c => !c.regimes || c.regimes.includes(regime));
 // The state an act on each target may change, as an expression over an observation `ax`: read once the prepare is ready
 // and again after an act that threw, so the row records whether the target stayed as prepared (`outcome.unchanged`, the
 // reading the judge's conservative-answer rule needs, ./answers.mjs conservativeEffect; ./matrix-cells.mjs caseCells).
@@ -552,3 +591,6 @@ export const isAcceptance3 = (target, regime, c, user) => regime === 'background
 export const caseId = (target, regime, c, user = null) => `${target}/${regime}/${c.method}.${c.case}${user ? `@${user}` : ''}`;
 // A frontmost case's own timing row (section 'speed'): part 5's "each method cell", one per run.
 export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`;
+// The method rows judged by the device's reading of the field's caret beside the vendor's (#258, #259; ./caret.mjs).
+export const CARET_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c.caret).map(c => caseId(target, 'frontmost', c))));
+export const isCaretRow = id => CARET_ROWS.includes(id);

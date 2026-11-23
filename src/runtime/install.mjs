@@ -37,6 +37,9 @@
 // $CUA_HOME/engine/linux/cua-engine with one rename. Unlike the helper, an engine of another version or a local build
 // there is replaced: a running engine keeps the file it started from.
 //
+// installMacosEngine is `cua install`'s macOS engine step (#117 M4; src/runtime/engine.mjs): cua's engine built and
+// signed at its one approved location when it is selected or asked for, and left pending for `cua engine approve`.
+//
 // The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
 // always uses the production codesign check, the global fetch and the PATH.
 import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, constants as fsConstants, createReadStream, createWriteStream} from 'node:fs';
@@ -45,6 +48,7 @@ import {createHash} from 'node:crypto';
 import {pipeline} from 'node:stream/promises';
 import {Readable} from 'node:stream';
 import {join} from 'node:path';
+import {homedir} from 'node:os';
 import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
 import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
@@ -52,6 +56,9 @@ import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
 import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
 import {ENGINE_BINARY, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEnginePin, placeLinuxEngine, readEngineRecord, refuseUnpinned, writeEngineRecord} from './linux-engine.mjs';
+import {buildEngine, engineDirectory, installedEngine} from './engine.mjs';
+import {signWaitMs} from './engine-sign.mjs';
+import {nativeEngineSetting} from './launch.mjs';
 
 // What unpacking a deb runs, and the package each comes from.
 const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
@@ -355,3 +362,40 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
     rmSync(stage, {recursive: true, force: true});
   }
 }
+
+// `cua install`'s macOS engine step (#117 M4; the native engine's spec, "Install, signing and permissions"): cua's engine
+// built, signed and put at its one approved location under HOME (buildEngine, as `cua engine build` does; no CUA_HOME
+// moves it) when the setting names it (CUA_NATIVE_ENGINE, else engine.json's `engine`, else the default: the preference,
+// not the effective selection, since a missing approved engine is what install is for) or when `explicit` (--engine)
+// asks, whatever the setting says. The build is left pending: approving it is `cua engine approve`'s, with the owner at
+// the console (its grant requests and its capture may raise prompts), never install's, so an ordinary or CI install
+// raises no permission or capture prompt. A failure to build (or to read the setting) fails the step only when
+// `explicit`; otherwise it is reported (status `warn`) and the rest of the install stands. `sign` 'adhoc' signs ad hoc
+// (CI only); `signWait` is --sign-wait, else CUA_SIGN_WAIT_MS, as engine build reads it. `selection` reaches the
+// setting's read (`config`, `defaultEngine`); `build`, `installed` (the approved engine, read from the files and the
+// signature only) and `engine` (the engine module's own deps) are test seams.
+// -> {skipped: 'not_selected'} | {status: 'warn', code, message, hint?} | {status: 'pass', ...buildEngine's answer,
+// approved: whether the bundle now at the location is the approved one}.
+export async function installMacosEngine({explicit = false, sign, signWait, env = process.env, selection = {}, build = buildEngine, installed = installedEngine,
+  engine = {}, log = () => {}} = {}) {
+  const reported = error => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {})});
+  if (!explicit) {
+    let setting;
+    try { setting = nativeEngineSetting({env, ...selection}); } catch (error) { return reported(classified(error, 'invalid_setting')); }
+    if (setting.engine !== 'cua') return {skipped: 'not_selected'};
+  }
+  const dir = engine.dir ?? engineDirectory(env.HOME || homedir());
+  let built;
+  try {
+    const timeoutMs = signWaitMs({flag: signWait, env});
+    built = await build({...engine, env, dir, ...(sign === 'adhoc' ? {identity: 'adhoc'} : {}), signOptions: {timeoutMs}, log});
+  } catch (error) {
+    const failed = classified(error, 'engine_install_failed');
+    if (explicit) throw failed;
+    return reported(failed);
+  }
+  return {status: 'pass', ...built, approved: installed({dir, runSync: engine.runSync})?.build === built.build};
+}
+
+// A step's failure as a CuaError: a raw one (a filesystem error, a bug) under `code`, its own code kept in the message.
+const classified = (error, code) => (error instanceof CuaError ? error : new CuaError(code, `${error.code ?? 'error'}: ${error.message}`, {cause: error}));

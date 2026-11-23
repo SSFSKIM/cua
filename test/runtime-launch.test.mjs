@@ -1012,8 +1012,8 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
   for (const host of [undefined, 'vendor', 'cua']) for (const node of [true, false]) {
     const refused = refusal('CUA_NATIVE_ENGINE=cua', host, node, false);
     assert.equal(refused.code, 'engine_not_installed', `${host} ${node}`);
-    assert.match(refused.message, /cua install --engine/);
-    assert.match(refused.message, /cua engine build/);
+    // cua install --engine builds and signs the bundle, pending; approving it is cua engine approve's, the owner's step.
+    assert.match(refused.message, /install it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console;/);
     assert.match(refused.message, /CUA_NATIVE_ENGINE=vendor/);
   }
   assert.match(refusal('engine.json cua', undefined, true, false).message, /engine\.json/, 'names where the setting came from');

@@ -17,6 +17,7 @@ const CODESIGN_TIMED_OUT_READ = () => CODESIGN_TIMED_OUT;
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
 import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
+import {installMacosEngine} from '../src/runtime/install.mjs';
 
 const OLD_BUILD = 'b'.repeat(64);
 
@@ -706,6 +707,43 @@ for (const [why, set] of [['cannot start', watcher => { watcher.ready = false; }
     assert.equal(w.operator.asked, 1);
   });
 }
+
+// ---- cua install's engine step over the real build ----
+
+// installMacosEngine as `cua install` (selected by CUA_NATIVE_ENGINE) or `cua install --engine` runs it, this world's
+// fakes as its engine deps. The world's operator stands for a terminal that would confirm anything (`state.lines`).
+const installStep = (w, options = {}) => installMacosEngine({env: {...w.deps.env, CUA_NATIVE_ENGINE: 'cua'}, engine: w.deps, log: w.deps.log, ...options});
+
+test('install, plain or --engine, builds and signs into pending and never approves, even where an approval would need no one', async t => {
+  for (const explicit of [false, true]) {
+    const w = world(t);
+    w.placeBundle({approved: true});   // approved under the configured identity: a same-identity rebuild follows
+    const running = await w.startEngine();
+    w.state.lines = [''];
+    const result = await installStep(w, {explicit});
+    assert.equal(result.status, 'pass');
+    assert.equal(result.changed, true);
+    assert.equal(result.approved, false, 'the new build is pending');
+    assert.equal(running.stopped, true, 'the old engine was stopped for the swap');
+    assert.equal(approves(running), 0);
+    assert.deepEqual(opened(w), [], 'nothing launched: no approve request, no capture');
+    assert.equal(w.engines.length, 1);
+    assert.equal(w.operator.asked, 0);
+    assert.equal(w.json('pending.json').build, w.checkoutBuild());
+    assert.equal(w.json('approved.json').build, OLD_BUILD, 'approved.json is cua engine approve\'s alone');
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}), null);
+    noIdentity(result, 'the result');
+  }
+});
+
+test('install over the approved bundle already at this build builds, stops and launches nothing, and reports it approved', async t => {
+  const w = world(t);
+  w.placeBundle({build: w.checkoutBuild(), approved: true});
+  const result = await installStep(w, {explicit: true});
+  assert.equal(result.changed, false);
+  assert.equal(result.approved, true);
+  assert.deepEqual(w.calls, []);
+});
 
 // ---- the operator's lines and replayd's log ----
 

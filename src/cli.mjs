@@ -8,7 +8,7 @@ import {hostname} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
-import {installLinuxEngine, installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
+import {installLinuxEngine, installMacosEngine, installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
 import {buildLinuxEngine, inspectLinuxEngine, loadEnginePin, refuseUnpinned} from './runtime/linux-engine.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
@@ -65,7 +65,14 @@ export const usageFor = platform => {
   install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime, then the pinned
           [--node-archive <node tarball> | --no-node]          Node 24 cua's own REPL host runs on (a local
                                                                nodejs.org tarball, or none: the host uses your Node)
-${darwin ? '' : `          [--sandbox-helper <file>]                            and first cua's pinned sandbox helper (a local copy of
+${darwin ? `          [--engine] [--engine-sign adhoc] [--sign-wait <ms>]  and last cua's engine, built and signed as engine build
+                                                               does when CUA_NATIVE_ENGINE or ~/.config/cua/engine.json
+                                                               selects it, pending until engine approve (the owner at
+                                                               the console): --engine builds it whatever selects, and
+                                                               makes it required (without it a failed build is only
+                                                               reported); --engine-sign adhoc and --sign-wait are
+                                                               engine build's --sign and --sign-wait
+` : `          [--sandbox-helper <file>]                            and first cua's pinned sandbox helper (a local copy of
                                                                the release asset instead of the download)
           [--engine]                                           then cua's pinned Linux engine, which install places in
                                                                any case: --engine makes it required (without it a missing
@@ -160,16 +167,29 @@ function progressReporter() {
 // REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
 // or Node step fails the command after the runtime is in place, saying so; --no-node skips the Node step (an offline
 // install without the tarball), and a platform with no Node pin has none to take. Either way the own host then runs on
-// CUA_NODE or the user's Node 24, else macOS sessions keep the vendor host and Linux sessions are refused.
-// `deps` is a test seam of this module API only (the installers, the pins, the home and the host); the CLI passes none.
-async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, installHelper = installSandboxHelper, installEngine = installLinuxEngine, enginePin = loadEnginePin, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome(), platform = process.platform} = {}) {
-  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}, 'sandbox-helper': {type: 'string'}, engine: {type: 'boolean'}, 'prune-leftovers': {type: 'boolean'}});
+// CUA_NODE or the user's Node 24, else macOS sessions keep the vendor host and Linux sessions are refused. Last, on
+// macOS, cua's engine (#117 M4, installMacosEngine): built and signed when the setting selects it or --engine asks,
+// and left pending for `cua engine approve` with the owner at the console; install never approves it. --engine means
+// the same on both platforms: cua's engine is required, so only with it does the engine step's failure fail the
+// install (on macOS after everything else is in place, saying so).
+// `deps` is a test seam of this module API only (the installers, the pins, the home, the host and, for the macOS
+// engine's selection, the environment); the CLI passes none.
+async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, installHelper = installSandboxHelper, installEngine = installLinuxEngine,
+  installMacosEngine: macosEngineInstaller = installMacosEngine, enginePin = loadEnginePin, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome(), platform = process.platform, env = process.env} = {}) {
+  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}, 'sandbox-helper': {type: 'string'}, engine: {type: 'boolean'},
+    'engine-sign': {type: 'string'}, 'sign-wait': {type: 'string'}, 'prune-leftovers': {type: 'boolean'}});
   if (values['sandbox-helper'] !== undefined && platform !== 'linux') throw new UsageError('install takes --sandbox-helper on Linux only');
-  if (values.engine && platform !== 'linux') throw new UsageError('install takes --engine on Linux only (on macOS, cua engine build and cua engine approve install cua\'s engine)');
+  if (values.engine && platform !== 'linux' && platform !== 'darwin') throw new UsageError('install takes --engine on macOS and Linux only');
+  if ((values['engine-sign'] !== undefined || values['sign-wait'] !== undefined) && platform !== 'darwin')
+    throw new UsageError('install takes --engine-sign and --sign-wait on macOS only (the Linux engine is not signed)');
+  if (values['engine-sign'] !== undefined && values['engine-sign'] !== 'adhoc') throw new UsageError('install takes --engine-sign adhoc or no --engine-sign (the configured identity)');
   if (values['no-node'] && values['node-archive'] !== undefined) throw new UsageError('install takes --node-archive or --no-node, not both');
-  // --engine requires the engine, so a cua with no pin for it refuses before anything is installed.
-  const linuxEnginePin = values.engine ? enginePin() : null;
-  if (values.engine && !linuxEnginePin) refuseUnpinned();
+  // A malformed --sign-wait is the command's error before anything is installed; CUA_SIGN_WAIT_MS is read only by an
+  // engine step that runs.
+  if (values['sign-wait'] !== undefined) signWaitMs({flag: values['sign-wait']});
+  // --engine requires the engine, so on Linux a cua with no pin for it refuses before anything is installed.
+  const linuxEnginePin = values.engine && platform === 'linux' ? enginePin() : null;
+  if (values.engine && platform === 'linux' && !linuxEnginePin) refuseUnpinned();
   const pins = pinsOf();
   const manifest = values.release ? findPin(pins, values.release) : selectPin(pins);
   const nodePin = values['no-node'] ? null : selectNodePin(nodePins());
@@ -244,7 +264,26 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
       : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
   }
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(codexLeftovers ? {codexLeftovers} : {}), ...(sandboxHelper ? {sandboxHelper} : {}), ...(linuxEngine ? {engine: linuxEngine} : {}), node});
+
+  // cua's macOS engine (#117 M4), last: the build is the slow step, and only --engine makes its failure the command's.
+  let macosEngine = null;
+  if (platform === 'darwin') {
+    const remedy = `${result.release} is installed and active; for the engine, run cua install --engine again`;
+    try {
+      macosEngine = await macosEngineInstaller({explicit: values.engine === true, sign: values['engine-sign'], signWait: values['sign-wait'], env,
+        log: line => process.stderr.write(`${line}\n`)});
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      throw new CuaError(error.code, `cua's engine was not installed: ${error.message}`, {hint: error.hint ? `${remedy}; ${error.hint}` : remedy, cause: error});
+    }
+    if (macosEngine.status === 'warn') macosEngine.hint = macosEngine.hint ? `${remedy}; ${macosEngine.hint}` : remedy;
+    if (!values.json) print(macosEngine.skipped
+      ? 'cua\'s engine is not selected, so install left it alone: cua install --engine builds it (CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects it)'
+      : macosEngine.status === 'warn' ? `cua's engine was not installed: ${macosEngine.message} (${macosEngine.code}); ${macosEngine.hint}`
+        : `${engineBuildText(macosEngine)}${macosEngine.approved ? ', and approved' : '; pending until cua engine approve, with the owner at the console'}`);
+  }
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(codexLeftovers ? {codexLeftovers} : {}), ...(sandboxHelper ? {sandboxHelper} : {}),
+    ...(linuxEngine ? {engine: linuxEngine} : {}), ...(macosEngine ? {engine: macosEngine} : {}), node});
 }
 
 async function doctor(args) {
@@ -820,6 +859,9 @@ const ENGINE_COMMANDS = ['build', 'approve', 'status', 'stop'];
 const signatureText = ({kind, identityMatches, reason}) => (kind === null ? 'unsigned' : kind === 'unreadable' ? `signature unknown (unreadable: ${reason})`
   : `signed with ${kind === 'adhoc' ? 'ad hoc' : identityMatches === null ? 'an identity (none is configured)'
     : identityMatches ? 'the configured identity' : 'an identity that is not the configured one'}`);
+// A build's outcome, as engine build and install say it.
+const engineBuildText = built => (built.changed ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, ${signatureText(built.signature)}`
+  : `cua's engine ${shortBuild(built.build)} at ${built.bundlePath} is already this build, ${signatureText(built.signature)}`);
 
 export function engineStatusLines(status) {
   const lines = [status.exists ? `engine: ${status.bundlePath} (version ${status.engineVersion}, build ${shortBuild(status.build)}), ${signatureText(status.signature)}`
@@ -894,9 +936,7 @@ async function engine(args, deps = {}) {
   if (command === 'build') {
     const timeoutMs = signWaitMs({flag: values['sign-wait'], env: deps.env ?? process.env});
     const built = await buildEngine({...deps, ...(values.sign ? {identity: 'adhoc'} : {}), signOptions: {...deps.signOptions, timeoutMs}, log});
-    print(values.json ? {ok: true, ...built} : built.changed
-      ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, signed with ${signatureText(built.signature)}; pending until cua engine approve`
-      : `cua's engine ${shortBuild(built.build)} at ${built.bundlePath} is already this build, signed with ${signatureText(built.signature)}`);
+    print(values.json ? {ok: true, ...built} : `${engineBuildText(built)}${built.changed ? '; pending until cua engine approve' : ''}`);
     return 0;
   }
   const operator = deps.operator ?? lineReader(process.stdin);

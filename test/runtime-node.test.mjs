@@ -438,8 +438,9 @@ async function cliInstall(t, args, deps) {
   process.stdout.write = chunk => { out.push(String(chunk)); return true; };
   process.stderr.write = chunk => { err.push(String(chunk)); return true; };
   try {
-    // No Linux engine pin unless a test gives one, so a Linux run never reaches the release download (#171).
-    const status = await main(['install', ...args], {enginePin: () => null, ...deps});
+    // No Linux engine pin unless a test gives one, so a Linux run never reaches the release download (#171); on macOS
+    // the vendor engine selected, so the engine step never reads the account's selection or builds an engine (#117 M4).
+    const status = await main(['install', ...args], {enginePin: () => null, env: {CUA_NATIVE_ENGINE: 'vendor'}, ...deps});
     return {status, stdout: out.join(''), stderr: err.join('')};
   } finally { Object.assign(process.stdout, {write: write.stdout}); Object.assign(process.stderr, {write: write.stderr}); }
 }

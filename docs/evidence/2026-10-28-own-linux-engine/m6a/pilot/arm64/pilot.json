@@ -1,0 +1,396 @@
+{
+ "pilot": "m6a-venue",
+ "leg": "arm64",
+ "arch": "arm64",
+ "node": "v24.22.3",
+ "home": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua",
+ "out": "/home/runner/work/_temp/linux-runtime/artifact",
+ "scratch": "/home/runner/work/_temp/linux-runtime/scratch",
+ "startedAt": "2026-11-23T08:45:17.542Z",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "display": ":99",
+   "sandbox": "(unset: scoped)"
+  },
+  {
+   "name": "doctor's four environment rows pass",
+   "status": "PASS",
+   "exit": 1,
+   "problems": []
+  },
+  {
+   "name": "today's cua install",
+   "status": "PASS",
+   "code": 0,
+   "signal": null,
+   "seconds": 23.5
+  },
+  {
+   "name": "sandbox.launcher passes",
+   "status": "PASS",
+   "exit": 0,
+   "launcher": {
+    "pass": true,
+    "status": "pass",
+    "detail": "cua's own sandbox confines the children: the pinned helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox (SHA-256 807448d058065db9e50ed8f24a739ac42f6a738503083ad93ee3626655916088); no Codex CLI is launched"
+   }
+  },
+  {
+   "name": "the item 1 smoke, with the shared confinement step",
+   "status": "PASS",
+   "exit": 0,
+   "signal": null,
+   "seconds": 173.1
+  },
+  {
+   "name": "the item 1 smoke under strace -f",
+   "status": "PASS",
+   "exit": 0,
+   "signal": null,
+   "seconds": 173.2,
+   "trace": "/home/runner/work/_temp/linux-runtime/scratch/smoke.strace"
+  },
+  {
+   "name": "strace -f followed the helper's children into the kernel",
+   "status": "PASS",
+   "problems": []
+  }
+ ],
+ "usernsBeforeRemedy": {
+  "bwrap": 1,
+  "restrict": "1",
+  "stderr": "bwrap: setting up uid map: Permission denied"
+ },
+ "environment": {
+  "pass": true,
+  "problems": [],
+  "rows": {
+   "display": "pass",
+   "accessibility.bus": "pass",
+   "accessibility.enabled": "pass",
+   "sandbox.userns": "pass"
+  }
+ },
+ "doctorRows": {
+  "platform": "pass",
+  "runtime.installed": "pass",
+  "runtime.files": "pass",
+  "runtime.vendor-manifest": "pass",
+  "runtime.ipc": "pass",
+  "runtime.signatures": "pass",
+  "sandbox": "pass",
+  "sandbox.launcher": "pass",
+  "run.stale": "pass",
+  "runtime.leftovers": "pass",
+  "display": "pass",
+  "accessibility.bus": "pass",
+  "accessibility.enabled": "pass",
+  "sandbox.userns": "pass",
+  "secrets.store": "pass",
+  "secrets.project": "skip",
+  "repl.host": "pass",
+  "engine": "pass",
+  "chrome.route": "blocked",
+  "chrome.host.registered": "blocked",
+  "chrome.hosts.live": "blocked",
+  "maws.hosts": "skip",
+  "agent.installed": "skip",
+  "agent.running": "skip",
+  "agent.enrolled": "skip",
+  "agent.console": "skip",
+  "agent.relay": "skip"
+ },
+ "smoke": {
+  "status": "PASS",
+  "steps": [
+   {
+    "name": "preconditions",
+    "status": "PASS"
+   },
+   {
+    "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+    "status": "PASS"
+   },
+   {
+    "name": "the default selects cua's engine (cua doctor --json)",
+    "status": "PASS"
+   },
+   {
+    "name": "bind the fixture window by X11 id",
+    "status": "PASS"
+   },
+   {
+    "name": "type the marker and read it back from the accessibility tree",
+    "status": "PASS"
+   },
+   {
+    "name": "the kernel reads no private state and no store",
+    "status": "PASS"
+   },
+   {
+    "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+    "status": "PASS"
+   },
+   {
+    "name": "screenshot of the window",
+    "status": "PASS"
+   },
+   {
+    "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+    "status": "PASS"
+   },
+   {
+    "name": "end_task",
+    "status": "PASS"
+   },
+   {
+    "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+    "status": "PASS"
+   },
+   {
+    "name": "cua serve exited cleanly",
+    "status": "PASS"
+   },
+   {
+    "name": "no run entry left for the connection",
+    "status": "PASS"
+   },
+   {
+    "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+    "status": "PASS"
+   }
+  ]
+ },
+ "confinement": {
+  "targets": {
+   "x11": {
+    "path": "/tmp/.X11-unix/X99"
+   },
+   "bus": {
+    "path": "/tmp/dbus-tGcr6Y0EHw"
+   },
+   "tcp": {
+    "host": "127.0.0.1",
+    "port": 44165
+   },
+   "unix": {
+    "path": "/tmp/cua-linux-native-W8rHvr/confinement.sock"
+   }
+  },
+  "controls": {
+   "x11": "ok",
+   "bus": "ok",
+   "tcp": "ok",
+   "unix": "ok"
+  },
+  "accepted": {
+   "afterControls": {
+    "tcp": 1,
+    "unix": 1
+   },
+   "afterKernel": {
+    "tcp": 1,
+    "unix": 1
+   }
+  },
+  "kernel": {
+   "x11": "EPERM",
+   "bus": "EPERM",
+   "tcp": "EPERM",
+   "unix": "EPERM"
+  },
+  "ancestry": {
+   "kernel": 3903,
+   "underServe": true,
+   "helper": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+   "ancestors": [
+    {
+     "pid": 3902,
+     "comm": "codex-linux-san",
+     "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox"
+    },
+    {
+     "pid": 3901,
+     "comm": "bwrap",
+     "exe": "/usr/bin/bwrap"
+    },
+    {
+     "pid": 3897,
+     "comm": "codex-linux-san",
+     "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox"
+    },
+    {
+     "pid": 3888,
+     "comm": "MainThread",
+     "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+    },
+    {
+     "pid": 3882,
+     "comm": "MainThread",
+     "exe": "/opt/hostedtoolcache/node/24.22.3/arm64/bin/node"
+    },
+    {
+     "pid": 3867,
+     "comm": "MainThread",
+     "exe": "/opt/hostedtoolcache/node/24.22.3/arm64/bin/node"
+    }
+   ]
+  },
+  "verdict": {
+   "pass": true,
+   "problems": []
+  }
+ },
+ "tracedSmoke": {
+  "status": "PASS",
+  "steps": [
+   {
+    "name": "preconditions",
+    "status": "PASS"
+   },
+   {
+    "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+    "status": "PASS"
+   },
+   {
+    "name": "the default selects cua's engine (cua doctor --json)",
+    "status": "PASS"
+   },
+   {
+    "name": "bind the fixture window by X11 id",
+    "status": "PASS"
+   },
+   {
+    "name": "type the marker and read it back from the accessibility tree",
+    "status": "PASS"
+   },
+   {
+    "name": "the kernel reads no private state and no store",
+    "status": "PASS"
+   },
+   {
+    "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+    "status": "PASS"
+   },
+   {
+    "name": "screenshot of the window",
+    "status": "PASS"
+   },
+   {
+    "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+    "status": "PASS"
+   },
+   {
+    "name": "end_task",
+    "status": "PASS"
+   },
+   {
+    "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+    "status": "PASS"
+   },
+   {
+    "name": "cua serve exited cleanly",
+    "status": "PASS"
+   },
+   {
+    "name": "no run entry left for the connection",
+    "status": "PASS"
+   },
+   {
+    "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+    "status": "PASS"
+   }
+  ]
+ },
+ "trace": {
+  "summary": {
+   "processes": 155,
+   "serve": 4091,
+   "workers": [
+    4151
+   ],
+   "helpers": [
+    4124,
+    4130,
+    4145,
+    4150
+   ],
+   "bwrap": [
+    4080,
+    4107,
+    4125,
+    4126,
+    4129,
+    4146,
+    4147,
+    4149
+   ],
+   "kernels": [
+    {
+     "pid": 4131,
+     "underHelper": true,
+     "underServe": true,
+     "callsAfterExec": 227
+    }
+   ],
+   "runtimesCalls": 103
+  },
+  "verdict": {
+   "pass": true,
+   "problems": []
+  }
+ },
+ "answers": {
+  "userns": {
+   "answer": "yes",
+   "evidence": {
+    "sandbox.userns": "pass",
+    "kernelUnderBwrap": true
+   }
+  },
+  "a11y": {
+   "answer": "yes",
+   "evidence": {
+    "source": "at_spi",
+    "readBack": true,
+    "step": "PASS"
+   }
+  },
+  "confinement": {
+   "answer": "yes",
+   "evidence": {
+    "controls": {
+     "x11": "ok",
+     "bus": "ok",
+     "tcp": "ok",
+     "unix": "ok"
+    },
+    "kernel": {
+     "x11": "EPERM",
+     "bus": "EPERM",
+     "tcp": "EPERM",
+     "unix": "EPERM"
+    },
+    "accepted": {
+     "afterControls": {
+      "tcp": 1,
+      "unix": 1
+     },
+     "afterKernel": {
+      "tcp": 1,
+      "unix": 1
+     }
+    }
+   }
+  },
+  "strace": {
+   "answer": "yes",
+   "evidence": {
+    "problems": []
+   }
+  }
+ },
+ "finishedAt": "2026-11-23T08:51:27.933Z"
+}

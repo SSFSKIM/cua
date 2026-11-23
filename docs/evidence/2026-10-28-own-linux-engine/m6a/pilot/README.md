@@ -1,36 +1,50 @@
 # M6a venue pilot (#171, task 143; the M6a pre-flight §5.2, "The venue pilot")
 
-**All four questions are answered yes on both legs.** The hosted `ubuntu-24.04-arm` runner works as the arm64 venue
-for acceptance 12 with this recipe, and so does its x64 control on `ubuntu-24.04`.
+**All four questions are answered yes on both legs, and the pilot's verdict is PASS on both.** The verdict requires
+every mandatory step to pass and all four answers to be yes. The hosted `ubuntu-24.04-arm` runner is a working arm64
+venue for acceptance 12 with this recipe, and so is its x64 control on `ubuntu-24.04`.
 
-- **Run:** [45141056542](https://github.com/SSFSKIM/cua/actions/runs/45141056542), `linux-runtime.yml` dispatched on
-  `m6a-t6-pilot` at 6d39cb0dc928a7b46cbe35a060340d608c065b74. That commit is main's code (da7585c3) plus the M6a
-  pre-flight and this task's harness. Its artifacts are `linux-runtime-pilot-arm64` and `linux-runtime-pilot-x64`.
+- **Run:** [45150450103](https://github.com/SSFSKIM/cua/actions/runs/45150450103), `linux-runtime.yml` dispatched on
+  `m6a-t6-pilot` at 7dfc6af6fc1c53e2da0df15e999ae28b10cb5e72. That commit is main's code (da7585c3), plus the M6a
+  pre-flight and this task's harness after its review fixes.
+- **Files:** this directory holds each leg's artifact as uploaded, which is exactly the pilot's `ARTIFACT_FILES`:
+  - `pilot.json`: the steps, the answers, the verdict, the confinement step and the trace summary;
+  - `smoke.json` and `smoke-traced.json`: each step's name and status only.
+
+  The raw streams (doctor's and the install's output, the smokes' own reports, the strace file) stayed in the run's
+  scratch directory and were not uploaded. The homes are the run's, the secret store is empty, and every window is
+  the harness's.
 - **Recipe, per leg:**
   1. Install the apt packages, then record `bwrap --ro-bind / / true`.
-  2. Apply the remedy doctor names, `kernel.apparmor_restrict_unprivileged_userns=0`.
-  3. Inside `scripts/accept/linux-runtime-env.sh`, run `scripts/accept/linux-runtime-pilot.mjs`. It checks doctor's
-     four environment rows, runs today's `cua install` (which fetches the vendor's pinned deb for the leg, F8 (ii)),
-     checks `sandbox.launcher`, then runs the item 1 smoke (`linux-native.mjs --selection default`) with the shared
-     confinement step, once plain and once under `strace -f`.
-- **Files:** each leg's `pilot.json` (steps, answers, confinement, trace summary), `smoke.json` and
-  `smoke-traced.json`. They hold labels, outcomes, counts and the run's own paths. The homes are the run's, the secret
-  store is empty, every window is the harness's, and no raw trace is kept.
+  2. Apply doctor's remedy, `kernel.apparmor_restrict_unprivileged_userns=0`.
+  3. Run `scripts/accept/linux-runtime-pilot.mjs` inside `scripts/accept/linux-runtime-env.sh`. The wrapper provides
+     fresh homes, a private Xvfb with Openbox, and a private bus with accessibility on; it unsets app-env.mjs's
+     variables.
+  4. The pilot checks doctor's four environment rows and runs today's `cua install` (which fetches the vendor's pinned
+     deb for the leg, F8 (ii)). It then checks `sandbox.launcher`, and runs the item 1 smoke with the shared
+     confinement step, once plain and once under `strace -f -y --pidns-translation`.
 
-| Question | arm64 | x64 | Evidence (the same on both legs) |
+| Question | arm64 | x64 | Evidence (the same on both legs unless noted) |
 |---|---|---|---|
-| 1. Does bubblewrap get its user namespace? | yes | yes | Before the remedy, `restrict=1` and bwrap failed with `setting up uid map: Permission denied`. After it, doctor's `sandbox.userns` passes, and the kernel's parents are `codex-linux-sandbox < bwrap < codex-linux-sandbox < supervisor < serve` |
-| 2. Is gedit's tree served on the private bus? | yes | yes | `accessibility.bus` and `accessibility.enabled` pass on the `dbus-run-session` bus. The smoke's marker is read back once from a tree whose source is `at_spi` |
-| 3. Do the positive controls connect while the kernel is refused? | yes | yes | The controls get `ok` on the X socket, the bus's socket, the TCP listener and the Unix listener. The kernel gets `EPERM` on all four. Each listener accepted 1 connection, the control's, before and after the kernel's cell |
-| 4. Does `strace -f` follow the helper's children? | yes | yes | Under `--pidns-translation` the kernel's exec is seen under the pinned helper and serve, and its calls go on after the exec (227 calls on arm64, 230 on x64). The trace holds 155 processes |
+| 1. Does bubblewrap get its user namespace? | yes | yes | Before the remedy, `restrict=1` and bwrap fails with `setting up uid map: Permission denied`. After it, doctor's `sandbox.userns` passes. The kernel that answered the confinement cell runs under `codex-linux-sandbox` → `bwrap` → `codex-linux-sandbox`, each certified by the executable read from /proc. The cell reported pid 2 in its namespace, and a 50 ms /proc sampler bound that to one process under this session's serve |
+| 2. Is gedit's tree served on the private bus? | yes | yes | `accessibility.bus` and `accessibility.enabled` pass on the `dbus-run-session` bus. The typing step passed, and the marker was read back once from a tree whose source is `at_spi` |
+| 3. Do the positive controls connect while the kernel is refused? | yes | yes | The controls reach the X socket, the bus's socket, a TCP listener and a Unix listener (`ok`). The kernel gets `EPERM` on all four, an errno that proves refusal for each target. Each listener accepted only the control's one connection, both before and after the kernel's cell |
+| 4. Does `strace -f` follow the helper's children? | yes | yes | The trusted worker, and the kernel under the pinned helper, both descend from the serve being judged in the trace. The kernel made 227 calls after its exec on arm64 and 230 on x64. The trace holds 155 processes |
 
-**Measured, not judged.** In the traced run, the serve's process tree made 103 file calls under `runtimes/` on each
-leg. On main's code these are the vendor module tree's reads. They show that E1's judge has something to catch, so it
-has teeth: after M6a, E1 requires 0 there.
+**Measured, not judged:** the serve's process tree made 125 calls that name a path under `runtimes/` on each leg. This
+counts relative paths resolved against their -y-decoded base and attempted execs, with 0 calls left unresolved, so the
+count is complete. On main's code these are the vendor tree's reads. E1's judge, after M6a, requires 0 there.
 
-**Times per leg.** Install: about 23 s. Each smoke: about 171 to 174 s, most of it the fixture's last step and gedit's
-exit. With strace, the run takes no longer.
+**Times per leg:**
+- install: about 22 to 24 s;
+- each smoke: about 169 to 174 s, most of it the fixture's last step and gedit's exit.
 
-The first dispatch, [45140841963](https://github.com/SSFSKIM/cua/actions/runs/45140841963), stopped on both legs at
-the recording step: the step's `bash -e` treated bubblewrap's expected refusal as a failure. The workflow's second
-commit fixes that.
+**Earlier runs:**
+- [45141056542](https://github.com/SSFSKIM/cua/actions/runs/45141056542) (6d39cb0d) answered yes on both legs under
+  the first judges. Task 143's review found those judges too lenient, and they were fixed test-first.
+- [45147992954](https://github.com/SSFSKIM/cua/actions/runs/45147992954) (629b31d9) ran the fixed judges. Both legs
+  failed closed: a kernel cell has no `process` global, so the cell reported no identity and no kernel was bound
+  (confinement no, userns unanswered). One call of the counter was also left unresolved, on a pipe descriptor. Both
+  were fixed in 7dfc6af6.
+- [45140841963](https://github.com/SSFSKIM/cua/actions/runs/45140841963) (72d1d653) stopped at the recording step,
+  whose `bash -e` treated bubblewrap's expected refusal as a failure.

@@ -1,0 +1,64 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 2192725,
+   "run": "dev-t148-t132-handle-long-off-r2",
+   "opt_in": true,
+   "started": "2026-11-23T11:41:55.748Z",
+   "finished": "2026-11-23T11:42:39.548Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 2192883,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/task148/bin/off-044",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "list_windows": 11,
+      "get_window_state": 18
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua:handle",
+     "pid": 2193852,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/task148/bin/off-044",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": "engine-stats/2192725.cua_handle.2193852.jsonl",
+     "lines": 57,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag_handle": 40,
+      "list_windows": 8,
+      "preflight": 8
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    }
+   ]
+  }
+ ]
+}

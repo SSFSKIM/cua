@@ -1,0 +1,3 @@
+#!/bin/sh
+# task 148: the pinned linux-engine 0.4.4 (home-x64-044) with --drag-dnd-release-sync off, the handle set's control lane (a development lane, never released)
+exec /Users/new/.local/share/cua-171/m5/home-x64-044/engine/linux/cua-engine --drag-dnd-release-sync off "$@"

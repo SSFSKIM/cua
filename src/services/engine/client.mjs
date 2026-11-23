@@ -68,13 +68,14 @@ const UNIFIED_LOG = 'log show --last 10m --info --predicate \'subsystem == "io.g
 export const socketPathFor = appPath => join(dirname(appPath), 'engine.sock');
 
 // MIN_ENGINE_VERSION, the oldest cua's engine this service drives (#117 M5, R4: Linux's rule, #171 F5). engineVersion
-// stood at 0.1.0 through some fifty-five engine changes, so a 0.1.0 bundle may be any of them; 0.2.0 is the first
-// version under the rule that every change to the engine's program moves it (scripts/engine-version-check.mjs, the
-// `engine-version` gate). The selection (src/runtime/launch.mjs nativeEngineFor) enforces it before anything launches,
-// from the approved bundle's version, which the client's ping then holds the running engine to: a default session keeps
-// the vendor's engine, with a warning, while the approved engine is older, and an explicit one is refused. Raise it when
-// the service starts relying on what a newer engine does.
-export const MIN_ENGINE_VERSION = '0.2.0';
+// stood at 0.1.0 through some fifty-five engine changes and moves with every change to the engine's program from 0.2.0
+// on (scripts/engine-version-check.mjs, the `engine-version` gate). The minimum stays where today's approved builds
+// (0.1.0) meet it until the macOS default flips to cua's engine (ruling 1126: the raise to 0.2.0 is the flip's, which
+// merges only after the owner's Mac has approved a 0.2.0 build). The selection (src/runtime/launch.mjs nativeEngineFor)
+// enforces it from the approved bundle's version before anything launches, and the client again at each connect, from
+// the bundle it is about to launch or talk to: a default session keeps the vendor's engine, with a warning, while the
+// approved engine is older, and an explicit one is refused.
+export const MIN_ENGINE_VERSION = '0.1.0';
 
 // An engine version's [major, minor, patch]; a `+metadata` suffix (the harnesses' fixture engine carries one) is set
 // aside. Null for a version this cua cannot read.
@@ -209,8 +210,10 @@ function within(promise, ms, message) {
 // bundle is seen); `cursor` the session's cursor request params, or null for none; `desktop` the session's device mode
 // ('shared' | 'dedicated', #282), which every connection's ping names so the engine applies it to that connection alone
 // (one engine serves sessions of either mode), or null to name none (the engine takes shared); `log` the worker's
-// diagnostics (its stderr), told of a cursor request that failed other than as an older engine's methodNotFound.
-export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath),
+// diagnostics (its stderr), told of a cursor request that failed other than as an older engine's methodNotFound;
+// `minimumVersion` the oldest engine it drives (MIN_ENGINE_VERSION): a bundle older than it, read at the connect, is
+// refused before anything is connected to or launched, since the bundle may have changed since the selection read it.
+export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath), minimumVersion = MIN_ENGINE_VERSION,
   firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS, cursor = null, cursorWaitMs = CURSOR_MS, endTaskWaitMs = END_TASK_MS,
   desktop = null, log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
   let connection = null;
@@ -281,6 +284,8 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     }
     let want;
     try { want = typeof expected === 'function' ? expected() : expected; } catch (error) { throw new SkyComputerUseTransportError(error.message, {cause: error}); }
+    if (belowMinimum(want.engineVersion, minimumVersion))
+      throw new Mismatch(`cua engine too old: ${appPath} is version ${want.engineVersion}, older than ${minimumVersion}, the oldest this cua drives; nothing was launched. Approve a newer build with cua engine approve (the owner at the console) if one is pending, else build one with cua install --engine, then cua engine approve`);
     try { return await attempt(firstConnectMs, want, born); } catch (error) { if (!(error instanceof NotYet)) throw error; }
     releasedSince(born);
     try { await nodeRepl.launchServices.openApplication({applicationPath: appPath}); } catch (cause) {

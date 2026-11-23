@@ -15,7 +15,7 @@ import {EngineFailure, NO_REPLY, frame, nativePipe, startFakeEngine} from './hel
 import {debugEngine, engineSkip, engineVersionFromSource, startEngine} from './helpers/engine-wire.mjs';
 import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
 import {MAX_FRAME, SkyComputerUseError, SkyComputerUseTransportError} from '../src/services/engine/protocol.mjs';
-import {DEFAULT_DEADLINE_MS, bundleIdentity, createEngineClient, socketPathFor} from '../src/services/engine/client.mjs';
+import {DEFAULT_DEADLINE_MS, MIN_ENGINE_VERSION, bundleIdentity, createEngineClient, socketPathFor} from '../src/services/engine/client.mjs';
 
 const IDENTITY = {engineVersion: '0.1.0', build: 'b1'};
 // Blocks this thread for `ms`, as a loaded machine or a long synchronous task does.
@@ -55,6 +55,36 @@ test('the socket is engine.sock beside the bundle, and the bundle\'s version and
   assert.deepEqual(bundleIdentity(app), {engineVersion: '0.1.0', build: 'abc123'});
   assert.throws(() => bundleIdentity(join(dir, 'missing.app')), /Info\.plist/);
   assert.equal(DEFAULT_DEADLINE_MS, 120_000);
+});
+
+// #117 M5, R4: the selection read the approved bundle's version before the launch, but the bundle may change before a
+// connect; the client checks the minimum again on the bundle it reads at each connect, before connecting or launching.
+test('a bundle below the minimum the service drives is refused at the connect, before anything is connected to or launched, also when it changed after a good connect', async t => {
+  assert.equal(MIN_ENGINE_VERSION, '0.1.0', 'today\'s approved builds meet it until the flip (ruling 1126)');
+  const dir = scratchDir(t);
+  const app = join(dir, 'cua Engine.app');
+  const socket = join(dir, 'engine.sock');
+  mkdirSync(join(app, 'Contents'), {recursive: true});
+  const bundle = version => writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version, build: 'b1'}));
+  bundle('0.1.0');
+  const engine = await startFakeEngine(t, socket);
+  const {nodeRepl, launches} = workerRepl();
+  const client = createEngineClient({nodeRepl, appPath: app, socketPath: socket, firstConnectMs: 150, launchWaitMs: 1500});
+  t.after(() => client.close());
+  assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY}, 'at the minimum: driven');
+  await client.release();
+  const pings = engine.received.filter(r => r.method === 'ping').length;
+  bundle('0.0.9');   // replaced by an older bundle between the selection (or the last connect) and this one
+  await assert.rejects(client.connect(), error => error instanceof SkyComputerUseTransportError
+    && error.message.startsWith(`cua engine too old: ${app} is version 0.0.9, older than 0.1.0, the oldest this cua drives; nothing was launched.`)
+    && error.message.includes('cua engine approve') && error.message.includes('cua install --engine'));
+  assert.equal(engine.received.filter(r => r.method === 'ping').length, pings, 'no ping');
+  assert.equal(launches.length, 0, 'no launch');
+  // The minimum as a seam: an engine at 0.1.0 under a 0.2.0 minimum, the flip's.
+  const raised = clientFor(socket, {minimumVersion: '0.2.0'});
+  t.after(() => raised.client.close());
+  await assert.rejects(raised.client.connect(), /version 0\.1\.0, older than 0\.2\.0/);
+  assert.equal(raised.launches.length, 0);
 });
 
 test('connect pings with cua-engine-1, accepts an engine whose version and build match the bundle, and reuses the live connection', async t => {

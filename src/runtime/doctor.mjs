@@ -73,11 +73,11 @@ import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
-import {engineDirectory, installedFrom, newerPendingBuild, readApprovedLocation, shortBuild} from './engine.mjs';
+import {engineDirectory, installedFrom, readApprovedLocation, shortBuild} from './engine.mjs';
+import {outdatedRemedy, pendingEngine} from './engine-minimum.mjs';
 import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, outdatedRemedy, ownHostNode, replHostFor} from './launch.mjs';
-import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION} from '../services/engine/client.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
@@ -211,10 +211,11 @@ function sharedEngineInputs(engine = {}, env) {
   let location;
   const once = () => (location ??= {value: read()}).value;
   const installed = engine.installed ?? (() => { try { return installedFrom(once()); } catch { return null; } });
-  // The build pending beside the approved one, from the same read (asked only for an approved engine below the minimum).
-  const pendingBuild = engine.pendingBuild ?? (() => { try { const {pending, approved} = once(); return newerPendingBuild(pending, approved?.build); } catch { return null; } });
-  let answer;
-  return {...engine, location: once, installed: () => (answer ??= {value: installed()}).value, pendingBuild};
+  // The build pending beside the approved one (files only, no codesign), read at most once for the selection and the
+  // engine row.
+  const pending = engine.pending ?? (() => pendingEngine({dir: engineDirectory(env.HOME || homedir())}));
+  let answer, pendingAnswer;
+  return {...engine, location: once, installed: () => (answer ??= {value: installed()}).value, pending: () => (pendingAnswer ??= {value: pending()}).value};
 }
 
 const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';
@@ -227,7 +228,7 @@ const REPL_HOST_REASONS = {
   browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session; ${ROLLBACK}`,
   own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, run \`cua install\` (it installs the pinned Node ${NODE_FLOOR} for it under $CUA_HOME/node), install Node ${NODE_FLOOR} or later yourself, or set CUA_NODE to the absolute path of one`,
   // #117 M5, R4: the default cua engine's approved engine is older than the service drives.
-  engine_outdated: ({engine}) => `the default engine is cua's, but the approved engine on this Mac is version ${engine.outdated.engineVersion}, older than ${MIN_MACOS_ENGINE_VERSION}, the oldest this cua drives, so this session keeps the vendor host and engine until a newer one is approved: ${outdatedRemedy(engine.pendingBuild)}`,
+  engine_outdated: ({engine}) => `the default engine is cua's, but the approved engine on this Mac is version ${engine.outdated.engineVersion}, older than ${engine.minimum}, the oldest this cua drives, so this session keeps the vendor host and engine until a newer one is approved: ${outdatedRemedy(engine.pending, engine.minimum)}`,
 };
 
 // The native engine a macOS computer selection drives, after the host's explanation.

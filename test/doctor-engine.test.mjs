@@ -35,12 +35,16 @@ const WITHOUT_NODE = () => { throw Object.assign(new CuaError('repl_host_node', 
 
 // The row for `env` (CUA_SHIM_SURFACES defaults to the computer surface), with the selection's inputs and the read
 // stubbed; the session's selection is repl.host's, computed as doctor computes it (replHostFor with the same inputs).
-// `installed`: true for APP, false for none, or the approved engine itself; `pending` the build pending.json names beside
-// it; `sourceBuild` this plugin's engine build (APP's unless a case says otherwise).
-async function row(env = {}, {read = facts(), installed = true, config = {}, defaultEngine = 'vendor', platform = 'darwin', records, node = true, pending = null, sourceBuild = BUILD} = {}) {
+// `installed`: true for APP, false for none, or the approved engine itself; `pending` the build pending beside it
+// (engine-minimum.mjs pendingEngine's shape); `sourceBuild` this plugin's engine build (APP's unless a case says
+// otherwise); `minimumVersion` the service's minimum (FIXTURE_MINIMUM; null for the shipped one).
+const FIXTURE_MINIMUM = '0.2.0';
+async function row(env = {}, {read = facts(), installed = true, config = {}, defaultEngine = 'vendor', platform = 'darwin', records, node = true, pending = null, sourceBuild = BUILD,
+  minimumVersion = FIXTURE_MINIMUM} = {}) {
   const inspections = [];
   const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', ...env};
-  const engine = {defaultEngine, config: () => config, installed: () => (installed === true ? APP : installed || null), pendingBuild: () => pending, sourceBuild: () => sourceBuild};
+  const engine = {defaultEngine, config: () => config, installed: () => (installed === true ? APP : installed || null), pending: () => pending, sourceBuild: () => sourceBuild,
+    ...(minimumVersion ? {minimumVersion} : {})};
   let session;
   try { session = replHostFor({platform, surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: '/nonexistent-home', resolveOwnNode: node ? WITH_NODE : WITHOUT_NODE, engine}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -246,9 +250,12 @@ test('cua\'s engine preferred with no approved engine: refused sessions fail the
 
 // #117 M5, R4 and ruling 1118: the service's minimum engine. Below it the default keeps the vendor's and the row warns,
 // an explicit selection is refused and the row fails, each naming the remedy; at or above it a newer pending build does
-// not fall back, and the row shows both builds; an approved build that is not this plugin's engine source warns.
+// not fall back, and the row shows both builds; an approved build that is not this plugin's engine source warns where
+// cua's engine is preferred and is stated where the vendor's is. The shipped minimum is 0.1.0 until the flip (ruling
+// 1126), so these rows run against FIXTURE_MINIMUM, the 0.2.0 the flip will ship.
 const OLD = {bundlePath: BUNDLE, engineVersion: '0.1.0', build: BUILD};
 const oldFacts = over => facts({engineVersion: '0.1.0', running: false, status: null, ...over});
+const pendingBuild = over => ({build: OTHER_BUILD, engineVersion: '0.4.1', bundlePath: '/Users/someone/Library/Application Support/cua/engine/pending/cua Engine.app', builtAt: 'later', ...over});
 test('an approved engine below the minimum: the default\'s fallback warns and an explicit selection fails, each naming the remedy; nothing is launched', async () => {
   const BUILD_ALONE = 'build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console';
   const fallback = await row({}, {defaultEngine: 'cua', installed: OLD, read: oldFacts()});
@@ -259,23 +266,29 @@ test('an approved engine below the minimum: the default\'s fallback warns and an
   assert.equal(fallback.mayLaunch, false, 'no session would use it');
   assert.equal(fallback.row.detail, `cua's engine is preferred (the default engine), but the approved engine is version 0.1.0, older than 0.2.0, the oldest this cua drives, so macOS computer sessions keep the vendor host and engine (engine_outdated): `
     + `the approved cua Engine.app at ${BUNDLE} (version 0.1.0, build aaaaaaaaaaaa) is installed, and doctor does not launch it while no session would use it; ${BUILD_ALONE}`);
-  const pending = await row({}, {defaultEngine: 'cua', installed: OLD, pending: OTHER_BUILD, read: oldFacts({pending: {build: OTHER_BUILD, builtAt: 'later'}})});
+  const pending = await row({}, {defaultEngine: 'cua', installed: OLD, pending: pendingBuild(), read: oldFacts()});
   assert.equal(pending.row.status, 'warn');
-  assert.ok(pending.row.detail.endsWith('; a newer build (cccccccccccc) is pending beside it: approve it with `cua engine approve` with the owner at the console'), pending.row.detail);
+  assert.ok(pending.row.detail.endsWith('; a newer build (cccccccccccc, version 0.4.1) is pending beside it: approve it with `cua engine approve` with the owner at the console'), pending.row.detail);
+  // A pending build itself below the minimum is no upgrade.
+  const stale = await row({}, {defaultEngine: 'cua', installed: OLD, pending: pendingBuild({engineVersion: '0.1.5'}), read: oldFacts()});
+  assert.ok(stale.row.detail.endsWith(BUILD_ALONE), stale.row.detail);
   const explicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: OLD, read: oldFacts()});
   assert.equal(explicit.row.status, 'fail');
   assert.deepEqual([explicit.report.selected, explicit.report.reason, explicit.report.refused.code], [null, 'engine_outdated', 'engine_outdated']);
   assert.equal(explicit.mayLaunch, false);
   assert.match(explicit.row.detail, /^cua's engine is preferred \(CUA_NATIVE_ENGINE=cua\), but the approved engine is version 0\.1\.0, older than 0\.2\.0, the oldest this cua drives, so every macOS computer session is refused \(engine_outdated\): /);
   assert.ok(explicit.row.detail.endsWith(BUILD_ALONE), explicit.row.detail);
+  // At the shipped minimum (0.1.0) the same approved engine is driven.
+  const shipped = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: OLD, minimumVersion: null, read: facts({engineVersion: '0.1.0'})});
+  assert.equal(shipped.report.selected, 'cua', shipped.row.detail);
 });
 
 test('an approved engine at or above the minimum with a newer build pending: no fallback, both builds shown; an approved build that is not this plugin\'s source warns', async () => {
-  const pending = await row({CUA_NATIVE_ENGINE: 'cua'}, {pending: OTHER_BUILD, sourceBuild: OTHER_BUILD, read: facts({pending: {build: OTHER_BUILD, builtAt: '2026-11-23T10:00:00.000Z'}})});
+  const pending = await row({CUA_NATIVE_ENGINE: 'cua'}, {pending: pendingBuild({builtAt: '2026-11-23T10:00:00.000Z'}), sourceBuild: OTHER_BUILD});
   assert.equal(pending.report.selected, 'cua', 'ruling 1118: the approved engine stays in use');
   assert.equal(pending.mayLaunch, true);
   assert.ok(pending.row.detail.includes(`the approved cua Engine.app at ${BUNDLE} (version 0.4.0, build aaaaaaaaaaaa)`), pending.row.detail);
-  assert.ok(pending.row.detail.includes('a new build is pending; cua engine approve to use it (pending build cccccccccccc, built 2026-11-23T10:00:00.000Z)'), pending.row.detail);
+  assert.ok(pending.row.detail.includes('a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built 2026-11-23T10:00:00.000Z)'), pending.row.detail);
   assert.ok(pending.row.detail.includes('the approved build is not this plugin\'s engine source (build cccccccccccc), which is the one pending'), pending.row.detail);
   assert.equal(pending.row.status, 'warn', 'the source differs');
   // Neither pending nor this plugin's: the warning names both steps.
@@ -284,13 +297,41 @@ test('an approved engine at or above the minimum with a newer build pending: no 
   assert.ok(stale.row.detail.includes('the approved build is not this plugin\'s engine source (build cccccccccccc): cua install --engine builds it pending approval, then cua engine approve with the owner at the console puts it in use'), stale.row.detail);
   assert.doesNotMatch(stale.row.detail, /a new build is pending/);
   // A pending build that is not the source, beside an approved one that is: shown, and nothing to warn of.
-  const other = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({pending: {build: OTHER_BUILD, builtAt: 'later'}})});
+  const other = await row({CUA_NATIVE_ENGINE: 'cua'}, {pending: pendingBuild()});
   assert.equal(other.row.status, 'pass', other.row.detail);
-  assert.ok(other.row.detail.includes('a new build is pending; cua engine approve to use it (pending build cccccccccccc, built later)'), other.row.detail);
-  // pending.json naming the approved build is no pending build; this plugin's source unread is not judged.
-  const same = await row({CUA_NATIVE_ENGINE: 'cua'}, {sourceBuild: null, read: facts({pending: {build: BUILD, builtAt: 'then'}})});
+  assert.ok(other.row.detail.includes('a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built later)'), other.row.detail);
+  // A pending build below the minimum is shown as no upgrade; one only pending.json names, as nothing to approve.
+  const old = await row({CUA_NATIVE_ENGINE: 'cua'}, {pending: pendingBuild({engineVersion: '0.1.5'})});
+  assert.ok(old.row.detail.includes('build cccccccccccc is pending beside it, but its version 0.1.5 is older than 0.2.0, the oldest this cua drives, so approving it would not be used: cua install --engine builds this plugin\'s engine pending in its place'), old.row.detail);
+  assert.doesNotMatch(old.row.detail, /a new build is pending/);
+  const unheld = await row({CUA_NATIVE_ENGINE: 'cua'}, {pending: pendingBuild({engineVersion: null, bundlePath: null})});
+  assert.ok(unheld.row.detail.includes('pending.json names build cccccccccccc, which no bundle here holds: cua install --engine builds this plugin\'s engine pending'), unheld.row.detail);
+  // This plugin's source unread is not judged.
+  const same = await row({CUA_NATIVE_ENGINE: 'cua'}, {sourceBuild: null});
   assert.equal(same.row.status, 'pass', same.row.detail);
   assert.doesNotMatch(same.row.detail, /pending|engine source/);
+});
+
+test('the builds are reported whichever engine sessions use: the vendor\'s row states them without a verdict, a fallback row warns, nothing is launched', async () => {
+  // The vendor's engine preferred: a stale approved build and a pending one are named; the row stays a skip.
+  const vendor = await row({}, {sourceBuild: OTHER_BUILD, pending: pendingBuild({build: 'e'.repeat(64)}),
+    records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: null})});
+  assert.equal(vendor.row.status, 'skip', vendor.row.detail);
+  assert.equal(vendor.inspected, 0, 'no codesign, no connection, no launch');
+  assert.ok(vendor.row.detail.includes(`approved.json approves build aaaaaaaaaaaa at ${BUNDLE}; a new build is pending; cua engine approve to use it (pending build eeeeeeeeeeee, version 0.4.1, built later); `
+    + 'the approved build is not this plugin\'s engine source (build cccccccccccc): cua install --engine builds it pending approval'), vendor.row.detail);
+  const current = await row({}, {records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: null})});
+  assert.ok(current.row.detail.endsWith(`approved.json approves build aaaaaaaaaaaa at ${BUNDLE}`), current.row.detail);
+  // The default cua engine without Node 24: the fallback row names them too, and warns.
+  const noNode = await row({}, {defaultEngine: 'cua', node: false, sourceBuild: OTHER_BUILD, pending: pendingBuild(), read: facts({running: false, status: null})});
+  assert.equal(noNode.row.status, 'warn');
+  assert.equal(noNode.mayLaunch, false);
+  assert.ok(noNode.row.detail.endsWith('is installed, and doctor does not launch it while no session would use it; a new build is pending; cua engine approve to use it (pending build cccccccccccc, version 0.4.1, built later); '
+    + 'the approved build is not this plugin\'s engine source (build cccccccccccc), which is the one pending'), noNode.row.detail);
+  // Explicitly selected and refused for want of Node: the row fails, and the builds are named all the same.
+  const refused = await row({CUA_NATIVE_ENGINE: 'cua'}, {node: false, sourceBuild: OTHER_BUILD, read: facts({running: false, status: null})});
+  assert.equal(refused.row.status, 'fail');
+  assert.match(refused.row.detail, /the approved build is not this plugin's engine source \(build cccccccccccc\)/);
 });
 
 test('the default cua engine without Node 24: sessions keep the vendor engine, so the row warns, reports both selections and launches nothing', async () => {

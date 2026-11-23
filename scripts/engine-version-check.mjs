@@ -5,6 +5,10 @@
 // from at least, and the service's minimum (src/services/engine/client.mjs MIN_ENGINE_VERSION) can tell an engine too
 // old to drive. The program is native/engine/ less its Tests/ and build products: the files `build` hashes
 // (src/runtime/engine-bundle.mjs), the assembler aside, which writes the bundle around the program and is not part of it.
+// Tests/ is exempt on purpose: the version names shipped builds, and no bundle contains the tests (they are outside the
+// build hash), so a test-only change leaves every build what it was.
+// Paths are listed with renames off (`--no-renames -z`, as ci-kit's planner lists them), so a file moved out of
+// native/engine/ counts by its old path as well as its new one.
 //
 //   node scripts/engine-version-check.mjs [--base <rev>] [--head <rev>]
 //
@@ -56,9 +60,9 @@ function main() {
     console.log('engine-version: no base to compare with (a dispatch, or no --base), so no change to check');
     return 0;
   }
-  const diff = git(['diff', '--name-only', base, head]);
+  const diff = git(['diff', '--name-only', '--no-renames', '-z', base, head]);
   if (!diff.ok) { console.error(`engine-version: git diff ${base} ${head} failed: ${diff.err}`); return 2; }
-  const changed = diff.out.split('\n').filter(Boolean);
+  const changed = diff.out.split('\0').filter(Boolean);
   const at = rev => { const shown = git(['show', `${rev}:${VERSION_FILE}`]); return shown.ok ? declaredVersion(shown.out) : null; };
   const [from, to] = [at(base), at(head)];
   const problem = versionMoveProblem({changed, base: from, head: to});

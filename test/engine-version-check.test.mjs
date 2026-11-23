@@ -85,3 +85,20 @@ test('the command diffs CI_KIT_BASE..CI_KIT_HEAD as a pull request\'s gate does,
   assert.equal(run.status, 0);
   assert.match(run.stdout, /no base to compare with/);
 });
+
+test('a file moved out of native/engine/ counts by its old path: renames are listed as a delete and an add', t => {
+  const s = scratch('cua-engine-version-');
+  t.after(s.cleanup);
+  const root = s.dir;
+  git(root, 'init', '-q');
+  const moving = 'native/engine/Sources/Engine/Moving.swift';
+  const base = commit(root, {'native/engine/Sources/Engine/Version.swift': versionFile('0.2.0'), [moving]: 'let moving = 1 // long enough for rename detection\n'}, 'base');
+  mkdirSync(join(root, 'docs'));
+  git(root, 'mv', moving, 'docs/Moving.swift');
+  git(root, 'commit', '-q', '-m', 'moved out');
+  const head = git(root, 'rev-parse', 'HEAD');
+  assert.match(git(root, 'diff', '--name-status', base, head), /^R100/, 'git sees a rename');
+  const run = check(root, {CI_KIT_BASE: base, CI_KIT_HEAD: head});
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stderr, /native\/engine\/ changed \(native\/engine\/Sources\/Engine\/Moving\.swift\), but engineVersion is still 0\.2\.0/);
+});

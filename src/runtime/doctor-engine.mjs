@@ -28,9 +28,12 @@
 // engine is not preferred; else `pass`. The probe's ability is reported, not judged.
 // The service's minimum (#117 M5, R4; src/services/engine/client.mjs MIN_ENGINE_VERSION): an approved engine older
 // than it is not driven (launch.mjs nativeEngineFor), and the row says so with the remedy, `cua engine approve` for a
-// newer build pending beside it, else `cua install --engine` then `cua engine approve` (ruling 1118). An approved engine
-// in use is compared with this plugin's engine source (engine-bundle.mjs engineBuild), and a newer pending build is
-// shown beside it, "a new build is pending; cua engine approve to use it"; it is no fallback.
+// build pending beside it that meets the minimum, else `cua install --engine` then `cua engine approve` (ruling 1118).
+// Whichever engine sessions use, the row names the approved build, the build pending beside it ("a new build is
+// pending; cua engine approve to use it"; no fallback) and whether the approved build is this plugin's engine source
+// (engine-bundle.mjs engineBuild), from files only where nothing would use cua's engine. A source that differs warns
+// where cua's engine is preferred (in use, explicitly selected, or the default's), and is stated without a verdict
+// where the vendor's is: that row is a skip, and an engine no session uses is not a fault.
 //
 // On Linux (#171; docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, "Doctor") the row reports cua's own
 // engine, cua-engine in the cua home: the engine sessions here run (the installed one, or what CUA_LINUX_ENGINE_BIN
@@ -50,9 +53,10 @@ import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
 import {BUNDLE_ID, engineBuild} from './engine-bundle.mjs';
-import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, newerPendingBuild, shortBuild} from './engine.mjs';
+import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, shortBuild} from './engine.mjs';
+import {outdatedRemedy, pendingEngine, pendingMeetsMinimum} from './engine-minimum.mjs';
 import {readEngineSettings} from './engine-sign.mjs';
-import {desktopModeFor, nativeEngineSetting, outdatedRemedy} from './launch.mjs';
+import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
 import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION} from '../services/engine/client.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
@@ -70,6 +74,8 @@ export const defaultInspectEngine = ({env, mayLaunch, location}) => inspectEngin
 export const defaultEngineRecords = ({env}) => engineRecords({dir: engineDirectory(env.HOME || homedir())});
 // This plugin's engine build (the hash `cua engine build` would give its native/engine source), or null when unreadable.
 export const defaultSourceBuild = () => { try { return engineBuild(); } catch { return null; } };
+// The build pending beside the approved engine under HOME (engine-minimum.mjs pendingEngine: files only).
+export const defaultPendingEngine = ({env}) => pendingEngine({dir: engineDirectory(env.HOME || homedir())});
 
 // The Linux engine placed in the cua home, against this cua's pin (src/runtime/linux-engine.mjs inspectLinuxEngine); a
 // pin this checkout cannot parse is reported as none, with why (`pinProblem`).
@@ -103,8 +109,9 @@ export async function defaultReadLinuxCapabilities({path, desktop, env, timeoutM
 
 // -> {row, report}; `report` is undefined off macOS and Linux. `session` is repl.host's selection for a session here
 // (replHostFor's answer, or {code, message} when refused; undefined when repl.host refused every connection before
-// selecting). `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location, pendingBuild}),
-// shared with repl.host, and `sourceBuild`, this plugin's engine build (defaultSourceBuild by default); `inspect` and
+// selecting). `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location, pending,
+// minimumVersion}), shared with repl.host, and `sourceBuild`, this plugin's engine build (defaultSourceBuild by default;
+// `pending` defaults to defaultPendingEngine); `inspect` and
 // `records` read the approved location on macOS, `inspectLinux` the engine placed in the cua home `home` on Linux, for a
 // machine of `arch`, and `readCapabilities` the Linux engine's capability report (defaultReadLinuxCapabilities'
 // contract) (seams for tests, which never launch anything).
@@ -133,11 +140,13 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
   const selection = {selected: refused ? null : session.engine?.engine ?? null, reason: refused ? refused.code : session.engine?.reason ?? null, refused,
     preferred: {engine: preferred.engine, reason: preferred.reason}};
   if (linux) return linuxRow(selection, {env, config, session, facts: inspectLinux({home, arch}), readCapabilities});
-  if (preferred.engine === 'vendor') return vendorRow(selection, records({env}));
+  const builds = {pending: (engine.pending ?? (() => defaultPendingEngine({env})))(), source: (engine.sourceBuild ?? defaultSourceBuild)(),
+    minimum: engine.minimumVersion ?? MIN_MACOS_ENGINE_VERSION};
+  if (preferred.engine === 'vendor') return vendorRow(selection, records({env}), builds);
   const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
   const settings = settingsOf(config);
-  return selection.selected === 'cua' ? installedRow(selection, facts, settings, deviceMode({env, config}), (engine.sourceBuild ?? defaultSourceBuild)())
-    : notInUseRow(selection, facts, settings);
+  return selection.selected === 'cua' ? installedRow(selection, facts, settings, deviceMode({env, config}), builds)
+    : notInUseRow(selection, facts, settings, builds);
 }
 
 // The device mode sessions here run cua's engine in (launch.mjs desktopModeFor; Linux since #171, macOS since #282) ->
@@ -165,7 +174,7 @@ function notApplicable(reason) {
 
 // ---- the vendor's engine preferred ----
 
-function vendorRow(selection, records) {
+function vendorRow(selection, records, builds) {
   const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : SOURCE_WORDS[selection.preferred.reason]('vendor');
   const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so macOS computer sessions use the vendor\'s Codex Computer Use helper (helper.live)';
   const holds = records.approved && records.exists ? `approved.json approves build ${shortBuild(records.approved.build)} at ${records.bundlePath}`
@@ -174,7 +183,8 @@ function vendorRow(selection, records) {
     : 'none is installed on this Mac (cua engine build, then cua engine approve with the owner at the console)';
   return {
     row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. `
-      + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own, which runs an approved engine: ${holds}`),
+      + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own, which runs an approved engine: ${holds}`
+      + (records.approved ? buildWords(records.approved.build, builds, (_, text) => text).map(words => `; ${words}`).join('') : '')),
     report: {...notApplicable(selection.reason), selected: selection.selected, refused: selection.refused, preferred: selection.preferred, bundle: records.bundlePath, exists: records.exists,
       approved: records.exists ? null : false, approvedBuild: records.approved?.build ?? null, approvedAt: records.approved?.approvedAt ?? null, pending: records.pending},
   };
@@ -312,19 +322,21 @@ const ownsSocket = facts => facts.approved === true && real(facts.status.bundleP
 
 // cua's engine preferred, and sessions do not drive it: refused, or kept on the vendor's engine by the default's
 // fallback (no approved engine, or no Node 24 for cua's own host). Nothing is launched (inspectEngine's mayLaunch).
-function notInUseRow(selection, facts, settings) {
+function notInUseRow(selection, facts, settings, builds) {
   const source = SOURCE_WORDS[selection.preferred.reason]('cua');
   const code = selection.refused?.code ?? selection.reason;
   const notInstalled = code === 'engine_not_installed';
   const outdated = code === 'engine_outdated';
   const consequence = selection.refused ? `so every macOS computer session is refused (${code})` : `so macOS computer sessions keep the vendor host and engine (${code})`;
   const cause = notInstalled ? 'no approved engine is installed'
-    : outdated ? `the approved engine is version ${facts.engineVersion}, older than ${MIN_MACOS_ENGINE_VERSION}, the oldest this cua drives`
+    : outdated ? `the approved engine is version ${facts.engineVersion}, older than ${builds.minimum}, the oldest this cua drives`
     : code === 'own_host_node_unavailable' || code === 'repl_host_node' ? `cua's own host finds no Node 24 or later (see repl.host)` : `repl.host refuses it (see repl.host)`;
   const parts = [facts.approved === true
     ? `the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)}) is installed, and doctor does not launch it while no session would use it`
     : installState(facts)];
-  if (outdated) parts.push(outdatedRemedy(newerPendingBuild(facts.pending, facts.approvedBuild)));
+  // Below the minimum the remedy speaks for the pending build and the source; otherwise the builds are named as in use.
+  if (outdated) parts.push(outdatedRemedy(builds.pending, builds.minimum));
+  else if (facts.approved === true) parts.push(...buildWords(facts.build, builds, (_, text) => text));
   if (settings.problem) parts.push(settings.problem);
   return {row: result('engine', selection.refused || settings.problem ? 'fail' : 'warn', `cua's engine is preferred (${source}), but ${cause}, ${consequence}: ${parts.join('; ')}`),
     report: factsReport(selection, facts, settings)};
@@ -341,12 +353,12 @@ function installState(facts) {
   return `the bundle at ${at} (build ${shortBuild(facts.build)}) is not approved: run cua engine approve with the owner at the console`;
 }
 
-function installedRow(selection, facts, settings, device, sourceBuild) {
+function installedRow(selection, facts, settings, device, builds) {
   const report = {...factsReport(selection, facts, settings), desktop: device.desktop};
   const verdicts = [];
   const say = (status, text) => { verdicts.push(status); return text; };
   const parts = [`the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)})`];
-  parts.push(...buildWords(facts, sourceBuild, say));
+  parts.push(...buildWords(facts.build, builds, say));
   parts.push(signatureWords(facts.signature, say));
   if (facts.bundleId !== BUNDLE_ID) parts.push(say('fail', `but it is not cua's engine (bundle id ${facts.bundleId ?? 'unreadable'}), so doctor does not launch it`));
   else parts.push(processWords(facts, report, say));
@@ -360,15 +372,22 @@ function installedRow(selection, facts, settings, device, sourceBuild) {
   return {row: result('engine', worst(verdicts),`cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
 }
 
-// The approved build against what else there is (#117 M5, R4 and ruling 1118): a newer build pending beside it, which
-// sessions do not use until it is approved, and this plugin's engine source (`sourceBuild`, null when unread, which is
-// not judged), which the approved build should be once this plugin's engine is approved.
-function buildWords(facts, sourceBuild, say) {
+// The approved build `approvedBuild` against what else there is (#117 M5, R4 and ruling 1118): the build pending beside
+// it (`builds.pending`, engine-minimum.mjs pendingEngine's), which sessions do not use until it is approved, and this
+// plugin's engine source (`builds.source`, null when unread, which is not judged). `say` records a verdict: a source
+// that differs warns, as the caller's row judges it (notInUseRow's row is a warning or worse already; vendorRow passes
+// one that records nothing).
+function buildWords(approvedBuild, {pending, source, minimum}, say) {
   const words = [];
-  const pending = newerPendingBuild(facts.pending, facts.approvedBuild);
-  if (pending) words.push(`a new build is pending; cua engine approve to use it (pending build ${shortBuild(pending)}, built ${facts.pending.builtAt ?? 'at an unknown time'})`);
-  if (sourceBuild && facts.build !== sourceBuild)
-    words.push(say('warn', `the approved build is not this plugin's engine source (build ${shortBuild(sourceBuild)})${pending === sourceBuild ? ', which is the one pending'
+  if (pending && pendingMeetsMinimum(pending, minimum))
+    words.push(`a new build is pending; cua engine approve to use it (pending build ${shortBuild(pending.build)}, version ${pending.engineVersion}, built ${pending.builtAt ?? 'at an unknown time'})`);
+  else if (pending?.bundlePath)
+    words.push(`build ${shortBuild(pending.build)} is pending beside it, but its version ${pending.engineVersion} is older than ${minimum}, the oldest this cua drives, so approving it would not be used: cua install --engine builds this plugin's engine pending in its place`);
+  else if (pending)
+    words.push(`pending.json names build ${shortBuild(pending.build)}, which no bundle here holds: cua install --engine builds this plugin's engine pending`);
+  const approvable = pending && pendingMeetsMinimum(pending, minimum) && pending.build === source;
+  if (source && approvedBuild !== source)
+    words.push(say('warn', `the approved build is not this plugin's engine source (build ${shortBuild(source)})${approvable ? ', which is the one pending'
       : ': cua install --engine builds it pending approval, then cua engine approve with the owner at the console puts it in use'}`));
   return words;
 }

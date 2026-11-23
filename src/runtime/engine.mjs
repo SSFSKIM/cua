@@ -313,12 +313,6 @@ export function engineRecords({dir = engineDirectory()} = {}) {
   };
 }
 
-// The build pending.json names when it is not the approved one, else null: buildEngine writes pending.json at every
-// build and approval leaves it, so a build other than approved.json's was made after the approved engine's, and
-// `cua engine approve` is what would promote it (#117 M5, ruling 1118). `pending` is pending.json's record,
-// `approvedBuild` approved.json's build.
-export const newerPendingBuild = (pending, approvedBuild) => (typeof pending?.build === 'string' && pending.build && pending.build !== approvedBuild ? pending.build : null);
-
 // ---- buildEngine ----
 
 const tail = text => lastLines(text, {count: 12, separator: '\n'});

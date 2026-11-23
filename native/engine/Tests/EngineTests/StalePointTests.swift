@@ -5685,6 +5685,33 @@ final class SecureValueQuoteTests: XCTestCase {
     XCTAssertTrue(said.contains("the point lies on an AXStaticText (value withheld) that does not act on its own, inside the AXLink \"Open\""), said)
   }
 
+  /// Site 5, #443's control the node outlived (`inertOutlivedControl`'s `control`): an untitled password field acting by
+  /// AXPress around an inert image, destroyed; the image moved into a link that slid over the point 5 pt off the field's
+  /// recorded frame, so the frame tells the two apart. The field's value was never recorded; it is said to be withheld.
+  func testTheControlTheNodeOutlivedNeverQuotesAWithheldValue() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 200))
+    let control = field(CGRect(x: 20, y: 100, width: 200, height: 30), pressable: true, .closed)
+    let b = Node("AXLink", CGRect(x: 20, y: 140, width: 200, height: 30), title: "Next")
+    let image = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
+    window.add(page)
+    page.add(list)
+    list.add(control)
+    control.add(image)
+    list.add(b)
+    let (nodes, frameless, members) = walkRecord(window)
+    list.children.removeAll { $0 === control }
+    control.destroy()
+    move(b, by: CGVector(dx: 0, dy: -45))
+    image.reparent(to: b)
+    let refused = stalePointVerdict(at: atControl, nodes: nodes, frameless: frameless, recorded: members, hit: image, reads: reads)
+    XCTAssertEqual(refused.reason, .controlGone)
+    let said = message(refused)
+    XCTAssertFalse(said.contains(secret), said)
+    XCTAssertTrue(said.contains("the point lies on an AXImage that does not act on its own, inside the AXStaticText (value withheld) the screenshot showed there; that control is gone"), said)
+  }
+
   /// Site 6, #442's control on top (`otherControlOnTopRefusal`'s `top`): its value, read now, is never quoted; a control
   /// with no title or description is named by its role.
   func testTheControlOnTopNeverQuotesAValueReadNow() {

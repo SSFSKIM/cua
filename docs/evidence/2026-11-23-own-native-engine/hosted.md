@@ -390,3 +390,226 @@ only at its `hostedRunOf` call. The `harness.md` edits from round 2 are untouche
   `parity-browser`) now depend on `loopback.sh`, which no runner has exercised yet.
 - **The "two UserNotificationCenter windows" bound comes from H0.** H0 saw one alert per copy. If a runner shows more,
   the run stops; the run still never passes on it.
+
+## Fix wave 2
+
+Round 2 of the review returned five Important findings (I1, I3, I5, I6, I7) and one Minor. All six are fixed on
+`feat/117-m5`, on top of part 1's fix wave 3 (`d50d4c891`) and the merge of M4 (`4c922d067`). Each file was re-read at
+that head before it was edited.
+
+### What changed, finding by finding
+
+- **I1: the O0 source is pinned at preparation** (`58ce12e43`).
+  - The writer no longer runs git. `scripts/hosted-sittings/pin.mjs` (`node scripts/hosted-sittings.mjs pin-decision
+    [--commit <full sha>] [--env-file <file>]`) does the fetching, at preparation:
+    - It pins the commit: `db775127652ebae5e0c7d90b5f5e2785f8e5711e` (`O0_COMMIT`) by default, or a later full SHA
+      that the workflow's new `decision_commit` input names.
+    - It fetches that commit if the checkout lacks it, then checks `FETCH_HEAD`.
+    - It writes the design spec at that commit to a file the run owns:
+      `$RUNNER_TEMP/hosted-sittings-decision/design-<sha>.md`.
+    - It exports `CUA_HOSTED_DECISION_FILE` and `CUA_HOSTED_DECISION_SHA`.
+    - It refuses off a GitHub-hosted runner, before any git.
+  - Where it runs:
+    - In the workflow, the step "Pin the O0 source for the TCC writer" runs before setup for A to E, through
+      `$GITHUB_ENV`. Sitting E's approve reads the pin from there too.
+    - In ci-kit, the `default-selection-approved` gate's run pins first, then sources the two variables.
+  - What `tcc.mjs` checks, in order, before any store access:
+    1. It is on a GitHub-hosted runner.
+    2. It reads only the pinned file (`pinnedDecisionLog`). It refuses when no file is named, when the file is missing
+       or unreadable, or when the SHA is not a full one.
+    3. It runs `decisionEntryProblem` on that file. The marker must open an entry of its own: a `- ` line, plus any
+       indented continuation lines, inside `## Decision Log` up to the next `## ` heading, whose whitespace-normalised
+       text begins with the marker. It refuses a quotation of the marker in another entry, and a marker outside the
+       section.
+  - The write log cites the pinned SHA: "under the design spec's Decision Log at <sha>". `grantRows` returns
+    `decision: {entry, commit}`, which lands in the setup and approve reports. The runner record carries no TCC facts,
+    so it does not cite the SHA.
+  - Tests:
+    - The off-host refusals use a `decisionLog` spy that throws if it is called.
+    - New refusals: a quoted marker, a marker outside the section, a missing file, an unreadable file, and a short SHA.
+    - Every refusal makes zero store calls.
+    - `pin.test.mjs` covers the hosted guard, the fetch with its `FETCH_HEAD` check, and the full-SHA rule.
+  - Checked on this Mac by a read only: `decisionEntryProblem` returns null for the real spec at `db775127`.
+- **I6: a step resolves only once its log is flushed** (`1e35e4f3f`).
+  - `execStep` is now async:
+    - It awaits the log stream's open.
+    - It resolves only after `file.end()` calls back.
+    - A write error on the log is the step's runtime error, as is a log directory that cannot be made.
+  - The test runs a real subprocess that writes 4 MB and then a `VERDICT:` line, and runs a delayed stream (each write
+    lands 30 ms late, injected through `openLog`). It also covers a blocked log path.
+  - Mutation check: with `execStep` resolving before the flush, the delayed-stream case fails.
+- **I7: E's expected red needs every home observed** (`525aaeafa`).
+  - The `selection` check now reads every home of `macos-selection.mjs` `HOMES`. A home counts as observed when it has
+    `selected` and `host.host`.
+  - Each home must select what the step's ref gives it (`expectedHome`):
+    - Before the flip, every home selects the vendor's engine for reason `default`, on the vendor host for
+      `macos_native_peer_requires_vendor`. That is `launch.mjs` `nativeEngineFor` with the vendor default, then
+      `macosComputerHost`.
+    - On the flip, the default home selects cua's engine (`default`) on cua's host (`cua_engine`). Each fallback home
+      keeps the vendor's engine and host for its own reason (`HOMES[kind].expect`).
+  - A fresh FAIL report whose default home fell back for `engine_not_installed` now fails. So does a report with a home
+    missing, or a home with no observation (its `problem` is quoted).
+- **I5: #212's cell asks for its runs and checks every record** (`ba623c5e8`).
+  - The plan:
+    - The save-sheet step passes `--runs <n>`: 1 in the pilot, 3 in full, as the matrix runs.
+    - It names every record it asks for in `records` (`run-1` to `run-n`). The pilot's step asks for exactly one run
+      and checks that run's record.
+  - The `observation` check:
+    - Every record must exist and be complete. A missing or incomplete record is a runtime error whatever it observed.
+      The reason counts the panel observations kept in the records; they stay in the artifact and are not certified.
+    - Every record must hold a sample of the cell.
+    - It passes only on an actual panel observation: `outcome.observed.before` or `.after` with at least one element
+      line (`savePanelStructure`'s shape).
+    - A sample that ran through, or an observation with no structure, is no longer a pass.
+    - NO VERDICT is unchanged: every sample has no verdict, by activation, unread or alert.
+- **I3: the capture alert at a key guard is the sample's NO VERDICT row** (`e9a79ed08`).
+  - `sendKeys` changes only on a hosted run, and only when the guard finds `com.apple.UserNotificationCenter` in front.
+    It then runs an alert check:
+    - If the check holds the capture alert, and nothing else, the key is still not sent. `meta.keySkipped` marks the
+      skip `held: true`.
+    - It reads front and key, then marks the device-clock window, from the run's last marked step through that read,
+      as the sample's window (`row`, or `setup` for a harness key). The alert's own activation is therefore accounted
+      to the sample, not left unaccounted.
+    - It then throws `AlertHeld`.
+    - Anything the watch does not hold still stops the run, as does UserNotificationCenter in front with no window
+      held. Off a runner, the run stops as before.
+  - `AlertHeld` is caught where each sample's row is made:
+    - `caseRow`: the row and its speed row;
+    - `probe-run.mjs` `sampled`: every probe cell. The span is now made by `sampled` and passed to the attempt, so the
+      held row's window covers the whole attempt;
+    - the Unicode mid-switch attempt;
+    - `run.mjs` `openPanel`: the panel's rows carry the readings.
+  - Each held row:
+    - Its readings are the activate step in force, the guard's reading (UserNotificationCenter) and one read after. So
+      `sampleCause` gives `alert`, NO VERDICT under ruling 1141, counted per cell.
+    - It also carries `invalid: "the key guard held the action's keys: …"` as a backstop.
+    - A cleanup whose keys the alert held is recorded as `outcome.cleanupHeld`. The run goes on.
+  - The alert's identity:
+    - The readings cannot identify the alert. H0 read its owner, one window for each capturing copy, and that it
+      persists; it read no title, text or size. On the runner the reading process may not read titles at all
+      (`system-windows.swift`: `name` is null without Screen Recording).
+    - So the hold stays the bound: UserNotificationCenter windows, up to two, with no pasteboard keyword. That is a
+      bound, not an identification.
+    - The limitation is written in `alertWatch`'s comment, here, and in the pilot's output. A new "Capture alert" line
+      always says the alert is held by owner and bound, not identified.
+    - What the pilot reads, so that a later wave can pin the alert:
+      - Each held window now keeps `titled`: true or false, or null when unreadable; never the title itself.
+      - It keeps its `size`.
+      - Each distinct held reading goes to the run's `meta.alertsHeld`. The pilot's reads merge these across runs.
+  - The reviewer's reproduction is now a test: an in-memory hosted save-sheet run where the alert comes up after
+    TextEdit's activation. It records one row:
+    - the row's readings show UserNotificationCenter front and key;
+    - `sampleCause` is `alert`;
+    - `super+n` is never sent;
+    - no activation is left unaccounted;
+    - the result is `complete: true`, verdict `no-verdict`.
+- **Minor: a pilot that proved nothing says so** (`59e688af3`).
+  - When a pilot passes but one of its judges gave only the expected NO VERDICT, or some of its steps are pending (F),
+    `renderSitting` changes two lines:
+    - "Proves: …" becomes "Would prove: …. This pilot proves none of it: <n judges gave the expected NO VERDICT>,
+      <n steps pending>".
+    - The headline becomes **PILOT COMPLETED WITHOUT ACCEPTANCE PROOF**.
+  - The exit codes are unchanged, as is `report.verdict` in `sitting.json`. B's pilot, its full form, keeps
+    "Proves" and PASS.
+
+### TDD
+
+**RED**, each run before its implementation:
+
+| Finding | Command | Failure before the change |
+|---|---|---|
+| I1 | `node --test test/hosted-sittings/tcc.test.mjs` | against the writer at `4c922d067` (re-run after the fix by restoring it): `does not provide an export named 'O0_COMMIT'`; pass 0 fail 1. The pinned-file reader the table needs did not exist |
+| I6 | `node --test test/hosted-sittings/run.test.mjs` | the 4 MB subprocess alone passed on the old code; the delayed `openLog` stream made test 7 fail; confirmed again by mutation after the fix |
+| I7 | `node --test test/hosted-sittings/checks.test.mjs` | `not ok 4 - sitting E: …`; pass 3 fail 1 (the `engine_not_installed` default home and the missing homes passed) |
+| I5 | `node --test test/hosted-sittings/plan.test.mjs test/hosted-sittings/checks.test.mjs` | `not ok 3` (observation: `step.records`), `not ok 8` (C: no `--runs`, no `records`); pass 10 fail 2 |
+| I3 | `node --test test/native-matrix/probe-run.test.mjs test/native-matrix/live-checks.test.mjs test/native-matrix/run.test.mjs` | `not ok 13` (held window readings), `not ok 50` (hosted save sheet: complete false, zero rows), `not ok 51`, `not ok 65` (caseRow); pass 70 fail 4. Re-run with the implementation reverted: the same four fail |
+| I3 (pilot) | `node --test test/hosted-sittings/report.test.mjs` | with the old `pilot-reads.mjs`: `not ok 3`, `not ok 5`; pass 3 fail 2 |
+| Minor | `node --test test/hosted-sittings/run.test.mjs` | `not ok 7 - a pilot that proved nothing is labelled so…`; pass 7 fail 1 |
+
+`pin.test.mjs` was written with `pin.mjs`, not run red on its own.
+
+**GREEN:**
+
+| Test file | Result |
+|---|---|
+| hosted-sittings: tcc | 14/14 |
+| hosted-sittings: pin | 3/3 |
+| hosted-sittings: checks | 4/4 |
+| hosted-sittings: plan | 8/8 |
+| hosted-sittings: run | 8/8 |
+| hosted-sittings: report | 5/5 |
+| native-matrix: probe-run | 25/25 |
+| native-matrix: run | 23/23 |
+| native-matrix: live-checks | 26/26 |
+| `test/native-matrix/*` | 519/519 |
+
+### The focused suites, at `59e688af3`
+
+```
+node --test test/hosted-sittings/*.test.mjs test/native-matrix/*.test.mjs test/accept*.test.mjs test/native-baseline/*.test.mjs test/repl-parity/*.test.mjs test/browser-parity/*.test.mjs
+# tests 2126
+# pass 2126
+# fail 0
+RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1 node --test <the same files>
+# tests 2126
+# pass 2126
+# fail 0
+```
+
+Other checks:
+
+- `test/runtime-launch.test.mjs`: 56/56.
+- The workflow parses with ci-kit's vendored YAML parser.
+- `.github/ci-kit.yml` parses with ci-kit's own `parseConfig`: 13 gates, and the approved gate pins first.
+
+No full `npm test`, hosted run, GUI, TCC write or push.
+
+### Decisions
+
+1. **Where the pin runs** (I1). It runs as its own CLI step, `pin-decision`, before setup, and in the ci-kit gate's run
+   script. The writer reads two environment variables and nothing else. The pinned SHA is cited in the write log and in
+   `grantRows`' `decision.commit`, not in `runner.json`: the record holds no TCC facts.
+2. **What "an entry of its own" means** (I1). An entry is a `- ` line in the section, plus its indented continuation
+   lines; its normalised text must begin with the marker. A marker inside another entry's text is a quotation.
+3. **E's pre-flip expectation includes the host's reason** (I7). Every home must give `vendor (default)` on
+   `vendor host (macos_native_peer_requires_vendor)`, which is exactly what the current code gives. A change in that
+   reason would turn E's expected red into a FAIL, and someone would have to look.
+4. **#212's full form asks for three runs** (I5). Three, as the matrix runs; one in the pilot. A pass needs every
+   record complete and at least one panel observation. A panel observation is one element line of
+   `savePanelStructure`: the controls are not identified yet, so "the panel's structure" cannot be checked more
+   narrowly.
+5. **The held alert is identified by the front plus a live alert check** (I3). The front must be UserNotificationCenter
+   and an alert check at the guard must hold it. The hold itself stays the bound, documented as such; titled/size
+   readings are added for the pilot to pin it later.
+6. **A held sample's row window** (I3). It runs from the run's last marked step through a read after the guard, so the
+   alert's own activation is the sample's. For harness keys it is a `setup` window.
+7. **A held cleanup does not stop the run** (I3). It is recorded as `outcome.cleanupHeld`. The state it would have
+   closed, such as an untitled document, stays, and later samples may be invalid because of it. That never makes a
+   pass.
+8. **The pilot label is presentation only** (Minor). The exit and `report.verdict` are unchanged. The label applies
+   only to a pilot that passed with expected NO VERDICTs or pending steps.
+
+### Discoveries
+
+- **The pilot's Save panel line never showed the structure's ids.** `outcome.observed` is `{before, after}`
+  (`probe-plan.mjs` `saveSheetDestinationCell`), but `renderPilotReads` read `.lines` on it directly. Its test fixture
+  used the flat shape, so the test passed. Both are fixed in `e9a79ed08`: the fixture now has the real shape, and the
+  line reads `after`, else `before`.
+- **The alert's activation would have left the run incomplete.** `accountActivations` leaves an activation outside
+  every window unaccounted, and the run then becomes incomplete. The capture alert's activation falls between the
+  activate step and the guard, a gap no window covered. The held mark closes that gap, and the hosted save-sheet test
+  injects such an activation.
+
+### Concerns
+
+- **The capture alert is held by a bound, not identified** (I3). Any UserNotificationCenter window, up to two, with no
+  pasteboard keyword is held. So a different system prompt from that process would also be held. Its cost is limited:
+  keys stay blocked while it is in front, and its samples are NO VERDICT. The pilot's "Capture alert" line and
+  `meta.alertsHeld` give the readings a later wave needs to narrow the hold.
+- **The pin's fetch needs `origin` readable without credentials** (I1).
+  - The workflow checks out with `fetch-depth: 0`, so the commit is present as long as `docs/117-progress` holds it.
+  - ci-kit's one-commit checkout needs the fetch, and `persist-credentials` is false. If the fetch fails, the gate
+    fails before any TCC write. That is fail-safe, but it would need a fix.
+- **A held sample can leave state behind** (I3, decision 7). This is not verified on a runner.
+- **I3's paths outside the save sheet and `caseRow`** (Unicode mid-switch, `openPanel`) are covered by code, but by
+  no test of their own.

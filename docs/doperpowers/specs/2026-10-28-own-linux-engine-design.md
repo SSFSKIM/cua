@@ -26,7 +26,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-11-02T00:10Z) M3 — cua's own Linux service, the device mode, the capability report and the truncation line; its release (`linux-engine-v0.3.0`). Twelve loop tasks, every code change reviewed clean (the task reviews, and the branch review by `doperpowers:reviewer-high` after one fix round), and the verdict run `m3-gate-musl` exiting 0 on the shipped x64 bytes (Outcomes & Retrospective, M3).
 - [x] (2026-11-14T21:00Z) M4 — The measured improvements: identity, minimized windows, truncation, waits, the settle; long browser and thumb drags at the bar, the Chrome drop's costs, `drag_handle`'s press; its release (`linux-engine-v0.4.0`). Loop tasks 28 to 80, every code change reviewed clean: the task reviews; the whole-branch review by `doperpowers:reviewer-high` in five slices, after six fix waves; and the gate's re-judge scripts and audit-leak-fix by `doperpowers:reviewer-medium`, after one fix wave. The release gate passed on its third candidate, the attested artifact of c55c8e08 (`751ec9be…`), and the published x64 asset is the same bytes (Outcomes & Retrospective, M4).
 - [x] (2026-11-23T06:22Z) M5 — Acceptance on both architectures on the pinned release; docs; the owner's default switch. Accepted at H8 = 048140a2 on linux-engine 0.4.3 on both arches (ruling 1090); three engine releases in M5 (0.4.1, 0.4.2, 0.4.3, #459); the owner's yes to the flip (1093), merged as T10 (a15d0618, plugin 0.29.0); the whole-branch review's harness fixes (task 139) moved no stored verdict; #487 and #488 to 0.4.4.
-- [ ] M6a — A vendor-free Linux runtime.
+- [ ] M6a — A vendor-free Linux runtime: a Linux session, computer or browser-only, resolves and launches from cua's own parts (the ModuleTree, the managed Node, the sandbox helper, `cua-engine` with cua's service) with no vendor tree read. It was built to the ruled pre-flight (`2026-10-28-own-linux-engine-m6a-preflight.md`, ruling 1110) in nine loop tasks (143–155), each reviewed clean. Acceptance 12 was counted at H = f41546d08 on x64 and on hosted arm64, 12 of 12 cells each, with the x64 regression (R1, R3, R4, the fallback part) and F10's credit (task 155; evidence `docs/evidence/2026-10-28-own-linux-engine/m6a/`). The branch review and the PR follow (Outcomes, M6a).
 - [ ] M6b — Retirement of the vendor's Linux package (after the soak).
 
 ## Scope, inheritance and evidence
@@ -716,6 +716,15 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - On arm64 at twice the load, `_NET_ACTIVE_WINDOW` can lag `activate_window`'s answer by about 85–108 ms while X focus is already the target's. In ruling 872's precise rerun it had not yet named the target at the answer in 9 of 200 runs, and focus was right in all 200. #429 should expect this when it waits on the property.
   - X11's SendEvent bit says an event was synthetic, not who sent it. Any client can send a synthetic KeyPress to any window, so nothing in the harness may treat `send: true` as the harness's own (task 106, fix wave 6).
   - The harness records no browser version for a run. F2's claim that a run drove Chrome 158 rests on the PATH chain logged beside it.
+
+- Observation: hosted ubuntu-24.04 runners, on arm64 and x64 alike, ship `kernel.apparmor_restrict_unprivileged_userns=1`, so bubblewrap is refused its user namespace ("setting up uid map: Permission denied") until the sysctl remedy doctor names is applied. After it, the whole sandbox chain runs on the hosted runner.
+  Evidence: M6a task 143, dispatch 45150450103 (`docs/evidence/2026-10-28-own-linux-engine/m6a/pilot/`).
+- Observation: the kernel's loader refuses `import('playwright')` (a CommonJS module with no default export) and `import('sharp')` (it can't import `../package.json`) by name, from the vendor tree and the ModuleTree alike, on Linux and macOS. The js tool's own description tells the model to use `await import("playwright")`.
+  Evidence: M6a task 152's pilot, where the older cua 0d19fdfa refused both with the same words, and the design session's reproduction on macOS with the installed plugin. Ticketed #531 (P2).
+- Observation: on the harness's Openbox, `xdotool getwindowgeometry` counts the window decoration's offset twice: (962,284) against xwininfo's client origin (961,262). A named drag aimed from it pressed 22 px above its target, which looked like an application declining the press.
+  Evidence: the 0.4.4 PR's whole-branch review (#516); task 142's fix wave 3, `m5/harness-487/wave3/`.
+- Observation: Node's JS `realpathSync` and `path.join` resolve `..` inside a symlink target lexically, so they can disagree with the kernel's resolution. A guard built on them can approve a path the kernel resolves into another tree.
+  Evidence: M6a task 149's fix waves; `src/runtime/vendor-tree.mjs`'s tests use `realpathSync.native` as the kernel's answer.
 
 ## Decision Log
 
@@ -2790,6 +2799,42 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - #512's fix (1142): (1) required: an in-floor Chrome drop whose path's last step comes after floor_until, by any margin, takes the after-path tail (993's rule applied to floor_until); (2) a dropped visit answers unconfirmed with option (c)'s notice; (2b) 0.4.5's design asks whether the engine can read Chrome's drag status, so that no leave seen after the last out-of-zone step makes activation alone not confirm; (3) rows copy `release_sync`. 0.4.5's acceptance: `left` ×300 at arm64 twice the load expecting 0, and L4d at 993's bar on both arches.
     - Ruling 993's bar is not waived: 0.4.5's reach must pass L4d.
     - 0.4.4 ships with L4d recorded as FAIL, because it strictly reduces wrong answers (#487 fails open, #488 fails closed).
+
+
+- Decision (2026-11-23, M6a pre-flight; the design session's ruling 1110, after an adversarial review in three rounds): M6a is built to docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-preflight.md, with every fork in its §7 ruled as recommended.
+  - **F1, the ModuleTree's install.** cua fetches each tarball of an authenticated closure itself: canonical HTTPS registry URLs, redirects refused, the length bounded, SHA-512 checked, and extraction confined, with paths and member types validated. The closure is checked at pin time by name, version and SHA-512 against the pinned vendor deb's `.pnpm/lock.yaml`. This departs from #117's `npm ci` (N L204), because the managed Node carries no npm. No prebuilt asset, so nothing is redistributed: libvips is LGPL.
+  - **F2, a minimum per part, not strict pins.** The module tree and the helper must be at their pins, the managed Node at or above `NODE_FLOOR`, and the engine at or above `MIN_ENGINE_VERSION`. Below the minimum or missing, the session is refused; behind the pin, it runs and doctor warns. L158's "matching its pin" is read this way. The engine guarantee is "a compatible engine": an install between the open and a launch can swap one compatible engine for another, as before (logged).
+  - **F2a, the overrides.** `CUA_NODE`, `CUA_LINUX_ENGINE_BIN`, a recorded local build and `CUA_SHIM_SANDBOX=disabled` stand. Nothing that is, or leads, under `runtimes/` may serve an own lane. The node running cua and `PATH` are no longer Node candidates on Linux.
+  - **F3.** M5's fallback to the vendor engine becomes a refusal naming the installer.
+  - **F4.** `cua install` installs the common parts first, then each lane on its own; every step is attempted, the exit status follows the requested lane, and the vendor comes last and is non-fatal unless asked for.
+  - **F5.** Cells get cua's ModuleTree under both selections.
+  - **F6.** `@oai/*`, `@statsig/*` and `corepack` are no longer importable in cells, a declared difference.
+  - **F7.** The browser-only check has no tab.
+  - **F8.** arm64's venue is cua's own dispatch workflow on hosted ubuntu-24.04-arm, with an x64 control leg. The deb fetch is allowed on that lane.
+  - **F9.** Every Linux remedy names this checkout's own installer by absolute path, with its release.
+  - **F10.** Item 6 is credited from M5 through 0.4.4's diff, plus a `linux-text.mjs` witness.
+  - **Additions (1110).**
+    - Doctor's warning for a part behind its pin names the same installer as the refusal.
+    - The README's update step lists the Linux homes the update touches.
+    - The version is allocated at merge.
+    - The explicit selection of an engine below the minimum is refused at the open.
+
+- Decision (2026-11-23 to 11-24, M6a's build; tasks 143–155; the design session's rulings 1145, 1162, 1175, 1194): what the reviews changed, and the calls made on the way.
+  - **The venue pilot (task 143)** answered yes on both hosted legs to all four questions: bubblewrap's user namespace after the sysctl remedy, gedit's tree on a private bus, controls connecting while the kernel was refused (EPERM on all four), and `strace -f` following the helper's children. Its review made the judges fail closed: any mandatory step fails the job; an inconclusive probe isn't a refusal; the kernel that answered is bound by pid and start time; the trace requires one connected serve tree; the vendor-tree counter resolves every operand or reports incomplete; and the wrapper clears `AT_SPI_BUS_ADDRESS` and `SESSION_MANAGER`.
+  - **The ModuleTree (task 144).** Pin and install share one package check. The deb is snapshotted before it is parsed. A damaged tree is reported, never followed through links or FIFOs. The 23 packages per arch match the vendor lock on both arches, and the x64 and arm64 lockfiles are byte-identical.
+  - **Launch and selection (task 149).** One kernel-faithful resolution, `outsideVendorTree`, walks each component and refuses to enter `runtimes/` before touching it, and requires a directory wherever a path traverses one. It is used for every check, probe and launch and for the sandbox preflight, and the links it followed are carried to the preflight. The `CUA_LINUX_ENGINE_BIN` override is probed at the open with a hard-killed `--version`.
+  - **Install and doctor (task 150).** What install reports as opening is the real serve selection. Every doctor remedy is one the installers accept, naming a blocking path to move aside first. The provisioner exits nonzero without cua's own runtime. One pointer-obstruction rule serves install and doctor.
+  - **The harnesses (task 151).** repl-parity's vendor release must be explicit and borne out by the connections' attestations. The refusal judge needs an observed refusal and a valid sample. `engine-answered.mjs` keeps its exported shape and its never-a-pass contract for #117's flip (1175).
+  - **Acceptance 12's driver (task 152).** Three review rounds closed false greens: the phase selection, fixture identity, trace completeness and per-kernel attribution, the baseline comparison, playwright's load witness, the vendor-tree boundaries per cell, the older checkout and U1's four no-op results, refusal capture after the drain, and the managed Node's identity. The 50 ms watch skips a vanished cua-engine when proving which engine answered, never when proving that no engine ran.
+  - **The import step (1162, 1194).** The kernel refuses `import('playwright')` and `import('sharp')` by name on every platform, and the older cua does too (#531, P2). So pngjs, jpeg-js, pixelmatch and classic-level are judged by name. Playwright and sharp are judged by the resolver's selected entry under modules/<lock>, opened under trace; by playwright loading through `require` with `chromium.launch` exposed, and its entry and playwright-core's coming from modules/; by sharp running natively; and by a by-name outcome equal to the older cua's (0d19fdfa). When #531 lands, the by-name step becomes a plain pass again.
+  - **The service's remedy (F9).** `src/services/engine/linux/client.mjs` names this checkout's installer, built from its own location. It doesn't import src/runtime/installer.mjs, because the trusted worker refuses src/runtime, and the trusted paths stay narrow. A drift test ties the two spellings.
+  - **H = f41546d08**, frozen for T8.
+  - **Acceptance 12, counted (task 155; ruling 1225).** At H = f41546d08, cells E0–E5 and U0–U5 passed 12 of 12 on x64 (this machine's private display), on hosted arm64, and on the hosted x64 control (run 45273664518). No run was repeated.
+    - R1: the cua lane 34 of 34, the vendor lane 34 with its 3 declared defects, a diff of 0.
+    - R3 14 of 14 and R4 20 of 20 in the default selection. In dedicated mode, acceptance 6's string reads back exactly once.
+    - The fallback part 5 of 5, each home refusing and naming the checkout's installer.
+    - F10's credit holds. 0.4.4's diff touches only the drop path: 8 files, two of them beyond the pre-flight's list, read and found text-neutral. H's engine tree equals the tag, and the pin hashes equal the assets. The service's diff from da7585c3 is MIN 0.4.4 and F9's remedy only.
+    - Serve start to first answer, head minus the older cua, median of 20: −41, +22 and +5 ms.
 
 ## Outcomes & Retrospective
 

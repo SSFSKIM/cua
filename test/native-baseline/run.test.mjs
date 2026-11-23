@@ -262,7 +262,7 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
     textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; },
     processOf: pid => { state.processReads = [...(state.processReads ?? []), pid]; return textEditProcess(state.processReads.length); },
     terminateTextEdit: pid => { if (terminate) terminate(pid); state.terminated.push(pid); terminatedApp = true; },
-    guard: ({pid, key}) => { state.guards.push({pid, key}); return screen(state.guards.length, key); },
+    guard: ({pid, key, keyWindow}) => { state.guards.push({pid, key, ...(keyWindow ? {keyWindow} : {})}); return screen(state.guards.length, key, keyWindow); },
     place: args => { state.places.push(args); return {requested: args.frame, readBack: args.frame, matched: true, exitStatus: 0, pid: args.pid ?? 12}; }};
   const out = outDir(t);
   let code, refusal = null;
@@ -846,6 +846,31 @@ test('sitting A: a key cell sent with its key reading not taken is counted per c
   assert.deepEqual(r.meta.keyUnread, {'task.act': plan.tasks * 2, 'task.close': plan.tasks, quit: 1});
   assert.equal(r.meta.alertGuards, undefined);
   assert.equal((await macRun(t)).meta.keyUnread, undefined, 'every key read: nothing counted');
+});
+
+// The key-window requirement (the design session's addition to ruling 1169): before each click or key cell TextEdit holds
+// the window the cell acts in as its own key window, read on the device (guard-device read --key-window); the scratch
+// document's click on the Open panel a fresh TextEdit shows is exempt (no document window is the scene's yet).
+const OWN = (focusedWindow, mainWindow = 'run') => ({scene: 'textedit', number: 7, trusted: true, ok: true, frontmost: true, focusedWindow, mainWindow});
+test('sitting A: a click or key cell whose TextEdit holds no key window of its own is refused unsent; a reading not taken is counted', async t => {
+  const held = await macRun(t, {screen: (n, withKey, keyWindow) => ({...CLEAR_SCREEN(n, withKey), ...(keyWindow ? {ownKey: OWN('none')} : {})})});
+  const refused = held.rows.find(row => row.alertGuard);
+  assert.deepEqual([refused.op, refused.sample, refused.alertGuard.cause], ['task.act', 1, 'keyWindow']);
+  assert.match(refused.alertGuard.detail, /the textedit app holds no key window/);
+  assert.ok(!held.app.keys.includes('super+n'), 'the task\'s keys were never sent');
+  // The cleanup's ⌘Q is held to the same rule, refused too, as under the alert holding the key.
+  assert.deepEqual(held.meta.alertGuardCounts, {'task.act': {alert: 0, unread: 0, keyWindow: 1}, quit: {alert: 0, unread: 0, keyWindow: 1}});
+  assert.equal(recordCheck(held.meta, 'vendor')[0], 'NO VERDICT');
+  assert.ok(!held.state.guards.some((g, i) => g.keyWindow && i < 3), 'the placements and the Open panel\'s click read no key window');
+  // Its own window key: every cell sent, nothing counted.
+  const kept = await macRun(t, {screen: (n, withKey, keyWindow) => ({...CLEAR_SCREEN(n, withKey), ...(keyWindow ? {ownKey: OWN('run')} : {})})});
+  assert.equal(kept.code, 0, kept.meta.error);
+  assert.equal(kept.meta.keyWindowUnread, undefined);
+  assert.equal(kept.state.guards.filter(g => g.keyWindow).length, plan.tasks * 3 + 1, 'each task\'s new document, typing and close, and the quit');
+  // Not read: sent, and counted per cell.
+  const unread = await macRun(t);
+  assert.equal(unread.code, 0, unread.meta.error);
+  assert.deepEqual(unread.meta.keyWindowUnread, {'task.act': plan.tasks * 2, 'task.close': plan.tasks, quit: 1});
 });
 
 test('sitting A: a capture refusal mid-series keeps the samples already taken, unconfirmed, and marks only the refused one', async t => {

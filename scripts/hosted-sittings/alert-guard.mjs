@@ -102,6 +102,32 @@ export function recordKeyUnread(record, cell) {
   counts[cell] = (counts[cell] ?? 0) + 1;
 }
 
+// The key-window requirement (the design session's addition to ruling 1169, after pilot B's diagnostic run 45254955711
+// read the Electron fixture frontmost with no key window, where TextEdit, Finder and Chrome each held their own): before
+// a click or key cell the scene's app holds the scene window as its own key window. Not the front: a background cell
+// still runs in the background. The reading (`ownKey`, ./key-window.mjs, taken on the device outside either engine) is
+// the app's own AXFocusedWindow and AXMainWindow against the scene window ('run', 'other' or 'none') and its
+// AXFrontmost. The scene window must be the app's focused window; an app that is not frontmost may hold no focused
+// window while keeping its main one, which is then the window it makes key when it is activated, so there the scene
+// window as its main window, with no other focused, holds too. A reading not taken (an untrusted reader, a failed read,
+// the scene window not on screen) refuses nothing: the cell goes unchecked and is counted (recordKeyWindowUnread), as a
+// key cell's unread key is. -> {category: 'keyWindow', detail} | null.
+const ownWindowText = w => (w === 'run' ? 'the scene window' : w === 'other' ? 'another of its windows' : 'none');
+export function keyWindowCause(ownKey) {
+  if (ownKey?.trusted !== true || ownKey.ok !== true) return null;
+  const {scene, number, frontmost, focusedWindow, mainWindow} = ownKey;
+  if (focusedWindow === 'run' || (frontmost === false && focusedWindow === 'none' && mainWindow === 'run')) return null;
+  const which = `the scene window ${number ?? '?'}`;
+  if (focusedWindow === 'other') return {category: 'keyWindow', detail: `the ${scene} app's key window is another of its windows, not ${which}`};
+  return {category: 'keyWindow', detail: `the ${scene} app holds no key window (its focused window ${ownWindowText(focusedWindow)}, its main window ${mainWindow === 'run' ? which : ownWindowText(mainWindow)}) while ${frontmost === false ? 'in the background' : 'frontmost'}`};
+}
+// A click or key cell whose key-window reading was not taken, counted per cell in the record its side keeps:
+// `keyWindowUnread: {cell: n}`.
+export function recordKeyWindowUnread(record, cell) {
+  const counts = record.keyWindowUnread ??= {};
+  counts[cell] = (counts[cell] ?? 0) + 1;
+}
+
 // Why a capture is NO VERDICT, from the fresh reading: `kind` 'window' (the target `scenes`' windows: one under an alert
 // may come back as the vendor's display crop showing it; one clear of every alert is exempt), 'screen' (any alert at all)
 // or 'region' (an alert meeting `region`). Front and key do not matter: only what the capture shows. -> cause | null.
@@ -162,12 +188,14 @@ export async function placeWindows(bounds, {move, select = () => true}) {
 // sampleCause), and an invalid reason as a backstop, so no statistic or verdict reads it.
 export const GUARD_INVALID = 'the alert guard refused the cell: nothing of it was sent';
 export const guardMark = cause => ({alertGuard: {cause: cause.category, detail: cause.detail}, invalid: GUARD_INVALID});
-// The refusals of one side, per cell and cause: [{cell, cause}] -> {cell: {alert, unread}}.
+// The refusals of one side, per cell and cause: [{cell, cause}] -> {cell: {alert, unread, keyWindow?}} (keyWindow
+// counted where the key-window requirement refused one).
 export function countGuards(entries) {
   const counts = {};
   for (const {cell, cause} of entries ?? []) {
     const n = counts[cell] ??= {alert: 0, unread: 0};
-    if (cause in n) n[cause]++;
+    if (cause === 'keyWindow') n.keyWindow = (n.keyWindow ?? 0) + 1;
+    else if (cause in n) n[cause]++;
   }
   return counts;
 }

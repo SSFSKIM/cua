@@ -155,6 +155,23 @@ test('read --with alert-bounds: one fresh screen read, the alerts and the run\'s
   });
 });
 
+test('read --key-window <scene>: the scene app\'s own key window, read by ax-state at its recorded window; a scene not up or a list unread is not taken', async () => {
+  await withRun(async dir => {
+    const asked = [];
+    const io = {frontWindow: () => ({frontmost: {pid: 501, bundleId: 'com.cua.fixture'}, topWindow: null}), enginePids: () => [], watcherRuns: () => true,
+      windows: () => [alertAt(rect(700, 200, 420, 180)), electronWindow(PLACED)],
+      axState: (pid, bounds) => { asked.push([pid, bounds]); return {trusted: true, ok: true, frontmost: true, focused: false, main: true, focusedWindow: 'none', mainWindow: 'run', windows: 1}; }};
+    const out = await main(['read', '--run', dir, '--key-window', 'electron'], {io});
+    assert.deepEqual(asked, [[501, '140,100,720,560']]);
+    assert.deepEqual(out.ownKey, {scene: 'electron', number: 41, trusted: true, ok: true, frontmost: true, focusedWindow: 'none', mainWindow: 'run'});
+    // Not up in this run, or the window list unread: not taken, with why.
+    assert.deepEqual((await main(['read', '--run', dir, '--key-window', 'chrome'], {io})).ownKey, {scene: 'chrome', number: null, trusted: null, ok: false, reason: 'the scene is not up in this run'});
+    const unread = await main(['read', '--run', dir, '--key-window', 'electron'], {io: {...io, windows: () => { throw new Error('swift exited 1'); }}});
+    assert.equal(unread.ownKey.reason, 'the window list was unread');
+    assert.equal((await main(['read', '--run', dir], {io})).ownKey, undefined);
+  });
+});
+
 test('place: the scene\'s recorded window moved by the frame probe and read back; a read-back off the frame does not match', async () => {
   await withRun(async dir => {
     const asked = [];

@@ -48,7 +48,9 @@ import {classifyAttestedRecord} from '../probe/lib.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
 import {frameAsymmetry} from './venue.mjs';
 
-const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert']);
+// A sample's causes that leave its proof missing, not failed: the key-window requirement's refusal (keyWindow, ruling
+// 1169's addition) among them.
+const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert', 'keyWindow']);
 // accept-native's items its live TextEdit fixture proves (scripts/accept-native.mjs: 5, 6 and 8), the ones the alert
 // guard's refusal there leaves unproven.
 const FIXTURE_ITEMS = Object.freeze([5, 6, 8]);

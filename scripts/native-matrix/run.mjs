@@ -548,6 +548,8 @@ async function openPanel(ctx, apps) {
   }
   if (opened === null) return {problem: 'the key guard did not send ⌘O'};
   if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
+  // TextEdit's focused window is the panel until closePanel: no key-window check meanwhile (./steps.mjs keyWindowScene).
+  ctx.panelOpen = true;
   await placePanel(ctx);
   return null;
 }
@@ -581,9 +583,10 @@ async function closePanel(ctx, {activateFirst = false} = {}) {
   try { keyed = await sendKeys(ctx, CLOSE_PANEL_KEY, ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'}); } catch (error) {
     if (!(error instanceof AlertHeld)) throw error;
   }
-  if (keyed?.ok && keyed.value?.closed) return;
+  if (keyed?.ok && keyed.value?.closed) { ctx.panelOpen = false; return; }
   const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL, {apps: TEXTEDIT});
   if (!closed.ok || !closed.value?.closed) throw new Stop('TextEdit\'s Open panel stayed open after its cases');
+  ctx.panelOpen = false;
 }
 
 async function backgroundPairing(ctx, {driven, user}) {

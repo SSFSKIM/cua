@@ -39,6 +39,29 @@ test('read: the alerts and the target\'s windows, the front, and with --key the 
   assert.deepEqual([foreign.key, foreign.keyWindow], [UNC, {owned: false}]);
 });
 
+// The key-window requirement: with --key-window the reading adds the first target's own key window (ax-state.swift window
+// on the scene window: the recorded one, else the target's frontmost on-screen window), read outside either engine.
+test('read --key-window: the target app\'s own focused and main windows against its scene window; unread when it cannot be read', async () => {
+  const asked = [];
+  const axState = (pid, bounds) => { asked.push([pid, bounds]); return {trusted: true, ok: true, frontmost: true, found: true, focused: true, main: true, focusedWindow: 'run', mainWindow: 'run', windows: 1, failed: []}; };
+  const out = await main(['read', '--target', 'textedit:600', '--key-window'], {io: io({axState})});
+  assert.deepEqual(asked, [[600, '79,31,627,677']]);
+  assert.deepEqual(out.ownKey, {scene: 'textedit', number: 7, trusted: true, ok: true, frontmost: true, focusedWindow: 'run', mainWindow: 'run'});
+  // A recorded window is the one read, whatever is in front of it.
+  const finder = {ownerPid: 410, ownerName: 'Finder', ownerBundleId: 'com.apple.finder', layer: 0, number: 21, name: 'x', bounds: rect(22, 80, 800, 520)};
+  const two = io({axState, screen: () => ({...screen, windows: [{...finder, number: 22, bounds: rect(0, 0, 400, 300)}, finder]})});
+  asked.length = 0;
+  assert.equal((await main(['read', '--target', 'finder:410:21:only', '--key-window'], {io: two})).ownKey.number, 21);
+  assert.deepEqual(asked, [[410, '22,80,800,520']]);
+  // No --key-window: no reading taken. The scene window not on screen, an untrusted reader or a failed read: unread.
+  assert.equal((await main(['read', '--target', 'textedit:600'], {io: io({axState: () => assert.fail('not asked')})})).ownKey, undefined);
+  const gone = await main(['read', '--target', 'textedit:999', '--key-window'], {io: io({axState})});
+  assert.deepEqual(gone.ownKey, {scene: 'textedit', number: null, trusted: null, ok: false, reason: 'the scene window is not on screen'});
+  assert.deepEqual((await main(['read', '--target', 'textedit:600', '--key-window'], {io: io({axState: () => ({trusted: false})})})).ownKey,
+    {scene: 'textedit', number: 7, trusted: false, ok: false, frontmost: null, focusedWindow: null, mainWindow: null});
+  assert.equal((await main(['read', '--target', 'textedit:600', '--key-window'], {io: io({axState: () => { throw new Error('swiftc failed'); }})})).ownKey.ok, false);
+});
+
 test('read: an unread screen is unread bounds, an unread front or key is null, never a clear screen', async () => {
   const out = await main(['read', '--target', 'textedit:600', '--key'], {io: io({screen: () => { throw new Error('swift exited 1'); }, frontmost: () => null, focus: () => { throw new Error('no engine'); }})});
   assert.equal(out.bounds, null);

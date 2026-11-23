@@ -5,6 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {keyWindowCause, recordKeyWindowUnread} from '../hosted-sittings/alert-guard.mjs';
 import {guardCause, PANEL_SERVICE, recordKeyUnread, sceneOfCell, sendsPointer} from './alert-guard.mjs';
 import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
@@ -27,8 +28,11 @@ export const mark = (ctx, kind, key, at, apps = []) => {
   if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) ctx.windows.push({kind, key, at, ...(kind === 'harness' ? {apps} : {})});
 };
 // A js cell, its device-clock window kept under `kind`.
+// A harness cell's key is the one its key-window guard counts under (ctx.harnessKey; guardLane).
 export async function js(ctx, kind, key, code, {timeoutMs, apps} = {}) {
-  const r = await ctx.lane.js(code, timeoutMs);
+  if (kind === 'harness') ctx.harnessKey = key;
+  let r;
+  try { r = await ctx.lane.js(code, timeoutMs); } finally { delete ctx.harnessKey; }
   mark(ctx, kind, key, r.at, apps);
   return r;
 }
@@ -56,11 +60,13 @@ const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--app
 // `electronMode`: the Electron fixture's accessibility mode as its record last showed it, read with the rest
 // (./matrix-device.mjs read --electron-mode); `frontKey`: the front and key applications' bundle ids (./front-key.mjs);
 // `windowOrder`: every on-screen window front to back (the window-order oracle, #485); `alertBounds`: the alert guard's
-// reading of the alert windows and the run's own (./alert-guard.mjs).
-export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false, alertBounds = false} = {}) => {
+// reading of the alert windows and the run's own (./alert-guard.mjs); `keyWindow`: a scene, whose app's own key window
+// is read (`ownKey`, ../hosted-sittings/key-window.mjs).
+export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false, alertBounds = false, keyWindow = null} = {}) => {
   const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : []), ...(alertBounds ? ['alert-bounds'] : [])];
   return ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
-    ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : []), ...(also.length ? ['--with', also.join(',')] : [])]);
+    ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : []), ...(also.length ? ['--with', also.join(',')] : []),
+    ...(keyWindow ? ['--key-window', keyWindow] : [])]);
 };
 export const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.width},${w.bounds.height}`;
 export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
@@ -123,17 +129,32 @@ function refuse(ctx, cause, reading) {
   noteGuard(ctx, cause);
   throw new AlertGuarded(cause, reading);
 }
+// The key-window requirement (ruling 1169's addition; ../hosted-sittings/alert-guard.mjs keyWindowCause) before a click
+// or key cell bound to a scene the run put up: its app holds the scene window as its own key window, read in the same
+// read as the cell's other guards. Not while TextEdit's Open panel is up (ctx.panelOpen, ./run.mjs openPanel and
+// closePanel): the panel is then TextEdit's focused window, as it must be for the panel's cells. -> the scene to read
+// for, or null.
+const keyWindowScene = (ctx, scene) => (scene && !ctx.panelOpen && ctx.records?.[scene] ? scene : null);
+// Refused (AlertGuarded, NO VERDICT keyWindow) when the reading shows another key window; counted under `key`
+// (meta.keyWindowUnread) when it was not taken, the cell then sent unchecked.
+function keyWindowGuard(ctx, r, key) {
+  const cause = keyWindowCause(r?.ownKey);
+  if (cause) refuse(ctx, cause, keyReading(r));
+  if (r?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, key);
+}
 // The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
 // sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over its target's
 // windows (the scene its prelude binds, sceneOfCell; every window of the run when it binds none) and the alert holding
-// neither front nor key; else AlertGuarded, the cell unsent.
+// neither front nor key, and its scene's app holding the scene window as its key window (keyWindowGuard, counted under
+// the harness cell's key or else the row the cell is for); else AlertGuarded, the cell unsent.
 export function guardLane(ctx, lane) {
   return {...lane, js: async (code, timeoutMs) => {
     if (sendsPointer(code)) {
-      const r = read(ctx, null, {frontKey: true, alertBounds: true});
-      const scene = sceneOfCell(code);
+      const scene = sceneOfCell(code), owned = keyWindowScene(ctx, scene);
+      const r = read(ctx, null, {frontKey: true, alertBounds: true, keyWindow: owned});
       const reading = keyReading(r), cause = guardCause(r?.alertBounds ?? null, reading, {scenes: scene ? [scene] : null});
       if (cause) refuse(ctx, cause, reading);
+      if (owned) keyWindowGuard(ctx, r, ctx.harnessKey ?? `row:${ctx.rows.length}`);
     }
     return lane.js(code, timeoutMs);
   }};
@@ -145,11 +166,15 @@ export function guardLane(ctx, lane) {
 // replayd's capture alert and nothing else: then AlertHeld, the key never sent, the device-clock window from the run's
 // last marked step through a read of front and key marked as the sample's (`kind` 'row'; else 'setup'), so the alert's
 // own activation is accounted to it. Before all that, a key the alert holds is refused (the alert guard, ruling 1154:
-// AlertGuarded), the keys unsent: an alert with the key and some other app in front would take them.
+// AlertGuarded), the keys unsent: an alert with the key and some other app in front would take them; and so is one whose
+// scene's app does not hold the scene window as its key window (keyWindowGuard).
 // -> the cell's answer, or null when it was not sent.
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
-  const seenKey = keyReading(front?.frontKey ? front : read(ctx, null, {frontKey: true}));
+  const owned = keyWindowScene(ctx, scene);
+  const r = front?.frontKey && (!owned || front.ownKey) ? front : read(ctx, null, {frontKey: true, keyWindow: owned});
+  const seenKey = keyReading(r);
   if (seenKey.key === CAPTURE_ALERT_PROCESS && seenKey.front !== CAPTURE_ALERT_PROCESS) refuse(ctx, guardCause(null, {key: seenKey.key}), seenKey);
+  if (owned) keyWindowGuard(ctx, r, key);
   // The key not read: the cell goes unguarded against the alert holding the key (the key-cell premise), counted under its
   // span's key (meta.keyUnread; a row's `row:<index>`, which the hosted counts map to the row's cell).
   if (seenKey.key === null) recordKeyUnread(ctx.meta, key);

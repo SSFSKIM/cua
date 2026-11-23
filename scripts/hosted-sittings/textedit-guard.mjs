@@ -14,11 +14,11 @@ import {defaultGuardIo, placeWindow, readGuard} from './guard-device.mjs';
 
 const runningTextEdits = () => String(spawnSync('/usr/bin/pgrep', ['-x', 'TextEdit'], {encoding: 'utf8'}).stdout ?? '').split('\n').filter(Boolean).map(Number);
 
-// deps: {pids() (TextEdit's running processes), io (./guard-device.mjs's)}. -> {read({key}) (readGuard's reading of
-// TextEdit's windows, with the key when asked), place() -> placeWindows' record}.
+// deps: {pids() (TextEdit's running processes), io (./guard-device.mjs's)}. -> {read({key, keyWindow}) (readGuard's
+// reading of TextEdit's windows, with the key and TextEdit's own key window when asked), place() -> placeWindows' record}.
 export function textEditGuard({pids = runningTextEdits, io = defaultGuardIo()} = {}) {
   const targets = () => pids().map(pid => ({scene: 'textedit', pid}));
-  const read = ({key = false} = {}) => readGuard({targets: targets(), key}, io);
+  const read = ({key = false, keyWindow = false} = {}) => readGuard({targets: targets(), key, keyWindow}, io);
   return {
     read,
     // Each window under an alert moved clear, by the pid that shows it (a TextEdit window) or as the Open panel's.

@@ -155,6 +155,9 @@ test('#212\'s observation-only cell: every run asked for recorded complete, and 
   const [status, reason] = check('observation', step, 1, both(result([skipped, skipped]), result([skipped])));
   assert.equal(status, 'NO VERDICT');
   assert.match(reason, /no sample observed: activation 3/);
+  // A cell the key-window requirement refused (ruling 1169's addition) is missing proof alike.
+  const keyWindowed = row({invalid: 'the alert guard refused the cell: nothing of it was sent', alertGuard: {cause: 'keyWindow', detail: 'the textedit app holds no key window'}});
+  assert.deepEqual(check('observation', step, 1, both(result([keyWindowed]), result([skipped]))), ['NO VERDICT', 'no sample observed: keyWindow 1, activation 1']);
   assert.deepEqual(check('observation', step, 1, both(result([row({invalid: 'the untitled document did not open (not sent)'})]))),
     ['FAIL', 'driver failure: no observation recorded (the untitled document did not open (not sent))']);
   assert.deepEqual(check('observation', step, 1), ['FAIL', `runtime error: no record at ${records[0]} (exit 1); also: runtime error: no record at ${records[1]} (exit 1)`]);

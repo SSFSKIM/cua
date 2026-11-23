@@ -49,6 +49,23 @@ test('sitting D: the fixture\'s key cells follow the key-cell premise; a key rea
   assert.equal((await keyCellWith(guardOn(CLEAR))).observations.keyUnread, undefined);
 });
 
+// The key-window requirement (the design session's addition to ruling 1169): before a fixture key cell TextEdit holds its
+// document as its own key window (the guard's reading, read --key-window); a reading not taken is counted, the cell sent.
+test('sitting D: a fixture key cell whose TextEdit holds no key window of its own is refused unsent; an unread one is counted', async () => {
+  const axIo = focusedWindow => ({...io(CLEAR), axState: (pid, bounds) => {
+    assert.deepEqual([pid, bounds], [600, '700,31,627,677']);
+    return {trusted: true, ok: true, frontmost: true, focusedWindow, mainWindow: 'run'};
+  }});
+  const none = await keyCellWith(textEditGuard({pids: () => [600], io: axIo('none')}));
+  assert.deepEqual([none.out.sent, none.out.refused.category, none.sent], [false, 'keyWindow', []]);
+  assert.deepEqual(none.observations.alertGuardCounts, {[STEP.type]: {alert: 0, unread: 0, keyWindow: 1}});
+  const own = await keyCellWith(textEditGuard({pids: () => [600], io: axIo('run')}));
+  assert.deepEqual([own.out.sent, own.observations.keyWindowUnread], [true, undefined]);
+  const unread = await keyCellWith(guardOn(CLEAR));
+  assert.deepEqual([unread.out.sent, unread.observations.keyWindowUnread], [true, {[STEP.type]: 1}]);
+  assert.deepEqual(fixtureGuardRecord(unread.observations), {keyWindowUnread: {[STEP.type]: 1}});
+});
+
 // The marker cell types and then captures TextEdit's window (markerCell's getScreenshot): it is held to the capture rule
 // as well, a window under an alert or an unread screen refusing the whole cell before it is sent.
 test('sitting D: the marker cell\'s capture under the shared capture rule: TextEdit\'s window under an alert, or unread, refuses the cell unsent', async () => {

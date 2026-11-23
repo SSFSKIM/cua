@@ -53,7 +53,7 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseline/engine.mjs';
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
-import {guardCause, placeWindows, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
+import {guardCause, keyWindowCause, placeWindows, recordKeyWindowUnread, recordRefusal} from '../hosted-sittings/alert-guard.mjs';
 import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
 import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval, settleRecordingProbes} from '../native-matrix/goldens.mjs';
@@ -401,7 +401,7 @@ function activate(ctx, id) {
 const guardTarget = (id, record) => [id, record.pid, record.window?.number, ...(SCENES[id].process === 'run' ? [] : ['only'])].filter(v => v !== undefined && v !== null).join(':');
 // The device's fresh reading (../hosted-sittings/guard-device.mjs read), or null when it could not be read: unread.
 function guardRead(ctx, id, record, {key = false} = {}) {
-  try { return ctx.ops.guard(['read', '--target', guardTarget(id, record), ...(key ? ['--key'] : [])]) ?? null; } catch { return null; }
+  try { return ctx.ops.guard(['read', '--target', guardTarget(id, record), ...(key ? ['--key', '--key-window'] : [])]) ?? null; } catch { return null; }
 }
 // The scene's windows placed clear of the alerts once it is up and set up, from a fresh reading, by the shared rule
 // (placeWindows), alike on both lanes: kept in the scene's account (`placement`: from, to and the read-back per window).
@@ -414,16 +414,21 @@ async function placeScene(ctx, id, record) {
   }});
 }
 // Before the action's click: the scene's windows clear of every alert, the alert holding neither front nor key, the
-// screen read. A refusal sends nothing: the action's row carries its cause (NO VERDICT `alert` or `unread`), the lane's
+// screen read; and the scene's app holding the scene window as its own key window (the key-window requirement,
+// ../hosted-sittings/alert-guard.mjs keyWindowCause; a reading not taken is counted in meta.keyWindowUnread and the
+// click goes on). A refusal sends nothing: the action's row carries its cause (NO VERDICT `alert`, `unread` or `keyWindow`), the lane's
 // meta keeps it per cell (alertGuards, alertGuardCounts) and its first (alertGuardStop, which the hosted record check
 // reads as NO VERDICT), and the scene ends there (GuardRefused: the lane goes on to its next scene, deciding again from
 // its own reading). Nothing is retried. -> {reading, activate}, the click's surroundings.
 function actionGuard(ctx, id, record, activated) {
   const reading = guardRead(ctx, id, record, {key: true});
   const before = {reading, activate: activationFacts(activated)};
-  const cause = guardCause(reading?.bounds ?? null, {front: reading?.front ?? null, key: reading?.key ?? null}, {scenes: [id]});
-  if (!cause) return before;
   const cell = `${id}/action`;
+  const cause = guardCause(reading?.bounds ?? null, {front: reading?.front ?? null, key: reading?.key ?? null}, {scenes: [id]}) ?? keyWindowCause(reading?.ownKey);
+  if (!cause) {
+    if (reading?.ownKey?.ok !== true) recordKeyWindowUnread(ctx.meta, cell);
+    return before;
+  }
   ctx.emit({scene: id, cell: 'action', ok: false, ...recordRefusal(ctx.meta, cell, cause), diagnostics: actionDiagnostics(before, null)});
   ctx.meta.scenes[id].outcome = 'action refused by the alert guard';
   throw new GuardRefused(`the action was not sent: ${cause.detail} (the alert guard, ruling 1154)`, cell);
@@ -442,7 +447,7 @@ const activationFacts = answer => (answer ? {ok: answer.ok === true, front: answ
 // cell's _meta is the last observation's.
 function actionDiagnostics(before, value) {
   const r = before?.reading;
-  return {before: {front: r?.front ?? null, key: r?.key ?? null, keyWindow: r?.keyWindow ?? null, activate: before?.activate ?? null},
+  return {before: {front: r?.front ?? null, key: r?.key ?? null, keyWindow: r?.keyWindow ?? null, ...(r?.ownKey ? {ownKey: r.ownKey} : {}), activate: before?.activate ?? null},
     click: value?.click ?? null, focusAfterClick: value?.focusAfterClick ?? null};
 }
 

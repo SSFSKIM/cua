@@ -165,11 +165,14 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
     matrix: step('matrix', args => {
       const at = [clock(), clock()];
       switch (args[0]) {
-        case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry'};
+        case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry', axState: 'ax-state-dry'};
         case 'read': {
           const also = args.includes('--with') ? args[args.indexOf('--with') + 1].split(',') : [];
           return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
             ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {}),
+            // The scene's app holding the scene window as its own key window.
+            ...(args.includes('--key-window') ? {ownKey: (scene => ({scene, number: records[scene]?.window.number ?? null, trusted: true, ok: true,
+              frontmost: front === records[scene], focusedWindow: 'run', mainWindow: 'run'}))(args[args.indexOf('--key-window') + 1])} : {}),
             ...(also.includes('front-key') ? {frontKey: {front: front?.bundleId ?? null, key: front?.bundleId ?? null}} : {}),
             ...(also.includes('window-order') ? {windowOrder: [front, ...Object.values(records).filter(r => r !== front)].filter(Boolean)
               .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {}),

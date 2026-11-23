@@ -47,4 +47,8 @@ test('loopback.sh hands the device sessions RUNNER_ENVIRONMENT=github-hosted, af
   assert.ok(guard >= 0 && env > guard, 'the variable is written to the sessions\' environment, after the guard');
   assert.match(script, /^echo "PATH=\$PATH" > "\$HOME\/\.ssh\/environment"$/m);
   assert.match(script, /^PermitUserEnvironment yes$/m);
+  // The bring-up ends by asking its own session for the variable, and fails when it is missing.
+  const probe = script.indexOf(`ssh -F "$D/config" "$DEVICE" 'test "$RUNNER_ENVIRONMENT" = github-hosted' || {`);
+  assert.ok(probe > script.indexOf('/usr/sbin/sshd -f'), 'the session is probed for the variable after the sshd starts');
+  assert.match(script.slice(probe), /\|\| \{\n[^\n]*>&2; exit 1; \}/);
 });

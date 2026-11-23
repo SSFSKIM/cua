@@ -1280,7 +1280,8 @@ with doubles only; the first hosted run is the evidence still owed.
 - **A device reader**, `scripts/hosted-sittings/guard-device.mjs`. It is a CLI and a module that runs on the device the
   cell drives:
   - `read --target <scene:pid:window[:only]> [--key]` returns `{bounds, front, key, keyWindow, at}`.
-  - `place --pid|--panel --window --frame` returns `{requested, readBack, matched}`.
+  - `place --pid|--panel --window --frame` returns `{requested, readBack, matched}`. Off a GitHub-hosted runner
+    (#560's follow-up) it moves nothing and answers `{requested, readBack: null, matched: false, refused}`.
 
   It uses the matrix's `system-windows.swift`, compiled once into `~/Library/Caches/cua-harness/guard-device`, together
   with `lsappinfo` for the front app and the live device's focus and window-frame probes. Sittings A and B call it
@@ -1637,11 +1638,15 @@ checks:
   `writeTextEditDefaults`, `clearTextEditSavedState`), and the record (`runner.mjs` `runnerRecord`).
 - **The sittings' own** checks: `hosted-sittings.mjs` (a sitting's run, the scratch TextEdit document, the focus
   probe's timing), `pin.mjs`, `onboarding.mjs` and accept-native's TextEdit guard (`isGithubHosted()`).
+- **The other hosted entry points**: `approval-cycles.mjs` (its usage check), `accept/macos-selection.mjs`
+  (`--approved-home`), `accept/macos-default-selection-hosted.sh` (its first test), `repl-parity/hosted/hosted.sh`
+  (its first test) and the `m5-sittings.yml` workflow's Prerequisites step.
 - **On the device**: the venue's reads (`runner.mjs` `attestedVenue`: Chrome's and the fixture's launch frames,
-  Finder's `finderFrame`, the TextEdit RTF's view size) and every window move through the frame probe
-  (`guard-device.mjs` `placeWindow`, `matrix-device.mjs` `placeScene`). Off a hosted runner a move is refused before
-  anything is read: `{readBack: null, matched: false, refused}`, recorded as not moved with "the move was refused:
-  …", and the alert guard refuses what the window overlaps.
+  Finder's `finderFrame`, the TextEdit RTF's view size) and every move through the `place` commands
+  (`guard-device.mjs` `placeWindow`, `matrix-device.mjs` `placeScene`, both through `runner.mjs` `moveRefusal`). Off a
+  hosted runner a move is refused before anything is read: `{requested, readBack: null, matched: false, refused}`,
+  recorded as not moved with "the move was refused: …", and the alert guard refuses what the window overlaps.
+  `loopback.sh` ends by checking that its own session carries the variable, and fails the bring-up if not.
 
 The goldens recorder's `finderFrame` step (`goldens-device.mjs`) is not a hosted-only write: it pins Finder on the mini
 by design, at `FINDER_FRAME` there and at the venue's frame only where the venue is read. It is left as it is.

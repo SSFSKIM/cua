@@ -2,7 +2,7 @@
 // a pointer event, a key or a capture, and the frame probe that places a window, all with doubles.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {guardCause} from '../../scripts/hosted-sittings/alert-guard.mjs';
+import {guardCause, placeWindows} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import {main, parseTarget} from '../../scripts/hosted-sittings/guard-device.mjs';
 import {MOVE_REFUSED_OFF_HOSTED} from '../../scripts/hosted-sittings/runner.mjs';
 
@@ -102,13 +102,27 @@ test('place off a GitHub-hosted runner is refused before the probe is asked: not
   for (const [env, platform] of [[{}, 'darwin'], [{RUNNER_ENVIRONMENT: 'self-hosted'}, 'darwin'], [{RUNNER_ENVIRONMENT: 'github-hosted'}, 'linux']]) {
     const out = await main(['place', '--pid', '600', '--window', '7', '--frame', '700,31,627,677'],
       {io: io({env, platform, screen: () => assert.fail('nothing read'), frameProbe: () => assert.fail('the probe is not asked')})});
-    assert.deepEqual(out, {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
-    const {placeWindows} = await import('../../scripts/hosted-sittings/alert-guard.mjs');
+    assert.deepEqual(out, {requested: rect(700, 31, 627, 677), readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
     const finder = {scene: 'finder', number: 7, recorded: true, bounds: rect(500, 150, 600, 400)};
     const [w] = (await placeWindows({alerts: [{number: 90, bounds: alert.bounds}], windows: [finder], displays: [rect(0, 0, 1920, 1080)]}, {move: () => out})).windows;
     assert.deepEqual([w.moved, w.matched, w.readBack], [false, false, null]);
     assert.match(w.reason, /the move was refused: a window is moved only on a GitHub-hosted runner/);
   }
+});
+
+// The production default: an io with no `env` reads process.env, so the variable is set (or unset) there and restored.
+async function withRunnerEnvironment(value, body) {
+  const before = process.env.RUNNER_ENVIRONMENT;
+  if (value === undefined) delete process.env.RUNNER_ENVIRONMENT; else process.env.RUNNER_ENVIRONMENT = value;
+  try { return await body(); } finally { if (before === undefined) delete process.env.RUNNER_ENVIRONMENT; else process.env.RUNNER_ENVIRONMENT = before; }
+}
+test('place with no env in its io reads the process\'s RUNNER_ENVIRONMENT: refused without it, moved with it', async () => {
+  const {env, ...noEnv} = io();
+  const args = ['place', '--pid', '600', '--window', '7', '--frame', '700,31,627,677'];
+  const off = await withRunnerEnvironment(undefined, () => main(args, {io: {...noEnv, screen: () => assert.fail('nothing read'), frameProbe: () => assert.fail('the probe is not asked')}}));
+  assert.equal(off.refused, MOVE_REFUSED_OFF_HOSTED);
+  const on = await withRunnerEnvironment('github-hosted', () => main(args, {io: {...noEnv, frameProbe: () => ({readBack: rect(700, 31, 627, 677), matched: true, exitStatus: 0})}}));
+  assert.deepEqual([on.matched, on.refused], [true, undefined]);
 });
 
 // Whether the reader is trusted where the runs reach the device (setup asks it over the loopback ssh): ax-state asked

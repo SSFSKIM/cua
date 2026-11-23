@@ -26,7 +26,9 @@
 //   place --run <dir> --scene <id> --frame <x,y,w,h> [--window <number>]
 //       the scene's recorded window (with --scene openPanel, the Open panel's window of that number) moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
 //       is pinned, ./goldens-device.mjs), read back -> {answer: {requested, readBack, matched, exitStatus}, at}: the run's
-//       placement of a window clear of the alerts (./run.mjs placeScenes)
+//       placement of a window clear of the alerts (./run.mjs placeScenes). A move is a hosted-only write: off a
+//       GitHub-hosted runner (this process's RUNNER_ENVIRONMENT) nothing is read or moved -> {answer: {requested,
+//       readBack: null, matched: false, exitStatus: null, refused}, at} (../hosted-sittings/runner.mjs moveRefusal)
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -99,7 +101,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
-import {MOVE_REFUSED_OFF_HOSTED, isGithubHosted} from '../hosted-sittings/runner.mjs';
+import {moveRefusal} from '../hosted-sittings/runner.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertBoundsOf, isPanelWindow} from './alert-guard.mjs';
@@ -227,9 +229,13 @@ export function sceneKeyWindow(scene, io) {
 // numbered `window` (its service's pid read from the window list), moved by the frame probe and read back.
 // io: {state(), probe(args), screen(), env?, platform?}. -> {requested, readBack, matched, exitStatus, pid?}. A move is
 // a hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by default) nothing is read
-// or asked of the probe: {readBack: null, matched: false, exitStatus: null, refused}.
+// or asked of the probe: {requested, readBack: null, matched: false, exitStatus: null, refused}.
 export function placeScene({scene, frame, window = null}, io) {
-  if (!isGithubHosted(io.env ?? process.env, io.platform ?? process.platform)) return {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED};
+  const parts = String(frame ?? '').split(',').map(Number);
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
+  const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
+  const refused = moveRefusal(io, requested);
+  if (refused) return refused;
   let pid, number;
   if (scene === 'openPanel') {
     const shown = (io.screen()?.windows ?? []).find(w => isPanelWindow(w) && w.number === Number(window));
@@ -240,9 +246,6 @@ export function placeScene({scene, frame, window = null}, io) {
     if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
     [pid, number] = [record.pid, record.window.number];
   }
-  const parts = String(frame ?? '').split(',').map(Number);
-  if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
-  const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
   const out = io.probe(['window-frame', '--pid', String(pid), '--window', String(number), '--frame', parts.join(',')]);
   const readBack = out?.readBack ?? null;
   return {requested, readBack, matched: out?.matched === true && ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]), exitStatus: out?.exitStatus ?? null,

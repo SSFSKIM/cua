@@ -17,7 +17,9 @@
 //   place --pid <n> | --panel  --window <number> --frame <x,y,w,h>
 //       the window moved to the frame by the approved engine's `--probe window-frame` and read back; the window must be
 //       one of pid's (or, with --panel, the Open panel's, its service's pid read from the window list), never another
-//       application's -> {requested, readBack, matched, exitStatus, pid}
+//       application's -> {requested, readBack, matched, exitStatus, pid}. A move is a hosted-only write: off a
+//       GitHub-hosted runner (this process's RUNNER_ENVIRONMENT) nothing is read or moved
+//       -> {requested, readBack: null, matched: false, exitStatus: null, refused} (./runner.mjs moveRefusal)
 //
 // What leaves the device: the targets' and the alerts' numbers and bounds, bundle ids, booleans. Never a title.
 import {spawnSync} from 'node:child_process';
@@ -31,7 +33,7 @@ import {defaultIo as liveIo} from '../native-matrix/live-device.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {guardReading, isPanelWindow} from './alert-guard.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from './key-window.mjs';
-import {MOVE_REFUSED_OFF_HOSTED, isGithubHosted} from './runner.mjs';
+import {moveRefusal} from './runner.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
@@ -76,14 +78,15 @@ export function readGuard({targets, key = false, keyWindow = false}, io) {
 // hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by default) nothing is read
 // or asked of the probe, and the answer says why (`refused`), which the placement records as a window not moved.
 export function placeWindow({pid = null, panel = false, window, frame}, io) {
-  if (!isGithubHosted(io.env ?? process.env, io.platform ?? process.platform)) return {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED};
+  const parts = String(frame ?? '').split(',').map(Number);
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
+  const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
+  const refused = moveRefusal(io, requested);
+  if (refused) return refused;
   const number = Number(window);
   const shown = (io.screen()?.windows ?? []).find(w => w.number === number);
   if (panel) { if (!shown || !isPanelWindow(shown)) throw new Error(`--window names no Open panel window on screen (${window})`); }
   else if (!shown || shown.ownerPid !== Number(pid)) throw new Error(`--window ${window} is not a window of pid ${pid} on screen`);
-  const parts = String(frame ?? '').split(',').map(Number);
-  if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
-  const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
   const out = io.frameProbe(['window-frame', '--pid', String(shown.ownerPid), '--window', String(number), '--frame', parts.join(',')]);
   const readBack = out?.readBack ?? null;
   return {requested, readBack, matched: out?.matched === true && ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]),

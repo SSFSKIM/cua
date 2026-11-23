@@ -57,3 +57,7 @@ EOF
 /usr/sbin/sshd -f "$SSHD/sshd_config" -E "$SSHD/sshd.log"
 sleep 1
 ssh -F "$D/config" "$DEVICE" true
+# The device's hosted-only uses read RUNNER_ENVIRONMENT from the session itself: a session without it would leave every
+# scene unplaced and the venue unread, so the bring-up fails here instead.
+ssh -F "$D/config" "$DEVICE" 'test "$RUNNER_ENVIRONMENT" = github-hosted' || {
+  echo "loopback.sh: the loopback session lacks RUNNER_ENVIRONMENT=github-hosted (~/.ssh/environment, PermitUserEnvironment)" >&2; exit 1; }

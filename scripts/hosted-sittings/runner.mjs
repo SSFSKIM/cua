@@ -97,6 +97,10 @@ const attestedVenue = (record, {env = process.env, platform = process.platform} 
 // Why a device refuses a window move (./guard-device.mjs placeWindow, ../native-matrix/matrix-device.mjs placeScene):
 // a move is a hosted-only write, so off a GitHub-hosted runner the frame probe is never asked.
 export const MOVE_REFUSED_OFF_HOSTED = 'a window is moved only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted): off one the frame probe is not asked';
+// A `place` command's answer off a GitHub-hosted runner (io.env, io.platform: the device's own, process's by default),
+// shaped like every other place answer, or null on one, where the move goes ahead.
+export const moveRefusal = (io, requested) => (isGithubHosted(io.env ?? process.env, io.platform ?? process.platform) ? null
+  : {requested, readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
 // The scene frames a device's record names (its venue's, ruling 1169): {scene: {x, y, width, height}} for each well-formed
 // frame, or null off a hosted runner (no record, an unattested one, or one with no venue), where every scene keeps its
 // own frame.

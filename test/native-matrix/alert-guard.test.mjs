@@ -205,8 +205,25 @@ test('place: the scene\'s recorded window moved by the frame probe and read back
     await assert.rejects(main(['place', '--run', dir, '--scene', 'openPanel', '--window', '78', '--frame', '0,0,1,1'], {io: {...HOSTED_DEVICE, probe: probe(to), screen}}), /no Open panel window/);
     // Off a GitHub-hosted runner (the mini's session) the move is refused before anything is read or asked of the probe.
     for (const off of [{env: {}, platform: 'darwin'}, {env: HOSTED_DEVICE.env, platform: 'linux'}]) {
-      const refused = await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {...off, probe: () => assert.fail('the probe is not asked'), screen: () => assert.fail('nothing read')}});
-      assert.deepEqual(refused.answer, {readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
+      const refused = await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'],
+        {io: {...off, probe: () => assert.fail('the probe is not asked'), screen: () => assert.fail('nothing read'), state: () => assert.fail('nothing read')}});
+      assert.deepEqual(refused.answer, {requested: to, readBack: null, matched: false, exitStatus: null, refused: MOVE_REFUSED_OFF_HOSTED});
     }
+  });
+});
+
+// The production default: an io with no `env` reads process.env, so the variable is set (or unset) there and restored.
+async function withRunnerEnvironment(value, body) {
+  const before = process.env.RUNNER_ENVIRONMENT;
+  if (value === undefined) delete process.env.RUNNER_ENVIRONMENT; else process.env.RUNNER_ENVIRONMENT = value;
+  try { return await body(); } finally { if (before === undefined) delete process.env.RUNNER_ENVIRONMENT; else process.env.RUNNER_ENVIRONMENT = before; }
+}
+test('place with no env in its io reads the process\'s RUNNER_ENVIRONMENT: refused without it, moved with it', async () => {
+  await withRun(async dir => {
+    const to = rect(22, 100, 720, 560), args = ['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'];
+    const off = await withRunnerEnvironment(undefined, () => main(args, {io: {platform: 'darwin', probe: () => assert.fail('the probe is not asked'), state: () => assert.fail('nothing read')}}));
+    assert.equal(off.answer.refused, MOVE_REFUSED_OFF_HOSTED);
+    const on = await withRunnerEnvironment('github-hosted', () => main(args, {io: {platform: 'darwin', probe: () => ({readBack: to, matched: true, exitStatus: 0})}}));
+    assert.deepEqual(on.answer, {requested: to, readBack: to, matched: true, exitStatus: 0});
   });
 });

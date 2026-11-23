@@ -15,15 +15,17 @@
 // first bind and checks before every bind that the same process still has that window on screen (bindRefusal): a bind
 // without it would make the engine reopen the app (TextEdit answers with its Open panel), so a lost fixture stops the
 // run as NO VERDICT. Around every bind, by rulings 1136 and 1141 (replayd's capture alert stays up on a runner): the
-// approved app is activated and must take front and key first, and front and key are sampled after; a system prompt in
-// front or key at either sample, or an activation that did not take, makes the bind NO VERDICT, never a pass.
+// approved app is activated and must take front and key first, or the bind is not sent at all (NO VERDICT); front and
+// key are sampled after it, and a system prompt in front or key there, or a sample that could not be read, makes the
+// bind NO VERDICT, never a pass.
 //
 // Each bind records what the client was asked while it ran, its refusal class (scripts/probe/approval-cycles.mjs
 // refusalOf, from the policy's #216 sentence), its `cua/approval` result meta (who answered, the connection's opaque id,
 // the runtime generation), a non-approval failure's first line, whether its result opened with the restart notice, its
 // task id and the samples' verdicts; never the app's text. Each end_task (status ended) and js_reset is checked. Every
-// js result must attest cua's engine on cua's host; a mismatch stops the run. The judge is judgeApprovalCycles. Nothing
-// here reads replayd's state or writes a TCC row.
+// js result must attest cua's engine on cua's host; a mismatch stops the run as a fail. A run stopped by a lost fixture
+// is judged on what it recorded, the steps it never reached NO VERDICT. The judge is judgeApprovalCycles. Nothing here
+// reads replayd's state or writes a TCC row.
 //
 //   CUA_SHIM_SURFACES=computer,browser node scripts/approval-cycles.mjs --engine cua \
 //     --approve com.apple.TextEdit --decline com.apple.calculator [--cycles 20] [--idle-ms 8000]
@@ -43,7 +45,7 @@ import {LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 import {openSession, resultText} from './accept/mcp-session.mjs';
 import {FRONT_WINDOW_SCRIPT, localFrontmost} from './accept/key-guard.mjs';
 import {readWindows} from './accept/window-close.mjs';
-import {ALERT_APPS, alertInFront, approvalCyclesPlan, judgeApprovalCycles, refusalOf} from './probe/approval-cycles.mjs';
+import {ALERT_APPS, approvalCyclesPlan, judgeApprovalCycles, refusalOf, screenState} from './probe/approval-cycles.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
@@ -94,7 +96,8 @@ const probe = async args => JSON.parse((compiled ? await run(join(probeDir, 'fro
 const pidOf = bundle => lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', bundle], {encoding: 'utf8'}).stdout ?? '');
 const windowsOf = pid => readWindows([pid], {probe: p => probe(['windows', String(p)])});
 
-// The screen now: the frontmost app, the owner of the top on-screen window, and the alert processes running.
+// The screen now: the frontmost app, the owner of the top on-screen window, and the alert processes running; a part
+// that could not be read is null (screenState reads it as unread).
 async function sample() {
   let keyOwnerPid = null;
   try { keyOwnerPid = (await probe(['front'])).topWindow?.ownerPid ?? null; } catch { /* unread: null */ }
@@ -114,6 +117,7 @@ async function awaitFixture() {
 }
 
 // Before a bind: the fixture is still there, then the approved app is activated and must take front and key.
+// -> null when it did, else why the bind is not sent: 'alert' (a system prompt in front or key) or 'activation'.
 async function prepareBind(fixture) {
   const pid = pidOf(bundles.approve);
   const refusal = bindRefusal({app: bundles.approve, pid, windows: pid === null ? null : await windowsOf(pid), first: fixture});
@@ -122,16 +126,16 @@ async function prepareBind(fixture) {
   let now;
   for (let i = 0; i < 6; i++) {
     now = await sample();
-    if (now.front === bundles.approve && now.keyOwnerPid === fixture.pid) return {activated: true, alert: alertInFront(now)};
+    if (now.front === bundles.approve && now.keyOwnerPid === fixture.pid) return null;
     await sleep(500);
   }
-  return {activated: false, alert: alertInFront(now)};
+  return screenState(now) === 'alert' ? 'alert' : 'activation';
 }
 
 // One connection running `plan`; resolves its record. A timed-out call, a protocol error or a wrong attestation throws.
 async function runConnection(name, plan, fixture) {
   let bind = null;   // the bind in flight
-  const record = {name, pid: null, binds: [], steps: [], other: 0};
+  const record = {name, pid: null, binds: [], steps: [], other: 0, planned: plan.length, ran: 0};
   const session = openSession({args: [CLI, 'serve'], env: serveEnv, clientName: 'cua-approval-216', onServerRequest: msg => {
     if (bind && isAppApproval(msg, bundles[bind.app])) {
       bind.asked++;
@@ -151,6 +155,7 @@ async function runConnection(name, plan, fixture) {
   try {
     await session.initialize();
     for (const step of plan) {
+      record.ran++;
       if (step.step === 'end_task') {
         const result = await tool(session.call('end_task'), 'end_task');
         const status = result.structuredContent?.status ?? null;
@@ -160,8 +165,9 @@ async function runConnection(name, plan, fixture) {
         record.steps.push({step: 'js_reset', cycle: step.cycle, ok: !result.isError, ...(result.isError ? {detail: boundedError(resultText({result}))} : {})});
       } else if (step.step === 'idle') await sleep(idleMs + 4000);
       else {
-        const prepared = await prepareBind(fixture);
-        bind = {app: step.app, cycle: step.cycle, asked: 0, refusal: null, failed: false, restarted: false, taskId: null, approval: null, ...prepared};
+        const blocked = await prepareBind(fixture);
+        bind = {app: step.app, cycle: step.cycle, dispatched: !blocked, blocked, after: null, asked: 0, refusal: null, failed: false, restarted: false, taskId: null, approval: null};
+        if (blocked) { record.binds.push(bind); bind = null; continue; }
         try {
           const code = `await cua.getApp(${JSON.stringify(bundles[step.app])}); nodeRepl.write("bound")`;
           const result = await tool(session.js(code, 120_000), `the bind of ${bundles[step.app]}`);
@@ -178,7 +184,7 @@ async function runConnection(name, plan, fixture) {
             bind.refusal = refusalOf(text);
             if (bind.refusal === null) Object.assign(bind, {failed: true, failure: boundedError(text.startsWith(RESTART_NOTICE) ? text.split('\n').slice(1).join('\n') : text)});
           }
-          if (alertInFront(await sample())) bind.alert = true;
+          bind.after = screenState(await sample());
         } finally { record.binds.push(bind); bind = null; }
       }
     }
@@ -200,10 +206,11 @@ try {
 } finally {
   rmSync(probeDir, {recursive: true, force: true});
 }
-const judged = judgeApprovalCycles({cycles, idleAt: IDLE_AT, connections: report.connections});
+// A lost fixture stops the run with steps unexecuted: the judge reads those as NO VERDICT and fails only what it saw.
+// Any other stop (no answer, a protocol error, a wrong attestation) is a failed run.
+const judged = judgeApprovalCycles({cycles, idleAt: IDLE_AT, connections: report.connections, complete: !stopped});
 if (stopped) {
-  // A lost fixture proves nothing either way; any other stop is a failed run. Problems already found still fail it.
-  const verdict = judged.problems.length || !stopped.noVerdict ? 'fail' : 'no verdict';
+  const verdict = !stopped.noVerdict ? 'fail' : judged.verdict === 'pass' ? 'no verdict' : judged.verdict;
   report.verdict = {...judged, verdict, ok: false, stopped: stopped.message};
 } else report.verdict = judged;
 console.log(JSON.stringify(report, null, 1));

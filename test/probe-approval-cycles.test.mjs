@@ -1,8 +1,8 @@
 // #216's hosted witness, its pure half (scripts/probe/approval-cycles.mjs): the plan of steps, the classification of a
-// bind's answer, the alert sample, and the judge over what the connections recorded.
+// bind's answer, the screen sample, and the judge over what the connections recorded.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {alertInFront, approvalCyclesPlan, judgeApprovalCycles, refusalOf} from '../scripts/probe/approval-cycles.mjs';
+import {approvalCyclesPlan, judgeApprovalCycles, refusalOf, screenState} from '../scripts/probe/approval-cycles.mjs';
 
 test('the plan binds the approved app, the declined one and the approved one again, then each cycle ends the task and binds both; js_reset and the idle stop once each', () => {
   const plan = approvalCyclesPlan(3, {resetAt: 2, idleAt: 3});
@@ -25,17 +25,19 @@ test('a bind\'s answer is classified by the policy\'s sentence alone, whatever f
   assert.equal(refusalOf('Computer Use was not approved to use TextEdit'), 'notApproved', 'an engine before #216\'s sentence');
 });
 
-test('an alert is in front when a system prompt is the frontmost app or owns the top window', () => {
-  assert.equal(alertInFront({front: 'com.apple.TextEdit', keyOwnerPid: 10, alertPids: [99]}), false);
-  assert.equal(alertInFront({front: 'com.apple.UserNotificationCenter', keyOwnerPid: 10, alertPids: []}), true);
-  assert.equal(alertInFront({front: 'com.apple.TextEdit', keyOwnerPid: 99, alertPids: [99]}), true, 'key but not front');
-  assert.equal(alertInFront(null), false);
+test('the screen is clear, has an alert in front or key, or could not be read; an unread sample proves no alert absent', () => {
+  assert.equal(screenState({front: 'com.apple.TextEdit', keyOwnerPid: 10, alertPids: [99]}), 'clear');
+  assert.equal(screenState({front: 'com.apple.UserNotificationCenter', keyOwnerPid: 10, alertPids: []}), 'alert');
+  assert.equal(screenState({front: 'com.apple.TextEdit', keyOwnerPid: 99, alertPids: [99]}), 'alert', 'key but not front');
+  assert.equal(screenState({front: null, keyOwnerPid: 10, alertPids: []}), 'unread', 'the frontmost app unread');
+  assert.equal(screenState({front: 'com.apple.TextEdit', keyOwnerPid: null, alertPids: []}), 'unread', 'the key window unread');
+  assert.equal(screenState(null), 'unread');
 });
 
 // A connection's record as the script keeps it.
 const CONNECTION = 'a5a26df15524';
 const approval = (action, answeredBy, runtimeGeneration = 0, connection = CONNECTION) => ({action, answeredBy, connection, runtimeGeneration, scope: 'connection'});
-const bind = (app, cycle, asked, refusal = null, more = {}) => ({app, cycle, asked, refusal, failed: false, restarted: false, taskId: `t${cycle}`, alert: false, activated: true,
+const bind = (app, cycle, asked, refusal = null, more = {}) => ({app, cycle, dispatched: true, blocked: null, after: 'clear', asked, refusal, failed: false, restarted: false, taskId: `t${cycle}`,
   approval: approval(app === 'approve' ? 'accept' : 'decline', asked ? 'client' : 'memory', more.generation ?? (cycle >= 2 ? 1 : 0)), ...more});
 function goodConnection(cycles = 2) {
   const binds = [bind('approve', 0, 1), bind('decline', 0, 1, 'declinedNow'), bind('approve', 0, 0)];
@@ -45,7 +47,7 @@ function goodConnection(cycles = 2) {
   return {name: 'first', pid: 10, binds, steps, other: 0};
 }
 const second = () => ({name: 'second', pid: 11, binds: [bind('approve', 0, 1), bind('decline', 0, 1, 'declinedNow')].map(b => ({...b, approval: {...b.approval, connection: 'b1b2b3b4b5b6'}})), steps: [], other: 0});
-const judge = connections => judgeApprovalCycles({cycles: 2, idleAt: 2, connections});
+const judge = (connections, more = {}) => judgeApprovalCycles({cycles: 2, idleAt: 2, connections, ...more});
 
 test('the judge passes when each app is asked once per connection, the approved one is never refused and the declined one is refused from memory after its first answer', () => {
   const verdict = judge([goodConnection(), second()]);
@@ -53,7 +55,7 @@ test('the judge passes when each app is asked once per connection, the approved 
   assert.deepEqual(verdict.inconclusive, []);
   assert.equal(verdict.verdict, 'pass');
   assert.equal(verdict.ok, true);
-  assert.match(verdict.detail, /first \(pid 10, connection a5a26df15524\): 7 binds, approve asked 1, decline asked 1, approve refused 0, approve failed after its approval 0, inconclusive 0; 3 tasks; 1 js_reset; 1 restart/);
+  assert.match(verdict.detail, /first \(pid 10, connection a5a26df15524\): 7 binds, 7 sent, approve asked 1, decline asked 1, approve refused 0, approve failed after its approval 0, inconclusive 0; 3 tasks; 1 js_reset; 1 restart/);
 });
 
 test('the judge fails the loss #216 reports, and every other departure, naming each', () => {
@@ -61,44 +63,48 @@ test('the judge fails the loss #216 reports, and every other departure, naming e
   lost.binds[2] = bind('approve', 0, 0, 'declinedEarlier', {approval: approval('decline', 'memory')});
   lost.binds[5] = bind('approve', 2, 1, 'declinedNow', {restarted: true, approval: approval('decline', 'client', 1)});
   assert.deepEqual(judge([lost, second()]).problems, [
-    'first: the approved app was asked 2 times; once, at its first bind that reached the approval, is expected',
     'first: the approved app was refused at bind 3 (declinedEarlier): its approval was lost',
+    'first: the approved app was asked again at bind 6 (2 asks); once per connection is expected',
     'first: the approved app was refused at bind 6 (declinedNow): its approval was lost',
   ]);
 
   // A fresh ask for the approved app after its persisted accept, even one the client accepts again, is a loss too.
   const reasked = goodConnection();
   reasked.binds[3] = bind('approve', 1, 1);
-  assert.deepEqual(judge([reasked, second()]).problems, ['first: the approved app was asked 2 times; once, at its first bind that reached the approval, is expected']);
+  assert.deepEqual(judge([reasked, second()]).problems, ['first: the approved app was asked again at bind 4 (2 asks); once per connection is expected']);
 
+  // A refusal is judged against its own ask: a fresh decline where none was asked, a second ask of the declined app.
   const asked = goodConnection();
-  asked.binds[4] = bind('decline', 1, 1, 'declinedNow');
+  asked.binds[4] = bind('decline', 1, 0, 'declinedNow');
+  asked.binds[6] = bind('decline', 2, 1, 'declinedNow');
   asked.other = 2;
   assert.deepEqual(judge([asked, second()]).problems, [
-    'first: the declined app was asked 2 times; once, at its first bind that reached the approval, is expected',
-    'first: the declined app\'s bind 5 was refused as declinedNow; declinedEarlier is expected after its first answer',
+    'first: the declined app\'s bind 5 was refused as declinedNow; declinedEarlier is expected by its ask',
+    'first: the declined app was asked again at bind 7 (2 asks); once per connection is expected',
     'first: 2 other requests were asked of the client',
   ]);
 
   const disagrees = goodConnection();
+  disagrees.binds[3].approval = approval('decline', 'memory', 0);
   disagrees.binds[6].approval = approval('decline', 'client', 1);
   disagrees.binds[1] = {...disagrees.binds[1], approval: {...disagrees.binds[1].approval, connection: 'ffffffffffff'}};
   assert.deepEqual(judge([disagrees, second()]).problems, [
-    'first: bind 7 (declined) was answered by client by its cua/approval, where memory is expected',
+    'first: bind 4 (approved) was not refused, but its cua/approval says decline',
+    'first: bind 7 (declined) was answered by client by its cua/approval, where its ask says memory',
     'first: cua/approval names 2 connections (a5a26df15524, ffffffffffff); one is expected',
   ]);
 
   const flat = goodConnection();
   for (const b of flat.binds) Object.assign(b, {taskId: 't0', restarted: false});
   flat.steps = [{step: 'end_task', cycle: 1, ok: false, detail: 'isError'}, {step: 'end_task', cycle: 2, ok: true}];
-  flat.binds[1] = bind('decline', 0, 1, null);
+  flat.binds[1] = bind('decline', 0, 1, null, {taskId: 't0'});
   assert.deepEqual(judge([flat, second()]).problems, [
-    'first: the declined app\'s bind 2 was not refused (none); declinedNow is expected',
+    'first: the declined app\'s bind 2 was not refused (none); declinedNow is expected by its ask',
     'first: end_task of cycle 1 failed (isError)',
     'first: cycle 1 ran in cycle 0\'s task; end_task must start a new one',
     'first: cycle 2 ran in cycle 0\'s task; end_task must start a new one',
     'first: js_reset never ran',
-    'first: the first bind of cycle 2 did not open with the restart notice: the idle stop was not seen',
+    'first: bind 6, the first after the idle stop, did not open with the restart notice',
   ]);
 
   const mixed = goodConnection();
@@ -106,13 +112,13 @@ test('the judge fails the loss #216 reports, and every other departure, naming e
   mixed.binds[5] = {...mixed.binds[5], approval: approval('accept', 'memory', 0)};
   assert.deepEqual(judge([mixed, second()]).problems, [
     'first: cycle 1\'s binds ran in 2 tasks; one is expected',
-    'first: the bind after the idle stop went to runtime generation 0, not past 0',
+    'first: bind 6, after the idle stop, went to runtime generation 0, not past bind 5\'s 0',
   ]);
 
   assert.deepEqual(judge([goodConnection()]).problems, ['no second connection ran: a new connection must ask again']);
   const remembered = second();
   remembered.binds[0] = {...remembered.binds[0], asked: 0, approval: {...remembered.binds[0].approval, answeredBy: 'memory'}};
-  assert.deepEqual(judge([goodConnection(), remembered]).problems, ['second: the approved app was asked 0 times; once, at its first bind that reached the approval, is expected']);
+  assert.deepEqual(judge([goodConnection(), remembered]).problems, ['second: bind 1 (approved) was answered without the client ever being asked on this connection']);
   const same = second();
   same.pid = 10;
   same.binds = same.binds.map(b => ({...b, approval: {...b.approval, connection: CONNECTION}}));
@@ -122,7 +128,38 @@ test('the judge fails the loss #216 reports, and every other departure, naming e
   ]);
 });
 
-test('a bind that failed is evidence only with its cua/approval; one without it, or with an alert in front, is NO VERDICT, never a pass', () => {
+test('on cua\'s host every judged bind carries the complete stamp: the fallback shape, or none, fails', () => {
+  const fallback = b => ({...b, approval: {action: b.approval.action, answeredBy: b.approval.answeredBy, connection: null, runtimeGeneration: null, scope: null}});
+  const first = goodConnection();
+  first.binds = first.binds.map(fallback);
+  const verdict = judge([first, {...second(), binds: second().binds.map(fallback)}]);
+  assert.equal(verdict.verdict, 'fail');
+  assert.equal(verdict.problems.length, 9, 'each of the nine binds');
+  assert.equal(verdict.problems[0], 'first: bind 1 (approved) carries an incomplete cua/approval (connection, runtimeGeneration, scope)');
+  assert.ok(verdict.inconclusive.includes('second: the connection ids could not both be read, so a new connection is not shown to have a new id'));
+  assert.ok(verdict.inconclusive.includes('first: bind 6\'s runtime generation could not be compared with one before the idle stop'));
+
+  const none = goodConnection();
+  none.binds[4] = {...none.binds[4], approval: null};
+  assert.deepEqual(judge([none, second()]).problems, ['first: bind 5 (declined) carries no cua/approval']);
+});
+
+test('which refusal is fresh comes from the asks: a first decline under an alert leaves the cached one after it judged as cached', () => {
+  const first = goodConnection();
+  first.binds[1] = {...first.binds[1], after: 'alert'};
+  const verdict = judge([first, second()]);
+  assert.deepEqual(verdict.problems, []);
+  assert.deepEqual(verdict.inconclusive, ['first: bind 2 (decline): an alert was in front or key after it']);
+  assert.equal(verdict.verdict, 'no verdict');
+
+  // The approved app's first ask unread after it: its remembered accepts after it still count.
+  const approved = goodConnection();
+  approved.binds[0] = {...approved.binds[0], after: 'unread'};
+  assert.deepEqual(judge([approved, second()]).problems, []);
+  assert.deepEqual(judge([approved, second()]).inconclusive, ['first: bind 1 (approve): the front and key after it could not be read']);
+});
+
+test('a bind not sent, under an alert, unread after, or failed without its approval is NO VERDICT, never a pass; a failure outranks it', () => {
   // Failed after the approval passed (a capture, say): the approval is shown, so it counts.
   const after = goodConnection();
   after.binds[3] = {...after.binds[3], failed: true};
@@ -136,16 +173,36 @@ test('a bind that failed is evidence only with its cua/approval; one without it,
   assert.deepEqual(verdict.problems, []);
   assert.equal(verdict.verdict, 'no verdict');
   assert.equal(verdict.ok, false);
-  assert.equal(verdict.inconclusive.length, 4);
-  assert.match(verdict.inconclusive[0], /first: bind 1 \(approve\): it failed before its approval was shown/);
+  assert.equal(verdict.inconclusive[0], 'first: bind 1 (approve): it failed before its approval was shown');
 
-  const alert = goodConnection();
-  alert.binds[4] = {...alert.binds[4], alert: true};
-  alert.binds[3] = {...alert.binds[3], activated: false};
-  assert.deepEqual(judge([alert, second()]).inconclusive, ['first: bind 4 (approve): the approved app did not take front and key before it', 'first: bind 5 (decline): an alert was in front or key']);
-  assert.equal(judge([alert, second()]).verdict, 'no verdict');
+  const skipped = goodConnection();
+  skipped.binds[3] = {...skipped.binds[3], dispatched: false, blocked: 'activation', asked: 0, approval: null, taskId: null, after: null};
+  skipped.binds[4] = {...skipped.binds[4], dispatched: false, blocked: 'alert', asked: 0, approval: null, taskId: null, after: null};
+  skipped.binds[6] = {...skipped.binds[6], after: 'unread'};
+  assert.deepEqual(judge([skipped, second()]).inconclusive, [
+    'first: bind 4 (approve): not sent: the approved app did not take front and key',
+    'first: bind 5 (decline): not sent: an alert was in front or key before it',
+    'first: bind 7 (decline): the front and key after it could not be read',
+  ]);
+  assert.equal(judge([skipped, second()]).verdict, 'no verdict');
 
-  // A failure outranks a NO VERDICT.
-  alert.binds[5] = bind('approve', 2, 0, 'declinedEarlier', {restarted: true, approval: approval('decline', 'memory', 1)});
-  assert.equal(judge([alert, second()]).verdict, 'fail');
+  skipped.binds[5] = bind('approve', 2, 0, 'declinedEarlier', {restarted: true, approval: approval('decline', 'memory', 1)});
+  assert.equal(judge([skipped, second()]).verdict, 'fail');
+});
+
+test('a run that stopped early leaves its unexecuted steps NO VERDICT; what it did observe can still fail it', () => {
+  const partial = goodConnection();
+  partial.binds = partial.binds.slice(0, 4);
+  partial.steps = [{step: 'end_task', cycle: 1, ok: true}];
+  const stopped = judge([partial], {complete: false});
+  assert.deepEqual(stopped.problems, []);
+  assert.deepEqual(stopped.inconclusive, ['not run: js_reset', 'not run: the binds after the idle stop (cycle 2)', 'not run: the second connection']);
+  assert.equal(stopped.verdict, 'no verdict');
+
+  assert.deepEqual(judge([partial]).problems, ['first: js_reset never ran', 'first: no bind ran in cycle 2, after the idle stop', 'no second connection ran: a new connection must ask again']);
+  assert.equal(judge([], {complete: false}).verdict, 'no verdict');
+  assert.equal(judge([]).verdict, 'fail');
+
+  partial.binds[2] = bind('approve', 0, 0, 'declinedEarlier', {approval: approval('decline', 'memory')});
+  assert.equal(judge([partial], {complete: false}).verdict, 'fail');
 });

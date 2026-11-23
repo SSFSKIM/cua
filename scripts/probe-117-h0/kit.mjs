@@ -422,9 +422,8 @@ async function prerecordMode() {
     const vendorApps = (record.setup?.runtimeApps ?? []).filter(a => /sky|CUAService|computer/i.test(a.bundleId));
     const rows = [...grantRows({client: ENGINE_BUNDLE_ID, bundle: PATHS.bundle, services: ALL}),
       ...vendorApps.flatMap(a => grantRows({client: a.bundleId, bundle: a.path, services: ALL}))];
-    // Each copy by its executable's path and its bundle id, before anything has captured.
-    const keys = [ENGINE_EXE, ENGINE_BUNDLE_ID, ...vendorApps.flatMap(a => [execOf(a.path), a.bundleId])];
-    const replayd = preRecordReplayd({keys});
+    // Each copy's app bundle, before anything has captured (replayd keys approvals by the bundle's file URL).
+    const replayd = preRecordReplayd({bundles: [PATHS.bundle, ...vendorApps.map(a => a.path)]});
     const relaunch = await relaunchLS();
     return {rows, replayd, idleVendor: skyProcesses(), relaunch, harnessApproval: harnessApproval(), alert: sampleNow('setup')};
   });

@@ -6,7 +6,7 @@
 // db775127). Every write (insert, delete, a tccd restart) goes through tccWrite, whose guard exits the process before
 // anything is written unless RUNNER_ENVIRONMENT=github-hosted and that entry is present in the fetched spec.
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
 import {join} from 'node:path';
 
@@ -99,8 +99,20 @@ const STORE = {
     dir: existsSync(REPLAYD_DIR) ? run('/bin/ls', ['-la', REPLAYD_DIR]).trim().split('\n') : null,
     approvals: existsSync(REPLAYD_APPROVALS) ? run('/usr/bin/plutil', ['-p', REPLAYD_APPROVALS]).trim() : null,
   }),
-  // One approval, through cfprefsd (defaults takes the plist's path without its extension).
-  replaydWrite: (key, date) => run('/usr/bin/defaults', ['write', REPLAYD_APPROVALS.replace(/\.plist$/, ''), key, '-date', date]),
+  // The approvals merged into the store's current contents and imported through cfprefsd (defaults import), so
+  // replayd's own reads see them. `entries`: [{key, xml}], each value the XML of its dict.
+  replaydWrite: entries => {
+    const current = existsSync(REPLAYD_APPROVALS) ? run('/usr/bin/plutil', ['-convert', 'xml1', '-o', '-', REPLAYD_APPROVALS]) : PLIST_EMPTY;
+    const at = current.lastIndexOf('</dict>');
+    if (at < 0) throw new Error('replayd\'s store is not a dictionary');
+    const merged = current.slice(0, at) + entries.map(e => `\t<key>${xmlEscape(e.key)}</key>\n${e.xml}\n`).join('') + current.slice(at);
+    const dir = mkdtempSync(join(tmpdir(), 'h0-replayd-'));
+    try {
+      writeFileSync(join(dir, 'merged.plist'), merged);
+      run('/usr/bin/plutil', ['-lint', join(dir, 'merged.plist')]);
+      return run('/usr/bin/defaults', ['import', REPLAYD_APPROVALS.replace(/\.plist$/, ''), join(dir, 'merged.plist')]);
+    } finally { rmSync(dir, {recursive: true, force: true}); }
+  },
   // replayd started afresh (launchd relaunches it on demand), so it reads the store again.
   replaydRestart: () => { try { return run('/usr/bin/killall', ['replayd']); } catch { return run('/usr/bin/sudo', ['-n', '/usr/bin/killall', 'replayd']); } },
 };
@@ -155,13 +167,29 @@ export function restartTccd(deps = {}) {
   }, deps);
 }
 
-// O0a: pre-records replayd's capture approval for each key (a copy's executable path and its bundle id) with `until`,
-// before the copy's first capture, then restarts replayd. Guarded by O0 and O0a both. -> what the store held before,
-// what was written, and what it holds after.
-export function preRecordReplayd({keys, until = '2100-01-01 00:00:00 +0000'}, deps = {}) {
+const PLIST_EMPTY = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n</dict>\n</plist>\n';
+const xmlEscape = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// replayd keys an approval by the app bundle's file URL (percent-encoded, with a trailing slash), as it records one
+// itself (run 45161413076), and the runner image pre-records its own agent with both dates at 3024-01-01.
+export const replaydKey = bundlePath => `file://${encodeURI(bundlePath.replace(/\/$/, ''))}/`;
+const iso = date => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+const approvalXml = now => `\t<dict>
+\t\t<key>kScreenCaptureAlertableUsageCount</key>\n\t\t<integer>1</integer>
+\t\t<key>kScreenCaptureApprovalLastAlerted</key>\n\t\t<date>3024-01-01T00:00:00Z</date>
+\t\t<key>kScreenCaptureApprovalLastUsed</key>\n\t\t<date>${iso(now)}</date>
+\t\t<key>kScreenCapturePrivacyHintDate</key>\n\t\t<date>3024-01-01T00:00:00Z</date>
+\t</dict>`;
+
+// O0a: pre-records replayd's capture approval for each app bundle (cua's engine bundle, the vendor's helper app) before
+// its first capture, in the image's own form, then restarts replayd. Guarded by O0 and O0a both. -> what the store held
+// before, what was written, and what it holds after.
+export function preRecordReplayd({bundles}, deps = {}) {
   return tccWrite(store => {
     const before = store.replaydRead();
-    const written = keys.map(key => { store.replaydWrite(key, until); return {key, date: until}; });
+    const now = new Date();
+    const entries = bundles.map(b => ({key: replaydKey(b), xml: approvalXml(now)}));
+    store.replaydWrite(entries);
+    const written = entries.map(e => ({key: e.key, kScreenCaptureApprovalLastAlerted: '3024-01-01T00:00:00Z', kScreenCapturePrivacyHintDate: '3024-01-01T00:00:00Z', kScreenCaptureApprovalLastUsed: iso(now), kScreenCaptureAlertableUsageCount: 1}));
     let restarted;
     try { store.replaydRestart(); restarted = true; } catch (error) { restarted = String(error.stderr || error.message).trim().slice(0, 200); }
     return {store: REPLAYD_APPROVALS, before, written, restarted, after: store.replaydRead()};

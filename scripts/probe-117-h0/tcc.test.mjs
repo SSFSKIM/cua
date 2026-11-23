@@ -23,7 +23,7 @@ const writers = {
   grantRows: deps => grantRows({client: 'h0.test', bundle: '/nonexistent/h0.app', services: ['accessibility']}, deps),
   revokeRows: deps => revokeRows({client: 'h0.test', services: ['accessibility']}, deps),
   restartTccd: deps => restartTccd(deps),
-  preRecordReplayd: deps => preRecordReplayd({keys: ['/nonexistent/h0.app/Contents/MacOS/h0', 'h0.test']}, deps),
+  preRecordReplayd: deps => preRecordReplayd({bundles: ['/nonexistent/h0.app']}, deps),
   readReplayd: deps => readReplayd(deps),
 };
 const cases = {
@@ -69,4 +69,11 @@ test('with the runner and the entry, the writer reaches the store', () => {
   assert.throws(() => writers.grantRows(deps), /store exists reached/);
   assert.deepEqual(exits, []);
   assert.deepEqual(calls, ['exists']);
+});
+
+// The key is replayd's own: the bundle's file URL, percent-encoded, with one trailing slash (a pure function; no store).
+test('replaydKey is the bundle\'s file URL as replayd records it', async () => {
+  const {replaydKey} = await import('./tcc.mjs');
+  assert.equal(replaydKey('/Users/runner/Library/Application Support/cua/engine/cua Engine.app'), 'file:///Users/runner/Library/Application%20Support/cua/engine/cua%20Engine.app/');
+  assert.equal(replaydKey('/x/Codex Computer Use.app/'), 'file:///x/Codex%20Computer%20Use.app/');
 });

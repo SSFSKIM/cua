@@ -76,12 +76,13 @@ private let focusFieldRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, "
 /// event stops the preparation before it moves the user's focus). Answers whether the click ran.
 @discardableResult
 func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: AXOps, beforeMutating: () throws -> Void = {},
-                        click: () throws -> Void) throws -> Bool {
+                        effects: InputEffects? = nil, click: () throws -> Void) throws -> Bool {
   guard let role = ax.role(element), focusFieldRoles.contains(role), ax.isSettable(element, kAXFocusedAttribute) else { return false }
   if bool(ax.read(element, kAXFocusedAttribute)) == true { return false }
   let straightToClick = bundleIdentifier == "com.apple.Safari" && ax.read(element, "AXDOMClassList") != nil
   if !straightToClick {
     try beforeMutating()
+    effects?.focusWriteAttempted = true
     _ = ax.write(element, kAXFocusedAttribute, kCFBooleanTrue)
     if bool(ax.read(element, kAXFocusedAttribute)) == true { return false }
   }
@@ -108,7 +109,13 @@ func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () thr
 /// the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
 func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout InputMeta) throws -> Void) throws {
   var clickMeta = meta
-  defer { if clickMeta.startedAt != nil { acted() } }
+  let postsBefore = meta.effects.postedGroups
+  defer {
+    if clickMeta.effects.postedGroups > postsBefore {
+      meta.effects.focusClickPosted = true
+      acted()
+    }
+  }
   do {
     try click(&clickMeta)
   } catch {
@@ -118,6 +125,7 @@ func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout Inp
   meta.startedAt = clickMeta.startedAt
   meta.endedAt = clickMeta.endedAt
   meta.activationGuardMs = clickMeta.activationGuardMs
+  meta.activationClick = clickMeta.activationClick
   meta.pointUnconfirmed = clickMeta.pointUnconfirmed
   meta.routeAdvice = clickMeta.routeAdvice
 }
@@ -227,7 +235,8 @@ extension Engine {
   /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, connection: ConnectionState,
                   meta: inout InputMeta) throws {
-    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {
+    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live,
+                           beforeMutating: guarding.checkInFlight, effects: meta.effects) {
       try focusFallbackClick(target.element, ax: .live) {
         let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
         try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in

@@ -47,6 +47,7 @@ final class ActivationSpan: @unchecked Sendable {
   private var armed = 0
   /// Bumped by every hold, so a request can tell whether it started a new span.
   private var holds = 0
+  private var releaseAttempts = 0
   private let label: String
   private let idleMs: Double
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
@@ -74,6 +75,10 @@ final class ActivationSpan: @unchecked Sendable {
 
   /// How many spans have been held: unchanged across a request that started none.
   var serial: Int { locked { holds } }
+
+  /// Teardown attempts, not proof of a posted deactivation: another holder or a real activation can suppress the post.
+  /// execute compares this across the entire request, including its deferred cleanup, before claiming no effects.
+  var releaseCount: Int { locked { releaseAttempts } }
 
   /// Holds a new span for `app`, releasing any earlier one first. The request that recorded it arms the idle bound as it
   /// ends.
@@ -137,6 +142,7 @@ final class ActivationSpan: @unchecked Sendable {
     lapseDue = false
     guard let ending = held else { return }
     held = nil
+    releaseAttempts += 1
     if !ending.release() {
       releaseFailed("\(label) activation release failed for \(ending.app): the deactivation event could not be made")
     }

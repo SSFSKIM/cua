@@ -51,6 +51,7 @@ import {isAbsolute, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {createLinuxPolicy} from './engine/policy.mjs';
+import {interruptionMessage} from './engine/interruption.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, inputFailedUnentered, concealedInputUnavailable,
   interventionKind, userIntervened, secretsFromEnv,
@@ -230,7 +231,11 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       const kind = vendorFailureKind(error);
       // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste.
       if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
-      // cua's engine says nothing was posted (its input meta's startedAt null), whatever the error's name.
+      // Native interruption phases take precedence over the ordinary interval: preparation may have moved focus or
+      // posted an activation click without starting that interval. Render only bounded metadata, never secret text.
+      const interruption = kind === 'userIntervened' ? interruptionMessage(error.meta?.interruption) : null;
+      if (interruption) throw new SecretInputError('secret_input_failed', `${method} with secret "${reference.label}" failed (userIntervened). ${interruption}`);
+      // Legacy engines have no phase metadata.
       const unentered = error?.name === 'SkyComputerUseError' && Boolean(error.meta) && error.meta.startedAt === null;
       // The user intervened: which of its two sentences, so the model knows whether to wait or to re-query.
       const intervened = kind === 'userIntervened' ? interventionKind(error.message) : null;

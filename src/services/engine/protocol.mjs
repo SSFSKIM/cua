@@ -11,6 +11,8 @@
 // vendor's mapping (its name for the code, else jsonRPCError). An input method's error also keeps the engine's input
 // meta (`meta`). Everything else is SkyComputerUseTransportError with a bounded sentence of cua's.
 
+import {interruptionMessage} from './interruption.mjs';
+
 export const CLIENT_API_VERSION = 'cua-engine-1';
 export const MAX_FRAME = 8 * 1024 * 1024;
 
@@ -28,7 +30,7 @@ const NAME_BY_CODE = new Map(Object.entries(VENDOR_CODES).map(([name, code]) => 
 export class SkyComputerUseError extends Error {
   // `reason` is the engine's (or the service's) bounded sentence; the message wraps it as the vendor's helper does.
   constructor({code, reason, errorName = null, meta = null}) {
-    super(`Computer Use server error ${code}: ${reason}`);
+    super(`Computer Use server error ${code}: ${(code === -10016 && interruptionMessage(meta?.interruption)) || reason}`);
     this.name = 'SkyComputerUseError';
     this.code = code;
     this.errorName = typeof errorName === 'string' && errorName ? errorName : NAME_BY_CODE.get(code) ?? 'jsonRPCError';

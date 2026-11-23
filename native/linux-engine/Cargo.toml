@@ -5,7 +5,7 @@ name = "cua-linux-engine"
 # docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Interfaces and Dependencies, and the Decision Log's ruling
 # 827). The release workflow (.github/workflows/linux-engine.yml) builds the version named here and refuses one already
 # released.
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 rust-version = "1.94"
 publish = false

@@ -349,9 +349,12 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   way (a take by then) gets the tail too (ruling 998, confirmed by 1026; task 132's handle long-left at arm64 twice the
   load answered one false ok in 100 on f9d1f86b): after the end's own rest, two visits from the pointer's own place,
   each the 1 px step along the handle's last segment and back, each followed by 8 ms, then the release; about 16 ms.
+  Since 0.4.4 (ruling 1034) the pointer is read again before each visit, the first included: a person's motion after
+  the end read the pointer stops the tail before the next visit, so nothing undoes it, and the end is judged as an
+  interrupted tail (`interrupted_unconfirmed`).
   It has no gate (a handle has no floor); `--drag-dnd-release-sync off` restores the earlier end, and `--stats`
   `handle.release_sync` records whether it ran and why not. The residual bound: no false ok in
-  <N> measured long Chrome drags at arm64 twice the load (95% upper bound <X>%). Electron's drops (settled, below),
+  200 measured long Chrome drags at arm64 twice the load (95% upper bound 1.5%). Electron's drops (settled, below),
   guarded drags and the release at the accept are unchanged. Option (c), which answers such a drop unconfirmed when
   Chrome's activation request is its only confirmation (`Pending from your last drag, an unconfirmed drop: your drag
   into <app> began a drag and drop and went on past the engine's settle time, …`), is built and off
@@ -384,6 +387,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   does not answer, or lists no ping, leaves the drop unconfirmed with that reason ("… did not answer in time for its drop
   to be confirmed …"). `--stats` records each drop's `drop_cursor.settle` and the engine's `drop_settles` counts;
   `--drop-no-settle` (measurement only) releases and judges as 0.4.0 did.
+  Since 0.4.4 the settle's rest is the source's family's (#487): a drag named to a window that rests not at all (GTK 4)
+  whose path starts in Electron rests Electron's 30 ms between the two pings, where 0.4.3 rested the named window's
+  none; and a handle's end settles a take its hold saw at its first read, though the cursor watch had not read it yet
+  (#488), where 0.4.3 skipped the settle and answered the drop unconfirmed.
   With no request (or no accept) in time the drop is unconfirmed, never ok: `Pending from
   your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
   request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor

@@ -114,20 +114,29 @@ export const POPUP_HTML = `<!doctype html>
 `;
 
 // The pointerdown page (ruling 1168, #534; `scenes-mac.mjs up chrome --page pointerdown`, which only the native matrix's
-// run passes, ../plan.mjs MATRIX_SCENE_ARGS): the shared page with one line below every control, a button whose only
-// handler is `pointerdown` (no click handler) and a status beside it counting the pointer downs, so an element click is
-// judged by whether a pointer event reached the page (web UI kits open menus on pointerdown). The Electron fixture
-// carries the same line under its own flag (./electron/renderer.js). Its CSP is the shared one with this script's hash
-// added. Every other consumer (the renderer goldens, sitting B's native-mac suite, #187's slots) loads the shared page.
+// run passes, ../plan.mjs MATRIX_SCENE_ARGS): the shared page with, inline after Apply in the name field's line, a
+// button whose only handler is `pointerdown` (no click handler) and a status beside it counting the pointer downs, so an
+// element click is judged by whether a pointer event reached the page (web UI kits open menus on pointerdown). Inline,
+// it adds no height, so it sits near the top of the page whatever the window's height (ruling 1169: at the hosted
+// 800 × 600 frame a line below the controls fell below the fold, where the vendor's click takes the action too), and
+// it follows every field in the Tab order. The Electron fixture carries the same pair under its own flag
+// (./electron/renderer.js). Its CSP is the shared one with this script's hash added. Every other consumer (the renderer
+// goldens, sitting B's native-mac suite, #187's slots) loads the shared page.
 export const POINTERDOWN = Object.freeze({variant: 'pointerdown', button: 'Pointer target', status: 'Pointer status', text: n => `Pointer downs: ${n}`});
-export const POINTERDOWN_LINE = `<p><button id="pointer" type="button">${POINTERDOWN.button}</button> <span id="pointer-status" role="status" aria-label="${POINTERDOWN.status}">${POINTERDOWN.text(0)}</span></p>\n`;
+export const POINTERDOWN_INLINE = ` <button id="pointer" type="button">${POINTERDOWN.button}</button> <span id="pointer-status" role="status" aria-label="${POINTERDOWN.status}">${POINTERDOWN.text(0)}</span>`;
 export const POINTERDOWN_SCRIPT = "(() => { let downs = 0; const status = document.getElementById('pointer-status');"
   + " document.getElementById('pointer').addEventListener('pointerdown', () => { downs += 1; status.textContent = 'Pointer downs: ' + downs; }); })();";
 const POINTERDOWN_HASH = createHash('sha256').update(POINTERDOWN_SCRIPT).digest('base64');
-export const POINTERDOWN_CSP = CSP.replace(`script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${POINTERDOWN_HASH}'`);
-const STATUS_LINE = `<p id="status" role="status" aria-label="Scene status">${PAGE_INITIAL.status}</p>\n`;
-export const POINTERDOWN_PAGE_HTML = PAGE_HTML.replace(STATUS_LINE, `${STATUS_LINE}${POINTERDOWN_LINE}`)
-  .replace(`<script>${SCRIPT}</script>`, `<script>${SCRIPT}</script><script>${POINTERDOWN_SCRIPT}</script>`);
+// A variant built by replacing a part of the shared page: a part that is not there (the shared page changed) is an
+// error at load, never a variant silently equal to the shared page.
+const inserted = (text, part, replacement) => {
+  if (!text.includes(part)) throw new Error(`the scene page has no ${JSON.stringify(part.slice(0, 60))} to build its variant from`);
+  return text.replace(part, replacement);
+};
+export const POINTERDOWN_CSP = inserted(CSP, `script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${POINTERDOWN_HASH}'`);
+const APPLY = '<button id="apply" type="button">Apply</button>';
+export const POINTERDOWN_PAGE_HTML = inserted(inserted(PAGE_HTML, APPLY, `${APPLY}${POINTERDOWN_INLINE}`),
+  `<script>${SCRIPT}</script>`, `<script>${SCRIPT}</script><script>${POINTERDOWN_SCRIPT}</script>`);
 
 // What the server keeps of a counters beacon: its sequence, the textarea's length and each count, every one a
 // non-negative whole number, and whether the document had the focus (a boolean); anything else in the body is dropped.

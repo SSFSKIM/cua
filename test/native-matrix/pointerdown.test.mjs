@@ -14,11 +14,11 @@ import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {judgeMethod} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {departureProblems, usableDepartures} from '../../scripts/native-matrix/departures.mjs';
 import {POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
-import {CSP, PAGE_HTML, PAGE_VARIANTS, POINTERDOWN, POINTERDOWN_CSP, POINTERDOWN_LINE, POINTERDOWN_PAGE_HTML, POINTERDOWN_SCRIPT, SCRIPT, startScenePage}
+import {CSP, PAGE_HTML, PAGE_VARIANTS, POINTERDOWN, POINTERDOWN_CSP, POINTERDOWN_INLINE, POINTERDOWN_PAGE_HTML, POINTERDOWN_SCRIPT, SCRIPT, startScenePage}
   from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
-import {CASES, casesOf, isPointerdownRow, MATRIX_SCENE_ARGS, POINTERDOWN_ROWS} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, casesOf, isPointerdownRow, MATRIX_SCENE_ARGS, pointerdownReference, POINTERDOWN_ROWS} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN, planOf} from '../../scripts/native-matrix/run.mjs';
 import {args, runWith} from './run-doubles.mjs';
 
@@ -36,6 +36,7 @@ function fakeDom(search = '') {
       get id() { return this._id; }, set id(v) { this._id = v; byId.set(v, this); },
       setAttribute(k, v) { this.attributes[k] = v; if (k === 'id') this.id = v; },
       append(...nodes) { this.children.push(...nodes); },
+      after(...nodes) { main.children.splice(main.children.indexOf(this) + 1, 0, ...nodes); },
       addEventListener(type, f) { (this.listeners[type] ??= []).push(f); },
       fire(type) { for (const f of this.listeners[type] ?? []) f({type}); }};
     return el;
@@ -48,16 +49,19 @@ function fakeDom(search = '') {
 }
 const listenerTypes = el => Object.keys(el.listeners).sort();
 
-test('the Chrome page\'s pointerdown variant: the shared page plus one line below every control and its script; the shared page unchanged', async () => {
+test('the Chrome page\'s pointerdown variant: the shared page plus the pair inline after Apply and its script; the shared page unchanged', async () => {
   assert.ok(PAGE_VARIANTS.includes(POINTERDOWN.variant));
-  // The shared page is byte-identical (every record so far was taken on it): removing the line and the script gives it back.
+  // The shared page is byte-identical (every record so far was taken on it): removing the pair and the script gives it back.
   assert.equal(createHash('sha256').update(PAGE_HTML).digest('hex'), '67d628ac5fbb8568140649e3ae68d0558e0940495b00275864a708b94b53ba84');
-  assert.equal(POINTERDOWN_PAGE_HTML.replace(POINTERDOWN_LINE, '').replace(`<script>${POINTERDOWN_SCRIPT}</script>`, ''), PAGE_HTML);
+  assert.ok(POINTERDOWN_PAGE_HTML.includes(`<script>${POINTERDOWN_SCRIPT}</script>`) && POINTERDOWN_PAGE_HTML.includes(POINTERDOWN_INLINE), 'the variant carries its pair and its script');
+  assert.equal(POINTERDOWN_PAGE_HTML.replace(POINTERDOWN_INLINE, '').replace(`<script>${POINTERDOWN_SCRIPT}</script>`, ''), PAGE_HTML);
   assert.doesNotMatch(PAGE_HTML, /Pointer/);
-  // Below every control: after the status line, which is the page's last control.
-  const status = POINTERDOWN_PAGE_HTML.indexOf('id="status"'), line = POINTERDOWN_PAGE_HTML.indexOf(POINTERDOWN_LINE);
-  assert.ok(status > 0 && line > status, 'the line follows the status line');
-  assert.ok(POINTERDOWN_LINE.includes(`>${POINTERDOWN.button}</button>`) && POINTERDOWN_LINE.includes(`aria-label="${POINTERDOWN.status}"`) && POINTERDOWN_LINE.includes(POINTERDOWN.text(0)));
+  // Inline in the name field's line, right after Apply (ruling 1169): no line of its own, so no height added and the
+  // pair near the page's top at any window height; it follows every field in the Tab order.
+  assert.ok(POINTERDOWN_PAGE_HTML.includes(`<button id="apply" type="button">Apply</button>${POINTERDOWN_INLINE}</p>`));
+  const paragraphs = html => html.split('<p').length;
+  assert.equal(paragraphs(POINTERDOWN_PAGE_HTML), paragraphs(PAGE_HTML));
+  assert.ok(POINTERDOWN_INLINE.includes(`>${POINTERDOWN.button}</button>`) && POINTERDOWN_INLINE.includes(`aria-label="${POINTERDOWN.status}"`) && POINTERDOWN_INLINE.includes(POINTERDOWN.text(0)));
   // Its CSP is the shared one with the script's hash added.
   const hash = createHash('sha256').update(POINTERDOWN_SCRIPT).digest('base64');
   assert.equal(POINTERDOWN_CSP.replace(` 'sha256-${hash}'`, ''), CSP);
@@ -93,12 +97,16 @@ test('the Electron fixture: the second button exists only under ?page=pointerdow
   vm.runInContext(RENDERER, plain.context);
   assert.equal(plain.main.children.length, 6);
   assert.equal(plain.byId.get('pointer'), undefined);
-  // index.html itself is unchanged: the line is the renderer's, under the flag.
+  // index.html itself is unchanged: the pair is the renderer's, under the flag.
   assert.doesNotMatch(fs.readFileSync(join(FIXTURE, 'index.html'), 'utf8'), /Pointer|pointer/);
   const flagged = fakeDom('?page=pointerdown');
   vm.runInContext(RENDERER, flagged.context);
-  assert.equal(flagged.main.children.length, 7, 'one line, appended below every control');
   const button = flagged.byId.get('pointer'), status = flagged.byId.get('pointer-status');
+  // Inline right after the fixture's button: no line of its own, after every field in the Tab order.
+  const order = flagged.main.children;
+  assert.deepEqual(order.slice(order.indexOf(flagged.byId.get('button')) + 1, order.indexOf(flagged.byId.get('button')) + 5), [' ', button, ' ', status]);
+  assert.equal(order.length, 10);
+  assert.ok(!order.some(n => n?.tag === 'p'), 'no paragraph added');
   assert.deepEqual([button.textContent, button.type], [POINTERDOWN.button, 'button']);
   assert.deepEqual([status.attributes.role, status.attributes['aria-label'], status.textContent], ['status', POINTERDOWN.status, POINTERDOWN.text(0)]);
   assert.deepEqual(listenerTypes(button), ['pointerdown']);
@@ -112,9 +120,27 @@ test('the Electron fixture: the second button exists only under ?page=pointerdow
 
 test('the Electron fixture loads the flagged page only when launched with the matrix\'s switch', () => {
   assert.equal(POINTERDOWN_SWITCH, '--cua-fixture-page=pointerdown');
-  const main = fs.readFileSync(join(FIXTURE, 'main.js'), 'utf8');
-  assert.match(main, /argument\('cua-fixture-page'\) === 'pointerdown'/);
-  assert.match(main, /loadFile\(path\.join\(__dirname, 'index\.html'\), pointerdown \? \{query: \{page: 'pointerdown'\}\} : \{\}\)/);
+  // main.js run under a stubbed `electron` (and stubbed file system, so nothing is written): what its window loads.
+  const source = fs.readFileSync(join(FIXTURE, 'main.js'), 'utf8');
+  const loads = argv => {
+    const loaded = [];
+    let ready = null;
+    const electron = {
+      app: {whenReady: () => ({then: f => { ready = f; }}), on() {}, setPath() {}, isAccessibilitySupportEnabled: () => false, quit() {}},
+      BrowserWindow: class { on() {} once() {} showInactive() {} loadFile(...a) { loaded.push(a); } },
+      ipcMain: {on() {}},
+    };
+    const modules = {electron, 'node:fs': {mkdtempSync: () => '/scratch', mkdirSync() {}, appendFileSync() {}, writeFileSync() {}, renameSync() {}},
+      'node:os': {tmpdir: () => '/tmp'}, 'node:path': {join, isAbsolute: p => p.startsWith('/')}, './counters.js': {PAGE_EVENTS: {}, createCounters: () => ({bump() {}})}};
+    const require = name => { assert.ok(Object.hasOwn(modules, name), `main.js requires ${name}`); return modules[name]; };
+    new Function('require', 'process', '__dirname', 'setInterval', source)(require, {argv: ['electron', '.', ...argv], pid: 1}, '/app', () => ({unref() {}}));
+    ready();
+    return loaded;
+  };
+  assert.deepEqual(loads([]), [['/app/index.html', {}]], 'no flag: the plain page');
+  assert.deepEqual(loads(['--cua-fixture-user-data=/u', '--cua-fixture-bounds=1,2,300,400']), [['/app/index.html', {}]]);
+  assert.deepEqual(loads([POINTERDOWN_SWITCH]), [['/app/index.html', {query: {page: 'pointerdown'}}]]);
+  assert.deepEqual(loads(['--cua-fixture-page=other']), [['/app/index.html', {}]], 'another page name is the plain page');
 });
 
 // ---- the gating: no consumer but the matrix gets the variant ------------------------------------------------------------
@@ -130,8 +156,13 @@ test('only the matrix\'s run brings the scenes up with the variants; every other
   // Every script that names the variants: the fixtures that carry them, the plan that judges them, the run that passes
   // them. The renderer goldens' recorder, sitting B's native-mac suite, the live hold, the cursor sitting and the spike
   // bring their scenes up without them.
-  const files = dir => fs.readdirSync(dir, {withFileTypes: true}).flatMap(e => (e.isDirectory() ? (e.name === 'node_modules' ? [] : files(join(dir, e.name))) : /\.(mjs|js)$/.test(e.name) ? [join(dir, e.name)] : []));
-  const naming = files(join(ROOT, 'scripts')).filter(f => /MATRIX_SCENE_ARGS|POINTERDOWN|cua-fixture-page|'pointerdown'/.test(fs.readFileSync(f, 'utf8'))).map(f => relative(ROOT, f)).sort();
+  // Scripts and shell files under scripts/, and the workflows; the variant named by constant, switch, or quoted name
+  // either way, or a `--page pointerdown` in a command line.
+  const files = dir => fs.readdirSync(dir, {withFileTypes: true}).flatMap(e => (e.isDirectory() ? (e.name === 'node_modules' ? [] : files(join(dir, e.name))) : /\.(mjs|cjs|js|sh|ya?ml)$/.test(e.name) ? [join(dir, e.name)] : []));
+  const VARIANT = /MATRIX_SCENE_ARGS|POINTERDOWN|cua-fixture-page|['"`]pointerdown['"`]|['"]--page['"],?\s*['"]pointerdown|--page[ =]pointerdown/;
+  // The scenes CLI's usage comment documents the variant; a comment line is not an `up`.
+  const code = text => text.split('\n').filter(line => !/^\s*(\/\/|#)/.test(line)).join('\n');
+  const naming = [...files(join(ROOT, 'scripts')), ...files(join(ROOT, '.github'))].filter(f => VARIANT.test(code(fs.readFileSync(f, 'utf8')))).map(f => relative(ROOT, f)).sort();
   assert.deepEqual(naming, ['scripts/native-matrix/fixtures/electron-fixture.mjs', 'scripts/native-matrix/fixtures/electron/main.js', 'scripts/native-matrix/fixtures/electron/renderer.js',
     'scripts/native-matrix/fixtures/scene-page.mjs', 'scripts/native-matrix/plan.mjs', 'scripts/native-matrix/run.mjs']);
   // The scene targets (the finding-elements cells, the fixed-state checks) do not name the new controls.
@@ -157,12 +188,13 @@ test('the two cells: element clicks on the pointerdown buttons, frontmost only, 
   assert.ok(!ids.some(id => /click\.pointerdown@/.test(id)), 'no background row');
 });
 
-// The scene's golden text with the variant's line after its status: the button, the status group and its text.
+// The scene's golden text with the variant's pair after its button (Apply, the fixture's): the button, the status group
+// and its text.
 const golden = scene => fs.readFileSync(join(ROOT, 'test/native-goldens', scene, 'vendor.txt'), 'utf8');
-function withPointer(ax, statusName) {
-  const lines = ax.split('\n'), at = lines.findIndex(l => l.endsWith(` container ${statusName}`));
+function withPointer(ax, buttonName) {
+  const lines = ax.split('\n'), at = lines.findIndex(l => l.endsWith(` 버튼 ${buttonName}`));
   const tabs = /^\t*/.exec(lines[at])[0];
-  lines.splice(at + 2, 0, `${tabs}90 버튼 ${POINTERDOWN.button}`, `${tabs}91 container ${POINTERDOWN.status}`, `${tabs}\t92 텍스트 ${POINTERDOWN.text(0)}`);
+  lines.splice(at + 1, 0, `${tabs}90 버튼 ${POINTERDOWN.button}`, `${tabs}91 container ${POINTERDOWN.status}`, `${tabs}\t92 텍스트 ${POINTERDOWN.text(0)}`);
   return lines.join('\n');
 }
 const AsyncFunction = (async () => {}).constructor;
@@ -185,19 +217,19 @@ async function runCase(target, app) {
   delete globalThis.__m;
   return out;
 }
-const STATUS = {chrome: 'Scene status', electron: 'Fixture status'};
+const BESIDE = {chrome: 'Apply', electron: 'Fixture button'};
 
 test('each cell passes on exactly one pointer down; none, or two, fails; the shared scene is not ready', async () => {
   for (const target of ['chrome', 'electron']) {
-    const once = pointerApp(withPointer(golden(target), STATUS[target]), 1);
+    const once = pointerApp(withPointer(golden(target), BESIDE[target]), 1);
     const passed = await runCase(target, once);
     assert.equal(passed.prepare.value.ready, true, `${target}: ${JSON.stringify(passed.prepare)}`);
     assert.deepEqual(once.clicks, [90], 'one element click on the button');
     assert.deepEqual(passed.check.value, {ok: true, outcome: {pointerDownOnce: true, rose: 1}});
     // A second row on the same page counts from where the first left it.
     assert.deepEqual((await runCase(target, once)).check.value, {ok: true, outcome: {pointerDownOnce: true, rose: 1}});
-    assert.deepEqual((await runCase(target, pointerApp(withPointer(golden(target), STATUS[target]), 0))).check.value, {ok: false, outcome: {pointerDownOnce: false, rose: 0}}, `${target}: AXPress with no pointer event`);
-    assert.deepEqual((await runCase(target, pointerApp(withPointer(golden(target), STATUS[target]), 2))).check.value, {ok: false, outcome: {pointerDownOnce: false, rose: 2}}, `${target}: two is not one`);
+    assert.deepEqual((await runCase(target, pointerApp(withPointer(golden(target), BESIDE[target]), 0))).check.value, {ok: false, outcome: {pointerDownOnce: false, rose: 0}}, `${target}: AXPress with no pointer event`);
+    assert.deepEqual((await runCase(target, pointerApp(withPointer(golden(target), BESIDE[target]), 2))).check.value, {ok: false, outcome: {pointerDownOnce: false, rose: 2}}, `${target}: two is not one`);
     // The scene without the variant (a consumer's): nothing is sent, the row invalid.
     const shared = pointerApp(golden(target), 1);
     const {prepare} = await runCase(target, shared);
@@ -210,14 +242,24 @@ test('each cell passes on exactly one pointer down; none, or two, fails; the sha
 // ---- the judge ------------------------------------------------------------------------------------------------------
 
 const row = (engine, sample, ok, rose) => ({section: 'method', id: CHROME, engine, sample, ok, regime: 'frontmost', method: 'click', case: 'pointerdown', outcome: {pointerDownOnce: rose === 1, rose}});
-test('judged against the vendor\'s sample of the same run: cua missing the pointer down where the vendor\'s rose is worse', () => {
-  const judge = (vendor, cua) => judgeMethod('frontmost', [row('vendor', 1, vendor === 1, vendor)], [row('cua', 1, cua === 1, cua)]).verdict;
+test('judged against the vendor\'s +1 of the same run: cua missing it, or two, is worse; a vendor not +1 is NO VERDICT naming its count', () => {
+  const cell = (vendor, cua) => judgeMethod('frontmost', [row('vendor', 1, vendor === 1, vendor)], [row('cua', 1, cua === 1, cua)], {reference: pointerdownReference});
+  const judge = (vendor, cua) => cell(vendor, cua).verdict;
   assert.equal(judge(1, 0), 'worse', 'AXPress dispatching no pointer event where the vendor\'s click did');
   assert.equal(judge(1, 1), 'equal');
   assert.equal(judge(1, 2), 'worse', 'two pointer downs is not the vendor\'s one');
-  assert.equal(judge(0, 0), 'equal', 'the vendor missing it alike: no gap against the vendor');
-  assert.equal(judge(0, 1), 'better');
-  assert.equal(judge(2, 0), 'worse', 'two failures are equal only as the same failure');
+  // The vendor posts a real click: its count not rising by exactly one says the scene is broken, so the pair says
+  // nothing of #534 either way (the coordinator's ruling of round 1).
+  for (const [vendor, cua, count] of [[0, 0, 'its count unchanged'], [0, 1, 'its count unchanged'], [2, 0, 'its count changed by 2'], [null, 1, 'its count unread']]) {
+    const judged = cell(vendor, cua);
+    assert.equal(judged.verdict, 'no-verdict', `vendor ${vendor}, cua ${cua}`);
+    assert.deepEqual(judged.account.cua.noVerdict, {reference: 1});
+    assert.deepEqual(judged.unreferenced, [{run: 1, reason: `the reference side did not register the pointerdown (the vendor's click: ${count})`}]);
+  }
+  assert.equal(cell(1, 1).unreferenced, undefined);
+  // A cua sample with its own cause keeps it; any other row is judged as before.
+  assert.equal(judgeMethod('frontmost', [row('vendor', 1, true, 1)], [{...row('cua', 1, false, 0), invalid: 'x'}], {reference: pointerdownReference}).account.cua.noVerdict.invalid, 1);
+  assert.equal(judgeMethod('frontmost', [row('vendor', 1, false, 0)], [row('cua', 1, false, 0)]).verdict, 'equal', 'no reference rule: the reference mode as it was');
 });
 
 test('no departure may name either cell (ruling 1168): a missed pointer handler is fixed, never declared', () => {

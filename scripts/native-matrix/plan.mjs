@@ -369,11 +369,14 @@ const statusText = (container, pattern) => `elementLines(ax).filter(l => parentI
 // ---- Ruling 1168 (#534): the pointerdown-only cell, on both web scenes ---------------------------------------------------
 //
 // Web UI kits open menus and popovers on `pointerdown` (Radix-style triggers). cua presses a web button through AXPress
-// where the vendor posts a click (F-helper-logic.md §5.1: the vendor synthesizes when the button's point lands on its
-// nested content), so a press that dispatches no pointer event misses those handlers. The cell: a button whose only
-// handler is `pointerdown`, counting into a status line, clicked by element on both engines and judged on the count
-// rising by exactly one, against the vendor's sample of the same run ('reference'): cua's count unchanged where the
-// vendor's rose is worse, and no departure may name the row (./departures.mjs). Frontmost only, as #258's and #259's
+// where the vendor posts a click (#534; F-helper-logic.md §18, the #258 reading that corrects §5.1's gate: inside a web
+// view the vendor posts a real click at the frame's visible midpoint whenever the hit-test there answers "the element
+// itself or a descendant"), so a press that dispatches no pointer event misses those handlers. The cell: a button whose
+// only handler is `pointerdown`, counting into a status line, clicked by element on both engines and judged on the
+// count rising by exactly one, against the vendor's sample of the same run ('reference'): cua's count unchanged (or
+// risen by two) where the vendor's rose by one is worse; a vendor count not risen by exactly one makes the pair NO
+// VERDICT (pointerdownReference: the vendor's real click not counting says the scene is broken); and no departure may
+// name the row (./departures.mjs). Frontmost only, as #258's and #259's
 // cells: behind a user window a background row is judged against ground truth alone, which would ask of cua a pointer
 // into a background page that nobody has measured the vendor delivering.
 //
@@ -630,3 +633,12 @@ export const isCaretRow = id => CARET_ROWS.includes(id);
 // Ruling 1168's rows (the pointerdown-only cell on each web scene): judged against the vendor's, never declarable.
 export const POINTERDOWN_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c === pointerdownCase).map(c => caseId(target, 'frontmost', c))));
 export const isPointerdownRow = id => POINTERDOWN_ROWS.includes(id);
+// Whether the vendor's sample can be the reference for a pointerdown row (ruling 1168, the coordinator's of round 1): the
+// vendor posts a real click, so its count rising by anything but one says the scene is broken, not that cua differs,
+// and the pair has no verdict (./cell-verdict.mjs `reference`). -> null, or the reason naming the vendor's count.
+export function pointerdownReference(vendorRow) {
+  const rose = vendorRow?.outcome?.rose;
+  if (rose === 1) return null;
+  const count = Number.isSafeInteger(rose) ? (rose === 0 ? 'its count unchanged' : `its count changed by ${rose}`) : 'its count unread';
+  return `the reference side did not register the pointerdown (the vendor's click: ${count})`;
+}

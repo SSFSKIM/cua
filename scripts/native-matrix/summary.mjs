@@ -79,7 +79,7 @@ import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
 import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
-import {ENGINE_METHOD, isCaretRow, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, TARGETS} from './plan.mjs';
+import {ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
@@ -303,7 +303,9 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   for (const [id, list] of groupBy(rows.filter(r => r.section === 'method'), r => r.id)) {
     const [target, regime] = id.split('/');
     const mode = regime !== 'frontmost' ? 'own' : isCaretRow(id) ? 'reading' : 'reference';
-    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), options('method')(id))});
+    // Ruling 1168: a pointerdown row's pair has no verdict unless the vendor's count rose by exactly one.
+    const reference = isPointerdownRow(id) ? pointerdownReference : null;
+    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), {...options('method')(id), reference})});
   }
   methods.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -387,12 +389,12 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const unneeded = full.length ? [...byRow.values()].filter(e => !applied.some(a => a.section === e.section && a.id === e.id)) : [];
 
   // Every judged cell of the manifest: its samples with and without a verdict, and whether it qualifies.
-  const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? (c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed') : c.verdict, account: c.account}]));
+  const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? (c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed') : c.verdict, account: c.account, ...(c.unreferenced ? {unreferenced: c.unreferenced} : {})}]));
   for (const f of findingRows) found.set(`${f.section} ${f.id}`, {verdict: f.account.qualifies ? 'measured' : 'no-verdict', account: f.account});
   const empty = {vendor: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, cua: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, pairs: 0, pairRuns: [], qualifies: false};
   const cells = cellsOf().map(({section, id}) => {
     const c = found.get(`${section} ${id}`) ?? {verdict: 'no-verdict', account: empty};
-    return {section, id, verdict: c.verdict, account: c.account, qualifies: c.account.qualifies};
+    return {section, id, verdict: c.verdict, account: c.account, qualifies: c.account.qualifies, ...(c.unreferenced ? {unreferenced: c.unreferenced} : {})};
   });
 
   // Other cells (implemented elsewhere), by cell and engine.
@@ -576,6 +578,8 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
       '| cell | verdict | complete pairs | vendor runs | cua runs | vendor by run | cua by run | vendor no verdict | cua no verdict | qualifies |', '|---|---|---|---|---|---|---|---|---|---|');
     const byRun = side => Object.entries(side.byRun).map(([run, r]) => `r${run} ${r.verdicts}/${r.samples}`).join(', ') || '-';
     for (const c of listed) out.push(`| ${c.section} ${c.id} | ${MARK[c.verdict] ?? c.verdict} | ${c.account.pairs} of ${RUNS_PER_SIDE} | ${c.account.vendor.runs} | ${c.account.cua.runs} | ${byRun(c.account.vendor)} | ${byRun(c.account.cua)} | ${causesText(c.account.vendor.noVerdict)} | ${causesText(c.account.cua.noVerdict)} | ${c.qualifies ? 'yes' : 'no'} |`);
+    const unreferenced = listed.flatMap(c => (c.unreferenced ?? []).map(u => `- ${c.section} ${c.id}, run ${u.run}: ${u.reason}`));
+    if (unreferenced.length) out.push('', 'The pairs whose vendor sample could not be the reference (`reference`):', '', ...unreferenced);
   }
   out.push('');
 

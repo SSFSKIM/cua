@@ -36,8 +36,8 @@ export const FIXTURE_CONTROLS = Object.freeze([
   {id: 'status', role: 'AXGroup', name: 'Fixture status'},
 ].map(Object.freeze));
 // The switch that loads the fixture's pointerdown page (ruling 1168, #534; ./electron/main.js and renderer.js): the
-// fixture with one more line below its controls, a button whose only handler is `pointerdown` and its own count, the
-// Chrome page's line (./scene-page.mjs POINTERDOWN). Only the native matrix's run passes it (../plan.mjs
+// fixture with, inline after its button, a button whose only handler is `pointerdown` and its own count, the Chrome
+// page's pair (./scene-page.mjs POINTERDOWN). Only the native matrix's run passes it (../plan.mjs
 // MATRIX_SCENE_ARGS); without it the fixture is the one every recording was taken on.
 export const POINTERDOWN_SWITCH = '--cua-fixture-page=pointerdown';
 // The side-effect counters' file in the fixture's user-data directory (./electron/counters.js), read by the harness.

@@ -18,12 +18,14 @@
 //   naming "intervention detection off", its permissions the running engine's status (src/runtime/doctor-engine.mjs
 //   GRANT_EFFECT, grantWords).
 // - Every result attests the engine that answered (_meta['cua/nativeEngine'], service.mjs): the run's approved cua
-//   build. A vendor attestation is NO VERDICT (ruling 1149), never a pass.
+//   build, classed as every hosted check classes it (../probe/lib.mjs classifyAttestation).
 //
-// Verdicts: FAIL for a behaviour other than the expected one; NO VERDICT for missing proof (no record or an ambiguous
-// one, a stage not set: its rows not written or not honoured, its relaunch or session not made, a call the product held
-// with no answer, an attestation that is not the run's engine, an unread status or doctor), never a pass; a FAIL anywhere
-// outweighs NO VERDICT elsewhere. -> [status, reason].
+// Verdicts, in ruling 1149's order (checks.mjs `record`): a result answered on another engine anywhere (the vendor's on
+// the cua side, state 1, or another build) is NO VERDICT naming it, before anything else; then FAIL for a behaviour other
+// than the expected one; then NO VERDICT for any other missing proof (no record or an ambiguous one, a result with no
+// attestation, a stage not set: its rows not written or not honoured, its relaunch or session not made, a call the
+// product held with no answer, an unread status or doctor). Never a pass without proof. -> [status, reason].
+import {classifyAttestation} from '../probe/lib.mjs';
 
 const OK = 'ok';
 export const EXPECTED = Object.freeze({
@@ -37,30 +39,32 @@ const ORDER = Object.keys(EXPECTED);
 const NAMES = {accessibility: 'Accessibility', screenRecording: 'Screen Recording'};
 const short = build => String(build).slice(0, 12);
 
-// One stage: -> {fail: [why], missing: [why], summary}.
+// One stage, its calls' attestations first.
+// -> {elsewhere: [why], fail: [why], missing: [why], summary}.
 function judgeStage(stage, {attest, prior}) {
   const want = EXPECTED[stage.id];
   const fail = [], missing = [];
-  if (stage.problem) return {fail, missing: [`not set: ${stage.problem}`]};
-  // Every answer the product gave must be cua's run engine's before anything in the stage counts (ruling 1149).
-  const unattested = stage.calls.filter(c => c.resultPresent).map(c => [c.id, attest(c.nativeEngine)]).filter(([, why]) => why);
-  if (unattested.length) return {fail, missing: unattested.map(([id, why]) => `${id} call: ${why}`)};
+  if (stage.problem) return {elsewhere: [], fail, missing: [`not set: ${stage.problem}`]};
+  // Every answer the product gave must be the run's cua engine's before anything in the stage counts (ruling 1149).
+  const classed = stage.calls.filter(c => c.resultPresent).map(c => [c.id, attest(c.nativeEngine)]).filter(([, c]) => c.status !== 'ok');
+  const elsewhere = classed.filter(([, c]) => c.status !== 'missing').map(([id, c]) => `${id} call: ${c.problem}`);
+  if (classed.length) return {elsewhere, fail, missing: classed.filter(([, c]) => c.status === 'missing').map(([id, c]) => `${id} call: ${c.problem}`)};
   // The product's own relaunch first: without it the old process cannot have taken the grant, so what it reads is its.
   const product = stage.relaunch?.method === 'product';
   if (want.recoveryAfter) {
     // The relaunch is owed only once this connection saw Screen Recording refused (client.mjs), in a stage that was set.
     const refused = prior?.set && prior.stage.calls.some(c => c.isError && c.metadata?.permission === 'screenRecording');
-    if (!refused) return {fail, missing: [`not set: the recovery follows a Screen Recording refusal in the ${want.recoveryAfter} stage, and none was observed`]};
-    if (stage.relaunch?.before?.connections !== 1) return {fail, missing: [`another connection was open at the relaunch (${stage.relaunch?.before?.connections ?? 'unread'}), which the engine refuses`]};
+    if (!refused) return {elsewhere: [], fail, missing: [`not set: the recovery follows a Screen Recording refusal in the ${want.recoveryAfter} stage, and none was observed`]};
+    if (stage.relaunch?.before?.connections !== 1) return {elsewhere: [], fail, missing: [`another connection was open at the relaunch (${stage.relaunch?.before?.connections ?? 'unread'}), which the engine refuses`]};
   }
   const status = stage.status;
   if (product && stage.relaunched === false && stage.calls.every(c => !c.waited)) {
     fail.push(`the product did not relaunch the engine for the Screen Recording grant (pid ${stage.relaunch.before.pid} throughout)`);
-    return {fail, missing};
+    return {elsewhere: [], fail, missing};
   }
-  if (!status?.read || !status.running) return {fail, missing: [`capabilities unread (${status?.problem ?? 'no engine running'})`]};
+  if (!status?.read || !status.running) return {elsewhere: [], fail, missing: [`capabilities unread (${status?.problem ?? 'no engine running'})`]};
   const unset = Object.entries(want.grants).filter(([key, value]) => status[key] !== value);
-  if (unset.length) return {fail, missing: unset.map(([key]) => `not set: ${key} reads ${status[key]} with the stage's rows`)};
+  if (unset.length) return {elsewhere: [], fail, missing: unset.map(([key]) => `not set: ${key} reads ${status[key]} with the stage's rows`)};
   for (const [id, outcome] of Object.entries(want.calls)) {
     const call = stage.calls.find(c => c.id === id);
     const where = `${id} call`;
@@ -86,34 +90,34 @@ function judgeStage(stage, {attest, prior}) {
   const refused = [...new Set(Object.values(want.calls).filter(o => o !== OK))].map(o => `refused ${NAMES[o]} with its steps`);
   const summary = refused.length ? refused.join(', ') : want.recoveryAfter ? `recovered through the product's relaunch (pid ${stage.relaunch.before.pid} → ${stage.calls[0].statusAfter?.pid})`
     : `answered, intervention ${status.inputMonitoring ? 'on' : 'off'}`;
-  return {fail, missing, summary};
+  return {elsewhere: [], fail, missing, summary};
 }
 
 // `path` and `exit`: where the record should be and how the driver ended, for the reason when there is none.
-export function judgeOnboarding(record, {path = 'onboarding.json', exit = null} = {}) {
+// `engine`: the side the step measures (plan.mjs's `engine`, cua's), which the record's expected attestation must be.
+export function judgeOnboarding(record, {path = 'onboarding.json', exit = null, engine = 'cua'} = {}) {
   if (!record) return ['NO VERDICT', `no onboarding record at ${path} (exit ${exit})`];
   if (record.kind !== 'hosted-onboarding' || !Array.isArray(record.stages)) return ['NO VERDICT', `${path} is not an onboarding record`];
   if (record.hosted !== true) return ['NO VERDICT', 'not a hosted run'];
   const ids = record.stages.map(s => s?.id);
   if (ids.some((id, i) => id !== ORDER[i])) return ['NO VERDICT', `ambiguous: its stages are ${ids.join(', ')}, not ${ORDER.join(', ')} in that order`];
   const expected = record.expected;
-  const attest = engine => {
-    if (!engine) return 'no cua/nativeEngine attestation';
-    if (engine.engine === 'vendor') return 'attested the vendor\'s engine (ruling 1149)';
-    if (engine.engine !== 'cua') return `attested ${engine.engine}`;
-    if (!expected || engine.build !== expected.build || engine.version !== expected.version) return `attested cua build ${short(engine.build)}, not the run's ${short(expected?.build)}`;
-    return null;
-  };
-  const fails = [], missing = [], summaries = [];
+  const notRun = `incomplete: ${record.problem ?? 'no reason recorded'}; ${ORDER.length - record.stages.length} stage(s) not run`;
+  if (!expected) return ['NO VERDICT', record.complete ? 'the record names no expected engine attestation' : notRun];
+  if (expected.engine !== engine || !expected.build) return ['NO VERDICT', `the record's engine is ${expected.engine}, not the ${engine} side the step measures`];
+  const attest = attested => classifyAttestation(attested, expected);
+  const elsewhere = [], fails = [], missing = [], summaries = [];
   let prior = null;
   for (const stage of record.stages) {
     const judged = judgeStage(stage, {attest, prior});
+    elsewhere.push(...judged.elsewhere.map(why => `${stage.id}: ${why}`));
     fails.push(...judged.fail.map(why => `${stage.id}: ${why}`));
     missing.push(...judged.missing.map(why => `${stage.id}: ${why}`));
     if (judged.summary) summaries.push(`${stage.id}: ${judged.summary}`);
     prior = {stage, set: !judged.missing.some(why => why.startsWith('not set'))};
   }
-  if (!record.complete) missing.push(`incomplete: ${record.problem ?? 'no reason recorded'}; ${ORDER.length - record.stages.length} stage(s) not run`);
+  if (!record.complete) missing.push(notRun);
+  if (elsewhere.length) return ['NO VERDICT', elsewhere.join('; ')];
   if (fails.length) return ['FAIL', fails.join('; ')];
   if (missing.length) return ['NO VERDICT', missing.join('; ')];
   return ['PASS', `${summaries.join('; ')}; every result attested cua ${short(expected.build)}`];

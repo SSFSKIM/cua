@@ -498,3 +498,64 @@ to that step. Only another app's activation becomes the row's. The sample is NO 
 - GREEN: the same command after the fix gave `# pass 1  # fail 0`.
 - `node --test test/native-matrix/*.test.mjs test/hosted-sittings/*.test.mjs` gave `# tests 505  # pass 505  # fail 0`.
   The dot reporter printed nothing else.
+
+## Ruling 1149: engine attestation per lane
+
+State 1 is a cua side that silently falls back to the vendor engine. Such a side compares the vendor with itself and
+would pass. Ruling 1149 asks every parity, acceptance and hosted-sitting run to check, on the cua side's own results,
+that `_meta['cua/nativeEngine']` attests cua's engine. A cua side that attests the vendor's is NO VERDICT with the cause
+named. A lane that has no NO VERDICT gives its refusal or invalid state instead. It is never a pass.
+
+**One classifier.** `scripts/probe/lib.mjs` `classifyAttestation(attested, expected)` returns one of four classes:
+`ok`; `vendor-on-cua-side` (state 1, its problem opening with `STATE_1`); `missing`; or `mismatched` (another engine, or
+another version or build). It compares only the keys `expected` holds. `classifyAttestedRecord` classes a lane's
+collected `{attested, unattested}` as a whole: a vendor answer anywhere on the cua side is state 1. `attestationProblem`
+is now the classifier's problem, so every lane that already used it names state 1 without other change.
+
+| Lane | Cua side? | Before | Now | A vendor attestation on the cua side |
+|---|---|---|---|---|
+| Native matrix, per result | yes | enforced: `native-matrix/lane.mjs:110` stops the lane; `run.mjs:321` `engineProblem` makes the run incomplete | unchanged | the run incomplete, cell `no-verdict`, cause in `problems` |
+| Native matrix judge (`summary.mjs`) | reads runs | a fallen-back run was counted by its lane as a vendor run, so the NO VERDICT came from unrelated causes (a repeated vendor run, no cua run) | newly enforced: `unmeasuredSide` sets the run aside and names it | NO VERDICT, `<run>: …(state 1)…; its rows are not judged` |
+| Native baseline, run and compare | yes | enforced: `native-baseline/engine.mjs:139`, `native-baseline.mjs:440-441`; `native-baseline/summary.mjs:185` makes the compare NO VERDICT (`compare.mjs:209`) | unchanged | run INCOMPLETE (`engineAttestationProblem`), compare NO VERDICT |
+| repl-parity native-mac | yes | enforced per result (`native-mac.mjs:96-106`), but the host check ran first, so a fallen-back lane (vendor host too) was named only by its host | engine checked before host (`native-mac.mjs:183-189`) | run incomplete naming the engine; settle cell `no-verdict`; diff refuses it (`native-mac-diff.mjs:109`) |
+| repl-parity selection (acceptance 9) | judges selection | enforced: `selection.mjs:119-120`, attested engine against the independent table | unchanged | the row's FAIL. The lane judges selection itself, so a fallback on a cua-expected row is the selection's own failure |
+| repl-parity native Linux, Linux baseline | yes | enforced by the trusted worker's engine-process witness (`engine-answered.mjs:152`, `native-linux.mjs:51`, `native-baseline/engine.mjs:132`); the Linux launch attests no `cua/nativeEngine` | unchanged: the witness is Linux's attestation, under #171's contract | the diff refused, the run incomplete |
+| repl-parity cells, services, api, docs-profiles; browser-parity; accept-chrome; maws-selection | none | browser surface only (`CUA_SHIM_SURFACES=browser`): `launch.mjs` gives no native engine without the computer surface | out of scope | — |
+| accept-native items 5, 6, 8 (TextEdit fixture), 6, 7 (probe-secrets) | yes | enforced: `accept/engine-lane.mjs:29` `attestReplies` (`textedit.mjs:222`, `probe-secrets.mjs:146`) | unchanged; the refusal now names state 1 | the lane's refusal: `every result attests the pinned engine` FAIL, nothing more sent |
+| accept-native items 3, 4, 8 (doctor, `verify.mjs:127`, `probe-lifecycle.mjs:83`) | yes | enforced: `engine-lane.mjs` `doctorEngineCheck`, `verifyChecks`, `lifecycleEngineCheck` | unchanged | the item's FAIL, the refusal named |
+| accept-native items 12, 13; `own-sandbox.mjs:89`, `compat-route.mjs:37`, `sandbox-probe/experiment.mjs:123` | none: pinned to the vendor on purpose | enforced against the vendor | unchanged | — |
+| `probe-engine-lane.mjs` (fixture engine) | yes | enforced: `:104`, `:115-117` | unchanged | the check's FAIL |
+| `approval-cycles.mjs` (#216) | yes | enforced, but another engine stopped the run as a fail of cua's engine | newly NO VERDICT: `probe/approval-cycles.mjs` `attestationStop`, `stoppedVerdict`; the run prints `VERDICT:` | NO VERDICT naming state 1 (what cua's engine did before can still fail it) |
+| Cursor sitting | yes | a present wrong engine stopped the session (`session.mjs:101`, local first result `:134`), but a result with no attestation passed after the first, and on a device's first | newly enforced: every result the runtime answered must attest (`session.mjs:102`); a reply with no result, or cua's own status error with no `cua/taskId` (lifecycle rejection, a device link's failure), ran on no engine | the session stops, nothing more sent |
+| Cursor sitting #187 isolation | yes | enforced: `item-187-isolate.mjs:297` `attestProblem` | unchanged | `not attested`, not counted |
+| Sitting E (`macos-default-selection.mjs`) | doctor only | enforced: T11's judge, `macos-selection.mjs:62-70` (cua engine and cua host from doctor's repl.host row) | unchanged | the selection's FAIL. Its limit: doctor proves what the selection is, not which engine answered a js result; no js runs |
+| Hosted sittings A, B, C (`checks.mjs` `record`, `observation`) | reads runs | a complete record passed without reading its engine; an incomplete one read as a runtime error FAIL; B's lanes were read by exit | newly enforced: each step names its side (`plan.mjs` `engine`); `sideAttestation` reads the record's attestations (baseline `nativeEngine`, matrix `meta.nativeEngine`, native-mac `engineAttestation`); B's lanes are read by their `meta.json` | NO VERDICT, `the cua side is not measured: …(state 1)…`, complete or not; a complete record that shows no engine is NO VERDICT too |
+| Hosted sitting D | yes | accept-native and verify by exit (their own refusals); approval-cycles by exit | approval-cycles read by its `VERDICT:` line | accept-native, verify: FAIL (the lanes' refusal); approval-cycles: NO VERDICT |
+| `maws-features` literalVendor | none: the vendor path on purpose | the default engine with `CUA_NATIVE_ENGINE` removed, passing only on the vendor host; it breaks on a Mac with an approved engine once the flip lands | pins `CUA_NATIVE_ENGINE=vendor`, and every result must attest the vendor engine (`literalVerdict`) | not applicable; a result attesting cua's engine, or none, fails the step |
+
+The direct-socket controls (`native-matrix/live-device.mjs`, the goldens' Skyshots) drive cua's engine socket with no
+MCP result. They are not a cua-against-vendor comparison, so no attestation applies.
+
+### Tests (RED, then GREEN)
+
+- `test/probe-lib-engine.test.mjs`: the four classes, and the record classes. RED: `does not provide an export named
+  'STATE_1'`.
+- `test/native-matrix/summary.test.mjs`, "ruling 1149: a cua run whose lane attests the vendor engine is NO VERDICT
+  naming state 1". RED: the verdict was NO VERDICT, but no missing-proof line named the cause (`summary.test.mjs:134`,
+  `false == true`).
+- `test/repl-parity/native-mac-run.test.mjs`, "ruling 1149: a cua lane answered by the vendor engine and host…". RED:
+  `meta.error` was `'the vendor host answered the lane, not the requested cua'`, the engine masked.
+- `test/hosted-sittings/checks.test.mjs`, the record shapes and #212's cell. RED: `'FAIL' !== 'NO VERDICT'`. Also
+  `plan.test.mjs`, each record step's `engine` (RED: `undefined !== 'vendor'`).
+- `test/probe-approval-cycles.test.mjs`. RED: `does not provide an export named 'attestationStop'`.
+- `test/cursor-sitting/target-guard.test.mjs`, the gate and a result with no attestation. RED: the promise resolved
+  where a rejection was expected.
+- `test/accept-maws-features.test.mjs`, literalVendor pinned and failing on cua's attestation. RED: `literalEnv` kept no
+  `CUA_NATIVE_ENGINE`.
+- `test/accept-engine-lane.test.mjs`: the refusal names state 1. This assertion was added after the classifier, so it
+  was GREEN at its first run. The native baseline's own regressions were already in place: `engine.test.mjs:81`,
+  `run.test.mjs:506-519`, `summary.test.mjs:166`.
+- The focused suites, GREEN: `node --test test/native-matrix/*.test.mjs test/repl-parity/*.test.mjs
+  test/accept*.test.mjs test/native-baseline/*.test.mjs test/hosted-sittings/*.test.mjs test/cursor-sitting/*.test.mjs
+  test/probe*.test.mjs test/verify-attestation.test.mjs` gave `# tests 2240  # pass 2239  # fail 0  # skipped 1` (the
+  existing hosted-only skip). This is not the full `npm test`, and no ci-gate or hosted run was made.

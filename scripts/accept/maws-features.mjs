@@ -21,10 +21,11 @@
 //   mawsKey    createBrowserTab("maws", page) (and getBrowser({id: "maws"})) on the same instance; closed again
 //   chromeKey  with --chrome-key <key>: the same with that profiles_list key, on its Chrome profile (SKIP without)
 //   keyMiss    getBrowser({id: "iab"}) fails naming the browser ids and the keys (maws, and the --chrome-key one)
-//   literalVendor  the ticket's literal agent path on the REPL host a MAWS session runs today (a second `cua serve` with
-//              computer,browser and the default engine: the vendor's host on macOS), five js calls: getBrowser() and
-//              its Name line, createBrowserTab(id, page, {visible: true}) throwing the declared #496 limit, the open
-//              without it, createBrowserTab("maws", page) on the same browser, the iab miss; host attested; tabs closed
+//   literalVendor  the ticket's literal agent path on the vendor's REPL host (a second `cua serve` with computer,browser
+//              pinned to the vendor engine, CUA_NATIVE_ENGINE=vendor, which runs on the vendor's host on macOS), five js
+//              calls: getBrowser() and its Name line, createBrowserTab(id, page, {visible: true}) throwing the declared
+//              #496 limit, the open without it, createBrowserTab("maws", page) on the same browser, the iab miss; host
+//              and engine attested on every result (the vendor's both); tabs closed
 //   createTab  cua.getBrowser() selects that instance; createBrowserTab(page) shows the page's document marker
 //   locator    #name filled with "x", #submit clicked: #state reads submitted:x
 //   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset
@@ -52,6 +53,7 @@ import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/orig
 import {REPORT_BODY, startFeaturesPage} from './features-page.mjs';
 import {imageSize} from './chrome-cells.mjs';
 import {DOCUMENTATION_CELL, serviceAttestation} from './service-attest.mjs';
+import {classifyAttestation, ENGINE_META_KEY} from '../probe/lib.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const RESULT_TAG = 'CUA_FEATURES_RESULT ';
@@ -221,20 +223,22 @@ export function featureDecision(msg, origin) {
 }
 
 // ---- literalVendor (#493, design ruling 1120) ----------------------------------------------------------------------
-// The ticket's literal agent path as a MAWS session runs it today: `cua serve` from this checkout with the surfaces the
+// The ticket's literal agent path on the vendor's REPL host: `cua serve` from this checkout with the surfaces the
 // installed plugin gives every session (.claude-plugin/plugin.json: CUA_SHIM_SURFACES=computer,browser; MAWS passes
-// only CUA_BROWSER_BACKENDS) and the default engine (CUA_NATIVE_ENGINE and CUA_REPL_HOST removed from its environment),
-// which on macOS is the vendor's REPL host. Each js result attests its host as the other steps' launches do
-// (`_meta['cua/replHost']`, src/repl-host/identity.mjs: cua's own host marks every result, the vendor's none). Five
-// separate js calls, browser calls only: the computer surface's only work is at the first call, when the facade asks
-// the computer-use service for its target (src/cua-api/sky.mjs `setup`), which reaches the computer-use helper and
-// no app: no app approval is asked and none of the person's windows is touched; an approval that did arrive would be
-// declined by the shared policy and listed in the report's elicitations.
+// only CUA_BROWSER_BACKENDS), pinned to the vendor engine (CUA_NATIVE_ENGINE=vendor, CUA_REPL_HOST removed), which on
+// macOS runs on the vendor's REPL host. The step exists to exercise the vendor path, so it stays literal once macOS's
+// default engine is cua's (on a Mac with an approved engine the default would select cua's engine on cua's host), and
+// the pin is checked, not assumed (ruling 1149): each js result must attest the vendor engine
+// (`_meta['cua/nativeEngine']`) and the vendor host, attested as the other steps' launches are (`_meta['cua/replHost']`,
+// src/repl-host/identity.mjs: cua's own host marks every result, the vendor's none). Five separate js calls, browser
+// calls only: the computer surface's only work is at the first call, when the facade asks the computer-use service for
+// its target (src/cua-api/sky.mjs `setup`), which reaches the computer-use helper and no app: no app approval is asked
+// and none of the person's windows is touched; an approval that did arrive would be declined by the shared policy and
+// listed in the report's elicitations.
 export const LITERAL_SURFACES = 'computer,browser';
 export const VISIBILITY_LIMIT = 'Capability is not available: visibility';   // the vendor host's answer (#496)
 export const literalEnv = env => {
-  const out = {...env, CUA_SHIM_SURFACES: LITERAL_SURFACES, CUA_SHIM_SECRETS: 'off'};
-  delete out.CUA_NATIVE_ENGINE;
+  const out = {...env, CUA_SHIM_SURFACES: LITERAL_SURFACES, CUA_SHIM_SECRETS: 'off', CUA_NATIVE_ENGINE: 'vendor'};
   delete out.CUA_REPL_HOST;
   return out;
 };
@@ -267,18 +271,23 @@ export const LITERAL_CALLS = page => [
   try { await cua.getBrowser({ id: "iab" }); return {selected: true}; } catch (error) { return {selected: false, error: String(error?.message ?? error).slice(0, 400)}; }`)],
 ];
 
-// One reply -> {host, text, detail} or {host, text, error}: the cell's own result or its error, never a throw.
+// One reply -> {host, attestation, text, detail} or {host, attestation, text, error}: the cell's own result or its error,
+// never a throw; `attestation` the result's engine against the pinned vendor's (scripts/probe/lib.mjs classifyAttestation).
 export function literalReply(reply) {
   const marker = reply?.result?._meta?.['cua/replHost'];
   const host = marker?.host ?? (reply?.result ? 'vendor' : null);
+  const attestation = {engine: reply?.result?._meta?.[ENGINE_META_KEY]?.engine ?? null, ...classifyAttestation(reply?.result?._meta?.[ENGINE_META_KEY], {engine: 'vendor'})};
   const text = resultText(reply ?? {});
-  try { return {host, text, detail: parseFeatureResult(reply)}; } catch (error) { return {host, text, error: String(error?.message ?? error)}; }
+  try { return {host, attestation, text, detail: parseFeatureResult(reply)}; } catch (error) { return {host, attestation, text, error: String(error?.message ?? error)}; }
 }
 
-// The five results -> {ok, detail}: each call's verdict, the attested host, and the Name line of the first-use document.
+// The five results -> {ok, detail}: each call's verdict, the attested host and engine (every result the vendor's, ruling
+// 1149; the first that is not named in `attestation`), and the Name line of the first-use document.
 export function literalVerdict(results) {
   const [select, visible, open, mawsKey, iabMiss] = results;
   const hosts = [...new Set(results.map(r => r.host))];
+  const engines = [...new Set(results.map(r => r.attestation.engine))];
+  const unattested = results.find(r => r.attestation.status !== 'ok')?.attestation.problem ?? null;
   const name = /^- Name: .*$/m.exec(select.text)?.[0] ?? null;
   const instance = select.detail?.instance ?? null;
   const calls = {
@@ -288,8 +297,9 @@ export function literalVerdict(results) {
     mawsKey: {ok: mawsKey.detail?.markerMatches === true && mawsKey.detail?.sameBrowser === true && mawsKey.detail?.closed === true, ...(mawsKey.error !== undefined ? {error: mawsKey.error} : mawsKey.detail)},
     iabMiss: {ok: iabMiss.detail?.selected === false && /^Browser is not available: iab\. Browser ids: .+; profiles_list keys: .*"maws"/.test(iabMiss.detail.error), ...(iabMiss.error !== undefined ? {error: iabMiss.error} : iabMiss.detail)},
   };
-  const host = hosts.length === 1 ? hosts[0] : hosts;
-  return {ok: host === 'vendor' && Object.values(calls).every(c => c.ok), detail: {host, surfaces: LITERAL_SURFACES, calls}};
+  const host = hosts.length === 1 ? hosts[0] : hosts, engine = engines.length === 1 ? engines[0] : engines;
+  return {ok: host === 'vendor' && unattested === null && Object.values(calls).every(c => c.ok),
+    detail: {host, engine, ...(unattested ? {attestation: unattested} : {}), surfaces: LITERAL_SURFACES, calls}};
 }
 
 // Runs the five calls on `session` (an initialized MCP session of `cua serve`), then end_task.

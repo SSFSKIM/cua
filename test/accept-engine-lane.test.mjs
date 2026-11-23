@@ -7,6 +7,7 @@ import {
   approvalLedger, AttestationRefusal, attestReplies, doctorEngineCheck, lifecycleEngineCheck, verifyChecks,
 } from '../scripts/accept/engine-lane.mjs';
 import {sendToPausedSession} from '../scripts/accept/key-guard.mjs';
+import {STATE_1} from '../scripts/probe/lib.mjs';
 import {NO_PAUSE, pausing} from '../scripts/mini-pause.mjs';
 
 const CUA = {engine: 'cua', version: '0.1.0', build: 'b'.repeat(64)};
@@ -37,6 +38,8 @@ test('the first mismatch refuses: it throws, reports once, and nothing more is s
   await assert.rejects(session.dispatch('third'), AttestationRefusal);
   assert.deepEqual(session.sent, [['dispatch', 'first']], 'only the refused call was ever sent');
   assert.equal(refused.length, 1);
+  // Ruling 1149: the cua side answered by the vendor's engine is the lane's refusal naming state 1, never a pass.
+  assert.ok(refused[0].startsWith(STATE_1), refused[0]);
 });
 
 test('a result with no attestation, or another build, is refused like another engine', async () => {

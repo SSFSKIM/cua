@@ -25,6 +25,7 @@ function fakeProduct(fault = {}) {
   const grantsNow = () => fault.rowsIgnored ? {accessibility: true, screenRecording: true, inputMonitoring: true, canPostHid: true}
     : {accessibility: rows.has('accessibility'), screenRecording: rows.has('screenRecording'), inputMonitoring: rows.has('inputMonitoring'), canPostHid: rows.has('postEvent')};
   engine.grants = grantsNow();
+  if (fault.stoppedAtStart) engine = null;   // the setup stops the engine after its approve
   const launch = () => { engine = {pid: nextPid++, grants: grantsNow()}; };   // a row is read at launch only (H0)
   const decision = {entry: 'O0', commit: 'c'.repeat(40)};
   const grant = (grants, deps) => {
@@ -216,8 +217,8 @@ test('a wrong behaviour FAILs: a refusal naming the wrong grant, one without the
 
 test('missing proof is NO VERDICT: a vendor attestation (ruling 1149), rows the runner did not honour, a row not written, no record', async () => {
   for (const [fault, why] of [
-    [{vendor: true}, /none: accessibility call: attested the vendor's engine \(ruling 1149\)/],
-    [{vendor: true, rowsIgnored: true}, /none: accessibility call: attested the vendor's engine \(ruling 1149\); none: screenRecording call: attested the vendor's engine/],
+    [{vendor: true}, /none: accessibility call: the cua side attested the vendor engine.*\(state 1\)/],
+    [{vendor: true, rowsIgnored: true}, /none: accessibility call: the cua side attested the vendor engine.*; none: screenRecording call: the cua side attested the vendor engine/],
     [{rowsIgnored: true}, /none: not set: accessibility reads true with the stage's rows/],
     [{grantMissing: true}, /accessibility: not set: rows not read back: io\.github\.ssfskim\.cua\.engine accessibility/],
   ]) {
@@ -232,16 +233,22 @@ test('missing proof is NO VERDICT: a vendor attestation (ruling 1149), rows the 
   assert.match(judgeOnboarding({...record, hosted: false})[1], /not a hosted run/);
   const other = structuredClone(record);
   other.stages[2].calls[1].nativeEngine.build = 'c'.repeat(64);
-  assert.match(judgeOnboarding(other).join(' '), /NO VERDICT .*screenRecording: screenRecording call: attested cua build cccccccccccc, not the run's bbbbbbbbbbbb/);
+  assert.match(judgeOnboarding(other).join(' '), /NO VERDICT .*screenRecording: screenRecording call: the result attested engine cua version 0\.3\.0 build c{64} where engine cua version 0\.3\.0 build b{64} was expected/);
   const unread = structuredClone(record);
   unread.stages[3].doctor = {received: false, problem: 'exit 2'};
   assert.match(judgeOnboarding(unread).join(' '), /NO VERDICT .*full: doctor unread \(exit 2\)/);
 });
 
-test('a wrong behaviour outweighs missing proof elsewhere: FAIL', async () => {
-  const {record} = await run({noGuidance: true});
-  record.stages[3].calls[0].nativeEngine = {engine: 'vendor', version: '1', build: 'r'};
-  assert.equal(judgeOnboarding(record)[0], 'FAIL');
+test('ruling 1149\'s order: an answer on another engine anywhere is NO VERDICT before any FAIL; a FAIL outweighs other missing proof, an unattested result included', async () => {
+  const fallback = (await run({noGuidance: true})).record;
+  fallback.stages[3].calls[0].nativeEngine = {engine: 'vendor', version: '1', build: 'r'};
+  const [status, reason] = judgeOnboarding(fallback);
+  assert.equal(status, 'NO VERDICT');
+  assert.match(reason, /^full: accessibility call: the cua side attested the vendor engine.*\(state 1\)/);
+  const unattested = (await run({noGuidance: true})).record;
+  unattested.stages[3].calls[0].nativeEngine = null;
+  assert.equal(judgeOnboarding(unattested)[0], 'FAIL');
+  assert.match(judgeOnboarding((await run()).record, {engine: 'vendor'}).join(' '), /^NO VERDICT the record's engine is cua, not the vendor side the step measures/);
 });
 
 test('the recovery is owed only after a Screen Recording refusal was observed: with none, its absence is NO VERDICT, not a FAIL', async () => {
@@ -250,4 +257,11 @@ test('the recovery is owed only after a Screen Recording refusal was observed: w
   const [status, reason] = judgeOnboarding(record);
   assert.equal(status, 'NO VERDICT', reason);
   assert.match(reason, /screenRecording: not set: the recovery follows a Screen Recording refusal in the accessibility stage, and none was observed/);
+});
+
+test('stage none from the engine the setup left stopped: the stop finds none running, and the session\'s launch is the relaunch', async () => {
+  const {record} = await run({stoppedAtStart: true});
+  assert.deepEqual(record.stages[0].relaunch.stop, {ok: true, wasRunning: false, pid: null, code: null, attempts: 1});
+  assert.equal(record.stages[0].relaunched, true);
+  assert.equal(judgeOnboarding(record)[0], 'PASS');
 });

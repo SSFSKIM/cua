@@ -5,9 +5,10 @@
 // attests (./runner.mjs). `pilot` is the pilot's smallest form of each sitting (one run a lane; the sittings that are
 // already one pass run whole).
 //
-// A step: {id, label, kind, argv, check?, record?, report?, observe?, lane?, pilotNoVerdict?, env?, needs?, expect?, keep?,
-// missing?, pending?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default, `expect` for an
-// expect step), with the files it reads: `record` (a run's), `report` (removed before the step runs). Kinds, as ./run.mjs
+// A step: {id, label, kind, argv, check?, record?, engine?, report?, observe?, lane?, pilotNoVerdict?, env?, needs?, expect?,
+// keep?, missing?, pending?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default, `expect` for
+// an expect step), with the files it reads: `record` (a run's, whose attestations must be `engine`'s, the side the run
+// pins: ruling 1149), `report` (removed before the step runs). Kinds, as ./run.mjs
 // schedules them:
 //   run       a measurement or a witness
 //   verdict   a judge or its report (compare, summary, diff); `pilotNoVerdict`: in the pilot its NO VERDICT is expected
@@ -44,7 +45,7 @@ const LANES = {vv: ['vendor', 'vendor'], vc: ['vendor', 'cua'], cc: ['cua', 'cua
 function sittingA(ctx) {
   const runs = ctx.pilot ? 1 : 3, exp = `hosted-${ctx.runId}-a`, steps = [];
   for (let i = 1; i <= runs; i++) for (const [lane, [host, engine]] of Object.entries(LANES)) {
-    steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${lane}/run-${i}/meta.json`,
+    steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${lane}/run-${i}/meta.json`, engine,
       argv: ['node', 'scripts/native-baseline.mjs', 'run', '--device', DEVICE, '--experiment', exp, '--host', host, '--engine', engine, ...approvedArgs(ctx), '--out', `${ctx.out}/${lane}/run-${i}`]});
   }
   const compare = (id, mode, left, right) => ({id, label: `comparison ${id.slice(-1)} (${mode})`, kind: 'verdict', check: 'verdict', pilotNoVerdict: true,
@@ -54,7 +55,8 @@ function sittingA(ctx) {
 
 function sittingB(ctx) {
   const parity = (...args) => ['node', 'scripts/repl-parity.mjs', ...args];
-  const lane = engine => ({id: engine, label: `native-mac, ${engine} host and engine`, kind: 'run', needs: ['prepare'],
+  // Each lane is read by its meta.json, its attestations included (its exit is 0 only when that record is complete).
+  const lane = engine => ({id: engine, label: `native-mac, ${engine} host and engine`, kind: 'run', needs: ['prepare'], check: 'record', record: `${ctx.out}/${engine}/meta.json`, engine,
     argv: parity('run', '--device', DEVICE, ...approvedArgs(ctx), '--suite', 'native-mac', '--host', engine, '--engine', engine, '--out', `${ctx.out}/${engine}`)});
   return [
     {id: 'prepare', label: 'repl-parity prepare on the run\'s install', kind: 'run', argv: parity('prepare', '--device', DEVICE, '--commit', ctx.commit, ...approvedArgs(ctx))},
@@ -72,11 +74,11 @@ function sittingC(ctx) {
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
     argv: ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', ctx.approvedEngine, '--out', `${ctx.out}/focus-timing.json`]});
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
-    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
+    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine, argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
   }
   // #212's cell asks for its runs (one in the pilot), and its check reads every one of their records.
   for (const engine of ['vendor', 'cua']) steps.push({id: `save-sheet-${engine}`, label: `#212's save-sheet cell (observation-only) on ${engine}`, kind: 'run',
-    check: 'observation', records: Array.from({length: runs}, (_, i) => `${ctx.out}/save-sheet/${engine}/run-${i + 1}/result.json`), observe: 'textedit/intervention.saveSheet',
+    check: 'observation', records: Array.from({length: runs}, (_, i) => `${ctx.out}/save-sheet/${engine}/run-${i + 1}/result.json`), observe: 'textedit/intervention.saveSheet', engine,
     argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`, '--runs', String(runs))});
   steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
   steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', pilotNoVerdict: true, argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});
@@ -96,11 +98,11 @@ function sittingD(ctx) {
     {id: 'verify-cua', label: 'verify --engine cua --bind TextEdit (Acceptance 2)', kind: 'run', needs: ['textedit-up'], argv: verify('cua')},
     {id: 'verify-vendor', label: 'verify --engine vendor --bind TextEdit (Acceptance 9, attested)', kind: 'run', needs: ['textedit-up'], argv: verify('vendor')},
     {id: 'approval-cycles', label: `#216's approval cycles (${APPROVAL_CYCLES}) on cua's engine and host`, kind: 'run', needs: ['textedit-up'], env: {CUA_SHIM_SURFACES: 'computer,browser'},
-      argv: ['node', 'scripts/approval-cycles.mjs', '--engine', 'cua', '--approve', 'com.apple.TextEdit', '--decline', 'com.apple.calculator', '--cycles', String(APPROVAL_CYCLES)]},
+      check: 'verdict', argv: ['node', 'scripts/approval-cycles.mjs', '--engine', 'cua', '--approve', 'com.apple.TextEdit', '--decline', 'com.apple.calculator', '--cycles', String(APPROVAL_CYCLES)]},
     // T3b, the last step that measures: it removes cua's engine's rows and adds them back stage by stage (./onboarding.mjs),
     // binding the same scratch document; one pass of the stages in either form.
     {id: 'onboarding', label: 'T3b\'s staged onboarding: cua\'s engine\'s rows none, Accessibility, Screen Recording added, then Input Monitoring and post events, a relaunch at every stage',
-      kind: 'run', needs: ['textedit-up'], check: 'onboarding', record: `${ctx.out}/onboarding.json`, report: `${ctx.out}/onboarding.json`,
+      kind: 'run', needs: ['textedit-up'], check: 'onboarding', engine: 'cua', record: `${ctx.out}/onboarding.json`, report: `${ctx.out}/onboarding.json`,
       argv: ['node', 'scripts/hosted-sittings.mjs', 'onboarding', '--out', `${ctx.out}/onboarding.json`]},
     {id: 'textedit-down', label: 'the scratch TextEdit quit', kind: 'cleanup', needs: ['textedit-up'], argv: ['node', 'scripts/hosted-sittings.mjs', 'textedit', 'down']},
   ];

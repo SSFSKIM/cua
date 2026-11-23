@@ -45,18 +45,41 @@ export const O0_COMMIT = 'db775127652ebae5e0c7d90b5f5e2785f8e5711e';
 // Why `text` (the pinned spec) holds no O0 entry: its "## Decision Log" section, up to the next "## " heading, must hold
 // an entry of its own (a line starting "- ", with its indented continuation lines) whose text, whitespace-normalised,
 // begins with DECISION_MARKER. A quotation inside another entry, the marker anywhere outside the section, or an example
-// of the bullet in code (a fenced block, ``` or ~~~ at any indent, or a line indented as code) is none.
+// of the bullet in code (a fenced block, or a line indented as code) is none.
+// Fences are placed conservatively, never by a full CommonMark parser (fenceScan): a document with a fence the scan
+// cannot place unambiguously is refused as such.
 // -> null when it holds one, else the problem.
-export function decisionEntryProblem(text) {
-  // Fences first, over the whole document, so neither a section's heading nor an entry is read inside one. A fence
-  // opens on ``` or ~~~ (three or more) and closes on the same character, at least as long; its lines are code (null).
+// The document's lines with every fenced line (its fences included) as null, or `ambiguous`: why a fence cannot be placed
+// without a full CommonMark parser. Placed: a fence that opens at column 0 on ``` or ~~~ (three or more) and closes on
+// the same character, at least as long, indented at most three spaces, with nothing after it (CommonMark's closer).
+// Ambiguous: a fence marker opening on a list marker or indented outside a fence (a list item's fence, tracked in
+// CommonMark by the item's content indent, or indented code), a closer indented four or more (literal content in
+// CommonMark, which leaves the rest fenced), and a fence never closed. -> {lines, ambiguous: null | reason}.
+export function fenceScan(text) {
   let fence = null;
-  const lines = String(text ?? '').split('\n').map(line => {
-    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (fence) { if (mark && mark[0] === fence[0] && mark.length >= fence.length && !line.trim().slice(mark.length).trim()) fence = null; return null; }
-    if (mark) { fence = mark; return null; }
-    return line;
-  });
+  const lines = [];
+  for (const [i, line] of String(text ?? '').split('\n').entries()) {
+    const ambiguous = why => ({lines, ambiguous: `${why} at line ${i + 1}`});
+    const marker = /^(\s*)(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      const closes = marker && marker[2][0] === fence[0] && marker[2].length >= fence.length && !line.trim().slice(marker[2].length).trim();
+      if (closes && marker[1].length >= 4) return ambiguous('a fence closer indented four or more');
+      if (closes) fence = null;
+      lines.push(null);
+      continue;
+    }
+    if (/^\s*([-*+]|\d{1,9}[.)])\s+(`{3,}|~{3,})/.test(line)) return ambiguous('a fence opening on a list marker');
+    if (marker && marker[1].length > 0) return ambiguous('an indented fence (a list item\'s, or indented code)');
+    if (marker) { fence = marker[2]; lines.push(null); continue; }
+    lines.push(line);
+  }
+  return fence ? {lines, ambiguous: 'a fence never closed'} : {lines, ambiguous: null};
+}
+
+export function decisionEntryProblem(text) {
+  // Fences first, over the whole document, so neither a section's heading nor an entry is read inside one.
+  const {lines, ambiguous} = fenceScan(text);
+  if (ambiguous) return `the pinned spec's fences are ambiguous (${ambiguous})`;
   const start = lines.findIndex(line => line !== null && /^## Decision Log\s*$/.test(line));
   if (start < 0) return 'the pinned spec has no "## Decision Log" section';
   const end = lines.findIndex((line, i) => i > start && line !== null && /^## /.test(line));

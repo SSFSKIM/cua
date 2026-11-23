@@ -2,7 +2,8 @@
 // bind's answer, the screen sample, and the judge over what the connections recorded.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {approvalCyclesPlan, judgeApprovalCycles, refusalOf, screenState} from '../scripts/probe/approval-cycles.mjs';
+import {approvalCyclesPlan, attestationStop, judgeApprovalCycles, refusalOf, screenState, stoppedVerdict, verdictLine} from '../scripts/probe/approval-cycles.mjs';
+import {STATE_1} from '../scripts/probe/lib.mjs';
 
 test('the plan binds the approved app, the declined one and the approved one again, then each cycle ends the task and binds both; js_reset and the idle stop once each', () => {
   const plan = approvalCyclesPlan(3, {resetAt: 2, idleAt: 3});
@@ -229,4 +230,27 @@ test('an end_task that found no task because every bind before it was blocked is
 
   blocked.steps = blocked.steps.map(step => (step.noTask ? {step: 'end_task', cycle: 2, ok: false, detail: 'status noop'} : step));
   assert.deepEqual(judge([blocked, second()]).problems, ['first: end_task of cycle 2 failed (status noop)']);
+});
+
+// Ruling 1149: the witness drives cua's engine; a bind the vendor's engine answered (state 1) measured nothing of cua's,
+// so the run stops NO VERDICT, the cause named, never a pass and never a fail of cua's engine. What it observed before
+// on cua's engine can still fail it, as any stopped run's can.
+test('ruling 1149: a bind that attests the vendor engine stops the run NO VERDICT naming state 1; the run prints its verdict line', () => {
+  const expected = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  assert.equal(attestationStop({'cua/nativeEngine': {...expected}}, expected), null);
+  const stop = attestationStop({'cua/nativeEngine': {engine: 'vendor', version: null, build: 'r'}}, expected);
+  assert.equal(stop.noVerdict, true);
+  assert.ok(stop.message.startsWith(`refused on the attestation: ${STATE_1}`), stop.message);
+  assert.equal(attestationStop({}, expected).noVerdict, true, 'no attestation: the engine that answered is unknown');
+
+  const partial = goodConnection();
+  partial.binds = partial.binds.slice(0, 4);
+  const stopped = {message: `first: ${stop.message}`, noVerdict: stop.noVerdict};
+  const verdict = stoppedVerdict(judge([partial], {complete: false}), stopped);
+  assert.deepEqual([verdict.verdict, verdict.ok, verdict.stopped], ['no verdict', false, stopped.message]);
+  partial.binds[2] = bind('approve', 0, 0, 'declinedEarlier', {approval: approval('decline', 'memory')});
+  assert.equal(stoppedVerdict(judge([partial], {complete: false}), stopped).verdict, 'fail', 'what cua\'s engine did before still fails it');
+  assert.equal(stoppedVerdict(judge([goodConnection()], {complete: false}), {message: 'first: no answer', noVerdict: false}).verdict, 'fail', 'any other stop fails');
+  assert.equal(stoppedVerdict(judge([goodConnection(), second()]), null).verdict, 'pass');
+  assert.deepEqual(['pass', 'fail', 'no verdict'].map(verdictLine), ['VERDICT: PASS', 'VERDICT: FAIL', 'VERDICT: NO VERDICT']);
 });

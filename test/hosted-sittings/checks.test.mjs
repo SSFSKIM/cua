@@ -20,6 +20,50 @@ test('a measurement is read by its record: complete is recorded whatever its exi
   assert.deepEqual(check('record', step, 1), ['FAIL', 'runtime error: no record at /o/vc/run-1/meta.json (exit 1)']);
 });
 
+// Ruling 1149: a run whose side answered on another engine measured nothing of that side. Above all the cua side that
+// attested the vendor's (state 1): NO VERDICT, its cause named, whatever the record says of itself.
+test('ruling 1149: a run of the cua side that attests the vendor engine is NO VERDICT naming state 1, in each record\'s shape; never a pass', () => {
+  const cua = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)}, vendor = {engine: 'vendor', version: null, build: 'r'};
+  const step = {record: '/o/cc/run-1/meta.json', engine: 'cua'};
+  const one = (record, exit = 1, s = step) => check('record', s, exit, {[s.record]: record});
+  const fellBack = [
+    // The native baseline's meta.json, stopped by its own engine check.
+    {complete: false, error: 'this run: the vendor engine answered, not the requested cua', nativeEngine: {requested: 'cua', attested: [vendor], unattested: 0}},
+    // The matrix's result.json, even one that calls itself complete.
+    {complete: true, meta: {nativeEngine: {requested: 'cua', attested: [vendor], unattested: 0}}},
+    // The native-mac suite's meta.json.
+    {complete: false, engine: 'cua', error: 'the vendor engine answered, not the requested cua', engineAttestation: {attested: [cua, vendor], unattested: 0}},
+  ];
+  for (const record of fellBack) {
+    const [status, reason] = one(record);
+    assert.equal(status, 'NO VERDICT', JSON.stringify(record));
+    assert.match(reason, /^the cua side is not measured: the cua side attested the vendor engine, a fallback that compares the vendor with itself \(state 1\)/);
+  }
+  assert.deepEqual(one({complete: true, nativeEngine: {requested: 'cua', attested: [cua], unattested: 0}}, 0), ['PASS', null]);
+  // A complete record that cannot show which engine answered measured nothing it can name.
+  assert.deepEqual(one({complete: true, nativeEngine: {requested: 'cua', attested: [], unattested: 0}}, 0),
+    ['NO VERDICT', 'the cua side is not measured: no result attested an engine (cua/nativeEngine)']);
+  assert.deepEqual(one({complete: true}, 0), ['NO VERDICT', 'the cua side is not measured: the record keeps no engine attestation']);
+  // A run that stopped before anything attested stays the runtime error it was.
+  assert.deepEqual(one({complete: false, error: 'the scenes refuse', nativeEngine: {requested: 'cua', attested: [], unattested: 0}}),
+    ['FAIL', 'runtime error: the run is incomplete (the scenes refuse)']);
+  // The other way: cua's engine on the vendor side is no fallback, and no measurement of the vendor either.
+  const [status, reason] = one({complete: true, nativeEngine: {requested: 'vendor', attested: [cua], unattested: 0}}, 0, {...step, engine: 'vendor'});
+  assert.equal(status, 'NO VERDICT');
+  assert.match(reason, /^the vendor side is not measured: the result attested engine cua .* where engine vendor was expected/);
+
+  // #212's observation-only cell: one run of the cua side on the vendor's engine makes the step NO VERDICT.
+  const records = ['/o/save-sheet/cua/run-1/result.json', '/o/save-sheet/cua/run-2/result.json'];
+  const sheet = {records, observe: 'textedit/intervention.saveSheet', engine: 'cua'};
+  const observed = {section: 'intervention', id: sheet.observe, engine: 'cua', sample: 1, ok: false, invalid: 'observation only',
+    outcome: {observed: {before: {count: 1, lines: [{index: 0}]}}}};
+  const result = attested => ({complete: true, meta: {hosted: true, nativeEngine: {requested: 'cua', attested: [attested], unattested: 0}}, rows: [observed]});
+  const [sheetStatus, sheetReason] = check('observation', sheet, 0, {[records[0]]: result(cua), [records[1]]: result(vendor)});
+  assert.equal(sheetStatus, 'NO VERDICT');
+  assert.match(sheetReason, /^\/o\/save-sheet\/cua\/run-2\/result\.json: the cua side is not measured: the cua side attested the vendor engine/);
+  assert.equal(check('observation', sheet, 0, {[records[0]]: result(cua), [records[1]]: result(cua)})[0], 'PASS');
+});
+
 test('a judge is read by the verdict it printed: missing proof is NO VERDICT, the owner\'s calls OWNER, and no verdict at all a runtime error', () => {
   for (const verdict of ['PASS', 'FAIL', 'NO VERDICT', 'OWNER'])
     assert.deepEqual(check('verdict', {}, verdict === 'PASS' ? 0 : 1, {}, `wrote /o/comparison.md\nVERDICT: ${verdict}\n  missing: x`), [verdict, null]);

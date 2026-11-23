@@ -8546,6 +8546,82 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   No hosted live-rate measurement is needed: each kept change only refuses a target already chosen.
   Date/Author: 2026-11-23, cursor235's builder for #519.
 
+- Decision (#520, rulings 1163 and 1165, 2026-11-23, `fix/520-output-quote` from 82ac93f3): a refusal quotes only a value
+  the record kept, where #405's classification of the recorded node, taken at the observation, found it open; a withheld
+  one is said to be "value withheld". It never quotes a value read now (ruling 1165): that is unclassified, whatever the
+  record says, so the sentence says only that the label differs. No read, comparison or verdict changes; only sentence
+  wording does. The two read-side
+  attempts (`fix/520-classified-value`, fe593148) each introduced presses main refused, so the leak is closed where
+  values are output.
+  - The record (`ScreenshotNode.valueOpen`, from `screenshotLabelsUnknown`): true when the walk's `classifiedData`
+    found the element open and read its value (`ElementData.valueUnread` false). A password field, an unclassifiable
+    element and a valueless source (#390) are not open. Nothing is classified again for a sentence.
+  - `relabelledLabel` answers the part its label came from (`StalePointLabelNow`), so a sentence can tell a value from a
+    title or description (`stalePointQuotable`: never a value). Its reads and comparisons are main's.
+  The inventory: every path from a live or recorded AXValue on the stale-point path (StalePoint.swift, OverlayClick.swift,
+  and what they feed: MenuItemPoint.swift, PopUpPoint.swift, the field and element routes in ElementInput.swift and
+  Input.swift) to what the model sees. Each value reaches the model only by being quoted into a refusal sentence
+  (`stalePointOutcome`), so output gating closes it (the brief's stop condition did not apply).
+  1. #298's `relabelled` sentence (`screenChangedSinceScreenshot`, `labelNow`): the node's label read now, which for an
+     AXStaticText with no title or description now is its AXValue read raw (`StalePointReads.label`). It leaked: a text
+     recorded as a password field (its value withheld) whose title went quoted its value, and so did a text recorded open
+     that is a password field now. A title or description read now is still quoted; a value is not: "the AXStaticText
+     "Show" it showed at this point now reads another label."
+  2. #433's relabelled control beneath an inert layer (`controlUnderInertChanged`'s `label`): the same read on the control.
+     It leaked the same ways. Now "...; that control now reads another label."
+  3. #442's control on top (`otherControlOnTopRefusal`'s `top`): its AXValue read raw (`reads.value`) when its live role
+     is AXStaticText, as the label of a control with no title or description. It leaked. Now it is named by its title or
+     description read now, else its role alone ("the AXStaticText now lies on top at this point"). The value is still
+     read, in main's order, and dropped.
+  4. The recorded names: the generic refusal's `was`, #433's `over` and `control`, #443's `node` and `control`
+     (`inertOutlivedControl`), and #442's `shown`. These quote `ScreenshotNode.value`, which the walk already drops for a
+     closed element, so none leaked. They now go through `stalePointName(_:)`, gated by the same record, and a withheld
+     value is said to be withheld, where main printed the bare role.
+  Not value outputs:
+  - The hit named "is there now" quotes the hit's title or description only, never its value.
+  - The meta (`StalePointRecord.wire`) carries roles, reasons, identities, counts and times. #453's meta
+    (`OverlayDecision.wire`) carries roles, frames and reasons, and its sentences name the app only. #454's
+    `MenuItemReads.value` is compared, recorded as an enum (`MenuItemValue`) and never quoted. #458's sentences name the
+    app and the control's kind.
+  - Logs: StalePoint.swift, OverlayClick.swift and MenuItemPoint.swift write nothing to stderr, and the signposts take
+    static names.
+  - The tree render is #405's, and the stale-point path writes nothing back into it.
+  Ruling 1165 closed the limit ruling 1163 left: an element recorded open that turned into a password field since was
+  still quoted from its value read now (the first cut's sites 1 to 3 gated a value read now by the record). Now no value
+  read now is quoted at all; recorded values are unchanged.
+  How it is proven:
+  - One test per output site (`SecureValueQuoteTests`, 9 with the record's own check and ruling 1165's). Each scene's
+    element is an AXStaticText with the subrole AXSecureTextField whose value is a secret, answered by the fake to every
+    read now. The test helper's walk now classifies by #405's rule (`decodedLabels`' `subrole`, as `classifiedData` drops
+    a closed value). Each asserts the secret is absent and the site's wording present.
+  - Ruling 1165's test: each of the seven scenes again, with its element recorded open as "Open" and a password field
+    holding the secret now. The secret is in no sentence, and "Open" is quoted only as recorded. Where the value's change
+    is itself what the guard refuses (#298 on the element, or #433 on the control beneath), that refusal is the scene's
+    verdict on main as here: five scenes answer `relabelled`, the control on top `otherControlOnTop`.
+  - Red on 82ac93f3 (the first cut): the tests run there with only the new names removed. The three live sites quote the
+    secret (sites 1, 2 and 3 above). The four recorded sites lack "value withheld" (main printed the bare role). Seven
+    tests fail with 10 assertions; every verdict assertion passes there.
+  - Red on 7a74be08 (the first cut's head) for ruling 1165: ruling 1165's test fails at all seven scenes, each sentence
+    quoting the secret read now (14 assertions); the three live sites' wording tests and #298's sentence test fail on
+    wording only. 4 tests, 18 assertions; every verdict assertion passes there.
+  - Differential, in `LabelMonotonicityTests`:
+    - `underlyingRefusal` against a frozen copy of 82ac93f3's, on every combination of the oracle's label slots (2,401 for
+      a button, 35,000 for a static text): the same refusal, identity and label read now.
+    - Whole verdicts through `stalePointVerdict` in two scenes (#298's own node; #433's control beneath an inert layer)
+      over the same 37,401 worlds each, a recorded value withheld standing for a closed classification. Each verdict,
+      sentence stripped, is written as its meta, its refusal, its target (current and control beneath) and its label
+      read now. The 74,802 lines' SHA-256 was taken from the same enumeration run on 82ac93f3 and is frozen; the head
+      matches it (656 `relabelled` refusals in each scene, every other world `sameElement`).
+    - Not covered by the differential: #442's verdict reads no label, so the label worlds do not reach it; its scenes'
+      verdicts are asserted in `SecureValueQuoteTests` and passed on 82ac93f3.
+  - The only source changes outside sentence wording are type plumbing (`labelNow`'s type, `valueOpen`'s field), checked
+    by reading the diff against 82ac93f3.
+  - `RelabelledGuardTests.testTheReasonAndTheSentence`, which quoted a value read now, now quotes the recorded value (its
+    60-character cut) and says the label read now differs.
+  - The differential's digest is unchanged: the head still matches the frozen 82ac93f3 value.
+  - 1737 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  Date/Author: 2026-11-23, cursor235's builder for #520.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -231,6 +231,8 @@ test('a job that does not finish in time is booted out, and the refusal says a k
     assert.match(error.message, /console/);
     assert.match(error.hint, /Always Allow/);
     assert.match(error.hint, /cua engine build/);
+    assert.match(error.hint, /dismiss the prompt this build left.*--sign-wait 600000.*Always Allow while that build still waits/,
+      'the left-over prompt is dismissed and a long-waiting build answered, as the README says');
     assert.ok(!JSON.stringify({m: error.message, h: error.hint}).includes(SHA1));
     return true;
   });

@@ -1,0 +1,450 @@
+{
+  "pins": [
+    {
+      "invocation": "3a732da6-7f35-4104-ad83-ecead1052a45",
+      "pid": 462,
+      "window": 19157,
+      "at": 1792790753606,
+      "exitStatus": 0,
+      "matched": true,
+      "readBack": {
+        "y": 80,
+        "height": 520,
+        "x": 80,
+        "width": 920
+      }
+    },
+    {
+      "invocation": "1763d120-ffe9-447e-97fb-2d0a0bc8a80f",
+      "pid": 462,
+      "window": 19200,
+      "at": 1792790984350,
+      "exitStatus": 0,
+      "matched": true,
+      "readBack": {
+        "y": 80,
+        "height": 520,
+        "width": 920,
+        "x": 80
+      }
+    },
+    {
+      "invocation": "366ffd47-1e65-4cad-a474-f2ec2741f385",
+      "pid": 462,
+      "window": 19395,
+      "at": 1792791858365,
+      "exitStatus": 0,
+      "matched": true,
+      "readBack": {
+        "y": 80,
+        "width": 920,
+        "x": 80,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "261b900c-bb00-4350-96ea-1e46ea8dfcba",
+      "pid": 462,
+      "window": 20212,
+      "at": 1792794104690,
+      "exitStatus": 0,
+      "matched": true,
+      "readBack": {
+        "y": 80,
+        "x": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "eab02f25-11b5-40c7-9163-fee039e79c88",
+      "pid": 462,
+      "window": 19294,
+      "at": 1792791346146,
+      "exitStatus": 0,
+      "matched": true,
+      "readBack": {
+        "y": 80,
+        "width": 920,
+        "height": 520,
+        "x": 80
+      }
+    },
+    {
+      "invocation": "e57a500a-8829-4641-b839-cde38d70cb2c",
+      "pid": 462,
+      "window": 19350,
+      "at": 1792791542869,
+      "exitStatus": 0,
+      "matched": true,
+      "readBack": {
+        "x": 80,
+        "height": 520,
+        "y": 80,
+        "width": 920
+      }
+    }
+  ],
+  "growth": [
+    {
+      "invocation": "3a732da6-7f35-4104-ad83-ecead1052a45",
+      "phase": "setup",
+      "point": "setup-entry",
+      "window": 19157,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "3a732da6-7f35-4104-ad83-ecead1052a45",
+      "phase": "setup",
+      "point": "after-chrome-statusBar",
+      "window": 19157,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "abbcdd97-c6e1-4f86-84d2-1ca2c06f6457",
+      "phase": "teardown",
+      "point": "teardown-entry",
+      "window": 19157,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "abbcdd97-c6e1-4f86-84d2-1ca2c06f6457",
+      "phase": "teardown",
+      "point": "after-chrome-statusBar",
+      "window": 19157,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "abbcdd97-c6e1-4f86-84d2-1ca2c06f6457",
+      "phase": "teardown",
+      "point": "pre-close",
+      "window": 19157,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "1763d120-ffe9-447e-97fb-2d0a0bc8a80f",
+      "phase": "setup",
+      "point": "setup-entry",
+      "window": 19200,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "1763d120-ffe9-447e-97fb-2d0a0bc8a80f",
+      "phase": "setup",
+      "point": "after-chrome-statusBar",
+      "window": 19200,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "3139a94c-f9ca-44d8-bb55-4dafda12a791",
+      "phase": "teardown",
+      "point": "teardown-entry",
+      "window": 19200,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "3139a94c-f9ca-44d8-bb55-4dafda12a791",
+      "phase": "teardown",
+      "point": "after-chrome-statusBar",
+      "window": 19200,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "3139a94c-f9ca-44d8-bb55-4dafda12a791",
+      "phase": "teardown",
+      "point": "pre-close",
+      "window": 19200,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "366ffd47-1e65-4cad-a474-f2ec2741f385",
+      "phase": "setup",
+      "point": "setup-entry",
+      "window": 19395,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "366ffd47-1e65-4cad-a474-f2ec2741f385",
+      "phase": "setup",
+      "point": "after-chrome-statusBar",
+      "window": 19395,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "aff9e7b2-ee89-40cf-ae7d-e9539ae03705",
+      "phase": "teardown",
+      "point": "teardown-entry",
+      "window": 19395,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "aff9e7b2-ee89-40cf-ae7d-e9539ae03705",
+      "phase": "teardown",
+      "point": "after-chrome-statusBar",
+      "window": 19395,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "aff9e7b2-ee89-40cf-ae7d-e9539ae03705",
+      "phase": "teardown",
+      "point": "pre-close",
+      "window": 19395,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "261b900c-bb00-4350-96ea-1e46ea8dfcba",
+      "phase": "setup",
+      "point": "setup-entry",
+      "window": 20212,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "261b900c-bb00-4350-96ea-1e46ea8dfcba",
+      "phase": "setup",
+      "point": "after-chrome-statusBar",
+      "window": 20212,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "3076edcb-f143-41c6-9ee2-539c9d319169",
+      "phase": "teardown",
+      "point": "teardown-entry",
+      "window": 20212,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "3076edcb-f143-41c6-9ee2-539c9d319169",
+      "phase": "teardown",
+      "point": "after-chrome-statusBar",
+      "window": 20212,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "3076edcb-f143-41c6-9ee2-539c9d319169",
+      "phase": "teardown",
+      "point": "pre-close",
+      "window": 20212,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "eab02f25-11b5-40c7-9163-fee039e79c88",
+      "phase": "setup",
+      "point": "setup-entry",
+      "window": 19294,
+      "bounds": {
+        "x": 820,
+        "y": 261,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "eab02f25-11b5-40c7-9163-fee039e79c88",
+      "phase": "setup",
+      "point": "after-chrome-statusBar",
+      "window": 19294,
+      "bounds": {
+        "x": 820,
+        "y": 261,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "51bd3492-c3e1-43c0-aa90-9e130384f035",
+      "phase": "teardown",
+      "point": "teardown-entry",
+      "window": 19294,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "51bd3492-c3e1-43c0-aa90-9e130384f035",
+      "phase": "teardown",
+      "point": "after-chrome-statusBar",
+      "window": 19294,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "51bd3492-c3e1-43c0-aa90-9e130384f035",
+      "phase": "teardown",
+      "point": "pre-close",
+      "window": 19294,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "e57a500a-8829-4641-b839-cde38d70cb2c",
+      "phase": "setup",
+      "point": "setup-entry",
+      "window": 19350,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "e57a500a-8829-4641-b839-cde38d70cb2c",
+      "phase": "setup",
+      "point": "after-chrome-statusBar",
+      "window": 19350,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "ddfa0c4e-66db-432a-b9d9-1e0c7579abaf",
+      "phase": "teardown",
+      "point": "teardown-entry",
+      "window": 19350,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 520
+      }
+    },
+    {
+      "invocation": "ddfa0c4e-66db-432a-b9d9-1e0c7579abaf",
+      "phase": "teardown",
+      "point": "after-chrome-statusBar",
+      "window": 19350,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    },
+    {
+      "invocation": "ddfa0c4e-66db-432a-b9d9-1e0c7579abaf",
+      "phase": "teardown",
+      "point": "pre-close",
+      "window": 19350,
+      "bounds": {
+        "x": 80,
+        "y": 80,
+        "width": 920,
+        "height": 548
+      }
+    }
+  ]
+}

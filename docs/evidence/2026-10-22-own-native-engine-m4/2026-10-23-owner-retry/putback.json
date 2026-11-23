@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-23T09:53:11.387Z",
+  "source": "executor tool readout; remote original /tmp/cua-m4.u5B2eG/hold5-putback-engine.json was not fetched under the no-further-mini-action instruction",
+  "stopped": {
+    "wasRunning": true,
+    "pid": 99635
+  },
+  "build": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc",
+  "approved": true,
+  "approvedBuild": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc",
+  "identityMatches": true,
+  "permissions": {
+    "accessibility": true,
+    "screenRecording": true,
+    "inputMonitoring": true
+  },
+  "connections": 0,
+  "readPid": 29272,
+  "readInstanceStopped": true,
+  "finalRunning": false,
+  "finalApproved": true,
+  "ok": true,
+  "SecurityAgentAbsent": true,
+  "TextEditAbsent": true,
+  "engineJsonMtime": 1792384396,
+  "releasedToMaintenance": "2026-10-23T09:54:20Z, coordinator report"
+}

@@ -50,7 +50,7 @@ import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseli
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
-import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval} from '../native-matrix/goldens.mjs';
+import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval, settleRecordingProbes} from '../native-matrix/goldens.mjs';
 import {isSessionFile} from '../native-matrix/goldens-cells.mjs';
 import {REPO_ROOT} from '../native-matrix/goldens-install.mjs';
 import {settleResult} from '../native-matrix/settle-cell.mjs';
@@ -202,6 +202,7 @@ export async function runNativeMac(options, io) {
         if (ctx.up.has(id)) takeDown(ctx, id);
       }
       write();
+      if (meta.probeSettlement?.ok === false) break;
     }
     meta.complete = SCENE_IDS.every(id => meta.scenes[id]?.recorded) && meta.problems.length === 0;
   } catch (error) {
@@ -209,15 +210,20 @@ export async function runNativeMac(options, io) {
     if (error instanceof Interrupted) meta.interrupted = interrupt.signal;
     log(`run stopped: ${error.message}`);
   } finally {
+    // No restoration may race a frame probe, even after a controller/SSH interruption.
     // The bounded final recovery: each scene still up gets one more teardown and down.
     for (const id of [...ctx.up]) takeDown(ctx, id);
+    const probesSettled = !ctx.prepared || settleRecordingProbes(ctx).ok === true;
     const outstanding = [...ctx.up];
     for (const id of outstanding) meta.problems.push(`${id}: could not be brought down (${meta.scenes[id]?.takeDown?.failures.at(-1) ?? 'it stayed up'})`);
     if (client) {
       try { await client.call('end_task'); } catch {}
       try { await client.close(); } catch {}
     }
-    if (ctx.prepared && outstanding.length) {
+    if (ctx.prepared && !probesSettled) {
+      meta.preparationCleanup = {deferred: 'probes are not confirmed settled; run cleanup again'};
+      meta.problems.push('probe settlement failed; preparation.json and the approved home kept for cleanup');
+    } else if (ctx.prepared && outstanding.length) {
       meta.preparationCleanup = {deferred: `the scenes ${outstanding.join(', ')} are still up`};
       log(`${outstanding.join(', ')} still up: the approved home stays held and ${join(dir, 'preparation.json')} kept; restore it all with node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${join(dir, 'preparation.json')}`);
     } else if (ctx.prepared) {
@@ -240,7 +246,7 @@ export async function runNativeMac(options, io) {
     // The owner's front app, last: one that was to be put back and is not in front leaves the run incomplete, and the
     // journal (the home recorded as given back) lets goldens.mjs cleanup try it again.
     let frontHeld = true;
-    if (frontmost?.bundleId) {
+    if (probesSettled && frontmost?.bundleId) {
       meta.frontmost.putBack = putBackFrontmost(ops, frontmost);
       frontHeld = frontPutBackHeld(meta.frontmost.putBack);
       if (!frontHeld) meta.problems.push(frontPutBackProblem(meta.frontmost.putBack));
@@ -346,6 +352,12 @@ function steps(ctx, id, phase) {
 function takeDown(ctx, id) {
   const account = (ctx.meta.scenes[id] ??= {}).takeDown ??= {attempts: 0, failures: []};
   account.attempts++;
+  const settlement = settleRecordingProbes(ctx);
+  if (!settlement.ok) {
+    account.failures.push(settlement.manual ?? settlement.error ?? 'probes are not confirmed settled');
+    account.down = false;
+    return;
+  }
   try { steps(ctx, id, 'teardown'); } catch (error) { account.failures.push(error.message); }
   try {
     const down = ctx.ops.scenes(['down', id, '--run', ctx.run]);

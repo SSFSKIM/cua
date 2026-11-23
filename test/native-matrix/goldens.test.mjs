@@ -38,6 +38,7 @@ function fakeDevice({observe = () => null, action = () => null, up = () => null,
     goldens(args) {
       calls.push(['goldens', ...args]);
       const [command, scene] = args;
+      if (command === 'settle-probes') return {ok: true, survivors: [], probeWait: null};
       if (command === 'engine-check') return {ok: !engineProblems.length, engine: {bundlePath: '/e/cua Engine.app', build: approvedBuild, engineVersion: '0.1.0', approvedAt: '2026-10-20T00:00:00Z'}, checkout: {build: approvedBuild, engineVersion: '0.1.0'}, problems: engineProblems};
       if (command === 'engine-stop') return {wasRunning: false};
       if (command === 'steps') return {scene, phase: args.at(-1), steps: steps(scene, args.at(-1))};
@@ -407,7 +408,7 @@ test('a recording directory already used is refused with the way on; a dead reco
   const ops = {goldens: args => { calls.push(args.join(' ')); if (args[0] === 'steps') throw new Error('scene finder is not up'); return {ok: true}; },
     scenes: args => { calls.push(args.join(' ')); return {down: true}; }, cleanup: prepared => { calls.push(`cleanup ${prepared.home}`); return {removed: true}; }};
   const out = cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, ops);
-  assert.deepEqual(calls, ['steps finder --run /r --phase teardown', 'down all --run /r', 'engine-stop', 'cleanup /h']);
+  assert.deepEqual(calls, ['settle-probes --run /r', 'steps finder --run /r --phase teardown', 'down all --run /r', 'engine-stop', 'cleanup /h']);
   assert.match(out.finderTeardown.error, /not up/);
   assert.deepEqual(out.preparationCleanup, {removed: true});
 });
@@ -419,7 +420,7 @@ test('a dead recording\'s cleanup keeps the approved home and its journal until 
     cleanup: prepared => { calls.push(`cleanup ${prepared.home}`); return {removed: true}; }});
   const stuck = cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r', frontmost: {bundleId: 'com.apple.Terminal', pid: 321}},
     ops({down: false, scenes: [{scene: 'finder', down: false, windowOpen: true, reason: 'the run\'s Finder window is still open'}]}));
-  assert.deepEqual(calls.slice(0, 2), ['steps finder --run /r --phase teardown', 'down all --run /r']);
+  assert.deepEqual(calls.slice(0, 3), ['settle-probes --run /r', 'steps finder --run /r --phase teardown', 'down all --run /r']);
   assert.equal(calls.some(c => c === 'engine-stop' || c.startsWith('cleanup')), false, 'the engine and the approved home stay as the recording left them');
   assert.match(stuck.preparationCleanup.deferred, /not confirmed down/);
   assert.equal(stuck.restored, false);
@@ -631,4 +632,64 @@ test('preparation.json holds the frontmost app for cleanup while the recording r
   device.ops.preflight = prepared => { preparation = JSON.parse(fs.readFileSync(join(dir, 'preparation.json'), 'utf8')); return preflight(prepared); };
   await run({device, repo, out: dir});
   assert.deepEqual(preparation.frontmost, {bundleId: 'com.apple.Terminal', pid: 321});
+});
+
+test('cleanup of an aborted recording settles frame probes before any restoration and keeps its journal on failure', () => {
+  const dir = scratch(), file = join(dir, 'preparation.json');
+  const preparation = {prepared: PREPARED, run: '/r', frontmost: {pid: 321, bundleId: 'com.apple.Terminal'}};
+  fs.writeFileSync(file, JSON.stringify(preparation));
+  const calls = [];
+  let settled = false;
+  const ops = {
+    goldens: args => { calls.push(args[0]); return args[0] === 'settle-probes' ? {ok: settled, survivors: settled ? [] : ['window-frame#1']} : {}; },
+    scenes: args => { calls.push(args[0]); return {down: true, reactivated: true, inFront: true}; },
+    cleanup: () => { calls.push('cleanup'); return {removed: true}; },
+  };
+  const blocked = cleanupRecording(preparation, ops);
+  assert.equal(blocked.restored, false);
+  assert.deepEqual(calls, ['settle-probes'], 'no teardown, down, engine stop, home release or front restoration behind a live probe');
+  assert.equal(settleCleanupJournal(file, preparation, blocked), 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)), preparation);
+  settled = true;
+  const recovered = cleanupRecording(preparation, ops);
+  assert.equal(recovered.restored, true);
+  assert.deepEqual(calls.slice(1), ['settle-probes', 'steps', 'down', 'engine-stop', 'cleanup', 'reactivate']);
+  assert.equal(settleCleanupJournal(file, preparation, recovered), 0);
+  assert.equal(fs.existsSync(file), false);
+});
+
+test('recording stops at a failed probe settlement, including normal and failed setup, without releasing recovery state', async () => {
+  for (const setupFails of [false, true]) {
+    const device = fakeDevice({steps: (id, phase) => { if (setupFails && phase === 'setup') throw new Error('controller lost SSH after probe launch'); return []; }});
+    const goldens = device.ops.goldens;
+    device.ops.goldens = args => {
+      if (args[0] === 'settle-probes') { device.calls.push(['goldens', ...args]); return {ok: false, manual: 'frame probe remains'}; }
+      return goldens(args);
+    };
+    const out = await run({device, scenes: ['finder'], install: false});
+    assert.equal(out.meta.complete, false);
+    assert.equal(device.calls.some(c => c[0] === 'cleanup' || c[1] === 'down' || c[1] === 'reactivate' || (c[1] === 'steps' && c.at(-1) === 'teardown')), false);
+    assert.equal(device.calls.filter(c => c[1] === 'engine-stop').length, 1, 'only the start stop; no final stop behind the probe');
+    assert.equal(device.calls.filter(c => c[1] === 'settle-probes').length, 1, 'failure is not retried in the same final cleanup, keeping its wait bounded');
+    assert.equal(fs.existsSync(join(out.dir, 'preparation.json')), true);
+  }
+});
+
+test('recording barriers precede every teardown and a failed final barrier still holds an already-down run', async () => {
+  const device = fakeDevice(), goldens = device.ops.goldens;
+  device.ops.goldens = args => {
+    if (args[0] === 'settle-probes' && device.calls.some(c => c[1] === 'down' && c[2] === 'finder')) {
+      device.calls.push(['goldens', ...args]);
+      throw new Error('SSH lost during final settlement');
+    }
+    return goldens(args);
+  };
+  const out = await run({device, scenes: ['finder'], install: false});
+  const teardown = device.calls.findIndex(c => c[1] === 'steps' && c.at(-1) === 'teardown');
+  assert.equal(device.calls[teardown - 1][1], 'settle-probes');
+  assert.equal(device.calls.some(c => c[1] === 'down'), true);
+  assert.equal(device.calls.some(c => c[0] === 'cleanup' || c[1] === 'reactivate'), false);
+  assert.equal(out.meta.complete, false);
+  assert.equal(fs.existsSync(join(out.dir, 'preparation.json')), true);
+  assert.match(out.meta.probeSettlement.error, /SSH/);
 });

@@ -7,8 +7,9 @@
 //
 // Two lanes judge the default home. `fixture`: a synthetic approved bundle (scripts/probe/fixture-engine.mjs), a
 // selection check only: doctor's inspection of that bundle cannot pass (it is not cua's engine), so the engine row is
-// recorded, not judged. `approved`: the run's own engine, built and approved in a disposable runner home (the hosted+
-// witness): the engine row must pass too, and a failed inspection is named apart from a wrong selection.
+// recorded, not judged. `approved`: the run's own engine, built ad hoc and approved in a disposable runner home (the
+// hosted+ witness): doctor's inspection is judged by its facts (approvedInspectionProblem), a failed one named apart
+// from a wrong selection.
 import {defaultSelectionProblem} from './linux-selection.mjs';
 
 export {defaultSelectionProblem};
@@ -54,10 +55,11 @@ export function hostOf(report) {
 
 /**
  * The default home's judge: null when doctor says the default selected cua's engine and runs it on cua's own host
- * (repl.host `cua host (cua_engine)`, pass); in the `approved` lane doctor's inspection of the approved bundle (the
- * engine row) must pass as well, and its failure is named as such, apart from a wrong selection.
+ * (repl.host `cua host (cua_engine)`, pass); in the `approved` lane doctor's inspection of the approved bundle must hold
+ * as well (approvedInspectionProblem, against `sourceBuild`, this checkout's engine build), its failure named as such,
+ * apart from a wrong selection.
  */
-export function defaultHomeProblem(report, {lane = 'fixture'} = {}) {
+export function defaultHomeProblem(report, {lane = 'fixture', sourceBuild = null} = {}) {
   if (!LANES.includes(lane)) return `no lane ${lane}: ${LANES.join(' or ')}`;
   const selection = defaultSelectionProblem(report);
   if (selection) return selection;
@@ -65,11 +67,34 @@ export function defaultHomeProblem(report, {lane = 'fixture'} = {}) {
   if (!host) return 'cua doctor --json reports no repl.host row';
   if (host.host !== 'cua' || host.reason !== 'cua_engine' || host.status !== 'pass')
     return `doctor's repl.host row is ${host.status}, ${host.host ? `${host.host} host (${host.reason})` : 'no host'}, not cua's host for cua's engine (cua_engine) with pass`;
-  if (lane === 'approved') {
-    const engine = row(report, 'engine');
-    if (engine.status !== 'pass') return `the default selected cua's engine on cua's host, but doctor's inspection of the approved bundle is ${engine.status}: ${engine.detail.slice(0, 400)}`;
-  }
-  return null;
+  return lane === 'approved' ? approvedInspectionProblem(report, sourceBuild) : null;
+}
+
+const GRANT_NAMES = Object.freeze({accessibility: 'Accessibility', screenRecording: 'Screen Recording', inputMonitoring: 'Input Monitoring'});
+/**
+ * The approved lane's inspection judge, on doctor's structured facts (report.engine, doctor-engine.mjs factsReport)
+ * rather than its row's verdict: the hosted job signs ad hoc, which doctor's row always warns on (signatureWords), so
+ * the row cannot pass there. A failing row is rejected as it stands. Otherwise the approved bundle must be this
+ * checkout's build, the engine that answered at its socket that bundle, its three grants held (the hosted approval
+ * grants all three) and doctor's launch of it clean; then a warning is accepted only when the bundle is signed ad hoc
+ * and no other of the row's warnings (installedRow's: the source build, the grants, the launch, route 3's advice) holds.
+ */
+function approvedInspectionProblem(report, sourceBuild) {
+  const engine = row(report, 'engine'), facts = report.engine;
+  if (engine.status === 'fail') return `the default selected cua's engine on cua's host, but doctor's inspection of the approved bundle is fail: ${engine.detail}`;
+  if (!sourceBuild) return 'the approved lane judges the bundle against this checkout\'s engine build, and none was given';
+  if (!facts?.socket || !facts.permissions) return 'cua doctor --json reports no inspection of the approved bundle';
+  if (facts.approved !== true || facts.approvedBuild !== sourceBuild || facts.build !== sourceBuild)
+    return `the approved bundle is build ${facts.approvedBuild}, running build ${facts.build}, not this checkout's (${sourceBuild})`;
+  if (facts.socket.ownerIsApproved !== true) return 'the engine doctor read at the socket is not the approved bundle';
+  const missing = Object.keys(GRANT_NAMES).filter(grant => facts.permissions[grant] !== true);
+  if (missing.length) return `cua Engine lacks ${missing.map(grant => GRANT_NAMES[grant]).join(', ')}, which the hosted approval grants`;
+  const launched = facts.launched;
+  if (launched?.replaced || launched?.error) return `doctor's launch of the approved bundle did not end cleanly: ${launched.error ?? launched.detail}`;
+  if (facts.routeAdvice?.length) return `doctor's engine row warns, route 3 advice for ${facts.routeAdvice.join(', ')}`;
+  if (engine.status === 'warn' && facts.signature?.kind !== 'adhoc')
+    return `doctor's engine row warns, and the bundle is not signed ad hoc (the one warning this lane expects): ${engine.detail}`;
+  return engine.status === 'pass' || engine.status === 'warn' ? null : `doctor's engine row is ${engine.status}`;
 }
 
 /**
@@ -94,14 +119,14 @@ export function fallbackSelectionProblem(report, kind) {
 }
 
 /** The judge of home `kind` in `lane`: the default home's where cua's engine is expected, else the fallback's. */
-export const judgeFor = (kind, {lane = 'fixture'} = {}) => (HOMES[kind]?.expect === 'cua' ? report => defaultHomeProblem(report, {lane}) : report => fallbackSelectionProblem(report, kind));
+export const judgeFor = (kind, {lane = 'fixture', sourceBuild = null} = {}) => (HOMES[kind]?.expect === 'cua' ? report => defaultHomeProblem(report, {lane, sourceBuild}) : report => fallbackSelectionProblem(report, kind));
 
 /**
- * The sitting's verdict from each home's doctor report (`reports`, kind -> report) in `lane`: {pass, homes: {kind:
- * problem | null}}. Every home of HOMES is judged; one without a report fails.
+ * The sitting's verdict from each home's doctor report (`reports`, kind -> report) in `lane` (the approved lane's
+ * `sourceBuild` with it): {pass, homes: {kind: problem | null}}. Every home of HOMES is judged; one without a report fails.
  */
-export function sittingVerdict(reports, {lane = 'fixture'} = {}) {
-  const homes = Object.fromEntries(Object.keys(HOMES).map(kind => [kind, kind in reports ? judgeFor(kind, {lane})(reports[kind]) : 'not run']));
+export function sittingVerdict(reports, {lane = 'fixture', sourceBuild = null} = {}) {
+  const homes = Object.fromEntries(Object.keys(HOMES).map(kind => [kind, kind in reports ? judgeFor(kind, {lane, sourceBuild})(reports[kind]) : 'not run']));
   return {pass: Object.values(homes).every(problem => problem === null), homes};
 }
 

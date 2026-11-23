@@ -8,7 +8,8 @@
 //             hosted+ witness: that home's own approved engine instead, which doctor launches, reads and stops, so it
 //             is refused unless the run is on a GitHub-hosted runner, the home is a disposable directory under the
 //             runner's temp directory, and its approved engine is this checkout's build (the run's own, built and
-//             approved by macos-default-selection-hosted.sh); the engine row must pass there
+//             approved by macos-default-selection-hosted.sh); doctor's inspection of it is judged there by its facts
+//             (the build, the socket's owner, the grants, the launch), the ad-hoc signature's warning expected
 //   none      no approved engine: the vendor's host and engine, engine_not_installed
 //   node      the fixture engine, cua run on a Node older than 24 (--older-node) with none other to find (no CUA_NODE,
 //             an empty cua home, no node on PATH): the vendor's host and engine, own_host_node_unavailable
@@ -57,6 +58,7 @@ if (process.platform !== 'darwin') usage('refused: macOS only');
 if (!values['older-node']) usage('--older-node <path> is required (the node home runs cua on it)');
 const older = {path: values['older-node'], version: olderNode(values['older-node'])};
 const lane = values['approved-home'] ? 'approved' : 'fixture';
+const sourceBuild = lane === 'approved' ? engineBuild() : null;
 if (lane === 'approved') {
   const real = path => { try { return realpathSync(path); } catch { return null; } };
   const home = real(values['approved-home']);
@@ -64,7 +66,7 @@ if (lane === 'approved') {
   let approvedBuild = null;
   try { approvedBuild = installedEngine({dir: engineDirectory(home)})?.build ?? null; } catch { approvedBuild = null; }
   const refused = approvedHomeProblem({home, env: process.env, runnerTemp: process.env.RUNNER_TEMP && real(process.env.RUNNER_TEMP), accountHome: real(homedir()),
-    approvedBuild, sourceBuild: engineBuild()});
+    approvedBuild, sourceBuild});
   if (refused) usage(`refused: ${refused}`);
 }
 const root = realpathSync(mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'cua-default-selection-')));
@@ -88,7 +90,7 @@ try {
 } finally {
   rmSync(root, {recursive: true, force: true});
 }
-const verdict = sittingVerdict(reports, {lane});
+const verdict = sittingVerdict(reports, {lane, sourceBuild});
 for (const [kind, judged] of Object.entries(verdict.homes)) {
   const found = record.homes[kind];
   const problem = found?.problem ?? judged;

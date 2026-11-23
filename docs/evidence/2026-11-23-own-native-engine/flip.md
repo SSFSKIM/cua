@@ -23,8 +23,8 @@ Modeled on Linux's (`scripts/accept/linux-selection.mjs`, #171 M5 commit 3e2e5d5
   verdict, `--approved-home`'s refusal.
   - `default`: a fixture approved engine at the service's minimum (`${MIN}+fixture`) → cua's engine, reason `default`,
     run on cua's own host: repl.host `cua host (cua_engine)` with pass (fix wave). In the `fixture` lane the synthetic
-    bundle's engine row is recorded, not judged; in the `approved` lane it must pass, its failure named apart from a
-    wrong selection.
+    bundle's engine row is recorded, not judged; in the `approved` lane doctor's inspection is judged by its facts,
+    the ad-hoc signature's warning expected, a failure named apart from a wrong selection (round 2).
   - `none`: no approved engine → vendor, `engine_not_installed`.
   - `node`: the fixture engine, cua run on a Node below 24 with nothing else to find → vendor, `own_host_node_unavailable`.
   - `outdated`: a fixture approved engine at 0.1.0 (what every pre-T9 build reports) → vendor, `engine_outdated`.
@@ -194,9 +194,9 @@ T11a (`scripts/accept`, `.github/ci-kit.yml`, their test):
   It then requires repl.host to read `cua host (cua_engine)` with pass. Before this, `cua (default)` beside a vendor
   repl.host row passed. `hostOf` parses the row, and each home's record and output line carry it.
 - **Two lanes.** `fixture`, the default: the synthetic bundle's engine row (always `fail`, since it is not cua's
-  bundle id) is recorded, not judged. `approved` (`--approved-home`): the engine row must pass too, and a failure
-  reads "the default selected cua's engine on cua's host, but doctor's inspection of the approved bundle is …",
-  apart from a wrong selection.
+  bundle id) is recorded, not judged. `approved` (`--approved-home`): as first fixed, the engine row had to pass;
+  round 2 (below) judges the inspection's facts instead. A failing row reads "the default selected cua's engine on
+  cua's host, but doctor's inspection of the approved bundle is fail: …", apart from a wrong selection.
 - **`--approved-home` refuses** (exit 2) unless `RUNNER_ENVIRONMENT=github-hosted`, RUNNER_TEMP is set, the home's
   real path is strictly under RUNNER_TEMP's and is not the account home, and that home's approved engine is this
   checkout's `engineBuild()`. Doctor launches and stops the bundle it inspects, so only the run's own disposable
@@ -245,6 +245,54 @@ Tests and evidence:
   --test-concurrency=4` gave `# tests 1623 # pass 1608 # fail 1 # skipped 14`. Not all green: the one failure is
   the pre-existing serve-lazy "the record is the runtime's raw answers…". The flip tree's
   accept-macos-selection.test.mjs is still T11b's copy; the fix-wave test reaches it when the controller merges.
+
+### Round 2
+
+The controller's second review: one T11a commit on `feat/117-m5`, then T11b's `d20874c8a` on the flip branch, then
+`feat/117-m5` merged into the flip branch again.
+
+- **T11a: the approved lane judges the inspection's facts, not the row's verdict.** The hosted job signs ad hoc, and
+  doctor's `signatureWords` warns on every ad-hoc signature, so the round-1 rule (the engine row must pass) could
+  never pass there. `approvedInspectionProblem` (`scripts/accept/macos-selection.mjs`) works as follows:
+  - It rejects a failing row as it stands, with the row's full detail (the first 400 characters cut off the failing
+    part, e.g. a missing grant).
+  - It then judges `report.engine`: the approved bundle and the running build are this checkout's `engineBuild()`
+    (the runner passes it as `sourceBuild`); the socket's owner is the approved bundle; all three grants are held
+    (the hosted approval grants all three; Input Monitoring is only a warning in doctor); doctor's launch ended
+    cleanly (no `replaced`, no `error`); and there is no route-3 advice.
+  - A warning is then accepted only when the bundle is signed ad hoc. These checks cover every warning `installedRow`
+    can give except the ad-hoc one.
+- **The test runs production doctor** (`inspectRuntime`, with only the default engine injected as cua's and
+  inspectEngine's facts as the seam) on an otherwise healthy ad-hoc bundle that doctor launched and stopped:
+  - Doctor's row is `warn` ("signed ad hoc …") and the lane passes it.
+  - Each case below changes one fact, and the lane rejects it:
+    - another source build;
+    - Accessibility missing (row fail);
+    - another build at the socket (row fail);
+    - nothing read (row fail);
+    - Input Monitoring missing (row warn);
+    - a replaced launch (row warn);
+    - an unstopped launch;
+    - route-3 advice (row warn);
+    - a non-ad-hoc signature that warns.
+- **T11b: README.**
+  - Native engine (macOS): under ruling 1118 an approved build at or above the minimum stays in use while its
+    replacement is pending. "The default stays on the vendor's until approval" is stated only for a Mac with no usable
+    approved build.
+  - The way back now includes the host step: where `CUA_REPL_HOST=cua` is set, unset it or set it to `vendor`
+    (launch.mjs refuses `repl_host_refused` otherwise).
+  - App approvals: "OpenAI's stack asks" is scoped to macOS's vendor engine; on Linux cua's policy asks for sky_linux
+    too (policy.mjs's createLinuxPolicy).
+- **RED:** before the judge changed, the new production-row test failed with "… doctor's inspection of the approved
+  bundle is warn: cua's engine is selected (the default engine): … signed ad hoc, so its grants do not survive a
+  rebuild …" (expected `null`). That is the reviewer's finding, reproduced.
+- **GREEN, shared checkout:**
+  - `node --test test/accept-macos-selection.test.mjs test/accept-linux-selection.test.mjs
+    test/native-baseline/engine.test.mjs test/repl-parity/selection-lane.test.mjs`: `# tests 35 # pass 35 # fail 0`.
+  - The live fixture lane still FAILs at `feat/117-m5` (minimum 0.1.0).
+- **Flip tree, before its commit:** the README readers (`accept-lib`, `chrome-peer`, `linux-engine-document`,
+  `engine-version-check`, `gate-runner`, `settle-302`, `runtime-node`): `# tests 139 # pass 139 # fail 0`. The
+  post-merge run is in the controller's report.
 
 ## Files M4's re-cut also touches
 

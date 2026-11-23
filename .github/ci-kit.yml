@@ -251,7 +251,7 @@ gates:
   # #117 M5, T11a: sitting E's approved lane, the hosted+ witness of the cua row
   # (scripts/accept/macos-default-selection-hosted.sh): the run's own engine built and approved in a disposable home
   # under the runner's temp directory, then the mode with --approved-home, doctor's inspection of that bundle judged
-  # too (doctor launches and stops it). Prepared, not run: it refuses until CUA_HOSTED_APPROVE names the hosted
+  # too, by its facts, the ad-hoc signature's warning expected (doctor launches and stops it). Prepared, not run: it refuses until CUA_HOSTED_APPROVE names the hosted
   # approval, which needs M4's hosted bundle build and T10b′'s approve (TCC rows, the relaunch, two passes). Dispatch
   # only: `ci-gate <sha> --gates default-selection-approved`.
   - name: default-selection-approved

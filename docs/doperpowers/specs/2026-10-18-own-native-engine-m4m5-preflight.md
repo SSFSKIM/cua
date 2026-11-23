@@ -260,6 +260,8 @@ engine that is not its checkout's build. If a later fix changes the engine befor
 new head before the next lane. Hosted evidence is macOS 26's unless H0 finds a `macos-27` label, so O1 and O3 are the
 witnesses for macOS 27, which the owner's Macs run.
 
+**#560 lands first.** The harness never runs on the owner's MacBook or on the mini before #560 (the venue record bound to the machine, IOPlatformUUID and kern.boottime) has merged: its hosted-only writes (TextEdit's preferences, removing saved state, window placement) each check `RUNNER_ENVIRONMENT` themselves, and #560 closes what remains of a record taken on a machine it was not written on. O1 does not start until then.
+
 | | What | When | Minutes | What it proves that hosted cannot |
 |---|---|---|---|---|
 | **O0** | May a kit write TCC rows on a GitHub-hosted runner, never on a Mac of the owner's? | **Answered yes** (ruling 1111; Decision Log, 2026-11-23) | done | – |

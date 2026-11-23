@@ -5,6 +5,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {MARKER} from '../../scripts/native-baseline/cells.mjs';
+import {CLICK_CONTROL} from '../../scripts/cursor-sitting/cells.mjs';
 import {CHECK} from '../../scripts/cursor-sitting/item-187.mjs';
 import {CLICK_PREPARE, CLICK_VALUE, CLICK_WORD} from '../../scripts/cursor-sitting/item-188.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
@@ -85,4 +86,33 @@ test('#526 ruling 1182: a multi-line value followed by another part fails the fi
     const r = await run(CHECK('chrome', lines.text), {apps: {chrome}, lane});
     assert.deepEqual([r.ok, r.value.ok, r.value.outcome.exact], [true, false, false], lane);
   }
+});
+
+// Ruling 1183, one rule: match only at a real part start, decode only a real final Value part, and on cua's lane a
+// Value part holding an escape the reader did not decode fails an exact check, never a prefix. Through the real cells.
+const scenePage = lines => ({getAXState: async () => `Window: "cua scene page", App: Chrome.\n0 standard window cua scene page\n${lines.map(l => `\t${l}`).join('\n')}\n`,
+  click: async index => { scenePage.clicked = index; }, setValue: async () => {}});
+test('#526 ruling 1183: #187\'s field check never passes on a prefix or on another part\'s continuation (cua\'s lane)', async () => {
+  // P1-2: the field holds "ok, extra" then a break then "next"; a check expecting "ok" fails.
+  const ok = field({lane: 'cua', title: 'cua scene page', line: 'text entry area (settable) Scene notes', value: 'ok, extra\nnext'});
+  const prefix = await run(CHECK('chrome', 'ok'), {apps: {chrome: ok}, lane: 'cua'});
+  assert.deepEqual([prefix.ok, prefix.value.ok, prefix.value.outcome.exact], [true, false, false]);
+  // P2-4: an empty field (no Value part) whose Help continues with "Expected Value: one" and a break.
+  const help = scenePage([`1 text entry area (settable) Scene notes, Help: Type here${escapeLineBreaks('\nExpected Value: one\ntwo')}`]);
+  const continued = await run(CHECK('chrome', 'one\ntwo'), {apps: {chrome: help}, lane: 'cua'});
+  assert.deepEqual([continued.ok, continued.value.ok, continued.value.outcome.exact], [true, false, false]);
+});
+
+test('#526 ruling 1183: a target is matched only at a real part start of an element\'s first line (cua\'s lane), through the control click', async () => {
+  // P2-3: an earlier button whose two-line title's second line ends with the target does not win over the real control.
+  const page = scenePage([`1 button old${escapeLineBreaks('\nUse Scene option')}`, '2 checkbox Scene option, Value: 0']);
+  const clicked = [];
+  page.click = async index => { clicked.push(index); };
+  const r = await run(CLICK_CONTROL('sceneOption'), {apps: {chrome: page}, lane: 'cua'});
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(clicked, [2]);
+  // A "Value:" inside a later line of another part's text is not a Value part: not found.
+  const {indexOfTarget} = await import('../../scripts/repl-parity/scenes-mac-text.mjs');
+  const helpText = `Window: "d", App: TextEdit.\n0 standard window d\n\t1 text entry area (settable) Help: see${escapeLineBreaks('\nValue: cua scene document\nmore')}\n`;
+  assert.equal(indexOfTarget(helpText, 'cua scene document', 'cua'), null);
 });

@@ -13,16 +13,22 @@ export const windowTitleOf = text => /^Window: "([^"]*)"/m.exec(String(text))?.[
 // before a bare title is localized and multi-word, so its boundary is only a space. The first matching line wins, so
 // targets are names the scene owns. On cua's lane (`rendering` 'cua', by default the lane the run's bind recorded,
 // globalThis.__axRendering) a multi-line value prints on its element's one line with its breaks escaped
-// (src/services/engine/render.mjs escapeLineBreaks, #526), so there, and only in the `Value:` part, a name also ends at
-// one of the escapes the renderer emits, and only when that value is the line's last part (nothing `, ` after it: a value
-// followed by another part is not found, as before); every other part, and the vendor's lane, match exactly as before.
+// (src/services/engine/render.mjs escapeLineBreaks, #526), and so does every other part's continuation. There a line
+// holding an escape is matched only within its first line (the text before its first escape, the vendor's element line):
+// a name ended there by a comma, as before, or, the one exception, a final `Value:` part's first line, the escape right
+// after the name and nothing `, ` after it (a value followed by another part is not found, ruling 1182). A part's
+// continuation never matches. Every other line, and the vendor's lane, match exactly as before.
 export function indexOfTarget(ax, name, rendering = globalThis.__axRendering) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)');
-  const value = rendering === 'cua' ? new RegExp('(?:^| |, )Value: ' + escaped + '\\\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))(?:(?!, )[^])*$') : null;
+  const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)'), inFirst = new RegExp('(?:^| |: )' + escaped + ',');
+  const finalValue = new RegExp('(?:^| |, )Value: ' + escaped + '$');
+  const escape = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/;
   for (const line of String(ax).split('\n')) {
     const element = /^[~+-]?[\t ]*(\d+) (.*)$/.exec(line);
-    if (element && (part.test(element[2]) || (value !== null && value.test(element[2])))) return Number(element[1]);
+    if (!element) continue;
+    const at = rendering === 'cua' ? element[2].search(escape) : -1;
+    if (at < 0 ? part.test(element[2])
+      : inFirst.test(element[2].slice(0, at)) || (finalValue.test(element[2].slice(0, at)) && !element[2].slice(at).includes(', '))) return Number(element[1]);
   }
   return null;
 }

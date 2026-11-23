@@ -179,9 +179,9 @@ test('#526: a value reads as before on either lane, and on cua\'s a multi-line v
   // The vendor's lane: raw lines as before; backslashes never decoded.
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\ntwo'), 1, 'vendor'), 'one\ntwo');
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: C:\\new\\nx'), 1, 'vendor'), 'C:\\new\\nx');
-  // Anything else reads as main reads it (the reader ticket's residue): a multi-line value followed by another part.
-  // Ruling 1182: it is never decoded into a value it might not be, so a check comparing it fails rather than passes.
-  assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo, Details: d'), 1, 'cua'), 'one\\ntwo');
+  // Ruling 1182/1183: a multi-line value followed by another part is never decoded into a value it might not be, nor cut
+  // to a prefix: its raw escaped remainder, so a check comparing it fails rather than passes.
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo, Details: d'), 1, 'cua'), 'one\\ntwo, Details: d');
   assert.notEqual(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo, Details: d'), 1, 'cua'), 'one\ntwo');
   // The run's bind records the lane.
   globalThis.__axRendering = 'cua';
@@ -193,4 +193,15 @@ test('#552: the selected text is read inside a fence of three or more backticks'
   assert.equal(text.selectedTextOf(ax('````')), 'a\n```\n[99] b');
   assert.equal(text.selectedTextOf('Window: "x", App: y.\n0 w\n\nSelected text: ```\nplain\n```\n\nnote'), 'plain');
   assert.equal(text.focusReading(ax('`````'), 1), 'masked');
+});
+
+// Ruling 1183: on cua's lane a line holding an escape is read only by its real parts.
+test('#526 ruling 1183: a Value after another part\'s escaped continuation is no value; an escaped Value with a later part is its raw remainder', () => {
+  const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 ${line}\n`;
+  // The reviewer's P1-2: "ok, extra" then a break then "next" is never read as "ok".
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: ok, extra\\nnext'), 1, 'cua'), 'ok, extra\\nnext');
+  // P2-4: an empty field whose Help part continues with "Expected Value: one" and a break: no value.
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: Type here\\nExpected Value: one\\ntwo'), 1, 'cua'), null);
+  // A line without an escape reads as on main, on cua's lane too.
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: h, Value: one, two'), 1, 'cua'), 'one');
 });

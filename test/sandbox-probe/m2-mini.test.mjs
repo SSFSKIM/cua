@@ -109,6 +109,7 @@ test('accept: the remote sitting at the SHA with the mirrored pause file, the re
   assert.match(run.remote, /git checkout -q --detach abc1234 /);
   assert.match(run.remote, /CUA_PAUSE_FILE="\/tmp\/cua115-pause-mirror\.json"/);
   assert.match(run.remote, /accept-native\.mjs --live-secrets --live-textedit --report/);
+  assert.match(run.remote, /CUA_PAUSE_FILE="[^"]*" CUA_NATIVE_ENGINE=vendor\s+node scripts\/accept-native\.mjs /, 'the sitting measures the vendor engine, not the default');
   assert.match(run.remote, /cd "\$HOME\/Developer\/GitHub\/cua-parity" \|\| exit 83\nA=\$HOME\/cua-115\/home\nP=\$\(node scripts\/native-baseline\/prepare\.mjs prepare /, 'prepare runs from the prepared parity clone');
   assert.match(run.remote, /cd "\$HOME\/Developer\/GitHub\/cua-parity" && node scripts\/native-baseline\/prepare\.mjs cleanup "\$P"/, 'and so does cleanup');
   assert.doesNotMatch(run.remote, /cua-115\/repo/, 'never the scratch tree');

@@ -33,8 +33,10 @@
 #             own scratch clone ~/cua-115-accept-m2, serving the approved home through native-baseline's approved-runtime
 #             preparation and cleanup, run from the prepared parity clone ~/Developer/GitHub/cua-parity as mini-rules.mjs's
 #             ACCEPT_REMOTE runs them (prepare refuses anywhere else), with the preparation's TMPDIR and XDG_CONFIG_HOME;
-#             CUA_PAUSE_FILE (mini-rules gated --pause --mirror) reaches it. Items 11 to 13 are #115's (13, the compat
-#             route, is acceptance 6: native calls through the compat executable's app-server). Report in
+#             CUA_PAUSE_FILE (mini-rules gated --pause --mirror) reaches it. Pinned to the vendor engine
+#             (CUA_NATIVE_ENGINE=vendor, as sandbox-live pins probe-secrets): #115's sitting measures the vendor's, and
+#             accept-native given no --engine pins the default, cua's since #117 M5's flip. Items 11 to 13 are #115's
+#             (13, the compat route, is acceptance 6: native calls through the compat executable's app-server). Report in
 #             $E/accept/acceptance.json; exits 1 unless accept-native and the cleanup both report (0 or 3) and 0.
 #
 # Every step runs, and its evidence is collected, even after an earlier one failed; the item then exits 1 naming each
@@ -143,7 +145,7 @@ P=$(node scripts/native-baseline/prepare.mjs prepare "{\"device\":\"mini\",\"app
 CONFIG=$(node -e 'const p = JSON.parse(process.argv[1]); if (!p.configHome) process.exit(1); console.log(p.configHome)' "$P") || exit 85
 RUN_TMP=$(node -e 'const p = JSON.parse(process.argv[1]); if (!p.tmpdir) process.exit(1); console.log(p.tmpdir)' "$P") || exit 86
 cd "$C"
-env -i PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" TMPDIR="$RUN_TMP" LANG=C.UTF-8 XDG_CONFIG_HOME="$CONFIG" CUA_HOME="$A" CUA_PAUSE_FILE="@PAUSE@" \
+env -i PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" TMPDIR="$RUN_TMP" LANG=C.UTF-8 XDG_CONFIG_HOME="$CONFIG" CUA_HOME="$A" CUA_PAUSE_FILE="@PAUSE@" CUA_NATIVE_ENGINE=vendor \
   node scripts/accept-native.mjs --live-secrets --live-textedit --report "$OUT/acceptance.json"
 ACCEPT=$?
 cd "$HOME/Developer/GitHub/cua-parity" && node scripts/native-baseline/prepare.mjs cleanup "$P"

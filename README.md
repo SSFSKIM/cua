@@ -144,9 +144,11 @@ client on another machine, see Remote control.
 
 ## App approvals
 
-Apart from Claude Code's tool permission, OpenAI's stack asks before an app is first used, `Allow Computer Use to use
-"X"?`, as an MCP elicitation that Claude Code shows as a dialog; on Linux cua's trusted wrapper asks the same per app
-(see Linux). An app declined is remembered for the connection; whether one accepted is depends on `CUA_SHIM_PERSIST`:
+Apart from Claude Code's tool permission, a computer session asks before an app is first used, `Allow Computer Use to
+use "X"?`, as an MCP elicitation that Claude Code shows as a dialog. Who asks follows the engine: on cua's own engine
+(macOS's default, and Linux's) cua's engine service asks it per app with the vendor's message and lists
+(`src/services/engine/policy.mjs`; Linux's by window, see Linux); on the vendor engine OpenAI's stack asks it. An app
+declined is remembered for the connection; whether one accepted is depends on `CUA_SHIM_PERSIST`:
 
 - `session` (the default): the connection remembers it until it closes, through the runtime's idle stops, so every
   new connection asks once more per app. (The vendor's host, which macOS computer sessions on the vendor engine run, also writes
@@ -214,8 +216,13 @@ doctor`'s `repl.host` and `engine` rows warn, naming why and the remedy: with no
 (`engine_not_installed`) or one older than 0.2.0 (`engine_outdated`, what every engine built before 0.2.0 reports),
 build one with `cua install --engine`, then approve it with `cua engine approve` with the owner at the console (only the
 approval, when a build that meets the minimum is already pending); with no Node 24 (`own_host_node_unavailable`), the
-Node remedies below. So a plugin update never breaks a session before its engine is approved. An explicit selection of cua's
-engine (the variable, the file or `CUA_REPL_HOST=cua`) is refused in those cases instead, naming its remedy.
+Node remedies below. So a session that selects no engine falls back to the vendor's rather than failing while no engine
+meeting the minimum is approved. An explicit selection of cua's engine (the variable, the file or `CUA_REPL_HOST=cua`)
+is refused in those cases instead, naming its remedy: a Mac that opted into cua's engine before this version, on an
+approved 0.1.0 build, needs an approved 0.2.0 or later build before it updates (`cua install --engine`, then `cua
+engine approve`), or the way back below until it has one. An install never approves: the engine `cua install` builds
+waits pending, and the default keeps the vendor's (an explicit selection keeps refusing) until the owner runs `cua
+engine approve` at the console.
 **The way back:** `CUA_NATIVE_ENGINE=vendor` in a session's environment, or `"engine": "vendor"` in
 `~/.config/cua/engine.json` for every session on the Mac, runs the vendor host and engine as before #117's M5; it
 stays until #117's M6 retires the vendor engine.

@@ -262,15 +262,13 @@ struct PointerRefusalRecord: Equatable {
   }
 }
 
-/// #538's refusal (`PointerRefusalRecord`): what was read, that nothing was sent, and what reaches the app without a
-/// pointer. Never a remedy that has the model raise the app (the design session's ruling 80a11b9a).
+/// #538's refusal (`PointerRefusalRecord`): the front as read (key focus named only while the target holds it), that
+/// nothing was sent, and what reaches the app without a pointer. Never a retry: a pointer joining a still-held
+/// never-activated entry would meet the same refusal however often it observed and clicked again (ruling 1174). Never a
+/// remedy that has the model raise the app (the design session's ruling 80a11b9a).
 func keyFocusOnlyRefused(_ app: String, noun: String, _ record: PointerRefusalRecord) -> EngineError {
-  guard record.keyFocusIsTarget else {
-    return EngineError(name: "backgroundClickRefused",
-      "Another app came in front of \(app) just before the \(noun), so nothing was sent. Observe \(app) with get_app_state and try again.")
-  }
-  return EngineError(name: "backgroundClickRefused",
-    "Another app is in front of \(app) while \(app) holds keyboard focus, so nothing was sent: a \(noun) sent now could bring \(app)'s window over the person's. Act on \(app) through its elements' own actions (performSecondaryAction, setValue) or keys (typeText, pressKey), or ask the person to bring \(app) to the front.")
+  EngineError(name: "backgroundClickRefused",
+    "Another app is in front of \(app)\(record.keyFocusIsTarget ? " while \(app) holds keyboard focus" : ""), so nothing was sent: a \(noun) sent now could bring \(app)'s window over the person's. Act on \(app) through its elements' own actions (performSecondaryAction, setValue) or keys (typeText, pressKey), or ask the person to bring \(app) to the front.")
 }
 
 /// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
@@ -661,8 +659,10 @@ final class FakeActivation {
   ///
   /// #538 (ruling 1173): a pointer (`pointer`, shared mode's: dedicated mode never comes here) with no activation standing,
   /// its own or a joined entry's that exited early because the app believed it had focus, reads the front once more,
-  /// with route 3's identity (`frontmostIsTarget`), as the last step before its events: this path makes no lookup of its
-  /// own, so nothing lies between the read and the events. Another app in front throws `PointerRefused` with the
+  /// with route 3's identity (`frontmostIsTarget`) for the pointer's own bound app (`action`'s, ruling 1174: the
+  /// registry shares an entry by serving process alone, so a joined entry may have been made for another app on the same
+  /// process), as the last step before its events: this path makes no lookup of its own, so nothing lies between the read
+  /// and the events. Another app in front throws `PointerRefused` with the
   /// readings (`PointerRefusalRecord`) and posts nothing; no app frontmost, or the target's, posts alone as before. Every
   /// other delivery (an activation standing, the paste route's keys) is unchanged.
   func deliver(window: CGWindowID? = nil, watches: AfterActionWatches? = nil, repairWindow: RepairWindow? = nil, pointer: Bool = false,
@@ -673,10 +673,11 @@ final class FakeActivation {
       hold = open
     } else {
       guard activated else {
-        if pointer, let front = system.frontmost(), !frontmostIsTarget(front, pid: pid, appPid: appPid) {
+        let bound = action?.appPid ?? appPid
+        if pointer, let front = system.frontmost(), !frontmostIsTarget(front, pid: pid, appPid: bound) {
           let key = system.keyFocus()
           throw PointerRefused(keyFocusOnly: PointerRefusalRecord(frontmostPid: front, keyFocusPid: key,
-                                                                  keyFocusIsTarget: key.map { $0 == pid || $0 == appPid } ?? false))
+                                                                  keyFocusIsTarget: key.map { $0 == pid || $0 == bound } ?? false))
         }
         post()
         return nil

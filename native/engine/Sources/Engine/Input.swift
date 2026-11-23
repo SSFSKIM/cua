@@ -295,6 +295,9 @@ struct PointerTarget {
 
   /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
   static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
+  /// A pointer into a view known to accept first mouse in `app`, named in its sentences: every button's before #282's
+  /// left-pointer reading, so a right or middle click's refusal names the app (#538, ruling 1174).
+  static func acceptingFirstMouse(in app: ResolvedApp) -> PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: app.displayName) }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
@@ -380,14 +383,16 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     try beforePosting()
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
-    announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
     func postAll() {
       meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
       pointerPosted()
     }
+    // The agent cursor is told only once the events are sure to go out: inside the delivery guard's `post`, after its
+    // refusal (#538, ruling 1174: a refused pointer moves no cursor, and its element route announces its own action).
     func postEvents() {
+      announce()
       if let standing { if standing.postAction(made, postAll) { reportsArm = true; consumedArm = true } } else { postAll() }
     }
     // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
@@ -639,7 +644,7 @@ extension Engine {
         }
         // What a left click by route 3 points into (#282, #315): in shared mode a Chromium or Gecko web area's plain click
         // takes the hit's own action when it has one, any other is refused, before anything is posted.
-        var pointer = PointerTarget.acceptingFirstMouse
+        var pointer = PointerTarget.acceptingFirstMouse(in: app)
         var pointerHit = hit
         // #452: the hit-test whose hit the guard judges, #288's last re-hit when it ran (the review of 023a3bee, P1).
         let latest = LatestHit(hitOutcome) { hitTestOutcome(window: placed.window, pid: appPid, at: placed.point, now: monotonicMilliseconds) }

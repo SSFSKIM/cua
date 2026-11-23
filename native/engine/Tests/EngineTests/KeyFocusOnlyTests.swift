@@ -254,6 +254,21 @@ final class KeyFocusOnlyTests: XCTestCase {
     holder.endFocusHold()
   }
 
+  /// Ruling 1174, P3: a right or middle click (an element's, or a coordinate middle click) takes the pointer target its
+  /// callers build for every button (`PointerTarget.acceptingFirstMouse(in:)`), so its refusal names the bound app,
+  /// never "the app".
+  func testANonLeftPointersRefusalNamesTheApp() throws {
+    let notes = ResolvedApp(appPath: "/System/Applications/Notes.app", bundleIdentifier: "com.apple.Notes", displayName: "Notes", running: nil)
+    for button in [MouseButton.right, .middle] {
+      let seam = keyFocusOnly()
+      var pointerMeta = meta(connection())
+      XCTAssertThrowsError(try click(seam, button: button, pointer: .acceptingFirstMouse(in: notes), meta: &pointerMeta), "\(button)") {
+        XCTAssertEqual(($0 as? EngineError)?.message, refusal("click", app: "Notes"), "\(button)")
+      }
+      XCTAssertEqual(seam.posts.count, 0)
+    }
+  }
+
   // MARK: Where main's path stands
 
   /// No app frontmost (the target holding key focus): the events posted alone, as on main, with no hold or record.

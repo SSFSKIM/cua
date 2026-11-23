@@ -211,7 +211,7 @@ test('#526 review 4: an ambiguous value is never equal or unchanged: selectionEv
   const {prelude} = await import('../../scripts/native-matrix/matrix-cells.mjs');
   const source = prelude(null);
   const plain = new Function(`${/class AmbiguousReadback [^\n]*/.exec(source)[0]}\n${/const plain = [^\n]*/.exec(source)[0]}\nreturn plain;`)();
-  assert.throws(() => plain({ambiguous: true}), error => error.name === 'AmbiguousReadback' && /^ambiguousReadback: .*cannot be read/.test(error.message));
+  assert.throws(() => plain({ambiguous: true}), error => error.name === 'AmbiguousReadback' && error[Symbol.for('cua.ambiguousReadback')] === true && /cannot be read/.test(error.message));
   assert.equal(plain('**a**'), 'a');
 });
 

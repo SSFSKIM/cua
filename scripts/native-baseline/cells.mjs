@@ -16,10 +16,14 @@ export const SENTENCE = 'The quick brown fox jumps over the lazy dog.';
 // in the same time and is not penalised for it.
 export const TRANSITION_MS = 10_000;
 
+// A cell that stopped on an ambiguous read-back (the matrix cells' `plain` throws AmbiguousReadback, marked by the
+// registered symbol below, ../native-matrix/matrix-cells.mjs) answers the structured `cause: "ambiguousReadback"`; the
+// wrapper never reads it from an error's text, so an RPC error worded alike keeps its own.
+export const AMBIGUOUS_READBACK_MARK = 'cua.ambiguousReadback';
 export function cell(body) {
   return `{const __t0 = performance.now(); let __r;
 try { __r = {ok: true, value: (await (async () => {${body}\n})()) ?? null}; }
-catch (e) { __r = {ok: false, error: String(e?.message ?? e).slice(0, 300)}; }
+catch (e) { __r = {ok: false, error: String(e?.message ?? e).slice(0, 300), ...(e?.[Symbol.for(${JSON.stringify(AMBIGUOUS_READBACK_MARK)})] === true ? {cause: "ambiguousReadback"} : {})}; }
 __r.inCellMs = performance.now() - __t0;
 nodeRepl.write(${JSON.stringify(MARKER)} + JSON.stringify(__r));}`;
 }

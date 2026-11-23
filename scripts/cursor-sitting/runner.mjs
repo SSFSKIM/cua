@@ -18,6 +18,7 @@ import {enginePaths} from '../../src/runtime/engine.mjs';
 import {runProbe, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {textViewOf} from '../native-matrix/residue-device.mjs';
+import {readbackOutcome} from '../native-matrix/matrix-text.mjs';
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
@@ -304,7 +305,9 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
   const file = join(out, `item-${item}.jsonl`);
   const rows = [];
   const record = row => { const full = {item, at: Date.now(), ...row}; rows.push(full); if (!dryRun) appendFileSync(file, JSON.stringify(full) + '\n'); };
-  const ctx = {io, sessions: {}, results: {}, watch: null, recording: null, settingsChanged: false, sourceChanged: false, sourceScene: null, error: null, failed: 0};
+  // `unread`: the blocks a required cell left without proof by an ambiguous read-back (#526, ruling 1179): their
+  // remaining steps are skipped (a step marked `always` still runs), and the item goes on with its other blocks.
+  const ctx = {io, sessions: {}, results: {}, watch: null, recording: null, settingsChanged: false, sourceChanged: false, sourceScene: null, error: null, failed: 0, unread: new Set()};
   let failed = 0, n = 0;
   const runCell = async step => {
     const code = typeof step.cell === 'function' ? step.cell(ctx.results) : step.cell;
@@ -321,7 +324,13 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
     record({step: n, kind: 'cell', session: step.run, label: step.label, startedAt, ...(step.sample ? {sample: step.sample} : {}),
       ...(step.orderTarget ? {orderTarget: step.orderTarget} : {}), ...(step.role ? {role: step.role} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
     log(`  ${step.run}: ${step.label}: ${answer.ok ? JSON.stringify(answer.value) : `FAILED ${answer.error}`}${answer.route ? ` (route ${answer.route})` : ''}`);
-    // A required cell that did not answer ok stops the item here (its finally still puts everything back).
+    // A required cell that stopped on an ambiguous read-back leaves its block no verdict; any other required cell that
+    // did not answer ok stops the item here (its finally still puts everything back).
+    if (step.required && !answer.ok && step.block != null && readbackOutcome(answer)) {
+      ctx.unread.add(step.block);
+      record({step: n, kind: 'unread', block: step.block, label: step.label, cause: readbackOutcome(answer)});
+      return;
+    }
     if (step.required && !answer.ok) throw new Error(`required cell "${step.label}" failed: ${answer.error}`);
   };
   record({kind: 'start', steps: steps.length, dryRun});
@@ -330,6 +339,10 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       n++;
       log(`[${item}.${n}] ${describe(step)}`);
       if (dryRun) { record({step: n, kind: 'plan', text: describe(step)}); continue; }
+      if (step.block != null && ctx.unread.has(step.block) && !step.always) {
+        record({step: n, kind: 'skipped', text: describe(step), block: step.block, cause: 'ambiguousReadback', ...(step.task ? {skippedTask: step.task, args: step.args ?? []} : {})});
+        continue;
+      }
       if (step.when && !step.when(ctx.results)) { record({step: n, kind: 'skipped', text: describe(step)}); continue; }
       if (step.open) {
         ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(id => sessionRecord(io.scene(id), step.windows?.[id], ctx.results)), device: step.device ?? null,

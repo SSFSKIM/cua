@@ -114,7 +114,8 @@ const facts = (${test})(ax);
 return {ok: inFront(ax) && facts.ok, outcome: {inFront: inFront(ax), ...facts.outcome, elements: elementLines(ax).length}};`,
 });
 // A refusal: the act must throw the expected sentence, and the watched state (read the same way before and after)
-// must be unchanged; a watch holding an ambiguous value (./matrix-text.mjs readingKey) is never unchanged.
+// must be unchanged. A watch holding an ambiguous value on either side (./matrix-text.mjs readingKey: no key) cannot
+// say so: a refusal as expected is then no verdict (`cause: "ambiguousReadback"`); any other refusal fails on its own.
 const refusal = ({method, kase, find, act, watch, sentence}) => ({
   method, case: kase, expect: 'refusal', refusal: sentence,
   prepare: `${observed}
@@ -124,8 +125,10 @@ __m.index = index; __m.before = readingKey(${watch});
 return {ready: true};`,
   act,
   check: `const ax = await observe();
-const now = readingKey(${watch}), unchanged = now !== null && __m.before !== null && now === __m.before;
-return {ok: refusedAs(${j(sentence)}) && unchanged, outcome: {refused: __m.threw !== null, expected: refusedAs(${j(sentence)}), unchanged, errorName: __m.errorName, message: __m.threw}};`,
+const now = readingKey(${watch}), unread = now === null || __m.before === null, unchanged = unread ? null : now === __m.before;
+const outcome = {refused: __m.threw !== null, expected: refusedAs(${j(sentence)}), unchanged, errorName: __m.errorName, message: __m.threw};
+if (unread && refusedAs(${j(sentence)})) return {ok: false, cause: "ambiguousReadback", outcome};
+return {ok: refusedAs(${j(sentence)}) && unchanged === true, outcome};`,
 });
 // A text field put into a known pre-state: focused, holding `value` (when given), with `word` (once in it) selected.
 // The focus is read before the selection and the selection after it: the renderer's trailer shows selected text instead
@@ -232,8 +235,9 @@ return {ok: value === "1", outcome: {checked: value === "1"}};`},
   {method: 'pressKey', case: 'selectAll', expect: 'outcome', keys: ['super+a'],
     prepare: `${selectedIn({find: TEXT_AREA, word: j(DOCUMENT[4])})}\nreturn {ready: true};`, act: 'await __app.pressKey("super+a");',
     check: `const ax = await observe();
-const selected = selectedTextOf(ax), value = valueOfIndex(ax, ${TEXT_AREA});
-const whole = typeof selected === "string" && plain(selected).trim() === plain(value).trim();
+// The value read first, so an ambiguous one stops the check (no verdict) before the selection decides anything.
+const value = plain(valueOfIndex(ax, ${TEXT_AREA})), selected = selectedTextOf(ax);
+const whole = typeof selected === "string" && plain(selected).trim() === value.trim();
 return {ok: whole, outcome: {selected: typeof selected === "string", whole, selection: selectionEvidence(ax, ${TEXT_AREA}, __m.seen)}};`},
   {method: 'selectText', case: 'line', expect: 'outcome',
     prepare: `${observed}

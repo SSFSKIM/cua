@@ -263,3 +263,18 @@ test('a probe left pending is finished whatever the act did, and the run\'s keys
   assert.ok(names(steps).includes('live recover'));
   assert.equal(sha256Hex('qz').length, 64);
 });
+
+test('#526 ruling 1179 (5): the sheet variant\'s typing read back ambiguous is no verdict (ambiguousReadback) after its cleanup; another failure keeps its reason', async () => {
+  const {realCell} = await import('./real-cells.mjs');
+  const untitled = 'Untitled';
+  const app = {typeText: async () => {}, getAXState: async () => `Window: "${untitled}", App: TextEdit.\n0 standard window ${untitled}\n\t1 text entry area (settable) ID: First Text View, Value: cua sheet\\nvariant, Details: d\n`};
+  const calls = [];
+  const {result} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls,
+    cell: async c => (tagOf(c) === 'sheet.type' ? {cellOutput: await realCell(c, {apps: {textedit: app}, globals: {__sheetDoc: untitled}})} : null)});
+  const row = rowOf(result, SHEET);
+  assert.equal(row.invalid, 'ambiguousReadback');
+  const typedAt = calls.findIndex(x => tagOf(x.code) === 'sheet.type');
+  assert.ok(typedAt >= 0 && calls.slice(typedAt + 1).some(c => tagOf(c.code) === 'sheet.cleanup'), 'the untitled document is cleaned up first');
+  const other = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: c => (tagOf(c) === 'sheet.type' ? {typed: false, reason: 'the untitled document is not TextEdit\'s front window'} : null)});
+  assert.match(rowOf(other.result, SHEET).invalid, /^the untitled document's text was not typed \(the untitled document is not TextEdit's front window\)$/);
+});

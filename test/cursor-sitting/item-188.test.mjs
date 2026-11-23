@@ -458,12 +458,14 @@ test('#259\'s cell end to end on fakes: the scroll the caret at the end made, th
 });
 
 test('#526: a prepare or read-back that stopped on an ambiguous value leaves the record no verdict (ambiguousReadback), never a fail', () => {
-  const ambiguous = {ok: false, error: 'ambiguousReadback: the value cannot be read from the text (a multi-line value followed by another part)'};
+  // As the cell wrapper answers when it catches AmbiguousReadback: a structured cause, never read from the text.
+  const ambiguous = {ok: false, cause: 'ambiguousReadback', error: 'the value cannot be read from the text (a multi-line value followed by another part)'};
   const ready = {ok: true, value: {ready: true, point: [1, 2]}}, click = {ok: true, value: {threw: false}};
   const read = clickRecord188({item: 'x', engine: 'cua', part: 'ii', prepare: ready, before: {range: END_RANGE}, click, after: {range: END_RANGE}, read: ambiguous});
   assert.equal(read.invalid, 'ambiguousReadback');
   assert.equal(read.outcome, null);
   assert.equal(clickRecord188({item: 'x', engine: 'cua', part: 'i', prepare: ambiguous}).invalid, 'ambiguousReadback');
-  // Any other failure keeps its own words.
+  // Any other failure keeps its own words, an RPC error worded like the cause included.
   assert.equal(clickRecord188({item: 'x', engine: 'cua', part: 'i', prepare: {ok: false, error: 'boom'}}).invalid, 'the prepare cell failed');
+  assert.equal(clickRecord188({item: 'x', engine: 'cua', part: 'i', prepare: {ok: false, error: 'ambiguousReadback: from the RPC'}}).invalid, 'the prepare cell failed');
 });

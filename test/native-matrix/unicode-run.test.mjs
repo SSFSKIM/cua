@@ -200,3 +200,16 @@ test('each target\'s source is read with the target in front and selected there 
   assert.ok(stuck.result.rows.filter(r => r.condition === 'korean').every(r => /Korean source did not hold with chrome in front/.test(r.invalid)));
   assert.ok(stuck.result.rows.filter(r => r.condition === 'latin').every(r => r.ok === true));
 });
+
+test('#526 ruling 1179 (6): the per-context condition\'s driven field read back ambiguous leaves its rows ambiguousReadback, not "Korean was not established"', async () => {
+  const {realCell} = await import('./real-cells.mjs');
+  const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['perContext']}};
+  const chrome = {getAXState: async () => 'Window: "cua scene page", App: Chrome.\n0 standard window cua scene page\n\t1 text entry area (settable) Scene notes, Value: a\\nb, Details: d\n',
+    setValue: async () => {}, click: async () => {}};
+  let ran = 0;
+  const {result} = await runWith({plan, cellName: 'korean', ops: contextHeld,
+    cell: async c => (tagOf(c) === 'field.empty' ? (ran++, {cellOutput: await realCell(c, {apps: {chrome}})}) : null)});
+  const rows = result.rows.filter(r => r.condition === 'perContext');
+  assert.ok(ran >= 1 && rows.length > 0);
+  assert.ok(rows.every(r => r.invalid === 'ambiguousReadback'), JSON.stringify(rows.map(r => r.invalid)));
+});

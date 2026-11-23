@@ -104,7 +104,7 @@ import {POPUP_OPEN_PATH} from '../native-matrix/fixtures/scene-page.mjs';
 import {clipboardDigest, probeStatus, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {prelude} from '../native-matrix/matrix-cells.mjs';
-import {readbackCause, sha256Hex} from '../native-matrix/matrix-text.mjs';
+import {AMBIGUOUS_READBACK, readbackOutcome, sha256Hex} from '../native-matrix/matrix-text.mjs';
 import {TEXT_FIELDS} from '../native-matrix/plan.mjs';
 import {EMPTY_HASH, emptyField, fieldCheck} from '../native-matrix/probe-plan.mjs';
 import {COMPOSITION, KOREAN_2SET, UNICODE_STRINGS} from '../native-matrix/unicode-plan.mjs';
@@ -313,17 +313,21 @@ function setupSteps({item, block, group}) {
 const sessionScenes = group => { const g = GROUPS[group]; return [g.driven, ...(g.user ? [g.user, releaseOf(group)] : [])]; };
 
 // One block: a session, the setup, the rows (Chrome's menus watched over them).
+// Every step between the session's opening and its close belongs to the block (`block: tag`): a setup read-back that is
+// ambiguous leaves the block no verdict and skips its other steps (./runner.mjs), while the setup's end mark, Chrome's
+// menu watch and the close (`always`) still run, and the item goes on with its next block.
 function blockSteps({item, group, block, rows, engine = 'cua'}) {
   const g = GROUPS[group], tag = tagOf(item, block), chrome = g.driven === 'chrome';
+  const inBlock = s => ({...s, block: tag});
   return [
     {say: `${tag}: ${groupName(group)}, ${engine === 'vendor' ? 'the vendor\'s engine (recorded only)' : 'the engine as installed'}, ${rows.length} rows`},
     {open: S, engine, scenes: sessionScenes(group)},
     {task: '187-setup', args: [tag, 'start']},
-    ...setupSteps({item, block, group}),
-    {task: '187-setup', args: [tag, 'end']},
-    ...(chrome ? [{task: '187-menu-start', args: [item]}] : []),
-    ...rows.flatMap((row, i) => rowSteps({item, group, block, i, row, engine})),
-    ...(chrome ? [{task: '187-menu-stop', args: [item]}] : []),
+    ...setupSteps({item, block, group}).map(inBlock),
+    inBlock({task: '187-setup', args: [tag, 'end'], always: true}),
+    ...(chrome ? [inBlock({task: '187-menu-start', args: [item], always: true})] : []),
+    ...rows.flatMap((row, i) => rowSteps({item, group, block, i, row, engine})).map(inBlock),
+    ...(chrome ? [inBlock({task: '187-menu-stop', args: [item], always: true})] : []),
     {close: S},
   ];
 }
@@ -553,11 +557,11 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
   const invalid = personTouched ? `person-touched: ${touchText(personTouched)}`
     : disturbed ? 'an earlier row of the block disturbed the user window\'s composition'
     : !prepare ? 'the driven field was not prepared (no answer)'
-      : !prepare.ok ? readbackCause(prepare) ?? `the prepare cell failed: ${prepare.error}`
+      : !prepare.ok ? readbackOutcome(prepare) ?? `the prepare cell failed: ${prepare.error}`
         : prepare.value?.ready !== true ? `not prepared: ${prepare.value?.reason ?? 'no reason'}`
           : !act ? 'the act was not sent'
-            : !act.ok ? readbackCause(act) ?? `the act cell failed: ${act.error}`
-              : !check?.ok ? readbackCause(check) ?? `the read-back failed: ${check?.error ?? 'no answer'}`
+            : !act.ok ? readbackOutcome(act) ?? `the act cell failed: ${act.error}`
+              : !check?.ok ? readbackOutcome(check) ?? `the read-back failed: ${check?.error ?? 'no answer'}`
                 : check.value?.invalid ? `the read-back: ${check.value.invalid}`
                   : page && !page.mid ? 'no page counters before the act: the row\'s counter evidence is incomplete'
                   : background && spec.engine === 'cua' && !freshActivation(meta) ? 'no fresh activation (no activationGuardMs, or focusEnforcement.activated false): the act ran under a held activation'
@@ -800,6 +804,8 @@ export function legacyTimeout(r) {
 const LEGACY_TEXT = `timed out with the legacy ${READ_TIMEOUT.code} read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout`;
 const repStatus = (c, bg) => {
   if (c.personTouched) return ['person-touched', `touched by the person (${touchText(c.personTouched)})`];
+  // A paste whose read-back was ambiguous proves nothing either way: the repetition is not counted.
+  if (readbackOutcome(bg, c.row)) return [AMBIGUOUS_READBACK, 'a read-back of the repetition was ambiguous (a multi-line value followed by another part): no proof either way'];
   if (c.route === 'press') {
     if (c.premise?.advertised !== true) return ['precondition unmet', `AXPress was not advertised on the textarea within ${AXPRESS_BOUND_MS} ms of the session's first observation (${c.premise?.actions ? `it advertised ${c.premise.actions.join(', ') || 'nothing'}` : 'unread'})`];
     if (!(c.press?.plan === 'action' && c.press?.action === 'AXPress')) return ['premise not met', `the click's plan was ${c.press?.plan ?? 'unread'}${c.press?.action ? `/${c.press.action}` : ''}${c.press?.reason ? ` (${c.press.reason})` : ''}, not action/AXPress`];
@@ -870,7 +876,9 @@ export function judge187(items) {
     if (items[name]) {
       const g = {item: name, group, target, role, stopped: stoppedOf(name), watcher: taskResult(name, '187-order-stop'),
         sources: rowsOf(name).filter(r => r.task === '187-korean').map(r => r.result?.reading ?? null),
-        readers: taskResult(name, '187-processes')?.readers ?? null, rows, ...summarize(rows)};
+        readers: taskResult(name, '187-processes')?.readers ?? null, rows, ...summarize(rows),
+        // Rows a block skipped after its setup read a value ambiguously (./runner.mjs): missing proof, never run.
+        unreadSkipped: rowsOf(name).filter(r => r.kind === 'skipped' && r.cause === AMBIGUOUS_READBACK && r.skippedTask === '187-row').length};
       g.restores = rowsOf(name).filter(r => r.kind === 'task' && r.task === '187-order-restore' && r.result?.restored).map(r => ({key: r.result.key, raisedAt: r.result.raisedAt ?? [], ok: r.result.ok}));
       groups.push(g);
     }
@@ -1015,7 +1023,9 @@ export function axFocusedCount({groups, cells}) {
 // why, on: the route the cell's landing rests on}. NO VERDICT only when the one thing between the slot and LANDS is a
 // BEFORE that delivers (the cell does not discriminate); any other failing condition is DOES NOT LAND.
 function barOf({groupOf, cells, putback, cellRows}) {
-  const why = [];
+  // `why`: what fails the bar; `noProof`: proof an ambiguous read-back left missing (#526, ruling 1179), which makes the
+  // bar NO VERDICT only when nothing fails it on its own.
+  const why = [], noProof = [];
   // The person's side per row: the front app, the composition, the clipboard, a page click (raises and menus are
   // counted over every bar row below).
   const touched = (rows, label) => {
@@ -1026,7 +1036,10 @@ function barOf({groupOf, cells, putback, cellRows}) {
     if (!g) return void why.push(`${label}: not recorded`);
     if (g.stopped) why.push(`${label} stopped: ${g.stopped}`);
     const good = g.rows.filter(r => r.invalid === null && r.delivered);
-    if (g.n !== TARGET || good.length !== TARGET) why.push(`${label}: ${good.length} of ${TARGET} rows valid and delivered (${g.n} recorded)${Object.keys(g.invalid).length ? `; invalid: ${Object.entries(g.invalid).map(([w, n]) => `${w} × ${n}`).join('; ')}` : ''}`);
+    const unreadRows = g.rows.filter(r => r.invalid === AMBIGUOUS_READBACK).length + (g.unreadSkipped ?? 0);
+    const onlyUnread = unreadRows > 0 && good.length + unreadRows === TARGET && g.n + (g.unreadSkipped ?? 0) === TARGET;
+    if (onlyUnread) noProof.push(`${label}: ${unreadRows} of ${TARGET} rows without proof (ambiguousReadback)`);
+    else if (g.n !== TARGET || good.length !== TARGET) why.push(`${label}: ${good.length} of ${TARGET} rows valid and delivered (${g.n} recorded)${Object.keys(g.invalid).length ? `; invalid: ${Object.entries(g.invalid).map(([w, n]) => `${w} × ${n}`).join('; ')}` : ''}`);
     if (perLine) {
       const bad = g.rows.map(r => [r.key, perLineProblem(r)]).filter(([, p]) => p);
       if (bad.length) why.push(`${label}: ${bad.length} row(s) whose lines were not each confirmed by their own change (${bad.slice(0, 3).map(([k, p]) => `${k}: ${p}`).join('; ')}${bad.length > 3 ? '; …' : ''})`);
@@ -1043,7 +1056,10 @@ function barOf({groupOf, cells, putback, cellRows}) {
   const P = cells.paste, cell = 'the background-paste cell';
   const repList = (cs, fail) => cs.map(c => `${c.item.replace(/^187-cell-/, '')}: ${c.status === 'counted' ? fail(c) ?? 'as required' : `${c.status}${c.why ? ` (${c.why})` : ''}`}`).join('; ');
   const afterCounted = P.after.filter(c => c.counted), afterPass = afterCounted.filter(c => c.pass);
-  if (afterCounted.length < CELL_REPS || afterPass.length !== afterCounted.length)
+  const unreadAfter = P.after.filter(c => c.status === AMBIGUOUS_READBACK).length;
+  if (afterPass.length === afterCounted.length && afterCounted.length < CELL_REPS && afterCounted.length + unreadAfter >= CELL_REPS)
+    noProof.push(`${cell}'s AFTER half: ${unreadAfter} repetition(s) without proof (ambiguousReadback), every counted one passing`);
+  else if (afterCounted.length < CELL_REPS || afterPass.length !== afterCounted.length)
     why.push(`${cell}'s AFTER half: ${afterPass.length} of ${CELL_REPS} counted repetitions with both pastes delivered (${afterCounted.length} counted; ${repList(P.after, c => (c.pass ? null : c.why))})`);
   touched(cellRows, `${cell}'s AFTER half`);
   // Each AFTER repetition's background paste ran under the order watcher: whole, within the gap, its raises reconciled.
@@ -1056,6 +1072,8 @@ function barOf({groupOf, cells, putback, cellRows}) {
   const beforeCounted = P.before.filter(c => c.counted), delivering = beforeCounted.filter(c => c.delivers);
   if (!P.before.some(c => c.recorded || c.stopped)) why.push(`${cell}'s BEFORE half on the saved engine was not recorded (\`--part before --saved\`, once the owner's engine is put back)`);
   else if (delivering.length) noVerdict = `NO VERDICT: ${delivering.length} counted BEFORE repetition(s) on the saved engine delivered a paste, so the cell does not discriminate (${repList(P.before, c => (c.delivers ? c.beforeWhy : null))}); #187 stays Refs`;
+  else if (beforeCounted.every(c => c.predicted) && beforeCounted.length < CELL_REPS && beforeCounted.length + P.before.filter(c => c.status === AMBIGUOUS_READBACK).length >= CELL_REPS)
+    noProof.push(`${cell}'s BEFORE half: ${P.before.filter(c => c.status === AMBIGUOUS_READBACK).length} repetition(s) without proof (ambiguousReadback), every counted one failing as predicted`);
   else if (beforeCounted.length < CELL_REPS || beforeCounted.some(c => !c.predicted))
     why.push(`${cell}'s BEFORE half: ${beforeCounted.filter(c => c.predicted).length} of ${CELL_REPS} counted repetitions failing as predicted (the background paste timing out at the read stage, the frontmost paste not delivered) (${beforeCounted.length} counted; ${repList(P.before, c => (c.predicted ? null : c.beforeWhy))})`);
   // Raises and menus over every bar item and the cell's rows.
@@ -1069,10 +1087,12 @@ function barOf({groupOf, cells, putback, cellRows}) {
   if (opened) why.push(`${opened} row(s) with a menu opened in Chrome`);
   if (unread) why.push(`Chrome's menus could not be read after ${unread} row(s)`);
   why.push(...putback.why);
-  const verdict = why.length ? 'DOES NOT LAND' : noVerdict ? 'NO VERDICT' : 'LANDS';
+  const unreadVerdict = noProof.length ? `NO VERDICT (ambiguousReadback): ${noProof.join('; ')}` : null;
+  const verdict = why.length ? 'DOES NOT LAND' : noVerdict || unreadVerdict ? 'NO VERDICT' : 'LANDS';
   // What delivery alone shows, stage aside: AFTER's repetitions with both pastes delivered, BEFORE's with neither.
   const shown = {after: {both: afterPass.length, of: afterCounted.length}, before: {neither: beforeCounted.filter(c => c.deliversNeither).length, of: beforeCounted.length}};
-  return {ok: verdict === 'LANDS', verdict, why: noVerdict ? [...why, noVerdict] : why, on: verdict === 'LANDS' ? ROUTE_NAMES.paste : null, shown};
+  return {ok: verdict === 'LANDS', verdict, why: [...why, ...(noVerdict ? [noVerdict] : []), ...(unreadVerdict ? [unreadVerdict] : [])],
+    ...(verdict === 'NO VERDICT' && !noVerdict ? {cause: AMBIGUOUS_READBACK} : {}), on: verdict === 'LANDS' ? ROUTE_NAMES.paste : null, shown};
 }
 
 // The owner's source at the end (187-end's select-source): restored only when it was switched and read back as the one
@@ -1574,7 +1594,8 @@ export function item187Tasks(d) {
           press: press && {ok: press.ok === true, pressed: press.value?.pressed ?? null, notPressed: press.value?.reason ?? null, threw: press.value?.threw ?? null, errorName: press.value?.errorName ?? null,
             route: press.route ?? null, plan: ec?.plan ?? null, action: ec?.action ?? null, reason: ec?.reason ?? null, hit: ec?.hit ?? null,
             kind: press.meta?.activationClickKind ?? null, activationClick: press.meta?.activationClick ?? null, activationGuardMs: press.meta?.activationGuardMs ?? null},
-          pressRead: read?.ok ? {inFront: read.value?.inFront ?? null, found: read.value?.found ?? null, focused: read.value?.focused ?? null, empty: read.value?.empty ?? null} : null,
+          pressRead: read?.ok ? {inFront: read.value?.inFront ?? null, found: read.value?.found ?? null, focused: read.value?.focused ?? null, empty: read.value?.empty ?? null}
+            : readbackOutcome(read) ? {cause: readbackOutcome(read)} : null,
           row: rowOf(0)};
       }
       const verdict = cellVerdict(record);

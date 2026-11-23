@@ -7,7 +7,7 @@ import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
-import {readbackCause} from './matrix-text.mjs';
+import {readbackOutcome} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {caseId, focusVerdict, SCENE_OF} from './plan.mjs';
 
@@ -147,7 +147,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const electron = scene === 'electron';
   const prepared = span(await ctx.lane.js(cells.prepare));
   keep('prepare', prepared);
-  if (!prepared.ok) return done({invalid: readbackCause(prepared) ?? 'the prepare cell failed', error: prepared.error});
+  if (!prepared.ok) return done({invalid: readbackOutcome(prepared) ?? 'the prepare cell failed', error: prepared.error});
   if (Array.isArray(prepared.value?.prepared)) row.prepared = prepared.value.prepared;
   if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
   // A prepare that needs its field focused: judged by the observation's own focus where the engine reports it (#188).
@@ -167,14 +167,18 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (act === null) return done({invalid: 'the key guard did not send the action\'s keys'});
   keep('act', act);
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
-  if (!act.ok) return done({invalid: readbackCause(act) ?? 'the act cell failed', error: act.error});
+  if (!act.ok) return done({invalid: readbackOutcome(act) ?? 'the act cell failed', error: act.error});
   Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(electron ? {actAt: act.value.at ?? act.at} : {})});
   const after = regime === 'background' ? read(ctx, focusOf(userWindow), {electronMode: electron}) : null;
   const check = span(await ctx.lane.js(cells.check));
   keep('check', check);
   if (electron) row.electronMode = (after ?? read(ctx, null, {electronMode: true}))?.electronMode ?? null;
-  if (!check.ok) return done({invalid: readbackCause(check) ?? 'the check cell failed', error: check.error});
+  if (!check.ok) return done({invalid: readbackOutcome(check) ?? 'the check cell failed', error: check.error});
   if (check.value?.invalid) return done({invalid: check.value.invalid});
+  // A check whose verdict rests on an ambiguous read-back (its own cause, or a pass whose evidence read the value
+  // ambiguous) is no verdict before it is scored; a fail it established on its own stands (./matrix-text.mjs).
+  const unread = readbackOutcome(check);
+  if (unread) return done({invalid: unread, outcome: check.value?.outcome ?? {}});
   if (after && after.watcher !== true) return done({invalid: 'the activation watcher was not running after the action'});
   // With `userValue`, the user window's field must also have kept that value (the focus probe's hash after the act).
   const kept = userValue === null ? null : after?.focus?.named === true && after.focus.valueHash === userValue;

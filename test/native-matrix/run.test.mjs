@@ -8,7 +8,10 @@ import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {dryOps} from '../../scripts/native-matrix/lane.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
-import {CASES} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, REFUSALS} from '../../scripts/native-matrix/plan.mjs';
+import {textEditDocument} from '../../scripts/repl-parity/scenes-mac.mjs';
+import {NOTE} from '../../src/services/engine/render.mjs';
+import {realCell} from './real-cells.mjs';
 import {cleanupMatrix, FULL_PLAN, PASTING, planOf} from '../../scripts/native-matrix/run.mjs';
 
 import {args, BUNDLE, cellsOf, matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
@@ -372,11 +375,68 @@ test('#526: a case whose read-back is ambiguous is no verdict (ambiguousReadback
   const row = rows[at];
   assert.equal(row.invalid, 'ambiguousReadback');
   assert.equal(row.ok, false);
-  assert.match(row.error, /^ambiguousReadback: /);
+  assert.match(row.error, /cannot be read from the text/);
   // The next case ran and was judged as before.
   const next = rows[at + 1];
   assert.ok(next && next.invalid === undefined && next.ok === true, JSON.stringify(next));
   // Nothing counts it as a fail: the row is invalid, kept out of the verdict.
   assert.notEqual(result.verdict, 'fail');
   assert.equal(rows.filter(r => r.invalid === 'ambiguousReadback').length, 1);
+});
+
+// #526, ruling 1179: the read-back's ambiguity reaches the row only as missing proof, through the cases' own cells.
+const DOC = textEditDocument().lines;
+const AREA = value => `text entry area (settable) ID: First Text View, Value: ${value}`;
+// TextEdit as the cells see it: the document's value (escaped, as cua prints it) and the trailer, which the fake's
+// selectText and pressKey move; `after` is the text once the act ran.
+function textEdit({before, after = before, refuse = null}) {
+  const state = {selected: null, acted: false};
+  const text = () => {
+    const {value, selected} = state.acted ? after : {...before, selected: state.selected};
+    return `Window: "cua-scene.rtf", App: TextEdit.\n0 standard window cua-scene.rtf\n\t1 ${AREA(value)}\n\n`
+      + (selected ? `Selected text: \`\`\`\n${selected}\n\`\`\`\n\n${NOTE}` : 'The focused UI element is 1 text entry area (settable) ID: First Text View');
+  };
+  return {getAXState: async () => text(), selectText: async (index, word) => { state.selected = word; },
+    pressKey: async () => { state.acted = true; }, click: async () => { if (refuse) throw new Error(refuse); state.acted = true; },
+    act: () => { state.acted = true; }};
+}
+async function caseWithRealCells(method, kase, app) {
+  const cells = cellsOf('textedit', method, kase);
+  const seen = [];
+  const r = await runWith({cell: async text => {
+    const which = ['prepare', 'act', 'check'].find(k => text.includes(cells[k]));
+    if (!which) return null;
+    seen.push(which);
+    if (which === 'act' && method === 'selectText') app.act();
+    return {cellOutput: await realCell(text, {apps: {textedit: app}})};
+  }});
+  delete globalThis.__m;
+  return {seen, row: r.result.rows.find(row => row.section === 'method' && row.method === method && row.case === kase), result: r.result};
+}
+const escapedDoc = DOC.join('\\n');
+
+test('#526 ruling 1179 (2): a refusal watch over an ambiguous document is no verdict (ambiguousReadback), never "changed"; a refusal that did not come fails on its own', async () => {
+  const sentence = REFUSALS.invalidIndex;
+  const ambiguous = await caseWithRealCells('click', 'invalidIndex', textEdit({before: {value: `${escapedDoc}, Details: d`}, refuse: sentence}));
+  assert.deepEqual(ambiguous.seen, ['prepare', 'act', 'check']);
+  assert.equal(ambiguous.row.invalid, 'ambiguousReadback');
+  assert.notEqual(ambiguous.result.verdict, 'fail');
+  const clear = await caseWithRealCells('click', 'invalidIndex', textEdit({before: {value: escapedDoc}, refuse: sentence}));
+  assert.deepEqual([clear.row.ok, clear.row.invalid], [true, undefined], 'the same refusal over a readable document passes');
+  const notRefused = await caseWithRealCells('click', 'invalidIndex', textEdit({before: {value: `${escapedDoc}, Details: d`}}));
+  assert.deepEqual([notRefused.row.ok, notRefused.row.invalid], [false, undefined], 'no refusal: a fail established on its own stands');
+});
+
+test('#526 ruling 1179 (3): selection outcomes whose value reads ambiguous are no verdict before scoring (selectText.line on its trailer, pressKey.selectAll)', async () => {
+  // selectText.line: the trailer shows the line selected (ok on its own), the value after it ambiguous.
+  const line = await caseWithRealCells('selectText', 'line', textEdit({before: {value: escapedDoc}, after: {value: `${escapedDoc}, Details: d`, selected: DOC[4]}}));
+  assert.deepEqual(line.seen, ['prepare', 'act', 'check']);
+  assert.equal(line.row.invalid, 'ambiguousReadback');
+  assert.equal(line.row.outcome.selection.valueAmbiguous, true);
+  const lineClear = await caseWithRealCells('selectText', 'line', textEdit({before: {value: escapedDoc}, after: {value: escapedDoc, selected: DOC[4]}}));
+  assert.deepEqual([lineClear.row.ok, lineClear.row.invalid], [true, undefined]);
+  // pressKey.selectAll: no selection after it and the value ambiguous; the value is read first, so it is no verdict.
+  const all = await caseWithRealCells('pressKey', 'selectAll', textEdit({before: {value: escapedDoc}, after: {value: `${escapedDoc}, Details: d`, selected: null}}));
+  assert.ok(all.seen.includes('check'), JSON.stringify(all.seen));
+  assert.equal(all.row.invalid, 'ambiguousReadback', JSON.stringify(all.row));
 });

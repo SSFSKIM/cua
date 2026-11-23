@@ -542,7 +542,8 @@ test('the AXPress route is reported, never the bar: not run behind a closed gate
 // Monitor; `foreignInSetup`: the person activates it once, at the item's first activation (outside every row);
 // `native`: the engine every act's result names (`cua/nativeEngine`), `clickKind` the act's activationClickKind.
 function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, delayedReads = 0, latinKey = false, keyless: keylessOpen = false,
-  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = [], foreignInSetup = false, native = null, clickKind = null} = {}) {
+  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = [], foreignInSetup = false, native = null, clickKind = null,
+  realCells = null} = {}) {
   const keyless = keylessOpen || armSet;
   let actionReads = 0, strays = strayWindowReads, shorts = shortMoves;
   let clock = T0, front = 'textedit', composed = false, typedLatin = false, keyedAt = null, fieldReads = 0;
@@ -560,6 +561,9 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
   const scene = id => ({id, app: `/Apps/${id}.app`, pid: pids[id], at: 1, window: {number: numbers[id]}});
   const session = {
     run: async (code, {keys}) => {
+      // A cell run for real where the test asks (`realCells`: code -> its answer, or null for the fake's own).
+      const real = realCells ? await realCells(code) : null;
+      if (real) return real;
       tick();
       if (code.includes('// cua-187: press read')) return {ok: true, value: {inFront: true, found: true, focused: true, empty: page.length === 0}, route: null, meta: {}, images: []};
       if (code.includes('// cua-187: press')) {
@@ -1162,4 +1166,74 @@ test('#361: a typeText row whose paste route is read back needs its per-line del
   const pasted = record({row: one, act: {...input({row: one}).act, meta: {...input({row: one}).act.meta, typeReadback: {confirmed: false}}}});
   assert.equal(perLineProblem(pasted), null);
   assert.match(perLineProblem({...pasted, paste: {...pasted.paste, perLine: [{line: 1, confirmed: false, effectWait: 'timeout'}]}}), /line 1 was not confirmed/);
+});
+
+// #526, ruling 1179: an ambiguous read-back is missing proof in #187's drive and judge, through the cells themselves.
+const AMBIGUOUS_CHECK = {ok: false, cause: 'ambiguousReadback', error: 'the value cannot be read from the text (a multi-line value followed by another part)'};
+// A cell run for real on an ambiguous field (cua's rendering: a multi-line value followed by another part), its answer
+// as the session keeps it.
+async function realAnswer(code, scene) {
+  const {realCell} = await import('../native-matrix/real-cells.mjs');
+  const {MARKER} = await import('../../scripts/native-baseline/cells.mjs');
+  const title = {chrome: 'cua scene page', textedit: 'cua-scene', electron: 'cua Electron fixture'}[scene];
+  const field = {chrome: 'text entry area (settable) Scene notes', textedit: 'text entry area (settable) ID: First Text View', electron: 'text entry area (settable) Fixture text'}[scene];
+  const app = {getAXState: async () => `Window: "${title}", App: A.\n0 standard window ${title}\n\t1 ${field}, Value: a\\nb, Details: d\n`, setValue: async () => {}, click: async () => {}};
+  const line = await realCell(code, {apps: {[scene]: app}});
+  return {...JSON.parse(line.slice(MARKER.length)), route: null, engine: 'cua', meta: {}, images: []};
+}
+
+test('#526 ruling 1179 (1): a block whose setup read-back is ambiguous is no verdict; its steps are skipped, and the drive goes on to the next block', async t => {
+  const out = scratch(t);
+  let first = true, prepares = 0;
+  const mac = fakeMac(out, {realCells: async code => {
+    if (!code.includes('// cua-187: prepare\n')) return null;
+    prepares++;
+    if (!first) return null;
+    first = false;
+    return realAnswer(code, 'chrome');
+  }});
+  const steps = groupItem({item: ITEMS.composing, group: 'chrome-composing', blocks: [{block: 0, rows: ROWS.slice(0, 1)}, {block: 1, rows: ROWS.slice(1, 2)}]});
+  await runSteps(steps, {item: ITEMS.composing, out, io: mac.io, log: () => {}});
+  const rows = rowsOfRun(out);
+  const unread = rows.filter(r => r.kind === 'unread');
+  assert.equal(unread.length, 1);
+  assert.equal(unread[0].cause, 'ambiguousReadback');
+  const skipped = rows.filter(r => r.kind === 'skipped' && r.cause === 'ambiguousReadback');
+  assert.ok(skipped.every(r => r.block === unread[0].block) && skipped.some(r => r.skippedTask === '187-row'), 'the block\'s row is skipped');
+  assert.equal(prepares, 4, 'block 0: its driven-side setup alone (its user side and its row skipped); block 1: both setups and its row');
+  const records = rows.filter(r => r.task === '187-row').map(r => r.result);
+  assert.equal(records.length, 1, 'block 1\'s row ran');
+  assert.equal(rows.filter(r => r.kind === 'close').length, 2, 'both blocks\' sessions closed');
+  // The judge reads the skipped row as missing proof (rows recorded in a block's place are its own).
+  assert.equal(judge187({[ITEMS.composing]: rows}).groups[0].unreadSkipped, 1);
+});
+
+test('#526 ruling 1179 (4): the bar reads ambiguous rows and repetitions as missing proof, NO VERDICT; a failure of its own still does not land', () => {
+  const ambiguousRow = evidence({tweakComposing: firstOnly(r => reRecord(r, {check: AMBIGUOUS_CHECK}))});
+  const judged = judge187(ambiguousRow);
+  assert.equal(judged.groups.find(g => g.item === ITEMS.composing).rows.filter(r => r.invalid === 'ambiguousReadback').length, 1);
+  assert.deepEqual([judged.overall.verdict, judged.bar.cause], ['NO VERDICT', 'ambiguousReadback'], judged.overall.why.join('; '));
+  assert.ok(judged.overall.why.every(w => !/rows valid and delivered/.test(w)));
+  // A block skipped after an ambiguous setup: its rows missing, the same.
+  const skippedBlock = evidence();
+  const kept = skippedBlock[ITEMS.composing].filter(r => !(r.kind === 'task' && r.task === '187-row' && r.result.block === 1));
+  skippedBlock[ITEMS.composing] = [...kept, ...COMPOSING_BLOCKS[1].map(() => ({kind: 'skipped', cause: 'ambiguousReadback', skippedTask: '187-row', block: 'b1'}))];
+  assert.equal(judge187(skippedBlock).overall.verdict, 'NO VERDICT', judge187(skippedBlock).overall.why.join('; '));
+  // An independent failure (a row that did not deliver) keeps DOES NOT LAND.
+  let n = 0;
+  const alsoFailing = evidence({tweakComposing: r => (n++ === 0 ? reRecord(r, {check: AMBIGUOUS_CHECK}) : n === 2 ? reRecord(r, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 1}}}}) : r)});
+  assert.equal(judge187(alsoFailing).overall.verdict, 'DOES NOT LAND');
+  // A background-paste repetition whose read is ambiguous is not counted, and its shortfall is missing proof.
+  const rep = evidence({cell: r => (r === 0 ? {background: cellRow('after', 0, 'chrome-cell-background', {check: AMBIGUOUS_CHECK})} : {})});
+  const repJudged = judge187(rep);
+  assert.deepEqual([repJudged.cells.paste.after[0].status, repJudged.cells.paste.after[0].counted], ['ambiguousReadback', false]);
+  assert.equal(repJudged.overall.verdict, 'NO VERDICT', repJudged.overall.why.join('; '));
+});
+
+test('#526 ruling 1179 (7): the AXPress route\'s field read keeps its named cause and moves no outcome', async t => {
+  const plain = await runRep(t, {route: 'press'});
+  const ambiguous = await runRep(t, {route: 'press', realCells: async code => (code.includes('// cua-187: press read') ? realAnswer(code, 'chrome') : null)});
+  assert.equal(ambiguous.error, null);
+  assert.deepEqual(ambiguous.result.pressRead, {cause: 'ambiguousReadback'});
+  assert.deepEqual([ambiguous.result.verdict.status, ambiguous.result.verdict.pass], [plain.result.verdict.status, plain.result.verdict.pass]);
 });

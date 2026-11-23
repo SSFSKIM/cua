@@ -77,11 +77,23 @@ export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, d
   if (!cua || !decoded) return rest;
   return rest.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
 }
-// The named cause of a cell that stopped on an ambiguous value (the cells' `plain` throws AmbiguousReadback, whose
-// message opens with it): the row is no verdict with this cause, never a fail, and the run goes on. Controller-side,
-// not embedded. -> 'ambiguousReadback' for such a cell answer ({ok: false, error}), else null.
+// The one test of an ambiguous read-back, for every runner and judge (#526, ruling 1179; controller-side, not embedded).
+// A source is missing proof when it carries the cause: a cell result whose wrapper caught AmbiguousReadback ({cause},
+// ../native-baseline/cells.mjs cell), a cell that says its verdict rests on such a read ({value: {cause}}), a row or
+// record already left invalid for it ({invalid}), or a judgement that would pass while its evidence read a value
+// ambiguous ({ambiguous: true}, selection evidence's valueAmbiguous). A fail a cell established on its own (value.ok
+// false, no cause) stands. Never read from an error's text. -> 'ambiguousReadback' or null.
 export const AMBIGUOUS_READBACK = 'ambiguousReadback';
-export const readbackCause = result => (result && result.ok === false && /^ambiguousReadback\b/.test(String(result.error ?? '')) ? AMBIGUOUS_READBACK : null);
+const carriesAmbiguity = (value, depth = 0) => Boolean(value) && typeof value === 'object' && depth < 5
+  && (value.ambiguous === true || value.valueAmbiguous === true || Object.values(value).some(v => carriesAmbiguity(v, depth + 1)));
+export function readbackOutcome(...sources) {
+  for (const s of sources) {
+    if (!s || typeof s !== 'object') continue;
+    if (s.cause === AMBIGUOUS_READBACK || s.invalid === AMBIGUOUS_READBACK || s.value?.cause === AMBIGUOUS_READBACK) return AMBIGUOUS_READBACK;
+    if (s.ok === true && s.value && s.value.ok !== false && carriesAmbiguity(s.value)) return AMBIGUOUS_READBACK;
+  }
+  return null;
+}
 // A watch's key: the readings as JSON, or null when any is ambiguous, so a watch that cannot be read is never unchanged.
 export function readingKey(values) {
   return values.some(value => value?.ambiguous === true) ? null : JSON.stringify(values);

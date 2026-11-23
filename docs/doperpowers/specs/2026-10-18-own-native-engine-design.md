@@ -87,7 +87,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
 - [ ] M4 re-cut tasks (branch `feat/117-m4-recut` from main b1b15484; the M4/M5 pre-flight's T1 to T7; Decision Log "M4 re-cut"):
   - [x] (2026-11-23) T1 — Install on macOS, pending-only; builds beside the approved engine and `cua engine approve` promotes (ruling 1118) (bdf3f424, 058bb0e0, review fixes c021e44a, 06864a1f, 768dd996; reviewed clean after four rounds).
   - [x] (2026-11-23) T2 — The permission flow (2865f597, 16a27627, review fixes fda61df9, bcef401d; reviewed clean after three rounds).
-  - [ ] T3 — `accept-native`.
+  - [x] (2026-11-23) T3 — `accept-native`: item 14 in its owner form, #197's dependencies, the structured reporter, #196's bounded cleanup, the build-beside reinstall (215dea04, review fixes 47524e65, 7c24dda9; reviewed clean after three rounds).
   - [x] (2026-11-23) T4 — The hosted gate builds the bundle (94f405ee, ceb45873, review fix 6237d0e2; reviewed clean after two rounds; the hosted run on the pull request is still owed).
   - [x] (2026-11-23) T5 — The window-frame probe and PR #199 (df48af00, 532d3db9, review fixes 28a0506b, f22b7ace, 908dbc6c; reviewed clean after four rounds; #199 superseded; live proof in M5's pilot).
   - [x] (2026-11-23) T6 — Docs: README and `docs/onboarding-new-mac.md` (install, signing, approval, permissions) and the engine's model rules in `src/mcp/surface.mjs` (e844445b, review fixes a9a55472, c9d6409e; reviewed clean after two rounds, the last one-paragraph fix checked by the controller against its finding).
@@ -8298,6 +8298,29 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   covers the false success. The harness keeps strict equality on the pin's read-back (M4's contract: the probe
   converges within a point, the harness checks the exact frame its lanes pair on).
   Date/Author: 2026-11-23, M4 re-cut controller (T5, fix waves 1 to 3).
+- Decision (T3's fix waves; acceptance fails closed): item 2 takes the release pin and the engine pin under separate
+  names (`scripts/accept/install-item.mjs`), so `--engine cua` really reinstalls with cua's engine pinned; its judge
+  accepts the build discarding a pending copy only when that copy's real signature matched the approved bundle's (the
+  comparison `buildEngine` makes, through `engine-sign.mjs`; only the boolean is kept). Item 14 approves through
+  `approveEngine({promote: false, expectedBuild})`, which under the approve lock refuses a pending build
+  (`engine_pending_build`) or a bundle of another build (`engine_unexpected_build`) before launching or prompting,
+  and item 14 reports either as BLOCKED; it asks for an explicit console readiness ("ready") before the owner window
+  starts and re-reads the checkout's build, the pending slot, the running engine, its connections and TextEdit after
+  it, before anything stops the engine. TextEdit cleanup signals the recorded pid only after an unfiltered, successful
+  window read of that pid (`front-window.swift windows <pid> --all`, which marks its answer; a failed read or a failed
+  `pgrep` signals nothing). Subprocesses run with a bounded drain (`scripts/accept/bounded-run.mjs`), and output that
+  did not complete fails the item that produced it, so no dependent item can cite it as proof. The structured
+  reporter emits a `# warnings <n>` count, never the text. Two session-test budgets were widened after a failure
+  under load (12 of 12 passes under parallel load after).
+  Date/Author: 2026-11-23, M4 re-cut controller (T3, fix waves 1 and 2).
+- Decision (the re-cut's finishing commits, on the design session's rulings 1126 and R4): the macOS engine's
+  `engineVersion` moves 0.1.0 → 0.2.0 (`Version.swift`, which the bundle, the client and the gate read), once for
+  this pull request, since M4 changes `native/engine/`; no macOS minimum is added and Linux's is untouched; whichever
+  of M4 and M5 merges second moves to the next version at its merge. A failed engine build keeps its first error
+  block (from the first `error:`, `fatal error` or failed assertion, 20 lines) beside the last 12 lines, at most 33
+  lines of 300 characters, so a compiler crash's assertion survives (H0's finding). The branch merged main at
+  a08fa842 (#504's Xcode 27.2 fix, #493) rather than rebasing.
+  Date/Author: 2026-11-23, M4 re-cut controller.
 - Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
   its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
   (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the

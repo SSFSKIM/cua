@@ -30,6 +30,12 @@ const setup=document.getElementById('setup'), field=document.getElementById('pas
 const doc=self.crypto.randomUUID(), nonce=doc.split('-')[0];
 document.title='Qualification '+nonce;
 let trial=null, effect='none', first='', hit=false, key=false, input=false, lastInputAtMs=null, seen='', measureEdits=false, editTimesMs=[];
+// #420: the plain field's own trusted key and input flags, as the password field has.
+let plainKey=false, plainInput=false;
+if(setup){
+  setup.addEventListener('input',event=>{if(event.isTrusted)plainInput=true;});
+  setup.addEventListener('keydown',event=>{if(event.isTrusted&&event.key.length===1)plainKey=true;});
+}
 const post=o=>fetch('/answer',{method:'POST',body:JSON.stringify({doc,...o})});
 // Runner-clock Unix milliseconds of the last genuine user edit of the password node: trusted, targeted at it, and its text changed.
 field.addEventListener('input',event=>{
@@ -53,20 +59,30 @@ field.addEventListener('keydown',event=>{
 const filler=()=>{const g=document.getElementById('large-before-editor');
   return FILLER===0?g===null:g!==null&&g.childElementCount===FILLER&&g.getBoundingClientRect().bottom<=field.getBoundingClientRect().top+1;};
 const reveal=el=>{if(FILLER>0)el.scrollIntoView({block:'nearest'});};
-function state(c){return {trial,focused:document.activeElement===field,plainFocused:document.activeElement===setup,
+// plainExpected is a field of the read command only (#420): prepare writes setupText into the field, so setupExact could
+// pass on a seeded field; plainExact passes only on text that arrived.
+function state(c){const plain=c.target==='plain';return {trial,focused:document.activeElement===field,plainFocused:document.activeElement===setup,
   shape:field===document.getElementById('password')&&field.type==='password'&&field.isConnected&&filler(),
-  exact:field.value===c.expected, controlExact:c.control!=null&&field.value===c.control,
+  exact:field.value===c.expected, empty:field.value==='', controlExact:c.control!=null&&field.value===c.control,
   setupExact:setup&&typeof c.setupText==='string'?setup.value===c.setupText:null,
-  unicodeShape:c.unicode===true?nonBmpShape(c.expected,field.value):null,
+  plainEmpty:setup?setup.value==='':null, plainExact:setup&&c.op==='read'&&typeof c.plainExpected==='string'?setup.value===c.plainExpected:null,
+  plainKey,plainInput,
+  unicodeShape:c.unicode===true?(plain?setup&&c.op==='read'&&typeof c.plainExpected==='string'?nonBmpShape(c.plainExpected,setup.value):null:nonBmpShape(c.expected,field.value)):null,
   selection:c.end!=null&&field.selectionStart===c.start&&field.selectionEnd===c.end,key,input,hit,lastInputAtMs,
   ...(measureEdits&&c.op==='read'?{editTimesMs}: {})};}
 function run(c){
   if(c.op==='prepare'){
     if(setup){setup.value=c.setupText??'';setup.focus();setup.setSelectionRange(setup.value.length,setup.value.length);reveal(setup);}
     else if(!c.keepFocus)field.focus();
-    trial=c.trial;field.value='';seen='';effect='none';first='';key=input=hit=false;lastInputAtMs=null;measureEdits=false;editTimesMs=[];
+    trial=c.trial;field.value='';seen='';effect='none';first='';key=input=hit=plainKey=plainInput=false;lastInputAtMs=null;measureEdits=false;editTimesMs=[];
   }else if(c.op==='seed'){
     if(c.trial!==trial)throw Error('generation');
+    // #420's plain cells: the setup field is the target, empty and focused with its caret at 0; the password stays empty.
+    if(c.target==='plain'){
+      if(!setup)throw Error('no plain field');
+      setup.value='';setup.focus();setup.setSelectionRange(0,0);reveal(setup);
+      return state(c);
+    }
     effect=c.effect;first=c.first;field.value=c.expected;seen=field.value;measureEdits=c.measureEdits===true;
     // keepFocus: the password node already holds focus from the one foreground seed; a background trial never re-focuses it.
     if(!c.keepFocus){field.focus();reveal(field);}

@@ -15,6 +15,8 @@ final class Fixture: NSObject {
     // Diagnostics only (Unix ms): last genuine printable target key arrival, the mutation insert's completion, and whether it advanced the caret.
     var lastKeyAtMs: Double?, addedAtMs: Double?, addAdvanced: Bool?, lastKeyAppliedAtMs: Double?, armed = false
     var measureEdits = false, editTimesMs: [Double] = []
+    // #420: the setup field's own key and edit flags, as the secure field has.
+    var plainKey = false, plainInput = false
     var editor: NSTextView? { secure.currentEditor() as? NSTextView }
 
     func launch() {
@@ -30,9 +32,17 @@ final class Fixture: NSObject {
             if self.measureEdits, self.editTimesMs.count < 64 { self.editTimesMs.append(at) }
             self.armed = false
         }
+        // Posted for an edit through the field editor only, never for a programmatic stringValue.
+        NotificationCenter.default.addObserver(forName:NSControl.textDidChangeNotification, object:setup, queue:nil) { [weak self] _ in
+            self?.plainInput = true
+        }
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps:true)
         NSEvent.addLocalMonitorForEvents(matching:.keyDown) { [weak self] e in
+            if let self, let plain = self.setup.currentEditor(), self.window.firstResponder === plain, e.characters?.count == 1 {
+                self.plainKey = true
+                return e
+            }
             guard let self, let field = self.editor, self.window.firstResponder === field,
                   let ch = e.characters, ch.count == 1 else { return e }
             self.key = true
@@ -66,10 +76,15 @@ final class Fixture: NSObject {
     func command(_ q:[String:Any]) {
         let op = q["op"] as? String, n = q["trial"] as? Int
         if op == "prepare", let n {
-            window.makeFirstResponder(setup); secure.stringValue = ""
-            trial = n; effect = "none"; first = ""; key = false; hit = false
+            setup.stringValue = ""; window.makeFirstResponder(setup); secure.stringValue = ""
+            trial = n; effect = "none"; first = ""; key = false; hit = false; plainKey = false; plainInput = false
             lastKeyAtMs = nil; addedAtMs = nil; addAdvanced = nil; lastKeyAppliedAtMs = nil; armed = false
             measureEdits = false; editTimesMs = []
+        } else if op == "seed", n == trial, q["target"] as? String == "plain" {
+            // #420's plain cells: the setup field is the target, empty and focused with its caret at 0; the secure field stays empty.
+            setup.stringValue = ""
+            window.makeFirstResponder(setup)
+            (setup.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location:0,length:0))
         } else if op == "seed", n == trial, let value = q["expected"] as? String,
                   let start = q["start"] as? Int, let end = q["end"] as? Int {
             secure.stringValue = value
@@ -79,11 +94,15 @@ final class Fixture: NSObject {
             measureEdits = q["measureEdits"] as? Bool == true
         }
         let field = editor, range = field?.selectedRange(), value = field?.string ?? secure.stringValue
+        let plainValue = (setup.currentEditor() as? NSTextView)?.string ?? setup.stringValue
+        let plainExpected = op == "read" ? q["plainExpected"] as? String : nil
         var out: [String:Any] = ["trial":trial,"shape":secure.window === window,"focused":field != nil && window.firstResponder === field,
               "plainFocused":setup.currentEditor() != nil && window.firstResponder === setup.currentEditor(),
               "exact":value == (q["expected"] as? String),"controlExact":value == (q["control"] as? String),
               "selection":range?.location == (q["start"] as? Int) && range.map(NSMaxRange) == (q["end"] as? Int),
-              "hit":hit,"key":key,"input":key,"request":q["request"] ?? 0]
+              "hit":hit,"key":key,"input":key,"request":q["request"] ?? 0,
+              "empty":value.isEmpty,"plainEmpty":plainValue.isEmpty,"plainExact":plainExpected.map { (plainValue == $0) as Any } ?? NSNull(),
+              "plainKey":plainKey,"plainInput":plainInput]
         if op == "read" {
             // Caret positions are known fixture constants passed by the caller; null when unavailable.
             func caretIs(_ k: String) -> Any {

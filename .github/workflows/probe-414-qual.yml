@@ -1,7 +1,9 @@
-name: probe-414-qualification
+# #420's qualification (docs/evidence/2026-11-23-own-native-engine/gates/420.md, runner witness A), built on #414's kit.
+# The file keeps #414's registered path so it dispatches from probe/420-qual without a registration push.
+name: probe-420-qualification
 on:
   push:
-    branches: ['probe/414-qual']
+    branches: ['probe/420-qual']
     paths: ['.github/workflows/probe-414-qual.yml']
   workflow_dispatch:
     inputs:
@@ -16,7 +18,7 @@ on:
       mode:
         description: Stock qualification, scratch drain timing, or a targeted provider diagnostic
         type: choice
-        options: [smoke, full, reduced, deadline, deadline-controls, sampled-hold, drain, firefox-focus, firefox-single, appkit-race, unicode]
+        options: [smoke, full, reduced, deadline, deadline-controls, sampled-hold, drain, firefox-focus, firefox-single, appkit-race, unicode, nonbmp-420]
         default: smoke
       firefox:
         description: Coverage selection for full/drain; omit Firefox if its one background setup retry fails
@@ -30,7 +32,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: probe-414-qualification-${{ inputs.mode || 'register' }}
+  group: probe-420-qualification-${{ inputs.mode || 'register' }}
   cancel-in-progress: false
 jobs:
   register:
@@ -46,7 +48,8 @@ jobs:
       fail-fast: false
       matrix:
         include: >-
-          ${{ fromJSON((startsWith(inputs.mode, 'deadline') || inputs.mode == 'sampled-hold') && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"}]' ||
+          ${{ fromJSON(inputs.mode == 'nonbmp-420' && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"plain"}]' ||
+          (startsWith(inputs.mode, 'deadline') || inputs.mode == 'sampled-hold') && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"}]' ||
           inputs.mode == 'reduced' && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"appkit","phase":"audit"}]' ||
           inputs.mode == 'unicode' && '[{"lane":"cft","phase":"stock"}]' ||
           (inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
@@ -100,7 +103,7 @@ jobs:
             if [[ "$PHASE" == focus ]]; then node scripts/probe-414/patch-firefox.mjs "$base-src"; fi
             if [[ "$PHASE" == drain ]]; then node scripts/probe-414/patch-appkit.mjs "$base-src"; fi
             swift build -c release --package-path "$base-src/native/engine" --scratch-path "$base-build"
-            if [[ "$PHASE" == stock ]]; then test -z "$(git -C "$base-src" status --porcelain)"; fi
+            if [[ "$PHASE" == stock || "$PHASE" == plain ]]; then test -z "$(git -C "$base-src" status --porcelain)"; fi
           done
       - name: Install lane prerequisites and compile the owned fixtures
         shell: bash
@@ -212,7 +215,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-414-${{ matrix.lane }}-${{ matrix.phase }}-${{ env.MODE }}
+          name: probe-420-${{ matrix.lane }}-${{ matrix.phase }}-${{ env.MODE }}
           path: ${{ runner.temp }}/q414-evidence/*.json
           if-no-files-found: error
           retention-days: 30

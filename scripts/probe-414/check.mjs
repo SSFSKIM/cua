@@ -89,6 +89,11 @@ const forbidden=/^(?:(?:cua\/)?(?:entered|checkpoints)|(?:ax)?(?:value|valueDesc
 const textEvidence=/[•●◦\uf79a]|\*{3,}|\b\d+\s*(?:characters?|chars?|code units?|bytes?)\b|\b(?:AXNumberOfCharacters|AXSelectedTextRange|length|count|numberOfCharacters|selectedText(?:Range)?|selection|range|offset|characters|(?:cua\/)?entered)\b["']?\s*(?:is\b|of\b|[=:])?\s*[[(]?\s*\d/i;
 const axNames=/\bAX(?:Value|ValueDescription|SelectedText|SelectedTextRange|NumberOfCharacters)\b/;
 const textName=/(?<![A-Za-z0-9_])(?:cua\/)?(?:entered|checkpoints|reads|pollMs|settleReads|expectedLength|actualLength|selectionStart|selectionEnd|selectionLength|selectedTextRange|selectedText|numberOfCharacters|valueDescription|value|length|count|characters|caret|range|location|offset|actual|expected|excerpt)["']?\s*[:=]/i;
+// #420 (ruling 1128): the engine's and the wrapper's whole refusal of a secret holding a character above U+FFFF in a Chromium
+// app. Value-free by construction: a cause and a remedy, never a character, a position or a length.
+export const FIXED_REFUSALS=['Nothing was entered: the secret holds a character this app drops when typed, such as an emoji, and cua will not type it partly or paste it. Use set_value on a settable element instead.',
+  'cua: type_text with secret "PROBE414" was refused and nothing was entered: it holds a character this app drops when typed, such as an emoji, and cua never types a secret partly or pastes it. Use setValue on a settable field, which needs no keystrokes or clipboard [concealed_input_unavailable]'];
+const fixedRefusals=new Set(FIXED_REFUSALS);
 const readbackKeys=new Set(['confirmed','reason','snapshotMs','concealed','secure','keysUnconfirmed','stoppedBeforeKey','lateReply',markerKey]);
 // A literal request's `entered` is a count of public units, posted at three production positions only.
 const enteredAt={ipc:[['result.meta','entered'],['error.meta','entered']],'sky-error':[['meta','entered']],forwarded:[['','cua/entered']]};
@@ -109,6 +114,8 @@ export function inspect(input,values,{literal=false,stringsOnly=false,surface=nu
   function string(s,depth){
     const lower=s.toLowerCase();
     if(needles.some(n=>n.length<=lower.length&&lower.includes(n)))findings.add('synthetic-value');
+    // #420's fixed refusal sentences (ruling 1128) open "nothing was entered:"; admitted whole only, never a variant.
+    if(fixedRefusals.has(s))return;
     if(textEvidence.test(s))findings.add('private-text');
     if(names&&(axNames.test(s)||textName.test(s)))findings.add('private-name');
     // JSON inside a string is structure too, without any exemption.
@@ -162,7 +169,8 @@ export function firefoxDisclosure(surface,{setupText,passwordText}={}){
 // Only same-machine elapsed times leave the scratch timing lane. The p99 sizing metric excludes intentional quiet sampling.
 // What shape a run takes follows from its lane and mode alone: only the focus diagnostic has (and verifies) a setup field,
 // and only the single-cell Firefox retry insists on real background cover rather than a frontmost fallback.
-export const runShape=(lane,mode)=>({singlePassword:lane==='firefox'&&mode!=='firefox-focus',setupCanary:lane==='firefox'&&mode==='firefox-focus',
+// #420: Firefox's plain cells run on the with-setup page (its focus there is the setup field, #419, the intended target).
+export const runShape=(lane,mode,field=null)=>({singlePassword:lane==='firefox'&&mode!=='firefox-focus'&&!(mode==='nonbmp-420'&&field==='plain'),setupCanary:lane==='firefox'&&mode==='firefox-focus',
   requireBackground:lane==='firefox'&&mode==='firefox-single'});
 // A password-only setup failure names the platform step that failed; only these fixed labels leave the run.
 const setupSteps=new Set(['foreground-activation','foreground-focus','foreground-seed','cover-activation','cover-lost','password-focus-lost','witness','background-seed','seed-unstable']);
@@ -430,4 +438,51 @@ export function coded(summary,auditGate=null){
     invalid:closed(summary.invalid,stages),wrongSuccesses:whole(summary.wrongSuccesses),
     knownLimit:{valid:whole(summary.knownLimit?.valid),lengthConfirmed:whole(summary.knownLimit?.lengthConfirmed)},privacyViolations:whole(summary.privacyViolations),
     auditGate:auditGate?{required:whole(auditGate.required),matched:whole(auditGate.matched),pass:auditGate.pass===true}:null};
+}
+
+// #420's qualification (docs/evidence/2026-11-23-own-native-engine/gates/420.md, runner witness A): the #414 non-BMP text
+// into the plain and the password field, non-secret, and as a secret into the password field. Each cell passes only by
+// delivered text, judged by the owned page or app, never by the engine's answer.
+export const CELLS_420=[{field:'plain',literal:true},{field:'password',literal:true},{field:'password',literal:false}];
+export const CHROMIUM_420=['cft','electron','electron-parity'];
+export const cellName=c=>`${c.literal?'nonsecret':'secret'}-${c.field}`;
+export const fields420=(lane,phase)=>lane==='firefox'?(phase==='plain'?['plain']:['password']):['plain','password'];
+export function plan420(fields){
+  const rows=[];
+  for(let rep=0;rep<20;rep++)CELLS_420.filter(c=>fields.includes(c.field)).forEach((c,i)=>{
+    for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind:'unicode',rep,field:c.field,literal:c.literal});
+  });
+  return rows;
+}
+// What the fix must do in each cell. In a Chromium app a non-secret text above U+FFFF is pasted and a secret is refused
+// before any key (ruling 1128); Safari, AppKit and Firefox keep keying both. The main head is scored by the same contract
+// and reported, never gated: there the Chromium cells are expected to miss.
+export function score420({lane,field,literal,attested,delivery:d,receipt,pasteboardUnchanged,lengthConfirmed}){
+  const plain=field==='plain',chromium=CHROMIUM_420.includes(lane),valid=attested===true;
+  const text=(plain?d?.plainExact:d?.exact)===true,empty=(plain?d?.plainEmpty:d?.empty)===true;
+  const key=(plain?d?.plainKey:d?.key)===true,input=(plain?d?.plainInput:d?.input)===true;
+  const delivered=text&&input,route=receipt?.route??null,r=receipt?.refusal??{};
+  const refusedClean=!literal&&r.native===true&&r.unposted===true&&r.cause==='droppedCharacter'&&r.wrapper===true&&
+    empty&&!key&&!input&&pasteboardUnchanged===true;
+  const pass=valid&&(!literal&&chromium?refusedClean:literal&&chromium?delivered&&route==='paste':
+    delivered&&route!=='paste'&&(literal||lane==='firefox'||lengthConfirmed===true));
+  return {valid,pass,delivered,refusedClean,domExact:text,keyEvent:key,inputEvent:input,route,answer:receipt?.answer??null,
+    wrongSuccess:valid&&receipt?.answer==='ok'&&!text};
+}
+export const outcome420=rows=>{const fix=rows.filter(r=>r.head==='fix');
+  return fix.length>0&&fix.every(r=>r.valid&&r.pass&&!r.wrongSuccess&&!r.evidenceFailure);};
+const tally=(o,k)=>{o[k??'none']=(o[k??'none']??0)+1;return o;};
+export function summarize420(rows){
+  const out={};
+  for(const r of rows){
+    const g=out[`${r.head}/${cellName(r)}`]??={planned:0,valid:0,passed:0,delivered:0,refusedClean:0,wrongSuccesses:0,keyEvents:0,inputEvents:0,
+      pasteboardUnchanged:0,routes:{},answers:{},unicodeShapes:{},invalid:{}};
+    g.planned++;
+    if(!r.valid){tally(g.invalid,r.invalid);continue;}
+    g.valid++;
+    for(const [k,on] of [['passed',r.pass],['delivered',r.delivered],['refusedClean',r.refusedClean],['wrongSuccesses',r.wrongSuccess],
+      ['keyEvents',r.keyEvent],['inputEvents',r.inputEvent],['pasteboardUnchanged',r.pasteboardUnchanged]])if(on===true)g[k]++;
+    tally(g.routes,r.route);tally(g.answers,r.answer);tally(g.unicodeShapes,r.unicodeShape);
+  }
+  return out;
 }

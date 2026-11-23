@@ -6,15 +6,16 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions,isDeadlineMode,isBalancedMode,failureReasonParity,failureTimingByLength} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions,isDeadlineMode,isBalancedMode,failureReasonParity,failureTimingByLength,plan420,fields420,score420,summarize420,outcome420} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
   'secureCountUnavailable','secureCountMismatch','secureRangeUnavailable','secureCountUnreadable','secureRangeUnreadable','secureMismatch','lengthUnreadable','lengthMismatch','caretMismatch','selectionUnreadable','noLongerSecure']);
+const ROUTES=new Set(['1',"2'",'2','3','4','paste']);
 const pickReason=x=>safeReasons.has(x)?x:x==null?null:'other';
 const nativeCodes=new Set(['typeUnconfirmed','concealedInputUnavailable','inputSourceChanged','keyboardLayoutUnavailable','userIntervened',
   'timeoutReached','windowMinimized','accessibilityError','permissionsNotGranted','runningApplicationNotFound','screenLocked','invalidArguments','unknownError','jsonRPCError']);
-const wrapperCodes=new Set(['secret_input_failed','secret_unavailable','secret_not_found','secret_unreadable','secret_input_unavailable','user_intervened']);
+const wrapperCodes=new Set(['concealed_input_unavailable','secret_input_failed','secret_unavailable','secret_not_found','secret_unreadable','secret_input_unavailable','user_intervened']);
 const actionCode=(native,error,guarded)=>!guarded?'request-shape':native?.error?
   nativeCodes.has(native.error.errorName)?native.error.errorName:'native-other':error?
   wrapperCodes.has(error.code)?error.code:'wrapper-other':native?.result?'success':'missing';
@@ -63,6 +64,15 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
   };
   const note=(label,data,opts={})=>{
     recordLate(label,data);
+    if(active?.plain){
+      // #420's plain cells type non-secret text into a plain field, which the product may count and quote (its paste and
+      // read-back diagnostics, a miss's excerpt): the strict scan's codes are kept apart as disclosures, and only another
+      // row's value appearing here, a secret's included, is a privacy flag.
+      for(const code of inspect(data,[active.words[0],...registry],opts))active.disclosures.add(label+'/'+code);
+      const others=[...registry].filter(v=>!active.words.includes(v));
+      if(others.length&&inspect(data,others,{...opts,stringsOnly:true,names:false}).includes('synthetic-value'))active.flags.add(label+'/synthetic-value');
+      return;
+    }
     const words=active?[active.words[0],...registry]:[...registry];
     for(const code of inspect(data,words,opts))(active?.flags??globalPrivacy).add(label+'/'+code);
   };
@@ -114,7 +124,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
         for(const line of text.split('\n').filter(s=>s.includes('PW walk test')))
           note('observation-secure-text',line.replace(/\bValue: secure text(?=,|$)/g,'secure text'));
         // Scan all serialized text for a value/mask that escaped the node or was misclassified; ordinary AX values are legitimate.
-        for(const code of inspect(r,[...registry],{stringsOnly:true,names:false}))active.flags.add('observation-native/'+code);
+        note('observation-native',r,{stringsOnly:true,names:false});
         return nodes.length>0;
       }
       return true;
@@ -166,8 +176,15 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
       const lateReply=lateReplyPresent(native,meta,error,rendered,content);
       const budget=concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt:nativeMeta?.startedAt,endedAt:nativeMeta?.endedAt,replyAt:replyAtMs,mode,lateReply});
       // Raw readbacks are profiled in memory into closed booleans; nothing of them is kept (see legacyBaselineCase).
+      // #420: closed projections of the route, the answer and a refusal's input meta (nothing posted, its cause).
+      const routeWire=meta['cua/inputRoute']??nativeMeta?.inputRoute??null;
+      const route=routeWire===null?null:ROUTES.has(String(routeWire))?String(routeWire):'other';
+      const answer=!error?'ok':wrapperCodes.has(error.code)?error.code:nativeCodes.has(error.errorName)?error.errorName:'other-error';
+      const cause=nativeMeta?.concealedRefusal;
+      const refusal={native:native?.error?.errorName==='concealedInputUnavailable',unposted:nativeMeta?.startedAt===null&&nativeMeta?.endedAt===null,
+        cause:cause==null?null:['droppedCharacter','inputSource'].includes(cause)?cause:'other',wrapper:error?.code==='concealed_input_unavailable'};
       const legacy={ipc:readbackProfile(raw),wrapper:readbackProfile(error?.meta?.typeReadback??error?.meta?.['cua/typeReadback']),forwarded:readbackProfile(meta['cua/typeReadback'])};
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget,legacy,lateReply};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget,legacy,lateReply,route,answer,refusal};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     recordLate('ipc-prime',await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true}));
@@ -182,10 +199,12 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
 async function main(){
   const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  const deadline=isDeadlineMode(mode),balanced=isBalancedMode(mode),sampledHold=mode==='sampled-hold',controlsOnly=mode==='deadline-controls';
-  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!balanced&&!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
+  const deadline=isDeadlineMode(mode),balanced=isBalancedMode(mode),sampledHold=mode==='sampled-hold',controlsOnly=mode==='deadline-controls',nonbmp=mode==='nonbmp-420';
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!balanced&&!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced','nonbmp-420'].includes(mode)||!['stock','audit','focus','drain','plain'].includes(phase))throw Error('invalid lane');
+  // #420: stock everywhere, and Firefox's second job (phase plain) on its with-setup page.
+  if(nonbmp?phase!=='stock'&&!(phase==='plain'&&lane==='firefox'):phase==='plain')throw Error('invalid #420 lane');
   const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',reduced=mode==='reduced'||balanced,diagnostic=mode.startsWith('firefox-');
-  const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode);
+  const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode,nonbmp&&phase==='plain'?'plain':null);
   // The focus scratch job of smoke runs the same short/literal pairs as the diagnostics, on the password-only page, without a canary.
   const miniPlan=diagnostic||smoke&&focusAllowed(lane,mode,phase);
   if(diagnostic?(lane!=='firefox'||audit||drain):focus&&!miniPlan)throw Error('invalid focus lane');
@@ -195,15 +214,18 @@ async function main(){
   const additions=Array.from({length:20},(_,rep)=>({head:'fix',kind:'add',rep,literal:rep%2===1}));
   const timingCells=Array.from({length:20},(_,i)=>[{head:'fix',kind:'short',rep:i*2},{head:'fix',kind:'short',rep:i*2+1},
     {head:'fix',kind:'long',rep:i*2},{head:'fix',kind:'long',rep:i*2+1},additions[i]]).flat();
-  const cells=race?additions:drain?timingCells:mode==='unicode'?plan(false).filter(r=>r.kind==='unicode'&&r.rep<5):
+  const cells=nonbmp?plan420(fields420(lane,phase)):race?additions:drain?timingCells:mode==='unicode'?plan(false).filter(r=>r.kind==='unicode'&&r.rep<5):
     reduced&&!audit?reducedPlan(lane,{mode}):miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
       ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
   // Paired primary rows receive the exact same disposable text, not independently generated treatments.
+  // #420's cells each get their own text, shared by the two heads of a repetition.
+  const inputKey=c=>c.field?`${c.kind}/${c.field}/${c.literal}/${c.rep}`:`${c.kind}/${c.rep}`;
   const inputs=new Map();
   for(const c of cells){
-    const k=`${c.kind}/${c.rep}`;
+    const k=inputKey(c);
     if(!inputs.has(k)){
       const m=materialize(c);
+      if(c.field==='plain')m.seed.target='plain';
       if(setupCanary)m.seed.setupText=ascii(11);
       if(drain)m.seed.measureEdits=true;
       inputs.set(k,m);
@@ -211,6 +233,7 @@ async function main(){
   }
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA},image:process.env.ImageVersion,
     os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,phase,
+    ...(nonbmp?{fields:fields420(lane,phase)}:{}),
     fixtureShape:singlePassword?'password-only':lane==='safari'?'large-with-setup':'with-setup'};
   try{
     platform=await startPlatform({lane,home,helper,cover,appkit,singlePassword,stage:x=>{stage=x;}});
@@ -223,23 +246,27 @@ async function main(){
     for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,focus,drain,globalPrivacy,lateReplyKeys,lane,mode});
     let trial=0;
     for(const c of cells){
-      const id=`${c.head}-${c.kind}-${c.rep}`,m=inputs.get(`${c.kind}/${c.rep}`),e=engines[c.head];
-      const row={...c};let s='prepare',armed=false,attested=false,receipt=null,delivery=null,focusFacts=null,timingTrace=null;
-      const scope={words:[m.text,...new Set([m.seed.expected,m.expected,m.control].filter(Boolean))],flags:new Set()};e.scope(scope);
+      const id=`${c.head}-${c.kind}-${c.rep}`,m=inputs.get(inputKey(c)),e=engines[c.head],plain=c.field==='plain',literal=c.kind==='literal'||c.literal===true;
+      const row={...c};let s='prepare',armed=false,attested=false,receipt=null,delivery=null,focusFacts=null,timingTrace=null,pbBefore=null,pbAfter=null;
+      const scope={words:[m.text,...new Set([m.seed.expected,m.expected,m.control].filter(Boolean))],flags:new Set(),plain,disclosures:new Set()};e.scope(scope);
       try{
         s='engine-attach';await e.attach();
         await platform.arm(++trial,m.seed,x=>{s=x;});armed=true;
-        s='action';receipt=await e.type(m,id,c.kind==='literal'||c.literal===true,c.head,c.kind);
+        if(nonbmp&&!literal)pbBefore=await platform.pasteboard();
+        s='action';receipt=await e.type(m,id,literal,c.head,c.kind);
         s='delivery';
         const end=performance.now()+2500;
+        // #420: a plain cell reads the plain field against plainExpected, a field of the read alone, and the password stays empty.
+        const read=nonbmp?{op:'read',trial,expected:plain?'':m.expected,plainExpected:plain?m.expected:undefined,target:plain?'plain':undefined,unicode:true}:
+          {op:'read',trial,expected:m.expected,control:m.control,setupText:m.seed.setupText,requestedCaret:m.requestedCaret,controlCaret:m.controlCaret,unicode:c.kind==='unicode'};
         do{
-          const d=await platform.command({op:'read',trial,expected:m.expected,control:m.control,setupText:m.seed.setupText,
-            requestedCaret:m.requestedCaret,controlCaret:m.controlCaret,unicode:c.kind==='unicode'});
-          if(d.trial!==trial||!d.shape||!d.focused)throw Error('fixture no longer focused');
+          const d=await platform.command(read);
+          if(d.trial!==trial||!d.shape||!(plain?d.plainFocused:d.focused))throw Error('fixture no longer focused');
           delivery=d;
-          if(m.control!==null?d.controlExact&&d.hit&&d.key:d.exact&&d.key)break;
+          if(nonbmp?(plain?d.plainExact&&d.plainInput:d.exact&&d.input):m.control!==null?d.controlExact&&d.hit&&d.key:d.exact&&d.key)break;
           await pause(35);
         }while(performance.now()<end);
+        if(nonbmp&&!literal)pbAfter=await platform.pasteboard();
         // An untouched fixture or a delivery mismatch after a witnessed call is a product miss, not setup-invalid.
         s='witness-end';const valid=await platform.disarm();armed=false;
         if(!valid)throw Error('presentation changed');attested=true;
@@ -277,6 +304,11 @@ async function main(){
       row.snapshotMs=Number.isFinite(receipt?.raw?.snapshotMs)?receipt.raw.snapshotMs:null;
       row.serviceMs=receipt?.serviceMs??null;
       row.concealedFailure=receipt?.budget??null;
+      if(nonbmp){
+        const pasteboardUnchanged=literal?null:pbBefore!==null&&pbAfter!==null?pbBefore===pbAfter:null;
+        Object.assign(row,score420({lane,field:c.field,literal,attested,delivery,receipt,pasteboardUnchanged,lengthConfirmed:row.lengthConfirmed}),
+          {pasteboardUnchanged,disclosures:[...scope.disclosures]});
+      }
       if(balanced)row.lateReply=receipt?.lateReply===true;
       if(c.kind==='unicode'&&row.valid){
         const labels=['exact','empty','missing','question-mark','replacement-character','ascii-substitution','split-or-unpaired','surrounding-mismatch','other-substitution'];
@@ -307,7 +339,9 @@ async function main(){
     const disposable=['cft','safari'].includes(lane)?['m','f'].map(name=>join(tmp,name)):[tmp];
     for(const path of disposable)rmSync(path,{recursive:true,force:true,maxRetries:2});
   }
-  const summary=summarize(rows),auditGate=audit?auditPairs(schedules,smoke?1:5):null;
+  const summary=summarize(rows),auditGate=audit?auditPairs(schedules,smoke?1:5):null,nonbmp420=nonbmp?summarize420(rows):null;
+  const plainDisclosures=Object.create(null);
+  for(const code of rows.flatMap(r=>r.disclosures??[]))plainDisclosures[code]=(plainDisclosures[code]??0)+1;
   const privacyViolations=summary.privacyViolations+(globalPrivacy.size?1:0);
   // Findings carry only the harness's surface label and scanner's fixed code, never the offending text or key.
   const privacyCodes=Object.create(null),actionCodes={main:Object.create(null),fix:Object.create(null)},unicodeShapes={main:Object.create(null),fix:Object.create(null)};
@@ -347,7 +381,7 @@ async function main(){
     bounds:['audit-success-path-only','held-match-focus-fail-schedule-not-compared','lost-match-schedule-not-compared']}:null;
   const legacyBaseline=legacyBaselineTally(legacyCases);
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
-    privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'||mode==='unicode'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
+    privacy:privacyViolations===0, outcome:nonbmp?outcome420(rows):audit||drain||focus||mode==='firefox-focus'||mode==='unicode'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
     // Historical full and reduced profiles keep their timing gates. In deadline modes, IPC timings are descriptive.
     concealedBudget:mode==='reduced'&&phase==='stock'?budgetCoverage.ok&&budgetMisses===0:mode==='full'&&phase==='stock'&&budgeted.length>0?budgetMisses===0:null,
@@ -357,7 +391,7 @@ async function main(){
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,unicodeShapes,observationsMissing:rows.filter(r=>r.observationMissing).length,
-    gates,concealedBudget,distributions,reasons,ipcFlags,failureTiming,lateReplyKeys:sampledHold?lateReplyKeys:null,
+    gates,nonbmp420,plainDisclosures:nonbmp?plainDisclosures:null,concealedBudget,distributions,reasons,ipcFlags,failureTiming,lateReplyKeys:sampledHold?lateReplyKeys:null,
     lateReplies:balanced?rows.filter(r=>r.lateReply).length:null,reduced:reducedReport,legacyBaseline,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.

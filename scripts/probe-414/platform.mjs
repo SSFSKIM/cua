@@ -141,8 +141,11 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
       active=coverApp.pid;
     }
     async function arm(trial,m,onStage=()=>{}){
-      const q={op:'seed',trial,...m};
-      const seeded=s=>s.trial===trial&&s.shape&&s.focused&&s.exact&&s.selection&&!s.key&&!s.hit;
+      const q={op:'seed',trial,...m},plain=m.target==='plain';
+      // #420's plain cells: the pre-action check is the setup field empty and focused, no key or input on it yet, and the
+      // password field empty too. A row whose check fails is setup-invalid, never scored.
+      const seeded=s=>s.trial===trial&&s.shape&&(plain?s.plainFocused&&s.plainEmpty===true&&!s.plainKey&&!s.plainInput:s.focused&&s.selection)&&
+        s.exact&&!s.key&&!s.hit;
       // The password-only Firefox cell has no setup input. The one first trial focuses and seeds the password while Firefox is
       // frontmost and then raises the owned cover; every later trial keeps that same focused node and never raises Firefox or
       // focuses the page again. If the background cannot be verified the setup is invalid; there is no frontmost fallback.
@@ -151,7 +154,8 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
       if(keep){if(!await front(active))throw setupFail('cover-lost');}
       else{try{await ensureFront(pid);}catch{throw setupFail('foreground-activation');}}
       const prep=await command({op:'prepare',trial,expected:'',setupText:m.setupText,keepFocus:keep||undefined});
-      if(prep.trial!==trial||!prep.shape||!(singlePassword?prep.focused:prep.plainFocused)||!prep.exact||(m.setupText&&prep.setupExact!==true))
+      if(prep.trial!==trial||!prep.shape||!(singlePassword?prep.focused:prep.plainFocused)||!prep.exact||(m.setupText&&prep.setupExact!==true)||
+        (plain&&prep.plainEmpty!==true))
         throw singlePassword?setupFail(keep?'password-focus-lost':'foreground-focus'):Error('prepare fixture');
       if(singlePassword&&!keep){
         onStage('foreground-seed');
@@ -199,6 +203,8 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
           visibleRange:{readable:bool(answer.visibleRange?.readable),atZero:bool(answer.visibleRange?.atZero),matchesFixture:bool(answer.visibleRange?.matchesFixture)}};
       }catch{try{await disarm();}catch{}return {unavailable:true};}
     }
-    return {pid,bundle,version,presentation,fallback,get coverActivation(){return coverActivation;},arm,disarm,command,dispose,appkitCapabilities};
+    // #420: the general pasteboard's change count, read around a secret's type call.
+    const pasteboard=async()=>{const n=(await ask({op:'pasteboard'})).changeCount;return Number.isSafeInteger(n)?n:null;};
+    return {pid,bundle,version,presentation,fallback,get coverActivation(){return coverActivation;},arm,disarm,command,dispose,appkitCapabilities,pasteboard};
   }catch(e){await dispose();throw e;}
 }

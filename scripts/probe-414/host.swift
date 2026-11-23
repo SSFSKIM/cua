@@ -118,6 +118,8 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
   case "disarm": return disarm()
   default: break
   }
+  // #420: the general pasteboard's change count only, around a secret's type call (never its contents).
+  if q["op"] as? String == "pasteboard" { return ["changeCount": NSPasteboard.general.changeCount] }
   if q["op"] as? String == "lookup", let bundle = q["bundle"] as? String {
     return ["pid": NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first?.processIdentifier ?? 0]
   }
@@ -171,6 +173,7 @@ func handle(_ line: String) -> String {
   return out
 }
 
+// Hosted runners only (ruling 1111): the AX enablement writes below and every owned app refuse anywhere else.
 guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else { exit(2) }
 // Owned AppKit cover (as #390): a regular app with one visible titled window, side by side with the Safari fixture and
 // never overlapping it. AppKit runs on this original main thread. Prints only its pid.

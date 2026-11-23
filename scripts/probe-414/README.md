@@ -1,5 +1,43 @@
 # #414 hosted qualification: password typing by length
 
+## #420: a character above U+FFFF in Chromium apps (`mode=nonbmp-420`)
+
+Branch `probe/420-qual`, cut from `probe/414-qual` at b7aebd311. Its specification is
+`docs/evidence/2026-11-23-own-native-engine/gates/420.md` (runner witness A); its results are recorded there.
+
+```sh
+gh workflow run probe-414-qual.yml --ref probe/420-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=nonbmp-420
+```
+
+The workflow keeps #414's registered path, so it dispatches from this branch with no registration push; it is
+named `probe-420-qualification`. Seven jobs: cft, electron, electron-parity, safari and appkit (phase `stock`), and
+Firefox twice, `stock` on its password-only page and `plain` on its with-setup page, where #419's misread focus is the
+setup field, the intended target.
+
+Per lane, 20 repetitions per head of three cells, both heads interleaved, each cell with its own #414 non-BMP text
+(four ASCII characters, U+1F4A1, three more):
+
+| Cell | Chromium (cft, both Electron lanes): the fix must | Safari, AppKit, Firefox: the fix must |
+|---|---|---|
+| non-secret, plain field (`#setup`, "Setup control") | deliver it exactly, by the paste route | deliver it exactly, keyed |
+| non-secret, password field | deliver it exactly, by the paste route | deliver it exactly, keyed |
+| secret, password field | refuse it before any key: `concealedInputUnavailable` with null `startedAt`/`endedAt` and `concealedRefusal: droppedCharacter`, the wrapper's `concealed_input_unavailable`, the field empty, no trusted key or input event, the pasteboard's change count unchanged | deliver it exactly, keyed, and length-confirmed (Firefox: delivery alone, #419) |
+
+A cell passes only by delivered text. The pre-action check (the target field empty and focused, no key or input yet,
+the password field empty) is part of setup; a row that fails it is setup-invalid and fails coverage. After the call,
+`op: 'read'` carries `plainExpected`, which `prepare` and `seed` never carry, so a seeded field cannot pass; the
+plain field has its own trusted `plainKey`/`plainInput` flags on the page and in the AppKit fixture. The main head runs
+the same cells and is reported per cell, never gated. The gate: every fix row attested and passing, no fix wrong
+success (a success answer over text that did not arrive), no privacy flag, no setup-invalid row.
+
+Privacy. Password-field and secret rows keep the strict #414 scan; the two fixed refusal sentences of ruling 1128 are
+admitted whole (`FIXED_REFUSALS`). The plain cells type non-secret text into a plain field, whose counts and excerpts
+the product may disclose: their strict-scan codes are reported as `plainDisclosures`, and only another row's value
+appearing on their surfaces is a privacy flag. `status.json` carries `nonbmp420`, per head and cell: counts, routes,
+answers, `nonBmpShape` labels and setup-invalid stages.
+
+This kit yields no vendor sample: both heads are cua's engine.
+
 This is a disposable hosted macOS qualification kit, not product code. It builds unmodified release binaries from two exact product SHAs and uses the corresponding production sky, secret-store, native service and renderer modules. Each of the six stock jobs interleaves the pins in the same owned app/profile. CfT and Safari also run a separate, instrumented copy of the fix solely for the AX schedule gate. Audit rows are never pooled with stock evidence.
 
 ```sh

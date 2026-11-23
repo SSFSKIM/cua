@@ -125,6 +125,12 @@ test('ruling 1149: an attestation is ok, the vendor on the cua side (state 1), m
   assert.deepEqual(classifyAttestation(cua, {engine: 'cua'}), {status: 'ok', problem: null});
   assert.equal(classifyAttestation(undefined, cua).status, 'missing');
   assert.match(classifyAttestation(null, cua).problem, /no cua\/nativeEngine attestation/);
+  // An attestation that names no engine leaves the engine unknown: missing, never "another engine answered".
+  for (const nameless of [{}, {version: '0.2.0', build: cua.build}, {engine: null}, {engine: ''}]) {
+    const unknown = classifyAttestation(nameless, cua);
+    assert.equal(unknown.status, 'missing', JSON.stringify(nameless));
+    assert.match(unknown.problem, /names no engine/);
+  }
   assert.equal(classifyAttestation({...cua, build: 'b'.repeat(64)}, cua).status, 'mismatched');
   assert.equal(classifyAttestation(cua, vendor).status, 'mismatched', 'cua\'s engine on the vendor side is no fallback, and no measurement of the vendor either');
   assert.equal(attestationProblem({'cua/nativeEngine': vendor}, cua), fellBack.problem, 'attestationProblem is the classifier\'s problem');

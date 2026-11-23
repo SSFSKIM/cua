@@ -23,9 +23,10 @@
 // refusalOf, from the policy's #216 sentence), its `cua/approval` result meta (who answered, the connection's opaque id,
 // the runtime generation), a non-approval failure's first line, whether its result opened with the restart notice, its
 // task id and the samples' verdicts; never the app's text. Each end_task (status ended) and js_reset is checked. Every
-// bind's result must attest cua's engine on cua's host: another host stops the run as a fail; another engine, or none,
-// stops it NO VERDICT (ruling 1149: the vendor's engine on this side is state 1, which measures nothing of cua's;
-// attestationStop). A run stopped by a lost fixture or an attestation is judged on what it recorded, the steps it never
+// bind's and js_reset's result must attest cua's engine, and every bind's cua's host: another host stops the run as a
+// fail; another engine, or none, stops it NO VERDICT (ruling 1149: the vendor's engine on this side is state 1, which
+// measures nothing of cua's; attestationStop, resetStep). A bind a stop interrupted is kept marked `unmeasured`, outside
+// the judgement. A run stopped by a lost fixture or an attestation is judged on what it recorded, the steps it never
 // reached NO VERDICT (stoppedVerdict). The judge is judgeApprovalCycles. Nothing here reads replayd's state or writes a
 // TCC row.
 //
@@ -48,7 +49,7 @@ import {LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 import {openSession, resultText} from './accept/mcp-session.mjs';
 import {FRONT_WINDOW_SCRIPT, localFrontmost} from './accept/key-guard.mjs';
 import {readWindows} from './accept/window-close.mjs';
-import {ALERT_APPS, approvalCyclesPlan, attestationStop, judgeApprovalCycles, refusalOf, screenState, stoppedVerdict, verdictLine} from './probe/approval-cycles.mjs';
+import {ALERT_APPS, approvalCyclesPlan, attestationStop, bindRecord, judgeApprovalCycles, refusalOf, resetStep, screenState, stoppedVerdict, verdictLine} from './probe/approval-cycles.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
@@ -169,12 +170,14 @@ async function runConnection(name, plan, fixture) {
         opened = false;
       } else if (step.step === 'js_reset') {
         opened = true;
-        const result = await tool(session.call('js_reset', {}, 60_000), 'js_reset');
-        record.steps.push({step: 'js_reset', cycle: step.cycle, ok: !result.isError, ...(result.isError ? {detail: boundedError(resultText({result}))} : {})});
+        // Attested before it counts (ruling 1149): another engine, or none, stops the run NO VERDICT (resetStep).
+        const {step: done, stop} = resetStep(await tool(session.call('js_reset', {}, 60_000), 'js_reset'), expected, step.cycle);
+        record.steps.push(done);
+        if (stop) throw Object.assign(stop, {message: `${name}: js_reset: ${stop.message}`});
       } else if (step.step === 'idle') await sleep(idleMs + 4000);
       else {
         const blocked = await prepareBind(fixture);
-        bind = {app: step.app, cycle: step.cycle, dispatched: !blocked, blocked, after: null, asked: 0, refusal: null, failed: false, restarted: false, taskId: null, approval: null};
+        bind = bindRecord({app: step.app, cycle: step.cycle, blocked});
         if (blocked) { record.binds.push(bind); bind = null; continue; }
         opened = true;
         try {
@@ -194,6 +197,10 @@ async function runConnection(name, plan, fixture) {
             if (bind.refusal === null) Object.assign(bind, {failed: true, failure: boundedError(text.startsWith(RESTART_NOTICE) ? text.split('\n').slice(1).join('\n') : text)});
           }
           bind.after = screenState(await sample());
+        } catch (error) {
+          // A stop interrupted the bind: it measured nothing the judge may read (judgeApprovalCycles `unmeasured`).
+          bind.unmeasured = error.message;
+          throw error;
         } finally { record.binds.push(bind); bind = null; }
       }
     }

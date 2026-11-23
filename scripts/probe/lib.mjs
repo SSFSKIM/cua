@@ -127,7 +127,7 @@ export function pinnedEngine({flag, env, defaultEngine}) {
 // build where the lane knows them; only the keys it has are compared) is one of:
 //   ok                  the side's own engine answered
 //   vendor-on-cua-side  the vendor's answered the cua side: state 1, named by STATE_1
-//   missing             no attestation, so the engine that answered is unknown
+//   missing             no attestation, or one naming no engine, so the engine that answered is unknown
 //   mismatched          another engine (cua's on the vendor side), or the side's engine at another version or build
 // Anything but ok leaves the side unmeasured: NO VERDICT where the lane has one, its refusal or invalid state where it
 // has none, never a pass. -> {status, problem} (problem null when ok).
@@ -135,6 +135,7 @@ export const STATE_1 = 'the cua side attested the vendor engine, a fallback that
 const shown = a => ['engine', 'version', 'build'].filter(key => Object.hasOwn(a, key)).map(key => `${key} ${a[key]}`).join(' ');
 export function classifyAttestation(attested, expected) {
   if (!attested || typeof attested !== 'object') return {status: 'missing', problem: `no ${ENGINE_META_KEY} attestation on the result`};
+  if (typeof attested.engine !== 'string' || !attested.engine) return {status: 'missing', problem: `the result's ${ENGINE_META_KEY} names no engine`};
   const keys = ['engine', ...['version', 'build'].filter(key => Object.hasOwn(expected, key))];
   if (keys.every(key => attested[key] === expected[key])) return {status: 'ok', problem: null};
   const mismatch = `the result attested ${shown({engine: attested.engine, version: attested.version, build: attested.build})} where ${shown(expected)} was expected`;

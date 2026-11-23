@@ -98,7 +98,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.ok(at('defaults write') > at('screen') && at('defaults write') < at('engine-stop'));
   assert.ok(calls.filter(c => c.kind === 'exec' && c.line.startsWith('defaults ')).every(c => c.line.split(' ')[2] === 'com.apple.TextEdit'), 'TextEdit\'s own domain only');
   assert.equal(report.venue.textEdit.ok, true);
-  assert.deepEqual(report.venue.frames.chrome, {x: 80, y: 60, width: 800, height: 600}, 'no alert: the hosted size at the mini\'s origin');
+  assert.deepEqual(report.venue.frames.chrome, {x: 80, y: 60, width: 800, height: 760}, 'no alert: the hosted size at the mini\'s origin');
   assert.deepEqual(calls.at(-1).record.venue, report.venue);
   assert.deepEqual(report.engineStop, {wasRunning: true, pid: 2142, stopped: true});
   assert.match(report.steps.find(s => s.step === 'engine stop').detail, /^was running \(pid 2142\), stopped$/);
@@ -121,16 +121,17 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
   assert.equal(report.ok, true, report.steps.map(s => `${s.step}: ${s.detail}`).join('\n'));
   const {alerts, displays, scenes} = report.placement;
   assert.deepEqual([alerts, displays], [[alert.bounds], SCREEN.displays]);
-  // Each the hosted size at the mini's origin, moved by the smallest move clear of the alert: Chrome's 800x600 and
-  // Finder's 800x520 below it, the fixture and the Open panel left of it.
-  assert.deepEqual(report.venue.frames, {chrome: {x: 80, y: 408, width: 800, height: 600}, electron: {x: 22, y: 100, width: 720, height: 560},
+  // Each the hosted size at the mini's origin, moved by the smallest move clear of the alert: Finder's 800x520 below it,
+  // the fixture and the Open panel left of it. Chrome's 800x760 has no clear frame beside this wide alert on 1920x1080:
+  // it is kept at its base, said so, and the guard refuses what the alert overlaps.
+  assert.deepEqual(report.venue.frames, {chrome: {x: 80, y: 60, width: 800, height: 760}, electron: {x: 22, y: 100, width: 720, height: 560},
     finder: {x: 80, y: 408, width: 800, height: 520}, openPanel: {x: 22, y: 80, width: 720, height: 440}});
-  assert.deepEqual(scenes.chrome, {base: {x: 80, y: 60, width: 800, height: 600}, frame: report.venue.frames.chrome, moved: true});
+  assert.deepEqual(scenes.chrome, {base: {x: 80, y: 60, width: 800, height: 760}, frame: report.venue.frames.chrome, moved: false, reason: 'no 800x760 frame on the display clears the alert windows'});
   // TextEdit sizes its own windows from its preferences; each run reads them back.
   assert.equal(scenes.textedit.base, null);
   assert.match(scenes.textedit.reason, /WidthInChars 60/);
   assert.equal(report.steps.find(s => s.step === 'placement').detail,
-    '1 alert window; hosted frames: chrome 80,408 800x600 (moved), electron 22,100 720x560 (moved), finder 80,408 800x520 (moved), openPanel 22,80 720x440 (moved)');
+    '1 alert window; hosted frames: chrome 80,60 800x760 (no clear frame: kept), electron 22,100 720x560 (moved), finder 80,408 800x520 (moved), openPanel 22,80 720x440 (moved)');
   assert.deepEqual(report.venue.alerts, [{number: 90, bounds: alert.bounds}]);
   assert.deepEqual(report.venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'openPanel']);
   // The Open panel's saved frame, in AppKit's coordinates on the 1920x1080 display.
@@ -145,7 +146,7 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
   assert.equal(unread.ok, true);
   assert.deepEqual(unread.placement, {unread: true});
   assert.equal(unread.venue.alerts, null);
-  assert.deepEqual(unread.venue.frames.chrome, {x: 80, y: 60, width: 800, height: 600});
+  assert.deepEqual(unread.venue.frames.chrome, {x: 80, y: 60, width: 800, height: 760});
   assert.match(unread.steps.find(s => s.step === 'placement').detail, /unread/);
 });
 

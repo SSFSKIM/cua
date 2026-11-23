@@ -263,7 +263,7 @@ const dragPoints = async (c, shot) => {
   return {ready: prepare.value?.ready, points: app.calls.filter(x => x[0] === 'click').map(x => x[1])};
 };
 
-// Ruling 1169: on a hosted runner Chrome's window is the venue's 800x600, not the mini's 1000x760. The page has no
+// Ruling 1169: on a hosted runner Chrome's window is the venue's 800x760, not the mini's 1000x760. The page has no
 // stylesheet, so the notes field stands at the same window points in either window; only the window's size, which turns
 // window points into the screenshot's pixels, follows the frame. The layout is re-grounded on the frame the run
 // launched Chrome at (the venue's), never scaled from the mini's.
@@ -271,20 +271,20 @@ test('ruling 1169: Chrome\'s drag is grounded on the frame the run launched its 
   const drag = casesOf('chrome', 'drag', 'select');
   assert.equal(groundCase('chrome', drag, null), drag, 'off a hosted runner: the mini\'s layout');
   assert.equal(groundCase('chrome', drag, {}), drag, 'a venue that names no Chrome frame changes nothing');
-  assert.deepEqual(chromeDragLayout({x: 22, y: 60, width: 800, height: 600}), {window: [800, 600], ...CHROME_DRAG_POINTS});
-  const hosted = groundCase('chrome', drag, {chrome: {x: 22, y: 60, width: 800, height: 600}});
+  assert.deepEqual(chromeDragLayout({x: 22, y: 60, width: 800, height: 760}), {window: [800, 760], ...CHROME_DRAG_POINTS});
+  const hosted = groundCase('chrome', drag, {chrome: {x: 22, y: 60, width: 800, height: 760}});
   assert.notEqual(hosted, drag);
   assert.deepEqual([hosted.method, hosted.case, hosted.expect, hosted.framed], ['drag', 'select', 'outcome', 'window points']);
-  // The hosted display is 1x: an 800x600 window's screenshot is 800x600, so the field's window points are its pixels.
-  assert.deepEqual(await dragPoints(hosted, jpegOf(800, 600)), {ready: true, points: [CHROME_DRAG_POINTS.to, CHROME_DRAG_POINTS.from]});
+  // The hosted display is 1x: an 800x760 window's screenshot is 800x760, so the field's window points are its pixels.
+  assert.deepEqual(await dragPoints(hosted, jpegOf(800, 760)), {ready: true, points: [CHROME_DRAG_POINTS.to, CHROME_DRAG_POINTS.from]});
   // The mini's layout on the mini's 2x 1000x760 window: the same window points, doubled.
   assert.deepEqual(await dragPoints(drag, jpegOf(2000, 1520)), {ready: true, points: [[400, 474], [48, 384]]});
-  // What re-grounding replaces: the mini's layout on the hosted shot passes its shape check (0.75 against 0.76) and
-  // would have scaled the points by 0.8, off the field's lines.
-  assert.deepEqual((await dragPoints(drag, jpegOf(800, 600))).points, [[160, 190], [19, 154]]);
+  // What re-grounding replaces: the mini's layout on the hosted shot fails its shape check (0.95 against 0.76), so the
+  // drag would never be prepared.
+  assert.equal((await dragPoints(drag, jpegOf(800, 760))).ready, false);
   // The other targets' cases are not grounded on a frame of the venue: the fixture keeps its size (its layout is the
   // mini's), TextEdit's drag is in fractions of its window, Finder's cases address rows.
-  const frames = {chrome: {x: 22, y: 60, width: 800, height: 600}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
+  const frames = {chrome: {x: 22, y: 60, width: 800, height: 760}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
   for (const target of ['textedit', 'finder', 'electron', 'openPanel']) for (const c of CASES[target]) assert.equal(groundCase(target, c, frames), c, `${target} ${c.method}.${c.case}`);
 });
 

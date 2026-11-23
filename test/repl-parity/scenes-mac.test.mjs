@@ -818,12 +818,12 @@ test('setup: Finder in front, list view, nothing selected, the owner\'s visible 
 // every scene brought up there is launched at its frame (Chrome's switches, the fixture's bounds, Finder's pin), with no
 // Accessibility write but Finder's existing probe. Off a runner (no record) each scene keeps its own frame.
 test('up on a hosted runner launches each scene at the venue\'s frame and records it; off a runner each keeps its own', async () => {
-  const venue = {chrome: {x: 22, y: 60, width: 800, height: 600}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
+  const venue = {chrome: {x: 22, y: 60, width: 800, height: 760}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
   await withRun(async run => {
     const io = Object.assign(fakeDevice(), {venueFrames: () => venue});
     const chrome = await upScene('chrome', {run, io});
     const chromeLaunch = io.calls[0][1];
-    assert.ok(chromeLaunch.args.includes('--window-position=22,60') && chromeLaunch.args.includes('--window-size=800,600'), JSON.stringify(chromeLaunch.args));
+    assert.ok(chromeLaunch.args.includes('--window-position=22,60') && chromeLaunch.args.includes('--window-size=800,760'), JSON.stringify(chromeLaunch.args));
     assert.deepEqual(chromeLaunch.args, chromeArgs({userDataDir: chrome.userDataDir, url: chrome.page.url, placement: venue.chrome}));
     assert.deepEqual(chrome.launchFrame, {frame: venue.chrome, from: 'venue'});
     const electron = await upScene('electron', {run, io});
@@ -845,11 +845,11 @@ test('up on a hosted runner launches each scene at the venue\'s frame and record
 // Ruling 1168's pointerdown variants (the matrix's MATRIX_SCENE_ARGS) come up at the venue's frames as the shared
 // scenes do: the variant is a page or a switch beside the frame, never instead of it.
 test('the matrix\'s pointerdown variants come up at the venue\'s frames: Chrome\'s page and the fixture\'s switch beside its bounds', async () => {
-  const venue = {chrome: {x: 22, y: 60, width: 800, height: 600}, electron: {x: 102, y: 100, width: 720, height: 560}};
+  const venue = {chrome: {x: 22, y: 60, width: 800, height: 760}, electron: {x: 102, y: 100, width: 720, height: 560}};
   await withRun(async run => {
     const io = Object.assign(fakeDevice(), {venueFrames: () => venue});
     const chrome = await upScene('chrome', {run, io, page: POINTERDOWN.variant});
-    assert.ok(io.calls[0][1].args.includes('--window-size=800,600') && io.calls[0][1].args.includes('--window-position=22,60'));
+    assert.ok(io.calls[0][1].args.includes('--window-size=800,760') && io.calls[0][1].args.includes('--window-position=22,60'));
     assert.deepEqual(chrome.launchFrame, {frame: venue.chrome, from: 'venue'});
     const electron = await upScene('electron', {run, io, electronExtra: [POINTERDOWN_SWITCH]});
     assert.deepEqual(io.calls.at(-1)[1].args, ['--cua-fixture-user-data=' + join(run, 'electron-user-data'), '--cua-fixture-bounds=102,100,720,560', POINTERDOWN_SWITCH]);

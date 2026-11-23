@@ -91,7 +91,7 @@ test('meta.hosted is never guessed: every disagreement between the device and th
 // Ruling 1169: the venue setup chose rides in the record, so the device's scenes launch at its frames and every lane
 // keeps it as meta.venue, apart from the run's attestation.
 test('the venue: kept in the record, handed out as its own block, its frames read by the device; none off a runner', () => {
-  const venue = {frames: {chrome: {x: 22, y: 60, width: 800, height: 600}, finder: {x: 22, y: 80, width: 800, height: 520}}, differences: []};
+  const venue = {frames: {chrome: {x: 22, y: 60, width: 800, height: 760}, finder: {x: 22, y: 80, width: 800, height: 520}}, differences: []};
   const withVenue = runnerRecord(ENV, {install: INSTALL, engine: ENGINE, vm: VM, venue, now: () => Date.UTC(2026, 10, 23)});
   assert.deepEqual(withVenue.venue, venue);
   assert.deepEqual(runnerProblems(withVenue), []);

@@ -3,7 +3,7 @@
 // y 188-608 (pilot A's re-run, run 45252131587), which leaves the strip x 0-822 clear. The approved engine's frame probe
 // moves Finder windows only (native/engine/Sources/Engine/WindowFrameProbe.swift), so every other window is placed
 // without an Accessibility write:
-//   chrome      Chrome for Testing launched at the venue's frame (--window-position, --window-size), 800x600 here
+//   chrome      Chrome for Testing launched at the venue's frame (--window-position, --window-size), 800x760 here
 //   electron    the fixture launched at the venue's frame (its BrowserWindow's bounds, --cua-fixture-bounds), 720x560
 //   finder      the existing probe pins its window at the venue's frame (setup step `finderFrame`), 800x520
 //   textedit    TextEdit sizes its own windows from its preferences: WidthInChars, written to com.apple.TextEdit on the
@@ -31,9 +31,10 @@ import {assertGithubHosted} from './runner.mjs';
 
 // The scenes' own frames, as the mini launches and pins them.
 export const MINI_FRAMES = Object.freeze({chrome: SCENES.chrome.placement, electron: SCENES.electron.placement, finder: FINDER_FRAME});
-// The hosted sizes (ruling 1169): Chrome 800x600, the fixture's own 720x560 (so ELECTRON_FIELD_LAYOUT holds as it is),
+// The hosted sizes (ruling 1169): Chrome 800x760 (the mini's height kept, so the scene page still fits its window and
+// NOT_APPLICABLE's "nothing to scroll" holds), the fixture's own 720x560 (so ELECTRON_FIELD_LAYOUT holds as it is),
 // Finder about 800x520 (its height kept, so its list shows the rows it shows on the mini), the Open panel 720x440.
-export const HOSTED_SIZES = Object.freeze({chrome: {width: 800, height: 600}, electron: {width: 720, height: 560}, finder: {width: 800, height: 520}, openPanel: {width: 720, height: 440}});
+export const HOSTED_SIZES = Object.freeze({chrome: {width: 800, height: 760}, electron: {width: 720, height: 560}, finder: {width: 800, height: 520}, openPanel: {width: 720, height: 440}});
 // Where each frame starts before clearFrame: the mini's origin; the panel, which the mini leaves to AppKit (centred on
 // the screen, where the alerts are), at Finder's.
 const ORIGINS = Object.freeze({...MINI_FRAMES, openPanel: FINDER_FRAME});
@@ -107,7 +108,7 @@ const NATIVE_MAC = {
   textedit: 'native-mac textedit (its tree)',
 };
 const GROUNDING = {
-  chrome: 'window points re-grounded on the hosted size: the page has no stylesheet, so the notes field stands at the same window points; the drag\'s layout takes the venue\'s 800x600 (../native-matrix/plan.mjs groundCase)',
+  chrome: 'window points re-grounded on the hosted size: the page has no stylesheet, so the notes field stands at the same window points; the drag\'s layout takes the venue\'s 800x760 (../native-matrix/plan.mjs groundCase)',
   electron: 'window points on the fixture\'s size, unchanged at 720x560: its layout (ELECTRON_FIELD_LAYOUT, #259\'s point) holds as it is; only the origin moved',
   finder: 'element-addressed rows; the height is the mini\'s, so the same rows are visible',
   textedit: 'fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare\'s clicks proving each end',
@@ -126,7 +127,7 @@ export function venueRecord({alerts, displays, placed, textEdit}) {
     const frame = placed.frames[scene], mini = MINI_FRAMES[scene] ?? null;
     const geometry = fresh === null ? 'the alert windows were unread after the mode switch' : fresh.length ? `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}` : 'no alert window after the mode switch';
     const under = mini && fresh?.some(a => overlaps(a.bounds, mini)) ? `; the mini's ${rectText(mini)} would overlap them` : '';
-    const size = scene === 'chrome' ? '; Chrome is 800x600 on a hosted runner (ruling 1169)' : scene === 'openPanel' ? '; the mini leaves the panel centred, where the alerts are' : '';
+    const size = scene === 'chrome' ? '; Chrome is 800x760 on a hosted runner (ruling 1169)' : scene === 'openPanel' ? '; the mini leaves the panel centred, where the alerts are' : '';
     const moved = placed.scenes[scene]?.reason ? `; ${placed.scenes[scene].reason}` : '';
     return `${geometry}${under}${size}; the frame ${rectText(frame)}${moved}`;
   };

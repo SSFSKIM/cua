@@ -1552,7 +1552,7 @@ With pilot A's alerts:
 
 | scene | mini | hosted | how it gets there |
 |---|---|---|---|
-| Chrome for Testing | 80,60 1000x760 | 22,60 800x600 (moved) | `--window-position` and `--window-size` at launch |
+| Chrome for Testing | 80,60 1000x760 | 22,60 800x760 (moved) | `--window-position` and `--window-size` at launch |
 | Electron fixture | 140,100 720x560 | 102,100 720x560 (moved) | `--cua-fixture-bounds` at launch |
 | Finder | 80,80 920x520 | 22,80 800x520 (moved) | the existing `WindowFrameProbe` pin, at the venue's frame |
 | TextEdit | its template | its template, 60 characters wide | `defaults write com.apple.TextEdit WidthInChars 60`, hosted only |
@@ -1608,10 +1608,11 @@ frame scaled by guess:
 
 - **Chrome's drag** (`plan.mjs` `CHROME_DRAG_POINTS`, `chromeDragLayout(frame)`). The page has no stylesheet (CSP
   `style-src 'none'`). The user agent lays the notes field (rows 8, cols 60) out from the content area's top left, so
-  the drag's window points (24,192 to 200,237) are the same at 1000x760 and 800x600. Only `layout.window`, which turns
+  the drag's window points (24,192 to 200,237) are the same at 1000x760 and 800x760. Only `layout.window`, which turns
   window points into the screenshot's pixels, follows the frame. `groundCase(target, case, frames)` grounds the case on
   the venue's frame. The matrix's `caseRow` passes `meta.venue.frames`, and a test runs a hosted matrix with the drag
-  grounded at 800x600.
+  grounded at 800x760. Without re-grounding, the mini's layout would fail its own shape check on the hosted
+  screenshot (0.95 against 0.76), so the drag would never be prepared.
 - **Electron.** The size is unchanged, so `ELECTRON_FIELD_LAYOUT` is unchanged. A test asserts this.
 - **Finder.** The height is unchanged at 520, so the visible rows and every row-based cell are the same.
 - **TextEdit's drag** is in window fractions. It holds at any width.
@@ -1625,12 +1626,14 @@ frame. In the mini's golden tree (`test/native-goldens/chrome/skyshot.json`, wit
 starts lowest), Apply's line is at y 375 to 397 in the window. The pair's line ends by x 523 even with every character
 taken at 9 pt, inside 800 less a 15 pt scrollbar. `venue.test.mjs` checks this from the golden.
 
-Finding: at 800x600 the scene page no longer fits its window. In the same golden tree, the Section heading ends 663 pt
-down the window (607 pt without the infobar), past 600. `NOT_APPLICABLE.chrome.scroll`'s reason ("the scene page fits
-its window") does not hold on the runner. Nothing judged depends on it: the cell is declared on both engines alike, and
-every focusable control ends by 579 pt, so no focus scrolls the page under the drag's window points. A hosted Chrome
-760 pt tall (22,60 800x760 clears the alerts, which start at x 830) would keep the reason true. That is the
-controller's call.
+Chrome keeps the mini's height on the runner: 800x760, not the 800x600 first chosen. At 600 pt the scene page did not
+fit its window. In the same golden tree the Section heading ends 663 pt down the window (607 pt without the
+infobar), so `NOT_APPLICABLE.chrome.scroll`'s reason ("the scene page fits its window") would have been false on the
+runner. At 760 pt the whole page fits, as it does on the mini. 22,60 800x760 still clears the alerts, which start at
+x 830. The same test checks that the page's end, Apply's line and the drag's window points all lie inside the frame.
+One cost: a taller window has fewer clear places. Beside an alert wider than pilot A's (setup's test uses one at
+750,220 420x180), no 800x760 frame on 1920x1080 clears it. Chrome then stays at its base, `placement` says "no clear
+frame: kept", and the alert guard refuses what the alert overlaps.
 
 ### Declared venue differences
 
@@ -1703,12 +1706,12 @@ New tests:
   - The saved-frame string.
   - The venue record and its rendering.
   - `sceneFrames` and `frameAsymmetry`.
-  - The pointerdown pair inside the hosted Chrome frame.
+  - The pointerdown pair, the page's end and the drag's points inside the hosted Chrome frame.
 - **Setup.** The `placement` and `textedit defaults` steps, the venue in the runner record, and `hostedRunOf` carrying
   it.
 - **The matrix.**
   - `groundCase` and `framedCells`.
-  - A hosted run whose Chrome drag is grounded at 800x600.
+  - A hosted run whose Chrome drag is grounded at 800x760.
   - `key-window-run.test.mjs`: the reading holds; no key window refuses click and key cells on both engines; a
     background main window passes and another key window refuses; an unread reading is counted; nothing is read
     while the Open panel is up.

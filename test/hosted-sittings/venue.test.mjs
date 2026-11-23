@@ -11,7 +11,7 @@ import {
 } from '../../scripts/hosted-sittings/venue.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
-import {ELECTRON_FIELD_LAYOUT} from '../../scripts/native-matrix/plan.mjs';
+import {CHROME_DRAG_POINTS, ELECTRON_FIELD_LAYOUT, NOT_APPLICABLE} from '../../scripts/native-matrix/plan.mjs';
 import {POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
 const rect = (x, y, width, height) => ({x, y, width, height});
@@ -20,9 +20,9 @@ const DISPLAY = rect(0, 0, 1920, 1080);
 const ALERTS = [{number: 31, layer: 8, bounds: rect(830, 188, 260, 348)}, {number: 59, layer: 8, bounds: rect(893, 244, 260, 364)}];
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
 
-test('the mini\'s frames are the scenes\' own; the hosted sizes are the ruling\'s: Chrome 800x600, the fixture unchanged, Finder 800x520', () => {
+test('the mini\'s frames are the scenes\' own; the hosted sizes are the ruling\'s: Chrome 800x760, the fixture unchanged, Finder 800x520', () => {
   assert.deepEqual(MINI_FRAMES, {chrome: SCENES.chrome.placement, electron: SCENES.electron.placement, finder: FINDER_FRAME});
-  assert.deepEqual(HOSTED_SIZES.chrome, {width: 800, height: 600});
+  assert.deepEqual(HOSTED_SIZES.chrome, {width: 800, height: 760});
   assert.deepEqual(HOSTED_SIZES.finder, {width: 800, height: 520});
   // The Electron fixture keeps its size, so ELECTRON_FIELD_LAYOUT (and #259's point) stays grounded as it is: a change
   // here would need it re-grounded on the new size first.
@@ -34,15 +34,15 @@ test('the mini\'s frames are the scenes\' own; the hosted sizes are the ruling\'
 
 test('the hosted frames: each the hosted size at the mini\'s origin, moved clear of the fresh alerts by the shared clearFrame; all in the left strip', () => {
   const {frames, scenes} = hostedFrames(ALERTS, [DISPLAY]);
-  assert.deepEqual(frames, {chrome: rect(22, 60, 800, 600), electron: rect(102, 100, 720, 560), finder: rect(22, 80, 800, 520), openPanel: rect(80, 80, 720, 440)});
-  assert.deepEqual(scenes.chrome, {base: rect(80, 60, 800, 600), frame: rect(22, 60, 800, 600), moved: true});
+  assert.deepEqual(frames, {chrome: rect(22, 60, 800, 760), electron: rect(102, 100, 720, 560), finder: rect(22, 80, 800, 520), openPanel: rect(80, 80, 720, 440)});
+  assert.deepEqual(scenes.chrome, {base: rect(80, 60, 800, 760), frame: rect(22, 60, 800, 760), moved: true});
   assert.deepEqual(scenes.openPanel, {base: rect(80, 80, 720, 440), frame: rect(80, 80, 720, 440), moved: false});
   for (const frame of Object.values(frames)) assert.ok(frame.x + frame.width <= 830 - 8, `${JSON.stringify(frame)} stays left of the alerts`);
   // No alert: every frame is its base, unmoved.
-  assert.deepEqual(hostedFrames([], [DISPLAY]).frames.chrome, rect(80, 60, 800, 600));
+  assert.deepEqual(hostedFrames([], [DISPLAY]).frames.chrome, rect(80, 60, 800, 760));
   // Unread (null alerts): the bases, unplaced, with the reason; the guard then refuses what overlaps.
   const unread = hostedFrames(null, null);
-  assert.deepEqual(unread.frames.chrome, rect(80, 60, 800, 600));
+  assert.deepEqual(unread.frames.chrome, rect(80, 60, 800, 760));
   assert.match(unread.scenes.chrome.reason, /the window list was unread/);
   // No clear frame on the display: the base is kept, the reason recorded.
   const tight = hostedFrames([{number: 1, bounds: rect(0, 0, 1920, 1080)}], [DISPLAY]);
@@ -107,9 +107,9 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
   assert.deepEqual(venue.display, DISPLAY);
   assert.deepEqual(venue.differences.map(d => d.scene), ['chrome', 'electron', 'finder', 'textedit', 'openPanel']);
   const chrome = venue.differences.find(d => d.scene === 'chrome');
-  assert.deepEqual([chrome.mini, chrome.hosted], [MINI_FRAMES.chrome, rect(22, 60, 800, 600)]);
+  assert.deepEqual([chrome.mini, chrome.hosted], [MINI_FRAMES.chrome, rect(22, 60, 800, 760)]);
   assert.match(chrome.reason, /alert 31 \(830,188 260x348\), alert 59 \(893,244 260x364\)/);
-  assert.match(chrome.reason, /800x600 on a hosted runner \(ruling 1169\)/);
+  assert.match(chrome.reason, /800x760 on a hosted runner \(ruling 1169\)/);
   // The cells whose points stand on the frame, derived from the matrix's plan, and the native-mac scene's tree.
   assert.ok(chrome.cells.includes('chrome/frontmost/drag.select'));
   assert.ok(chrome.cells.includes('chrome/background/drag.select@textedit'));
@@ -135,19 +135,19 @@ test('the venue renders for sitting.md: each difference with its frame, reason a
   const placed = hostedFrames(ALERTS, [DISPLAY]);
   const md = renderVenue(venueRecord({alerts: ALERTS, displays: [DISPLAY], placed, textEdit: {domain: TEXTEDIT_DOMAIN, writes: [], ok: true}}));
   assert.match(md, /^## The venue \(ruling 1169\)/);
-  assert.match(md, /\| chrome \| 80,60 1000x760 \| 22,60 800x600 \|/);
+  assert.match(md, /\| chrome \| 80,60 1000x760 \| 22,60 800x760 \|/);
   assert.match(md, /chrome\/frontmost\/drag\.select/);
   assert.match(renderVenue(null), /no venue recorded/);
 });
 
 // A side's frames: the venue it launched on and every window it read back, keyed alike on both sides of a pair.
-const matrix = (chrome, finder = rect(22, 80, 800, 520)) => ({complete: true, meta: {venue: {frames: {chrome: rect(22, 60, 800, 600)}},
+const matrix = (chrome, finder = rect(22, 80, 800, 520)) => ({complete: true, meta: {venue: {frames: {chrome: rect(22, 60, 800, 760)}},
   placement: {alerts: [], scenes: {chrome: {from: chrome, moved: false}, finder: {from: rect(0, 0, 800, 520), to: finder, moved: true, readBack: finder, matched: true}}, panel: [{beforeRow: 3, number: 9, from: rect(80, 80, 720, 440), moved: false}]}}});
 const parity = textedit => ({complete: true, venue: {frames: {}}, scenes: {textedit: {placement: {alerts: [], windows: [{scene: 'textedit', number: 4, from: textedit, moved: false}]}}}});
 const baseline = (...frames) => ({complete: true, placement: [{at: 'setup.newDocument', alerts: [], windows: frames.map((from, i) => ({scene: 'textedit', number: 10 + i, from, moved: false}))}]});
 
 test('a side\'s frames from each record shape: the matrix\'s, native-mac\'s and the baseline\'s', () => {
-  assert.deepEqual(sceneFrames(matrix(rect(22, 60, 800, 600))), {'venue:chrome': rect(22, 60, 800, 600), chrome: rect(22, 60, 800, 600), finder: rect(22, 80, 800, 520), 'openPanel#1': rect(80, 80, 720, 440)});
+  assert.deepEqual(sceneFrames(matrix(rect(22, 60, 800, 760))), {'venue:chrome': rect(22, 60, 800, 760), chrome: rect(22, 60, 800, 760), finder: rect(22, 80, 800, 520), 'openPanel#1': rect(80, 80, 720, 440)});
   assert.deepEqual(sceneFrames(parity(rect(256, 87, 503, 488))), {'textedit/textedit#1': rect(256, 87, 503, 488)});
   assert.deepEqual(sceneFrames(baseline(rect(256, 87, 503, 488), rect(257, 107, 520, 505))),
     {'setup.newDocument/textedit#1': rect(256, 87, 503, 488), 'setup.newDocument/textedit#2': rect(257, 107, 520, 505)});
@@ -155,12 +155,12 @@ test('a side\'s frames from each record shape: the matrix\'s, native-mac\'s and 
 });
 
 test('symmetry: a pair whose sides stood on different frames names the scene and both frames; one frame, or a side not read, is none', () => {
-  assert.equal(frameAsymmetry(matrix(rect(22, 60, 800, 600)), matrix(rect(22, 60, 800, 600))), null);
-  assert.match(frameAsymmetry(matrix(rect(30, 60, 800, 600)), matrix(rect(22, 60, 800, 600))), /chrome: 30,60 800x600 on this side, 22,60 800x600 on its pair/);
+  assert.equal(frameAsymmetry(matrix(rect(22, 60, 800, 760)), matrix(rect(22, 60, 800, 760))), null);
+  assert.match(frameAsymmetry(matrix(rect(30, 60, 800, 760)), matrix(rect(22, 60, 800, 760))), /chrome: 30,60 800x760 on this side, 22,60 800x760 on its pair/);
   assert.match(frameAsymmetry(baseline(rect(256, 87, 503, 488)), baseline(rect(241, 87, 586, 488))), /setup\.newDocument\/textedit#1/);
   // A window one side did not read (its run stopped before it) is no difference: nothing to compare.
   assert.equal(frameAsymmetry(baseline(rect(256, 87, 503, 488)), baseline()), null);
-  assert.equal(frameAsymmetry(matrix(rect(22, 60, 800, 600)), null), null);
+  assert.equal(frameAsymmetry(matrix(rect(22, 60, 800, 760)), null), null);
 });
 
 // Ruling 1168's pointerdown pair ("Pointer target" and "Pointer downs", fixtures/scene-page.mjs POINTERDOWN_INLINE) sits
@@ -168,15 +168,26 @@ test('symmetry: a pair whose sides stood on different frames names the scene and
 // same in any window wide enough for its lines; the mini's golden tree (Chrome at 1000x760 with an infobar under its
 // toolbar, so its content area starts lowest) gives Apply's frame. The pair's width is bounded from above (each
 // character at most 9 pt, the button's padding and border 16 pt, two separating spaces 5 pt each), so its line neither
-// wraps nor leaves the hosted 800x600 window, scrollbar taken off.
-test('the pointerdown pair inline after Apply lies inside the hosted Chrome frame, by the mini\'s measured layout', () => {
+// wraps nor leaves the hosted 800x760 window, scrollbar taken off. The window keeps the mini's height, so the whole page
+// (down to its Section heading) still fits, which NOT_APPLICABLE's chrome.scroll states; and the drag's window points
+// lie inside the window and across the notes field's width (the prepare's harness clicks prove each lands in the field).
+test('the pointerdown pair, the whole page and the drag lie inside the hosted Chrome frame, by the mini\'s measured layout', () => {
   const nodes = JSON.parse(readFileSync(new URL('../native-goldens/chrome/skyshot.json', import.meta.url), 'utf8')).nodes;
-  const win = nodes.find(n => n.role === 'AXWindow').frame, apply = nodes.find(n => n.role === 'AXButton' && n.title === 'Apply').frame;
-  const inWindow = {x: apply.x - win.x, y: apply.y - win.y, width: apply.width, height: apply.height};
+  const win = nodes.find(n => n.role === 'AXWindow').frame;
+  const inWindow = node => ({x: node.frame.x - win.x, y: node.frame.y - win.y, width: node.frame.width, height: node.frame.height});
+  const apply = inWindow(nodes.find(n => n.role === 'AXButton' && n.title === 'Apply'));
   const charsAtMost = 9, buttonChrome = 16, space = 5, scrollbar = 15;
-  const pairRight = inWindow.x + inWindow.width + space + (POINTERDOWN.button.length * charsAtMost + buttonChrome) + space + POINTERDOWN.text(999).length * charsAtMost;
+  const pairRight = apply.x + apply.width + space + (POINTERDOWN.button.length * charsAtMost + buttonChrome) + space + POINTERDOWN.text(999).length * charsAtMost;
   const hosted = HOSTED_SIZES.chrome;
-  assert.deepEqual([hosted.width, hosted.height], [800, 600]);
+  assert.deepEqual([hosted.width, hosted.height], [800, 760]);
   assert.ok(pairRight <= hosted.width - scrollbar, `the pair's line ends by ${pairRight} pt`);
-  assert.ok(inWindow.y + inWindow.height <= hosted.height, `Apply's line ends ${inWindow.y + inWindow.height} pt down`);
+  assert.ok(apply.y + apply.height <= hosted.height, `Apply's line ends ${apply.y + apply.height} pt down`);
+  const section = inWindow(nodes.find(n => n.role === 'AXHeading' && n.title === 'Section'));
+  assert.ok(section.y + section.height <= hosted.height, `the page ends ${section.y + section.height} pt down: it fits, nothing to scroll`);
+  assert.equal(NOT_APPLICABLE.chrome.scroll, 'the scene page fits its window: nothing to scroll');
+  const notes = inWindow(nodes.find(n => n.role === 'AXTextArea' && n.title === 'Scene notes'));
+  for (const [x, y] of [CHROME_DRAG_POINTS.from, CHROME_DRAG_POINTS.to]) {
+    assert.ok(x > notes.x && x < notes.x + notes.width, `x ${x} across the field`);
+    assert.ok(y > 0 && y < hosted.height, `y ${y} inside the window`);
+  }
 });

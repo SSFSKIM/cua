@@ -414,7 +414,7 @@ return {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(
 // Chrome's drag, in window points. The page has no stylesheet (fixtures/scene-page.mjs: style-src 'none'), so the user
 // agent's default layout puts the notes field (rows 8, cols 60) at the content area's top left, below Chrome's toolbar,
 // whose height does not follow the window's: the field's lines stand at the same window points in any window wide enough
-// for the field and tall enough to show it, the mini's 1000x760 and the hosted runner's 800x600 alike (ruling 1169). Only
+// for the field and tall enough to show it, the mini's 1000x760 and the hosted runner's 800x760 alike (ruling 1169). Only
 // the window's size, which turns window points into the screenshot's pixels (and whose shape the prepare checks), follows
 // the frame, so the layout is grounded on the frame the run launched Chrome at (groundCase), never the mini's scaled. The
 // prepare's harness click at each end still proves the points land in the field before anything is dragged.

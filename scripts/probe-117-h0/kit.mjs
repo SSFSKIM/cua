@@ -466,6 +466,9 @@ await step('step10-onboarding', async () => {
   await settle();
   out.accessibilityOnly = await stage('ax', {relaunch: false});
   out.accessibilityOnly.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  // A running engine does not see a row written under it (runs 45141067063, 45144483807): Accessibility only, relaunched.
+  out.accessibilityOnlyRelaunched = await stage('ax-relaunch', {relaunch: true});
+  out.accessibilityOnlyRelaunched.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
   out.screenRecordingRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['screenRecording']});
   await settle();
   out.screenRecordingAdded = await stage('sr', {relaunch: false});

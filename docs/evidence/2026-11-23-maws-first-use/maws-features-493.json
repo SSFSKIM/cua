@@ -43,7 +43,7 @@
     {
      "key": "personal",
      "ready": true,
-     "extensionInstanceId": "584f0152-5fcf-40f8-a961-d3998022c45d"
+     "extensionInstanceId": "<redacted: owner Chrome profile>"
     },
     {
      "key": "school",
@@ -56,7 +56,7 @@
      "reason": "extension_not_installed"
     }
    ],
-   "guidance": "school is not ready (binding_stale): its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (open a window in Chrome profile \"Profile 6\" (one line: cua profiles open school; Chrome unloads a profile and its extension host when the profile's last window closes, including a window a cua task opened and then closed) and open the cua extension's popup (its toolbar icon) if it still has no backend: that wakes it and shows whether its host is connected, and if not why, then retry), or the cua extension was reinstalled (or its unpacked load removed and loaded again), which mints a new instance id (bind it again with cua profiles bind school).\nwork is not ready (extension_not_installed): the cua extension is not installed or loaded in this Chrome profile (load the checkout's extension/ directory unpacked there, README \"Chrome\"; cua never installs it).\nTell the user; do not bind or pick a profile for them."
+   "guidance": "school is not ready (binding_stale): its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (open a window in Chrome profile \"<redacted: profile directory>\" (one line: cua profiles open school; Chrome unloads a profile and its extension host when the profile's last window closes, including a window a cua task opened and then closed) and open the cua extension's popup (its toolbar icon) if it still has no backend: that wakes it and shows whether its host is connected, and if not why, then retry), or the cua extension was reinstalled (or its unpacked load removed and loaded again), which mints a new instance id (bind it again with cua profiles bind school).\nwork is not ready (extension_not_installed): the cua extension is not installed or loaded in this Chrome profile (load the checkout's extension/ directory unpacked there, README \"Chrome\"; cua never installs it).\nTell the user; do not bind or pick a profile for them."
   },
   "service": {
    "requested": "cua",

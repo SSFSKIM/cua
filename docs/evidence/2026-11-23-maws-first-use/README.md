@@ -23,3 +23,6 @@ No elicitations. Two page requests, both served from 127.0.0.1.
 ## Not covered
 - The vendor host's `{visible: true}` throw remains: #496, blocked by #117's switch of the macOS default.
 - `chromeKey` was not selected (no Chrome profile key was exercised in this run). The profile-selection invariant is covered by the table-driven test (ruling 1112).
+
+## Redaction
+In `maws-features-493.json`, the `personal` profile's extension instance id and the `school` profile's Chrome profile directory are replaced with `<redacted: …>`. They are owner details in a public repository. The MAWS instance id and the mawsd socket path are per-session and kept as recorded.

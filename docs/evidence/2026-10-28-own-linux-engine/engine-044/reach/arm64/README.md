@@ -3,16 +3,18 @@
 The reach list of rulings 1102, 1113 and 1114, run on the arm64 VM (`cua-171-arm64`) on private displays only. Nothing
 ran on any `:0`.
 
-## At H9 (0.4.4) (2026-11-23 09:59Z to 11:24Z; task 147)
+## At H9 (0.4.4) (2026-11-23 09:59Z to 11:49Z; task 147)
 
 The head is **H9 = `cd03a47bde2a484e1c3ecbf07cc97aada720fda7`**, branch `engine-044-pin`. It is the 0.4.4 tag commit
 23f34217 with the pin, `MIN_ENGINE_VERSION` 0.4.4, and task 142's harness (harness-487) merged in. The engine is
 **linux-engine-v0.4.4** (release run 45138098451). The arm64 `cua-engine` has sha256
 `f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e` and reads `cua-engine 0.4.4 (23f342178d94)`.
-- Holder `h9-arm64`. The lock lines are in `scripts/lock-lines.txt`. The lock was released at 11:24:39Z.
-- **The run stopped at L4d, which failed** (below). Under the brief's rule a failure is never rerun, so items 3 and 4 did
-  not run: Chrome `drag_handle` long-left ×100 and `t487-named` ×30. Their launchers are staged and were never started
-  (`scripts/dev.sh`, `dev-setup.sh`, `t487.sh`).
+- Holder `h9-arm64`. The lock lines are in `scripts/lock-lines.txt`. The lock was last released at 11:49:29Z.
+- **The run stopped at L4d, which failed** (below). Ruling 1140 keeps L4d recorded as FAIL at H9, with no rerun.
+- **The development work after the ruling** is under `dev/` (development, not counted):
+  - item 3, Chrome `drag_handle` long-left ×100;
+  - item 4, `t487-named` ×30;
+  - a new t14-floor `left` ×100 measurement with each row's `release_sync`.
 
 **Setup** (`scripts/setup-all.sh`; logs `setup-all.log.txt`, `setup-h9.log.txt`, `install-home.log.txt`):
 - `t147-h9` is a fresh worktree of the VM's clone, detached and clean at H9. It has a real `npm ci`, the Electron
@@ -36,8 +38,9 @@ The head is **H9 = `cd03a47bde2a484e1c3ecbf07cc97aada720fda7`**, branch `engine-
 | 1 | H2 | 10:18:28–10:36:31 | 0 | 0.24 0.18 0.12 | **PASS**; 560 of 560 settled drags rested 30 ms |
 | 1 | L4a | 10:36:31–10:58:04 | 0 | 0.21 0.11 0.10 | **PASS**; 560 of 560 settled drags rested 30 ms |
 | 2 | L4d | 10:58:04–11:24:39 | **1** | 0.89 9.12 10.40 (a 170 s wait) | **FAIL**: `cua left: answered ok with no drop and nothing pending on 1 of 30 (#28)`, in t14-floor |
-| 3 | Chrome `drag_handle` long-left ×100 | – | – | – | not run (stopped at L4d) |
-| 4 | `t487-named` ×30 | – | – | – | not run (stopped at L4d) |
+| 3 | Chrome `drag_handle` long-left ×100 (development) | 11:32:46–11:41:32 | 0 | 0.00 3.38 9.33 | **bar met**: 0 false oks, 0 stale in 100; the tail ran on 100 of 100 with 4 motions, 0 `interrupted_unconfirmed`, +22.1 / 27.0 / 31.1 ms (`dev/README.md`) |
+| 4 | `t487-named` ×30 (measured, not gated) | 11:41:33–11:43:16 | 0 | 16.63 14.44 12.55 | **bar met**: exercised 0, not exercised 30 (no drag began; start 30 and settle 30 missing), as ruling 1113 expects (`dev/README.md`) |
+| – | t14-floor `left` ×100 (development, ruling 1140) | 11:43:16–11:49:29 | 0 | 16.43 14.91 12.92 | 2 false oks in 100, both in floor with Chrome's leave unseen; 1 of the 2 had a dropped visit (`dev/floor-left/README.md`) |
 
 Every run that took place was clean, and so was each private display's watchdog.
 
@@ -110,8 +113,11 @@ activation then confirmed the drop.
   `floor_until_ms` record. The settle-rest change is behind `(Some(settle), Some(drop_cursor))`, Electron's arm.
 - The row's `settle_count.entered` is 0, so no settle ran on it.
 - Task 132's 0.4.3 candidate gave t14-floor `left` 0 false oks in 100. H8's L4d gave 0 in 30. This run gives 1 in 30.
+- The development measurement of ruling 1140 (`dev/floor-left/`) gives 2 in 100 with each row's `release_sync`.
+  Both are in floor, and on neither did Chrome show the leave before the release (98 of 98 honest rows did). One of
+  the two had a dropped visit; the other ran both visits.
 
-**Scans** of this directory (93 files when saved; rerun over the final 99 before the commit, with the same result):
+**Scans** of this directory, `dev/` included (`scripts/scan-token.txt`, `scripts/privacy-scan.txt`; rerun before each commit):
 - token-shaped strings: 0 hits (`scripts/scan-token.txt`);
 - key codes: 0 held-code rows and 0 raw minimized codes (`scripts/privacy-scan.txt`).
 - No `:0` title list was read, since no step connected to any `:0`. The title count is therefore over an empty list,
@@ -130,5 +136,9 @@ activation then confirmed the drop.
     changed), `add-plans.py` and the `off-044` control wrapper;
   - item 4's `t487.sh`.
 
-  `dev-setup.sh` ran (a VM-local commit 4a090228 adding task 132's plans to a second worktree, never pushed). `dev.sh`
-  and `t487.sh` did not run.
+  - ruling 1140's chain `chain-1140.sh`, `add-left-plan.py`, `t147-left-table.mjs` and the copy `copy-dev.sh`.
+
+  `dev-setup.sh` made the second checkout t147-dev with a VM-local commit 4a090228 (task 132's plans), and
+  `chain-1140.sh` added c4b8b764 (`t147-left`); neither was pushed.
+- `dev/`: the development sets (development, not counted), each whole: `handle-long/`, `t487-named/` and
+  `floor-left/`, with `dev/README.md` and `dev/floor-left/README.md`.

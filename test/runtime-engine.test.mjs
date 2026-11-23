@@ -929,43 +929,49 @@ test('Ctrl-C at cua engine approve\'s prompt goes through the rollback', async t
   assert.equal(process.listenerCount('SIGINT'), 0, 'the handler is gone once approve returns');
 });
 
-// A promote cut short (kill -9): `previous` holds approved.json's build and the approved path holds another, or none.
-function placeInterruptedPromote(w, {candidateAtPath = true} = {}) {
+// A promote cut short (kill -9): `previous` holds the approved bundle and the approved path holds the candidate, or
+// none. The candidate is a new build, or (`sameBuild`) the approved build re-signed ad hoc, which only the signature
+// tells apart.
+function placeInterruptedPromote(w, {candidateAtPath = true, sameBuild = false} = {}) {
   w.placeBundle({approved: true});
   renameSync(w.bundle, join(w.dir, 'previous'));
-  if (candidateAtPath) {
-    w.placePending();
-    renameSync(w.pendingBundle, w.bundle);
-  } else w.placePending();
+  w.placePending(sameBuild ? {build: OLD_BUILD, kind: 'adhoc'} : {});
+  if (candidateAtPath) renameSync(w.pendingBundle, w.bundle);
 }
+const KILLED = [{candidateAtPath: true}, {candidateAtPath: false}, {candidateAtPath: true, sameBuild: true}];
 
-test('the next approve first recovers a promote that was killed: the approved build back at its path, the candidate pending again', async t => {
-  for (const candidateAtPath of [true, false]) {
+test('the next approve first recovers a promote that was killed: the approved bundle back at its path, the candidate pending again', async t => {
+  for (const killed of KILLED) {
     const w = world(t);
-    placeInterruptedPromote(w, {candidateAtPath});
+    placeInterruptedPromote(w, killed);
+    writeFileSync(join(w.dir, 'promoting.json'), JSON.stringify({pid: 99_999_999}));
     const approved = w.text('approved.json');
     w.state.accessibility = false;
     w.state.lines = ['n'];
     const result = await approveEngine(w.deps);
-    assert.equal(result.approved, false);
-    assert.equal(w.plistBuild(), OLD_BUILD, `candidate at the path: ${candidateAtPath}`);
+    const label = JSON.stringify(killed);
+    assert.equal(result.approved, false, label);
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead})?.build, OLD_BUILD, `the approved bundle, signature and all, serves again: ${label}`);
     assert.equal(w.text('approved.json'), approved);
-    assert.equal(w.pendingBuild(), NEW_BUILD);
+    assert.equal(w.pendingBuild(), killed.sameBuild ? OLD_BUILD : NEW_BUILD, label);
     assert.match(w.logs.join('\n'), /interrupted/);
+    assert.ok(!existsSync(join(w.dir, 'promoting.json')), 'the stale marker is replaced, then released');
   }
 });
 
 test('the next build also recovers a promote that was killed (its promoting.json naming a process that is gone) before publishing its own', async t => {
-  const w = world(t);
-  placeInterruptedPromote(w);
-  writeFileSync(join(w.dir, 'promoting.json'), JSON.stringify({pid: 99_999_999}));
-  const result = await buildEngine(w.deps);
-  assert.equal(result.pending, true);
-  assert.equal(w.plistBuild(), OLD_BUILD);
-  assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, OLD_BUILD);
-  assert.equal(w.pendingBuild(), w.checkoutBuild());
-  assert.ok(!existsSync(join(w.dir, 'previous')));
-  assert.ok(!existsSync(join(w.dir, 'promoting.json')));
+  for (const killed of KILLED.filter(k => k.candidateAtPath)) {
+    const w = world(t);
+    placeInterruptedPromote(w, killed);
+    writeFileSync(join(w.dir, 'promoting.json'), JSON.stringify({pid: 99_999_999}));
+    const result = await buildEngine(w.deps);
+    const label = JSON.stringify(killed);
+    assert.equal(result.pending, true, label);
+    assert.equal(w.plistBuild(), OLD_BUILD, label);
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead})?.build, OLD_BUILD, label);
+    assert.equal(w.pendingBuild(), w.checkoutBuild());
+    assert.ok(!existsSync(join(w.dir, 'previous')), label);
+  }
 });
 
 test('a promote whose process is still alive (an approve waiting for the owner) is not mistaken for an interrupted one', async t => {
@@ -975,6 +981,52 @@ test('a promote whose process is still alive (an approve waiting for the owner) 
   await buildEngine(w.deps);
   assert.equal(w.plistBuild(), NEW_BUILD, 'the live approve\'s promoted build is left at the approved path');
   assert.equal(previousBuild(w), OLD_BUILD);
+});
+
+// A second `cua engine approve` while the first waits for the owner with its build promoted: refused before it reads
+// the slot, so it can neither approve the promoted bundle in place nor promote a build published meanwhile over the
+// first's `previous`; the first's rollback then stands.
+test('a second approve while one is in progress is refused, naming it, and disturbs neither its promote nor its rollback', async t => {
+  for (const buildMeanwhile of [false, true]) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    w.placePending();
+    const approved = w.text('approved.json');
+    w.state.accessibility = false;
+    let second;
+    w.operator.next = async () => {
+      if (buildMeanwhile) await buildEngine(w.deps);
+      w.state.accessibility = true;
+      second = await approveEngine({...w.deps, operator: {next: async () => ''}}).then(() => 'approved', error => error);
+      w.state.accessibility = false;
+      return 'n';
+    };
+    const result = await approveEngine(w.deps);
+    const label = `a build meanwhile: ${buildMeanwhile}`;
+    assert.equal(second.code, 'engine_approve_in_progress', label);
+    assert.match(second.message, new RegExp(`pid ${process.pid}\\b`));
+    assert.match(second.hint, /Ctrl-C/);
+    assert.equal(result.approved, false);
+    assert.equal(w.text('approved.json'), approved, 'approved.json byte for byte');
+    assert.equal(w.plistBuild(), OLD_BUILD, label);
+    assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead})?.build, OLD_BUILD);
+    assert.equal(w.pendingBuild(), buildMeanwhile ? w.checkoutBuild() : NEW_BUILD, label);
+    assert.ok(!existsSync(join(w.dir, 'promoting.json')), 'released once the first approve returns');
+  }
+});
+
+test('approve takes its lock even with no pending build, and releases it on success and on failure', async t => {
+  const w = world(t);
+  w.placeBundle();
+  w.watcher.alerts = [1];
+  let second;
+  w.operator.next = async () => { second = await approveEngine(w.deps).catch(error => error); return ''; };
+  const result = await approveEngine(w.deps);
+  assert.equal(result.approved, true);
+  assert.equal(second.code, 'engine_approve_in_progress');
+  assert.ok(!existsSync(join(w.dir, 'promoting.json')));
+  await assert.rejects(approveEngine({...w.deps, dir: join(w.home, 'empty')}), {code: 'engine_not_built'});
+  assert.ok(!existsSync(join(w.home, 'empty', 'promoting.json')));
 });
 
 test('a promoted engine that refuses the rollback\'s stop: the bundles go back, and the owner is told it still holds the socket', async t => {

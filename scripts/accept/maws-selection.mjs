@@ -11,7 +11,8 @@
 // Steps: default-is-maws (cua.getBrowser() with no id selects the MAWS instance); maws-down-unreachable (the MAWS peer
 // stopped: profiles_list reads maws_unreachable); default-fails-closed (cua.getBrowser() then fails with the vendor's
 // "Browser is not available", never selecting the Chrome-shaped peer); explicit-chrome (getBrowser({extensionInstanceId:
-// <the Chrome-shaped peer's>}) still works: one tab created and closed there); reconnect-ready (the MAWS peer started
+// <the Chrome-shaped peer's>}) still works: one tab created and closed there, and the person's own tab, which the peer
+// starts with as a real Chrome window always has one, is left as it was); reconnect-ready (the MAWS peer started
 // again: profiles_list reads maws ready within 10 s); default-restored (cua.getBrowser() selects MAWS again in the same
 // REPL heap, so the runtime was never restarted). Then a second `cua serve` starts while the MAWS peer is down, so no
 // hello arrives before its launch (the default is the bare marker maws:): late-start-fails-closed (cua.getBrowser()
@@ -42,6 +43,7 @@ const js = value => JSON.stringify(value);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const serveFor = backends => openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_BROWSER_BACKENDS: backends}, clientName: 'cua-maws-selection'});
 const CHROME_KEY = 'accept-chrome';
+const PERSON_TAB = {windowId: 1, url: 'https://person.fixture.invalid/', title: 'The person\'s tab'};
 const entryOf = session => async () => (await session.call('profiles_list', {}, 60_000)).result?.structuredContent?.profiles?.find(p => p.key === 'maws');
 async function readyWithin(mawsEntry, ms) {
   const started = Date.now();
@@ -71,7 +73,9 @@ export async function runSelection() {
   const dir = mkdtempSync('/tmp/cua-sel-');
   const mawsPath = join(dir, 'app-sel.sock'), chromePath = join(dir, 'chrome.sock');
   let maws = await startFakeMawsPeer({path: mawsPath});
-  const chrome = await startFakeMawsPeer({path: chromePath, chrome: true, instanceId: randomUUID()});
+  // A real Chrome window always holds a tab: without one the agent's tab would be its last, and closing it would open
+  // the keep-window New Tab page (#148, src/chrome/host.mjs checkWindow) as a second tabs.create.
+  const chrome = await startFakeMawsPeer({path: chromePath, chrome: true, instanceId: randomUUID(), extension: {tabs: [PERSON_TAB]}});
   const steps = [];
   const record = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', detail}); return ok; };
   const session = serveFor(`${mawsPath}:${chromePath}`);
@@ -93,7 +97,10 @@ export async function runSelection() {
     const ext = chrome.connections.at(-1)?.ext;
     const created = ext?.calls.filter(c => c.method === 'tabs.create').length ?? 0;
     const gone = ext ? !ext.state.tabs.has(Number(explicit.tabId)) : false;
-    record('explicit-chrome', explicit.closed === true && created === 1 && gone, {...explicit, chromePeer: {created, gone}});
+    const person = ext ? [...ext.state.tabs.values()].filter(tab => tab.url === PERSON_TAB.url) : [];
+    const untouched = person.length === 1 && person[0].title === PERSON_TAB.title && person[0].windowId === PERSON_TAB.windowId && person[0].groupId === -1
+      && !ext.state.guarded.has(person[0].id) && !ext.calls.some(c => c.params?.tabId === person[0].id || c.params?.debuggee?.tabId === person[0].id);
+    record('explicit-chrome', explicit.closed === true && created === 1 && gone && untouched, {...explicit, chromePeer: {created, gone, personTabUntouched: untouched}});
     await session.call('end_task', {}, 30_000);
     maws = await startFakeMawsPeer({path: mawsPath});
     const back = await readyWithin(mawsEntry, 10_000);

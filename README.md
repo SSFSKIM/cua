@@ -351,10 +351,12 @@ computer surface on macOS runs the vendor engine (`repl_host_refused`, naming `C
 silently downgraded. This replaces the host and facade on supported sessions, not the installed vendor runtime.
 
 `cua doctor`'s `repl.host` row names the host and reason for the configured session and the separate browser-only
-profile listing. It reads `pass` for usable selections, `fail` for a setting or explicit
-selection that refuses, and `warn` when either would use cua's host but cannot find Node 24, naming the candidates
-tried and the remedies above. A `warn` does not make `ok` false or the exit nonzero: on macOS the session keeps working
-on the vendor host.
+profile listing. It reads `pass` for usable selections, and `fail` when either of them is refused: a setting or
+explicit selection that refuses, a macOS computer session that selects cua's engine with no Node 24 (`repl_host_node`)
+included, even when the profile listing falls back. It reads `warn` only when a fallback actually happens and nothing
+is refused: a session or the listing that selects nothing finds no Node 24 and runs on the vendor host
+(`own_host_node_unavailable`), the row naming the candidates tried and the remedies above. A `warn` does not make `ok`
+false or the exit nonzero: on macOS the session keeps working on the vendor host.
 
 **Process footprint.** Claude Code starts the plugin's server in every session, used or not, so `cua serve` holds no
 runtime until a call needs one. It answers the MCP handshake and the tool list itself and launches the selected host

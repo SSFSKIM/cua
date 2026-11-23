@@ -50,8 +50,9 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 - [ ] T10b′ (the harness on a runner, built; its pilot after M4 merges)
 - [ ] T3b
 - [ ] T8e
-- [ ] T11a
-- [ ] T11b
+- [x] T11a — reviewed 2026-11-23 (61743b1da, fixes dbde89ba4, 46d5bb93b) on `feat/117-m5`.
+- [x] T11b — reviewed 2026-11-23 (e1b4a8a01, fixes 9cb3921c7, d20874c8a) on `feat/117-m5-flip` (pushed, merges
+  16da95398, 4d02b54a0, all `[skip ci]`); merges only after O1, M4 (#513) on main and the owner's go.
 
 ## Surprises & Discoveries
 
@@ -214,6 +215,24 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   judge trusts `ok: true` before `userKept` (`cell-verdict.mjs` ~L114), which today's producer cannot contradict; the
   harness must not write contradictory rows. Until T10b′ records the engine's own error name and the
   unchanged/effect readings, no departure and no conservative-better case can be shown.
+- 2026-11-23, T11 (detail in `docs/evidence/2026-11-23-own-native-engine/flip.md`): the default-selection mode is
+  the dispatch-only ci-kit gate `default-selection` (`scripts/accept/macos-selection.mjs`,
+  `macos-default-selection.mjs`) over four scratch homes (default, none, node, outdated at 0.1.0); a default home
+  passes only on cua's engine and cua's host, a fallback home only when the engine and `repl.host` rows warn naming
+  the reason and the remedy. Its unit test asserts FAIL against today's default, so `feat/117-m5` never goes red if
+  the flip never merges; the flip turns it to PASS. Sitting E: `ci-gate 61743b1da --gates default-selection` (RED) and
+  the same on the flip (GREEN). The hosted+ witness is a separate dispatch-only job
+  (`scripts/accept/macos-default-selection-hosted.sh`) that builds the run's own ad hoc bundle in a disposable runner
+  home and refuses until `CUA_HOSTED_APPROVE` is supplied (T10b′'s hosted approval, after M4); `--approved-home`
+  refuses off a GitHub-hosted runner or outside a disposable home; the approved lane judges doctor's inspection facts
+  (approved and running build equal to the checkout's, the socket's engine the approved bundle, all three grants, a
+  clean launch, no route-3 advice) and accepts only the ad hoc signature's warning. The flip sets `darwin: 'cua'`
+  and the minimum 0.2.0, pins `CUA_NATIVE_ENGINE=vendor` in sandbox-live's probe-secrets step and m2-mini's `accept`;
+  lanes that take the default now take cua's engine; no sandbox-live baseline moves; the README says an unconfigured
+  session falls back, an existing opt-in needs an approved 0.2.0 or later build (or the vendor rollback, with the
+  host override unset), and a plain install stages a pending build that never approves itself. At integration: M4
+  rewrites the same README and onboarding passages, so the flip needs a manual docs pass once M4 is on main; the
+  project CLAUDE.md's first line goes stale at the flip (left for the owner).
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

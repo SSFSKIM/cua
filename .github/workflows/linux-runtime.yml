@@ -1,0 +1,109 @@
+# M6a's live Linux runs on GitHub's hosted runners (#171 M6a, T6; docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-
+# preflight.md §5.2, "Venues", F8): an arm64 leg on ubuntu-24.04-arm, the acceptance's arm64 venue, and an x64 leg on
+# ubuntu-24.04 as its control. One recipe runs on both, so a failure on arm64 alone is the architecture's and a failure on
+# both is the recipe's. Today it runs the venue pilot (scripts/accept/linux-runtime-pilot.mjs) on a commit of main's code:
+# the environment of scripts/accept/linux-runtime-env.sh (a private Xvfb with Openbox, a private session bus,
+# accessibility on, a home of the run's, the sandbox scoped), doctor's four environment rows, today's `cua install`
+# (which fetches the pinned vendor deb for the leg's architecture: allowed on this dispatch-only lane, F8 (ii)),
+# `sandbox.launcher`, the item 1 smoke with the shared confinement step, and the smoke again under `strace -f`. It answers
+# four questions per leg: does bubblewrap get its user namespace; is gedit's tree served on the private bus; do the
+# positive controls connect while the kernel is refused; does `strace -f` follow the helper's children.
+#
+#   gh workflow run linux-runtime.yml --ref <branch> -f commit=<40-hex sha>
+#
+# The commit must be the head of the ref the run is dispatched on, as linux-engine.yml requires: the run tests what it
+# names. The log and the artifact carry labels, outcomes, counts and scratch paths: the homes are the run's, the secret
+# store is empty, and every window is the harness's.
+name: linux-runtime
+on:
+  # A push of this file only registers the workflow, so it can be dispatched on a branch before it reaches main (as
+  # linux-engine.yml was from feat/171-m1b); its jobs run on dispatch only.
+  push:
+    paths: ['.github/workflows/linux-runtime.yml']
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'the cua commit to run (40 hex digits): the head of the ref this run is dispatched on'
+        required: true
+permissions: {}
+concurrency:
+  group: linux-runtime-${{ inputs.commit || github.sha }}
+  cancel-in-progress: false
+env:
+  COMMIT: ${{ inputs.commit }}
+jobs:
+  pilot:
+    if: github.event_name == 'workflow_dispatch'
+    name: pilot ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+          - {arch: x64, runner: ubuntu-24.04}
+    steps:
+      - name: Check the commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "commit must be 40 lowercase hex digits" >&2; exit 1; }
+          [[ "$COMMIT" == "$GITHUB_SHA" ]] || { echo "${GITHUB_REF} is at ${GITHUB_SHA}, not ${COMMIT}: dispatch on a ref whose head is the commit" >&2; exit 1; }
+          # The run's directory: its homes, its scratch and the artifact.
+          echo "RUN=${RUNNER_TEMP}/linux-runtime" >> "$GITHUB_ENV"
+      - name: Check out the commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - name: Set up Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Install cua's dependencies
+        shell: bash
+        run: npm ci
+      - name: Install the desktop (Xvfb, Openbox, a session bus, AT-SPI, gedit, zenity), bubblewrap, strace and the deb's tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb xauth x11-utils openbox dbus dbus-bin at-spi2-core gedit zenity bubblewrap strace binutils xz-utils
+      - name: Record bubblewrap's user namespace before the remedy
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUN"
+          restrict="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo absent)"
+          err="$(bwrap --ro-bind / / true 2>&1 >/dev/null)"; code=$?
+          node -e 'const [code, restrict, err] = process.argv.slice(1); process.stdout.write(JSON.stringify({bwrap: Number(code), restrict, stderr: err.trim().split("\n").at(-1) || null}) + "\n")' "$code" "$restrict" "$err" | tee "$RUN/userns-before.json"
+      - name: Apply the user-namespace remedy doctor names
+        shell: bash
+        run: |
+          set -euo pipefail
+          # USERNS_REMEDY, src/runtime/linux-desktop.mjs: lift Ubuntu's AppArmor restriction for this runner.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Run the venue pilot
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          scripts/accept/linux-runtime-env.sh "$RUN" -- node scripts/accept/linux-runtime-pilot.mjs --out "$RUN/artifact" --leg "${{ matrix.arch }}" || status=$?
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const lines = [`### venue pilot, ${r.leg} (${r.arch}), ${process.env.COMMIT}`, "", "| step | status |", "|---|---|", ...r.steps.map(s => `| ${s.name} | ${s.status} |`),
+              "", "| question | answer | why |", "|---|---|---|", ...Object.entries(r.answers).map(([q, a]) => `| ${q} | ${a.answer} | ${a.why ?? ""} |`)];
+            process.stdout.write(lines.join("\n") + "\n");' "$RUN/artifact/pilot.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Upload the pilot's report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: linux-runtime-pilot-${{ matrix.arch }}
+          path: ${{ env.RUN }}/artifact/
+          if-no-files-found: error
+          retention-days: 30

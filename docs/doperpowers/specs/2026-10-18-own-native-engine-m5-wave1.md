@@ -287,8 +287,9 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   counts the vendor's posted click, on Chrome and on Electron alike. The cell measures what a user sees, whether such a
   button responds: both +1 closes #534 per 1168, citing the cell. The row carries cua's `cua/inputRoute` from `_meta`
   and the summary shows it, unjudged. No page fingerprint is added (no new fixture build hash, CSP hash or PROVENANCE
-  change). A stricter #534 that judges the path is a separate question with the design session, not built. Source
-  and detail in `docs/evidence/2026-11-23-own-native-engine/gates/534.md`.
+  change). A stricter #534 that judges the path was declined; the AX press's "virtual" pointerdown (react-aria's term)
+  is #551 (P3, deferred). #534 closes only when the cell passes live on Chrome and Electron, citing C's run and the
+  Blink source. Source and detail in `docs/evidence/2026-11-23-own-native-engine/gates/534.md`.
 - 2026-11-23, TextEdit's launch window (the design session, after pilot A placed, run 45272465181): NO VERDICT
   `venue`, not a FAIL. The scratch document stood at 242,107 387x505 on both sides, but the untitled document AppKit
   opens at launch, which no cell acts on, stood at 241,87 586x488 on the runner's first TextEdit launch (vv-1, WidthInChars

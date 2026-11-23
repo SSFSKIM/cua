@@ -1,0 +1,8 @@
+{
+  "source": "coordinator report, distinguished from console evidence",
+  "owner": "connected on VNC but took no action",
+  "console": "coordinator ran SSH PTY/FIFO; manual revocation unanswered",
+  "harness": "no Settings action; all subsequent checks not reached; no cells/statuses/doctor records",
+  "state": "coordinator reports nothing changed and hold released; no independent post-release readout by executor",
+  "retry": "owner-console-d0b.sh prepared offline, output onboarding-d0b.json, not staged or executed"
+}

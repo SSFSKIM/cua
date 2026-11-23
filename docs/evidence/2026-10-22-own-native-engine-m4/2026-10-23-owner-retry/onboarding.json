@@ -1,0 +1,535 @@
+{
+  "scenario": "accept-native",
+  "status": "FAIL",
+  "suiteQualification": "The hosted Node 24 gate is the unit-suite authority (#198). Local whole-suite failures remain FAIL and need per-failure classification; no environmental exception promotes an item to PASS.",
+  "options": {
+    "freshOnboarding": true,
+    "liveSecrets": false,
+    "liveTextedit": false,
+    "callerSecretKey": false,
+    "items": [
+      14
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v24.22.0",
+  "startedAt": "2026-10-23T09:36:15.134Z",
+  "finishedAt": "2026-10-23T09:45:36.587Z",
+  "summary": {
+    "14": "FAIL"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 14,
+      "title": "Fresh permission onboarding: OWNER revocation, model errors, staged grants and relaunch recovery",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "preconditions",
+          "status": "PASS",
+          "detail": "approved engine verified; no live engine connection or TextEdit to disturb"
+        },
+        {
+          "name": "manual revocation",
+          "status": "PASS",
+          "detail": "terminal confirmed (revoked); UI actor not inferred; harness did not perform the UI step"
+        },
+        {
+          "name": "Accessibility error reaches the model",
+          "status": "PASS",
+          "detail": "MCP js error names Accessibility, + and the exact approved bundle path"
+        },
+        {
+          "name": "all three grants absent",
+          "status": "PASS",
+          "detail": "Accessibility, Screen Recording and Input Monitoring read false"
+        },
+        {
+          "name": "manual Accessibility grant",
+          "status": "PASS",
+          "detail": "terminal confirmed (granted); UI actor not inferred; harness did not perform the UI step"
+        },
+        {
+          "name": "Screen Recording error reaches the model",
+          "status": "PASS",
+          "detail": "MCP js error names Screen Recording, +, exact approved path and pending relaunch"
+        },
+        {
+          "name": "AX-only intervention diagnostic",
+          "status": "PASS",
+          "detail": "with AX alone granted, doctor reports Input Monitoring absent and intervention detection off"
+        },
+        {
+          "name": "manual Screen Recording grant",
+          "status": "PASS",
+          "detail": "terminal confirmed (granted); UI actor not inferred; harness did not perform the UI step"
+        },
+        {
+          "name": "service relaunch recovery",
+          "status": "PASS",
+          "detail": "same MCP connection recovered; engine PID changed during retry and screenshot bytes were nonempty (not emitted)"
+        },
+        {
+          "name": "owner recovery prompt observation",
+          "status": "PASS",
+          "detail": "terminal relayed owner-observed alert categories/responses for the timed action; prompt origin unknown"
+        },
+        {
+          "name": "intervention off: input completion",
+          "status": "PASS",
+          "detail": "typeText must return successfully and emit the typed marker; posted-action metadata alone is not completion"
+        },
+        {
+          "name": "intervention off: metadata",
+          "status": "FAIL",
+          "detail": "input result must carry intervention off independently of input completion"
+        },
+        {
+          "name": "intervention off: doctor",
+          "status": "FAIL",
+          "detail": "doctor must read Input Monitoring false and its engine row must say intervention detection off"
+        },
+        {
+          "name": "intervention off",
+          "status": "FAIL",
+          "detail": "intervention-off operands did not all pass; see the separate completion, metadata and doctor verdicts"
+        },
+        {
+          "name": "owner input prompt observation",
+          "status": "PASS",
+          "detail": "terminal relayed owner-observed alert categories/responses for the timed action; prompt origin unknown"
+        },
+        {
+          "name": "manual Input Monitoring grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "engine approval",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "final grants and approved build",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "intervention on",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual TextEdit cleanup",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        }
+      ],
+      "evidence": {
+        "ownerWindow": "Reserve approximately 15 minutes continuously for item 14: remove the three entries and open a blank TextEdit document (4); grant Accessibility (1); grant Screen Recording with Later and observe recovery alerts (3); check input and observe alerts (2); grant Input Monitoring (1); approve, check and close only the disposable document without saving (4). Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings.",
+        "windows": [
+          {
+            "stage": "Accessibility error reaches the model",
+            "pid": 95129,
+            "number": 17037,
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "Screen Recording error reaches the model",
+            "pid": 95129,
+            "number": 17037,
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "service relaunch recovery",
+            "pid": 95129,
+            "number": 17037,
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "intervention off",
+            "pid": 95129,
+            "number": 17037,
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "intervention off",
+            "pid": 95129,
+            "number": 17037,
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+
+                "height": 500
+              }
+            ]
+          }
+        ],
+        "cells": [
+          {
+            "stage": "Accessibility error reaches the model",
+            "startedAt": 1792748401804,
+            "finishedAt": 1792748402601,
+            "attestation": "matched",
+            "reply": {
+              "completion": "error",
+              "resultPresent": true,
+              "isError": true,
+              "transportError": false,
+              "typed": null,
+              "screenshotBytes": null,
+              "metadata": {
+                "interventionPresent": true,
+                "intervention": null,
+                "inputRoute": null,
+                "actionInterval": {
+                  "startedAt": null,
+                  "endedAt": null
+                },
+                "receivedAt": null,
+                "hidIdleMs": null,
+                "entered": null
+              }
+            }
+          },
+          {
+            "stage": "Screen Recording error reaches the model",
+            "startedAt": 1792748440111,
+            "finishedAt": 1792748440242,
+            "attestation": "matched",
+            "reply": {
+              "completion": "error",
+              "resultPresent": true,
+              "isError": true,
+              "transportError": false,
+              "typed": null,
+              "screenshotBytes": null,
+              "metadata": {
+                "interventionPresent": true,
+                "intervention": null,
+                "inputRoute": null,
+                "actionInterval": {
+                  "startedAt": null,
+                  "endedAt": null
+                },
+                "receivedAt": null,
+                "hidIdleMs": null,
+                "entered": null
+              }
+            }
+          },
+          {
+            "stage": "service relaunch recovery",
+            "startedAt": 1792748470559,
+            "finishedAt": 1792748470963,
+            "attestation": "matched",
+            "reply": {
+              "completion": "returned",
+              "resultPresent": true,
+              "isError": false,
+              "transportError": false,
+              "typed": null,
+              "screenshotBytes": 50182,
+              "metadata": {
+                "interventionPresent": true,
+                "intervention": null,
+                "inputRoute": null,
+                "actionInterval": {
+                  "startedAt": null,
+                  "endedAt": null
+                },
+                "receivedAt": null,
+                "hidIdleMs": null,
+                "entered": null
+              }
+            }
+          },
+          {
+            "stage": "intervention off",
+            "startedAt": 1792748632739,
+            "finishedAt": 1792748632868,
+            "attestation": "matched",
+            "reply": {
+              "completion": "returned",
+              "resultPresent": true,
+              "isError": false,
+              "transportError": false,
+              "typed": true,
+              "screenshotBytes": null,
+              "metadata": {
+                "interventionPresent": true,
+                "intervention": null,
+                "inputRoute": "2'",
+                "actionInterval": {
+                  "startedAt": 1792748632863,
+                  "endedAt": 1792748632866
+                },
+                "receivedAt": 1792748632860,
+                "hidIdleMs": null,
+                "entered": 1
+              }
+            }
+          }
+        ],
+        "statuses": [
+          {
+            "stage": "revoked",
+            "pid": 97324,
+            "connections": 1,
+            "accessibility": false,
+            "screenRecording": false,
+            "inputMonitoring": false,
+            "canPostHid": false
+          },
+          {
+            "stage": "AX-only",
+            "pid": 97324,
+            "connections": 1,
+            "accessibility": true,
+            "screenRecording": false,
+            "inputMonitoring": false,
+            "canPostHid": false
+          },
+          {
+            "stage": "pre-relaunch",
+            "pid": 97324,
+            "connections": 1,
+            "accessibility": true,
+            "screenRecording": false,
+            "inputMonitoring": false,
+            "canPostHid": false
+          },
+          {
+            "stage": "post-relaunch",
+            "pid": 99635,
+            "connections": 1,
+            "accessibility": true,
+            "screenRecording": true,
+            "inputMonitoring": true,
+            "canPostHid": true
+          }
+        ],
+        "doctors": [
+          {
+            "stage": "AX-only intervention diagnostic",
+            "received": true,
+            "permissions": {
+              "accessibility": true,
+              "screenRecording": false,
+              "inputMonitoring": false
+            },
+            "engineRow": {
+              "present": true,
+              "status": "fail",
+              "interventionOff": true
+            }
+          },
+          {
+            "stage": "intervention off",
+            "received": true,
+            "permissions": {
+              "accessibility": true,
+              "screenRecording": true,
+              "inputMonitoring": true
+            },
+            "engineRow": {
+              "present": true,
+              "status": "pass",
+              "interventionOff": false
+            }
+          }
+        ],
+        "recoveryPrompts": [
+          {
+            "stage": "service relaunch recovery",
+            "source": "owner-observed",
+            "origin": "unknown",
+            "startedAt": 1792748470559,
+            "finishedAt": 1792748470963,
+            "reportedAt": 1792748630582,
+            "confirmed": true,
+            "prompts": []
+          },
+          {
+            "stage": "intervention off",
+            "source": "owner-observed",
+            "origin": "unknown",
+            "startedAt": 1792748632739,
+            "finishedAt": 1792748632868,
+            "reportedAt": 1792748736361,
+            "confirmed": true,
+            "prompts": []
+          }
+        ],
+        "checkoutBuild": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc",
+        "attested": 4,
+        "relaunch": {
+          "before": 97324,
+          "after": 99635
+        }
+      }
+    }
+  ]
+}

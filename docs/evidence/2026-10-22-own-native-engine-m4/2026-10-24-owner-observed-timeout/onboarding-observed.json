@@ -1,0 +1,175 @@
+{
+  "scenario": "accept-native",
+  "status": "BLOCKED",
+  "suiteQualification": "The hosted Node 24 gate is the unit-suite authority (#198). Local whole-suite failures remain FAIL and need per-failure classification; no environmental exception promotes an item to PASS.",
+  "options": {
+    "freshOnboarding": true,
+    "ownerWindowMinutes": 25,
+    "liveSecrets": false,
+    "liveTextedit": false,
+    "callerSecretKey": false,
+    "items": [
+      14
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v24.22.0",
+  "startedAt": "2026-10-24T19:19:22.366Z",
+  "finishedAt": "2026-10-24T19:44:22.500Z",
+  "summary": {
+    "14": "BLOCKED"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 14,
+      "title": "Fresh permission onboarding: OWNER revocation, model errors, staged grants and relaunch recovery",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "preconditions",
+          "status": "PASS",
+          "detail": "approved engine verified; no live engine connection or TextEdit to disturb"
+        },
+        {
+          "name": "manual revocation",
+          "status": "BLOCKED",
+          "detail": "overall 25-minute owner window expired while awaiting confirmation"
+        },
+        {
+          "name": "Accessibility error reaches the model",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "all three grants absent",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual Accessibility grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "Screen Recording error reaches the model",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "AX-only intervention diagnostic",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual Screen Recording grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "service relaunch recovery",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "owner recovery prompt observation",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "owner input prompt observation",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: capability stability",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: input completion",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: metadata",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: doctor",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: post-gate stability",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual Input Monitoring grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "engine approval",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "final grants and approved build",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "intervention on",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual TextEdit cleanup",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        }
+      ],
+      "evidence": {
+        "ownerWindow": "Reserve 25 minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each coordinator current-display gate (including any owner alert response and fresh clear observation) waits at most 5 minutes, clipped by the remaining overall budget; manual Settings/fixture and approval confirmations use the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.",
+        "ownerBudget": {
+          "minutes": 25,
+          "observationLimitMs": 300000,
+          "startedAt": 1792869562494,
+          "deadlineAt": 1792871062494,
+          "expiredAt": 1792871062494
+        },
+        "ownerWaits": [
+          {
+            "stage": "manual revocation",
+            "startedAt": 1792869562494,
+            "deadlineAt": 1792871062494,
+            "waitMs": 1500000,
+            "finishedAt": 1792871062494,
+            "expiredBound": "overall",
+            "cancelled": false
+          }
+        ],
+        "windows": [],
+        "cells": [],
+        "statuses": [],
+        "doctors": [],
+        "recoveryPrompts": [],
+        "checkoutBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "source": "original report and executor cold status JSON fetched unchanged from /tmp/cua-m4.u5B2eG/",
+  "ownerPresence": "coordinator reports connected on VNC; System Settings open",
+  "manualStep": "no confirmation received; no subsequent engine acceptance stages reached",
+  "postTimeoutRead": "19:45:18Z cold approved engine read AX/SR/IM and post false, zero clients; read instance stopped and independent finalRunningfalse",
+  "restoration": "NOT established by this evidence; all three must be restored by owner/coordinator before hold release",
+  "actionsByExecutor": "narrow status/stop only, no prompting/capture/GUI"
+}

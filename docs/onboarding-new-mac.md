@@ -1,7 +1,7 @@
-# Connecting a Chrome profile to cua on a new Mac
+# Setting up cua on a new Mac
 
 A step list for bringing a fresh Mac to the point where an agent, through the `cua_repl` MCP server, works in one of
-the user's own Chrome profiles. It is written for the next machine and for a later resident agent service, so each
+the user's own Chrome profiles and in the Mac's own apps. It is written for the next machine and for a later resident agent service, so each
 step says what it needs from a person at the console and what can run unattended. The commands are the README's. The
 browser goes through cua's own Chrome extension and host, which need no ChatGPT account and no Codex login
 (`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`); the clean-machine gate
@@ -18,7 +18,7 @@ that was set up that way moves with the README's "Moving a home off the ChatGPT 
 | 4 Extension in each Chrome profile | the cua extension from the Chrome Web Store once listed; until then load `extension/` unpacked | yes | `chrome.extension.<key>` PASS |
 | 5 Native host registration | `cua chrome register` | no | `chrome.host.registered` PASS |
 | 6 Register and bind the profile | `cua profiles add`, Chrome open on it, `cua profiles bind` | yes, for any pick | `profiles list`: ready |
-| 7 macOS permissions (native surface) | allow Accessibility and Screen Recording when asked | yes, once | a live native call |
+| 7 macOS permissions (native surface) | the vendor engine (the default): allow Accessibility and Screen Recording when asked. cua's own engine (opt-in): a signing identity, `cua install --engine`, `cua engine approve` | yes: the grants, and for cua's engine its first sign's keychain prompt | a live native call; for cua's engine, `cua doctor`'s `engine` row |
 | 8 Claude Code wiring | `claude mcp add …`, settings permissions and hook | no | `claude mcp list`: Connected |
 
 ## The steps
@@ -100,12 +100,84 @@ steps 4 and 7 happen at the console. A browser-only machine still needs
 the runtime to start for the listing launch, but the Chrome acceptance ran without granting the native permissions
 first.
 
+That is the vendor engine, still the default. **cua's own engine** (`cua Engine.app`, #117) is an opt-in until a later
+release of #117 switches the default; the README's "cua's own macOS engine (opt-in)" (under Install) explains each
+step. It has one place per Mac, `~/Library/Application Support/cua/engine/cua Engine.app`, which no `CUA_HOME` moves.
+Every step marked *owner* is done by the owner at this Mac's console; automation never enters a password, answers a
+system alert or touches System Settings.
+
+1. *Owner, once per Mac.* Install Xcode (its Swift toolchain builds the engine). Create an Apple Development
+   certificate in Xcode's Accounts settings, or import the owner's certificate with its private key into the login
+   keychain, and check that `security find-identity -v -p codesigning` lists it as valid (if it does not, add the Apple
+   WWDR intermediate it chains to).
+2. Name the identity: `"signingIdentity": "<its SHA-1 or common name>"` in `~/.config/cua/engine.json` (keeping the
+   file's other keys), or `CUA_SIGNING_IDENTITY` in the build's environment. Prefer the SHA-1 where two certificates
+   share a name. Keep it out of chats, reports and the repository; cua never prints it.
+3. *Owner, once per Mac and key.* Admit `codesign` to the signing key, then make the first sign at the console:
+
+   ```sh
+   security set-key-partition-list -S apple-tool:,apple: -s -t private \
+     -l '<signing key label>' ~/Library/Keychains/login.keychain-db   # asks for the keychain password
+   node bin/cua.mjs install --engine --sign-wait 600000
+   ```
+
+   The label is the signing private key's name in Keychain Access. When `codesign` asks for the key, answer with the
+   login password and **Always Allow** while the build still waits (`--sign-wait 600000` gives ten minutes; 45 s by
+   default). If the build gave up first, the prompt stays on screen: answer it and run the build again. Later builds
+   sign with no prompt, also when started over SSH: the build then signs through a one-shot job in the GUI session
+   (`launchctl bootstrap gui/<uid>`), which needs someone logged in at the console.
+
+   The build lands in the pending slot, `pending/cua Engine.app` beside the approved place, and says "a new build is
+   pending; cua engine approve to use it". `cua install` never approves it and raises no permission dialog.
+4. *Owner, with no session using the engine.* Approve it:
+
+   ```sh
+   node bin/cua.mjs engine approve
+   ```
+
+   It puts the pending build in place and asks for its grants. macOS usually shows no prompt for this background app,
+   so follow the steps it prints for each grant that is missing: System Settings → Privacy & Security →
+   **Accessibility**, **Screen & System Audio Recording** and **Input Monitoring**; click **+**, press **⌘⇧G**, enter
+   `~/Library/Application Support/cua/engine/cua Engine.app`, and switch **cua Engine** on. Grant them to that bundle,
+   not to the terminal or a copy, then press Enter in the approve terminal (`n` aborts). Input Monitoring is the
+   intervention tap's grant: without it the engine runs with user-intervention detection off. The command relaunches
+   the engine, takes one display capture it discards, and only then writes `approved.json`; if macOS shows a
+   screen-capture confirmation, the owner answers it and confirms at the terminal. If approval does not complete, the
+   previous engine goes back and keeps serving, and the build is pending again.
+
+   On a copy macOS has not seen before, the first capture can raise replayd's alert about bypassing the system's
+   private window picker, and approve fails with `engine_capture_confirmation`: answer the alert at the console
+   (Allow), then run `cua engine approve` again. `cua engine approve --foreground` makes the first grant requests from
+   a foreground launch, which may let macOS show its own prompts.
+5. Check it:
+
+   ```sh
+   CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor
+   node bin/cua.mjs engine status
+   ```
+
+   The `engine` row names the approved build, any build pending beside it, whether the signature matches the
+   configured identity (never the identity itself) and the three grants: it fails without Accessibility or Screen
+   Recording, and warns without Input Monitoring. In a session, a missing grant fails the request with
+   `permissionsPending`, whose sentence gives the same steps; after Screen Recording is granted, the next observation
+   relaunches the engine, when no other session uses it, and retries once.
+
+A later update that changes the engine is built the same way (`cua install --engine`, or `cua engine build`) and is
+pending until `cua engine approve` puts it in place; the approved engine serves until then. Under the same identity
+the grants carry over, so that approval normally needs no one at the Mac.
+
 ### 8. Wire it into Claude Code
 
 ```sh
 claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -- node ~/Developer/GitHub/cua/bin/cua.mjs serve
 claude mcp list
 ```
+
+That keeps the default, the vendor engine. With cua's own engine approved (step 7), select it either for this server,
+by adding `-e CUA_NATIVE_ENGINE=cua` before `--` in the command above, or for every session of the account, with
+`"engine": "cua"` in `~/.config/cua/engine.json`; the variable wins over the file. Configuring `signingIdentity`, or
+`CUA_NATIVE_ENGINE=cua` on the doctor command, selects nothing for `serve`. A selection of cua's engine with no
+approved engine is refused, naming `cua install --engine` and `cua engine approve`.
 
 `~/.claude.json` is per machine; run this on each. Two hand-made parts of `~/.claude/settings.json` also have to be
 copied: the `mcp__cua_repl__*` permission entries, and the `Elicitation` hook matched to `cua_repl` that runs
@@ -119,7 +191,9 @@ network); `disabled` lifts both.
 What this sequence implies for a service that is meant to run without a person:
 
 - **Console steps are one-time.** Permissions (7) and the extension install (4) happen once per Mac and profile;
-  everything after is unattended, including the listing launch, `profiles list` and `cua serve`.
+  everything after is unattended, including the listing launch, `profiles list` and `cua serve`. With cua's own
+  engine, a rebuild waits for `cua engine approve`, which needs the console only when a grant reads false or macOS
+  shows a capture confirmation; the approved engine serves meanwhile, and approve refuses while a session uses it.
 - **Chrome must be open on the profile, with the extension awake.** The host is started by Chrome when the extension
   connects and ends when that connection closes (spike #7). A service should check readiness (`profiles list --json`
   or the agent's `profiles_list`) before each task and surface `host_not_live` / `binding_stale` as a person's step,

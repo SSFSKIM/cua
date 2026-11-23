@@ -19,6 +19,7 @@ import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {toolOverrides} from '../src/repl-host/instructions.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
@@ -450,12 +451,12 @@ test('maws unreachable reads as not ready with the reason and the step, never wi
 // The Linux js rule on text input follows the engine the connection selected (#171 M5, T8; the spec's Decision Log,
 // M5 pre-flight): the vendor engine's typeText and paste fail in GTK 3 text views, so its rule sends typing to pressKey;
 // cua's engine inserts exact text and refuses, on a shared desktop, input an app ignores in the background, and its
-// rule says so. macOS's rules do not depend on it.
+// rule says so. macOS's follow it too (below).
 const GTK3_RULE = /typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call \(minus, space\)\./;
 const CUA_TEXT_RULE = /typeText and paste insert exact text, Unicode and newlines included; pressKey takes X keysyms \(minus, space\)\./;
 const SHARED_DESKTOP_RULE = /"does not accept background input": nothing was sent, since this desktop is shared; use the element's action, or tell the user\./;
 
-test('on Linux the js rule on text input follows the selected engine; macOS\'s does not', () => {
+test('on Linux the js rule on text input follows the selected engine', () => {
   for (const surfaces of [['computer'], ['computer', 'browser']]) {
     const vendor = jsRulesFor(surfaces, {platform: 'linux', engine: 'vendor'});
     const cua = jsRulesFor(surfaces, {platform: 'linux', engine: 'cua'});
@@ -469,9 +470,47 @@ test('on Linux the js rule on text input follows the selected engine; macOS\'s d
     const without = (text, ...rules) => text.split('\n').filter(line => !rules.some(rule => rule.test(line)));
     assert.deepEqual(without(cua, CUA_TEXT_RULE, SHARED_DESKTOP_RULE), without(vendor, GTK3_RULE), `${surfaces}: only the text rule changes`);
     assert.ok(cua.length + 2 < DESCRIPTION_CAP, `${surfaces}: cua's rules are never cut`);
-    assert.equal(jsRulesFor(surfaces, {platform: 'darwin', engine: 'cua'}), jsRulesFor(surfaces, {platform: 'darwin', engine: 'vendor'}), `${surfaces}: macOS`);
   }
   assert.equal(jsRulesFor(['browser'], {platform: 'linux', engine: 'cua'}), jsRulesFor(['browser'], {platform: 'linux', engine: 'vendor'}), 'no computer surface, no rule');
+});
+
+// The macOS js rules follow the engine too (#117 M4 re-cut, T6). The vendor engine's typeText drops what the layout
+// cannot key; cua's keys a Latin layout, sends the rest as Unicode and pastes under any other input source, so its
+// rule says it takes any text. cua's engine never pastes a secret, and its permission errors name "cua Engine", whose
+// grants are the user's to make.
+const MAC_VENDOR_TEXT_RULE = COMPUTER_RULES['typeText drops emoji: paste those'];
+const MAC_CUA_TEXT_RULE = /typeText enters any text under any input source; enter \{\{secret:KEY\}\} by typeText or setValue, never paste\./;
+const MAC_CUA_PERMISSION_RULE = /permissionsPending: the user, not you, grants "cua Engine" in System Settings; then retry\./;
+const MAC_CUA_RULES = [MAC_CUA_TEXT_RULE, MAC_CUA_PERMISSION_RULE];
+
+test('on macOS the js rules follow the selected engine: cua\'s typing-and-secrets and permission rules in place of the vendor\'s typing rule', () => {
+  for (const surfaces of [['computer'], ['computer', 'browser']]) {
+    const vendor = jsRulesFor(surfaces, {platform: 'darwin', engine: 'vendor'});
+    const cua = jsRulesFor(surfaces, {platform: 'darwin', engine: 'cua'});
+    assert.equal(jsRulesFor(surfaces, {platform: 'darwin'}), vendor, `${surfaces}: an engine not named keeps the vendor engine's rules`);
+    assert.match(vendor, MAC_VENDOR_TEXT_RULE, surfaces.join());
+    for (const rule of MAC_CUA_RULES) assert.doesNotMatch(vendor, rule, `${surfaces}: vendor ${rule}`);
+    assert.doesNotMatch(cua, MAC_VENDOR_TEXT_RULE, surfaces.join());
+    for (const rule of MAC_CUA_RULES) assert.match(cua, rule, `${surfaces}: cua ${rule}`);
+    const without = (text, ...rules) => text.split('\n').filter(line => !rules.some(rule => rule.test(line)));
+    assert.deepEqual(without(cua, ...MAC_CUA_RULES), without(vendor, MAC_VENDOR_TEXT_RULE), `${surfaces}: only the engine's rules change`);
+    assert.ok(cua.length + 2 < DESCRIPTION_CAP, `${surfaces}: cua's rules are never cut`);
+  }
+  // Against the measured vendor text and the text cua's own host serves today (src/repl-host/instructions.mjs).
+  const runtimeJs = toolOverrides({platform: 'darwin', surfaces: ['computer']}).tools.js.description.length;
+  for (const base of [VENDOR_COMPUTER_JS, runtimeJs])
+    assert.ok(jsRulesFor(['computer'], {platform: 'darwin', engine: 'cua'}).length + 2 + base <= DESCRIPTION_CAP, `the computer surface's js description on cua's engine is never cut (${base})`);
+  assert.equal(jsRulesFor(['browser'], {platform: 'darwin', engine: 'cua'}), jsRulesFor(['browser'], {platform: 'darwin', engine: 'vendor'}), 'no computer surface, no rule');
+});
+
+test('a macOS server shows the js rules of the engine it was given', async () => {
+  for (const [engine, present, absent] of [['cua', MAC_CUA_RULES, [MAC_VENDOR_TEXT_RULE]], ['vendor', [MAC_VENDOR_TEXT_RULE], MAC_CUA_RULES], [null, [MAC_VENDOR_TEXT_RULE], MAC_CUA_RULES]]) {
+    const h = harness({server: {surfaces: ['computer'], platform: 'darwin', engine, profiles: {list: () => []}}});
+    const js = (await toolsOf(h)).find(t => t.name === 'js');
+    for (const rule of present) assert.match(js.description, rule, `${engine}: ${rule}`);
+    for (const rule of absent) assert.doesNotMatch(js.description, rule, `${engine}: ${rule}`);
+    assert.ok(js.description.startsWith(jsRulesFor(['computer'], {platform: 'darwin', engine: engine ?? undefined})), String(engine));
+  }
 });
 
 test('the server shows the js rule of the engine it was given', async () => {

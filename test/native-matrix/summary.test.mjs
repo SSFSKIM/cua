@@ -18,7 +18,10 @@ import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-pla
 const m = (engine, sample, ok, extra = {}) => ({section: 'method', id: 'textedit/frontmost/click.control', engine, sample, ok, regime: 'frontmost', method: 'click', case: 'control', ...extra});
 
 test('a frontmost method row is judged sample for sample against the vendor; a background one against ground truth', () => {
-  assert.equal(judgeMethod('frontmost', [m('vendor', 1, true), m('vendor', 2, false)], [m('cua', 1, true), m('cua', 2, false)]).verdict, 'equal');
+  // Two failures are the same failure only with the same answer and the same effect readings (ruling 1144, finding 4).
+  const failed = {outcome: {collapsed: false, unchanged: true}};
+  assert.equal(judgeMethod('frontmost', [m('vendor', 1, true), m('vendor', 2, false, failed)], [m('cua', 1, true), m('cua', 2, false, failed)]).verdict, 'shared');
+  assert.equal(judgeMethod('frontmost', [m('vendor', 1, true), m('vendor', 2, false, failed)], [m('cua', 1, true), m('cua', 2, false, {outcome: {collapsed: true, unchanged: false}})]).verdict, 'worse');
   assert.equal(judgeMethod('frontmost', [m('vendor', 1, false)], [m('cua', 1, true)]).verdict, 'better');
   assert.equal(judgeMethod('frontmost', [m('vendor', 1, true), m('vendor', 2, false)], [m('cua', 1, false), m('cua', 2, true)]).verdict, 'worse', 'better on one sample does not buy back a worse one');
   assert.equal(judgeMethod('frontmost', [m('vendor', 1, true)], [m('cua', 1, false, {invalid: 'not in front'})]).verdict, 'no-verdict');
@@ -210,9 +213,10 @@ test('a declaration carried on a full run\'s row excuses nothing (R3: the depart
   const declared = {declared: {kind: 'vendor-defect', cause: 'the vendor caps the count'}};
   assert.equal(judgeMethod('frontmost', [m('vendor', 1, false, declared)], [m('cua', 1, true)]).verdict, 'better', 'judged on its raw outcome');
   assert.equal(judgeMethod('frontmost', [m('vendor', 1, true)], [m('cua', 1, false, declared)]).verdict, 'worse');
-  const j = judged({vendor: {resolved: 9, tweak: set(CLICK, {ok: false, ...declared})}, cua: {tweak: set(CLICK, {ok: false, ...declared})}});
-  assert.deepEqual(j.blocking, [], 'both failed: equal, judged as they read');
-  assert.equal(j.methods.find(x => x.id === CLICK).verdict, 'equal');
+  const alike = {ok: false, outcome: {clicked: false}, ...declared};
+  const j = judged({vendor: {resolved: 9, tweak: set(CLICK, alike)}, cua: {tweak: set(CLICK, alike)}});
+  assert.deepEqual(j.blocking, [], 'both failed alike: a shared limit, judged as they read');
+  assert.equal(j.methods.find(x => x.id === CLICK).verdict, 'shared');
   assert.ok(j.missing.includes(`method: ${CLICK} on cua (sample 1) carries a declaration, which no row of the matrix may (R3: the declared-departures file is the one place): its raw outcome is judged`), j.missing.join('\n'));
   assert.equal(j.verdict, 'NO VERDICT');
   const back = judged({vendor: {resolved: 9}, cua: {tweak: set(BACK, {ok: false, ...declared})}});
@@ -409,7 +413,7 @@ test('a vendor row present and invalid: the cua sample of its run has no valid p
   const cell = j.cells.find(c => c.section === 'method' && c.id === CLICK);
   assert.equal(cell.qualifies, false);
   assert.ok(j.missing.some(p => /^1 cell\(s\) do not qualify: fewer than 3 runs with a verdict on a side/.test(p)), j.missing.join('\n'));
-  assert.ok(renderSummary(j).includes(`| method ${CLICK} | **no verdict** | 2 of 3 | 2 of 3 | invalid 1 | unpaired 1 | no |`), renderSummary(j));
+  assert.ok(renderSummary(j).includes(`| method ${CLICK} | **no verdict** | 2 of 3 | 2 of 3 | r1 1/1, r2 0/1, r3 1/1 | r1 1/1, r2 0/1, r3 1/1 | invalid 1 | unpaired 1 | no |`), renderSummary(j));
   // Every vendor sample invalid: no cua sample has a pair.
   const none = judged({vendor: {resolved: 9, axMs: 50, tweak: set(CLICK, {invalid: 'not in front'})}, cua: {axMs: 40}});
   assert.ok(none.missing.includes(`method: ${CLICK} has no cua sample with a valid vendor sample of its run (ruling 1116)`), none.missing.join('\n'));
@@ -438,8 +442,8 @@ test('speed and finding rest on the vendor too: a run whose vendor samples have 
 // ---- R3: the declared departures -------------------------------------------------------------------------------------
 
 const DECISION = 'Decision Log, 2026-11-20, a background click on a shared desktop is refused';
-const departure = (patch = {}) => ({section: 'method', id: BACK, vendor: {answer: 'ok'}, cua: {answer: 'refused', sentence: 'background click refused'}, decision: DECISION, ...patch});
-const refusedRow = {ok: false, outcome: {threw: 'Computer Use server error -10005: background click refused; nothing was sent', unchanged: true}};
+const departure = (patch = {}) => ({section: 'method', id: BACK, vendor: {answer: 'ok'}, cua: {answer: 'refused', errorName: 'backgroundClickRefused', sentence: 'background click refused'}, decision: DECISION, ...patch});
+const refusedRow = {ok: false, outcome: {threw: 'Computer Use server error -10005: background click refused; nothing was sent', errorName: 'backgroundClickRefused', unchanged: true}};
 test('a declared departure: cua refused where the vendor answered ok, the pair observed with both sides\' checks, listed under what changes for a user', () => {
   const j = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(BACK, refusedRow)}, departures: [departure()]});
   assert.deepEqual([j.blocking, j.missing, j.owner], [[], [], []]);
@@ -462,8 +466,10 @@ test('a declaration cannot supply an answer nobody observed, nor excuse anything
   // The vendor refused too: the entry's kind does not hold; behind, the ground truth judges cua's refusal worse.
   assert.ok(declaredWith({tweak: set(BACK, {ok: false})}, {tweak: set(BACK, refusedRow)}).blocking.includes(`method: ${BACK} is worse on cua`));
   // Another sentence, or a refusal whose effect check did not read the state unchanged: not the declared answer.
-  assert.ok(declaredWith({}, {tweak: set(BACK, {ok: false, outcome: {threw: 'another refusal', unchanged: true}})}).blocking.includes(`method: ${BACK} is worse on cua`));
-  assert.ok(declaredWith({}, {tweak: set(BACK, {ok: false, outcome: {threw: 'background click refused'}})}).blocking.includes(`method: ${BACK} is worse on cua`));
+  assert.ok(declaredWith({}, {tweak: set(BACK, {ok: false, outcome: {threw: 'another refusal', errorName: 'backgroundClickRefused', unchanged: true}})}).blocking.includes(`method: ${BACK} is worse on cua`));
+  assert.ok(declaredWith({}, {tweak: set(BACK, {ok: false, outcome: {threw: 'background click refused', errorName: 'backgroundClickRefused'}})}).blocking.includes(`method: ${BACK} is worse on cua`));
+  // A timeout that says it refused is no refusal: the kind comes from the recorded error name (finding 5).
+  assert.ok(declaredWith({}, {tweak: set(BACK, {ok: false, outcome: {threw: 'background click refused', errorName: 'timeoutReached', unchanged: true}})}).blocking.includes(`method: ${BACK} is worse on cua`));
   // cua acting differently (answered ok, the check failed): never declarable.
   assert.ok(declaredWith({}, {tweak: set(BACK, {ok: false, outcome: {unchanged: false}})}).blocking.includes(`method: ${BACK} is worse on cua`));
   // A refusal that interfered is not conservative; nor is one beside a vendor sample whose oracle failed.
@@ -483,7 +489,7 @@ test('the judge enforces the kind: an entry of another kind, or one naming a pre
   assert.equal(other.verdict, 'FAIL');
   assert.ok(other.blocking.some(b => /^departures: method textedit\/background\/click\.control@finder is not the one declarable kind \(R3\)/.test(b)), other.blocking.join('\n'));
   const keys = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set('textedit/korean/pressKey.rk', {ok: false, outcome: {threw: 'refused'}})},
-    departures: [departure({section: 'unicode', id: 'textedit/korean/pressKey.rk', cua: {answer: 'refused', sentence: 'refused'}})]});
+    departures: [departure({section: 'unicode', id: 'textedit/korean/pressKey.rk', cua: {answer: 'refused', errorName: 'backgroundClickRefused', sentence: 'refused before any key'}})]});
   assert.ok(keys.blocking.some(b => /no pressKey row may be declared \(ruling 1119\)/.test(b)), keys.blocking.join('\n'));
   assert.ok(keys.blocking.includes('unicode: textedit/korean/pressKey.rk failed on cua'), 'and the row is judged on its raw outcome');
   const unused = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}, departures: [departure()]});
@@ -509,7 +515,7 @@ test('an alert front or key during a judged sample is NO VERDICT, never a pass: 
   const row = j.methods.find(x => x.id === CLICK);
   assert.equal(row.verdict, 'no-verdict', 'its ok sample is not counted as a pass');
   assert.deepEqual(row.account.cua.noVerdict, {alert: 1});
-  assert.ok(renderSummary(j).includes(`| method ${CLICK} | **no verdict** | 3 of 3 | 2 of 3 | - | alert 1 | no |`), renderSummary(j));
+  assert.ok(renderSummary(j).includes(`| method ${CLICK} | **no verdict** | 3 of 3 | 2 of 3 | r1 1/1, r2 1/1, r3 1/1 | r1 0/1, r2 1/1, r3 1/1 | - | alert 1 | no |`), renderSummary(j));
   // A failing sample with the alert up is no failure: runs 2 and 3 failed with good readings, run 1 is no verdict.
   const failed = judged({vendor: {resolved: 9, axMs: 50, hosted: true}, cua: {axMs: 40, hosted: true, tweak: (rows, run) => withReadings(BACK, alert)(set(BACK, {ok: false})(rows), run)}});
   const back = failed.methods.find(x => x.id === BACK);
@@ -517,7 +523,7 @@ test('an alert front or key during a judged sample is NO VERDICT, never a pass: 
   // Four runs a side: one alert leaves three verdicts, so the cell qualifies and the count is still reported.
   const four = judged({runs: 4, vendor: {resolved: 9, axMs: 50, hosted: true}, cua: {axMs: 40, hosted: true, tweak: withReadings(CLICK, alert)}});
   assert.equal(four.verdict, 'PASS', four.missing.join('\n'));
-  assert.ok(renderSummary(four).includes(`| method ${CLICK} | equal | 4 of 3 | 3 of 3 | - | alert 1 | yes |`), renderSummary(four));
+  assert.ok(renderSummary(four).includes(`| method ${CLICK} | equal | 4 of 3 | 3 of 3 | r1 1/1, r2 1/1, r3 1/1, r4 1/1 | r1 0/1, r2 1/1, r3 1/1, r4 1/1 | - | alert 1 | yes |`), renderSummary(four));
   // The vendor's sample with the alert up leaves cua's of that run without a pair.
   const vendorAlert = judged({vendor: {resolved: 9, axMs: 50, hosted: true, tweak: withReadings(CLICK, alert)}, cua: {axMs: 40, hosted: true}});
   assert.deepEqual(vendorAlert.methods.find(x => x.id === CLICK).account.cua.noVerdict, {unpaired: 1});
@@ -530,7 +536,7 @@ test('an activate step that did not take front and key is NO VERDICT, not FAIL; 
   assert.deepEqual(j.blocking, [], 'its failed rows were never judged');
   assert.equal(j.verdict, 'NO VERDICT');
   assert.deepEqual(j.methods.find(x => x.id === BACK).account.cua.noVerdict, {activation: 3});
-  assert.ok(renderSummary(j).includes(`| method ${BACK} | **no verdict** | 3 of 3 | 0 of 3 | - | activation 3 | no |`), renderSummary(j));
+  assert.ok(renderSummary(j).includes(`| method ${BACK} | **no verdict** | 3 of 3 | 0 of 3 | r1 1/1, r2 1/1, r3 1/1 | r1 0/1, r2 0/1, r3 0/1 | - | activation 3 | no |`), renderSummary(j));
   const unread = judged({vendor: {resolved: 9, axMs: 50, hosted: true}, cua: {axMs: 40, hosted: true, tweak: (rows, run) => (run === 2 ? rows.map(r => (r.id === CLICK ? (({frontKey, ...rest}) => rest)(r) : r)) : rows)}});
   assert.equal(unread.verdict, 'NO VERDICT');
   assert.deepEqual(unread.methods.find(x => x.id === CLICK).account.cua.noVerdict, {unread: 1});
@@ -573,4 +579,105 @@ test('hold 3\'s records still load and judge: FAIL, on interference and Unicode 
   assert.deepEqual([notText.verdict, notText.account.cua.noVerdict], ['no-verdict', {unpaired: 1}]);
   assert.ok(!j.methods.some(x => x.verdict === 'worse'));
   assert.ok(j.cells.every(c => !c.qualifies), 'one vendor run and two cua runs: no cell has three runs a side');
+});
+
+// ---- the fix wave: provenance, eligible observations, method timings, ruling 1144 --------------------------------------
+
+// Three runs a side in memory, each run's meta and rows given per engine and run number.
+const judgeEach = ({vendor = () => ({}), cua = () => ({}), departures = []} = {}) => {
+  const runs = [];
+  for (let n = 1; n <= 3; n++) for (const [engine, opts] of [['vendor', vendor(n)], ['cua', cua(n)]]) runs.push({path: `${engine}/run-${n}`, result: fullRun(engine, n, opts)});
+  return judge(runs, [], {departures});
+};
+
+test('a pair from two commits is not compared: its cua sample has no verdict where the vendor\'s answer is the reference, and still fails on its own behind', () => {
+  const j = judgeEach({vendor: () => ({resolved: 9, axMs: 50}),
+    cua: n => ({axMs: 40, ...(n === 2 ? {meta: {commit: 'c2'}, tweak: rows => set(BACK, {ok: false})(set(CLICK, {ok: false})(rows))} : {})})});
+  assert.ok(j.missing.some(p => /^run 2's vendor and cua runs name more than one commit/.test(p)));
+  assert.ok(!j.blocking.includes(`method: ${CLICK} is worse on cua`), 'never compared against another commit\'s vendor sample');
+  assert.deepEqual(j.methods.find(x => x.id === CLICK).account.cua.noVerdict, {unpaired: 1});
+  assert.ok(j.blocking.includes(`method: ${BACK} is worse on cua`), 'a failure against ground truth needs no pair');
+  // Speed is compared only on eligible pairs too.
+  assert.deepEqual(j.speed.find(s => s.id === 'textedit/getAXState').account.cua.noVerdict, {unpaired: 2});
+});
+
+test('speed and finding compare the same eligible observations on both sides: a vendor reading with no cua match is left out', () => {
+  const slow = rows => rows.map(r => (r.id === 'textedit/getAXState' ? {...r, inCellMs: 500} : r));
+  const j = judgeEach({vendor: n => ({resolved: 9, axMs: 50, ...(n === 3 ? {tweak: slow} : {})}),
+    cua: n => ({axMs: 40, ...(n === 3 ? {tweak: rows => rows.map(r => (r.id === 'textedit/getAXState' ? {...r, invalid: 'x'} : r))} : {})})});
+  const row = j.speed.find(s => s.id === 'textedit/getAXState');
+  assert.deepEqual([row.vendor.n, row.vendor.median, row.vendor.p95, row.cua.n], [4, 50, 50, 4], 'run 3\'s vendor samples have no cua match');
+  assert.equal(row.account.vendor.verdicts, 6, 'the side\'s own count kept as a diagnostic');
+  // A finding target the vendor resolved only in a run cua has no verdict for does not count for the vendor.
+  const finding = judgeEach({vendor: n => ({resolved: n === 1 ? 10 : 9, axMs: 50}),
+    cua: n => ({axMs: 40, resolved: 9, ...(n === 1 ? {tweak: rows => rows.map(r => (r.section === 'finding' && r.id.startsWith('textedit/') ? {...r, invalid: 'x'} : r))} : {})})});
+  assert.equal(finding.finding.find(f => f.scene === 'textedit').vendor.resolved, 9);
+});
+
+test('the per-method timings are in the manifest and the ledger; a timing without a numeric duration has no verdict', () => {
+  const manifest = manifestOf({run: 1, samples: 2});
+  for (const id of ['textedit/method.click.control', 'textedit/method.panel.click.cancel', 'finder/method.click.row']) assert.ok(manifest.some(e => e.section === 'speed' && e.id === id && e.sample === 1), id);
+  const j = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: (rows, run) => (run === 1 ? rows.map(r => (r.id === 'textedit/method.click.control' ? (({inCellMs, ...rest}) => rest)(r) : r)) : rows)}});
+  assert.equal(j.verdict, 'NO VERDICT');
+  const cell = j.cells.find(c => c.section === 'speed' && c.id === 'textedit/method.click.control');
+  assert.deepEqual([cell.qualifies, cell.account.cua.noVerdict], [false, {unmeasured: 1}]);
+});
+
+test('two frontmost failures are equal only as the same failure: a vendor refusal beside a cua wrong effect is worse', () => {
+  const vendorRefused = {ok: false, outcome: {collapsed: false, unchanged: true, threw: 'Computer Use server error -10005: element not found', errorName: 'Error'}};
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: set(CLICK, vendorRefused)}, cua: {axMs: 40, tweak: set(CLICK, {ok: false, outcome: {collapsed: false, unchanged: false}})}});
+  assert.ok(j.blocking.includes(`method: ${CLICK} is worse on cua`), j.blocking.join('\n'));
+  const alike = judged({vendor: {resolved: 9, axMs: 50, tweak: set(CLICK, vendorRefused)}, cua: {axMs: 40, tweak: set(CLICK, vendorRefused)}});
+  assert.equal(alike.methods.find(x => x.id === CLICK).verdict, 'shared');
+  assert.deepEqual(alike.shared.map(g => [g.kind, g.rows.map(r => r.id)]), [['honest failure', [CLICK]]]);
+});
+
+// Ruling 1144: a row judged by an absolute expected string.
+const LINES = 'chrome/korean/typeText.lines', A4 = 'textedit/korean/typeText.acceptance4';
+const falseOk = hash => ({ok: false, outcome: {exact: false, nfcEqual: false, length: 3, expectedLength: 5, hash}});
+test('ruling 1144: a shared failure with the same read-back is equal and listed as a shared limit; a false ok on both is flagged', () => {
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: set(LINES, falseOk('h1'))}, cua: {axMs: 40, tweak: set(LINES, falseOk('h1'))}});
+  assert.deepEqual([j.verdict, j.blocking, j.missing], ['PASS', [], []]);
+  assert.equal(j.unicode.find(u => u.id === LINES).verdict, 'shared');
+  assert.deepEqual(j.shared.map(g => [g.kind, g.priority, g.rows.map(r => [r.id, r.samples])]), [['shared false ok', 'P2 or higher', [[LINES, 3]]]]);
+  const text = renderSummary(j);
+  assert.match(text, /^Verdict: \*\*PASS\*\* \(1 shared limit: Shared limits \(vendor has them too\)\)$/m);
+  assert.ok(text.includes(`## Shared limits (vendor has them too)`) && text.includes(`- ${LINES}: 3 sample(s), read back 3 of 5 characters on both`), text);
+  assert.ok(text.indexOf('## Shared limits (vendor has them too)') > text.indexOf('## What changes for a user'));
+});
+
+test('ruling 1144: another read-back, the vendor passing any sample, or a cua false ok beside a vendor refusal fails; an unpaired sample has no verdict', () => {
+  const other = judged({vendor: {resolved: 9, axMs: 50, tweak: set(LINES, falseOk('h1'))}, cua: {axMs: 40, tweak: set(LINES, falseOk('h2'))}});
+  assert.ok(other.blocking.includes(`unicode: ${LINES} failed on cua`));
+  const vendorPassedOne = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, run) => (run === 2 ? rows : set(LINES, falseOk('h1'))(rows))}, cua: {axMs: 40, tweak: set(LINES, falseOk('h1'))}});
+  assert.ok(vendorPassedOne.blocking.includes(`unicode: ${LINES} failed on cua`), 'the vendor typed it in run 2');
+  const vendorRefused = {ok: false, outcome: {exact: false, length: 0, expectedLength: 5, hash: 'h1', threw: 'Timed out', errorName: 'Error'}};
+  assert.ok(judged({vendor: {resolved: 9, axMs: 50, tweak: set(LINES, vendorRefused)}, cua: {axMs: 40, tweak: set(LINES, falseOk('h1'))}}).blocking.includes(`unicode: ${LINES} failed on cua`), 'a cua false ok where the vendor refused');
+  const unpaired = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, run) => set(LINES, run === 1 ? {invalid: 'x'} : falseOk('h1'))(rows)}, cua: {axMs: 40, tweak: set(LINES, falseOk('h1'))}});
+  const row = unpaired.unicode.find(u => u.id === LINES);
+  assert.deepEqual([unpaired.verdict, row.verdict, row.account.cua.noVerdict], ['NO VERDICT', 'no-verdict', {unpaired: 1}], 'NO VERDICT never counts toward a pass');
+});
+
+test('ruling 1144: cua refusing or answering unconfirmed where the vendor gave a false ok is better, listed under what changes for a user', () => {
+  const unconfirmed = {ok: false, outcome: {exact: false, length: 0, expectedLength: 5, hash: 'h0', threw: 'the text did not read back', errorName: 'typeUnconfirmed'}};
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: set(LINES, falseOk('h1'))}, cua: {axMs: 40, tweak: set(LINES, unconfirmed)}});
+  assert.deepEqual([j.verdict, j.blocking], ['PASS', []]);
+  assert.equal(j.unicode.find(u => u.id === LINES).verdict, 'better');
+  assert.ok(renderSummary(j).includes(`- unicode ${LINES}: the vendor answered ok with other text (a false ok), cua answered unconfirmed (typeUnconfirmed) in 3 sample(s): better, no entry needed`), renderSummary(j));
+  // Named only by the facade's plain Error, the same answer is no evidence of a refusal: a failure.
+  const unnamed = judged({vendor: {resolved: 9, axMs: 50, tweak: set(LINES, falseOk('h1'))}, cua: {axMs: 40, tweak: set(LINES, {...unconfirmed, outcome: {...unconfirmed.outcome, errorName: 'Error'}})}});
+  assert.ok(unnamed.blocking.includes(`unicode: ${LINES} failed on cua`));
+});
+
+test('acceptance rows are absolute: neither a shared limit nor a departure satisfies them (S L239)', () => {
+  const shared = judged({vendor: {resolved: 9, axMs: 50, tweak: set(A4, falseOk('h1'))}, cua: {axMs: 40, tweak: set(A4, falseOk('h1'))}});
+  assert.ok(shared.blocking.includes(`unicode: ${A4} failed on cua`));
+  assert.deepEqual(shared.shared, []);
+  const unconfirmed = {ok: false, outcome: {exact: false, hash: 'h0', threw: 'the text did not read back', errorName: 'typeUnconfirmed', unchanged: true}};
+  const declared = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(A4, unconfirmed)},
+    departures: [departure({section: 'unicode', id: A4, cua: {answer: 'unconfirmed', errorName: 'typeUnconfirmed', sentence: 'the text did not read back'}})]});
+  assert.ok(declared.blocking.some(b => /^departures: unicode textedit\/korean\/typeText\.acceptance4 .*an acceptance row/.test(b)), declared.blocking.join('\n'));
+  assert.ok(declared.blocking.includes(`unicode: ${A4} failed on cua`));
+  const better = judged({vendor: {resolved: 9, axMs: 50, tweak: set(A4, falseOk('h1'))}, cua: {axMs: 40, tweak: set(A4, unconfirmed)}});
+  assert.ok(better.blocking.includes(`unicode: ${A4} failed on cua`), 'an honest answer is still not the exact text');
 });

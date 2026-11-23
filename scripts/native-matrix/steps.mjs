@@ -8,7 +8,7 @@ import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
-import {caseId, focusVerdict, SCENE_OF} from './plan.mjs';
+import {caseId, focusVerdict, methodTimingId, SCENE_OF} from './plan.mjs';
 
 // The acts that may paste (type_text's paste route included): each sent only between two alert checks.
 export const PASTING = Object.freeze(['paste', 'typeText']);
@@ -176,6 +176,6 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const pushed = done({ok: check.value?.ok === true && kept !== false, outcome: {...(check.value?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept})}});
   ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
     ? {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid} : null});
-  if (speed) push(ctx, {section: 'speed', id: `${scene}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`, engine: ctx.engine, sample: ctx.n, ok: true, inCellMs: act.value.actMs, wallMs: act.wallMs});
+  if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: true, inCellMs: act.value.actMs, wallMs: act.wallMs});
   return pushed;
 }

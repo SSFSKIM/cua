@@ -226,3 +226,106 @@ Removed: `scripts/native-matrix/expected/unicode.json`.
 3. **Departure readings are not recorded yet.** No case records `outcome.effect` today, and `outcome.unchanged` is
    recorded only by some method cases. A departure on any other row cannot be proven until the harness records these
    readings. The departures file is empty, and #420's R3 declaration still waits on the vendor pair.
+
+## Fix wave: ruling 1144 and the task review
+
+This wave builds ruling 1144 (shared failures) into the judge and fixes the task review's six findings and its minor
+point. It also adds the per-run counts the design session asked for.
+
+**Ruling 1144: shared failures.** The rule lives in `cell-verdict.mjs` (`judgeCell`, in its `absolute` and `pressKey`
+modes) and `answers.mjs`. It applies to Unicode rows, which are judged by an absolute expected string.
+
+- A cua sample that passes needs no pair.
+- A cua sample that fails, with no vendor sample from an eligible run, is `unpaired`: it has no verdict.
+- If the vendor passed the paired sample, the row fails.
+- If both failed the same way, the sample is `shared` (equal). Same way means the same answer and the same read-back
+  hash.
+- If the vendor answered ok with the wrong text and cua refused or answered unconfirmed, the sample is better. It is
+  listed under "What changes for a user" as "better, no entry needed".
+- Any other failure, including a cua false ok beside a vendor refusal, fails the row.
+
+The pressKey row keeps ruling 1119's rule: a vendor sample that composed otherwise fails the row, unless cua's sample
+from the same run failed the same way.
+
+Shared samples appear in a new report section, "Shared limits (vendor has them too)", after "What changes for a user".
+They are grouped by cause: the scene, the method, and the answer both engines gave. Each group carries its ticket
+priority (P2 or higher for a shared false ok, P3 for an honest shared failure). The verdict line counts shared limits
+beside the departures; they do not demote PASS.
+
+**What counts as an answer.** `answers.mjs`'s `answerOf` gives a sample's answer one of four kinds: `ok`, `refused`,
+`unconfirmed` or `error`. The kind comes from the recorded error name alone, checked against cua's engine names of each
+kind (`REFUSAL_NAMES`, `UNCONFIRMED_NAMES`, taken from `native/engine` `EngineError` names). Two answers that are both
+plain errors are the same answer only when their sentences are equal.
+
+The read-back hash is now recorded:
+
+- `probe-plan.mjs` `fieldCheck` keeps it as `outcome.hash`, so every typeText, paste and composing row has it.
+- `unicode-run.mjs` keeps it for the midSwitch row too.
+- Hold 3's records predate this, so none of their failures can be shown shared.
+
+**The review findings.**
+
+1. **Provenance.** `pairableRuns` reuses the per-run checks that `proofProblems` makes (`pairProblems`). A run number is
+   eligible when it has exactly one vendor and one cua run, with one hold, one commit and one approved build. Only
+   eligible runs' vendor samples answer for cua's samples or let a departure find its vendor ok. A cua failure against
+   ground truth (`own` mode) still fails with no pair.
+2. **Speed and finding.** Both compare the same eligible observations on both sides: only the runs where each side has
+   samples with a verdict count. Each side's own counts stay in `account` as diagnostics.
+3. **Method timings.** The per-method timings are now in the manifest: one `<scene>/method.<method>.<case>` row per
+   frontmost case per run. The id comes from `plan.mjs` `methodTimingId`, which `steps.mjs` now uses too. A speed sample
+   without a numeric `inCellMs` is `unmeasured`.
+4. **Two failures in front.** A frontmost pair where both failed is `shared` only as the same failure: the same answer
+   and the same boolean effect readings, or the same read-back. Otherwise it is worse, so a vendor refusal beside a cua
+   wrong effect now fails.
+5. **The departure check.** An entry must name `cua.errorName`, and that name must belong to the declared kind; the
+   kind is no longer taken from the claim. `answeredAs` matches the row's recorded `outcome.errorName` and its sentence
+   with the server prefix stripped. A sentence pattern is refused as too broad when it matches the empty string or has
+   fewer than 10 literal characters in a row, so `.*`, `.+`, `x` and `(refused|ok)` are all refused.
+6. **Acceptance rows.** Any row whose string id is `acceptance<N>` (`isAcceptanceRow`) is absolute: a departure entry
+   naming one is a blocking problem, and neither a shared failure nor an honest refusal satisfies one.
+
+**The minor point.** `frontKey.after: null` now records a skipped act, and the activation check runs before the
+null-reading check. A failed activate step therefore stays `activation`, never `unread`.
+
+**Per-run counts.** The "NO VERDICT by cell" table gains two columns, `vendor by run` and `cua by run`. Each shows, per
+run, how many of the run's samples have a verdict (for example `r1 1/1, r2 0/1`). The `runs` column is the number of
+runs in which every sample has one.
+
+### What the old records judge as now
+
+All three holds still judge FAIL. The blocking lists changed against T10a's first commit as follows:
+
+| Hold | Line that left the blocking list | Why |
+|---|---|---|
+| 3 | `unicode: chrome/midSwitch/typeText.long failed on cua` | cua passed run 1; its failed run 2 has no vendor run, so it is unpaired. |
+| 2a, 2b | `finding elements: finder is lower on cua` | Only eligible observations are compared now; no pair there is eligible. |
+| 2a | the cua lines for `chrome/korean/typeText.lines`, `chrome/midSwitch/typeText.long`, `electron/midSwitch/typeText.long` and the two non-TextEdit pressKey rows | No run pair there is eligible, so those cua samples are unpaired. The two pressKey rows still fail, now as "composes otherwise on the vendor" (ruling 1119). |
+
+Hold 3's `chrome/korean/typeText.lines` stays FAIL: its records carry no read-back hash, so its shared failure cannot be
+shown. Hold 3's `chrome/frontmost/selectText.notText` run 1 pair now appears as an honest shared failure ("Could not
+find the requested text to select in the element"), which agrees with #190's finding.
+
+### Tests
+
+**RED,** before implementing:
+`node --test test/native-matrix/answers.test.mjs test/native-matrix/front-key.test.mjs test/native-matrix/departures.test.mjs test/native-matrix/summary.test.mjs`
+gave 17 failing tests. They covered every new rule: the kind checked against the error name, the broad sentences, the
+acceptance-row entry, the skipped act, the provenance pairs, the eligible speed observations, the method timings, a
+different frontmost failure, the four 1144 cases, the acceptance rows, and the new table columns. The read-back hash
+test in `probe-plan.test.mjs` failed the same way until `fieldCheck` kept the hash.
+
+**GREEN:**
+
+- `node --test test/native-matrix/*.test.mjs`: `# pass 413`, `# fail 0`.
+- `node --test test/cursor-sitting/item-188.test.mjs test/cursor-sitting/item-187.test.mjs test/repl-parity/native-mac-run.test.mjs`:
+  `# pass 77`, `# fail 0`.
+
+### Concerns
+
+- **No cua answer can yet be shown to be a refusal.** The facade hands the cell a plain `Error`: hold 3's cua rows
+  record `errorName: 'Error'`, never the engine's name. Until the harness records the engine's own name (T10b′), no
+  departure applies and no honest-refusal better holds; those rows read as plain errors instead.
+- **Two frontmost failures need comparable effect readings.** A pair is equal only when both rows record the same
+  boolean effect readings or a read-back. A case whose outcome records neither will fail whenever both engines fail.
+- **Shared-limit grouping is mechanical.** A group is a scene, a method and the answer both engines gave. Naming each
+  cause for its ticket is the design session's job.

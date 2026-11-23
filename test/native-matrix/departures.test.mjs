@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import {answeredAs, departureProblems, readDepartures, usableDepartures} from '../../scripts/native-matrix/departures.mjs';
 
 const ROW = {section: 'method', id: 'chrome/background/drag.select@textedit'};
-const entry = (patch = {}) => ({...ROW, vendor: {answer: 'ok'}, cua: {answer: 'refused', sentence: 'refused a background drag'}, decision: 'Decision Log, 2026-11-20, a background drag into Chromium is refused', ...patch});
+const entry = (patch = {}) => ({...ROW, vendor: {answer: 'ok'}, cua: {answer: 'refused', errorName: 'backgroundClickRefused', sentence: 'refused a background drag'},
+  decision: 'Decision Log, 2026-11-20, a background drag into Chromium is refused', ...patch});
 
 test('the shipped file loads and holds no entry of another kind', () => {
   const list = readDepartures();
@@ -16,7 +17,7 @@ test('the shipped file loads and holds no entry of another kind', () => {
 
 test('the one declarable kind: the vendor answered ok, cua refused or answered unconfirmed', () => {
   assert.deepEqual(departureProblems([entry()]), []);
-  assert.deepEqual(departureProblems([entry({cua: {answer: 'unconfirmed', sentence: 'typeUnconfirmed'}})]), []);
+  assert.deepEqual(departureProblems([entry({cua: {answer: 'unconfirmed', errorName: 'typeUnconfirmed', sentence: 'the field did not read back'}})]), []);
   for (const [vendor, cua] of [[{answer: 'refused'}, {answer: 'ok', sentence: 'x'}], [{answer: 'ok'}, {answer: 'ok', sentence: 'x'}], [{answer: 'ok'}, {answer: 'differs', sentence: 'x'}],
     [{answer: 'unconfirmed'}, {answer: 'refused', sentence: 'x'}], [undefined, {answer: 'refused', sentence: 'x'}]]) {
     const problems = departureProblems([entry({vendor, cua})]);
@@ -32,22 +33,33 @@ test('an entry must name a judged row of the matrix, cua\'s sentence and its Dec
   assert.match(named({id: 'textedit/frontmost/nothing.here'}), /names no judged row of the matrix/);
   assert.match(named({id: 'textedit/frontmost/selectText.notText'}), /is a refusal case: the vendor's ok there is its refusal/, 'cua refusing otherwise there is cua acting differently');
   assert.match(named({decision: ''}), /cites no Decision Log entry/);
-  assert.match(named({cua: {answer: 'refused'}}), /names no sentence for cua's answer/);
-  assert.match(named({cua: {answer: 'refused', sentence: '('}}), /sentence is not a regular expression/);
+  assert.match(named({cua: {answer: 'refused', errorName: 'backgroundClickRefused'}}), /names no sentence for cua's answer/);
+  assert.match(named({cua: {answer: 'refused', errorName: 'backgroundClickRefused', sentence: '('}}), /sentence is not a regular expression/);
+  // The kind is checked against the error name cua's engine gives it, never taken from the claim.
+  assert.match(named({cua: {answer: 'refused', errorName: 'timeoutReached', sentence: 'refused a background drag'}}), /timeoutReached is not one of cua's refused answers/);
+  assert.match(named({cua: {answer: 'unconfirmed', errorName: 'backgroundClickRefused', sentence: 'refused a background drag'}}), /backgroundClickRefused is not one of cua's unconfirmed answers/);
+  assert.match(named({cua: {answer: 'refused', sentence: 'refused a background drag'}}), /names no error name/);
+  for (const broad of ['.*', '.+', '^', 'x', '[a-z]+ .*', '(refused|ok)'])
+    assert.match(named({cua: {answer: 'refused', errorName: 'backgroundClickRefused', sentence: broad}}), /sentence is too broad/, broad);
+  // Acceptance rows are absolute: acceptance 4's text lands exactly, whatever the vendor does (S L239).
+  assert.match(named({section: 'unicode', id: 'textedit/korean/typeText.acceptance4'}), /an acceptance row: it must pass on cua whatever the vendor does/);
   assert.match(departureProblems([entry(), entry()]).join('; '), /declared twice/);
   assert.deepEqual(usableDepartures([entry(), entry({id: 'textedit/frontmost/click.control', vendor: {answer: 'refused'}}), entry({section: 'unicode', id: 'textedit/latin/pressKey.rk'})]).map(e => e.id), [ROW.id], 'only well-formed entries apply');
   assert.deepEqual(usableDepartures([entry(), entry()]), [], 'a row declared twice applies neither');
 });
 
-test('answeredAs: the act threw cua\'s declared sentence, and the row\'s own effect check read what that answer allows', () => {
-  const refused = entry(), unconfirmed = entry({cua: {answer: 'unconfirmed', sentence: '^typeUnconfirmed'}});
-  const row = outcome => ({...ROW, engine: 'cua', sample: 1, ok: false, outcome});
+test('answeredAs: the act threw cua\'s declared error, named so, with its sentence, and the row\'s own effect check read what that answer allows', () => {
+  const refused = entry(), unconfirmed = entry({cua: {answer: 'unconfirmed', errorName: 'typeUnconfirmed', sentence: '^typeUnconfirmed'}});
+  const name = {backgroundClickRefused: 'backgroundClickRefused', typeUnconfirmed: 'typeUnconfirmed'};
+  const row = (outcome, errorName = /typeUnconfirmed/.test(outcome.threw ?? '') ? name.typeUnconfirmed : name.backgroundClickRefused) => ({...ROW, engine: 'cua', sample: 1, ok: false, outcome: {errorName, ...outcome}});
+  assert.deepEqual(answeredAs(refused, row({threw: 'refused a background drag', unchanged: true}, 'timeoutReached')), {answered: false, effect: true}, 'another name, whatever the sentence');
+  assert.deepEqual(answeredAs(refused, row({threw: 'refused a background drag', unchanged: true}, 'Error')), {answered: false, effect: true}, 'no engine name recorded is no evidence');
   assert.deepEqual(answeredAs(refused, row({threw: 'Computer Use server error -10005: refused a background drag', unchanged: true})), {answered: true, effect: true});
-  assert.deepEqual(answeredAs(refused, row({message: 'refused a background drag here', unchanged: true})), {answered: true, effect: true}, 'a refusal case keeps it as message');
+  assert.deepEqual(answeredAs(refused, row({refused: true, message: 'refused a background drag here', unchanged: true})), {answered: true, effect: true}, 'a refusal case keeps it as message');
   assert.deepEqual(answeredAs(refused, row({threw: 'refused a background drag'})), {answered: true, effect: false}, 'no reading that nothing took effect');
   assert.deepEqual(answeredAs(refused, row({threw: 'refused a background drag', unchanged: true, effect: true})), {answered: true, effect: false}, 'a refusal whose effect took place is no refusal');
   assert.deepEqual(answeredAs(refused, row({threw: 'something else', unchanged: true})), {answered: false, effect: true});
-  assert.deepEqual(answeredAs(refused, row({unchanged: false})), {answered: false, effect: false}, 'answered ok but acted differently');
+  assert.deepEqual(answeredAs(refused, row({unchanged: false}, null)), {answered: false, effect: false}, 'answered ok but acted differently');
   // Unconfirmed: the intended effect or nothing; anything else is cua acting differently.
   assert.deepEqual(answeredAs(unconfirmed, row({threw: 'typeUnconfirmed: the field did not read back', effect: true})), {answered: true, effect: true});
   assert.deepEqual(answeredAs(unconfirmed, row({threw: 'typeUnconfirmed: the field did not read back', unchanged: true})), {answered: true, effect: true});

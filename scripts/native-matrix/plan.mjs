@@ -525,3 +525,5 @@ export const OWNER_OPTIONS = Object.freeze([
 // A row's id: `<target>/<regime>/<method>.<case>`, and in the background regime `@<user>` after it (TextEdit and Finder
 // are each driven behind two user windows).
 export const caseId = (target, regime, c, user = null) => `${target}/${regime}/${c.method}.${c.case}${user ? `@${user}` : ''}`;
+// A frontmost case's own timing row (section 'speed'): part 5's "each method cell", one per run.
+export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`;

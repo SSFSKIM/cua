@@ -32,6 +32,13 @@ test('an activate step that did not take front and key is NO VERDICT, not FAIL (
     'the failed activation is the first cause: the alert keeping key is its consequence');
 });
 
+test('a skipped act (its activate step failed, nothing read after it) stays an activation cause, never unread', () => {
+  const skipped = readings({activate: {app: TEXTEDIT, front: false, key: false}, before: {front: ALERT, key: null}, after: null});
+  assert.deepEqual(frontKeyProblems(skipped), [], 'after: null records the skipped act');
+  assert.equal(frontKeyCause(skipped, {hosted: true}).category, 'activation');
+  assert.equal(frontKeyCause(readings({after: null}), {hosted: true}).category, 'unread', 'an act that ran needs its readings after it');
+});
+
 test('readings missing: NO VERDICT on a hosted run, judged as before off it; readings present but unread are NO VERDICT anywhere', () => {
   assert.deepEqual(frontKeyCause(undefined, {hosted: true}), {category: 'unread', detail: 'no front/key readings on a hosted run'});
   assert.equal(frontKeyCause(undefined, {hosted: false}), null, 'a record before the rule (hold 3) or a run off a hosted runner');
@@ -52,7 +59,7 @@ test('sampleCause: the readings first, then the harness\'s own invalid reason, t
 test('the shape: what does not conform is named, field by field', () => {
   assert.deepEqual(frontKeyProblems(readings()), []);
   assert.deepEqual(frontKeyProblems(readings({after: {front: null, key: null}})), [], 'null is unread, which conforms');
-  const bad = frontKeyProblems({apps: 'x', activate: {app: 1, front: 'yes'}, before: {front: 3}, after: null});
+  const bad = frontKeyProblems({apps: 'x', activate: {app: 1, front: 'yes'}, before: {front: 3}, after: 'later'});
   for (const field of ['apps', 'activate.app', 'activate.front', 'activate.key', 'before.front', 'before.key', 'after']) assert.ok(bad.some(p => p.includes(`frontKey.${field}`)), `${field}: ${bad.join('; ')}`);
   assert.deepEqual(frontKeyProblems(null), ['frontKey is not an object']);
 });

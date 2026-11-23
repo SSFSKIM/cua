@@ -136,14 +136,15 @@ if (!__empty || __focus !== "focused") return {ready: false, reason: !__empty ? 
 return {ready: true, ...__stated};`;
 
 // A text field read back by hash against `expected` (or, with `expected` null, its hash and length returned). The value
-// stays in the cell. -> {ok, outcome: {exact, nfcEqual, length, expectedLength}} | {hash, length} | {invalid}.
+// stays in the cell; its hash is kept beside the verdict, so two engines' failures can be shown the same read-back
+// (ruling 1144). -> {ok, outcome: {exact, nfcEqual, length, expectedLength, hash}} | {hash, length} | {invalid}.
 export const fieldCheck = (scene, expected) => `const ax = await observe();
 const __index = ${TEXT_FIELDS[scene]};
 if (__index === null) return {invalid: "the field is not in the text"};
 const __value = plain(valueOfIndex(ax, __index) ?? "");
 const __hash = sha256Hex(__value);
 ${expected === null ? 'return {hash: __hash, length: __value.length};' : `const exact = __hash === ${j(sha256Hex(expected))};
-return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}}};`}`;
+return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash}};`}`;
 export const fieldCheckCell = (scene, expected, tag = 'field.check') => cell(`${prelude(scene)}
 // cua-matrix-cell: ${tag}
 ${fieldCheck(scene, expected)}`);

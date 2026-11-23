@@ -287,7 +287,7 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   const interval = intervalOf(ctx.engine, act);
   const {ok, stopped, exact, sentenceEntered, sentenceAgrees} = judgeMidSwitch({threw: act.value.threw, message: act.value.message, entered, field: check.value, text: r.string.text});
   const row = {ok, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {stopped, errorName: act.value.errorName, message: act.value.message ?? null, entered, sentenceEntered, sentenceAgrees, length: check.value?.length ?? null, exact,
+    outcome: {stopped, errorName: act.value.errorName, message: act.value.message ?? null, entered, sentenceEntered, sentenceAgrees, length: check.value?.length ?? null, hash: check.value?.hash ?? null, exact,
       intervalSource: interval?.source ?? null, switchOffsetMs: interval && Number.isFinite(switchedAt) ? switchedAt - interval.from : null}};
   const why = probeProblem(finished?.answer) ?? postValidity(switchedAt, interval)?.replace('the probe posted', 'the probe switched');
   if (why) return end({...row, ok: false, invalid: why}, {retry: true, preMs: nextPreMs({callAt: act.value.callAt, interval, postedAt: switchedAt, scheduled: started.scheduled, preMs})});

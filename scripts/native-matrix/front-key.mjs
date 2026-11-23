@@ -17,18 +17,20 @@
 //   before     {front, key}: read after the activate step and before the act: the frontmost application, and the
 //              application holding keyboard focus (the system-wide focused application, as `--probe focus` reports
 //              it); each a bundle id, or null when it could not be read.
-//   after      {front, key}: the same, read after the act and its check.
+//   after      {front, key}: the same, read after the act and its check; null when the act was skipped because its
+//              activate step failed (nothing ran, so nothing is read after it, and the cause stays `activation`).
 // Bundle ids only: never a pid, a window's title or anything of a window the run does not own. A full run marked
 // hosted carries meta.hosted: true (set on a GitHub-hosted runner, RUNNER_ENVIRONMENT=github-hosted).
 //
 // A sample has no verdict (NO VERDICT: never a pass, never a fail; the judge counts it per cell by category), the first
 // cause that applies:
-//   unread      a hosted run's sample without readings, or any sample whose readings hold a null
-//   activation  the activate step did not take front and key (1141: NO VERDICT, not FAIL)
+//   activation  the activate step did not take front and key (1141: NO VERDICT, not FAIL), its act skipped or not
+//   unread      a hosted run's sample without readings, or any sample whose readings hold a null (an act that ran
+//               with `after` null among them)
 //   alert       an application outside `apps` front or key, before or after the act (1136)
 //   invalid     the harness's own reason (Row.invalid: its target was not in front, its probe post fell outside the
 //               action's interval)
-//   unmeasured  a speed or finding sample not measured (its `ok` false)
+//   unmeasured  a speed or finding sample not measured: its `ok` false, or a speed sample without a numeric duration
 // and one the judge decides, since it needs both engines' samples:
 //   unpaired    a cua sample whose verdict rests on the vendor's answer (a frontmost method row, a speed or finding
 //               row, the pressKey row, a declared departure) with no vendor sample with a verdict from the same run
@@ -39,7 +41,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   activation: 'the activate step did not take front and key',
   alert: 'an app other than the cell\'s front or key (an alert)',
   invalid: 'the harness\'s own invalid reason',
-  unmeasured: 'a speed or finding sample not measured',
+  unmeasured: 'a speed or finding sample not measured (no numeric duration)',
   unpaired: 'no vendor sample with a verdict from the same run (ruling 1116)',
 });
 
@@ -59,7 +61,8 @@ export function frontKeyProblems(frontKey, at = 'frontKey') {
   }
   for (const when of ['before', 'after']) {
     const reading = frontKey[when];
-    if (!reading || typeof reading !== 'object') { out.push(`${at}.${when} is not {front, key}`); continue; }
+    if (when === 'after' && reading === null) continue;
+    if (!reading || typeof reading !== 'object') { out.push(`${at}.${when} is not {front, key}${when === 'after' ? ', nor null for a skipped act' : ''}`); continue; }
     for (const k of ['front', 'key']) if (!readingOk(reading[k])) out.push(`${at}.${when}.${k} is neither a bundle id nor null`);
   }
   return out;
@@ -68,9 +71,11 @@ export function frontKeyProblems(frontKey, at = 'frontKey') {
 // What the readings say about the sample. `hosted`: the run is marked hosted. -> {category, detail} | null.
 export function frontKeyCause(frontKey, {hosted = false} = {}) {
   if (frontKey === undefined) return hosted ? {category: 'unread', detail: 'no front/key readings on a hosted run'} : null;
+  const activate = frontKey.activate;
+  if (typeof activate?.front !== 'boolean' || typeof activate?.key !== 'boolean') return {category: 'unread', detail: 'the activate step\'s check is missing'};
+  if (!(activate.front && activate.key)) return {category: 'activation', detail: `${activate.app} did not take ${[!activate.front && 'front', !activate.key && 'key'].filter(Boolean).join(' and ')}`};
   const values = [frontKey.before?.front, frontKey.before?.key, frontKey.after?.front, frontKey.after?.key];
-  if (values.some(v => !isBundle(v)) || typeof frontKey.activate?.front !== 'boolean' || typeof frontKey.activate?.key !== 'boolean') return {category: 'unread', detail: 'a front/key reading is missing'};
-  if (!(frontKey.activate.front && frontKey.activate.key)) return {category: 'activation', detail: `${frontKey.activate.app} did not take ${[!frontKey.activate.front && 'front', !frontKey.activate.key && 'key'].filter(Boolean).join(' and ')}`};
+  if (values.some(v => !isBundle(v))) return {category: 'unread', detail: 'a front/key reading is missing'};
   const apps = new Set(frontKey.apps ?? []);
   const foreign = [...new Set(values.filter(v => !apps.has(v)))];
   return foreign.length ? {category: 'alert', detail: foreign.join(', ')} : null;
@@ -83,5 +88,6 @@ export function sampleCause(row) {
   if (readings) return readings;
   if (row.invalid) return {category: 'invalid', detail: row.invalid};
   if ((row.section === 'speed' || row.section === 'finding') && row.ok !== true) return {category: 'unmeasured'};
+  if (row.section === 'speed' && !Number.isFinite(row.inCellMs)) return {category: 'unmeasured', detail: 'no numeric duration'};
   return null;
 }

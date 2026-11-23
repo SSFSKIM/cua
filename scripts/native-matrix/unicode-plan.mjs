@@ -43,6 +43,9 @@ export const PRESS_KEY = Object.freeze({id: 'rk', keys: 'r k', expected: Object.
 const pressKeyString = condition => Object.freeze({id: PRESS_KEY.id, keys: PRESS_KEY.keys, text: PRESS_KEY.expected[condition]});
 // Whether a Unicode row id is the pressKey row's, which no departure may name (ruling 1119).
 export const isPressKeyRow = id => typeof id === 'string' && id.endsWith(`/pressKey.${PRESS_KEY.id}`);
+// Whether a row is an acceptance item's own (its string `acceptance<N>`, Acceptance 4's text): absolute, it lands exactly
+// on cua whatever the vendor does (S L239), so neither a declared departure nor a shared limit satisfies it.
+export const isAcceptanceRow = id => typeof id === 'string' && /\.acceptance\d+$/.test(id);
 // The conditions whose rows run and are reported but are out of every verdict (./not-judged.mjs).
 export {NOT_JUDGED};
 // The mid-switch row's long keyed text, so the switch lands inside it.

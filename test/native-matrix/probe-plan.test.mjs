@@ -104,6 +104,13 @@ test('TextEdit: the text view stays findable once emptied (its identifier then p
   try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', fieldCheckCell('textedit', null))({write: t => output.push(t)}); }
   finally { delete globalThis.__apps; }
   assert.deepEqual(parseCell(output.join('\n'))?.value, {hash: EMPTY_HASH, length: 0});
+  // Against an expected string, the read-back's hash is kept beside the verdict (ruling 1144: a shared failure is the
+  // same read-back on both engines).
+  const expected = [];
+  globalThis.__apps = {textedit: textEditDouble({value: '', focused: true}).app};
+  try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', fieldCheckCell('textedit', 'x'))({write: t => expected.push(t)}); }
+  finally { delete globalThis.__apps; }
+  assert.deepEqual(parseCell(expected.join('\n'))?.value, {ok: false, outcome: {exact: false, nfcEqual: false, length: 0, expectedLength: 1, hash: EMPTY_HASH}});
 });
 
 test('Chrome and Electron prepare and read back as before, the preparation changed only by #188', () => {
@@ -112,10 +119,10 @@ test('Chrome and Electron prepare and read back as before, the preparation chang
   assert.equal(TEXT_FIELDS.electron, 'indexOfTarget(ax, "Fixture text")');
   // The bodies' sources as of 38ecfa07, before the TextEdit locator changed; the preparation's since #188, which names
   // the emptying in its result and reports a trailer a selection masks as its own reason (the same calls, in the same
-  // order).
+  // order); the read-back against an expected string's since ruling 1144, which keeps its hash in the outcome.
   assert.deepEqual(['chrome', 'electron'].map(s => [sha(emptyField(s)), sha(fieldCheck(s, 'x')), sha(fieldCheck(s, null))]), [
-    ['e8b238e9385f95ec', '41639a7e0fddf612', '5cf0e282ecc58ddc'],
-    ['3c254c5f5131ca19', '3495030f8aa3813c', 'bb2fde8b360fdc61'],
+    ['e8b238e9385f95ec', 'ba26236b926131f5', '5cf0e282ecc58ddc'],
+    ['3c254c5f5131ca19', 'f40c0db49b99d2af', 'bb2fde8b360fdc61'],
   ]);
 });
 

@@ -420,21 +420,57 @@ test('modules/ or staging/ that is a link is not followed: the install refuses a
   assert.ok(root);
 });
 
-test('a FIFO in place of a native file or of the record: each check reports damage, and nothing hangs', {timeout: 20000}, async t => {
+// The checks run in a child process the parent kills at a deadline: a synchronous read of a FIFO would block this
+// process's own event loop, where no test timeout could interrupt it.
+const CHECKS_IN_A_CHILD = `
+import {checkModuleTree, installModuleTree, loadModuleLock, loadModuleProvenance, readModuleTree, verifyModuleTree} from ${JSON.stringify(new URL('../src/runtime/module-tree.mjs', import.meta.url).href)};
+const [home, pins, root, recordJson] = process.argv.slice(1);
+const host = {platform: 'linux', arch: 'x64', libc: 'glibc'};
+const lock = loadModuleLock(pins);
+const code = run => { try { run(); return 'none'; } catch (error) { return error.code ?? String(error); } };
+const answer = {read: readModuleTree(home, lock, host) === null ? 'null' : 'tree'};
+if (recordJson) {
+  const record = JSON.parse(recordJson);
+  answer.check = code(() => checkModuleTree(root, record));
+  answer.verify = code(() => verifyModuleTree(root, record));
+}
+answer.install = await installModuleTree({home, lock, host, provenance: loadModuleProvenance(pins), fetch: () => { throw new Error('nothing is fetched'); }})
+  .then(() => 'none', error => error.code ?? String(error));
+console.log(JSON.stringify(answer));
+`;
+const checksInAChild = (s, root, written) => {
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', CHECKS_IN_A_CHILD, s.home, s.pins.dir, root, written ? JSON.stringify(written) : ''],
+    {encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL'});
+  assert.equal(run.error?.code, undefined, 'no check blocks on the FIFO: the child finished before its deadline');
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout);
+};
+
+test('a FIFO in place of a native file or of the record: each check reports damage, and nothing hangs', async t => {
   const s = setup(t);
   const {root} = await install(s);
   const written = record(root);
   const native = join(root, 'node_modules/lev/prebuilds/linux-x64/lev.node');
   rmSync(native);
   assert.equal(spawnSync('mkfifo', [native]).status, 0);
-  assert.throws(() => checkModuleTree(root, written), expectCode('layout_invalid', /lev\.node/));
-  assert.throws(() => verifyModuleTree(root, written), expectCode('module_tree_invalid', /lev\.node/));
-  await assert.rejects(install(s), expectCode('module_tree_invalid'));
+  assert.deepEqual(checksInAChild(s, root, written), {read: 'tree', check: 'layout_invalid', verify: 'module_tree_invalid', install: 'module_tree_invalid'});
 
   const other = setup(t);
   const tree = await install(other);
   rmSync(join(tree.root, 'install.json'));
   assert.equal(spawnSync('mkfifo', [join(tree.root, 'install.json')]).status, 0);
-  assert.equal(readModuleTree(other.home, other.lock, LINUX_X64), null);
-  await assert.rejects(install(other), expectCode('target_occupied'));
+  assert.deepEqual(checksInAChild(other, tree.root), {read: 'null', install: 'target_occupied'});
+});
+
+test('a staging/ link does not disturb a tree already installed and verified: the install stays a no-op', async t => {
+  const s = setup(t);
+  const first = await install(s);
+  const outside = join(s.dir, 'outside-staging');
+  mkdirSync(outside);
+  rmSync(homeLayout(s.home).staging, {recursive: true, force: true});
+  symlinkSync(outside, homeLayout(s.home).staging);
+  s.pins.urls.length = 0;
+  assert.deepEqual(await install(s), {...first, changed: false});
+  assert.deepEqual(s.pins.urls, []);
+  assert.deepEqual(readdirSync(outside), []);
 });

@@ -8,7 +8,7 @@ import {existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {gzipSync} from 'node:zlib';
-import {readTarball, unpackTarball} from '../src/runtime/tarball.mjs';
+import {readPackageTarball, readTarball, unpackTarball} from '../src/runtime/tarball.mjs';
 import {packageTarball, paxRecord, sha256Of, tarBytes, tarHeader, tarball} from './fixtures/module-registry.mjs';
 
 function setup(t) {
@@ -94,6 +94,24 @@ test('each member a package may not carry refuses the whole package, and nothing
     assert.equal(existsSync(dest), false, `${name}: the package directory is not created`);
   }
   assert.deepEqual(listAll(dir), [], 'nothing was written anywhere');
+});
+
+test('an npm package carries its package.json at the top: one without it is refused before anything is written', t => {
+  const dir = setup(t);
+  const cases = {
+    'no package.json': [{name: 'package/index.js', data: 'x'}],
+    'package.json only deeper': [{name: 'package/lib/package.json', data: '{}'}],
+    'package.json as a directory': [{name: 'package/package.json/', type: 'dir'}, {name: 'package/package.json/x', data: '{}'}],
+  };
+  for (const [name, entries] of Object.entries(cases)) {
+    const bytes = tarball(entries);
+    assert.throws(() => readPackageTarball(bytes), refused(/package\.json/), name);
+    const dest = join(dir, name.replace(/\W+/g, '-'), 'package');
+    assert.throws(() => unpackTarball(bytes, dest), refused(/package\.json/), name);
+    assert.equal(existsSync(dest), false, name);
+  }
+  assert.deepEqual(listAll(dir), []);
+  assert.equal(readPackageTarball(packageTarball('a', '1.0.0')).top, 'package');
 });
 
 test('a member past the bound the caller sets is refused, as is an archive whose unpacked size passes the total', () => {

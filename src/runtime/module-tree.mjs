@@ -418,9 +418,11 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
   const layout = homeLayout(real);
   const root = join(layout.modules, lock.hash);
   const answer = changed => ({root, moduleDir: join(root, 'node_modules'), lock: lock.hash, changed});
-  // Nothing is written or read through a link where modules/ or staging/ should be.
-  for (const dir of [layout.modules, layout.staging])
+  // Nothing is read or written through a link where modules/ should be, nor, for a new tree, where staging/ should be.
+  const refuseLinked = dir => {
     if (pathExists(dir) && !isRealDirectory(dir)) fail('target_occupied', `${dir} is a link or not a real directory; cua does not install through it`, {hint: 'move it aside yourself, then run install again'});
+  };
+  refuseLinked(layout.modules);
 
   const existing = readModuleTree(real, lock, host);
   if (existing) {
@@ -433,6 +435,7 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
     return answer(false);
   }
   assertTargetFree(root);
+  refuseLinked(layout.staging);
 
   mkdirSync(layout.modules, {recursive: true, mode: 0o755});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
@@ -451,7 +454,6 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
       const dest = join(tree, pkg.path);
       if (pathExists(dest)) fail('tarball_invalid', `${pkg.path} would be written over files another package placed`);
       const {files} = unpackTarball(bytes, dest);
-      if (!files.some(file => file.path === 'package.json')) fail('tarball_invalid', `${pkg.name}@${pkg.version} has no package.json`);
       recorded.push({path: pkg.path, name: pkg.name, version: pkg.version, files: files.length, digest: payloadDigest(files)});
       for (const file of files) if (NATIVE_FILE.test(file.path)) natives.push({path: `${pkg.path}/${file.path}`, size: file.size, sha256: file.sha256});
     }

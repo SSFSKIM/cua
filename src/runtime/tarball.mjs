@@ -146,11 +146,19 @@ export function readTarball(bytes, {maxMemberBytes = MAX_MEMBER_BYTES, maxTotalB
   return {top, entries};
 }
 
-// Reads the whole archive, then writes it into `dest`, which must not exist (its parents are made) -> {files: [{path, size,
+// The npm package shape, shared by the installer and the pin script (scripts/modules-pin.mjs), so a package the pin
+// accepts is one the install accepts: a valid archive (readTarball) whose top directory holds a package.json file.
+export function readPackageTarball(bytes, limits) {
+  const read = readTarball(bytes, limits);
+  if (!read.entries.some(entry => entry.type === 'file' && entry.path === 'package.json')) refuse('it has no package.json at its top');
+  return read;
+}
+
+// Reads the whole archive as an npm package (readPackageTarball), then writes it into `dest`, which must not exist (its parents are made) -> {files: [{path, size,
 // sha256}]}, sorted by path: the payload as it was written. Files are 0644, or 0755 when the archive gives any execute
 // bit; directories 0755.
 export function unpackTarball(bytes, dest, limits) {
-  const {entries} = readTarball(bytes, limits);
+  const {entries} = readPackageTarball(bytes, limits);
   mkdirSync(dirname(dest), {recursive: true, mode: 0o755});
   mkdirSync(dest, {mode: 0o755});
   const files = [];

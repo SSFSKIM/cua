@@ -13,7 +13,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {pinModules} from '../scripts/modules-pin.mjs';
 import {arArchive, digest, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
-import {FIXTURE_CLOSURES, fixtureProvenance, fixturePnpmLock, registry, sha256Of, writeFixtureModules} from './fixtures/module-registry.mjs';
+import {FIXTURE_CLOSURES, FIXTURE_PACKAGES, fixtureProvenance, fixturePnpmLock, registry, sha256Of, tarball, writeFixtureModules} from './fixtures/module-registry.mjs';
 
 const LOCK_IN_DEB = 'usr/lib/chatgpt/resources/cua_node/lib/node_modules/.pnpm/lock.yaml';
 
@@ -37,12 +37,12 @@ function fixtureDeb(dir, name, lockYaml) {
   return {path, ...digest(bytes)};
 }
 
-function setup(t, {pnpm = {}, arm64 = false, lock} = {}) {
+function setup(t, {pnpm = {}, arm64 = false, lock, packages} = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-modules-pin-')));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
-  const modules = writeFixtureModules(join(dir, 'modules'), {lock});
+  const modules = writeFixtureModules(join(dir, 'modules'), {lock, packages});
   rmSync(join(modules.dir, 'provenance.json'));
-  const yaml = fixturePnpmLock(pnpm);
+  const yaml = fixturePnpmLock({packages, ...pnpm});
   const x64 = fixtureDeb(dir, 'x64', yaml);
   const pins = [linuxFixturePin({arch: 'x64', sha256: x64.sha256, length: x64.length})];
   const debs = [x64.path];
@@ -165,5 +165,12 @@ test('each tarball comes from its canonical URL itself, under a size cap: a redi
   await assert.rejects(s.run({fetch: endless.fetch, maxTarballBytes: 1024 * 1024}), refused(/bound/));
   const declared = registry(s.modules.tarballs, () => new Response('x', {headers: {'content-length': String(2 * 1024 * 1024)}}));
   await assert.rejects(s.run({fetch: declared.fetch, maxTarballBytes: 1024 * 1024}), refused(/bound/));
+  assert.equal(existsSync(s.out), false);
+});
+
+test('a package the installer would refuse is refused at pin time: a tarball without its package.json, and nothing is written', async t => {
+  const packages = {...FIXTURE_PACKAGES, 'node_modules/beta': {...FIXTURE_PACKAGES['node_modules/beta'], bytes: tarball([{name: 'package/index.js', data: 'module.exports = 1;\n'}])}};
+  const s = setup(t, {packages});
+  await assert.rejects(s.run(), refused(/package\.json/));
   assert.equal(existsSync(s.out), false);
 });

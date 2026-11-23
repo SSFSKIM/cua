@@ -17,8 +17,8 @@
 // Each deb is first copied into a private scratch directory, and that one snapshot is hashed, matched and read, so a
 // file replaced while the script runs cannot pair a pinned hash with another lockfile.
 // Then 5. fetches each tarball once from its canonical URL (a redirect is refused) under a size bound, checks its
-// SHA-512, reads it with cua's tarball reader (so a package the installer would refuse is refused here), and records
-// its length. It writes nothing unless every check passes, and run twice it
+// SHA-512, reads it as an npm package by the installer's own step (readPackageTarball, so a package the installer would
+// refuse is refused here), and records its length. It writes nothing unless every check passes, and run twice it
 // writes the same bytes. It runs no package script and unpacks no package. Run it when the lock is written and
 // whenever it changes, on a machine that holds a pinned deb, and review its output like any pin.
 import {execFile} from 'node:child_process';
@@ -31,7 +31,7 @@ import {fileURLToPath} from 'node:url';
 import {fail} from '../src/runtime/errors.mjs';
 import {loadPins} from '../src/runtime/manifest.mjs';
 import {admitsHost, MODULES_PIN_DIR, moduleClosure, parseModuleLock, parseModuleProvenance} from '../src/runtime/module-tree.mjs';
-import {readTarball} from '../src/runtime/tarball.mjs';
+import {readPackageTarball} from '../src/runtime/tarball.mjs';
 
 // The targets cua's Linux runtime serves: the vendor's two debs, both glibc.
 export const TARGETS = [{platform: 'linux', arch: 'arm64', libc: 'glibc'}, {platform: 'linux', arch: 'x64', libc: 'glibc'}];
@@ -272,7 +272,12 @@ async function fetchTarball(entry, fetchImpl, maxBytes) {
   const bytes = Buffer.concat(chunks);
   const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
   if (integrity !== entry.integrity) fail('archive_hash_mismatch', `${entry.name}@${entry.version}: ${entry.resolved} has SHA-512 ${integrity}; the lock says ${entry.integrity}`);
-  readTarball(bytes);
+  try {
+    readPackageTarball(bytes);
+  } catch (error) {
+    error.message = `${entry.name}@${entry.version}: ${error.message}`;
+    throw error;
+  }
   return bytes.length;
 }
 

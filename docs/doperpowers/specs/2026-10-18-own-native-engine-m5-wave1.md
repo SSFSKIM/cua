@@ -34,7 +34,8 @@ or the owner is prepared and named in its gate's disposition file under
 - [x] T9 — reviewed clean 2026-11-23 (e84ba7953, fix b709b776a). The combined tree with M4's re-cut (the pending
   build named once, approval of a compatible pending build ending the fallback) and sitting E's third home are not yet
   witnessed.
-- [ ] T8a
+- [x] T8a — reviewed clean 2026-11-23 (8198c50a3..5d59bd440, fixes 7e948e006..7d71f26e2 and f7ab700d4). Unit
+  witnesses green; every runner witness waits on T10's harness or the `probe/420-qual` kit (specified, not built).
 - [ ] T8b
 - [ ] T8c
 - [ ] T8d

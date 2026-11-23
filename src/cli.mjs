@@ -12,7 +12,7 @@ import {installLinuxEngine, installMacosEngine, installRuntime, installSandboxHe
 import {buildLinuxEngine, inspectLinuxEngine, loadEnginePin, refuseUnpinned} from './runtime/linux-engine.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
-import {approveEngine, buildEngine, engineStatus, holdersText, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
+import {approveEngine, buildEngine, candidateRunningText, engineStatus, holdersText, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
 import {signWaitMs} from './runtime/engine-sign.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
@@ -950,14 +950,32 @@ async function engine(args, deps = {}) {
     print(values.json ? {ok: true, ...built} : `${engineBuildText(built)}${built.pending ? `; ${PENDING_BUILD}` : ''}`);
     return 0;
   }
-  const operator = deps.operator ?? lineReader(process.stdin);
+  // Ctrl-C aborts the approve through its rollback (a promoted build is put back) rather than killing it mid-promote;
+  // the rollback is bounded, so a second Ctrl-C meanwhile is not needed and is ignored.
+  const interrupt = new AbortController();
+  const onInterrupt = () => interrupt.abort();
+  process.on('SIGINT', onInterrupt);
+  const operator = deps.operator ?? lineReader(process.stdin, {onInterrupt});
   try {
-    const approved = await approveEngine({...deps, operator, log, foreground: values.foreground === true});
+    const approved = await approveEngine({...deps, operator, log, foreground: values.foreground === true, signal: interrupt.signal});
     print(values.json ? {ok: approved.approved, ...approved} : approved.approved
       ? `approved cua's engine ${shortBuild(approved.build)} at ${approved.approvedAt}`
-      : `not approved: ${approved.reason}${approved.restored ? '; the previous build is back in place, and the new one is pending again' : ''}`);
+      : `not approved: ${approved.reason}${rollbackText(approved.rollback)}`);
     return approved.approved ? 0 : 1;
-  } finally { operator.close?.(); }
+  } finally {
+    process.off('SIGINT', onInterrupt);
+    operator.close?.();
+  }
+}
+
+// A rolled-back promote (approveEngine's `rollback`), appended to "not approved: …".
+function rollbackText(rollback) {
+  if (!rollback) return '';
+  return [
+    rollback.previousRestored ? 'the previous build is back in place' : null,
+    rollback.pendingAgain === true ? 'the new build is pending again' : rollback.pendingAgain === false ? 'a build made meanwhile is pending in its place' : null,
+    rollback.candidateRunning ? candidateRunningText(rollback.candidateRunning) : null,
+  ].filter(Boolean).map(part => `; ${part}`).join('');
 }
 
 const COMMANDS = {install, doctor, runtime, serve, secrets, profiles, chrome, remote, agent, devices, engine};

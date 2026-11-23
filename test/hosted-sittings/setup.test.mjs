@@ -56,6 +56,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   const at = needle => order.findIndex(o => o.startsWith(needle));
   assert.ok(at('sh scripts/hosted-sittings/loopback.sh') === 0);
   assert.ok(at('ssh') > 0);
+  assert.ok(calls.some(c => c.kind === 'exec' && c.line === `ssh -F ${HOME}/.local/share/cua-hosted/ssh/config hosted-macos node -v`), 'the device is reached through its own config only');
   assert.ok(at('node scripts/native-baseline.mjs prepare') > at('git -C'), 'the parity clone is made from the job\'s checkout before prepare');
   assert.ok(at('tar') > at('node bin/cua.mjs install'), 'the engine is unpacked into the run\'s install');
   assert.ok(at('codesign') > at('tar'));

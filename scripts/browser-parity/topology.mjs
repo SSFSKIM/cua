@@ -1,5 +1,6 @@
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 export const root = fileURLToPath(new URL('../../',import.meta.url));
 export const quote = text => "'"+String(text).replaceAll("'", "'\\''")+"'";
 export function assertPreparedProfile(result,key) {
@@ -7,7 +8,7 @@ export function assertPreparedProfile(result,key) {
 }
 const ssh = (device,script) => {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(device)) throw new Error('Invalid ssh device alias');
-  return {command:'ssh',args:['-o','BatchMode=yes',device,`export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:$PATH"
+  return {command:'ssh',args:[...loopbackSshArgs(device),'-o','BatchMode=yes',device,`export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:$PATH"
 ${script}`]};
 };
 export function miniPrepareCommand({device,commit,profile}) {

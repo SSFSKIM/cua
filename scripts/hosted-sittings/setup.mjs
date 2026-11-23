@@ -22,6 +22,7 @@ import {ENGINE_DIRECTORY_IN_HOME} from '../../src/runtime/layout.mjs';
 import {locateRuntime} from '../../src/runtime/manifest.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
 import {engineToApprove, hostedApprove} from './approve.mjs';
+import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 import {DEVICE} from './plan.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
@@ -55,7 +56,7 @@ export async function hostedSetup({env = process.env, platform = process.platfor
   const steps = [
     ['loopback', () => {
       run('sh', ['scripts/hosted-sittings/loopback.sh']);
-      const remote = String(run('ssh', ['-o', 'BatchMode=yes', DEVICE, 'node -v']).stdout).trim();
+      const remote = String(run('ssh', [...loopbackSshArgs(DEVICE, home), DEVICE, 'node -v']).stdout).trim();
       failIf(remote !== process.version, `the device's node (${remote}) is not the job's (${process.version})`);
       return `${DEVICE} reaches this runner with node ${remote}`;
     }],

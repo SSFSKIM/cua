@@ -185,45 +185,14 @@ bind() {
   quiet bind-explicit node bin/cua.mjs profiles bind harness --extension-instance-id "$id" --json > "$S/bind2.json" && public bind "$S/bind2.json"
 }
 ready() { node bin/cua.mjs profiles list --json > "$S/list.json" 2> "$ERR/list"; public ready "$S/list.json" harness; }
-sshd_up() {
-  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" || return
-  quiet keygen-host ssh-keygen -q -t ed25519 -N '' -f "$SSHD/hostkey" || return
-  rm -f "$HOME/.ssh/hosted-parity" "$HOME/.ssh/hosted-parity.pub"
-  quiet keygen-user ssh-keygen -q -t ed25519 -N '' -f "$HOME/.ssh/hosted-parity" || return
-  cat "$HOME/.ssh/hosted-parity.pub" >> "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys" || return
-  echo "PATH=$PATH" > "$HOME/.ssh/environment"
-  # The login shell is bash, which reads ~/.bashrc for a command sshd runs. The image's ~/.bashrc puts Homebrew first
-  # (`brew shellenv`), so the image's own node shadowed setup-node's. Unseen while their versions matched; image
-  # 20261021 has 24.22.0 against setup-node's 24.22.1. The job's PATH is restored last, after the image's lines.
-  printf "export PATH='%s'\n" "$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")" >> "$HOME/.bashrc"
-  cat > "$SSHD/sshd_config" <<EOF
-Port 2222
-ListenAddress 127.0.0.1
-HostKey $SSHD/hostkey
-PidFile $SSHD/sshd.pid
-AuthorizedKeysFile $HOME/.ssh/authorized_keys
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-UsePAM no
-StrictModes no
-PermitUserEnvironment yes
-EOF
-  cat >> "$HOME/.ssh/config" <<EOF
-Host $DEVICE
-  HostName 127.0.0.1
-  Port 2222
-  User $USER
-  IdentityFile $HOME/.ssh/hosted-parity
-  IdentitiesOnly yes
-  StrictHostKeyChecking no
-  UserKnownHostsFile /dev/null
-  LogLevel ERROR
-EOF
-  quiet sshd /usr/sbin/sshd -f "$SSHD/sshd_config" -E "$SSHD/sshd.log" 3>&- || return
-  sleep 1
-}
+# The loopback device and its own ssh config (scripts/hosted-sittings/loopback.sh, shared with M5's sittings): every ssh
+# to $DEVICE names that config (scripts/repl-parity/loopback-ssh.mjs), pinned to the endpoint and the sshd's own host
+# key, so none reads the account's ssh config or a default known_hosts. The image's ~/.bashrc puts Homebrew's node first
+# (`brew shellenv`; image 20261021 had 24.22.0 against setup-node's 24.22.1), so loopback.sh restores the job's PATH
+# last. The sshd's directory is this run's scratch, so the exit trap stops it.
+sshd_up() { LOOPBACK_SSHD_DIR=$SSHD quiet loopback sh scripts/hosted-sittings/loopback.sh 3>&-; }
 ssh_node() {
-  remote=$(quiet ssh ssh -o BatchMode=yes "$DEVICE" 'node -v') || return
+  remote=$(quiet ssh ssh -F "$HOME/.local/share/cua-hosted/ssh/config" "$DEVICE" 'node -v') || return
   [ "$remote" = "$(node -v)" ] || { say "the device's node ($remote) is not the job's ($(node -v))"; return 1; }
 }
 # repl-parity's prepare checks the tested commit out in the device's parity clone, which it clones from GitHub when

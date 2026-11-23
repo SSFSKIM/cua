@@ -270,7 +270,7 @@ test('the script refuses to run off a GitHub-hosted macOS runner and touches not
 });
 
 test('the runner is a declared darwin device', () => {
-  assert.deepEqual(declaredDevice('hosted-macos'), {platform: 'darwin'});
+  assert.deepEqual(declaredDevice('hosted-macos'), {platform: 'darwin', loopback: true});
 });
 
 test('a failed cell that says what it saw (`; seen {...}`, #168) prints that in fixture data, its paths and text withheld', () => {

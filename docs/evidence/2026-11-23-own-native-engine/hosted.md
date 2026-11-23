@@ -933,3 +933,127 @@ The `~~~` example moves to column 0, so it still tests a placed fence.
 The real spec at `db775127` passes; I checked a byte-identical copy of `git show` at that commit. It has four fence
 lines (307, 386, 392, 634), all at column 0, balanced, and all before `## Decision Log` (line 780). Its Decision Log
 holds no fence.
+
+## Pilot A, run 45220897246
+
+Sitting A's re-run at `92b13bb66`. The artifact is in `~/.local/share/cua-m5-pilot/a-2/`, and the job log is saved
+beside it as `job.log`.
+
+The engine job took 2.5 min. The sitting job took 4.5 min: vv 30 s, vc 56 s and cc 58 s.
+
+The engine-stop fix worked. Setup passed every step, including `engine stop: was running (pid 2782), stopped`, and vc-1
+and cc-1 were complete. vv-1 was INCOMPLETE at `setup.activate`, so the hosted `record` check gave FAIL ("runtime error:
+the run is incomplete"). compare-A, B and C were NO VERDICT, as expected for a pilot.
+
+### Timeline (job log and vv's rows)
+
+| Time (UTC) | What |
+|---|---|
+| 16:54:14.1 | setup: the vendor helper's rows written; the helper is not running |
+| 16:54:20.4 | approve pass 1: `engine_capture_confirmation`. This is cua's copy's first capture, which raises replayd's alert |
+| 16:54:25.9 | approve pass 2 approved; engine stop (pid 2782) |
+| 16:54:30.5 | vv-1 starts: cold connections, then warm.noop, getState and listApps. All ok; none needs the front |
+| 16:54:44 | vv's `bind.getApp` launches TextEdit (pid 4009): ok, 2.9 s, 1 approval. The vendor helper had not run before this run (`helperAtStart`: none), so this bind's capture is its first |
+| ~16:54:49.7 | `setup.activate`: `open -a TextEdit` once, then 12 reads of the front over 5.08 s |
+| 16:54:54.8 | every read was UserNotificationCenter (pid 2596), never TextEdit, so the run stops |
+| 16:55:09 | vc's bind launches TextEdit (pid 6049); `setup.activate` takes the front on its first read (977 ms) |
+| 16:56:05 | cc's bind launches TextEdit (pid 9623); `setup.activate` takes the front on its first read (474 ms) |
+
+### Which alert it was
+
+UserNotificationCenter shows both copies' alerts, so its pid cannot tell them apart. pid 2596 is lower than the engine's
+2782, so the process predates the approve's launch of the engine. That dates the process, not the window. Nothing in
+the run read the window list or replayd's SCAlert lines, so I cannot say from the record which window was in front.
+
+The evidence points to the vendor helper's own first-capture alert:
+
+- In H0 (ii), every copy alerts at its first capture, and the vendor helper stacks a second window over cua's. Here the
+  vendor helper's first capture was vv's bind, about 3 to 5 s before the activation.
+- vc and cc activated on their first read, with cua's alert from approve pass 1 still up, and by then the vendor's.
+  Neither raised a new alert: cua's copy had already captured at the approve, and a second capture by the same copy
+  raises none (H0 (ii)).
+- So the one run that failed is the one whose own bind had just raised a new alert. The runs where every alert was
+  already up activated cleanly.
+
+That fits H0's two observations: a new alert takes the front, and an activation takes the front from an alert already
+up.
+
+What I cannot tell:
+
+- whether the vendor's window appeared before or after the one `open -a`;
+- whether a second activation would have worked;
+- whether vv's warm.getState, which listed 8 apps, captured. If it did, the alert came about 15 s earlier, and the
+  failure is H0 (ii)'s "activation under an alert is unreliable" rather than a fresh alert.
+
+It was not the leftover from approve pass 1 alone. That alert was equally up for vc and cc, which activated fine.
+
+### Reconciliation with H0 (ii): the alert did not clear
+
+H0 (ii), run 45156038821, saw both alerts on screen at every sample for 604 s and 602 s. Nothing in this run shows an
+alert closing either. The "about 15 s" is the gap between vv's failed activation (16:54:54.8) and vc's activation
+(about 16:55:10), and that activation is the only later front reading. It shows the front taken by vc's
+`open -a TextEdit`, not an alert gone.
+
+H0 (ii)'s keystroke cell and ruling 1141's run show the same thing: TextEdit and Finder activations took the front and
+the key focus with the alerts still on screen. So the alert was covered, not closed. Both copies' alerts were most
+likely still up behind TextEdit for all of vc and cc. Neither run read the window list, so that is inferred, not seen.
+
+### What that means for the wait and the judged cells
+
+The fix's bounded wait (below) asks whether UserNotificationCenter is still the front app. It does not ask whether the
+alert still exists. Since the alert never closes, the wait can only end early if something takes the front.
+
+Nothing in setup activates an app, so I expect the wait to reach its 60 s bound after both warm-ups. That costs about
+2 min per sitting, and the record will say "still in front".
+
+That is a wait the sitting can pass with the alert still up, and that is acceptable. The judged cells never rely on the
+alert being gone:
+
+- each run activates its TextEdit first, which takes the front from an alert already up;
+- front and key are sampled around each judged cell under the alert-frontmost rule;
+- a run that finds the alert in front where it needs TextEdit (at `setup.activate` or before a key) now records the
+  cause, and the hosted check reads it as NO VERDICT, never FAIL.
+
+What the warm-up changes is when a new alert can be raised. Both copies make their first capture in setup, so no run's
+bind raises one in the middle of its activation, which is the failure in vv.
+
+One residue is worth the design session's eye. H0's README says the alerts "stay on screen above the scenes". A cell
+that clicks by coordinates where an alert window overlaps the scene could land on the alert, which would answer it.
+That is forbidden. The setup record now keeps each alert window's bounds, so the next pilot can check for overlap with
+the scene windows. vc and cc completed their clicks with the alerts up.
+
+### The fix (ruling 1153; 8dd641d2d, b6154d108)
+
+- **(c) The producer names the cause.** In native-baseline's macOS lane (`macos.mjs`), a stop with
+  UserNotificationCenter in front records `incompleteCause: {cause: 'alert', at, front}`. `at` is `setup.activate` or
+  `key.skipped`, and the first such stop counts. The `record` check (`checks.mjs`, `record` only; `observation` is
+  untouched) reads that as `NO VERDICT` ("alert: … stopped at … with com.apple.UserNotificationCenter (pid …) in
+  front (…)"). An incomplete run without that cause is still a runtime error, and the message text is never matched.
+- **(b) The warm-up, symmetric.** New setup steps `warm-up cua` and `warm-up vendor` run after the approve and before
+  the engine stop (`warm-up.mjs`). Each is one `cua serve` session on the copy: bind TextEdit and take one screenshot,
+  accept TextEdit's approval and nothing else, then end by pid the TextEdit it launched. If TextEdit was already
+  running, it refuses to start. It refuses off a GitHub-hosted runner. It writes nothing, clicks nothing and answers
+  nothing.
+- **(a) The bounded wait and what each warm-up raised.** Each warm-up records, in `setup.json` → `warmUps[]`:
+  - the capture's outcome and the engine its result attested;
+  - replayd's SCAlert lines over the capture (`watchCaptureAlerts`);
+  - the front app after it;
+  - UserNotificationCenter's windows from the window server's list (`system-windows.swift`): pid, number, layer,
+    bounds, and whether a title was readable (never the title);
+  - the wait itself: a watch-only poll of the front app every 1 s, up to 60 s, with `cleared`, `waitedMs`, `polls`, the
+    distinct fronts seen and the last one. An unreadable front does not count as clear;
+  - the alert windows again at the end.
+
+  An alert still in front at the bound, or a failed capture, is recorded and the setup goes on. Nothing retries.
+
+Tests:
+
+- RED: `node --test test/hosted-sittings/checks.test.mjs` failed 1 of 6, the new mapping. The producer test failed 1 of
+  1. `warm-up.test.mjs` failed: the module did not exist. `setup.test.mjs` failed 2 of 5: the steps list and the
+  held-alert case.
+- GREEN: checks 6/6; `test/native-baseline/{run,compare-lanes,summary}` 69/69; warm-up 9/9; setup 5/5;
+  `test/hosted-sittings/*` 82/82.
+
+Not proven here: the warm-up itself has not run on a runner. Hosted runs are the controller's. The next pilot shows
+whether the vendor warm-up raises its alert in setup (`captureAlerts.count` 2, window stacked), whether vv's activation
+then takes the front, and how long the two waits cost.

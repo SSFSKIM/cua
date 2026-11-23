@@ -1555,7 +1555,7 @@ With pilot A's alerts:
 | Chrome for Testing | 80,60 1000x760 | 22,60 800x760 (moved) | `--window-position` and `--window-size` at launch |
 | Electron fixture | 140,100 720x560 | 102,100 720x560 (moved) | `--cua-fixture-bounds` at launch |
 | Finder | 80,80 920x520 | 22,80 800x520 (moved) | the existing `WindowFrameProbe` pin, at the venue's frame |
-| TextEdit | its template | its template, 60 characters wide | `defaults write com.apple.TextEdit WidthInChars 60`, hosted only |
+| TextEdit | its template | its template, 60 characters wide; the scenes' document a 480x792 view | `WidthInChars 60` read back from TextEdit's container, and the RTF's own `\vieww9600\viewh15840`, hosted only (both added after the pilots, below) |
 | Open panel | where it last stood | 80,80 720x440 (not moved) | its own saved frame in TextEdit's domain, hosted only |
 
 Chrome and the fixture are launched at the frame. They are never moved after launch. Each scene's record keeps
@@ -1586,6 +1586,76 @@ The proof is each run's read-back. `sitting.md` now prints it per step under "Te
 (recorded checks 1 and 2): the window's actual frame, what the venue planned, and whether an alert the venue read
 overlaps it. The record check's frame symmetry (below) shows any difference between the sides, and the alert guard
 refuses any cell whose window an alert overlaps.
+
+### TextEdit's scene document (pilot B, run 45274556933)
+
+`WidthInChars` sizes new documents only. The parity TextEdit scene opens the run's RTF as a file, and an opened RTF
+with no view size takes its paper's width: pilot B read the scene window at 213,78 627x877 on both sides (Letter's 612
+points and a 15-point scroller), its right edge 840 over alert 31 at 830,188. The guard refused textedit/action on
+both sides. Sitting C's matrix brings TextEdit up the same way.
+
+On a hosted runner the document now carries TextEdit's own saved view size, `\vieww9600\viewh15840` (twips: 480 x
+792 points). AppKit's RTF reader returns it as `NSViewSizeDocumentAttribute`, and TextEdit sizes the document's window
+from it: the view, the text padding (5 points a side) and the scroller. `venue.mjs` declares it
+(`TEXTEDIT_DOCUMENT_VIEW`). The runner record carries it to the device, and `up textedit` inserts it after the font
+table. The mini's document is byte for byte what it was.
+
+- **The width.** 242 (the furthest cascade origin read so far, pilot A's new document; pilot B's was 213) + 30 (one
+  more cascade step) + 480 + 25 = 777, left of the strip's 822.
+- **The height.** Letter's 792. Pilot B's 877-point window suggests TextEdit took that height unasked (792 and its
+  bars), so the rows shown stay as they were on the runner.
+- **Only the view size changes.** The patched file is the original with the two words inserted, in both layouts.
+  AppKit's `textutil` renders both files to the same plain text and the same HTML (each run's font, size and bold).
+  That covers everything the cells read of the document: the text area's value and valueMarkdown in native-mac's tree,
+  the matrix's text fields, the typing read-back and cursor-sitting's text. `textutil -convert rtf` gives the view
+  size back, so AppKit's reader takes it (`test/repl-parity/scenes-mac.test.mjs`).
+- **The wide page** (`\paperw28800\viewkind1\viewscale200`, the hscroll cell) keeps its zoom, so its page stays
+  wider than the narrower window.
+- **The record.** `venue.textEditDocument` keeps the view, the control words and each layout's sha256 as the mini and
+  a runner write it. The venue table's `textedit document` row shows them with the cells resting on it, and
+  `test/native-goldens/PROVENANCE.md` names the same hashes. The read-back table plans the scene document's windows
+  (the matrix's `textedit`, native-mac's `textedit/…`) as `view 480x792` and the new and scratch documents as
+  `WidthInChars 60`.
+
+Not proven: that TextEdit sizes the opened window from the view size. AppKit's reader taking it is shown here, and the
+window is TextEdit's to make. The next B and C runs must read the scene window about 505 wide and about 877 high, its
+right edge left of 822, the same on both sides, with textedit/action sent.
+
+### TextEdit's preferences reach the file it reads (pilot A's re-run, run 45277221729)
+
+vv-1's launch window stood again at 241,87 586x488, the frame every vv run reads, with
+`NSRequiresOpenUntitledWindowAtLaunch NO` in force. Its ⌘N document took 603x505 at 242,107, the default 75
+characters, although setup had read `WidthInChars 60` back from the domain. Alert 31 then refused
+warm.getScreenshot. Two causes are read from that. The warm-ups end TextEdit by pid, so its saved application state
+outlives it and restores their window at the next launch. And TextEdit is sandboxed: it reads its container's plist,
+which `defaults write com.apple.TextEdit` from outside the sandbox need not reach.
+
+The `textedit defaults` step now does three more things, hosted only:
+
+- It writes `ApplePersistenceIgnoreState YES` beside the other keys: AppKit's own switch for window restoration, and
+  already the parity scenes' launch argument.
+- It reads each key back from the domain and from
+  `~/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`. A key the container does not
+  hold is written through that path and read again. Only the container's read-back puts a key in force; one it does
+  not hold fails the setup. Each write keeps both read-backs and whether it was written through
+  (`venue.textEdit.writes[].container`: `{readBack, readBackBefore?, written?}`).
+- After the writes, it removes TextEdit's saved application state, the container's and the plain
+  `~/Library/Saved Application State/com.apple.TextEdit.savedState`. Each path is recorded as removed, absent, or not
+  removed with the error (`venue.textEdit.savedState`). A refused removal does not fail the step, since the
+  persistence key keeps restoration off on its own.
+
+The step's detail and sitting.md's venue line say which keys were written through and which state was removed. The
+next A re-run proves it. vv-1's `meta.placement` must show no window at 241,87 586x488 at `setup.activate`, and the
+`setup.newDocument` window about 500 wide, not 603. The read-back table must show both clear of x 830.
+
+### The placement record
+
+Pilot B also recorded TextEdit's window `moved: true, readBack: null, matched: false`. The frame probe moves Finder
+windows only and refuses every other process, so nothing had moved. `placeWindows` now offers only Finder's windows to
+the probe (`FRAME_PROBE_SCENES`). Any other window under an alert is recorded where it was read, `moved: false`, with
+the reason. A probe move counts as `moved` only when the window reads back somewhere else, with a reason whenever it
+did not match. `sceneFrames` keeps every window where it was last read: its read-back, else where it was read. Pilot
+B's read-back table had said no TextEdit window was read back, though the window stood at 213,78 on both sides.
 
 ### The Open panel
 
@@ -1650,9 +1720,10 @@ frame: kept", and the alert guard refuses what the alert overlaps.
 `venueRecord` produces the `venue` block. It goes into setup's runner record, `setup.json`, every lane's `meta.venue`
 (A's `native-baseline` meta, B's and C's through `hostedRunOf`) and `sitting.json`. `renderVenue` prints it in
 `sitting.md` under "The venue (ruling 1169)". Its shape:
-`{alerts, display, frames, textEdit: {domain, writes, readBack, ok}, differences: [{scene, mini, hosted, reason,
-grounding, cells}]}`. Chrome, Electron and Finder are listed when their frame differs from the mini's. TextEdit and the
-Open panel are always listed.
+`{alerts, display, frames, textEdit: {domain, container, writes, savedState, ok}, textEditDocument: {document, view,
+controlWords, sha256}, differences: [{scene, mini, hosted, reason, grounding, cells}]}`. Chrome, Electron and Finder
+are listed when their frame differs from the mini's. TextEdit, its scene document and the Open panel are always
+listed.
 
 ### Symmetry
 
@@ -1688,7 +1759,14 @@ window. That is not the same as being frontmost: a background cell still runs in
   is a window of its own in the window list but part of its parent in Accessibility. When Accessibility lists no
   window at the frontmost one's bounds, and a window of the process behind it holds those bounds, that window is read
   and the sheet is kept in the reading (`sheet`). A, C and D all read this way (`ownKeyWindow`). Review round 1 found
-  that C had read the recorded window, which would have refused every key cell after ⌘N.
+  that C had read the recorded window, which would have refused every key cell after ⌘N. B did too, through
+  `guard-device.mjs`, whose target names the recorded window for the guard. On pilot B's vendor side (run
+  45274556933) that reading said "the scene window is not on screen" while the fixture's one window stood at 102,100
+  720x560 and held the focus. Only window 106 was listed for the fixture's pid, at placement and at the action, so `up`
+  had recorded a document-size window the fixture lists but never shows, as Chrome for Testing did in #187's slot. The
+  record's number is not in the artifacts; that much is deduced from the two readings. The reader now names the
+  recorded window only for a shared process (`only`, Finder's), and Electron's `up` records the window on screen, as
+  Chrome's does.
 - **The grant.** The reader needs the Accessibility grant of the process that runs it. On the hosted image
   `/bin/bash` holds it and its children inherit it (#282's evidence). Whether that survives the loopback `sshd` chain
   the runs use is unverified, so setup now asks. Its `key-window trust` step runs `guard-device.mjs trust` over the

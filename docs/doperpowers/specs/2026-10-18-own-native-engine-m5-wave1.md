@@ -281,6 +281,55 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, TextEdit's preferences reach the file it reads (the design session, after pilot A's re-run, run
+  45277221729): vv-1's launch window stood again at 241,87 586x488, the frame every vv run reads, with
+  NSRequiresOpenUntitledWindowAtLaunch NO in force, and its ⌘N document took 603x505 at 242,107, the default 75
+  characters, though setup had read WidthInChars 60 back from the domain; warm.getScreenshot was refused under alert
+  31. Read as two causes: the warm-ups end TextEdit by pid, so its saved application state restores their window at
+  the next launch; and TextEdit is sandboxed, so it reads its container's plist, which `defaults write
+  com.apple.TextEdit` from outside need not reach. Hosted only, in the `textedit defaults` step: (a)
+  `ApplePersistenceIgnoreState YES` joins the writes (AppKit's restoration off; the parity scenes' launch argument
+  already); (b) each key is read back from the domain and from
+  `~/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`, written through that path
+  when the container does not hold it, and only the container's read-back puts it in force (else the setup fails);
+  the record keeps both read-backs and whether it was written through (`venue.textEdit.writes[].container`); (c) after
+  the writes, TextEdit's saved state (container and plain `.savedState`) is removed, each path recorded as removed,
+  absent, or not removed with the error (`venue.textEdit.savedState`; a refused removal does not fail the step, the
+  persistence key holding restoration off on its own). The next A re-run proves it: setup's `textedit defaults` detail
+  says how many keys were written through and which state was removed; vv-1's `meta.placement` must show no window at
+  241,87 586x488 at `setup.activate` (no restored window), and `setup.newDocument`'s window about 500 wide, not 603;
+  sitting.md's read-back table shows both clear of x 830.
+- 2026-11-23, pilot B's TextEdit scene and the placement record (the design session, after pilot B, run 45274556933):
+  the parity TextEdit document, the run's RTF opened as a file, stood at 213,78 627x877 on both sides (an opened RTF
+  with no view size takes Letter's 612-point width plus a 15-point scroller; WidthInChars sizes new documents only),
+  its right edge 840 over alert 31, and the guard refused textedit/action on both sides; sitting C's matrix brings it up
+  the same way. Ruled: on a hosted runner the document carries TextEdit's own view size, `\vieww9600\viewh15840` (480
+  x 792 pt; `venue.mjs` `TEXTEDIT_DOCUMENT_VIEW`), declared in the venue record (`venue.textEditDocument`: the view,
+  the control words, each layout's sha256 as the mini and a runner write it) and its table (row `textedit document`,
+  the cells resting on it, the wide page's hscroll among them), carried to the device in the runner record and
+  inserted by `up textedit` after the font table; the mini's bytes are unchanged. Width: 242 (the furthest cascade
+  origin read) + 30 (one more step) + 480 + 25 (padding and scroller) = 777, inside the strip's 822; height: Letter's
+  792, which pilot B's 877-point window suggests TextEdit took unasked. The control words change the view size only:
+  the patched file is the original with them inserted, and AppKit's `textutil` renders both to the same text and HTML
+  in each layout (the text, the bold line's run, the font), which covers what every cell reads (the text area's value
+  and valueMarkdown, the matrix's text fields, the typing read-back); `textutil -convert rtf` gives the view size back,
+  so AppKit's reader takes it. Both hashes are in `test/native-goldens/PROVENANCE.md`. The placement record:
+  `placeWindows` offered TextEdit's window to the frame probe, which moves Finder windows only, and recorded it
+  `moved: true, readBack: null, matched: false`; now only Finder's windows are offered (`FRAME_PROBE_SCENES`), any other
+  window under an alert is recorded where it was read, not moved, with why, and a probe move is `moved` only when its
+  window read back elsewhere (`reason` when not matched). `sceneFrames` keeps every window where it was last read (its
+  read-back, else where it was read), so the read-back table no longer drops a window whose move read nothing back.
+  The vendor side's Electron key-window reading ("the scene window is not on screen" while the fixture's one window
+  stood at 102,100 720x560 and held the focus): native-mac's guard target names the recorded window, and the reader
+  looked for that number; on the vendor side it was not on screen at placement or at the action (only window 106 was
+  listed for the fixture's pid, the cua side's recorded 164 was), so `up` had recorded a document-size window the
+  fixture lists but never shows, as Chrome for Testing did in #187's slot (the record's number is not in the
+  artifacts: deduced from the two readings). Fixed at both ends: the reader names the recorded window only for a
+  shared process (`only`, Finder's) and reads a launched process at its frontmost window, as key-window.mjs's rule
+  and the matrix already do; and Electron's `up` records the window on screen (`onScreenOnly`), as Chrome's does.
+  Unproven until the next B and C runs: that TextEdit sizes the opened window from the view size; they must read the
+  scene window about 505 wide (480 + padding and scroller) and about 877 high, its right edge left of 822, the same on
+  both sides, with textedit/action sent, and every Electron action's ownKey read (`keyWindowRead`, no unread).
 - 2026-11-23, ruling 1168's cell after the #538 probe (the design session): the cell proves reach, not path. Blink's
   `DispatchSimulatedClick(kFromAccessibility)`, which Chromium's AXPress reaches, dispatches a trusted pointerdown
   (pointerId 1, `"mouse"`, button 0) on the node itself, so the pointerdown-only button counts cua's AXPress as it

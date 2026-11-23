@@ -8958,14 +8958,17 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     - Where the vendor's element line, header or trailer needs an escape or a longer fence, only that form is cua's:
       cua printing the vendor's raw form (a raw LF in the focused trailer, three backticks inside a three-backtick
       fence) is a difference, never accepted by the raw comparison first.
-    - `valueOfIndex` reads where a value holding a line break ends by the renderer's grammar: the labelled parts in
-      their order, short before long, so only short Details, Placeholder, ID or Secondary Actions, then long parts,
-      follow a short value, and only long parts after Value follow a long one (`second, Rows: unassigned` inside a
-      multi-line value is the value's text). Where the grammar allows several readings, it answers `{ambiguous: true,
-      candidates}` instead of a prefix; a settable number's type in the flags settles it, and the helper `valueMatches`
-      settles it by the value a cell expects. A value without a break (no escape on cua's lane, no raw break on the
-      vendor's) ends at its first `, ` exactly as on main, so the cells' existing reads are unchanged (coordinator's
-      narrowing of the ambiguity, 2026-11-23); `fieldReading` gives no value only for an ambiguous multi-line one.
+    - `valueOfIndex`: a value without a line break ends at its first `, ` exactly as on main, so the cells' existing
+      reads are unchanged (the coordinator's narrowing, 2026-11-23). A value with a break is read only when it is the
+      line's last part, nothing `, ` after `Value: `; otherwise (a labelled part after it, a label that cannot follow
+      Value, or a short value followed by a bare multi-line title such as `Shared` and `Docs\nShared`) it answers
+      `{ambiguous: true}` (round 3, replacing the part grammar and its candidate lists, which kept yielding corner cases;
+      `valueMatches` is removed, no cell used it). An ambiguous reading is never equal or unchanged: the cells' `plain`
+      throws on it, so a check comparing it (TextEdit's click, item 187's and 188's reads) fails visibly;
+      `fieldReading` gives it no value and `selectionEvidence` reports its change as undetermined (`valueChanged: null`,
+      `valueAmbiguous: true`), never `false`; a refusal's watch keys its readings with `readingKey`, which gives none
+      for an ambiguous one, so "unchanged" cannot hold. The cursor sitting's control reads are checkboxes and buttons,
+      single-line, and only recorded.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

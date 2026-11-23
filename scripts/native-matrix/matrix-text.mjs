@@ -56,16 +56,12 @@ export function indexOfId(ax, id) {
 // BIND): on cua's the escapes are decoded, on the vendor's the text is left as printed, so a vendor path like `\new`
 // keeps its backslash. On cua's lane a literal backslash-n in a value decodes as a break (#555): a check that must tell
 // them apart reads it with `decoded: false` and compares at the rendered form (renderedAs).
-// A value without a line break ends at its first `, `, as before #526. Where a value with one ends is read by the
-// renderer's grammar [F §2.4; src/services/engine/render.mjs parts]: the labelled
-// parts in their order (Description, Rows, Columns, URL, Help, Value, Details, Placeholder, ID, Secondary Actions), the
-// short ones first and the long ones (100 characters or more, or a line break) after them, each group in that order.
-// So after a short value come short Details, Placeholder, ID or Secondary Actions, then long parts of any label; after
-// a long value only long parts after Value. Every end of the value from which the rest of the line reads so is a
-// reading: one reading is the value; several (a value that itself holds `, Details: …`, or a short value followed by a
-// short Details part, which could be one longer value) give {ambiguous: true, candidates}, shortest first, never a
-// guessed prefix (a settable number's type in the flags settles it); a cell that knows the value it expects asks
-// valueMatches instead.
+// A value without a line break ends at its first `, `, as before #526. A value with one is a long part, which the
+// renderer prints after the short parts, and any part after it, labelled or bare (a long title), opens with `, `: so
+// it is read only when it is the line's last part, nothing `, ` in what follows `Value: `; otherwise the text cannot
+// say where it ends, and the answer is {ambiguous: true}, never a guessed prefix. An ambiguous reading is never equal
+// to anything: the cells' `plain` refuses it, `fieldReading` and `selectionEvidence` report it as unread, and
+// `readingKey` gives a watch no key.
 export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, decoded = true} = {}) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
@@ -75,52 +71,15 @@ export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, d
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
   const rest = parts.join('\n'), cua = rendering === 'cua';
-  const decode = t => (cua ? t.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16)))) : t);
-  // A value without a line break (no escape on cua's lane, no raw break on the vendor's) ends at its first `, `, as it
-  // did before #526: every cell read was written against that, and only parts that follow a value move there.
   const broken = parts.length > 1 || (cua ? /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/.test(rest) : /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/.test(rest));
   if (!broken) return rest.split(', ')[0];
-  const long = t => { const d = decode(t); return d.length >= 100 || d.includes('\n'); };
-  const ORDER = ['Description', 'Rows', 'Columns', 'URL', 'Help', 'Value', 'Details', 'Placeholder', 'ID', 'Secondary Actions'], VALUE = 5;
-  const label = /^, (Description|Rows|Columns|URL|Help|Value|Details|Placeholder|ID|Secondary Actions): /;
-  const ends = [];
-  for (let i = rest.indexOf(', '); i >= 0; i = rest.indexOf(', ', i + 1)) ends.push(i);
-  ends.push(rest.length);
-  const memo = new Map();
-  // Whether the line from `from` reads as the parts that may follow, the last one's order `after`, in `phase`.
-  const follows = (from, after, phase) => {
-    if (from === rest.length) return true;
-    const key = `${from} ${after} ${phase}`;
-    if (memo.has(key)) return memo.get(key);
-    let ok = false;
-    const m = label.exec(rest.slice(from, from + 24));
-    const order = m ? ORDER.indexOf(m[1]) : -1;
-    if (m && order !== VALUE) {
-      const textStart = from + m[0].length;
-      for (const end of ends) {
-        if (ok || end <= textStart) continue;
-        const isLong = long(rest.slice(textStart, end));
-        if (!isLong) ok = phase === 'short' && order > after && follows(end, order, 'short');
-        else ok = (phase === 'short' || order > after) && follows(end, order, 'long');
-      }
-    }
-    memo.set(key, ok);
-    return ok;
-  };
-  let candidates = ends.filter(end => end > 0 && follows(end, VALUE, long(rest.slice(0, end)) ? 'long' : 'short'))
-    .map(end => (decoded ? decode(rest.slice(0, end)) : rest.slice(0, end)));
-  // A settable number's type in the flags (`(settable, float)`) settles it: the value is the reading that is a number.
-  const numbers = candidates.filter(candidate => /^-?(?:\d+(?:\.\d+)?(?:e[+-]?\d+)?|inf|nan)$/.test(candidate));
-  if (/\(([^()]*, )?settable, (?:float|integer)(, [^()]*)?\)/.test(head.slice(0, start)) && numbers.length) candidates = numbers;
-  if (candidates.length === 0) return null;
-  return candidates.length === 1 ? candidates[0] : {ambiguous: true, candidates};
+  if (rest.includes(', ')) return {ambiguous: true};
+  if (!cua || !decoded) return rest;
+  return rest.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
 }
-// Whether the element `index`'s value is `expected`: the value, or one of an ambiguous reading's candidates, after
-// `normalize` (a cell's own, such as dropping the bold markers). The value a cell wrote is known, so a reading the text
-// cannot settle on its own is settled by it.
-export function valueMatches(ax, index, expected, {rendering = globalThis.__axRendering, normalize = text => text} = {}) {
-  const value = valueOfIndex(ax, index, {rendering});
-  return (value?.ambiguous ? value.candidates : [value]).some(candidate => candidate !== null && normalize(candidate) === expected);
+// A watch's key: the readings as JSON, or null when any is ambiguous, so a watch that cannot be read is never unchanged.
+export function readingKey(values) {
+  return values.some(value => value?.ambiguous === true) ? null : JSON.stringify(values);
 }
 // A text as a lane prints it inside a value: on cua's, its line breaks escaped as src/services/engine/render.mjs
 // escapeLineBreaks does; on the vendor's, as it is.
@@ -319,7 +278,7 @@ export function fieldReading(ax, index) {
   const plainOf = t => (t === null ? null : String(t).replace(/\*\*/g, ''));
   const value = index === null ? null : valueOfIndex(ax, index);
   // A value the text cannot settle is no reading: null, marked so.
-  if (value?.ambiguous) return {value: null, ambiguous: true, selected: plainOf(selectedTextOf(ax))};
+  if (value?.ambiguous === true) return {value: null, ambiguous: true, selected: plainOf(selectedTextOf(ax))};
   return {value: plainOf(value), selected: plainOf(selectedTextOf(ax))};
 }
 // What a field's check records of its selection and value, by UTF-16 length and SHA-256 only (never the text), and
@@ -328,13 +287,16 @@ export function fieldReading(ax, index) {
 // -> {selectedLength, selectedHash, valueLength, valueHash, valueChanged, selectionChanged}.
 export function selectionEvidence(ax, index, before = null) {
   const now = fieldReading(ax, index);
+  // An ambiguous value on either side leaves its change undetermined (null), never `false`: it is not unchanged.
+  const unread = now.ambiguous === true || before?.ambiguous === true;
   return {selectedLength: now.selected?.length ?? null, selectedHash: now.selected === null ? null : sha256Hex(now.selected),
     valueLength: now.value?.length ?? null, valueHash: now.value === null ? null : sha256Hex(now.value),
-    valueChanged: before === null ? null : now.value !== before.value, selectionChanged: before === null ? null : now.selected !== before.selected};
+    valueChanged: before === null || unread ? null : now.value !== before.value, selectionChanged: before === null ? null : now.selected !== before.selected,
+    ...(unread ? {valueAmbiguous: true} : {})};
 }
 
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
-export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex, valueMatches, renderedAs,
+export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex, readingKey, renderedAs,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, focusReading, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
   namedLines, idCount, sha256Hex, fieldReading, selectionEvidence].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

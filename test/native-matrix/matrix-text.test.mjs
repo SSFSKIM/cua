@@ -164,34 +164,54 @@ test('a field\'s selection evidence is lengths and SHA-256 hashes only, with wha
 test('#526: a value cua prints with its line breaks escaped reads back with its breaks, whole', () => {
   // Ruling 1175: cua's renderer prints a value's breaks as `\n` and `\r` (any other break as `\uXXXX`) on the element's
   // one line, where the vendor prints them raw. A value with a break is a long part, so it runs to the line's end.
-  const ax = 'Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ID: Notes, Value: one, two\\nthree\\r\\nfour\\u2028five\n\t2 button OK\n';
-  assert.equal(text.valueOfIndex(ax, 1, {rendering: 'cua'}), 'one, two\nthree\r\nfour\u2028five');
+  const ax = 'Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ID: Notes, Value: one two\\nthree\\r\\nfour\\u2028five\n\t2 button OK\n';
+  assert.equal(text.valueOfIndex(ax, 1, {rendering: 'cua'}), 'one two\nthree\r\nfour\u2028five');
   assert.deepEqual(text.elementLines(ax).map(l => l.index), [0, 1, 2]);
   assert.equal(text.indexOfId(ax, 'Notes'), 1);
   globalThis.__axRendering = 'cua';   // as the run's bind records it on cua's lane
-  try { assert.deepEqual(text.fieldReading(ax, 1), {value: 'one, two\nthree\r\nfour\u2028five', selected: null}); } finally { delete globalThis.__axRendering; }
+  try { assert.deepEqual(text.fieldReading(ax, 1), {value: 'one two\nthree\r\nfour\u2028five', selected: null}); } finally { delete globalThis.__axRendering; }
   // A one-line value with no break keeps being read up to its first `, `.
   assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 standard window x\n\t1 slider (settable, float) Help: h, Value: 3, Secondary Actions: Decrement\n', 1), '3');
 });
 
-test('#526 review 4: a value ends where the renderer\'s grammar says, on either lane, its CR and LS kept', () => {
-  const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ${line}\n\t2 button OK\n`;
-  // A long value: only long parts after Value can follow it, so a short one after it is the value's own text.
-  assert.equal(text.valueOfIndex(ax('Value: one, two\nthree, Placeholder: p'), 1, {rendering: 'vendor'}), 'one, two\nthree, Placeholder: p');
-  // A label the grammar never puts after Value is the value's text (the review's `second, Rows: unassigned`).
-  assert.equal(text.valueOfIndex(ax('Value: first\nsecond, Rows: unassigned'), 1, {rendering: 'vendor'}), 'first\nsecond, Rows: unassigned');
-  assert.equal(text.valueOfIndex(ax('Value: first\\nsecond, Rows: unassigned'), 1, {rendering: 'cua'}), 'first\nsecond, Rows: unassigned');
-  // Where the grammar allows two readings, the reader says so rather than guess; the cell's known value settles it.
-  const twice = text.valueOfIndex(ax('Value: 3, Details: a\\nb'), 1, {rendering: 'cua'});
-  assert.deepEqual(twice, {ambiguous: true, candidates: ['3', '3, Details: a\nb']});
-  assert.equal(text.valueMatches(ax('Value: 3, Details: a\\nb'), 1, '3', {rendering: 'cua'}), true);
-  assert.equal(text.valueMatches(ax('Value: 3, Details: a\\nb'), 1, '4', {rendering: 'cua'}), false);
-  assert.deepEqual(text.valueOfIndex(ax('Value: 3, Details: a\nb'), 1, {rendering: 'vendor'}), {ambiguous: true, candidates: ['3', '3, Details: a\nb']});
-  assert.deepEqual(text.valueOfIndex(ax('Value: a\rb, Details: d'), 1, {rendering: 'vendor'}), {ambiguous: true, candidates: ['a\rb', 'a\rb, Details: d']});
-  assert.deepEqual(text.valueOfIndex(ax('Value: a\\rb\\u2028c, ID: x'), 1, {rendering: 'cua'}), {ambiguous: true, candidates: ['a\rb c', 'a\rb c, ID: x']});
-  assert.deepEqual(text.fieldReading(ax('Value: 3, Details: a\nb'), 1), {value: null, ambiguous: true, selected: null});
-  // A settable number's type settles its reading.
-  assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 w\n\t1 ruler marker (settable, float) Value: 15.23809523809524, Secondary Actions: Delete\n', 1), '15.23809523809524');
+test('#526 review 4: a multi-line value is read only as the line\'s last part; with anything after it, it is ambiguous', () => {
+  const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 ${line}\n\t2 button OK\n`;
+  // The last part: read whole, its breaks kept (CR and LS too).
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) ID: Notes, Value: one\ntwo'), 1, {rendering: 'vendor'}), 'one\ntwo');
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: a\\rb\\u2028c'), 1, {rendering: 'cua'}), 'a\rb\u2028c');
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: a\u2028b'), 1, {rendering: 'vendor'}), 'a\u2028b');
+  // The reviewer's cases: a labelled part after it, a label that cannot follow Value (`, Rows:` inside the value), and a
+  // short value followed by a bare multi-line title (the selectable row `Shared` + `Docs\nShared`): none is certain.
+  for (const [rendering, line] of [['cua', 'text entry area (settable) Value: 3, Details: a\\nb'], ['vendor', 'text entry area (settable) Value: one\ntwo, Placeholder: p'],
+    ['vendor', 'text entry area (settable) Value: first\nsecond, Rows: unassigned'], ['cua', 'text entry area (settable) Value: first\\nsecond, Rows: unassigned'],
+    ['cua', 'row (selectable) Description: folder, Value: Shared, Docs\\nShared'], ['vendor', 'row (selectable) Description: folder, Value: Shared, Docs\nShared'],
+    ['vendor', 'text entry area (settable) Value: a\rb, Details: d']]) {
+    assert.deepEqual(text.valueOfIndex(ax(line), 1, {rendering}), {ambiguous: true}, `${rendering}: ${JSON.stringify(line)}`);
+  }
+  assert.deepEqual(text.fieldReading(ax('text entry area (settable) Value: 3, Details: a\nb'), 1), {value: null, ambiguous: true, selected: null});
+  assert.equal('valueMatches' in text, false, 'no helper a cell does not use');
+});
+
+test('#526 review 4: an ambiguous value is never equal or unchanged: selectionEvidence, the cells\' plain and a watch\'s key', async () => {
+  const ax = value => `Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) Value: ${value}, Details: d\n`;
+  // A real edit made while the value reads ambiguously, before and after: its change is undetermined, not false.
+  const before = text.fieldReading(ax('one\\ntwo'), 1, {rendering: 'cua'});
+  globalThis.__axRendering = 'cua';
+  try {
+    const evidence = text.selectionEvidence(ax('one\\nTWO'), 1, text.fieldReading(ax('one\\ntwo'), 1));
+    assert.equal(evidence.valueChanged, null);
+    assert.equal(evidence.valueAmbiguous, true);
+    assert.equal(text.selectionEvidence(ax('one\\ntwo'), 1, before).valueChanged, null, 'even reading the same text');
+  } finally { delete globalThis.__axRendering; }
+  // A watch over such a value has no key, so a refusal's "unchanged" cannot hold.
+  assert.equal(text.readingKey(['x', {ambiguous: true}]), null);
+  assert.equal(text.readingKey(['x', '1']), JSON.stringify(['x', '1']));
+  // The cells' plain refuses an ambiguous reading, so TextEdit's click check (plain(after) === __m.before) fails
+  // visibly rather than comparing "[object Object]" with itself.
+  const {prelude} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const plain = new Function(`${/const plain = [^\n]*/.exec(prelude(null))[0]}\nreturn plain;`)();
+  assert.throws(() => plain({ambiguous: true}), /cannot be read/);
+  assert.equal(plain('**a**'), 'a');
 });
 
 test('#526 review 5: only cua\'s rendering is decoded; the vendor\'s backslashes stay, and cua\'s can be read as printed', () => {
@@ -222,6 +242,4 @@ test('#526: a value without a line break reads as before #526, ending at its fir
     assert.equal(text.valueOfIndex(ax('text field (settable) Value: 3, Details: d'), 1, {rendering}), '3');
   }
   assert.deepEqual(text.fieldReading(ax('text field (settable) Value: 3, Details: d'), 1), {value: '3', selected: null});
-  // valueMatches stays available, and agrees with a single-line reading.
-  assert.equal(text.valueMatches(ax('text field (settable) Value: x, Placeholder: p'), 1, 'x'), true);
 });

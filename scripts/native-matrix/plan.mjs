@@ -114,17 +114,17 @@ const facts = (${test})(ax);
 return {ok: inFront(ax) && facts.ok, outcome: {inFront: inFront(ax), ...facts.outcome, elements: elementLines(ax).length}};`,
 });
 // A refusal: the act must throw the expected sentence, and the watched state (read the same way before and after)
-// must be unchanged.
+// must be unchanged; a watch holding an ambiguous value (./matrix-text.mjs readingKey) is never unchanged.
 const refusal = ({method, kase, find, act, watch, sentence}) => ({
   method, case: kase, expect: 'refusal', refusal: sentence,
   prepare: `${observed}
 const index = ${find};
 if (index === null) return {ready: false, reason: "the case's element is not in the text"};
-__m.index = index; __m.before = JSON.stringify(${watch});
+__m.index = index; __m.before = readingKey(${watch});
 return {ready: true};`,
   act,
   check: `const ax = await observe();
-const unchanged = JSON.stringify(${watch}) === __m.before;
+const now = readingKey(${watch}), unchanged = now !== null && __m.before !== null && now === __m.before;
 return {ok: refusedAs(${j(sentence)}) && unchanged, outcome: {refused: __m.threw !== null, expected: refusedAs(${j(sentence)}), unchanged, errorName: __m.errorName, message: __m.threw}};`,
 });
 // A text field put into a known pre-state: focused, holding `value` (when given), with `word` (once in it) selected.

@@ -229,3 +229,20 @@ gates:
     lane: hosted-macos
     timeout: 50
     run: PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  # #117 M5, T11a: the M4/M5 pre-flight's sitting E, the macOS default-selection mode
+  # (scripts/accept/macos-default-selection.mjs): which engine a default macOS computer session selects, read from `cua
+  # doctor --json` on four scratch homes: a fixture approved engine at the service's minimum (cua's, by default) and the
+  # three fallbacks to the vendor's host and engine (no approved engine, no Node 24, an engine below the minimum). It
+  # fails on every commit before the flip, where macOS's default is the vendor's, and passes on the flip; the sitting
+  # runs it on both. The no-Node home runs cua on the runner's cached Node 22. Nothing is launched or captured and no TCC
+  # row is written. Dispatch only, its verdict evidence: `ci-gate <sha> --gates default-selection`.
+  - name: default-selection
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 15
+    run: |
+      set -eu
+      older=$(ls -d "$RUNNER_TOOL_CACHE"/node/22.*/*/bin/node 2>/dev/null | tail -n 1)
+      [ -n "$older" ] || { echo "default-selection: no Node 22 in the runner's tool cache" >&2; exit 1; }
+      node scripts/accept/macos-default-selection.mjs --older-node "$older" --out default-selection-out/report.json
+    artifacts: ["default-selection-out/**"]

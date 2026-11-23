@@ -24,13 +24,14 @@ const LAUNCH_MARKER = 'fixture-engine-launched';
 export const fixtureEngineLaunched = userHome => existsSync(join(engineDirectory(userHome), LAUNCH_MARKER));
 
 // Places the fixture under `userHome` and approves it -> installedEngine's answer for it (throws when it does not read
-// as installed).
-export function placeFixtureEngine(userHome, {run = execFileSync} = {}) {
+// as installed). `version` is the bundle's engine version (FIXTURE_ENGINE's by default; the default-selection mode's
+// outdated home gives an older one).
+export function placeFixtureEngine(userHome, {run = execFileSync, version = FIXTURE_ENGINE.version} = {}) {
   const paths = enginePaths(engineDirectory(userHome));
   const contents = join(paths.bundle, 'Contents');
   mkdirSync(join(contents, 'MacOS'), {recursive: true, mode: 0o700});
   const keys = {CFBundleIdentifier: 'io.github.ssfskim.cua.fixture-engine', CFBundleExecutable: 'cua-engine', CFBundlePackageType: 'APPL',
-    CFBundleShortVersionString: FIXTURE_ENGINE.version, CUAEngineBuild: FIXTURE_ENGINE.build};
+    CFBundleShortVersionString: version, CUAEngineBuild: FIXTURE_ENGINE.build};
   writeFileSync(join(contents, 'Info.plist'), '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
     + `<plist version="1.0">\n<dict>\n${Object.entries(keys).map(([key, value]) => `\t<key>${key}</key>\n\t<string>${value}</string>\n`).join('')}</dict>\n</plist>\n`);
   writeFileSync(join(contents, 'MacOS', 'cua-engine'), `#!/bin/sh\n: > "$(dirname "$0")/../../../${LAUNCH_MARKER}"\n`);

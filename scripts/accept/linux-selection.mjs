@@ -72,11 +72,12 @@ export function fallbackSelectionProblem(report, kind) {
 }
 
 /**
- * `cua doctor --json` run as the session would be (`cli` bin/cua.mjs, `env` the session's environment) -> {code, report}:
- * the report parsed whatever the exit status (a failing row elsewhere does not hide the selection), null when none.
+ * `cua doctor --json` run as the session would be (`cli` bin/cua.mjs, `env` the session's environment, `node` the Node
+ * that runs cua, this one by default) -> {code, report}: the report parsed whatever the exit status (a failing row
+ * elsewhere does not hide the selection), null when none.
  */
-export function readDoctor({cli, env}) {
-  const run = spawnSync(process.execPath, [cli, 'doctor', '--json'], {env, encoding: 'utf8', timeout: 120_000});
+export function readDoctor({cli, env, node = process.execPath}) {
+  const run = spawnSync(node, [cli, 'doctor', '--json'], {env, encoding: 'utf8', timeout: 120_000});
   let report = null;
   try {report = JSON.parse(run.stdout);} catch {report = null;}
   return {code: run.status, report};

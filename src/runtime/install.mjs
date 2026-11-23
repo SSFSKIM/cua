@@ -408,7 +408,7 @@ export async function installMacosEngine({explicit = false, sign, signWait, env 
   // A failed build (`dir`, the engine directory it built in) says its cause and what serves; a setting that cannot be
   // read, which refuses sessions as it refuses the build, says only itself.
   const reported = (error, dir) => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {}),
-    ...(dir ? {cause: buildFailureCause(error, {home: env.HOME || homedir()}), serves: serves(dir), pending: approvable(dir)} : {})});
+    ...(dir ? {cause: buildFailureCause(error), serves: serves(dir), pending: approvable(dir)} : {})});
   if (!explicit) {
     let setting;
     try { setting = nativeEngineSetting({env, ...selection}); } catch (error) { return reported(classified(error, 'invalid_setting')); }

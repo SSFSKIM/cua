@@ -85,25 +85,49 @@ test('engineFallbackFor reads the pending build and the failure record only for 
   assert.equal(engineFallbackFor({selection: NOT_INSTALLED, env: {HOME: s.dir}}).why, 'no approved cua engine (build failed: Xcode is not installed (no swift))');
 });
 
-test('the build failure\'s cause is short, one line, and carries no identity, stack or home path', () => {
-  const cause = (error, options) => buildFailureCause(error, options);
+// The cause is public (a session's line, doctor, a device's HTTP refusal): a classified, bounded phrase by what failed,
+// never text taken from a diagnostic, whose paths (spaces and all), identities and compiler lines stay in install's output.
+test('the build failure\'s cause is a classified phrase: no diagnostic text, path, identity or compiler line', () => {
+  const cause = error => buildFailureCause(error);
   assert.equal(cause(new CuaError('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built')), 'Xcode is not installed (no swift)');
   assert.equal(cause(new CuaError('engine_identity_missing', 'no signing identity for cua\'s engine: neither CUA_SIGNING_IDENTITY nor signingIdentity in /Users/someone/.config/cua/engine.json names one')),
     'no signing identity is configured');
-  const compile = new CuaError('engine_build_failed', ['swift build failed (exit 1):', 'Compiling Engine', '/Users/someone/src/native/engine/Sources/Engine/Foo.swift:12:3: error: cannot find type \'Bar\' in scope', '  12 | let x: Bar', 'error: fatalError'].join('\n'));
-  assert.equal(cause(compile), 'compile error (swift build exit 1): cannot find type \'Bar\' in scope');
-  assert.equal(cause(new CuaError('engine_build_failed', 'swift build failed (exit 1):\nno detail')), 'compile error (swift build exit 1)');
+  const compile = new CuaError('engine_build_failed', ['swift build failed (exit 1):', 'Compiling Engine', '/Users/someone/src/native/engine/Sources/Engine/Foo.swift:12:3: error: cannot find type \'Bar\' in scope'].join('\n'));
+  assert.equal(cause(compile), 'compile error (swift build exit 1)');
   const sha = 'f'.repeat(40);
-  const signed = cause(new CuaError('engine_sign_failed', `codesign could not sign with ${sha} for signer Apple Development: Some One (ABCDE12345) at /Users/someone/Library/x\nmore`), {home: '/Users/someone'});
-  assert.equal(signed, 'engine_sign_failed: codesign could not sign with <signing identity> for signer <signing identity> at <path>');
-  assert.ok(!signed.includes(sha) && !signed.includes('Some One'));
-  // Every absolute path goes, quoted (spaces and all) or bare, under HOME or not.
-  const raw = Object.assign(new Error(`EACCES: permission denied, mkdir '/Users/someone/Library/Application Support/cua/engine'\n    at mkdirSync (node:fs:1:1)`), {code: 'EACCES'});
-  assert.equal(cause(raw, {home: '/Users/someone'}), 'EACCES: permission denied, mkdir \'<path>\'');
-  assert.equal(cause(new CuaError('engine_sign_failed', 'the staged bundle at /private/var/folders/x/T/staging/cua Engine.app reads as unsigned')),
-    'engine_sign_failed: the staged bundle at <path> Engine.app reads as unsigned', 'an unquoted path ends at its first space');
-  assert.doesNotMatch(cause(new CuaError('engine_sign_failed', 'see /opt/x and "/tmp/a b/c" and (/var/y)')), /\/opt|\/tmp|\/var/);
-  assert.ok(cause(new CuaError('engine_build_failed', 'x'.repeat(500))).length <= 200, 'bounded');
+  const spaced = '/Users/someone/Library/Application Support/cua/engine/staging/cua Engine.app';
+  for (const message of [`codesign could not sign with ${sha} for signer Apple Development: Some One (ABCDE12345) at ${spaced}`, `the staged bundle at ${spaced} reads as unsigned`])
+    assert.equal(cause(new CuaError('engine_sign_failed', message)), 'codesign failed');
+  assert.equal(cause(new CuaError('engine_sign_prompt_waiting', `codesign is waiting at ${spaced}`)), 'codesign is waiting for its keychain prompt at the console');
+  assert.equal(cause(Object.assign(new Error(`EACCES: permission denied, mkdir '${spaced}'`), {code: 'EACCES'})), 'EACCES');
+  assert.equal(cause(new CuaError('engine_install_failed', 'error: compiler unavailable')), 'engine_install_failed');
+  assert.equal(cause(Object.assign(new Error('x'), {code: 'has space/and path'})), 'the build failed', 'a code that is not a plain word is not shown');
+  assert.equal(cause(new Error('no code at all')), 'the build failed');
+});
+
+// A record is read back through the same classification, so an older cua's free-text cause, or a hand-edited one, never
+// reaches a public line.
+test('a persisted record is classified again when read: the public line carries no recorded path or text', t => {
+  const s = shortScratch('cua-notice-');
+  t.after(s.cleanup);
+  const dir = join(s.dir, 'engine');
+  mkdirSync(dir, {recursive: true});
+  const spaced = '/Users/someone/Library/Application Support/cua/engine/staging/cua Engine.app';
+  const write = record => writeFileSync(join(dir, 'build-failed.json'), JSON.stringify({failedAt: '2026-11-23T00:00:00.000Z', ...record}));
+  const line = () => engineFallbackFor({selection: NOT_INSTALLED, env: {HOME: s.dir}, engine: {pending: () => null, buildFailure: () => readBuildFailure({dir})}}).why;
+  for (const [record, cause] of [
+    [{code: 'engine_sign_failed', cause: `engine_sign_failed: the staged bundle at <path> Engine.app reads as unsigned at ${spaced}`}, 'codesign failed'],
+    [{code: 'engine_build_failed', cause: 'compile error (swift build exit 1): cannot find type \'Bar\' in /src/Foo.swift'}, 'compile error (swift build exit 1)'],
+    [{code: 'engine_build_failed', cause: `something at ${spaced}`}, 'engine_build_failed'],
+    [{code: 'engine_build_failed', cause: 'Xcode is not installed or not selected'}, 'Xcode is not installed or not selected'],
+    [{code: '/Users/x', cause: 'no signing identity is configured'}, 'no signing identity is configured'],
+    [{code: 'EACCES', cause: `EACCES: permission denied, mkdir '${spaced}'`}, 'EACCES'],
+  ]) {
+    write(record);
+    assert.equal(readBuildFailure({dir}).cause, cause, JSON.stringify(record));
+    assert.equal(line(), `no approved cua engine (build failed: ${cause})`);
+    assert.doesNotMatch(line(), /\/|Support|Engine\.app|Bar/);
+  }
 });
 
 // A swift shim with no active developer directory exits non-zero with xcrun's or xcode-select's own words: that is a
@@ -125,7 +149,7 @@ test('the failure record: written with the cause and the time, never the message
   assert.equal(readBuildFailure({dir}), null);
   const sha = 'e'.repeat(40);
   recordBuildFailure({dir, error: new CuaError('engine_sign_failed', `signing with ${sha} failed`), now: () => Date.parse('2026-11-23T01:02:03.000Z')});
-  assert.deepEqual(readBuildFailure({dir}), {code: 'engine_sign_failed', cause: 'engine_sign_failed: signing with <signing identity> failed', failedAt: '2026-11-23T01:02:03.000Z'});
+  assert.deepEqual(readBuildFailure({dir}), {code: 'engine_sign_failed', cause: 'codesign failed', failedAt: '2026-11-23T01:02:03.000Z'});
   assert.ok(!readFileSync(join(dir, 'build-failed.json'), 'utf8').includes(sha), 'no identity on disk');
   clearBuildFailure({dir});
   assert.equal(readBuildFailure({dir}), null);

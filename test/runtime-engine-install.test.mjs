@@ -104,7 +104,7 @@ test('a failed build under the selection is reported and the install succeeds; w
         assert.match(refusal.message, /^cua's engine was not installed: /);
       } else {
         assert.equal(answer.engine.status, 'warn');
-        assert.equal(answer.engine.cause, error.code ? 'no signing identity is configured' : 'engine_install_failed: error: compiler unavailable');
+        assert.equal(answer.engine.cause, error.code ? 'no signing identity is configured' : 'engine_install_failed');
         assert.deepEqual(answer.engine.serves, {refused: 'engine_not_installed'}, 'CUA_NATIVE_ENGINE=cua with none approved: sessions are refused');
         assert.match(refusal.hint, /run `cua install --engine`, then `cua engine approve` with the owner at the console; fixture is installed and active$/);
       }
@@ -122,7 +122,7 @@ test('the install warning on a failed build names the cause, the engine sessions
     [new CuaError('engine_identity_missing', 'no signing identity for cua\'s engine: neither CUA_SIGNING_IDENTITY nor signingIdentity in /x/.config/cua/engine.json names one', {hint: 'set "signingIdentity" in ~/.config/cua/engine.json'}),
       'no signing identity is configured', 'set "signingIdentity" in ~/.config/cua/engine.json, then '],
     [new CuaError('engine_build_failed', 'swift build failed (exit 1):\n/src/Foo.swift:1:1: error: cannot find type \'Bar\' in scope', {hint: 'the approved bundle is unchanged'}),
-      'compile error (swift build exit 1): cannot find type \'Bar\' in scope', ''],
+      'compile error (swift build exit 1)', ''],
   ]) {
     // The default (cua's engine since the flip), none approved: the default keeps the vendor engine.
     const r = await invoke(fixture(t, {build: async () => { throw error; }}).deps);

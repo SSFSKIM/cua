@@ -370,7 +370,7 @@ export function buildFailureDetail(text) {
 // -> {bundlePath (where the build is), engineVersion, build, signature: {kind, identityMatches}, changed, pending}:
 // `pending` true when the build waits in the slot for `cua engine approve`. Its outcome is recorded for the notice of a
 // Mac with no approved engine (design ruling 1148, engine-build-failure.mjs): a failure as build-failed.json beside
-// approved.json, its cause one short line with no identity or home path; a success removes that record.
+// approved.json, its cause a classified phrase with no diagnostic text; a success removes that record.
 export async function buildEngine({identity, scratchPath, sourceRoot, signOptions, ...deps} = {}) {
   const ctx = context(deps);
   try {
@@ -378,10 +378,8 @@ export async function buildEngine({identity, scratchPath, sourceRoot, signOption
     clearBuildFailure({dir: ctx.paths.dir});
     return built;
   } catch (error) {
-    // The identity the build signed with, given or configured, is masked in the record's cause.
-    let signer = identity && identity !== 'adhoc' ? identity : null;
-    try { signer ??= configuredIdentity({env: ctx.env}); } catch { /* unreadable settings: the record masks SHA-1s and certificate names alone */ }
-    recordBuildFailure({dir: ctx.paths.dir, error, identity: signer, home: ctx.env.HOME || homedir(), now: ctx.now});
+    // The record's cause is a classified phrase, never the error's text (engine-build-failure.mjs).
+    recordBuildFailure({dir: ctx.paths.dir, error, now: ctx.now});
     throw error;
   }
 }

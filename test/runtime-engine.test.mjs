@@ -322,7 +322,7 @@ test('a failed build records its cause beside approved.json, with no identity; t
   assert.deepEqual(w.json('build-failed.json'), {code: 'engine_build_failed', cause: 'Xcode is not installed (no swift)', failedAt: new Date(0).toISOString()});
   w.state.swift = () => ({code: 1, stdout: '', stderr: `${join(w.home, 'src', 'Foo.swift')}:1:1: error: cannot find type 'Bar' in scope\n`});
   await assert.rejects(buildEngine(w.deps), {code: 'engine_build_failed'});
-  assert.equal(w.json('build-failed.json').cause, 'compile error (swift build exit 1): cannot find type \'Bar\' in scope');
+  assert.equal(w.json('build-failed.json').cause, 'compile error (swift build exit 1)', 'swift\'s exit status alone: the compiler\'s lines stay in install\'s output');
   noIdentity(w.text('build-failed.json'), 'the record');
   assert.equal(w.plistBuild(), OLD_BUILD, 'the approved bundle keeps serving');
   // A swift shim with no active developer directory: the toolchain is missing, not the source broken.

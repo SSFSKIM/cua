@@ -273,6 +273,24 @@ test('alertWatch: system-alert processes are read by name; anything else new abo
   }
 });
 
+test('alertWatch on a hosted run: replayd\'s capture alert (UserNotificationCenter, one a copy) is held, not an abort; anything else still stops the run', () => {
+  const w = (number, ownerPid, extra = {}) => ({number, ownerPid, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, name: null, ...extra});
+  const unc = (number, extra = {}) => w(number, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, ...extra});
+  const before = [w(1, 10), w(3, 600)], runPids = [600];
+  const held = alertWatch(before, [...before, unc(6)], {runPids, hosted: true});
+  assert.equal(held.abort, false, 'rulings 1136/1141: alert up, scene activated first; its samples are NO VERDICT, the run goes on');
+  assert.deepEqual(held.export, {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: 'com.apple.UserNotificationCenter', layer: 8}]}});
+  assert.equal(alertWatch(before, [...before, unc(6), unc(7)], {runPids, hosted: true}).abort, false, 'one alert for each copy: cua\'s engine and the vendor\'s helper');
+  const three = alertWatch(before, [...before, unc(6), unc(7), unc(8)], {runPids, hosted: true});
+  assert.equal(three.abort, true, 'more than the two copies\' alerts is not the known alert');
+  assert.equal(three.export.alerts.length, 3);
+  for (const [why, extra] of [['a pasteboard title', [unc(9, {name: 'Allow “cua Engine” to paste from Mail?'})]],
+    ['another alert process', [w(10, 13, {ownerName: 'SecurityAgent', ownerBundleId: 'com.apple.SecurityAgent'})]],
+    ['an unknown new window', [w(11, 14, {layer: 3})]]])
+    assert.equal(alertWatch(before, [...before, ...extra], {runPids, hosted: true}).abort, true, why);
+  assert.equal(alertWatch(before, [...before, unc(6)], {runPids}).abort, true, 'off a hosted run every alert process stops the run, as before');
+});
+
 test('compositionGuard: HID keys only while the scene\'s TextEdit is the front app, its scene window the front window and TextEdit\'s key window', () => {
   const record = {pid: 600, window: {number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}};
   const ok = {frontmost: {pid: 600, bundleId: 'com.apple.TextEdit'}, topWindow: {ownerPid: 600, number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: 600, height: 800}}, record};

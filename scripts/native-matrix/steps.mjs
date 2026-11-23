@@ -59,8 +59,10 @@ export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 
 
 // The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
 // the run untouched; only its sanitized export is kept. The engine under test's own windows (its roots) are not alerts.
+// On a hosted run replayd's capture alert is held, not a stop (./live-checks.mjs alertWatch `hosted`; rulings 1136, 1141):
+// a sample with it front or key is NO VERDICT by its front/key readings (./front-key.mjs).
 export function alertCheck(ctx, when) {
-  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...engineRoots(ctx)]);
+  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...engineRoots(ctx), ...(ctx.meta.hosted === true ? ['--hosted', 'yes'] : [])]);
   if (check?.abort !== false) {
     ctx.meta.alert = {when, ...(check?.export ?? {})};
     throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);

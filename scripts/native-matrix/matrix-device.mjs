@@ -34,7 +34,8 @@
 //       at the baseline kept in the run directory (numbers and owners only), then each check against it -> {abort, export}
 //       (sanitized: alert processes' bundle ids and layers, title keywords, counts); no alert's text is ever read. A check
 //       given --approved-runtime <home> and --approved-engine <bundle> leaves out the windows of the engine under test
-//       (enginePids: an owner whose executable lies inside either), as it does the run's own
+//       (enginePids: an owner whose executable lies inside either), as it does the run's own; --hosted yes (a hosted
+//       run) holds replayd's capture alert instead of aborting on it (live-checks.mjs alertWatch)
 //   launched intent <scene> --run <dir>
 //       journaled before a launch row's act is sent: the scene's bundle id, the device's time and the pids of that
 //       bundle running at that moment -> {at, pids}. A controller that dies during or after the act leaves this, and
@@ -366,7 +367,7 @@ export function executablePaths(pids, {exec = execFileSync} = {}) {
 }
 
 // io: {windows(), state(), launched(), executablePaths(pids), dir}; roots: the engine under test's (enginePids), for a check.
-export function alerts(action, io, {approvedRuntime = null, approvedEngine = null} = {}) {
+export function alerts(action, io, {approvedRuntime = null, approvedEngine = null, hosted = false} = {}) {
   const file = join(io.dir, ALERT_BASELINE_FILE);
   // An unread window list (./system-windows.swift) proves no screen free of alerts.
   const read = () => { const windows = io.windows(); if (!Array.isArray(windows)) throw new Error('the on-screen windows could not be read: the alert watch has nothing to judge'); return windows; };
@@ -380,7 +381,7 @@ export function alerts(action, io, {approvedRuntime = null, approvedEngine = nul
   const windows = read(), owned = ownedPids(io.state(), io.launched());
   const others = [...new Set(windows.map(w => w.ownerPid))].filter(pid => Number.isInteger(pid) && !owned.includes(pid));
   const engine = enginePids(others, [approvedRuntime, approvedEngine], pids => (io.executablePaths ?? executablePaths)(pids));
-  const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), windows, {runPids: [...owned, ...engine]});
+  const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), windows, {runPids: [...owned, ...engine], hosted});
   return {abort: watch.abort, export: watch.export};
 }
 
@@ -541,6 +542,7 @@ export async function main(argv, {io: given = {}} = {}) {
     ...given,
   };
   const roots = {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null};
+  if (flags.hosted !== undefined && flags.hosted !== 'yes') throw new Error('--hosted yes is the one value');
   switch (command) {
     case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir))};
     case 'read': {
@@ -558,7 +560,7 @@ export async function main(argv, {io: given = {}} = {}) {
       const frontKey = positional[0] === 'activate' && SCENES[positional[1]] ? await activationCheck(SCENES[positional[1]].bundleId, io) : null;
       return {answer, at: [from, Date.now()], ...(frontKey ? {frontKey} : {})};
     }
-    case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
+    case 'alerts': return {...alerts(positional[0], io, {...roots, hosted: flags.hosted === 'yes'}), at: [Date.now(), Date.now()]};
     case 'launched':
       if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);

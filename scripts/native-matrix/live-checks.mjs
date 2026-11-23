@@ -97,20 +97,31 @@ const alertProcessOf = w => {
 // may leave the device (`export`) is sanitized: an alert process's bundle id and layer; for a title match only the
 // keyword; for anything else only its layer, counted. `readable` names the alert processes whose text the engine may
 // read; no other owner is ever observed.
-// -> {abort, export: {alerts, keywords, unknown: {count, windows}}, readable: [{bundleId}]}.
-export function alertWatch(before, now, {runPids}) {
+// `hosted` (a run on a GitHub-hosted runner, rulings 1136 and 1141): replayd's capture alert stays up there, carried by
+// UserNotificationCenter, one for each copy that captured (cua's engine and the vendor's helper, H0), and nothing may
+// dismiss it; up to CAPTURE_ALERTS such windows with no pasteboard title are that known alert, reported as `held` and
+// no abort, so the run goes on "alert up, scene activated first" and a sample with it front or key is NO VERDICT
+// (./front-key.mjs). Any other alert, a pasteboard title, a new window or a third UserNotificationCenter window still
+// aborts, and an unread window list still stops the run (the device's check throws).
+// -> {abort, export: {alerts, keywords, unknown: {count, windows}, held?: {count, windows}}, readable: [{bundleId}]}.
+const CAPTURE_ALERT_PROCESS = 'com.apple.UserNotificationCenter';
+const CAPTURE_ALERTS = 2;
+export function alertWatch(before, now, {runPids, hosted = false}) {
   const known = new Set((before ?? []).map(w => w.number));
-  const alerts = [], keywords = [], unknown = [];
+  const alerts = [], keywords = [], unknown = [], held = [];
   for (const w of now ?? []) {
     if (runPids.includes(w.ownerPid)) continue;
     const bundleId = alertProcessOf(w);
     const keyword = ALERT_KEYWORDS.find(k => String(w.name ?? '').toLowerCase().includes(k));
-    if (bundleId) alerts.push({bundleId, layer: w.layer, isAlertProcess: true});
+    if (hosted && bundleId === CAPTURE_ALERT_PROCESS && !keyword) held.push({bundleId, layer: w.layer});
+    else if (bundleId) alerts.push({bundleId, layer: w.layer, isAlertProcess: true});
     else if (keyword) keywords.push({keyword, layer: w.layer, isAlertProcess: false});
     else if (!known.has(w.number) && w.layer >= 0 && w.layer < ALERT_LAYER_BELOW) unknown.push({layer: w.layer, isAlertProcess: false});
   }
+  if (held.length > CAPTURE_ALERTS) alerts.push(...held.splice(0).map(a => ({...a, isAlertProcess: true})));
   const readable = [...new Set(alerts.map(a => a.bundleId))].map(bundleId => ({bundleId}));
-  return {abort: alerts.length + keywords.length + unknown.length > 0, export: {alerts, keywords, unknown: {count: unknown.length, windows: unknown}}, readable};
+  return {abort: alerts.length + keywords.length + unknown.length > 0,
+    export: {alerts, keywords, unknown: {count: unknown.length, windows: unknown}, ...(hosted ? {held: {count: held.length, windows: held}} : {})}, readable};
 }
 
 // ---- The HID composition row (MAWS P4-B2, a measurement) -----------------------------------------------------------

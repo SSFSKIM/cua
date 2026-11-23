@@ -172,6 +172,10 @@ test('the alert watch leaves out the engine under test: a window whose owner run
     }
     // An alert process stays an alert whatever else runs.
     assert.equal(alerts('check', {...io, windows: () => [...windows, {number: 10, ownerPid: 300, ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8}]}, roots).abort, true);
+    // A hosted run holds replayd's capture alert (rulings 1136/1141) and reports it.
+    const hosted = alerts('check', {...io, windows: () => [...windows, {number: 10, ownerPid: 300, ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8}]}, {...roots, hosted: true});
+    assert.equal(hosted.abort, false);
+    assert.equal(hosted.export.held.count, 1);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 

@@ -144,6 +144,13 @@ test('the watcher not running at the end: its coverage of the run is not proven'
   assert.ok(r.result.rows.filter(row => row.section === 'method').every(row => row.invalid));
 });
 
+test('a hosted run asks every alert check to hold replayd\'s capture alert; a run off a runner never does', async () => {
+  const checksOf = r => matrixSteps(r.steps, 'alerts').filter(a => a[1] === 'check');
+  const hosted = checksOf(await runWith({env: {RUNNER_ENVIRONMENT: 'github-hosted'}}));
+  assert.ok(hosted.length > 0 && hosted.every(a => a.join(' ').includes('--hosted yes')));
+  assert.ok(checksOf(await runWith()).every(a => !a.includes('--hosted')));
+});
+
 test('a paste or typeText act is sent only between two alert checks; an alert before it stops the run with nothing sent', async () => {
   const ok = await runWith();
   const checks = matrixSteps(ok.steps, 'alerts').filter(a => a[1] === 'check');

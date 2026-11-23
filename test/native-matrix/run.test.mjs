@@ -9,6 +9,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {dryOps} from '../../scripts/native-matrix/lane.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {CASES} from '../../scripts/native-matrix/plan.mjs';
+import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {cleanupMatrix, FULL_PLAN, PASTING, planOf} from '../../scripts/native-matrix/run.mjs';
 
 import {args, BUNDLE, cellsOf, matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
@@ -223,6 +224,35 @@ test('on a hosted run a key row whose guard finds the held capture alert in fron
   assert.deepEqual([row.ok, row.frontKey.before, row.frontKey.after], [false, {front: UNC, key: UNC}, {front: UNC, key: UNC}]);
   assert.equal(row.invalid, 'the key guard held the action\'s keys: replayd\'s capture alert in front');
   assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), [['super+a', true]]);
+});
+
+// I3a of fix wave 3: the guard's own observation decides. The alert flashes up for the guard's read of ⌘O only and is
+// gone by every read after it; each Open-panel row, frontmost and background, is still NO VERDICT `alert`.
+test('on a hosted run ⌘O held by the capture alert leaves every Open-panel row NO VERDICT, even when the alert left the front before the re-read', async () => {
+  const UNC = 'com.apple.UserNotificationCenter';
+  const plan = {id: 'test', frontmost: ['openPanel'], speed: false, finding: false, background: [{driven: 'openPanel', user: 'finder'}], launch: []};
+  let flash = false, held = false;
+  const r = await runWith({plan, env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: {matrix: (base, a) => {
+    if (a[0] === 'step' && a[1] === 'activate' && a[2] === 'textedit') { flash = true; return base(a); }
+    // The guard's plain read (no --with): UserNotificationCenter in front, once.
+    if (a[0] === 'read' && flash && !a.includes('--with')) { flash = false; held = true; const x = base(a); return {...x, reading: {...x.reading, frontmost: {pid: 77, bundleId: UNC, owned: false}}}; }
+    if (a[0] === 'alerts' && a[1] === 'check' && held) {
+      held = false;
+      return {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: null}]}}, at: base(a).at};
+    }
+    return base(a);
+  }}});
+  assert.equal(r.result.complete, true, JSON.stringify(r.result.problems));
+  assert.deepEqual(validateCellResult(r.result), []);
+  const rows = r.result.rows.filter(x => x.target === 'openPanel' && x.section === 'method');
+  assert.deepEqual([...new Set(rows.map(x => x.regime))].sort(), ['background', 'frontmost']);
+  assert.equal(rows.length, 2 * CASES.openPanel.length);
+  for (const row of rows) {
+    assert.deepEqual(sampleCause({...row, hosted: true}), {category: 'alert', detail: `${UNC} in front at the key guard; super+o held`}, row.id);
+    assert.deepEqual([row.ok, row.frontKey.before.front, row.invalid], [false, UNC, 'the key guard held the action\'s keys: replayd\'s capture alert in front'], row.id);
+  }
+  assert.notEqual(r.result.verdict, 'fail');
+  assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), [['super+o', true], ['super+o', true]]);
 });
 
 test('a key skipped with one of the run\'s windows in front leaves the row invalid; with another app in front the run stops', async () => {

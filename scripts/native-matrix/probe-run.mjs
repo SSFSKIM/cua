@@ -26,7 +26,7 @@ import {
 import {requeryCell} from './matrix-cells.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
-import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, HELD_INVALID, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
+import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
   skippedReadings, Stop, userFront, waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
@@ -69,7 +69,7 @@ async function sampled(ctx, base, attempt) {
     let out;
     try { out = await attempt({lead, n, id: base.id, key, span}); } catch (error) {
       if (!(error instanceof AlertHeld)) throw error;
-      out = span.end({invalid: HELD_INVALID, frontKey: heldReadings(ctx, base, error, span)});
+      out = span.end({...error.row, frontKey: heldReadings(ctx, base, error, span)});
     }
     let cleanupFailed = null;
     if (out.retry && n < PROBE_ATTEMPTS) {

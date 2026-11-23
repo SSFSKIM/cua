@@ -455,11 +455,12 @@ const caseRows = (ctx, target, regime, extra, user = null) => {
 };
 // Every sample a frontmost target planned, skipped because its activation did not take front and key (./steps.mjs
 // notActivated): its cases and their timings, and the scene's speed and finding rows, each carrying the activate step's
-// own check, so no planned sample vanishes and none is invalid (ruling 1141).
-function skippedTarget(ctx, target, plan, frontKey) {
+// own check, so no planned sample vanishes and none is invalid (ruling 1141). `held`: the mark of a key the capture
+// alert held (./steps.mjs AlertHeld `row`), on every case and its timing.
+function skippedTarget(ctx, target, plan, frontKey, held = {}) {
   const scene = SCENE_OF[target], measured = {...frontKey, apps: [SCENES[scene].bundleId]};
-  if (!plan.onlyMeasures) caseRows(ctx, target, 'frontmost', {frontKey});
-  if (plan.speed && !plan.onlyMeasures) for (const c of CASES[target]) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey});
+  if (!plan.onlyMeasures) caseRows(ctx, target, 'frontmost', {frontKey, ...held});
+  if (plan.speed && !plan.onlyMeasures) for (const c of CASES[target]) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey, ...held});
   if (target === 'openPanel') return;
   if (plan.speed) for (const op of SPEED_OPS) for (let i = 1; i <= ctx.samples; i++)
     push(ctx, {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene, frontKey: measured});
@@ -469,7 +470,8 @@ function skippedTarget(ctx, target, plan, frontKey) {
 
 // The Open panel opened from the run's document (⌘O, under the key guard with TextEdit's process in front). -> null,
 // {skipped: readings} when TextEdit's activation did not take front and key (`apps` the cells' own) or, on a hosted run,
-// replayd's capture alert held ⌘O (its readings, so the panel's rows are NO VERDICT; ruling 1141), or {problem}.
+// replayd's capture alert held ⌘O (`held` its mark, so the panel's rows are NO VERDICT whatever is read after; ruling
+// 1141), or {problem}.
 async function openPanel(ctx, apps) {
   const front = activate(ctx, 'textedit');
   const skipped = notActivated(ctx, 'textedit', apps);
@@ -478,7 +480,7 @@ async function openPanel(ctx, apps) {
   let opened;
   try { opened = await sendKeys(ctx, OPEN_PANEL, ['super+o'], {scene: 'textedit', front: read(ctx)}); } catch (error) {
     if (!(error instanceof AlertHeld)) throw error;
-    return {skipped: {apps, activate: activationOf(ctx, SCENES.textedit.bundleId), before: error.reading, after: readKey(ctx)}};
+    return {skipped: {apps, activate: activationOf(ctx, SCENES.textedit.bundleId), before: error.reading, after: readKey(ctx)}, held: error.row};
   }
   if (opened === null) return {problem: 'the key guard did not send ⌘O'};
   if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
@@ -489,7 +491,7 @@ async function frontmostTarget(ctx, target, plan) {
   const scene = SCENE_OF[target];
   if (target === 'openPanel') {
     const failed = await openPanel(ctx, appsOf(target));
-    if (failed?.skipped) return skippedTarget(ctx, target, plan, failed.skipped);
+    if (failed?.skipped) return skippedTarget(ctx, target, plan, failed.skipped, failed.held);
     if (failed) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', failed.problem); return; }
   } else {
     const front = activate(ctx, scene);
@@ -511,7 +513,7 @@ async function closePanel(ctx) {
 async function backgroundPairing(ctx, {driven, user}) {
   if (driven === 'openPanel') {
     const failed = await openPanel(ctx, appsOf(driven, user));
-    if (failed?.skipped) return caseRows(ctx, driven, 'background', {frontKey: failed.skipped}, user);
+    if (failed?.skipped) return caseRows(ctx, driven, 'background', {frontKey: failed.skipped, ...failed.held}, user);
     if (failed) return invalidCases(ctx, driven, 'background', failed.problem, user);
   }
   try {

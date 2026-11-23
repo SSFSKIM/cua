@@ -70,3 +70,11 @@ test('a hosted sample the harness left invalid before anything was read keeps it
   assert.equal(sampleCause(row).category, 'unread', 'a sample with nothing to say why stays unread');
   assert.equal(sampleCause({...row, invalid: 'x', frontKey: readings({before: {front: ALERT, key: ALERT}})}).category, 'alert', 'readings, when there are some, still come first');
 });
+
+test('a sample whose guarded key the capture alert held is NO VERDICT \'alert\' by its own mark, whatever its readings say', () => {
+  const held = {alertHeld: {keys: ['super+o'], front: ALERT}, invalid: 'the key guard held the action\'s keys: replayd\'s capture alert in front'};
+  // The alert left the front before the re-read: the readings alone would let the unexecuted row count.
+  assert.equal(sampleCause({section: 'method', ok: false, frontKey: readings()}), null);
+  assert.deepEqual(sampleCause({section: 'method', ok: false, frontKey: readings(), ...held}), {category: 'alert', detail: `${ALERT} in front at the key guard; super+o held`});
+  assert.deepEqual(sampleCause({section: 'method', ok: false, hosted: true, ...held}), {category: 'alert', detail: `${ALERT} in front at the key guard; super+o held`});
+});

@@ -475,7 +475,7 @@ test('#212\'s save sheet on a hosted run: the capture alert in front at the key 
   const row = rowOf(result, SAVE_SHEET);
   assert.deepEqual([row.ok, row.frontKey.activate, row.frontKey.before, row.frontKey.after],
     [false, {app: 'com.apple.TextEdit', front: true, key: true}, {front: UNC, key: UNC}, {front: UNC, key: UNC}]);
-  assert.deepEqual(sampleCause({...row, hosted: true}), {category: 'alert', detail: UNC}, 'ruling 1141: the alert frontmost, NO VERDICT');
+  assert.deepEqual(sampleCause({...row, hosted: true}), {category: 'alert', detail: `${UNC} in front at the key guard; super+n held`}, 'ruling 1141: the alert frontmost, NO VERDICT');
   assert.equal(calls.filter(c => tagOf(c.code) === 'sheet.new').length, 0, 'the key stays blocked');
   assert.deepEqual(result.meta.keySkipped.map(k => [k.keys.join('+'), k.front.bundleId, k.held]), [['super+n', UNC, true]]);
   assert.deepEqual(result.meta.activations.unaccounted, [], 'the alert\'s activation is the row\'s');

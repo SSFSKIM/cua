@@ -85,13 +85,18 @@ export function alertCheck(ctx, when) {
 
 // A guarded key held back on a hosted run because replayd's capture alert is in front (rulings 1136, 1141): the key is
 // never sent, and the sample it was for is recorded NO VERDICT by its readings (./front-key.mjs `alert`), the run going
-// on "alert up, scene activated first". `reading` is the front and key read when the guard held it. Thrown by sendKeys,
-// caught where the sample's row is made (caseRow, ./probe-run.mjs sampled, ./unicode-run.mjs, ./run.mjs openPanel).
-export class AlertHeld extends Error {
-  constructor(keys, reading) { super(`${keys.join(', ')} not sent: replayd's capture alert is in front (held, ruling 1141)`); this.reading = reading; }
-}
-// The invalid reason a held sample's row carries beside its readings, which decide it first.
+// on "alert up, scene activated first". `reading` is the guard's own observation: the front it saw (the alert), with the
+// key read just after. `row` is what every row it was for carries: `alertHeld`, which makes the sample NO VERDICT
+// `alert` whatever its readings say (./front-key.mjs sampleCause), and an invalid reason as a backstop. Thrown by
+// sendKeys, caught where the sample's row is made (caseRow, ./probe-run.mjs sampled, ./unicode-run.mjs, ./run.mjs openPanel).
 export const HELD_INVALID = 'the key guard held the action\'s keys: replayd\'s capture alert in front';
+export class AlertHeld extends Error {
+  constructor(keys, reading) {
+    super(`${keys.join(', ')} not sent: replayd's capture alert is in front (held, ruling 1141)`);
+    this.reading = reading;
+    this.row = {alertHeld: {keys, front: reading.front}, invalid: HELD_INVALID};
+  }
+}
 
 // A key cell sent only under the key guard: the driven scene's process in front, or (given `userWindow`) the run's
 // user window. A skip with one of the run's windows in front leaves the row invalid; any other front (the owner at the
@@ -115,7 +120,7 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
     const r = read(ctx, null, {frontKey: true});
     const ends = ctx.windows.map(w => w.at[1]);
     if (Array.isArray(r?.at)) mark(ctx, kind === 'row' ? 'row' : 'setup', key, [ends.length ? Math.max(...ends) : r.at[0], r.at[1]]);
-    throw new AlertHeld(keys, keyReading(r));
+    throw new AlertHeld(keys, {front: seen.bundleId, key: keyReading(r).key});
   }
   if (seen === 'unreadable' || seen.owned !== true) throw new Stop(`${keys.join(', ')} not sent: the front is not one of the run's windows (#162); the run stopped`);
   return null;
@@ -286,7 +291,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   try { act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act)); } catch (error) {
     if (!(error instanceof AlertHeld)) throw error;
     // The capture alert took the front after the activation: the key unsent, the readings the row's (NO VERDICT).
-    const held = finish({invalid: HELD_INVALID});
+    const held = done({frontKey: {...readings, before: error.reading, after: keyReading(after())}, ...error.row});
     if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey: held.frontKey});
     return held;
   }

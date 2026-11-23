@@ -19,7 +19,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {activate, activationOf, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, HELD_INVALID, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
+import {activate, activationOf, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
@@ -296,7 +296,7 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   if (held) {
     // The capture alert in front at the guard (ruling 1141): the typing unsent, the readings the row's (NO VERDICT).
     const app = SCENES[field].bundleId;
-    return end({invalid: HELD_INVALID, frontKey: {apps: [app], activate: activationOf(ctx, app), before: held.reading, after: keyReading(span(read(ctx, null, {frontKey: true})))}});
+    return end({...held.row, frontKey: {apps: [app], activate: activationOf(ctx, app), before: held.reading, after: keyReading(span(read(ctx, null, {frontKey: true})))}});
   }
   if (!act) return end({invalid: 'the key guard did not send the action'});
   alertCheck(ctx, `after ${r.id}`);

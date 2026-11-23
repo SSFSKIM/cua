@@ -580,6 +580,22 @@ test('a TextEdit that does not come to the front stops the run before any key or
   assert.deepEqual([app.keys, app.clicks], [[], []]);
 });
 
+// Pilot A (run 45220897246): the capture alert (UserNotificationCenter) in front where the run needed TextEdit, at
+// setup.activate or before a key, leaves the run incomplete for a cause that is no verdict's (rulings 1136, 1141):
+// the producer names it (meta.incompleteCause) so the hosted record check never has to read the message. Any other
+// front app leaves no cause.
+test('a run stopped with UserNotificationCenter in front records the alert as its incomplete cause', async t => {
+  const alert = await macRun(t, {engine: 'vendor', frontmost: () => 'com.apple.UserNotificationCenter', activateMs: 50});
+  assert.equal(alert.meta.complete, false);
+  assert.deepEqual(alert.meta.incompleteCause, {cause: 'alert', at: 'setup.activate', front: {pid: 777, bundleId: 'com.apple.UserNotificationCenter'}});
+  let reads = 0;
+  const key = await macRun(t, {frontmost: () => (++reads <= 3 ? 'com.apple.TextEdit' : 'com.apple.UserNotificationCenter')});
+  assert.equal(key.meta.complete, false);
+  assert.deepEqual(key.meta.incompleteCause, {cause: 'alert', at: 'key.skipped', front: {pid: 777, bundleId: 'com.apple.UserNotificationCenter'}});
+  const other = await macRun(t, {engine: 'cua', frontmost: () => 'com.google.Chrome', activateMs: 50});
+  assert.equal(other.meta.incompleteCause, undefined);
+});
+
 // The M1b.4 review: a run that fails before its scratch document exists (a failed bind, a failed activation) still ends
 // the TextEdit it launched, by the pid it read when it saw TextEdit come up, so the sitting's next run is not refused.
 // The quit cell cannot do it (it quits only from the scratch document), and there is no document of anyone's in it.

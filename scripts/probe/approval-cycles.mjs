@@ -4,6 +4,8 @@
 // alert in front, and the judge over what each connection recorded. An approval is judged by behaviour (what the client
 // was asked, whether a bind was refused for approval) and by the call's `cua/approval` result meta, which on cua's own
 // host carries the connection's stamp (who answered, the connection's opaque id, the runtime generation).
+import {attestationProblem, boundedError, isLifecycleRejection} from './lib.mjs';
+import {resultText} from '../accept/mcp-session.mjs';
 
 const NOT_APPROVED = 'Computer Use was not approved to use ';
 // System prompts that take the front (scripts/mini-rules.mjs SYSTEM_PROMPTS): replayd's capture alert is
@@ -64,7 +66,12 @@ const stampProblem = approval => {
 // up before it), one with an alert in front or key after it or whose screen could not be read after it, is NO VERDICT.
 // A bind that failed with no approval refusal proves the approval passed only when its `cua/approval` says accept (the
 // policy sets it once the answer is in, before the engine is asked); otherwise it may have failed before the approval.
+// A bind a stop interrupted (`unmeasured`, ruling 1149: another engine answered it, or none attested) measured nothing:
+// it is NO VERDICT and stays out of the asks, the tasks, the restart and the approval judgement (`measured`).
+const measured = bind => bind.dispatched && !bind.unmeasured;
+const notJudged = call => call.unmeasured && call.other ? `; ${plural(call.other, 'other request')} during it, not judged` : '';
 function inconclusive(bind) {
+  if (bind.unmeasured) return `not measured: ${bind.unmeasured}`;
   if (!bind.dispatched) return bind.blocked === 'alert' ? 'not sent: an alert was in front or key before it' : 'not sent: the approved app did not take front and key';
   if (bind.after === 'alert') return 'an alert was in front or key after it';
   if (bind.after !== 'clear') return 'the front and key after it could not be read';
@@ -74,7 +81,10 @@ function inconclusive(bind) {
 }
 
 // `connections` [{name, pid, binds: [{app: 'approve'|'decline', cycle, dispatched, blocked, after, asked, refusal,
-// failed, restarted, taskId, approval}], steps: [{step, cycle, ok, detail?, noTask?}], other}] (`noTask`: an end_task
+// failed, restarted, taskId, approval, other, unmeasured?}], steps: [{step, cycle, ok, detail?, noTask?, other?, unmeasured?}],
+// other}] (`other` on a bind or step: the client's other requests while that call was in flight, on the connection: those
+// between calls; `unmeasured`: why a stop left the bind or step measuring nothing, NO VERDICT, its other requests
+// diagnostic only; `noTask`: an end_task
 // that found no task when no call since the last one had opened any, every bind between them not sent): the first is the cycles'
 // connection, the second a new connection binding each app once. `idleAt`: the cycle whose first bind follows the idle
 // stop. `complete`: whether every planned step ran (false when the run stopped early). -> {verdict: 'pass' | 'fail' |
@@ -100,7 +110,7 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
     else unexecuted('no connection ran');
   }
   connections.forEach((connection, i) => {
-    const {name, pid, binds = [], steps = [], other = 0} = connection;
+    const {name, pid, binds = [], steps = [], other: between = 0} = connection;
     const problem = text => problems.push(`${name}: ${text}`);
     const unsure = text => unproven.push(`${name}: ${text}`);
     if (i > 0 && pid === connections[0].pid) problem(`served by the first connection's process (pid ${pid}); a new connection is a new cua serve`);
@@ -109,9 +119,9 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
     for (const bind of numbered) {
       const label = bind.app === 'approve' ? 'approved' : 'declined';
       const before = asks[bind.app];
-      if (bind.dispatched) asks[bind.app] += bind.asked;
-      if (bind.dispatched && bind.asked > 0 && before + bind.asked > 1) problem(`the ${label} app was asked again at bind ${bind.n} (${before + bind.asked} asks); once per connection is expected`);
-      if (bind.why) { unsure(`bind ${bind.n} (${bind.app}): ${bind.why}`); continue; }
+      if (measured(bind)) asks[bind.app] += bind.asked;
+      if (measured(bind) && bind.asked > 0 && before + bind.asked > 1) problem(`the ${label} app was asked again at bind ${bind.n} (${before + bind.asked} asks); once per connection is expected`);
+      if (bind.why) { unsure(`bind ${bind.n} (${bind.app}): ${bind.why}${notJudged(bind)}`); continue; }
       if (bind.asked === 0 && before === 0) problem(`bind ${bind.n} (${label}) was answered without the client ever being asked on this connection`);
       const stamp = stampProblem(bind.approval);
       if (stamp) problem(`bind ${bind.n} (${label}) ${stamp}`);
@@ -127,13 +137,17 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
       }
     }
     for (const app of ['approve', 'decline']) {
-      if (numbered.some(bind => bind.app === app)) continue;
+      if (numbered.some(bind => bind.app === app && !bind.unmeasured)) continue;
       if (complete) problem(`the ${app === 'approve' ? 'approved' : 'declined'} app was never bound`);
       else unexecuted(`${name}'s ${app === 'approve' ? 'approved' : 'declined'} app was never bound`);
     }
+    // Another request fails the run unless the call it came during measured nothing (ruling 1149: it may be the other
+    // engine's, which this witness does not judge).
+    const other = between + [...binds, ...steps].filter(call => !call.unmeasured).reduce((sum, call) => sum + (call.other ?? 0), 0);
     if (other > 0) problem(`${plural(other, 'other request')} ${other === 1 ? 'was' : 'were'} asked of the client`);
     for (const step of steps) {
       if (step.ok) continue;
+      if (step.unmeasured) { unsure(`${step.step} of cycle ${step.cycle} not measured: ${step.unmeasured}${notJudged(step)}`); continue; }
       if (step.noTask) unsure(`${step.step} of cycle ${step.cycle} found no task (${step.detail}): no call had opened one since the last`);
       else problem(`${step.step} of cycle ${step.cycle} failed${step.detail ? ` (${step.detail})` : ''}`);
     }
@@ -150,7 +164,7 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
 
     // One task per cycle, each new: the binds sent in one cycle share a task, and no cycle reuses another's.
     const tasks = new Map();
-    for (const bind of numbered.filter(b => b.dispatched)) {
+    for (const bind of numbered.filter(measured)) {
       if (bind.taskId == null) { problem(`bind ${bind.n} carries no task id`); continue; }
       tasks.set(bind.cycle, [...new Set([...(tasks.get(bind.cycle) ?? []), bind.taskId])]);
     }
@@ -166,7 +180,7 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
         if (complete) problem('js_reset never ran');
         else unexecuted('js_reset');
       }
-      const after = numbered.find(bind => bind.cycle === idleAt && bind.dispatched);
+      const after = numbered.find(bind => bind.cycle === idleAt && measured(bind));
       if (!after) {
         if (complete && !numbered.some(bind => bind.cycle === idleAt)) problem(`no bind ran in cycle ${idleAt}, after the idle stop`);
         else if (complete) unsure(`no bind of cycle ${idleAt} was sent, so the idle stop is not shown`);
@@ -174,7 +188,7 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
       } else if (!after.restarted) problem(`bind ${after.n}, the first after the idle stop, did not open with the restart notice`);
       else {
         const now = stampProblem(after.approval) ? null : after.approval.runtimeGeneration;
-        const earlier = numbered.slice(0, after.n - 1).reverse().find(bind => bind.dispatched && !stampProblem(bind.approval));
+        const earlier = numbered.slice(0, after.n - 1).reverse().find(bind => measured(bind) && !stampProblem(bind.approval));
         if (now === null || !earlier) unsure(`bind ${after.n}'s runtime generation could not be compared with one before the idle stop`);
         else if (!(now > earlier.approval.runtimeGeneration)) problem(`bind ${after.n}, after the idle stop, went to runtime generation ${now}, not past bind ${earlier.n}'s ${earlier.approval.runtimeGeneration}`);
       }
@@ -192,3 +206,41 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
   const verdict = problems.length ? 'fail' : unproven.length ? 'no verdict' : 'pass';
   return {verdict, ok: verdict === 'pass', problems, inconclusive: unproven, detail: details.join(' | ')};
 }
+
+// Ruling 1149: a bind's result `_meta` against the attestation the witness expects, cua's engine on its approved build.
+// -> null when it attests it; else the error that stops the run, NO VERDICT (`noVerdict`), since another engine
+// answered (the vendor's: state 1) or none is shown, and nothing of cua's engine was measured by that bind.
+export function attestationStop(meta, expected) {
+  const problem = attestationProblem(meta, expected);
+  return problem && Object.assign(new Error(`refused on the attestation: ${problem}`), {noVerdict: true});
+}
+
+// A bind's record as the script starts it (`blocked`: why it was not sent, or null), the judge's input shape. The
+// client's other requests while it is in flight count on it (`other`). A stop while it runs marks it `unmeasured` (the
+// stop's message): it measured nothing the judge may read.
+export const bindRecord = ({app, cycle, blocked}) => ({app, cycle, dispatched: !blocked, blocked, after: null, asked: 0, refusal: null, failed: false,
+  restarted: false, taskId: null, approval: null, other: 0});
+
+// A js_reset's answer -> {step (the record's), stop (the error that stops the run, or null)}. The connection
+// lifecycle's rejection is a failure of its own (no engine ran it); an answer must attest cua's engine before it counts
+// (src/mcp/server.mjs attests js_reset as js), else it is unmeasured and stops the run NO VERDICT (attestationStop); an
+// attested error result is the reset's failure.
+export function resetStep(result, expected, cycle) {
+  const base = {step: 'js_reset', cycle};
+  if (isLifecycleRejection(result)) return {step: {...base, ok: false, detail: `rejected before dispatch (${result.structuredContent.code})`}, stop: null};
+  const stop = attestationStop(result?._meta, expected);
+  if (stop) return {step: {...base, ok: false, unmeasured: stop.message}, stop};
+  return {step: {...base, ok: !result.isError, ...(result.isError ? {detail: boundedError(resultText({result}))} : {})}, stop: null};
+}
+
+// The run's verdict: the judge's (`judged`, judgeApprovalCycles over what was recorded, `complete` false when the run
+// stopped), or, for a run that stopped (`stopped` {message, noVerdict}), a fail for any stop that is not NO VERDICT's
+// (no answer, a protocol error) and else NO VERDICT unless what it did observe fails it. -> the judge's, with the stop.
+export function stoppedVerdict(judged, stopped) {
+  if (!stopped) return judged;
+  const verdict = !stopped.noVerdict ? 'fail' : judged.verdict === 'pass' ? 'no verdict' : judged.verdict;
+  return {...judged, verdict, ok: false, stopped: stopped.message};
+}
+
+// The line the hosted sitting's `verdict` check reads (scripts/hosted-sittings/checks.mjs).
+export const verdictLine = verdict => `VERDICT: ${verdict.toUpperCase()}`;

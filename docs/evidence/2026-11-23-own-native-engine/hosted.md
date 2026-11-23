@@ -794,3 +794,266 @@ The focused suites at `4130efedc` pass 2135/2135, plain and with `RUNNER_ENVIRON
 GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1`.
 
 I made no full `npm test`, hosted run, GUI action, TCC write or push.
+
+## Pilot A, run 45218179501
+
+Sitting A's hosted pilot ran at `8bf3ff37b`. The artifact is kept outside the repository, in `~/.local/share/cua-m5-pilot/a-1/`.
+
+### Setup: every step passed
+
+| Step | Result |
+|---|---|
+| loopback | passed |
+| harness checkout | passed |
+| prepare | passed |
+| install | passed |
+| engine | unpacked, signature verified |
+| vendor rows | written |
+| TCC rows | all four services written |
+| approve | two passes: pass 1 `engine_capture_confirmation`, pass 2 approved. Build `c83131f0…`, engineVersion 0.3.0 |
+
+### What failed
+
+Every native-baseline run (vv-1, vc-1, cc-1) failed at prepare within a second:
+
+```
+the approved home is in use by 3 process(es) (pids 2142, 2162, 2180); refusing to share it
+```
+
+pid 2142 was the same in every run; the other two changed from run to run (2208/2226, 2253/2271).
+
+### Cause
+
+`homeUsers` counted every process whose command line names the approved home (`pgrep -f`). On a runner, two kinds of
+process do that without using the runtime:
+
+- **cua's approved engine** (pid 2142). Setup's approve left it running, at
+  `~/Library/Application Support/cua/engine/cua Engine.app`. On a runner the approved home is the default CUA_HOME,
+  `~/Library/Application Support/cua`, so the engine sits under it.
+- **The controller's ssh client and the shell around it** (the two pids that changed each run). On the hosted
+  topology the controller and the device are one VM. These carry the home in their argv. They are outside prepare's
+  ppid chain, because sshd sits between them and prepare. On a two-machine topology they would be on the other
+  machine.
+
+### The fix
+
+- **The engine is stopped first, under the admission, before the in-use check.**
+  - `prepareRun` now runs in two phases: `admitReused` takes the admission; `cua engine stop` runs (`stopEngine`, the
+    `shutdown` request); then `settle()` runs the in-use check, the scratch directory and the stash.
+  - Every run starts from a known engine state, and the check needs no exception for the engine.
+  - An engine that will not stop gives the admission back and refuses the run, as before.
+  - `engineStop` (`{wasRunning, pid?}`) is the run's, as before.
+  - Setup gains an `engine stop` step after approve, so every sitting starts with the engine down; this covers C, D and
+    T3b too. The result goes into `setup.json` as `engineStop: {wasRunning, pid?, stopped}`.
+  - Cleanup already stopped the engine before its own users check.
+- **Only real users of the runtime are counted.**
+  - `homeUsers` counts a candidate only if it runs the approved helper's exact executable, or an executable under the
+    home: the managed Node, a REPL host, or cua's engine if it is left running.
+  - A process that only names the path in its argv is not a user. That is the decoy, the controller's ssh client and
+    its shell.
+  - The match is on executables (`lsof` txt), never on argv.
+  - Cleanup uses the same function, so the hosted cleanup no longer sees the ssh client as a stranger.
+
+### Tests
+
+- New, with real processes: an ssh-style client and a shell that name the home are not users; another run's helper
+  and a serve whose executable is under the home still are. Their RED (in the next table) is against the
+  argv-counting `homeUsers`.
+- New: an approved-runtime run stops the engine before its in-use check. With the engine as the only user, the run is
+  admitted, and the order is stop, then users.
+- Changed: the ownership test's decoy, which only names the helper's path, is no longer listed. The stop-under-the-
+  admission test now checks that the admission is held and nothing is stashed yet. `owner.json` is written after the
+  check.
+- Setup: `engine stop` comes after approve and before the record, and `engineStop` is reported.
+
+RED:
+
+| Command | Result |
+|---|---|
+| `node --test test/native-baseline/approved-runtime.test.mjs` | pass 13 fail 4: `not ok 10` (the stop came after the stash), `not ok 15` (the decoy listed), `not ok 16`, `not ok 17` |
+| `node --test test/hosted-sittings/setup.test.mjs` | pass 3 fail 1 |
+
+GREEN:
+
+| Suite | Result |
+|---|---|
+| `test/native-baseline/*` | 203/203 |
+| `test/hosted-sittings/*` | 68/68 |
+
+### The other sittings, checked statically
+
+| Where | Guard | Finding |
+|---|---|---|
+| B: `native-mac`, through `repl-parity/prepare-device.mjs` | `prepareRun`/`cleanupRun` | Met the same guard, with the engine running and the ssh client visible. Fixed by both changes. |
+| C: `native-matrix`, `live-device.mjs` | its begin already runs `stopEngine` before preparation | Only the ssh client in argv was a problem, fixed by the narrowing. Its cleanup stops the engine again before the users check. |
+| `native-baseline/remote.mjs` | the preflight's `serves` count, `pgrep -f` on `<checkout>/bin/cua.mjs serve` | No change. It runs before a serve is started, and its bracket keeps it from matching its own ssh command. A controller's ssh client carrying a serve command exists only while that serve runs, so counting it is not a false positive. |
+| The scene and app checks | `pgrep -x TextEdit`, `pgrep -x ChatGPT` in accept-native, `hosted-sittings.mjs textedit`, `mini-rules.mjs` | Process names, not paths: no change. |
+| D: `accept-native` | runs in a scratch CUA_HOME with no admission guard | Setup's engine stop gives it a known engine state. |
+| D: `verify --bind`, `approval-cycles` | no admission or in-use guard | Setup's engine stop gives them a known engine state. |
+| T3b | not built yet | Its stages run after setup's engine stop. A relaunch at every stage should go through `cua engine stop` the same way. |
+
+### Decisions
+
+1. **Stop the engine; do not exclude it.** The design session's steer: the engine is stopped under the admission and
+   before the check, so the check stays one rule. The engine is no longer needed to persist across a run, because the
+   cua lanes launch it on demand.
+2. **Executables, not argv.** A user runs part of the runtime. That is the same rule `cleanupReused` already applied to
+   helpers, now applied to every candidate.
+
+The focused suites (hosted-sittings, native-matrix, accept*, native-baseline, repl-parity, browser-parity, sandbox-probe) pass 2259/2259. I made no hosted run, GUI action, TCC write or push.
+
+## The O0 fence scanner, after wave 4's review
+
+An independent review of wave 4 found that the fence scanner in `tcc.mjs` was not CommonMark-aware in two ways:
+
+- It accepted a closer at any indent, including an indented line that is literal content inside a top-level fence.
+- It did not recognise a fence that opens on a list marker. It could then take that fence's closer for an opener and
+  hide the Decision Log after it.
+
+This commit does not write a full parser. `fenceScan` places only fences it can place without doubt: those that open
+at column 0 and close with the same character, at least as long, indented at most three spaces, with nothing after the
+marker. It refuses a document as "the pinned spec's fences are ambiguous (…, line N)" when it finds any of these:
+
+- a closer indented four or more;
+- a fence opening on a list marker;
+- any other indented fence marker outside a fence, which would belong to a list item or be indented code;
+- a fence that is never closed.
+
+The zero-store-call table gains three cases:
+
+- an indented closer inside a top-level fence;
+- a list-marker fence before the Decision Log;
+- a list item's fence whose closer looks like an opener.
+
+The `~~~` example moves to column 0, so it still tests a placed fence.
+
+- RED (`node --test test/hosted-sittings/tcc.test.mjs`): pass 18, fail 3. The three new cases reached the store.
+- GREEN: 21/21, and `test/hosted-sittings/*` 71/71.
+
+The real spec at `db775127` passes; I checked a byte-identical copy of `git show` at that commit. It has four fence
+lines (307, 386, 392, 634), all at column 0, balanced, and all before `## Decision Log` (line 780). Its Decision Log
+holds no fence.
+
+## Pilot A, run 45220897246
+
+Sitting A's re-run at `92b13bb66`. The artifact is in `~/.local/share/cua-m5-pilot/a-2/`, and the job log is saved
+beside it as `job.log`.
+
+The engine job took 2.5 min. The sitting job took 4.5 min: vv 30 s, vc 56 s and cc 58 s.
+
+The engine-stop fix worked. Setup passed every step, including `engine stop: was running (pid 2782), stopped`, and vc-1
+and cc-1 were complete. vv-1 was INCOMPLETE at `setup.activate`, so the hosted `record` check gave FAIL ("runtime error:
+the run is incomplete"). compare-A, B and C were NO VERDICT, as expected for a pilot.
+
+### Timeline (job log and vv's rows)
+
+| Time (UTC) | What |
+|---|---|
+| 16:54:14.1 | setup: the vendor helper's rows written; the helper is not running |
+| 16:54:20.4 | approve pass 1: `engine_capture_confirmation`. This is cua's copy's first capture, which raises replayd's alert |
+| 16:54:25.9 | approve pass 2 approved; engine stop (pid 2782) |
+| 16:54:30.5 | vv-1 starts: cold connections, then warm.noop, getState and listApps. All ok; none needs the front |
+| 16:54:44 | vv's `bind.getApp` launches TextEdit (pid 4009): ok, 2.9 s, 1 approval. The vendor helper had not run before this run (`helperAtStart`: none), so this bind's capture is its first |
+| ~16:54:49.7 | `setup.activate`: `open -a TextEdit` once, then 12 reads of the front over 5.08 s |
+| 16:54:54.8 | every read was UserNotificationCenter (pid 2596), never TextEdit, so the run stops |
+| 16:55:09 | vc's bind launches TextEdit (pid 6049); `setup.activate` takes the front on its first read (977 ms) |
+| 16:56:05 | cc's bind launches TextEdit (pid 9623); `setup.activate` takes the front on its first read (474 ms) |
+
+### Which alert it was
+
+UserNotificationCenter shows both copies' alerts, so its pid cannot tell them apart. pid 2596 is lower than the engine's
+2782, so the process predates the approve's launch of the engine. That dates the process, not the window. Nothing in
+the run read the window list or replayd's SCAlert lines, so I cannot say from the record which window was in front.
+
+The evidence points to the vendor helper's own first-capture alert:
+
+- In H0 (ii), every copy alerts at its first capture, and the vendor helper stacks a second window over cua's. Here the
+  vendor helper's first capture was vv's bind, about 3 to 5 s before the activation.
+- vc and cc activated on their first read, with cua's alert from approve pass 1 still up, and by then the vendor's.
+  Neither raised a new alert: cua's copy had already captured at the approve, and a second capture by the same copy
+  raises none (H0 (ii)).
+- So the one run that failed is the one whose own bind had just raised a new alert. The runs where every alert was
+  already up activated cleanly.
+
+That fits H0's two observations: a new alert takes the front, and an activation takes the front from an alert already
+up.
+
+What I cannot tell:
+
+- whether the vendor's window appeared before or after the one `open -a`;
+- whether a second activation would have worked;
+- whether vv's warm.getState, which listed 8 apps, captured. If it did, the alert came about 15 s earlier, and the
+  failure is H0 (ii)'s "activation under an alert is unreliable" rather than a fresh alert.
+
+It was not the leftover from approve pass 1 alone. That alert was equally up for vc and cc, which activated fine.
+
+### Reconciliation with H0 (ii): the alert did not clear
+
+H0 (ii), run 45156038821, saw both alerts on screen at every sample for 604 s and 602 s. Nothing in this run shows an
+alert closing either. The "about 15 s" is the gap between vv's failed activation (16:54:54.8) and vc's activation
+(about 16:55:10), and that activation is the only later front reading. It shows the front taken by vc's
+`open -a TextEdit`, not an alert gone.
+
+H0 (ii)'s keystroke cell and ruling 1141's run show the same thing: TextEdit and Finder activations took the front and
+the key focus with the alerts still on screen. So the alert was covered, not closed. Both copies' alerts were most
+likely still up behind TextEdit for all of vc and cc. Neither run read the window list, so that is inferred, not seen.
+
+### What that means for the wait and the judged cells
+
+The fix's bounded wait (below) asks whether UserNotificationCenter is still the front app. It does not ask whether the
+alert still exists. Since the alert never closes, the wait can only end early if something takes the front.
+
+Nothing in setup activates an app, so I expect the wait to reach its 60 s bound after both warm-ups. That costs about
+2 min per sitting, and the record will say "still in front".
+
+That is a wait the sitting can pass with the alert still up, and that is acceptable. The judged cells never rely on the
+alert being gone:
+
+- each run activates its TextEdit first, which takes the front from an alert already up;
+- front and key are sampled around each judged cell under the alert-frontmost rule;
+- a run that finds the alert in front where it needs TextEdit (at `setup.activate` or before a key) now records the
+  cause, and the hosted check reads it as NO VERDICT, never FAIL.
+
+What the warm-up changes is when a new alert can be raised. Both copies make their first capture in setup, so no run's
+bind raises one in the middle of its activation, which is the failure in vv.
+
+One residue is worth the design session's eye. H0's README says the alerts "stay on screen above the scenes". A cell
+that clicks by coordinates where an alert window overlaps the scene could land on the alert, which would answer it.
+That is forbidden. The setup record now keeps each alert window's bounds, so the next pilot can check for overlap with
+the scene windows. vc and cc completed their clicks with the alerts up.
+
+### The fix (ruling 1153; 8dd641d2d, b6154d108)
+
+- **(c) The producer names the cause.** In native-baseline's macOS lane (`macos.mjs`), a stop with
+  UserNotificationCenter in front records `incompleteCause: {cause: 'alert', at, front}`. `at` is `setup.activate` or
+  `key.skipped`, and the first such stop counts. The `record` check (`checks.mjs`, `record` only; `observation` is
+  untouched) reads that as `NO VERDICT` ("alert: … stopped at … with com.apple.UserNotificationCenter (pid …) in
+  front (…)"). An incomplete run without that cause is still a runtime error, and the message text is never matched.
+- **(b) The warm-up, symmetric.** New setup steps `warm-up cua` and `warm-up vendor` run after the approve and before
+  the engine stop (`warm-up.mjs`). Each is one `cua serve` session on the copy: bind TextEdit and take one screenshot,
+  accept TextEdit's approval and nothing else, then end by pid the TextEdit it launched. If TextEdit was already
+  running, it refuses to start. It refuses off a GitHub-hosted runner. It writes nothing, clicks nothing and answers
+  nothing.
+- **(a) The bounded wait and what each warm-up raised.** Each warm-up records, in `setup.json` → `warmUps[]`:
+  - the capture's outcome and the engine its result attested;
+  - replayd's SCAlert lines over the capture (`watchCaptureAlerts`);
+  - the front app after it;
+  - UserNotificationCenter's windows from the window server's list (`system-windows.swift`): pid, number, layer,
+    bounds, and whether a title was readable (never the title);
+  - the wait itself: a watch-only poll of the front app every 1 s, up to 60 s, with `cleared`, `waitedMs`, `polls`, the
+    distinct fronts seen and the last one. An unreadable front does not count as clear;
+  - the alert windows again at the end.
+
+  An alert still in front at the bound, or a failed capture, is recorded and the setup goes on. Nothing retries.
+
+Tests:
+
+- RED: `node --test test/hosted-sittings/checks.test.mjs` failed 1 of 6, the new mapping. The producer test failed 1 of
+  1. `warm-up.test.mjs` failed: the module did not exist. `setup.test.mjs` failed 2 of 5: the steps list and the
+  held-alert case.
+- GREEN: checks 6/6; `test/native-baseline/{run,compare-lanes,summary}` 69/69; warm-up 9/9; setup 5/5;
+  `test/hosted-sittings/*` 82/82.
+
+Not proven here: the warm-up itself has not run on a runner. Hosted runs are the controller's. The next pilot shows
+whether the vendor warm-up raises its alert in setup (`captureAlerts.count` 2, window stacked), whether vv's activation
+then takes the front, and how long the two waits cost.

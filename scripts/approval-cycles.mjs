@@ -23,12 +23,18 @@
 // refusalOf, from the policy's #216 sentence), its `cua/approval` result meta (who answered, the connection's opaque id,
 // the runtime generation), a non-approval failure's first line, whether its result opened with the restart notice, its
 // task id and the samples' verdicts; never the app's text. Each end_task (status ended) and js_reset is checked. Every
-// js result must attest cua's engine on cua's host; a mismatch stops the run as a fail. A run stopped by a lost fixture
-// is judged on what it recorded, the steps it never reached NO VERDICT. The judge is judgeApprovalCycles. Nothing here
-// reads replayd's state or writes a TCC row.
+// bind's and js_reset's result must attest cua's engine, and every bind's cua's host: another host stops the run as a
+// fail; another engine, or none, stops it NO VERDICT (ruling 1149: the vendor's engine on this side is state 1, which
+// measures nothing of cua's; attestationStop, resetStep). A bind a stop interrupted is kept marked `unmeasured`, outside
+// the judgement. The client's other requests count on the call in flight (a bind, an end_task, a js_reset; between
+// calls, on the connection), so those during an unmeasured call stay diagnostic and the rest fail the run. A run
+// stopped by a lost fixture or an attestation is judged on what it recorded, the steps it never reached NO VERDICT
+// (stoppedVerdict). The judge is judgeApprovalCycles. Nothing here reads replayd's state or writes a
+// TCC row.
 //
 //   CUA_SHIM_SURFACES=computer,browser node scripts/approval-cycles.mjs --engine cua \
 //     --approve com.apple.TextEdit --decline com.apple.calculator [--cycles 20] [--idle-ms 8000]
+// The report on stdout, then `VERDICT: PASS|FAIL|NO VERDICT` on stderr (the hosted sitting's verdict check reads it).
 // Exit 0 on a pass, 1 on a fail or NO VERDICT, 2 on a usage error or off a hosted runner.
 import {execFile, spawnSync} from 'node:child_process';
 import {mkdtempSync, rmSync} from 'node:fs';
@@ -40,12 +46,12 @@ import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 import {REPL_HOST_META_KEY} from '../src/repl-host/identity.mjs';
-import {attestationProblem, bindRefusal, boundedError, isAppApproval, isLifecycleRejection, lsappinfoPid} from './probe/lib.mjs';
+import {bindRefusal, boundedError, isAppApproval, isLifecycleRejection, lsappinfoPid} from './probe/lib.mjs';
 import {LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 import {openSession, resultText} from './accept/mcp-session.mjs';
 import {FRONT_WINDOW_SCRIPT, localFrontmost} from './accept/key-guard.mjs';
 import {readWindows} from './accept/window-close.mjs';
-import {ALERT_APPS, approvalCyclesPlan, judgeApprovalCycles, refusalOf, screenState} from './probe/approval-cycles.mjs';
+import {ALERT_APPS, approvalCyclesPlan, attestationStop, bindRecord, judgeApprovalCycles, refusalOf, resetStep, screenState, stoppedVerdict, verdictLine} from './probe/approval-cycles.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
@@ -135,6 +141,7 @@ async function prepareBind(fixture) {
 // One connection running `plan`; resolves its record. A timed-out call, a protocol error or a wrong attestation throws.
 async function runConnection(name, plan, fixture) {
   let bind = null;   // the bind in flight
+  let inStep = null;   // the end_task or js_reset in flight: {other}
   let opened = false;   // whether a call since the last end_task could have opened a task
   const record = {name, pid: null, binds: [], steps: [], other: 0, planned: plan.length, ran: 0};
   const session = openSession({args: [CLI, 'serve'], env: serveEnv, clientName: 'cua-approval-216', onServerRequest: msg => {
@@ -142,7 +149,8 @@ async function runConnection(name, plan, fixture) {
       bind.asked++;
       return bind.app === 'approve' ? {action: 'accept', content: {}} : {action: 'decline'};
     }
-    record.other++;
+    // Counted on the call in flight, so the judge can set aside one whose answer measured nothing (ruling 1149).
+    (bind ?? inStep ?? record).other++;
     return {action: 'decline'};
   }});
   record.pid = session.pid;
@@ -153,33 +161,45 @@ async function runConnection(name, plan, fixture) {
     if (reply.error) throw new Error(`${name}: ${label} failed: ${reply.error.code} ${boundedError(reply.error.message)}`);
     return reply.result;
   };
+  // An end_task's or js_reset's answer, with the client's other requests while it was in flight; a call that throws
+  // leaves them on the connection.
+  const stepTool = async (send, label) => {
+    inStep = {other: 0};
+    try { return {result: await tool(send(), label), other: inStep.other}; }
+    catch (error) { record.other += inStep.other; throw error; }
+    finally { inStep = null; }
+  };
+  const tally = other => (other ? {other} : {});
   try {
     await session.initialize();
     for (const step of plan) {
       record.ran++;
       if (step.step === 'end_task') {
-        const result = await tool(session.call('end_task'), 'end_task');
+        const {result, other} = await stepTool(() => session.call('end_task'), 'end_task');
         const status = result.structuredContent?.status ?? null;
         // Every bind of the cycle not sent (blocked) and no js_reset: no task was opened, so a noop proves nothing.
         const noTask = !opened && !result.isError && status === 'noop';
-        record.steps.push({step: 'end_task', cycle: step.cycle, ok: !result.isError && status === 'ended', ...(result.isError || status !== 'ended' ? {detail: `status ${status}${result.isError ? ', isError' : ''}`} : {}), ...(noTask ? {noTask} : {})});
+        record.steps.push({step: 'end_task', cycle: step.cycle, ok: !result.isError && status === 'ended', ...(result.isError || status !== 'ended' ? {detail: `status ${status}${result.isError ? ', isError' : ''}`} : {}), ...(noTask ? {noTask} : {}), ...tally(other)});
         opened = false;
       } else if (step.step === 'js_reset') {
         opened = true;
-        const result = await tool(session.call('js_reset', {}, 60_000), 'js_reset');
-        record.steps.push({step: 'js_reset', cycle: step.cycle, ok: !result.isError, ...(result.isError ? {detail: boundedError(resultText({result}))} : {})});
+        // Attested before it counts (ruling 1149): another engine, or none, stops the run NO VERDICT (resetStep).
+        const {result, other} = await stepTool(() => session.call('js_reset', {}, 60_000), 'js_reset');
+        const {step: done, stop} = resetStep(result, expected, step.cycle);
+        record.steps.push({...done, ...tally(other)});
+        if (stop) throw Object.assign(stop, {message: `${name}: js_reset: ${stop.message}`});
       } else if (step.step === 'idle') await sleep(idleMs + 4000);
       else {
         const blocked = await prepareBind(fixture);
-        bind = {app: step.app, cycle: step.cycle, dispatched: !blocked, blocked, after: null, asked: 0, refusal: null, failed: false, restarted: false, taskId: null, approval: null};
+        bind = bindRecord({app: step.app, cycle: step.cycle, blocked});
         if (blocked) { record.binds.push(bind); bind = null; continue; }
         opened = true;
         try {
           const code = `await cua.getApp(${JSON.stringify(bundles[step.app])}); nodeRepl.write("bound")`;
           const result = await tool(session.js(code, 120_000), `the bind of ${bundles[step.app]}`);
           if (isLifecycleRejection(result)) throw new Error(`${name}: the bind of ${bundles[step.app]} was rejected before dispatch`);
-          const problem = attestationProblem(result._meta, expected);
-          if (problem) throw new Error(`${name}: refused on the attestation: ${problem}`);
+          const stop = attestationStop(result._meta, expected);
+          if (stop) throw Object.assign(stop, {message: `${name}: ${stop.message}`});
           const host = result._meta?.[REPL_HOST_META_KEY]?.host;
           if (host !== 'cua') throw new Error(`${name}: the bind ran on the ${host ?? 'vendor'} host`);
           const text = resultText({result});
@@ -191,6 +211,10 @@ async function runConnection(name, plan, fixture) {
             if (bind.refusal === null) Object.assign(bind, {failed: true, failure: boundedError(text.startsWith(RESTART_NOTICE) ? text.split('\n').slice(1).join('\n') : text)});
           }
           bind.after = screenState(await sample());
+        } catch (error) {
+          // A stop interrupted the bind: it measured nothing the judge may read (judgeApprovalCycles `unmeasured`).
+          bind.unmeasured = error.message;
+          throw error;
         } finally { record.binds.push(bind); bind = null; }
       }
     }
@@ -212,12 +236,9 @@ try {
 } finally {
   rmSync(probeDir, {recursive: true, force: true});
 }
-// A lost fixture stops the run with steps unexecuted: the judge reads those as NO VERDICT and fails only what it saw.
-// Any other stop (no answer, a protocol error, a wrong attestation) is a failed run.
-const judged = judgeApprovalCycles({cycles, idleAt: IDLE_AT, connections: report.connections, complete: !stopped});
-if (stopped) {
-  const verdict = !stopped.noVerdict ? 'fail' : judged.verdict === 'pass' ? 'no verdict' : judged.verdict;
-  report.verdict = {...judged, verdict, ok: false, stopped: stopped.message};
-} else report.verdict = judged;
+// A lost fixture or an attestation of another engine stops the run with steps unexecuted: the judge reads those as NO
+// VERDICT and fails only what it saw. Any other stop (no answer, a protocol error, another host) is a failed run.
+report.verdict = stoppedVerdict(judgeApprovalCycles({cycles, idleAt: IDLE_AT, connections: report.connections, complete: !stopped}), stopped);
 console.log(JSON.stringify(report, null, 1));
+process.stderr.write(`${verdictLine(report.verdict.verdict)}\n`);
 process.exitCode = report.verdict.ok ? 0 : 1;

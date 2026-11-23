@@ -65,9 +65,10 @@
 // cua runs one hold, one commit and one approved engine build; no (section, id, engine, sample) twice; every row of the
 // manifest (./manifest.mjs) in every run, built only from a run whose own metadata says what it holds; every judged
 // cell qualifying; every counted background or launch row carrying its oracle reading; the shared device mode, the
-// default, wherever a run records its mode (meta.desktopMode). Whatever is missing is NO VERDICT, which blocks M5 as a
-// failure does but is not one. What the matrix does not run on a shared Mac (./plan.mjs OWNER_OPTIONS) is listed as the
-// owner's option, outside the verdict.
+// default, wherever a run records its mode (meta.desktopMode); every full run's lane attesting the side it measured
+// (ruling 1149: a cua run answered by the vendor's engine, state 1, is named and its rows not judged). Whatever is
+// missing is NO VERDICT, which blocks M5 as a failure does but is not one. What the matrix does not run on a shared Mac
+// (./plan.mjs OWNER_OPTIONS) is listed as the owner's option, outside the verdict.
 //
 // The verdict: FAIL when something was judged worse, lower or interfering, or the departures file holds an entry of
 // another kind; else NO VERDICT when proof is missing; else OWNER when only the owner's calls remain; else PASS (the
@@ -84,6 +85,7 @@ import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
+import {classifyAttestation, classifyAttestedRecord} from '../probe/lib.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
 export {manifestOf, SPEED_OPS} from './manifest.mjs';
@@ -127,6 +129,22 @@ function metadataProblems(result) {
   if (!['vendor', 'cua'].includes(lane?.host)) out.push('its lane names no host');
   if (typeof lane?.build !== 'string' || !lane.build || typeof lane?.version !== 'string' || !lane.version) out.push('its lane carries no attested build and version');
   return out;
+}
+
+// Ruling 1149: whether a full run attests the side it measured, the engine its run requested
+// (meta.nativeEngine.requested, ./run.mjs), else the one engine its rows name. Every answer the run kept
+// (meta.nativeEngine {attested, unattested}) is classed, since the lane names only the first (scripts/probe/lib.mjs
+// classifyAttestedRecord: a vendor answer anywhere on the cua side is state 1, a result left unattested is missing); a run
+// that kept none is classed by its lane. -> null, or the problem. A run whose lane or side cannot be read is left to
+// metadataProblems.
+function unmeasuredSide(result) {
+  const engines = [...new Set(result.rows.map(r => r.engine))];
+  const kept = result.meta?.nativeEngine;
+  const side = kept?.requested ?? (engines.length === 1 ? engines[0] : null);
+  const lane = result.lanes?.[0];
+  if (!side) return null;
+  if (Array.isArray(kept?.attested)) return classifyAttestedRecord(kept, {engine: side}).problem;
+  return lane ? classifyAttestation(lane, {engine: side}).problem : null;
 }
 
 // The full runs by run number, in order. -> [[n, [entry]]].
@@ -240,8 +258,13 @@ const oracleJudges = r => (r.section === 'method' && r.regime === 'background') 
 // missing, options, desktop, verdict}.
 export function judge(results, problems = [], {departures: entries = readDepartures()} = {}) {
   const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
-  const full = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
-  const narrowed = results.filter(r => own(r) && !full.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
+  const fullRuns = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
+  const narrowed = results.filter(r => own(r) && !fullRuns.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
+  // Ruling 1149: a run whose lane attests another engine than the side it measured is no measurement of that side (the
+  // cua side on the vendor's engine, state 1, would compare the vendor with itself): its rows are not judged and the
+  // missing proof names it (unmeasuredSide).
+  const unmeasured = fullRuns.map(entry => [entry, unmeasuredSide(entry.result)]).filter(([, problem]) => problem);
+  const full = fullRuns.filter(entry => !unmeasured.some(([u]) => u === entry));
   // Each row tagged with its run's number (the pairing key) and whether that run is hosted (./front-key.mjs).
   const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
@@ -249,7 +272,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const notJudged = full.length ? notJudgedOf(all.filter(r => exclusionOf(r))) : [];
   const runs = {vendor: 0, cua: 0};
   for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
-  const missingProof = [...problems, ...proofProblems(full)];
+  const missingProof = [...problems, ...unmeasured.map(([{path}, problem]) => `${path}: ${problem}; its rows are not judged`), ...proofProblems(full)];
   // Marks the rules do not allow, on results that reached the judge without the reader's check: an `excluded` mark on a
   // row no ruling puts out (the row is judged as it read), a declaration on a full run's row (judged on its raw outcome).
   const misMarked = all.filter(r => r.excluded !== undefined && !exclusionOf(r)).length;

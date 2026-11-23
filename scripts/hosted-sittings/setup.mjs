@@ -12,6 +12,13 @@
 //                       nothing here kills one)
 //   vendor rows         the vendor's helper's rows (./tcc.mjs, the one guarded writer)
 //   approve             cua's engine's rows, the relaunch and the two-pass approve (./approve.mjs)
+//   warm-up cua,        each copy's first capture made here, outside every judged cell, so replayd's alert for it is
+//   warm-up vendor      raised in setup, not in a run (ruling 1153; pilot A, run 45220897246), then a bounded,
+//                       watch-only wait for the alert to leave the front (./warm-up.mjs); each kept in `warmUps`. An
+//                       alert still in front, or a failed capture, is recorded and the setup goes on
+//   engine stop         `cua engine stop` on the engine the approve and its warm-up left running, so every sitting
+//                       starts from a known engine state and no stray engine feeds a measured run or reads as a user of the approved home
+//                       (pilot A, run 45218179501); whether it was running and that it stopped are kept (`engineStop`)
 //   record              the runner's record, which every harness's preflight reads and attests (./runner.mjs)
 // Each step gates the next. It refuses off a GitHub-hosted macOS runner before running anything.
 import {spawnSync} from 'node:child_process';
@@ -19,17 +26,28 @@ import {randomUUID} from 'node:crypto';
 import {existsSync, mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {BUNDLE_NAME} from '../../src/runtime/engine-bundle.mjs';
+import {stopEngine as stopApprovedEngine} from '../../src/runtime/engine.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from '../../src/runtime/layout.mjs';
 import {locateRuntime} from '../../src/runtime/manifest.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
 import {engineToApprove, hostedApprove} from './approve.mjs';
 import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 import {DEVICE} from './plan.mjs';
+import {warmUp as warmUpCopy} from './warm-up.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
 export const PARITY_CLONE_IN_HOME = 'Developer/GitHub/cua-parity';
 const ORIGIN = 'https://github.com/SSFSKIM/cua';
+
+// A warm-up's step detail (./warm-up.mjs): what it captured, what it raised, and whether the alert left the front.
+const frontName = front => (front ? `${front.bundleId ?? 'an app with no bundle id'}` : 'an unreadable app');
+function warmUpDetail({capture, captureAlerts, frontAfter, wait}) {
+  const made = capture.ok ? `capture made (${capture.engine}'s)` : `capture failed (${capture.error})`;
+  const lines = captureAlerts.watched ? `${captureAlerts.count} SCAlert lines` : 'SCAlert lines unwatched';
+  const left = wait.cleared ? `it left the front after ${wait.waitedMs} ms` : `UserNotificationCenter still in front after ${wait.waitedMs} ms; the sitting goes on`;
+  return `${made}, ${lines}, ${frontName(frontAfter)} in front after it; ${left}`;
+}
 
 class StepFailed extends Error {}
 const failIf = (condition, detail) => { if (condition) throw new StepFailed(detail); };
@@ -37,16 +55,17 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
 // engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
-// exists, vendorRunning(app), grant, approve, write(path, record), log}.
-// -> {ok, steps: [{step, ok, detail}], approve, record, approved: {runtime, engine}}.
+// exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), stopEngine() (src/runtime/engine.mjs stopEngine),
+// write(path, record), log}.
+// -> {ok, steps: [{step, ok, detail}], approve, warmUps, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
   runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync,
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
-  approve = deps => hostedApprove(deps), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
+  approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
   log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the hosted setup');
-  const report = {ok: false, steps: [], approve: null, record: null, approved: null};
+  const report = {ok: false, steps: [], approve: null, warmUps: [], engineStop: null, record: null, approved: null};
   const run = (command, args, extra = {}) => {
     const result = exec(command, args, {env, ...extra});
     failIf(result.status !== 0, `${[command, ...args].join(' ')}: exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''}`);
@@ -97,6 +116,16 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       report.approve = await approve({env, platform, home, log});
       failIf(!report.approve.approved, report.approve.summary);
       return report.approve.summary;
+    }],
+    ...['cua', 'vendor'].map(copy => [`warm-up ${copy}`, async () => {
+      const done = await warmUp(copy);
+      report.warmUps.push(done);
+      return warmUpDetail(done);
+    }]),
+    ['engine stop', async () => {
+      const stopped = await stopEngine();
+      report.engineStop = {...stopped, stopped: true};
+      return stopped.wasRunning ? `was running (pid ${stopped.pid}), stopped` : 'not running';
     }],
     ['record', () => {
       const engine = realpath(join(home, ENGINE_DIRECTORY_IN_HOME, BUNDLE_NAME));

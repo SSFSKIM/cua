@@ -124,11 +124,14 @@ test('#493\'s cells follow the first-use path literally and pass a key where an 
   assert.equal(FIRST_USE_CHECKS.miss(miss, ['maws', 'personal']), false);
 });
 
-test('literalVendor: five separate js calls on a computer,browser serve with the default engine; the vendor host passes only with the declared visible limit', async () => {
+test('literalVendor: five separate js calls on a computer,browser serve pinned to the vendor engine; the vendor host passes only with the declared visible limit', async () => {
+  // Ruling 1149: the step exercises the vendor path, so it pins the vendor engine (once macOS's default is cua's, an
+  // approved engine would otherwise move it to cua's host), and the host the pin selects is never left to CUA_REPL_HOST.
   const env = literalEnv({PATH: '/bin', CUA_NATIVE_ENGINE: 'cua', CUA_REPL_HOST: 'cua', CUA_BROWSER_BACKENDS: '/s.sock'});
-  assert.deepEqual(env, {PATH: '/bin', CUA_BROWSER_BACKENDS: '/s.sock', CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off'});
+  assert.deepEqual(env, {PATH: '/bin', CUA_BROWSER_BACKENDS: '/s.sock', CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off', CUA_NATIVE_ENGINE: 'vendor'});
   const page = {url: 'http://127.0.0.1:9/', documentMarker: 'MARK'};
-  const tagged = (body, extra = {}) => ({result: {content: [{type: 'text', text: `CUA_FEATURES_RESULT ${JSON.stringify(body)}`}], isError: false, ...extra}});
+  const VENDOR_ENGINE = {engine: 'vendor', version: '26.924.1001281', build: '26.928.40906-darwin-arm64'};
+  const tagged = (body, extra = {}) => ({result: {content: [{type: 'text', text: `CUA_FEATURES_RESULT ${JSON.stringify(body)}`}], isError: false, _meta: {'cua/nativeEngine': VENDOR_ENGINE}, ...extra}});
   const withDoc = reply => ({...reply, result: {...reply.result, content: [{type: 'text', text: '# Selected Browser\n- Name: MAWS in-app browser (maws)\n- Type: extension'}, ...reply.result.content]}});
   const vendorReplies = [
     withDoc(tagged({detail: {browserId: '1', instance: 'maws:app-1'}})),
@@ -146,6 +149,7 @@ test('literalVendor: five separate js calls on a computer,browser serve with the
   const passed = await runLiteral({session: vendor, page});
   assert.equal(passed.ok, true, JSON.stringify(passed.detail));
   assert.equal(passed.detail.host, 'vendor');
+  assert.equal(passed.detail.engine, 'vendor', 'the pin is checked by every result\'s attestation, not assumed');
   assert.equal(passed.detail.calls.select.name, '- Name: MAWS in-app browser (maws)');
   assert.equal(passed.detail.calls.visible.error, VISIBILITY_LIMIT);
   assert.equal(vendor.sent.length, 6, 'five js calls, then end_task');
@@ -154,7 +158,17 @@ test('literalVendor: five separate js calls on a computer,browser serve with the
     [[true, false, false, false], [false, true, false, false], [false, false, false, false], [false, false, true, false], [false, false, false, true]]);
   assert.ok(vendor.sent.slice(1, 4).every(({code}) => code.includes(page.url) && code.includes('await tab.close()')), 'every tab it opens is closed, and only the loopback page is opened');
 
-  const ownHost = vendorReplies.map(reply => ({...reply, result: {...reply.result, _meta: {'cua/replHost': {host: 'cua', version: REPL_HOST_VERSION}}}}));
+  // A result attesting cua's engine (on the vendor host, or none at all) fails the step, whatever else it answered.
+  const attesting = (engine, at = [0, 1, 2, 3, 4]) => vendorReplies.map((reply, i) => (!at.includes(i) ? reply
+    : {...reply, result: {...reply.result, _meta: engine ? {'cua/nativeEngine': {...VENDOR_ENGINE, engine, build: 'a'.repeat(64)}} : {}}}));
+  for (const [replies, why] of [[attesting('cua', [2]), 'one result on cua\'s engine'], [attesting('cua'), 'every result on cua\'s engine'], [attesting(null, [4]), 'a result attesting no engine']]) {
+    const failed = await runLiteral({session: fakeSession(replies), page});
+    assert.equal(failed.ok, false, why);
+    assert.equal(failed.detail.host, 'vendor', why);
+    assert.notEqual(failed.detail.engine, 'vendor', why);
+  }
+
+  const ownHost = vendorReplies.map(reply => ({...reply, result: {...reply.result, _meta: {...reply.result._meta, 'cua/replHost': {host: 'cua', version: REPL_HOST_VERSION}}}}));
   assert.equal((await runLiteral({session: fakeSession(ownHost), page})).detail.host, 'cua');
   assert.equal((await runLiteral({session: fakeSession(ownHost), page})).ok, false, 'not the host a MAWS session runs');
   const opened = [...vendorReplies];

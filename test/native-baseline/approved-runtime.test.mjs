@@ -168,9 +168,10 @@ const busy = n => new CuaError('engine_busy', `the engine (pid 4321) has ${n} ot
 test('an approved-runtime run stops cua\'s engine at preparation, under the admission it holds', async t => {
   const {home, options} = fixture(t);
   const seen = [];
-  const stop = async () => { seen.push({admitted: existsSync(join(home, ADMISSION, 'owner.json'))}); return {wasRunning: true, pid: 4321}; };
+  // Under the admission (its directory, the lock), before the run's scratch directory or stash exists.
+  const stop = async () => { seen.push({admitted: existsSync(join(home, ADMISSION)), stashed: existsSync(join(home, 'state', 'codex', 'kept')) === false}); return {wasRunning: true, pid: 4321}; };
   const prepared = await prepareRun({device: 'mini', approvedHome: home}, {...options, stop});
-  assert.deepEqual(seen, [{admitted: true}]);
+  assert.deepEqual(seen, [{admitted: true, stashed: false}]);
   assert.deepEqual(prepared.engineStop, {wasRunning: true, pid: 4321});
   await cleanupRun(prepared, {...options, stop: async () => ({wasRunning: false})});
 });
@@ -260,7 +261,7 @@ test('ownership is the exact executable plus the run\'s TMPDIR; argv mentions an
   assert.equal(executableOf(owned), executable);
   assert.equal(executableOf(decoy), realpathSync(process.execPath));
   const users = homeUsers(dir, {executable, tmpdir: runTmp}, {candidates: () => [owned, decoy, otherRun]});
-  assert.deepEqual(users, [{pid: owned, helper: true, owned: true}, {pid: decoy, helper: false, owned: false}, {pid: otherRun, helper: true, owned: false}]);
+  assert.deepEqual(users, [{pid: owned, helper: true, owned: true}, {pid: otherRun, helper: true, owned: false}], 'a process that only names the path is no user');
   assert.equal(JSON.stringify(users).includes(sentinel), false);
   assert.equal(hasRunTmpdir(otherRun, otherTmp), true);
   // Parse failures say only that they failed: an environment that does not continue the command, or a failed read.
@@ -283,4 +284,47 @@ test('ownership is the exact executable plus the run\'s TMPDIR; argv mentions an
   // A failed read in homeUsers marks the helper unreadable, never owned, and carries nothing from the environment.
   const unreadable = homeUsers(dir, {executable, tmpdir: runTmp}, {candidates: () => [owned], exec: (cmd, args, options) => cmd === '/bin/ps' ? leaky(cmd, args) : execFileSyncReal(cmd, args, options)});
   assert.deepEqual(unreadable, [{pid: owned, helper: true, owned: false, unreadable: true}]);
+});
+
+// Hosted pilot A (run 45218179501): on a GitHub runner the controller's ssh client and its shell run on the device's
+// own machine, naming the approved home in their argv. Neither uses the approved runtime: a user is the approved
+// helper's exact executable or a process whose executable lives under the home (a serve's managed Node, a REPL host).
+test('an ssh client or shell naming the home is not a user; a helper or a serve under the home still is', async t => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'home-users-pilot-a-')));
+  const children = [];
+  t.after(() => { for (const child of children) child.kill(); rmSync(dir, {recursive: true, force: true}); });
+  const copy = (...parts) => {
+    const executable = join(dir, ...parts);
+    mkdirSync(dirname(executable), {recursive: true});
+    copyFileSync(process.execPath, executable);
+    standalone(executable, join(dirname(executable), '..', 'lib'));
+    return executable;
+  };
+  const helper = copy('runtimes', 'r1', 'Sky.app', 'Contents', 'MacOS', 'Sky');
+  const managedNode = copy('node', '24.22.0', 'bin', 'node');
+  const keep = ['-e', 'setTimeout(() => {}, 30000)'];
+  const start = (file, args) => { const child = spawn(file, args, {stdio: 'ignore', env: {PATH: '/usr/bin:/bin', TMPDIR: join(dir, 'other', 'tmp')}}); children.push(child); return child.pid; };
+  const sshClient = start(process.execPath, [...keep, '--', '-F', 'config', 'hosted-macos', `prepare '{"approvedHome":"${dir}"}'`]);
+  const shell = start('/bin/sh', ['-c', `sleep 30; : ${dir}`]);
+  const otherHelper = start(helper, keep);
+  const serve = start(managedNode, keep);
+  await new Promise(r => setTimeout(r, 400));
+  assert.deepEqual(homeUsers(dir, {executable: helper, tmpdir: null}, {candidates: () => [sshClient, shell, otherHelper, serve]}),
+    [{pid: otherHelper, helper: true, owned: false}, {pid: serve, helper: false, owned: false}]);
+  assert.deepEqual(homeUsers(dir, {executable: helper, tmpdir: null}, {candidates: () => [sshClient, shell]}), [], 'nothing else in use: the run is admitted');
+});
+
+// Pilot A again: setup's approve left cua's engine running, and on a runner the engine lives under the approved home
+// (~/Library/Application Support/cua/engine), where the in-use check counts it. The run stops it under the admission and
+// before that check, so it starts from a known engine state and the check needs no exception for the engine.
+test('an approved-runtime run stops cua\'s engine before it checks the home is in use', async t => {
+  const {home, options, device} = fixture(t);
+  const order = [];
+  device.users = [{pid: 2142, helper: false, owned: false}];   // the engine, until it is stopped
+  const stop = async () => { order.push('stop'); device.killed.push(2142); return {wasRunning: true, pid: 2142}; };
+  const usersOf = (...args) => { order.push('users'); return options.usersOf(...args); };
+  const prepared = await prepareRun({device: 'mini', approvedHome: home}, {...options, stop, usersOf});
+  assert.deepEqual(order, ['stop', 'users']);
+  assert.deepEqual(prepared.engineStop, {wasRunning: true, pid: 2142});
+  await cleanupRun(prepared, {...options, stop: async () => ({wasRunning: false})});
 });

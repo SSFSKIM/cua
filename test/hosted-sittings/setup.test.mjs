@@ -13,8 +13,12 @@ const CUA_HOME = `${HOME}/Library/Application Support/cua`;
 const ENGINE = `${CUA_HOME}/engine/cua Engine.app`;
 const SKY = `${CUA_HOME}/runtimes/r1/SkyComputerUseService.app`;
 const COMMIT = 'c'.repeat(40);
+const UNC = {pid: 2596, bundleId: 'com.apple.UserNotificationCenter'};
+// A warm-up as ./warm-up.mjs records it: cua's copy alerted at its approve and raises none; the vendor's raises its own.
+const warmedUp = copy => ({copy, capture: {ok: true, engine: copy, bytes: 1, textEdit: {pids: [4009], ended: true}}, captureAlerts: {watched: true, count: copy === 'vendor' ? 2 : 0},
+  frontAfter: UNC, windowsAfter: [], wait: {cleared: true, waitedMs: 3000, polls: 4, seen: [UNC, {pid: 410, bundleId: 'com.apple.finder'}], front: {pid: 410, bundleId: 'com.apple.finder'}}, windowsAtEnd: []});
 
-function spies({fail = null, vendorUp = false, approved = true, missing = []} = {}) {
+function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null} = {}) {
   const calls = [];
   const exec = (command, args, options = {}) => {
     const line = [command, ...args].join(' ');
@@ -34,6 +38,8 @@ function spies({fail = null, vendorUp = false, approved = true, missing = []} = 
     vendorRunning: app => { calls.push({kind: 'vendor-running', app}); return vendorUp; },
     grant: grants => { calls.push({kind: 'grant', clients: grants.map(g => g.client)}); return {rows: [], missing}; },
     approve: ({home}) => { calls.push({kind: 'approve', home}); return {approved, summary: approved ? 'approved in two passes: pass 1 engine_capture_confirmation, pass 2 approved' : 'not approved: pass 1 engine_capture_confirmation, pass 2 engine_capture_confirmation'}; },
+    warmUp: async copy => { calls.push({kind: `warm-up ${copy}`}); return warmUp ? warmUp(copy) : warmedUp(copy); },
+    stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; },
     write: (path, record) => calls.push({kind: 'write', path, record}),
     log: () => {},
   };
@@ -52,7 +58,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   const {calls, deps} = spies();
   const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
   assert.equal(report.ok, true, report.steps.map(s => `${s.step}: ${s.detail}`).join('\n'));
-  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'record']);
+  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'engine stop', 'record']);
   const order = calls.map(c => (c.kind === 'exec' ? c.line.split(' ').slice(0, 3).join(' ') : c.kind === 'grant' ? `grant ${c.clients}` : c.kind));
   const at = needle => order.findIndex(o => o.startsWith(needle));
   assert.ok(at('sh scripts/hosted-sittings/loopback.sh') === 0);
@@ -64,6 +70,14 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.ok(at(`grant ${CLIENTS.vendor}`) > at('vendor-running'), 'the helper is known not to be running before its rows');
   assert.ok(at('approve') > at(`grant ${CLIENTS.vendor}`), 'both bundles\' rows precede any launch the approve makes');
   assert.equal(at('write'), order.length - 1, 'the record comes last, once the engine is approved');
+  // Pilot A (run 45218179501): the engine approve left running is stopped, so every sitting starts from a known engine state.
+  assert.ok(at('engine-stop') > at('approve') && at('engine-stop') < at('write'));
+  // Ruling 1153: each copy's first capture in setup, after the approve and before the engine stop, both recorded alike.
+  assert.ok(at('approve') < at('warm-up cua') && at('warm-up cua') < at('warm-up vendor') && at('warm-up vendor') < at('engine-stop'));
+  assert.deepEqual(report.warmUps, [warmedUp('cua'), warmedUp('vendor')]);
+  assert.match(report.steps.find(s => s.step === 'warm-up vendor').detail, /^capture made \(vendor's\), 2 SCAlert lines, com\.apple\.UserNotificationCenter in front after it; it left the front after 3000 ms$/);
+  assert.deepEqual(report.engineStop, {wasRunning: true, pid: 2142, stopped: true});
+  assert.match(report.steps.find(s => s.step === 'engine stop').detail, /^was running \(pid 2142\), stopped$/);
   const install = calls.find(c => c.kind === 'exec' && c.line.includes('install --json'));
   assert.equal(install.env.CUA_NATIVE_ENGINE, 'vendor');
   assert.equal(install.env.CUA_HOME, undefined, 'the default home, the one the engine directory lives in');
@@ -110,5 +124,20 @@ test('each step gates the next: a failed one stops the setup with no row, approv
     const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
     assert.equal(report.steps.at(-1).step, 'engine');
     assert.ok(!calls.some(c => c.kind === 'grant'));
+  }
+});
+
+// Ruling 1153 and the pilot A ruling: an alert that never leaves the front, or a capture that fails, is recorded and
+// the setup goes on; nothing retries.
+test('a warm-up whose alert stays in front, or whose capture fails, is recorded and the setup goes on', async () => {
+  const held = copy => ({...warmedUp(copy), wait: {cleared: false, waitedMs: 60_000, polls: 61, seen: [UNC], front: UNC}});
+  const failed = copy => ({...warmedUp(copy), capture: {ok: false, engine: null, error: 'timeoutReached', textEdit: {pids: [], ended: true}}, captureAlerts: {watched: true, count: 0}});
+  for (const [warmUp, detail] of [[held, /UserNotificationCenter still in front after 60000 ms; the sitting goes on/], [failed, /^capture failed \(timeoutReached\), 0 SCAlert lines/]]) {
+    const {calls, deps} = spies({warmUp});
+    const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
+    assert.equal(report.ok, true);
+    assert.match(report.steps.find(s => s.step === 'warm-up vendor').detail, detail);
+    assert.equal(calls.filter(c => c.kind === 'warm-up vendor').length, 1, 'no retry');
+    assert.equal(calls.at(-1).kind, 'write');
   }
 });

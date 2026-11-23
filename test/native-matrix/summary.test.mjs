@@ -142,6 +142,45 @@ test('a caret row (#258, #259) is equal only with the vendor\'s reading, even wh
   assert.equal(judged({vendor: {resolved: 9}}).methods.find(m => m.id === POINT).verdict, 'equal');
 });
 
+// Ruling 1149: a full run whose lane attests another engine than its rows measure is no measurement of its side. The cua
+// side answered by the vendor's engine (state 1) would compare the vendor with itself: its rows are not judged, and the
+// missing proof names it, whatever the run says of itself.
+test('ruling 1149: a cua run whose lane attests the vendor engine is NO VERDICT naming state 1, its rows not judged; never a pass', () => {
+  const fellBack = judged({vendor: {axMs: 50, resolved: 9}, cua: {lane: {engine: 'vendor', build: 'b-vendor'}, meta: {nativeEngine: {requested: 'cua', approved: {build: 'a'.repeat(64)}}}}});
+  assert.equal(fellBack.verdict, 'NO VERDICT');
+  for (const n of [1, 2, 3]) {
+    assert.ok(fellBack.missing.some(p => p.includes(`cua/run-${n}: the cua side attested the vendor engine, a fallback that compares the vendor with itself (state 1)`)
+      && p.endsWith('its rows are not judged')), fellBack.missing.join('\n'));
+  }
+  assert.deepEqual(fellBack.runs, {vendor: 3, cua: 0}, 'counted on neither side as a cua run nor as a vendor one');
+  assert.ok(!fellBack.missing.some(p => /repeat run number/.test(p)), 'not read as a second vendor run');
+  assert.ok(fellBack.methods.every(row => row.cua.valid === 0), 'no cua row judged');
+  // Without meta.nativeEngine.requested, the rows' own engine names the side.
+  const unnamed = judged({vendor: {axMs: 50, resolved: 9}, cua: {lane: {engine: 'vendor'}}});
+  assert.equal(unnamed.verdict, 'NO VERDICT');
+  assert.equal(unnamed.missing.filter(p => p.includes('(state 1)')).length, 3);
+  // The other way: cua's engine on the vendor side is named too.
+  const swapped = judged({vendor: {lane: {engine: 'cua'}}});
+  assert.equal(swapped.verdict, 'NO VERDICT');
+  assert.ok(swapped.missing.some(p => /vendor\/run-1: the result attested engine cua .* where engine vendor was expected; its rows are not judged/.test(p)), swapped.missing.join('\n'));
+});
+
+// The lane names the run's first attestation (./run.mjs); the run keeps every one it saw (meta.nativeEngine
+// {attested, unattested}). A later answer of the vendor's, or one with none, is judged from that whole set.
+test('ruling 1149: a run whose first answer is cua\'s but a later one the vendor\'s, or unattested, is set aside and named', () => {
+  const CUA_ANSWER = {engine: 'cua', version: 'v', build: 'b-cua'}, VENDOR_ANSWER = {engine: 'vendor', version: null, build: 'r'};
+  const kept = (attested, unattested = 0) => ({cua: {meta: {nativeEngine: {requested: 'cua', approved: {build: 'a'.repeat(64)}, attested, unattested}}}});
+  const later = judged({vendor: {axMs: 50, resolved: 9}, ...kept([CUA_ANSWER, VENDOR_ANSWER])});
+  assert.equal(later.verdict, 'NO VERDICT');
+  assert.equal(later.missing.filter(p => p.includes('(state 1)') && p.endsWith('its rows are not judged')).length, 3, later.missing.join('\n'));
+  assert.deepEqual(later.runs, {vendor: 3, cua: 0});
+  const unattested = judged({vendor: {axMs: 50, resolved: 9}, ...kept([CUA_ANSWER], 2)});
+  assert.equal(unattested.verdict, 'NO VERDICT');
+  assert.equal(unattested.missing.filter(p => /2 js result\(s\) carry no cua\/nativeEngine attestation; its rows are not judged$/.test(p)).length, 3, unattested.missing.join('\n'));
+  // Every answer cua's: judged as before.
+  assert.equal(judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, ...kept([CUA_ANSWER]).cua}}).verdict, 'PASS');
+});
+
 test('missing proof is NO VERDICT, never a pass: fewer than three runs, a missing row, a repeated sample, two sittings, two builds', () => {
   const two = judged({runs: 2, vendor: {resolved: 9}});
   assert.equal(two.verdict, 'NO VERDICT');

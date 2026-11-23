@@ -180,12 +180,12 @@ export async function runNativeMac(options, io) {
     ctx.js = async (code, timeoutMs = CELL_MS) => {
       const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
       attestEngine(meta.engineAttestation, result);
-      if (!meta.hostAttestation) {
-        meta.hostAttestation = hostAttestationOf(serverInfo, result);
-        if (meta.hostAttestation.host !== host) throw new Error(`the ${meta.hostAttestation.host} host answered the lane, not the requested ${host}`);
-      }
+      meta.hostAttestation ??= hostAttestationOf(serverInfo, result);
+      // The engine first (ruling 1149): a cua lane fallen back to the vendor's engine runs on the vendor's host too,
+      // and the engine is the cause to name.
       const problem = laneAttestationProblem(meta.engineAttestation, expected);
       if (problem) throw new Error(problem);
+      if (meta.hostAttestation.host !== host) throw new Error(`the ${meta.hostAttestation.host} host answered the lane, not the requested ${host}`);
       const parsed = parseCell(textOf(result));
       if (!parsed) throw new Error(`a cell printed no result marker${result?.isError ? ' (an error result)' : ''}`);
       return parsed;

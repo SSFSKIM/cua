@@ -120,14 +120,21 @@ export function isSessionTmpOf(home, value) {
   const id = value.slice(prefix.length, -'/tmp'.length);
   return SESSION_ID.test(id) && join(prefix, id, 'tmp') === value;
 }
-// Every other process using `home`: whoever names it on the command line, and whoever runs the approved helper's exact
-// executable. A helper is the run's (`owned`) only when its environment's TMPDIR is the run's: `tmpdir`, or a session
-// temp of `home`'s run/ (the header); the environment of any other process is never read.
+// Every other process using `home`'s runtime, among those whose command line names it (`candidates`): one that runs the
+// approved helper's exact executable, or any executable under the home (its managed Node, a REPL host, cua's engine when
+// the home holds the engine directory). A process that only names the path in its argv runs no part of the runtime and
+// is no user: on a hosted runner, where controller and device are one machine, that is the controller's own ssh client
+// and the shell around it (pilot A, run 45218179501). A helper is the run's (`owned`) only when its environment's TMPDIR
+// is the run's: `tmpdir`, or a session temp of `home`'s run/ (the header); the environment of any other process is
+// never read.
 export function homeUsers(home, {executable, tmpdir}, {exec = execFileSync, candidates = processesUsing} = {}) {
+  let real;
+  try { real = fs.realpathSync(home); } catch { real = home; }
   return candidates(home).flatMap(pid => {
     const running = executableOf(pid, {exec});
     if (running === null) return [];   // gone
     const helper = running === executable;
+    if (!helper && !running.startsWith(`${real}/`)) return [];   // names the home, runs nothing of it
     let owned = false, unreadable = false;
     if (helper && tmpdir) { try { owned = hasRunTmpdir(pid, value => value === tmpdir || isSessionTmpOf(home, value), {exec}); } catch { unreadable = true; } }
     return [{pid, helper, owned, ...(unreadable ? {unreadable: true} : {})}];
@@ -143,7 +150,7 @@ const base = () => join(homedir(), '.local/share/cua-native-baseline');
 export function prepareNative({device, display, node, approvedHome}, {directoryRoot = base(), tempRoot = fs.realpathSync(tmpdir()), ambient = process.env,
   desktop = name => discoverDesktopEnvironment(fs, {display: name}), run = execFileSync, inspect = executionFacts, declared = declaredDevice, ...reuse} = {}) {
   const declaration = declared(device);
-  if (approvedHome !== undefined) return prepareReused({device, node, approvedHome, declaration}, {directoryRoot, tempRoot, inspect, ...reuse});
+  if (approvedHome !== undefined) return admitReused({device, node, approvedHome, declaration}, {directoryRoot, tempRoot, inspect, ...reuse}).settle();
   // the session of the named display (a private one beside the person's, #171 M4), else the first session found
   const xSession = declaration.platform === 'linux' ? sessionEnvironment(desktop(display)) : {};
   if (display !== undefined && display !== xSession.DISPLAY) throw new Error('--display does not match the discovered device X session');
@@ -178,7 +185,10 @@ const writeRecovery = (scratch, recovery) => fs.writeFileSync(join(scratch, 'rec
 const recoveryOf = scratch => JSON.parse(fs.readFileSync(join(scratch, 'recovery.json'), 'utf8'));
 const keptError = (what, error, scratch) => Object.assign(new Error(`${what}: ${error.message}; nothing was deleted, the admission is kept, recovery in ${scratch} (recovery.json)`), {cause: error});
 
-function prepareReused({device, node, approvedHome, declaration}, {directoryRoot, tempRoot, inspect, ...options}) {
+// An approved-runtime preparation in two phases: the admission taken here, then `settle()` (the in-use check, the scratch
+// directory and the stash) or `release()` (the admission given back, nothing else done). prepareRun stops cua's engine
+// between them, under the admission and before the check.
+function admitReused({device, node, approvedHome, declaration}, {directoryRoot, tempRoot, inspect, ...options}) {
   const {locate, usersOf, rename, undo, now, userHomeDir} = reuseSeams(options);
   if (declaration.platform !== 'darwin') throw new Error('an approved runtime is reused only on macOS, where a new helper copy raises a confirmation');
   if (node) throw new Error('an approved-runtime run uses the home\'s managed Node, never a diagnostic override');
@@ -195,6 +205,8 @@ function prepareReused({device, node, approvedHome, declaration}, {directoryRoot
     try { holder = JSON.parse(fs.readFileSync(join(admission, 'owner.json'), 'utf8')).scratch; } catch { /* a half-written admission is still held */ }
     throw new Error(`the approved home's admission (${admission}) is held by another run (scratch ${holder}); refusing to share it`);
   }
+  return {release: () => fs.rmSync(admission, {recursive: true, force: true}), settle: () => settleReused()};
+  function settleReused() {
   let scratch;
   try {
     const users = usersOf(home, {executable: runtime.executable, tmpdir: null});
@@ -234,6 +246,7 @@ function prepareReused({device, node, approvedHome, declaration}, {directoryRoot
     fs.rmSync(scratch, {recursive: true, force: true});
     fs.rmSync(admission, {recursive: true, force: true});
     throw error;
+  }
   }
 }
 
@@ -322,20 +335,23 @@ export function cleanupNative(prepared, {directoryRoot = base(), ...options} = {
 // A CuaError's message with its hint, which says what to do.
 const described = error => `${error.message}${error.hint ? ` (${error.hint})` : ''}`;
 
-// prepareNative, then (an approved-runtime run) `cua engine stop` under the admission just taken -> the preparation with
-// `engineStop` ({wasRunning, pid?}). An engine that will not stop (another connection, a busy answer, no exit) refuses
-// the run: the preparation is undone and the refusal names why. `stop` is src/runtime/engine.mjs stopEngine (tests pass
-// a double); the other options reach prepareNative and, on a refusal, cleanupNative.
+// prepareNative, with (an approved-runtime run) `cua engine stop` under the admission just taken and before the home's
+// in-use check -> the preparation with `engineStop` ({wasRunning, pid?}). The engine is stopped first so every run starts
+// from a known engine state, and an engine left running (by setup's approve, by a run that never reached its cleanup)
+// is neither counted as a user of the home, where it lives on a hosted runner (~/Library/Application Support/cua/engine),
+// nor carried into a measured run (pilot A, run 45218179501). An engine that will not stop (another connection, a busy
+// answer, no exit) refuses the run: the admission is given back, nothing else was done, and the refusal names why.
+// `stop` is src/runtime/engine.mjs stopEngine (tests pass a double); the other options reach prepareNative.
 export async function prepareRun(options, {stop = () => stopEngine(), ...seams} = {}) {
-  const prepared = prepareNative(options, seams);
-  if (!prepared.runtimeReuse) return prepared;
+  if (options.approvedHome === undefined) return prepareNative(options, seams);
+  const {directoryRoot = base(), tempRoot = fs.realpathSync(tmpdir()), inspect = executionFacts, declared = declaredDevice, ...reuse} = seams;
+  const admitted = admitReused({device: options.device, node: options.node, approvedHome: options.approvedHome, declaration: declared(options.device)}, {directoryRoot, tempRoot, inspect, ...reuse});
   let engineStop;
   try { engineStop = await stop(); } catch (error) {
-    const refusal = `refusing the run: cua's engine could not be stopped at preparation: ${described(error)}`;
-    try { cleanupNative(prepared, seams); } catch (undo) { throw new Error(`${refusal}; undoing the preparation failed too: ${undo.message}`); }
-    throw new Error(refusal);
+    admitted.release();
+    throw new Error(`refusing the run: cua's engine could not be stopped at preparation: ${described(error)}`);
   }
-  return {...prepared, engineStop};
+  return {...admitted.settle(), engineStop};
 }
 
 // cleanupNative, after (an approved-runtime run whose admission and stash are proven its own and whose serves are gone)

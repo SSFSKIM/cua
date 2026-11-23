@@ -5,7 +5,7 @@ import Foundation
 // Observation (the spec's Design, "Observation (skyshot)"): get_app_state settles first when the engine just launched or
 // reopened the app or the app was acted on since its last observation (Settle.swift), enables a web-shaped app's
 // accessibility (Enablement.swift), observes a minimized primary window in place with no screenshot (Minimized.swift),
-// then walks the app's primary window (AXFocusedWindow, else AXMainWindow, else the last of AXWindows) plus the menu bar's top-level
+// and one off every display or on another Space with no screenshot and its placement named (Placement.swift), then walks the app's primary window (AXFocusedWindow, else AXMainWindow, else the last of AXWindows) plus the menu bar's top-level
 // items (Walk.swift) and returns a `Skyshot` JSON tree; rendering to the model's text is the service's. `timings`
 // carries the per-phase durations and counts the M0 spike measures; the request's switches choose what it prices.
 
@@ -53,9 +53,12 @@ func deadlineBounded(deadline: Int64, now: @escaping () -> Int64, setTimeout: @e
 /// then `timeoutReached`), where the vendor's failed read reads as no window; and a minimized primary window is never
 /// reopened, since the reopen would un-minimize the owner's window. The reads are charged to the request's deadline: no
 /// open is sent once it has passed. The open's own process is the one observed after it, so an app replaced
-/// meanwhile is followed. -> {opened, the open's process (nil when nothing was opened), the pid to observe}.
+/// meanwhile is followed. A third (ruling 1ea561bc:782, Placement.swift): a running app read as having no window is
+/// asked `absentRefusal` first, and one whose windows are on another Space, where accessibility lists none (Electron),
+/// is refused at once rather than reopened and waited for; the check runs only on an absence, so an app with a window
+/// pays nothing for it. -> {opened, the open's process (nil when nothing was opened), the pid to observe}.
 func prepareTarget<Running>(pid: pid_t?, deadline: Int64, now: () -> Int64, sleep: () -> Void,
-                            read: (pid_t) -> WindowRead,
+                            read: (pid_t) -> WindowRead, absentRefusal: (pid_t) -> EngineError?,
                             open: (_ deadline: Int64) throws -> (running: Running, pid: pid_t)) throws -> (opened: Bool, running: Running?, pid: pid_t) {
   let timeout = EngineError(name: "timeoutReached", "timeoutReached")
   func openNow() throws -> (opened: Bool, running: Running?, pid: pid_t) {
@@ -70,7 +73,9 @@ func prepareTarget<Running>(pid: pid_t?, deadline: Int64, now: () -> Int64, slee
     guard now() < deadline else { throw timeout }  // a read that ends past the deadline is not accepted
     switch found {
     case .window: return (false, nil, pid)
-    case .absent: return try openNow()
+    case .absent:
+      if let refusal = absentRefusal(pid) { throw refusal }
+      return try openNow()
     case .failed:
       sleep()
       guard now() < deadline else { throw timeout }
@@ -171,6 +176,7 @@ extension Engine {
                                                                    setTimeout: { AXUIElementSetMessagingTimeout(element, $0) },
                                                                    copy: { copyAttribute(element, $0) }))
                         },
+                        absentRefusal: { pid in absentWindowRefusal(pid: pid, app: app.displayName) },
                         open: { deadline in let running = try apps.launch(app, deadline: deadline); return (running, running.processIdentifier) })
     }
     if let running = target.running {
@@ -201,6 +207,8 @@ extension Engine {
     // connection has enabled the process since (adoptsSettledTree).
     let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
     let enablementsBefore = webAccessibility.enablements(pid: appPid, launched: generation)
+    // When the settles began reading the tree: a settled tree read before the process's Chromium readiness is not adopted.
+    let settlesFrom = monotonicClock()
     for kind in observationSettles(opened: opened, armed: connection.needsSettle.contains(app.key), forced: args["settle"] as? Bool) {
       let prefix = kind == .afterOpen ? "openSettle" : "settle"
       let settleCosts = FetchCosts()
@@ -244,6 +252,19 @@ extension Engine {
     // `freshSince`, as the process's first observation or a write does. Firefox's accessibility comes on at that first
     // contact with nothing written (its attribute then reads true).
     let enabledAt = webAccessibility.freshSince(pid: appPid, launched: generation).flatMap { $0 >= started ? $0 : nil }
+    // Ruling 772 (ChromiumReadiness.swift): a Chromium-family process's tree is read once its complete mode has arrived,
+    // the rest of the window after the last accepted enablement write waited out first, within the deadline. One the
+    // deadline cuts reads anyway, its entries recorded before readiness (`LineageEntry.recordedAt`), which the action's
+    // backstop reads again from their handles.
+    let readiness = signposted("observation.chromiumReady") {
+      timings.time("chromiumReady") {
+        awaitObservationReadiness(app: app, pid: appPid, launched: generation, budgetMs: Double(context.deadline - unixMilliseconds()))
+      }
+    }
+    if readiness.waitedMs > 0 { timings.set("chromiumReadyWaitMs", readiness.waitedMs) }
+    if case .deadline = readiness { timings.set("chromiumReady", "deadline") }
+    let readyAt = chromiumReadyAt(engine: webAccessibility.pageEngine(app.appPath),
+                                  lastWrite: webAccessibility.lastEnablementWrite(pid: appPid, launched: generation))
 
     // The window is there by now when the engine opened the app (waited above); otherwise it is read once.
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: unixMilliseconds(), opened: false) }) else {
@@ -254,7 +275,7 @@ extension Engine {
     let minimized = isMinimized(window)
     if minimized { timings.set("minimized", true) }
     let exposesTree = !minimized || connection.menuRoot(app: app.key) != nil || !elementList(attribute(window, kAXChildrenAttribute)).isEmpty
-    let plan = try minimizedObservation(minimized: minimized, exposesTree: exposesTree, includeScreenshot: includeScreenshot, app: app.displayName)
+    let minimizedPlan = try minimizedObservation(minimized: minimized, exposesTree: exposesTree, includeScreenshot: includeScreenshot, app: app.displayName)
     // The wait follows any enabling (the named bundles' too) and every Chromium window.
     var waited = false
     var chromium = false
@@ -288,6 +309,11 @@ extension Engine {
     let menuBarElement = menuRoot != nil ? nil : timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
     let menuItems = timings.time("menuBar") { menuBarElement.map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
+    // A window off every display or on another Space (Placement.swift, #367) is observed with no screenshot and its
+    // placement named; a minimized window is the minimized rule's.
+    let placement = minimized ? nil : livePlacement(of: window, application: application, frame: windowFrame)
+    if let placement { timings.set("placement", placement.rawValue) }
+    let plan = placementObservation(placement, plan: minimizedPlan, includeScreenshot: includeScreenshot)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
     // frame, and the walk does not depend on it, so the observation costs the longer of the two, not their sum.
     // Its file is named with the revision this observation commits, which the Skyshot reports.
@@ -304,7 +330,7 @@ extension Engine {
       : nil
     // The settle's reads stand for the tree only when nothing changed it since (adoptsSettledTree).
     let source: ElementSource
-    if let settled, let reused = settled.source, let busyWindow = settled.window,
+    if let settled, let reused = settled.source, let busyWindow = settled.window, !(readyAt.map { settlesFrom < $0 } ?? false),
        adoptsSettledTree(sameWindow: CFEqual(busyWindow, window), enablementsBefore: enablementsBefore, enablementsAfter: enablementsAfter,
                          waited: waited, loadedWebArea: settled.loadedWebArea) {
       source = reused
@@ -320,6 +346,7 @@ extension Engine {
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
                         interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
                         recordsScreenshot: pendingCapture != nil, clipRereadPoll: clipRereadPoll)
+    walk.revision.recordedAt = monotonicClock()
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
@@ -354,7 +381,7 @@ extension Engine {
       }
       let element = prepare(value as! AXUIElement)
       if let token = walk.token(of: element) { focused = token } else { focusRead = "outsideTheWalk" }
-      if let text = stringAttribute(element, kAXSelectedTextAttribute), !text.isEmpty { selectedText = bounded(text) }
+      if let text = focusedSelectedText(request: { fetchAttributes(element, $0) }) { selectedText = text }
       // The selected elements the trailer names: the focused element's selected children, else its selected rows.
       for name in [kAXSelectedChildrenAttribute, kAXSelectedRowsAttribute] {
         let selected = elementList(attribute(element, name)).compactMap { walk.token(of: $0) }
@@ -380,9 +407,11 @@ extension Engine {
       // What this window's coordinate clicks divide by, and the tree they are checked against (#296), every element of it
       // with whether its children all were recorded (#330).
       let record = timings.time("stalePointRecord") {
-        (screenshotNodes(walk.screenshotReads), screenshotChildrenRecorded(walk.screenshotReads) { ElementKey(element: $0) })
+        (screenshotRecord(walk.screenshotReads) { AnyHashable(ElementKey(element: $0)) },
+         screenshotChildrenRecorded(walk.screenshotReads) { ElementKey(element: $0) })
       }
-      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: record.0, recorded: record.1)
+      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: record.0.nodes, frameless: record.0.frameless,
+                                              recorded: record.1)
       return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)
@@ -405,7 +434,7 @@ extension Engine {
     appWire["catalyst"] = bool(attribute(application, "_AXExhibitsMacCatalystBehavior")) ?? false
     var skyshot: [String: Any] = [
       "app": appWire,
-      "window": ["title": windowTitle(window, pid: pid(of: window), frame: windowFrame) ?? NSNull(), "frame": rectWire(windowFrame), "pid": Int(pid(of: window))],
+      "window": windowWire(title: windowTitle(window, pid: pid(of: window), frame: windowFrame), frame: windowFrame, pid: pid(of: window), placement: placement),
       "lineage": lineage.id,
       "revision": lineage.revision,
       "nodes": walk.nodes,
@@ -434,6 +463,16 @@ extension Engine {
                        desktopLevel: server.desktopLevel, ownerIsFinder: ownerIsFinder)
   }
 
+}
+
+/// The focused element's selected text the trailer prints, bounded; nil when it has none, and for a password field or
+/// one whose role or subrole cannot be read: AXSelectedText is read in one batch with the role and subrole and dropped
+/// when that reply classifies the element closed (#405, `classifiedRead`).
+func focusedSelectedText(request: ([String]) -> AttributeRead?) -> String? {
+  guard case .read(let read) = classifiedRead([kAXSelectedTextAttribute], request: request),
+        let value = read.values[kAXSelectedTextAttribute], CFGetTypeID(value) == CFStringGetTypeID() else { return nil }
+  let text = value as! String
+  return text.isEmpty ? nil : bounded(text)
 }
 
 /// The primary window, polled every 50 ms until `deadline` (Unix ms); past it, `timeoutReached` for an app the

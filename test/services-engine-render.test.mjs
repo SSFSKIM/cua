@@ -3,7 +3,8 @@
 // item 3; the rules are sky-behaviour.md §5–§8). The scenes' recorded captures are test/services-engine-render-goldens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE} from '../src/services/engine/render.mjs';
+import {readFileSync} from 'node:fs';
+import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, ANOTHER_SPACE_REMEDY, placementLine} from '../src/services/engine/render.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
 
 const win = (children = []) => [node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W', actions: ['AXRaise']}), ...children];
@@ -280,6 +281,45 @@ test('#301: a cut walk of the window says how many elements it omitted and which
   assert.equal(marker({count: 5}), '[truncated: 5 elements omitted]', 'a walk with no visible area to place them by (a menu-bar root)');
 });
 
+// #367: a window the engine found off every display or on another Space.
+const placed = (placement, fields = {}) => skyshot(win([group('g', 1)]),
+  {window: {title: 'W', frame: {x: -5000, y: 0, width: 100, height: 100}, pid: 1, ...(placement ? {placement} : {})}, ...fields});
+
+test('#367: a window on screen renders byte for byte as before: no placement, no line', () => {
+  const shot = skyshot(win([button('a', 1, 'A')]), {truncated: {count: 3, above: 0, below: 3}});
+  assert.equal(render(shot, advanceNumbering(null, shot)),
+    'Window: "W", App: Example.\n0 standard window W, Secondary Actions: Raise\n\t1 button A\n[truncated: at least 3 elements omitted, below the visible area]\n');
+  assert.equal(placementLine(shot), null);
+  assert.equal(placementLine(placed('somewhereElse')), null, 'a placement this renderer does not know prints nothing');
+});
+
+test('#367: a window off every display says so in one line after the tree, before any truncation marker', () => {
+  const shot = placed('offScreen', {truncated: {count: 3}});
+  assert.equal(render(shot, advanceNumbering(null, shot)),
+    'Window: "W", App: Example.\n0 standard window W, Secondary Actions: Raise\n'
+    + '[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Ask the user to move it onto a display.]\n'
+    + '[truncated: 3 elements omitted]\n');
+});
+
+test('#367: a window on another Space says so in one line', () => {
+  const shot = placed('anotherSpace');
+  assert.equal(render(shot, advanceNumbering(null, shot)).split('\n').at(-2),
+    '[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.]');
+  assert.equal(WINDOW_PLACEMENT.anotherSpace.line, placementLine(shot));
+  assert.equal(WINDOW_PLACEMENT.offScreen.screenshot, 'the window is off screen, outside every display. Ask the user to move it onto a display.');
+  assert.equal(WINDOW_PLACEMENT.anotherSpace.screenshot, 'the window is on another Space. Ask the user to bring it here or switch to its Space.');
+});
+
+// Ruling 1ea561bc:782: the engine's windowOnAnotherSpace refusal (an app with no accessible window there, or a Raise
+// of a window there) gives the screenshot's reason and remedy, so the remedy is one sentence in both languages.
+test('#367 ruling 782: the engine\'s windowOnAnotherSpace refusal ends with the screenshot\'s reason and remedy', () => {
+  const source = readFileSync(new URL('../native/engine/Sources/Engine/Placement.swift', import.meta.url), 'utf8');
+  const sentence = source.match(/EngineError\(name: "windowOnAnotherSpace", "The \\\(app\) (window is on another Space\. [^"]+)"\)/);
+  assert.ok(sentence, 'Placement.swift builds the refusal');
+  assert.equal(`the ${sentence[1]}`, WINDOW_PLACEMENT.anotherSpace.screenshot);
+  assert.ok(WINDOW_PLACEMENT.anotherSpace.screenshot.endsWith(ANOTHER_SPACE_REMEDY));
+});
+
 // ---- The transformations (sky-behaviour.md §5) ----
 
 test('(0) a child serving as title for one sibling names it and goes', () => {
@@ -353,4 +393,48 @@ test('over the tree\'s 4,000 URL characters, fragments go, then queries, then ea
   const long = skyshot(win(links(40, i => `https://example.com/${i}/${'p'.repeat(200)}`)));
   // 40 URLs at the limit of 100 are exactly 4,000 characters: the first limit that fits.
   assert.equal(lines(long)[2], `\t\t2 link L0, Value: ${`example.com/0/${'p'.repeat(200)}`.slice(0, 99)}…`);
+});
+
+// ---- #405: a password field ----
+
+const password = (token, depth, fields = {}) => node(token, depth, 'AXTextField', {
+  roleDescription: 'secure text field', subrole: 'AXSecureTextField', description: 'PW', flags: {settable: true, focusable: true}, ...fields,
+});
+
+test('#405: a password field prints `secure text` as its value, with no length, mask, value description or selected text', () => {
+  // As the engine sends it: no value, marked secure.
+  assert.deepEqual(lines(skyshot(win([password('p', 1, {secure: true, value: null})]))),
+    ['0 standard window W, Secondary Actions: Raise', '\t1 secure text field (settable) Description: PW, Value: secure text']);
+  // Whatever value a node of that role or subrole carries (an engine that read it), none of it is printed.
+  for (const fields of [{value: 'PLAINTEXT', numberOfCharacters: 9, valueMarkdown: '**PLAINTEXT**', valueDescription: 'PLAINTEXT of length 9'}, {value: '•••••••••', valueType: 'string'},
+    {role: 'AXSecureTextField', subrole: null, value: 'PLAINTEXT'}]) {
+    const shot = skyshot(win([password('p', 1, fields)]), {focused: 'p', selectedText: 'PLAINTEXT'});
+    const text = render(shot, advanceNumbering(null, shot));
+    assert.match(text, /\t1 secure text field \(settable\) Description: PW, Value: secure text\n/);
+    assert.doesNotMatch(text, /PLAINTEXT|•|9|Selected text/);
+    assert.match(text, /\nThe focused UI element is 1 secure text field \(settable\) Description: PW, Value: secure text$/);
+  }
+  // Nor through a transformation that takes its descendants' values: a selectable row's join (1).
+  const row = skyshot(win([node('r', 1, 'AXRow', {roleDescription: 'row', flags: {selectable: true}}),
+    password('p', 2, {value: 'PLAINTEXT', flags: {}})]));
+  assert.doesNotMatch(render(row, advanceNumbering(null, row)), /PLAINTEXT/);
+});
+
+test('#405: an element whose value the engine left unread prints `value unread`, whatever value its node carries', () => {
+  for (const fields of [{valueUnread: true, value: null}, {valueUnread: true, value: 'PLAINTEXT', valueDescription: 'PLAINTEXT details'}]) {
+    const shot = skyshot(win([button('b', 1, 'Go', fields)]), {focused: 'b', selectedText: 'PLAINTEXT'});
+    const text = render(shot, advanceNumbering(null, shot));
+    assert.match(text, /\t1 button Go, Value: value unread\n/);
+    assert.doesNotMatch(text, /PLAINTEXT|secure text|Selected text/);
+  }
+  // An unlabelled one is not pruned as saying nothing: it keeps its line and its index.
+  const bare = skyshot(win([group('g', 1, {valueUnread: true, value: null})]));
+  assert.deepEqual(lines(bare), ['0 standard window W, Secondary Actions: Raise', '\t1 container value unread']);
+});
+
+test('#405: a plain field and its selected text print as before', () => {
+  const shot = skyshot(win([node('f', 1, 'AXTextField', {roleDescription: 'text field', value: 'abc', valueType: 'string', flags: {settable: true}})]),
+    {focused: 'f', selectedText: 'b'});
+  assert.equal(render(shot, advanceNumbering(null, shot)).split('\n').slice(1).join('\n'),
+    `0 standard window W, Secondary Actions: Raise\n\t1 text field (settable) abc\n\nSelected text: \`\`\`\nb\n\`\`\`\n\n${NOTE}`);
 });

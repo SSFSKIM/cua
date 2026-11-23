@@ -11,7 +11,8 @@
 //   <the trailer: selected text, selected elements or the focused element>
 //
 // Changes come in depth-first order of the current tree, with no context lines. With no change the answer is
-// `There has been no change in the accessibility tree for Window: "<title>".` and the trailer. The diff may have at
+// `There has been no change in the accessibility tree for Window: "<title>".`, the window's placement line when it has
+// one (#367), and the trailer. The diff may have at
 // most as many lines as the current tree has elements; when the changes, plus one line for the removed summary, do not
 // fit, the answer is the full tree. A previous observation of another lineage (or none) answers the full tree.
 //
@@ -36,7 +37,8 @@ export function diff(previous, current) {
   const removedIds = [...new Set(removed)].filter(index => !present.has(index)).sort((a, b) => a - b);
 
   const window = `Window: "${now.title}"`;
-  if (!changes.length && !removedIds.length) return `There has been no change in the accessibility tree for ${window}.${now.trailer}`;
+  // A window off screen keeps its placement line even when nothing changed (#367): every observation of it says why.
+  if (!changes.length && !removedIds.length) return `There has been no change in the accessibility tree for ${window}.${now.placement ? `\n${now.placement}` : ''}${now.trailer}`;
 
   let remaining = now.nodeCount;
   const lines = [];

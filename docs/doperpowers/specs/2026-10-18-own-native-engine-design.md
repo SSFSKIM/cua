@@ -144,7 +144,7 @@ What changes behind it: the engine process, the socket it listens on, who may co
 
 ### Input
 
-Every input request names the app and either an element index or window coordinates (coordinates in the pixel space of the lineage's last screenshot, "Screenshot" above). The rule that produces "not interfering": **the engine never activates an app on its own** (an observation's non-activating reopen of a windowless app, "Observation (skyshot)", is not an activation), and input is posted to the process that owns the target element (`AXUIElementGetPid`), which for a sheet or an open panel is not the app; the engine checks that owning pid against the forbidden list before posting anything, so a panel served by a forbidden process (a password manager's autofill) is refused with the forbidden-app sentence even when the bound app is allowed. **M2a's route table, measured in the second sitting (2026-10-19, 19:17–20:42Z; `spike/sit2/u12u13`, three samples per cell with an outcome read-back and the activation watcher, all four scenes, each driven with another scene's window in front; Decision Log, "second input sitting"):** typed text and plain key presses (`type_text`, `press_key` without ⌘) go by **route 2′**, the plain post with no fake activation, which delivered on all four scenes; **a ⌘ chord in `press_key` (a menu key equivalent) and an element's own action or attribute write (a click carried by `AXPress` or `AXPick`, `set_value`, `select_text`, `perform_secondary_action`) go by route 3 when the app does not believe it has focus**, the activation held across the interaction (amended 2026-10-22 from M2b's matrix, Decision Log "route 3 for key equivalents and element actions"; U12 measured typed text, never these); a synthesized click (an element without an advertised action, or a coordinate click) goes by **route 3**, the fake activation, the only click route that delivered on all four; the ladder for clicks is **1 → 3 → 4**, route 4 only through the per-app override; **route 2, the ⌘ post, leaves the defaults**: when route 3's guard fails the click is refused as `activationFailed` (Interfaces), never retried with ⌘, because ⌘ changes what a click means. The routes, with what the two sittings measured for each on the mini (the first: `spike/iter1-input`, `spike/iter2-input`, TextEdit and Finder; the second: `spike/sit2/u3u4`, `spike/sit2/u12u13`, the four scenes; in both the device-side front-window probe read the frontmost application and the top window after every action and the activation watcher ran through every cell, and no action in either sitting changed the frontmost application or the top window or was seen as an activation):
+Every input request names the app and either an element index or window coordinates (coordinates in the pixel space of the lineage's last screenshot, "Screenshot" above). The rule that produces "not interfering": **the engine never activates an app on its own** (an observation's non-activating reopen of a windowless app, "Observation (skyshot)", is not an activation), and input is posted to the process that owns the target element (`AXUIElementGetPid`), which for a sheet or an open panel is not the app; the engine checks that owning pid against the forbidden list before posting anything, so a panel served by a forbidden process (a password manager's autofill) is refused with the forbidden-app sentence even when the bound app is allowed. **M2a's route table, measured in the second sitting (2026-10-19, 19:17–20:42Z; `spike/sit2/u12u13`, three samples per cell with an outcome read-back and the activation watcher, all four scenes, each driven with another scene's window in front; Decision Log, "second input sitting"):** typed text and plain key presses (`type_text`, `press_key` without ⌘) go by **route 2′**, the plain post with no fake activation, which delivered on all four scenes (except an arrow key in a Firefox that does not believe it has focus, which goes by route 3: Decision Log, "#360's arrow keys"); **a ⌘ chord in `press_key` (a menu key equivalent) and an element's own action or attribute write (a click carried by `AXPress` or `AXPick`, `set_value`, `select_text`, `perform_secondary_action`) go by route 3 when the app does not believe it has focus**, the activation held across the interaction (amended 2026-10-22 from M2b's matrix, Decision Log "route 3 for key equivalents and element actions"; U12 measured typed text, never these); a synthesized click (an element without an advertised action, or a coordinate click) goes by **route 3**, the fake activation, the only click route that delivered on all four; the ladder for clicks is **1 → 3 → 4**, route 4 only through the per-app override; **route 2, the ⌘ post, leaves the defaults**: when route 3's guard fails the click is refused as `activationFailed` (Interfaces), never retried with ⌘, because ⌘ changes what a click means. The routes, with what the two sittings measured for each on the mini (the first: `spike/iter1-input`, `spike/iter2-input`, TextEdit and Finder; the second: `spike/sit2/u3u4`, `spike/sit2/u12u13`, the four scenes; in both the device-side front-window probe read the frontmost application and the top window after every action and the activation watcher ran through every cell, and no action in either sitting changed the frontmost application or the top window or was seen as an activation):
 
 1. **Accessibility actions** for element-targeted requests when the element advertises the action: `AXPick` when advertised, else `AXPress`, for a plain single left click (the vendor's choice, `R/F-helper-logic.md` §5.1; `AXShowMenu` is never used and right clicks are synthesized), `AXIncrement`/`AXDecrement`, the element's own secondary actions for `performSecondaryAction`, `AXValue` for `setValue` when settable, `AXSelectedTextRange` for `selectText`. These reach the element without events; into an app that does not believe it has focus they take route 3's held activation first and report route 3 (amended 2026-10-22: an Electron button's `AXPress` and its field's value and selection writes were ineffective in a background app by the action alone), and inside a recorded menu's span they stay route 1. The route applies only where the element advertises the action: the TextEdit document's text area and a Finder row's cell advertise neither `AXPick` nor `AXPress`, so the forced route-1 cells refused on both (the route's precondition, not a delivery failure), while the Electron fixture's button and the Chrome loopback page's checkbox do, and the background click on each went by this route in the second sitting (the natural route for both; `treeChanged: true`). The action is taken only when a hit-test at the element's clickable point (the midpoint of its visible frame, scrolled into view) does not land on a strict descendant of the element; when it does, the vendor's nested-content gate (§5.1, its "web view" case), the click is synthesized instead, since the action would reach the container and not the control the point names.
 2. **Synthesized events posted to the owning process with the vendor's recipe** (`R/F-helper-logic.md` §5.3–5.4, §6.2) for everything else: coordinate clicks, multi-clicks, right clicks, drags, scroll wheel, key presses and typed text, in two forms. **Route 2′** is the plain post: the same events with no ⌘ flag and no fake activation, which the vendor never takes into a background app. Measured in the second sitting (U12): **keys by route 2′ delivered on all four scenes**, three of three on each by outcome, with no activation seen and, on the Electron fixture, zero became-active, resigned-active, window, page or text focus and blur events per key; **clicks by route 2′ delivered on Finder and Electron only** (TextEdit's caret did not move, three of three for the element click and the coordinate click alike; Chrome's checkbox stayed unchecked and its focus unchanged). So it is the route for typed text and plain keys and for no click; a ⌘ chord, a menu key equivalent, takes route 3 into an app that does not believe it has focus (amended 2026-10-22: TextEdit's ⌘A into a background window left the selection unchanged by 2′, with ⌘ on every event). The vendor's fake activation before every keyboard action (§6.1) is a declared difference: it fires the app's activation hooks on every key for no delivery gain. **Route 2** is the ⌘ post, the vendor's ordinary background click. Mouse events are made through AppKit (`NSEvent.mouseEvent(...)` taken as a `CGEvent`, no event source), carry the global point as their location and the window-local point through the private `CGEventSetWindowLocation` (recovered by name; `dlsym`), the button in field 3, mouse subtype 3 in field 7 and the window id in fields 91 and 92, and are posted back-to-back with `CGEventPostToPid`, down and up per click; **when the target app is not active the ⌘ flag (0x100000) is added**, which AppKit treats as a click to deliver to an inactive window without activating it; that, not SPI, is the vendor's ordinary background click (`R/F-helper-logic.md` §5.4). Measured by outcome in the second sitting (U10): a ⌘-click delivered on Chrome and Electron, **did not move TextEdit's caret** (three of three), and **changed Finder's outcome**, adding the clicked row to the selection (`["003"]` → `["003", "005"]`) where a plain click selects it alone; ⌘-flagged keys delivered everywhere. So route 2 is no default and no fallback: a click reaches the app with the flag, and the flag changes its meaning. It stays in the engine as a forced spike route only. Keyboard, scroll and modifier events come from an HID-system event source (`CGEventSourceCreate(.hidSystemState)`), as the vendor's do, because the Text Services Manager and some apps ignore other source states; what that costs the intervention rule is now known ("User intervention": the engine's own posts pass the session tap, where its source pid excludes them, and reset the HID idle counter). The real pointer is never moved.
@@ -490,7 +490,20 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     pointOutsideScreenshot (#328: a click, scroll or drag point outside the screenshot its coordinates came from, refused
     with nothing posted; its sentence gives the image's size and asks for a point inside it); scrollUnconfirmed (#328: a
     scroll whose container under the point was not seen to move, the bar's fallback included, or that has no readable
-    container; its sentence asks the model to observe before scrolling again)
+    container; its sentence asks the model to observe before scrolling again); menuUnconfirmed (#374: a Show Menu sent
+    whose menu was not seen to open within 1 s; its sentence says the app may have shown its own menu or ignored the
+    request, and asks the model to observe before any retry; its success means a menu appeared, not which one: the
+    Decision Log's "#374's coincident menu")
+  typeUnconfirmed, engine-only and admitted by the wrapper by name, its sentence withheld (a concealed type_text into
+    a password field, or one that does not match, ends with it): #354, a keyed type_text (and, since #361, a pasted
+    one, its snapshot taken after the paste's activation and its poll once the paste answered) whose focused field did
+    not read, within 1 s, its value from before the first event with the selected range replaced by the text (and,
+    where that is the value before, the caret past the insertion), or whose text before a key that can leave or submit
+    did not, the key and the rest then unsent; or whose field cannot be read back: secure, not a text-entry role,
+    unreadable, at Chromium's AXValue cap, or no longer the focused field; its sentence says some text may have gone in
+    and asks the model to observe, then use setValue; a concealed mismatch says only that the field does not match
+    what was typed; only a plain mismatch on a field that stayed readable carries an excerpt, at most 200 UTF-16 units of each of expected and actual around the first
+    difference, with both lengths (never on the paste route, #361, whose mismatch carries its reason alone)
   activationGuardMs: route 3's guard time, present only when a guard ran; activationClick: what the inert-point rule
     decided at the window's AXActivationPoint when an activation ran, "posted" there or the reason it was not ("noPoint",
     "outsideFrame", "spared", "control", "actionsUnknown", "hitTestFailed"); activationClickKind: the click that
@@ -541,22 +554,71 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
     "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther" |
-    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298) | "appWindowOverPoint" (#452)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
     `recordedHit`), windowsMs? (#316's rule W's window-list read), webAreaReads? (#316's rule G's parent reads),
-    newWindow? (#316: the new window's number), newElementReads? (#330's rule dL's reads, when it read any), ms,
+    newWindow? (#316: the new window's number), overWindow? (#452: the number of the app's window over the observed one at
+    the point, 0 unread), by? (#452: "axHit" | "popover", the signal that refused), hitMs? (#452, design ruling 940: the
+    coordinate's hit-test's time; after a recheck, the recheck's own, #456), newElementReads? (#330's rule dL's reads, when
+    it read any), ms,
     rechecked? (true: #282's or #283's
-    route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
+    route waited and the guard ran again before the press, #452's rule first on its own hit-test (#456); the verdict is
+    that check's, ms and windowsMs both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
-  note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187), and on a
+  menuItemClick: #454's coordinate click on an open menu's item, on its result and its errors once the guard kept the
+    point: {menuWindow (the number of the app's menu window over the point), delivery? ("action": the click delivered as
+    the item's action, inputRoute 1, no pointer event; set as the action is dispatched), action? ("AXPick" |
+    "AXPress"), effect? ("confirmed" | "unconfirmed"), actionError? (the action's AXError when not success: a messaging
+    timeout is then judged by the effect), menuClosed? (true: the menu's window left the screen or the item's handle
+    died; null: the window list did not read), value? ("taken" | "unchanged" | "other" | "unread": the selection of
+    the control identified before the action against the item's title, moved to it, already it or unread before, another,
+    or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
+    "unobserved" | "relabelled" | "disabled" | "noAction")}; never a title
+  popUpClick: #458's coordinate click on a closed pop-up button, on its result and its errors once the guard kept the
+    point and #454's step left it (and on #282's element route when it pressed a `<select>`): {role ("AXPopUpButton" |
+    "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" | "ancestryUnread" | "disabled" | "open" |
+    "windowsUnread" | "noAction" | "frontmost" | "browserView" | "viewClassUnread": main's path was kept, and why), refused? ("noAction": a native combo
+    box whose arrow has no AXPress, the app not frontmost), delivery? ("action": the click delivered as the pop-up
+    button's or the combo box's arrow's AXPress, by the element click's route, inputRoute 3 or 1, no pointer event; set
+    as the action is dispatched), action? ("AXPress"), arrow? (true: the combo box's arrow was pressed), effect?
+    ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
+    press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
+    window at layer 101 for a pop-up button, a window of any layer above the app's window for a combo box's list),
+    restored? ({windows, ms, complete, raises, leftCovered, failedRaises?, stopped? ("personInput" | "bound" |
+    "unresolved" | "focusUnknown" | "focusRaiseFailed" | "orderUnread")}: windows, the person's windows in front of the
+    app's window before the press; once the open had raised the app's over the person's focused window, that one window
+    raised back (raises: 0 or 1), the order read once about 300 ms later (complete: the focused window back over the
+    app's), and the other recorded windows the app's window covers counted, never raised (leftCovered); the result's
+    note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)}; never a
+    title
+  note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
+    since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
     result's content
+  typeReadback (#354, on a type_text's result and its errors once the field was snapshotted, keyed or, since #361,
+    pasted, whose route `inputRoute: "paste"` names; the same shape on both): {confirmed,
+    reason?: "noFocusedElement" | "roleUnreadable" | "secure" | "notTextField" | "valueUnreadable" | "rangeUnreadable" |
+    "possiblyTruncated" | "valueMismatch" | "concealedMismatch" | "unchanged" | "becameSecure" | "fieldUnreadable" |
+    "fieldChanged", snapshotMs, pollMs, reads, checkpoints? (keys that can leave or submit whose preceding text was
+    confirmed before they were posted), keysUnconfirmed? (those keys, posted, their effect unconfirmed),
+    expectedLength?, actualLength? (a plain mismatch's only, never a concealed one's), stoppedBeforeKey?: true,
+    placeholderLine?: true, placeholderCaretUnread?: true (an ending Return's placeholder line, item 10.12),
+    settleReads?, settleCapped?: true (the settle before the snapshot after a recent press_key, item 10.15)};
+    value-free. A concealed request's is {confirmed, concealed: true, snapshotMs, reason?, keysUnconfirmed?: true,
+    stoppedBeforeKey?: true}: no count and no poll time, which would tell the secret's control characters and segments
+  keyEffect (#354, on a press_key's result and errors once a press was posted): "unconfirmed", since press_key answers
+    once its keys are posted
   scroll (#328, on a scroll's result and its scrollUnconfirmed): {container: "scrollArea" | "pageScroller" | "webArea" |
     null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, endBefore?: true, moved?: points the asked way,
     by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
     fallbackSkipped?: "web" | "clipped", containerBy?: "window", walked?, readMs, ms}
+  menu (#374, on a Show Menu's result and its menuUnconfirmed): {seen: "element" | "ancestor" | "focus" | null,
+    openBefore, polls, ms, actionError?: the AXShowMenu's AXError when it was cannotComplete, taken as sent,
+    unreadBefore?: the sources the baseline could not read in full, which confirm nothing}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
-    read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage "returnEffect", a
-    Return between two of type_text's lines showed no effect, and the next line was not pasted (its own sentence)
+    read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage
+    "returnEffect", a Return between two of type_text's lines showed no effect, and the next line was not pasted (its own
+    sentence). Unchanged by #361: type_text's paste route keeps #187's delivery, and its read-back answers only once that
+    delivery succeeded
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing
     posted, the input meta carried with startedAt/endedAt null; the sentence names getScreenshot as the way to get an image to click
     in (c13759a4's "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again
@@ -4714,6 +4776,3151 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     browser measured exposes one; the case is covered by unit tests only.
   Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298; the live
   results 2026-11-10.
+- Decision (#354, 2026-11-10, `fix/354-type-readback`; the design session's rulings 1ea561bc:567 (measure both halves
+  first) and 1ea561bc:585 (build the read-back as scoped), findings
+  https://github.com/SSFSKIM/cua/issues/354#issuecomment-6771144651, ruling
+  https://github.com/SSFSKIM/cua/issues/354#issuecomment-6771210096; kit `probe/354-measure` eb28ae3f, `scripts/probe-354/`
+  and `scripts/probe-354-fences/`, runs 42758470642, 42776542139, 42797770753, 42810035238, 42810419737, 42815192390 and
+  the period-off diagnostic 42814306485): **a keyed `type_text` answers success only once the focused field reads its
+  value from before the first event with the selected range replaced by the text; anything else is `typeUnconfirmed`,
+  never retried. `press_key` still answers once posted, and says so.** This departs from the vendor, which answers once
+  its events are posted, as cua did: `entered` counted posted units, not consumed ones.
+  1. **What the measurement found.** An edit key followed by `type_text` left the wrong final text: Cmd+A, Cmd+Z and
+     Cmd+V before typing went wrong in Safari 161 of 640 and Chrome 88 of 640 (20 per cell, behind a cover), in the
+     foreground too (Cmd+A then type in two calls: Safari 39/80, Chrome 36/80) and inside one call; Firefox 0. The page
+     receives the key's keydown before the text, but the key's effect lands after the typed input has begun, and the
+     later input overwrites it. No fence tested holds generally: a synchronous AX read, an effect predicate (falsified
+     by Cmd+A over a selection already made), an F20 marker (Chrome's select-all landed after its acknowledgement 69 of
+     80 times; Safari inserts U+0010 for it) and the AX selected-text notification (Safari acknowledged a negative
+     control 151 of 160, Chrome's Cmd+A over a selection never answered). Right after `type_text` returned the DOM or AX
+     was still partial in 520 of 720 trials, complete within p95 20 to 45 ms; the model's own observations saw the full
+     text in all but one (#357). macOS's "Add period with double-space" rewrote "word is" in 2 Chrome trials of 500
+     characters, and TextEdit's completion expanded "delivere" in all 60 of its 500-character trials. **The exact
+     read-back** (snapshot, expected, equality poll) confirmed 719 of 720 trials with the key settled and accepted 0
+     wrong values; 120 password or concealed and 60 canvas trials all answered unconfirmed with no value read.
+  2. **The rule as built** (`TypeReadback.swift`, the spike's `Fence354Readback` and `logic.swift` ported):
+     - **The snapshot**, the last thing before the first event (after a forced activation), concealed or not (item 10):
+       the app's focused element, its role, its subrole (only when the role read),
+       then its value and selected range only when the role is a text-entry role (`typeReadbackTextRoles`: AXTextField,
+       its search subrole included, AXTextArea, which Chromium, WebKit and Gecko give a contenteditable region, and
+       AXComboBox) and neither role nor subrole is AXSecureTextField nor the subrole unreadable. A non-text role is
+       refused whatever its value (Chrome's canvas reads AXImage with an empty string value, the spike's 20 cells).
+     - **Expected:** the before-value with the selected UTF-16 range replaced (NSString), the typed text as the units
+       insert it: a newline (LF, CR or CR LF, one Return) as "\n" in a multi-line field, a key that can leave or submit
+       as nothing (item 10).
+     - **The poll:** after the last event, the snapshotted field every `typeReadbackPollIntervalMs` (5) for at most
+       `typeReadbackBudgetMs` (1,000), each read with a `typeReadbackMessagingTimeout` (0.1 s) messaging timeout, the
+       spike's three numbers. Role and subrole are read again before every value read; a field whose role no longer
+       reads, whose subrole read fails, that turned secure, or whose role is no longer the snapshot's is read no
+       further. Equality of UTF-16 code units only, never containment nor Swift's canonical `==`; a read that may be
+       cut is never equal (item 10).
+     - **The answers.** Equal, and the app's focused element still the snapshotted one (CFEqual, as the spike's
+       `focusRetained` was in all 2,393 confirmed trials of run 42815192390): success, `typeReadback.confirmed`. A mismatch on a field
+       that stayed readable: `typeUnconfirmed` with the excerpt, or for a concealed request with nothing (item 10).
+       Secure, non-text, unreadable, a field that turned secure or unreadable or changed identity, a value that may be
+       cut, and an unchanged value with no sign it was consumed: `typeUnconfirmed` with no values.
+  3. **What the build settled** (gaps the ruling left):
+     - **A key in the text is a checkpoint** (as amended by ruling 1ea561bc:589, item 10: only a key that can leave or
+       submit). A Return or a Tab (any keyed control character) can do something other
+       than insert itself (submit a form, move focus), so one expected value cannot cover it: either every
+       `type_text("query\n")` into a search field would answer unconfirmed, or a wrong query would be submitted before
+       anything was checked. So the text typed since the last checkpoint must read back before the key is posted (the
+       same poll and answers); a mismatch there stops the text, the key and the rest unsent (`stoppedBeforeKey`, its
+       sentence says so). The keys that end the text are posted after that confirmation and reported as
+       `keysUnconfirmed`, as press_key's are; text after a key is expected with the key's character in it, as a text
+       area holds it, so a single-line field that took a Return as a submission answers unconfirmed there. The check runs
+       before the in-flight intervention guard, so the guard is read after its wait.
+     - **"May be truncated"** (#350): Blink cuts a string attribute to at most 10,000 UTF-8 bytes at a character
+       boundary, and #290's 20,499-character ASCII field read 10,000 long. A read whose length sits at the cap in UTF-8
+       bytes (9,997 to 10,000) or UTF-16 units (9,999 or 10,000) may be cut (`readbackMayBeTruncated`): the snapshot's
+       before-value, the expected value (which a whole and a cut field would read alike) and the final actual each answer
+       `possiblyTruncated`. A value past the cap was not cut there and compares, so TextEdit's 20,000-character document
+       is read back.
+     - **The excerpt** (`readbackExcerpt`): 100 UTF-16 units either side of the first unit where expected and actual
+       differ (`typeReadbackExcerptRadius`), the same span of each, never splitting a surrogate pair, quoted with its
+       control characters escaped, with its start and both full lengths: at most about 400 units of the field in the
+       answer. Anchored at the difference rather than the selection so a substitution far into a 500-character text is
+       shown; the difference lies in the edited span unless the app changed text outside it.
+     - **The meta stays value-free:** `typeReadback` carries the reason, the snapshot's and the polls' time, the reads,
+       the checkpoints, `keysUnconfirmed`, and only on a mismatch the two lengths. The excerpt is in the sentence alone.
+     - **Not ported:** the spike's range read after the poll and its expected caret (evidence only, never the
+       predicate), and the observer fences, falsified.
+     - **Empty text** posts nothing and reads nothing, as before. A text of keys alone confirms nothing typed: success
+       with `keysUnconfirmed` when the snapshot was readable.
+     - **The wrapper admits `typeUnconfirmed` by name** (src/services/sky.mjs): a concealed `type_text` that keyed into
+       a password field, or that does not match, ends with it, and without the name the model read `failed (failed)`. Its sentence stays withheld, as every
+       substituted request's is: `type_text with secret "<label>" failed (typeUnconfirmed) after the secret was read; it
+       may have been partly entered.`
+     - **The paste route** (a non-Latin input source, Paste.swift) keeps #187's effect check and is not read back: the
+       ruling measured the keyed route only, and the paste route's unreadable-field answer is #187's success with a
+       note. The documents say the read-back does not apply there. A stated limit (ruling 1ea561bc:589, call 3); its
+       read-back is #361.
+  4. **The sentences.** A mismatch: `The text was typed, but the field does not read as expected, so it is not confirmed
+     and some or all of it may have gone in. Observe the field with getAXState() before going on, then use setValue to
+     put it right; do not type the text again. From character <n>, expected "<…>"; the field reads "<…>". The expected
+     text is <n> characters long, the field's <n>.` The other reasons replace the clause after "but" (a password field,
+     which is never read back; the field does not match what was typed, a concealed mismatch's; nothing shows the field
+     took the text: it reads as expected, but its caret did not move past the text; the focused element is not a text
+     field; the
+     field's text could not be read back; the field holds more text than accessibility reports in full; the focused
+     field changed while the text was typed; no focused field could be found) and carry no excerpt. A checkpoint's
+     opens `The text before a Return or Tab was typed, but …, so the key and the text after it were not sent.`
+  5. **press_key** is unchanged in behaviour; its meta says `keyEffect: "unconfirmed"` once a press was posted, and the
+     documents say that an editing key's effect is not confirmed and that text typed right after one can race it.
+  6. **The cost.** The spike's snapshot and poll, p50/p95: Safari 26.0/57.2 ms, Chrome 28.4/47.8 ms, Firefox 33.4/53.4
+     ms; 1 to 6 polls when confirmed. Each poll is three reads (role, subrole, value), plus one focus read at the end. A
+     mismatch, and an unreadable value, cost the whole second. A field that cannot be read back costs the snapshot only.
+     Each checkpoint costs one confirmed poll before its key.
+  7. **Limits.**
+     1. What `typeUnconfirmed` will now answer, where main answered success: every password field (typed concealed or
+        not), a `{{secret:…}}` that does not match (item 10), typing into a list to select a row (Finder's type-select:
+        the documents tell the model to observe the selection) or into a canvas or other non-text element, a field whose
+        app reformats what was typed (a phone mask, a substitution, completion: TextEdit's 60 of 60), typing over a
+        selection that held the same text in an app that does not move the caret, and a Chromium field at its AXValue
+        cap. Each is honest, and each asks the model to observe.
+     2. The read-back confirms the field's text, not where its caret ended nor anything a key did.
+     3. A field that keeps changing on its own (a live counter in the field) never reads equal and answers unconfirmed.
+     4. Cut detection rests on the cap's units as stated above; a Chromium cut in another unit would show as a mismatch,
+        never as a false equal, unless the cut text happened to equal the expected one.
+     5. A contenteditable whose AXValue does not show a Return as "\n" answers a Return in it unconfirmed, as a
+        mismatch, unless its subrole is in `typeReadbackReturnUnreadSubroles` (Gecko's AXApplicationGroup, item 10.12),
+        where its Return is a key. A text area and a contenteditable that read alike cannot be told apart. Where the
+        caret cannot be read, a doubled ending Return may read as confirmed in a multi-line field (item 10.12).
+     6. The paste route is outside the read-back (item 3): #361.
+     7. A concealed comparison zeroes the buffers the read-back owns; the CFString the app's reply was decoded into, and
+        the request's own text, are immutable and released, not overwritten.
+     8. A concealed request's reply time grows with the secret's length, as on main (item 10.9). A Return or Tab in a
+        secret is not checked before it is posted, so a secret that went in wrong can still be submitted by its own
+        Return. A concealed request in an app that does not move its reported caret past typed text answers
+        unconfirmed (item 10.10).
+     9. `typeUnconfirmed` right after an editing key may still answer a field that ends up holding the right text: the
+        settle (item 10.15) covers a press_key's effect that shows within its 100 ms, not one that lands later, nor
+        one that pauses for 15 ms between steps, nor the effect of a key the settle does not track (a type_text's own
+        Tab or Return, the paste method's super+v): #386.
+    10. In background Firefox, AXSelectedTextRange does not move after typing (0 of 2,425 reads in run 44022892172
+        matched the caret past the text), and every concealed confirmation requires that caret (item 10.10), so a
+        `{{secret:…}}` typed there answers `typeUnconfirmed` (`unchanged`) even though the text went in; the model is
+        told to observe the field. A stated limit (ruling 1ea561bc:761): the caret stays required for secrets, and
+        Firefox's behaviour is unchanged; #394.
+    11. In background Safari on a large page, the walk for the focused field (item 10.16) reaches its bounds before it
+        has read the whole window, so it claims nothing and `type_text` answers `typeUnconfirmed`
+        (`noFocusedElement`): no confirmation, never a wrong one. Measured in run 44031200818 on a page of 1,600
+        accessibility children: 20 of 20 walks cut at 200 elements (depth 8, 24.4/29.0 ms p50/p95), 0 claimed, the
+        final text right in 20 of 20; the same run's text-marker trace (item 10.16's (b)) found the field in all 20.
+        A stated limit (ruling 1ea561bc:765); the text-marker route is #395. *(Amended by #395, ruling 1ea561bc:824:
+        in Safari the route runs before the walk and finds the field whatever the page's size; the Decision Log's
+        "#395".)*
+  8. **The documents.** `docs/cua-api/agent-cursor.md` gains a sixth paragraph: what `typeText` confirms, that
+     `typeUnconfirmed` may mean some text went in and the remedy is to observe, then `setValue`; the fields it cannot
+     read; the OS's substitutions answering unconfirmed, never a silent success; keys in the text; and `setValue`, or
+     `selectText` then `typeText`, to replace a field's text instead of a select-all key, since `pressKey` does not
+     confirm an editing key's effect. The surface inventory's Table 3 addition of 2026-11-10 (#354), the docs test,
+     parity's docs oracle and PROVENANCE.md carry it. The plugin version is set at the merge turn.
+  9. **Parity.** repl-parity drives no `type_text`; its docs oracle carries the paragraph. The native matrix's Finder
+     type-select rows (the method matrix's `typeText.typeSelect` and concurrent use's Finder side) now see cua answer
+     `typeUnconfirmed` for an element that is not a text field once the keys landed, where the vendor answers success:
+     they judge the outcome and keep that one answer as cua's expected difference (`typeIntoList`, scripts/native-matrix/
+     plan.mjs). The text scenes' rows (TextEdit's document, Chrome's and the fixture's fields) are expected to confirm.
+  10. **Amended** by the design session's ruling 1ea561bc:589 on the build's three calls, and by the review of
+      9020bb18..dad56362 (reviewer-high, two findings, both real):
+      1. **A `{{secret:…}}` keeps the read-back as equality only** (call 1). The snapshot is taken as for any request (a
+         secure field is never read); the expected value is built as UTF-16 units in a buffer the read-back owns and
+         every read copied straight from its CFString into another (`liveReadbackValueUnits`), both zeroed with
+         `memset_s` after use (`readbackZero`). Equal is success; a mismatch is `typeUnconfirmed`, reason
+         `concealedMismatch`, saying only that the field does not match what was typed: no excerpt, no values and no
+         lengths, since a length tells the secret's.
+      2. **A Return in a multi-line field is text** (call 2): in an AXTextArea, unless its subrole is one the cells
+         show does not read a Return back (`typeReadbackReturnUnreadSubroles`, Gecko's since item 10.12), a Return is "\n"
+         in the expected value, verified like any character, with no checkpoint. Only a key that can leave or submit (a
+         Return in a single-line field, a Tab anywhere, any other keyed control character) keeps the checkpoint, adds
+         nothing to the expected value and is counted `keysUnconfirmed` wherever it falls; text after it is expected in
+         the same field, so focus that moved with a Tab answers `fieldChanged`.
+      3. **The paste route** is a stated limit (call 3), its read-back #361.
+      4. **An unchanged value confirms only once consumed** (the review's P1). Where the expected value equals the
+         snapshot's (the selection held the typed text), the first poll would confirm the old value before any event
+         was consumed, #354's race itself, and could release a checkpoint's key as early. Now such a read is equal only
+         when the selected range also reads the caret past the insertion, {location + inserted length, 0}, which
+         differs from the snapshot's non-empty selection; else, at the budget, `typeUnconfirmed` reason `unchanged`, at
+         every checkpoint too.
+      5. **Code units, and the cap before equality** (the review's P2). The poll accepted a match before checking the
+         actual value for the cap, and Swift's `==` takes canonically equivalent strings of different lengths for equal
+         (4,999 composed é against 4,999 decomposed). Each read is now checked for the cap first, a read that may be cut
+         is never equal, and equality is of UTF-16 code units.
+      6. **The documents** add that typing into an element that is not a text field (Finder's type-to-select) answers
+         unconfirmed and is checked by observing the selection, and say each of the above; the surface inventory's
+         Table 3 amendment (2026-11-10, #354, ruling 1ea561bc:589) carries the paragraph.
+      7. **Only a value read after the caret counts** (the review of dad56362..af1860ef, P1). The reader judged the
+         caret after a value read, so a stale value read before a newer caret confirmed what the app had already
+         changed ("a" typed over a selected "a" and stored as "A": the first read still "a", the caret at {1, 0}). The
+         equal read that first sees the caret past the insertion now only marks it seen; only a later equal read, its
+         role and subrole read again before it, confirms. Plain and concealed, at every checkpoint.
+      8. **A concealed record counts nothing** (that review's P2). `keysUnconfirmed` and `checkpoints` told how many
+         control characters and segments a secret holds, and a secret of leaving keys alone its length; the reads and
+         poll time of each checkpoint's poll tell the segments too. A concealed record carries `confirmed`,
+         `concealed: true`, `snapshotMs` (taken before any input), the reason, and `keysUnconfirmed` and
+         `stoppedBeforeKey` as flags only.
+      9. **A secret's keys make no checkpoint** (the review of af1860ef..a8e55870, P2; the design session's ruling
+         1ea561bc:593). Each checkpoint is a confirmation wait, so a concealed `abc\n\n` took one and `a\nb\nc` three,
+         with identical meta, and the reply's time (`cua/serviceMs`, `cua/engineMs`, its latency) showed how the
+         secret's text is segmented. Checkpoints now come only from keys in the caller's own text, whose structure the
+         caller already knows. The wrapper expands a secret only as the whole text of a `type_text`, so a concealed
+         request is all secret: a Return or Tab in it is posted with the rest, `keysUnconfirmed: true` is set, and the
+         field is read back once, after the last unit, even for a secret of keys alone. The aim is that the read-back
+         adds no channel of its own; as cua's secret documents say, substitution makes no promise against
+         exfiltration. **The limit, as on main:** the reply's time still grows with the secret's length, by the
+         per-character posting time (the vendor's 250 µs between events) and by how long the app takes to show the
+         text.
+     10. **One schedule for every concealed confirmation** (the review of a8e55870..8f465bf9, P2). The caret's evidence
+         and a value read after it (item 10.7) ran only when the expected value equalled the snapshot's, so a concealed
+         `abc` typed over a selected `abc` took one more caret read, poll and value read than `xyz` (5 ms against 0),
+         and a caller could test a secret against a selection it chose. Every concealed confirmation now requires the
+         caret past the insertion, {location + typed length, 0}, then an equal value read taken after it, whatever the
+         secret replaced; without both within the budget it answers `typeUnconfirmed`, reason `unchanged`, whose
+         sentence no longer says the selection held the same text. Plain input keeps its path. This replaces the
+         limit, stated before, of the extra read over the same text.
+     11. **The focused field through the window** (the hosted A/B, run 43752829833, on bd63a0cc; ruling 1ea561bc:737).
+         Background Safari answered no application-level `AXFocusedUIElement` for its focused input in 120 of 120
+         cells that took no route 3 hold first (every secret cell; the keys still landed, 20 of 20) and found it in all
+         664 cells whose ⌘ key had just taken one, so any plain `type_text` into a background app with no hold would
+         have answered `noFocusedElement` too; the A/B's plain cells all pressed a ⌘ key first. When the application
+         answers none, the read-back asks its primary window (AXFocusedWindow, else AXMainWindow) for its
+         `AXFocusedUIElement`, where the posted keys go (`readbackFocusedField`), with the same guards; the identity
+         check uses the same lookup. To be verified on the next hosted run; a route 3 hold for the read-back, should the
+         window not answer, goes to the design session first. *(Superseded by item 10.16: the window did not answer.)*
+     12. **An ending Return's placeholder line** (the same A/B; ruling 1ea561bc:737). Safari's contenteditable read an
+         ending Return as "\n\n", its empty last line's placeholder, in 20 of 20, while a Return between lines read back
+         exactly in 20 of 20; it carries no subrole, as Safari's and Chromium's text areas do. A Return stays text in a
+         multi-line field (ruling 589). When the typed text ends in a Return in such a field and nothing of the field
+         follows the insertion, a read of the expected value and exactly one more "\n" confirms only when
+         AXSelectedTextRange reads {expected length, 0}, the placeholder line's start, then a fresh read after that
+         caret read (`readbackPlaceholderLine`); a Return typed twice in a text area reads the same value with its caret
+         one further on and answers `valueMismatch`. An unreadable caret is accepted (`placeholderCaretUnread` in a plain
+         meta): the stated residual, a doubled ending Return may read as confirmed in a multi-line field. A secret's
+         ending Return stays text and takes the same acceptance on the caret every concealed confirmation already reads,
+         so it adds no read and no wait; an unreadable caret never confirms a secret. Gecko's contenteditable
+         (AXApplicationGroup), whose AXValue flattens its line breaks, joins `typeReadbackReturnUnreadSubroles`: its
+         Return is a key.
+     13. **The caret confirms only the value it was read with** (the review of bd63a0cc..5582db9c, P1). The caret seen
+         with one value confirmed whichever accepted value a later read showed: a secret `x` and Return read "x\n" with
+         its caret at {2, 0}, then a late second Return made it "x\n\n" with its caret at {3, 0}, and that read confirmed
+         as the placeholder line. The evidence is now tied to the value it was read with (`ReadbackCandidate`): only a
+         later read of that same value confirms with it, and any other read, an unreadable one included, drops it, so the
+         next accepted value has its caret read again. The schedule stays one for every concealed confirmation: the reads
+         follow what the field shows, never whether the secret equals the text it replaced. The plain path's unchanged
+         value and its placeholder line already checked their carets apart; they take the same rule, so a value that
+         leaves and comes back is not confirmed by the caret seen before it left.
+     14. **A key equivalent's race can read unconfirmed over the right text** (ruling 1ea561bc:738, on the A/B's race
+         cells). The expected value is built from the snapshot, which can be taken before an editing key sent just before
+         (super+a, super+z, super+v) takes effect, so `typeUnconfirmed` may answer a field that ends up holding the right
+         text: 65 of the 296 unconfirmed answers in the race cells held it (Chrome for Testing's super+v cell: 30 of
+         40). The answer stays honest (nothing was confirmed) and its remedy, to observe the field, finds that case; the
+         typing paragraph says so. Its follow-up is #386; item 10.15 narrows it.
+     15. **The settle before the snapshot** (the follow-up run 44001080688 on 3141f170; ruling 1ea561bc:754). 0 wrong
+         successes in 1,269, but Firefox's race cells answered unconfirmed 170 of 240 times over the right final text
+         (Chrome for Testing and Safari the same, less often): the key's effect (super+a, super+z, super+v) landed
+         between the snapshot and the typing, so the expected value was built over a stale field. Now, when press_key
+         posted to the same app (by pid, `RecentKeyPosts`, the time of its last post) within
+         `typeReadbackSettleWindowMs` (1,000), the snapshot settles (`readbackSettle`, TypeReadbackSettle.swift): after
+         the snapshot's first value and range read, the field's role and subrole are checked as the poll checks them,
+         and its value and range read again every `typeReadbackSettleIntervalMs` (15) until a read agrees with the one
+         before it in code units and range, for at most `typeReadbackSettleCapMs` (100: six reads); the snapshot is
+         the last read, with the snapshot's checks (the cap, a range inside the value) applied to it. Without a recent
+         key the snapshot is taken at once, as before, so ordinary typing pays nothing; a recent key over a still field
+         pays one interval and one read. The plain meta carries `settleReads` and `settleCapped`. **Safety:** typing
+         still follows the snapshot, so a later snapshot cannot make a success false; it only lets the expected value
+         include an earlier key's effect that had not shown yet, and every success still needs the field to read that
+         value after the typing. **Secrets:** the settle runs before any of the secret is typed, so its reads and
+         waits depend on the field and the earlier key, never on the secret, and a concealed record counts none of
+         them (its `snapshotMs` includes them). It comes after the secure and text-role checks and re-checks the role
+         and subrole before every read, so it never reads a secure field's value; a field that turns secure while it
+         settles answers `becameSecure`. Only press_key's keys are tracked: the gap the run measured is an editing
+         key followed by typing; an intervening input to the app does not clear the record, since it does not make the
+         key's effect land, and costs at most the cap.
+     16. **The focused field by a bounded walk of the window** (the diagnostic run 44022892172, Safari 27.2 on
+         3141f170, 10 reps; ruling 1ea561bc:761). With no key first, background Safari's application
+         `AXFocusedUIElement` answered no value (-25212), its windows' focus attributes were unsupported (-25205) and
+         its web area's `AXFocusedUIElement` answered no value, so item 10.11's window fallback never answered there.
+         Two paths that activate nothing found the field 10 of 10: (a) a walk from the window to its AXWebArea (28
+         nodes, depth 6, 4.7/10.9 ms p50/p95) and inside it to the element whose AXFocused is true, the AXTextField (5
+         nodes, depth 2, 0.5/1.0 ms); (b) the web area's AXSelectedTextMarkerRange, its start marker through
+         AXUIElementForTextMarker to an AXStaticText whose AXParent is the field. The window fallback is replaced by
+         (a), which is generic where (b) is WebKit's marker API (`readbackFocusedByWalk`): when the application names
+         no focused element, its primary window (AXFocusedWindow, else AXMainWindow) is walked breadth first, reading
+         each element's role. An element with a text-entry role or AXSecureTextField (which the snapshot then refuses
+         unread), the roles the snapshot accepts, a contenteditable region's AXTextArea included, is a leaf of the
+         walk: its AXFocused is read and its children never are, focused or not, so nothing typed into any field is
+         read. Any other element is walked through, focused or not: after a key press the same run found Safari's
+         AXWebArea itself reading AXFocused true beside the editor, 10 of 10, so the walk never claims the first focused
+         element it meets. The one focused text-entry element is claimed only when the walk finished with nothing left
+         unread within `typeReadbackFocusWalkNodes` (200) and `typeReadbackFocusWalkMs` (40): zero, several, a walk
+         past either bound, an element at `typeReadbackFocusWalkDepth` (12, the window at 0) that has children, or a
+         read that failed (any error but noValue and attributeUnsupported, which are absences, or a value of the wrong
+         type) claim nothing (`noFocusedElement`), since what the walk did not read could be another. **Amended by the
+         review of 1bac4017..45e5a5ed** (reviewer-high, three findings, all fixed): (P1) a subtree cut at the depth
+         bound was dropped while the walk still claimed, so a field near the top and another past the bound claimed
+         the first; (P2) only a focused field was a leaf, so after a concealed request moved focus on (a trailing Tab
+         out of a contenteditable) the identity check's walk read the text elements under the field it left, their
+         number and time following the secret; (P2) the live reads turned a failed read into an absence (no children,
+         unfocused, no role), so a timeout could hide a second focused field. The identity check's walk after a secret
+         is typed now reads the same elements whatever the secret. The bounds give about 6 times the
+         measured path's nodes, 1.5 times its depth and 3 times its time, since proving one focused element reads
+         the whole window, not just that path. Only AX attributes are read; nothing is activated. **The gap (a)
+         leaves**, named for the design session: a window larger than the bounds (a long page) claims nothing, where
+         (b) costs a few reads whatever the page's size; (b) stays out until a run shows that gap.
+  Proven offline: `TypeReadbackTests` (57) drive the real keyText through `keyTextReadBack` over a fake app whose field
+  takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
+  sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
+  excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
+  a field turning secure read no further; a concealed text confirmed when equal, a mismatching one whose reply, meta
+  and reads carry none of its characters and no length, a concealed Return and a concealed read at the cap, the
+  buffers zeroed; non-text roles with a string value refused and the three text roles read; no focus, an unreadable
+  role, value or range; a value and an expected value at the cap, a read cut at it, the UTF-8 window, canonically
+  equivalent text unequal, a read at the cap never accepted though Swift's `==` would call it equal; typing over the
+  same text unconfirmed until the caret moves, at a checkpoint too, and a stale value read before the caret never
+  confirming, plain or concealed; a concealed record giving one Return and three identical meta, and a secret's keys
+  making no checkpoint (one wait for `a\nb\nc`, `abc\n\n` and keys alone) while the caller's own still do, and every
+  concealed confirmation taking the same reads and waits over the same text as over another, a caret that never
+  moves unconfirmed; the focused field found by the window's walk when the application names none (one focused
+  text field claimed, two or none or a walk past its node, time or depth bound not, one near the top with a subtree
+  cut at the depth bound not, a failed role, focus or children read not, a focused web area neither claimed nor
+  counted, nothing inside any text-entry element read, the same reads whatever an editor left holds, a secure field
+  it finds refused unread, the live reads' errors kept apart from absences), the
+  application's answer first; an ending Return's placeholder line confirmed with the caret at its start, refused
+  doubled, accepted with an unreadable caret, never without an ending Return, mid-field or on a stale read, a secret's
+  on the same schedule; the caret confirming only the value it was read with, a secret's late doubled Return refused
+  and a value that left and came back read again, plain or concealed; the settle only after a key posted to the app
+  within the window, one interval over a still field, the snapshot once two reads agree (an undo in steps, a select-all
+  landing), the cap's last read, the snapshot's checks on the settled read, a secure field never read and one turning
+  secure while it settles, a secret's settle the same whatever the secret; focus moving, a role changing or no longer
+  reading; UTF-16 replacement with emoji and combining marks; a text area's Returns read back as text and a dropped
+  one a mismatch, a single-line field's and a combo box's trailing Return confirmed before it is posted, a wrong text
+  never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
+  `fieldChanged`, the exclusion set with Gecko's contenteditable, keys alone, empty text, the guard before a key read
+  after the checkpoint's wait; the snapshot's read order; an intervention's stop keeping the record; press_key's
+  `keyEffect`. 1,184 engine tests pass, 1 skipped as before. Of 146 parts and bounds of the rule changed in turn
+  (`~/.local/share/187/mutate-354.py`), 134 fail a test. Twelve survive by design: the zeroing of the read and the
+  expected buffers, which no answer shows (`readbackZero` itself is tested), and ten reached only by a live
+  press_key or type_text: the engine's call into the read-back, press_key's record of its key and type_text's request
+  for the settle (`RecentKeyPosts` itself is tested), and the live seam's value, units, subrole-error, identity and
+  main-window reads and its walk's children and AXFocused reads (`readbackFocusedByWalk` and `readbackWalkRead` are
+  tested). The service (`cua/typeReadback`,
+  `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have
+  node tests.
+  **The merge gate** (the ruling; met, ruling 1ea561bc:765: the final run 44031200818, 2,980 of 2,980 valid, 0 wrong
+  successes and 0 privacy failures, with the runs before it, `docs/evidence/2026-11-17-type-readback/README.md`): a
+  hosted A/B against main on the spike's cells, the real engine's answers, with the
+  cost stated: the race cells (Cmd+A, Cmd+Z, Cmd+V then `type_text`, three browsers, four editors, 20 each) with 0 wrong
+  values answering success and the branch's `typeUnconfirmed` rate against main's success; the clean cells at 30, 120
+  and 500 characters confirmed; password and canvas unconfirmed with no values and no secure value read; a concealed
+  text confirmed where it reads back equal, and a mismatching one unconfirmed with nothing of it in the answer (item
+  10); a Chrome field past 10,000 characters unconfirmed; the 500-character contenteditable under "Add period with
+  double-space" unconfirmed, never success; and `type_text`'s time per browser and length (p50, p95) and the mismatch
+  path's, branch against main. Item 10 adds, where the kit allows: a Return typed into a textarea and a
+  contenteditable read back as "\n" (or the subrole that does not, for `typeReadbackReturnUnreadSubroles`), a trailing
+  Return into a search field confirmed with `keysUnconfirmed`, and typing over a selection that holds the same text.
+  Date/Author: 2026-11-10, cursor235's lane-1 implementer for the design session's ruling 1ea561bc:585 on #354, amended
+  for ruling 1ea561bc:589 and the review of 9020bb18..dad56362.
+
+- Decision (#374, 2026-11-15, `fix/374-menu-unconfirmed`; the issue's intent as amended by its comment, the Linux
+  fix's design input of cua #171 ruling 687; spawned by #171 M4's Linux gate, rulings 684 and 685; the four choices
+  below agreed by the dispatching session): **perform_secondary_action "Show Menu" (AXShowMenu) answers success only
+  once a menu is seen to open within 1 s, and `menuUnconfirmed` otherwise, the "sent, effect not seen" family's answer
+  beside `clickUnconfirmed` and `scrollUnconfirmed`; a refusal ("the menu could not be confirmed"), as the issue first
+  had it, is not built.** A deliberate departure from the vendor, which answers success as soon as the Accessibility
+  call does, menu or none.
+  1. **Why not a refusal.** A web page or Electron app that handles contextmenu itself (preventDefault and its own HTML
+     menu, as Docs-style apps do) shows no native menu, so confirming a native menu would refuse a request that worked.
+     `menuUnconfirmed` says the action was sent and no menu was seen, which is true in both cases, and names the case
+     where the page drew its own. It matches the Linux engine's answer of the same name (Linux spec, Decision Log
+     2026-11-14, candidate 3).
+  2. **What counts as the menu** (MenuConfirm.swift `openMenus`), read once just before the action and then at once
+     and every 20 ms (`menuConfirmIntervalMs`) for up to 1 s (`menuConfirmWindowMs`, Linux's MENU_WAIT) after it
+     returns: an AXMenu child of the application element, under the element's serving process and the app's
+     (`application`; amended 2026-11-16 by "#374's menu hosts" below: no family puts its context menu there, and the
+     source is the element's ancestors outside the page instead, `ancestor`); an AXMenu child
+     of the element (`element`: a popup or menu button's own menu); and the app's AXFocusedUIElement or one of its 3
+     nearest ancestors with role AXMenu (`focus`: a page's ARIA role=menu, which Chrome and Safari expose as AXMenu,
+     sits inside the page, and the WAI-ARIA menu pattern moves the focus onto its first item). A menu open before the
+     action, by identity, confirms nothing by itself, and neither does a source whose baseline read was not complete
+     (a children or focus read that failed, a role that did not read, a parent missing below the window: the record's
+     `unreadBefore`), since a menu open before may have gone unread there (the review of 74d674cc, P2). The deadline is
+     checked before every read, a children list's role reads included, and the reads stop one interval past the window,
+     so an app whose every read hangs for the 1 s messaging timeout ends the wait one read past it (the same review,
+     P2: a stall on each child's role had cost one timeout per child). **The stated limit:** an ARIA menu
+     that takes no focus and is not the element's child is not seen, and answers `menuUnconfirmed`.
+  3. **Polled, not notified.** AXMenuOpened would need an observer on each process registered before the action and a
+     run loop serviced through the wait, for a gain of at most one interval; the poll would still be needed for an
+     ARIA menu and as the backstop. The poll reads the state the model will act on: a menu that opened and closed again
+     within the wait (Chromium's on an unfocused window, as the Linux gate found) is not open, and the answer says so.
+  4. **A timed-out Show Menu counts as sent** (`showMenuSent`). An app that runs the menu's tracking loop inside the
+     action replies only once the menu closes, so the call answers kAXErrorCannotComplete after the element's 1 s
+     messaging timeout with the menu open; main answered that `actionFailed` ("did not accept"). The menu is looked for
+     after cannotComplete as after success, and the AXError rides in the record (`actionError`). Every other AXError is
+     `actionFailed` as before. A menu is still required for success, so the worst case moves from `actionFailed` to
+     `menuUnconfirmed`. **Unverified:** that AppKit's AXShowMenu blocks this way is a reading, not yet observed on this
+     engine; the live kit's AppKit fixture has a view whose Show Menu runs its menu inside the action
+     (`appkit-blocking`), so the hosted run observes the cannotComplete path, and every cell records the AXError.
+  5. **The record** rides as meta `menu` (`cua/menu` through the service): {seen: "element" | "ancestor" | "focus" |
+     null, openBefore, polls, ms, actionError?, unreadBefore?}, value-free. The app's menu record (MenuRecord.swift) is cleared on
+     either answer, since the action was sent.
+  6. **A posted right click stays at click's own contract**, matching Linux. click_element has no right-button route
+     that sends AXShowMenu on macOS: the ladder (`elementClickPlan`) takes the action route only for a plain single left
+     click on an element advertising AXPick or AXPress; every right click, element or coordinate, is a posted pointer
+     event, the person's own gesture, with no AXShowMenu fallback, and it answers as any posted click does. Linux
+     confirms only its AX fallback for an element with no visible point, not its posted right click. Left for the
+     design session to rule on if it disagrees.
+  7. **The comparisons.** No cell of comparison A (`compare --engines`; the baseline's method cases are paste, scroll,
+     selectText, setValue and typeText), of the `native-mac` parity suite (accessibility text only) or of the method
+     matrix (its performSecondaryAction cells perform "Scroll Down" and an action no element offers) performs Show Menu,
+     so this departure moves no compared row and needs no declaration today. A cell that adds Show Menu declares its
+     difference from the vendor as a departure citing this entry (`fault: "departure"`, `decisionLog`), as Linux's
+     `scripts/linux-engine-diff/deviations.mjs` declares its `menuUnconfirmed` samples.
+  8. **The model's document.** One sentence closes agent-cursor.md's fourth paragraph (the surface inventory's "Table 3
+     addition (2026-11-15, #374)").
+  The live check is a hosted kit on a dispatch-only workflow (`probe/374-measure`, `.github/workflows/probe-374.yml`,
+  `scripts/probe-374/README.md`), not yet run while GitHub Actions is billing-locked: one job per family, AppKit (a
+  fixture app), Chrome for Testing, Electron, Firefox and Safari, each with a native-menu cell, an ARIA-menu cell on the
+  web families, a preventDefault page as the negative control, and on AppKit a view that takes AXShowMenu and shows
+  nothing (the ignored case) and one that runs its menu inside the action (item 4).
+  Date/Author: 2026-11-15, cursor235's implementer for #374 (design 1ea561bc:733).
+- Decision (#374's menu hosts, 2026-11-16, `fix/374-menu-unconfirmed`; the design session's ruling 1ea561bc:752 on
+  the hosted diagnostic smoke, run 44004726498, kit `probe/374-measure` 43d561cf; amends #374's item 2 above): **a
+  context menu counts when it is a new AXMenu child of the element or of one of its ancestors up to and including its
+  window, leaving out the web area and everything inside it; the AXMenu child of the application element is no
+  source.** A pop-up-level window was weighed as the signal and rejected.
+  1. **The finding.** The first smoke (run 44001129810) had the candidate answer `menuUnconfirmed` on every browser's
+     native context menu while the kit's oracle saw it on screen: none of the five families puts its context menu
+     under the application element. The diagnostic smoke hit-tested each menu window's centre through AX and walked
+     the hit's ancestry, the same in the foreground and the background: AppKit's text view, AXMenuItem < AXMenu <
+     AXTextArea (the element, already the `element` source; the popup button likewise); Chrome for Testing, < AXMenu <
+     AXScrollArea (the page's own scroll area) < AXGroup ×6 < AXWindow; Electron, < AXMenu < AXWindow; Firefox, <
+     AXMenu < AXGroup < AXWindow; Safari, < AXMenu < AXGroup < AXTabGroup < AXSplitGroup < AXWindow. A bounded search
+     of each application's tree found only the menu bar's menus under it. The menu hangs under the view that popped it
+     up: the element, or an ancestor of it outside the page.
+  2. **The rule** (MenuConfirm.swift `menuHosts`, `MenuScope`; `seen` "element" | "ancestor" | "focus"). The hosts are
+     read once before the action: the element's parents up to the window (at most `menuHostLevels`, 40), less the
+     outermost web area and every node below it, and only when the walk reached the window with every parent and role
+     read; a walk cut short establishes no hosts and leaves the `ancestor` source unread, so it confirms nothing (the
+     review of 5cdc968c, P2: a walk that stopped inside the page had taken the page's own nodes for hosts), which are the page's own and hold no native menu (a page's ARIA menu stays the focus's). Each poll reads
+     the element's children and each host's: one children read per host, 2 to 8 hosts on the measured trees. The
+     baseline, the unread rule, the focus source, the bounds and the 1 s wait are unchanged. An AXMenu beside a host
+     (Firefox's autocomplete, an AXMenu inside an AXPopover under a group) is no child of a host and does not count.
+  3. **Why not the window.** Every native menu measured was a new on-screen window at the pop-up menu level (layer
+     101) owned by the app's process, but that signal ties nothing to the request, and it is not unique: Firefox's
+     datalist suggestions are a layer-101 window of Firefox's (Chrome's are at layer 999, Safari's and Electron's showed
+     none; no tooltip was raised by a synthesized pointer move in any family; the ARIA, own and ignored cells raised no
+     pop-up window). AX names the menu and its host; a window level only says something popped up.
+  4. **Verified by the same run:** decision item 4's reading. AppKit's AXShowMenu on the blocking view answered
+     cannotComplete (−25204) in both placements with the menu open, and the candidate answered success (seen on the
+     first read, 1 to 1.5 ms after the call returned), where main answered `actionFailed` ("did not accept") with the
+     menu on screen. Also observed: while a native menu is open its app answers reads slowly (2 to 17 polls in the 1 s
+     wait on the browsers), which the first poll after the menu appears absorbs.
+  5. **What the full run checks besides** (the ruling's negative controls): a menu that appears in the same window
+     within the wait but not from the request (Firefox's datalist autocomplete, a `<select>` popup the page opens, and a
+     menu the page opens on a timer), each raised inside the wait after a Show Menu that opens nothing, must not
+     confirm; if one does, a discriminator (the menu's position against the element's frame, or its appearance after
+     the send) comes before shipping.
+  Date/Author: 2026-11-16, cursor235's implementer for #374 (ruling 1ea561bc:752).
+- Decision (#374's coincident menu, 2026-11-16, `fix/374-menu-unconfirmed`; the design session's ruling 1ea561bc:753
+  on smoke run 44010453311, kit `probe/374-measure` be48e33a, candidate 7ad0362b; follows "#374's menu hosts" above):
+  **the ancestor and focus rule ships with no discriminator, and its limit is stated: a success means a menu appeared,
+  not which one.** When something other than the request opens a menu in the same window within the 1 s wait, under a
+  host of the element or taking the focus, the Show Menu answers success on it; the agent's next observation shows
+  which menu is open. The model's document says so beside `menuUnconfirmed` (agent-cursor.md, the surface inventory's
+  #374 addition).
+  1. **The evidence** (ruling 1ea561bc:752's negative controls, each a menu raised 300 ms into the wait after a Show
+     Menu on a target that opens nothing). Confirmed: a focused ARIA menu the page opened on a timer (Chrome for
+     Testing, Electron, Firefox, Safari; through `focus`), a context menu popped up in the window's content view
+     (AppKit; through `ancestor`, the content view being a host) and Firefox's `<select>` popup opened on a timer
+     (through `ancestor`: Gecko hangs it under a host). Excluded by the rule: a sibling view's own context menu
+     (AppKit's text view, beside the target), an AXMenu inside an AXPopover (Firefox's datalist suggestions) and Chrome's
+     datalist suggestions (an AXList in a layer-999 window). The full run (44012053373, reps 10): the timer ARIA menu confirmed 80 of 80, the content-view menu 20 of 20, Firefox's select 20 of 20, Firefox's datalist 1 of 7 fired; the sibling's menu 0 of 20, Chrome's datalist 0 of 20 (`docs/evidence/2026-11-16-show-menu/`). On the request cells the candidate gave 0 false ok in 400 rows, against main's 120.
+  2. **Why no discriminator.** Position was measured and fails both ways: a real menu can open far from the element
+     (Electron's Menu.popup() opens at the pointer, 256 points from the target, as most Electron apps do), and a
+     coincident menu can open next to it (Firefox's select, 13 points below the target). "Appeared after the send"
+     holds for every control, and structure cannot tell a real AppKit context menu from one popped up in the same
+     view. The coincidence needs an unrelated menu to open in the same window within 1 s of the request; the Linux
+     engine's contract (a new menu child of the application within the wait) has the same limit.
+  3. **Registered at merge** as a platform-neutral ticket shared with Linux (the design session registers it).
+  Date/Author: 2026-11-16, cursor235's implementer for #374 (ruling 1ea561bc:753).
+- Decision (#360's arrow keys, 2026-11-16, `fix/360-firefox-nav-focus`; the design session's ruling 764 on #360's
+  hosted spike, run 44024467862, kit `probe/360-measure` 14311fa0, engine b99232de, Firefox 159.0, narrowed by ruling 767
+  on the qualification run 44047809532; amends "route 3 for key equivalents and element actions" above): **in a Firefox
+  that does not believe it has focus, a `press_key` sequence holding an arrow key takes route 3's held activation, as a
+  ⌘ chord does; the answer stays the posting's.** The keys are Left, Right, Up and Down, with any modifiers, Shift
+  included, so a Shift-extended selection and its collapse share one rule (Routes.swift `arrowKeyCodes`, `isArrowKey`,
+  `needsHeldActivation`, `pressKeyRoute`). Gecko is `PageEngine.gecko`, the principal-class
+  read #313 introduced (`webAccessibility.pageEngine`), and route 3 is `holdKeyFocus`, the ⌘ chord's own; no new
+  mechanism, no editor role read.
+  1. **The evidence.** In a background Firefox, Left, Option+Left and Cmd+Left posted by 2′ left a rich editor's caret
+     where it was (contenteditable and compose fixtures, 0 of 120); Cmd+Shift+Left extended the selection (40 of 40)
+     and plain textarea and input fields moved (120 of 120). Route 3's prelude before the unchanged key moved every
+     case (120 of 120), as the foreground did. The key reached DOM keydown and Gecko decoded the right command in 320 of
+     320; Firefox's collapse commands check that the caret is enabled and scroll otherwise, and only focus enables it
+     (the prelude gave the page a focusin before keydown in 320 of 320, baseline 0). So the cause is the editor's logical
+     focus, not delivery; window fields, event flags and event sources were all ruled out (0 of 20 each).
+  2. **Why every arrow and every field.** Cmd+Left already took route 3 as a key equivalent; the measured failures
+     were the unmodified and Option arrows. The prelude kept plain fields moving (textarea and input, 120 of 120
+     collapses and 40 of 40 extensions), so the rule is the key's, not the editor's (the ruling: no role sniffing).
+     Other apps, a Firefox that believes it has focus, and every other key keep their route.
+  3. **No caret read-back.** Firefox's AXSelectedTextRange matched the DOM 0 of 80 after a background move and 59 to 63
+     of 80 with the prelude (#394), so the press is answered as posted, as every press_key is.
+  4. **What the page sees.** The focus the activation gives is a focus event on the field before the key, which the
+     model's document now states (agent-cursor.md's background paragraph; the surface inventory's #360 addition).
+  5. **Qualified on the production path** (hosted run 44047809532, 2026-11-17, kit `probe/360-measure` 8a0e1dca, the
+     unmodified fix f066023e against main c7eee724, Firefox 160.0; 1,600 of 1,600 scorable;
+     `docs/evidence/2026-11-17-firefox-nav-focus/`). The fix's own press_key, cold on a fresh connection per attempt,
+     judged by the page's DOM against the same repetition's foreground row. The arrow rule is covered by the arrows'
+     cells, Left, Option+Left, Cmd+Left and Cmd+Shift+Left in all four editors: background 320 of 320, foreground 320
+     of 320. The rich editors' Left and Option+Left went from 0 of 80 on main to 80 of 80; the rich collapse keys from
+     40 of 120 (Cmd+Left alone) to 120 of 120. The passive watch observed no activation or raise in 501,913 samples
+     (gaps p50/p95/max 5.0/6.7/176 ms; a window-order read up to 230 ms): sampled evidence, not a no-flash guarantee.
+  6. **Ruling 767: Home, End, Page Up and Page Down leave the rule.** f066023e routed them by route 3 too (ruling 764).
+     In the qualification they scroll rather than move the caret, and main's plain post already matched the foreground
+     for them in the rich editors (160 of 160), so route 3 bought nothing measurable there at its cost (item 7). In a
+     single-line input they do nothing, even in the foreground (those 160 rows are not applicable). A background
+     textarea's Home, End and page keys by 2′ were not measured (main's control ran the rich editors only); the fix's
+     route 3 matched the foreground there (80 of 80).
+  7. **The cost:** route 3's held activation, paid once per hold. Cold, the call is 110/147 ms p50/p95 against the
+     plain post's 3/6 ms on the same cells, of which the guard is 104/142 ms (all 32 background cells pooled; the
+     arrows' cells alone are 95 to 126 ms p50); main's ⌘ chords cost the same (109/146 ms). A call inside an already
+     held interaction was not measured.
+  Date/Author: 2026-11-16, cursor235's implementer for #360 (ruling 764); items 5 to 7 2026-11-17, from the
+  qualification run and ruling 767.
+- Decision (#367, 2026-11-16, `fix/367-offscreen-reason`; the issue's intent, from the 2026-11-11 dogfood's Problems §2
+  (MAWS on the MacBook: an off-screen window gave `container MAWS > container` and a bare "Screenshot unavailable");
+  the dispatching session's rulings on the checkpoint of the same day): **a primary window that lies outside every
+  display, or that the window server does not show on the current Space, is named in its observation by one line
+  after the tree, is not captured, and the facade's getScreenshot error gives the reason and the remedy. A window on
+  screen is observed byte for byte as before.**
+  1. **Detection (Placement.swift `windowPlacement`), cheap and claiming only what it read.** *Off screen*: the AX frame,
+     already read for the walk and the capture, overlaps no screen frame (ScreenScaleCache's NSScreen frames, top-left
+     global points like AX frames) by any area. This costs no read, and is checked first because it is geometry: a window
+     the window server also lists as not shown is still named for where it is. *Another Space*: the window lies on a
+     display, but its CGWindow (the number from `_AXUIElementGetWindow`, then one
+     `CGWindowListCopyWindowInfo(.optionIncludingWindow)`) has no `kCGWindowIsOnscreen`, and both the window's AXMinimized
+     and its app's AXHidden read false (Minimized.swift's rule runs first and is unchanged). Those are the other two
+     causes of the flag's absence that an observation meets. A read-only probe on the MacBook (2026-11-16) found the key
+     absent, not false, on all 111 layer-0 windows not shown (12 shown), and the per-window read at p50 0.089 ms (max
+     2.7 ms, n 123). Neither claim is made from an unknown: no usable frame (none, or under one point), no screens read,
+     no window number, or an unread AXMinimized or AXHidden makes no claim. That was the branch review's finding:
+     the first cut let an unread geometry or attribute through to "another Space". Alternatives rejected: SkyLight's
+     space SPIs (`CGSCopySpacesForWindows` against each display's current space), which name the Space positively but add
+     two SPIs and a dictionary walk for a line the flag already earns; and reading the window server's bounds instead of
+     the AX frame, which is the same rectangle for one more read.
+  2. **No capture, as for a minimized window** (`placementObservation`): `screenshotOmitted` "windowOffScreen" or
+     "windowOnAnotherSpace" (the meta's `cua/screenshotOmitted`), and the Skyshot's `window` gains `placement`
+     ("offScreen" | "anotherSpace") only then. A window off every display gives a screenshot no coordinate can act on. A
+     window on another Space is not in `SCShareableContent(onScreenWindowsOnly: true)`, so until now its whole
+     observation, getAXState included, failed `noCapturableWindow`. It now succeeds and carries the line. That is the one
+     behaviour change, and it is narrow: with no placement the minimized rule's plan stands, so every other
+     `noCapturableWindow` cause (no frame, a frame under one point, no window number, a window the shareable content does
+     not list though the window server shows it) still fails the observation as before (PlacementTests). No input is
+     refused for a placed window. An earlier screenshot of the window stays the lineage's, as a minimized window's does.
+  3. **The words (render.mjs `WINDOW_PLACEMENT`).** They follow the bracketed form of cua's truncation marker. The
+     line is the first of cua's lines after the tree, and it stays in a diff with no change, so every observation of the
+     window says why:
+     `[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.]`
+     and `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.]`.
+     The service adds `screenshotUnavailable` to the get_app_state result. The facade's error
+     (bind-mac-app.mjs, cua's one addition to the port) becomes `Screenshot unavailable for <app>: the window is off
+     screen, outside every display. Its Raise action …` or `…: the window is on another Space. Its Raise action …`. The
+     vendor's engine and a minimized window keep the bare sentence. The remedy is stated as a fact plus cua's host rule
+     (the person's windows are left as they are unless asked), on the dispatching session's ruling, so the line never
+     invites an unprompted raise. The truncation paragraph of `docs/cua-api/agent-cursor.md` gains one sentence (the
+     surface inventory's "Table 3 addition (2026-11-16, #367)").
+  4. **Not proven live.** Raise was seen to bring the dogfood's off-screen Electron window back. Whether it brings a
+     window back from another Space is unmeasured, hence "can". The live check is an owned window moved off screen
+     (and to a second Space) on a hosted macOS runner: getApp and getAXState carry the line, and getScreenshot names the
+     reason. It waits on GitHub Actions.
+  Date/Author: 2026-11-16, cursor235's implementer for #367.
+- Decision (#366, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 766 on the spike's findings,
+  hosted runs 44032504512 and 44052940748, kit `probe/366-measure`, engine b99232de; ruling 757 narrowed the issue to
+  this false success): **an element action into a Chromium-family app waits out what remains of 2.5 s since the
+  engine's last accepted enablement write of the app's process.** A first AX press into Electron or Chrome answered
+  success and ran no handler when it landed less than about 2.25 s after the write: 0 of 124 presses delivered at 0.92 s
+  or less, 283 of 283 at 3.45 s or more; the threshold sweep delivered 30 of 30 at 2.25 s, 7 of 30 at 2 s and none at
+  1.75 s, in a parity and a default Electron 44.4.5 window and Chrome for Testing 156. Every AXManualAccessibility write
+  restarts Electron's 2 s debounce to its complete mode (`electron_application.mm`), until which a button is exposed but
+  its press does not reach the renderer; Electron announces only the write, and no attribute on every page's root shows
+  the mode's arrival, so the wait is fixed, not read.
+  1. **The gate** (`ChromiumReadiness.swift`): execute's prologue, after the input's own enablement step
+     (`inputEnablement`) and the holds' steps, before the method runs, for the methods that may carry an element action
+     (`elementActionMethods`: click, set_value, select_text, perform_secondary_action, scroll) on an app whose page engine
+     is `.chromium` (`pageEngineOf`), waits `chromiumActionWaitMs`: what remains of `chromiumActionWindowMs` (2.5 s, the
+     sweep's 2.25 s and a margin) since `WebAccessibility.lastEnablementWrite`, 0 once it has passed or with no write.
+     The cause is the renderer's mode, so every element action waits, not the press alone. The answer is unchanged: a
+     dispatch stays a dispatch (ruling 757). The engine takes an injectable monotonic clock and sleeper for it.
+  2. **No hold through the wait.** It runs before the method takes any hold. A focus hold the connection keeps on the
+     app from an earlier action (FocusHold.swift's 120 s bound outlasts the enablement's 30 s grace, so an action after a
+     grace release meets one) ends before the wait, and the action takes it again. A recorded menu's span is the one
+     hold an action keeps, a press on the menu's item, which must land inside it: that press does not wait, its item
+     being AppKit's menu, not the page's renderer. Another connection's hold on the same process is not this request's
+     to end, and is left as it is.
+  3. **Read before write** holds already and is pinned by tests: an owned attribute is neither read nor written again
+     (#244); one that reads true and is not the engine's own write-back is left alone, so neither restarts the window.
+     The one rewrite of a value that reads true is after the engine's own write-back, whose true is AppKit's readback
+     with the mode gone (Decision Log 2026-10-22); that write is a real restart, and is waited out.
+  4. **Where the first write is**: already at the first contact. get_app_state's enablement step (Skyshot.swift,
+     `observeEnablement`) runs before the window read, the web-area wait, the walk and the screenshot, so the window runs
+     while the agent reads the observation; an input with no observation before it writes in `inputEnablement` and then
+     waits the whole window. Only cua's own launch or reopen (its window wait and open settle) and an armed or forced
+     settle come before the step, and the armed one follows an action that has already enabled the process. The write
+     is not moved ahead of the open settle: the settle's adopted tree is keyed on no enablement since it began
+     (`adoptsSettledTree`), and the gain is confined to an app cua itself launched.
+  5. **Accepted** is what `enableReporting` counts as set: success, or Chrome's kAXErrorNotImplemented with the
+     attribute reading true after it (#292). The ruling's "owned" is read as the engine's own write: one that set an
+     attribute whose value could not be read (not owned, so never written back) restarts the countdown all the same, and
+     is waited out.
+  6. **Over-approximation.** The gate is per method, not per Accessibility call, so a coordinate click or scroll that
+     ends as posted events alone (dedicated mode, a non-web view) waits too, once, within 2.5 s of a write; a per-call
+     gate would run inside the holds the actions take before their perform. press_key, type_text, paste and drag post
+     events only and never wait.
+  7. **The model's document** gains one sentence at the end of agent-cursor.md's second paragraph (the surface
+     inventory's #366 addition), copied byte for byte into the docs oracle and the core-documentation test.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 766).
+- Decision (#366's review, 2026-11-17, `fix/366-chromium-ax-ready`; the review of c7eee724..d94039ec, two P2 findings
+  and one scope note, all accepted by the design session; amends "#366" above, items 1, 2 and 6):
+  1. **The window is read again after every sleep.** A write over a value that could not be read is not owned, so
+     another connection's observation writes it again while a request sleeps (accepted writes at 0 s and 1 s would have
+     woken the request at 2.5 s, 1.5 s after the latest). `waitOutChromiumWindow` re-reads `lastEnablementWrite` after
+     each sleep and waits out what remains, until none does; only then does the method take a hold or dispatch.
+  2. **The wait is bounded by the request's deadline.** A window that would end at or past the remaining deadline
+     (`deadlineUnixMilliseconds`, or receipt plus 120 s) is refused before the sleep as `timeoutReached`, the engine's
+     answer for a settle or launch wait the deadline cuts, with the input meta and nothing dispatched; the holds stay as
+     they were. A refusal before the deadline is preferred to sleeping into it, since nothing could be sent after it.
+     A sleep can overshoot, so every wake checks the deadline again before the ready path returns, and a wake at or past
+     it is `timeoutReached` too (the re-review's probe: a 2,600 ms budget whose 2,500 ms sleep woke at 3,000 ms).
+  3. **Scroll waits only when it names an element** (`mayCarryElementAction`). An element scroll sends AXScrollToVisible
+     (or its fallbacks' writes, Positioning.swift) to the page before its wheel, which is an AX element action into the
+     renderer. A scroll at a point or the window's centre is a posted wheel and its read-back, and its #328 bar write
+     never targets a web area's or a page scroller's bar, so it serves no readiness and no longer waits.
+     `elementActionMethods` keeps click, set_value, select_text and perform_secondary_action, each of which can act
+     through accessibility on every request shape (a coordinate click through #282's element route).
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (the design session's acceptance of the review).
+- Decision (#366's observation wait, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 772 on the
+  live smoke and the cache diagnostic, run 44068144650; amends "#366" and "#366's review" above): **the first
+  observation after a write waits for readiness before it reads the tree, and an action's backstop reads a target
+  recorded before readiness again from its own handle.** The diagnostic found the handles survive the switch to the
+  complete mode (valid, and CFEqual to fresh lookups) while what cua cached about them goes stale: Chrome for Testing's
+  buttons go from [ShowMenu, ScrollToVisible] to [Press, ShowMenu, ScrollToVisible], so a click planned from the
+  recorded actions refused noAction even after the action's wait, and every field's placeholder goes from none to
+  "Search", so set_value's re-fetch after an accepted write (`.ignoringValue`, which compares the placeholder) threw
+  elementNoLongerValid, the old identity's walk finding nothing either.
+  1. **The observation's wait** (`Engine.awaitObservationReadiness`, Skyshot.swift after the enablement step): the
+     rest of `chromiumActionWindowMs` after the process's last accepted write, whichever request made it, the same loop
+     as the action's (`waitForChromiumReadiness`: re-read after every sleep, a sleep that would end at or past the
+     deadline not slept, a wake past it ending the wait). It leaves the holds as every observation does. Its time is
+     the observation's `chromiumReady` phase (and the `observation.chromiumReady` signpost), `chromiumReadyWaitMs` when
+     it slept. A settled tree whose settle began before readiness is not adopted.
+  2. **Deadline-short observations read anyway** (`chromiumReady: "deadline"` in the timings). Every entry records when
+     it was read (`LineageEntry.recordedAt`, the walk's start, `Revision.recordedAt`; a carried entry keeps its own), and
+     an entry is recorded before readiness when that time is earlier than the process's readiness now
+     (`recordedBeforeReadiness`, `chromiumReadyAt`): a later write moves readiness, so an entry read before it is
+     marked again.
+  3. **The action's backstop** (`Lineage.resolve`'s `readiness`, passed by `targetElement` for every element method):
+     after the action's wait, a target recorded before readiness is read again from its cached handle (identity,
+     actions, read time now) and only then resolved as before; a handle that no longer validates or reads is
+     elementNoLongerValid before any write. It never re-finds by identity, so no other handle is adopted for the token.
+     An entry read after readiness, or a process with no readiness, is left as recorded. Review round 4 (P2, accepted):
+     the refreshed resolution is pinned to the handle and ends there, never entering the ordinary re-read or the
+     identity re-fetch, which could otherwise adopt another element matching the identity just read when the handle
+     went between the two reads (the reviewer's probe moved t1 from handle 1 to 6). The handle is validated before and
+     after its read, and the entry changes only once both pass, so a refusal leaves it as recorded, still marked.
+  4. **valueUnconfirmed** (ValueSetting.swift, `confirmingWrittenValue`): a set_value whose write was accepted and
+     whose re-fetch then fails, whatever its refusal, answers `valueUnconfirmed` ("sent, effect not seen", beside
+     clickUnconfirmed, scrollUnconfirmed and menuUnconfirmed) in place of elementNoLongerValid, which told the model
+     the value was not sent. The service passes it through as every engine input error, with the meta.
+  5. **The model's document**: the background-click paragraph's last sentence now says the first observation of a
+     freshly enabled Chromium app may take up to 2.5 s longer, and an action sent before then waits; the fourth
+     paragraph closes with valueUnconfirmed (the surface inventory's "#366, ruling 772" addition; the copies in the
+     docs oracle and the core-documentation test byte for byte).
+  6. **What this costs**: an agent's first observation of a Chromium app cua has just enabled takes up to 2.5 s longer
+     (the action's wait then finds the window passed); a deadline under that reads Basic mode's tree, and the backstop
+     repairs only the target the action names.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 772).
+- Decision (#366's grace, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 775 on the live
+  qualification; amends #292's grace): **the enablement's idle release comes 5 minutes after cua's last observation of
+  or input to the process, not 30 s** (`enablementReleaseGraceMs`, 300 000 ms). end_task and the engine's stop still
+  release at once, unchanged. The qualification showed that after a real release the attribute reads false, so the
+  next observation writes it again and, under ruling 772, waits out the 2.5 s readiness window: with a 30 s grace every
+  agent pause over 30 s paid that. 5 minutes covers an agent's ordinary pauses within a task. Since end_task releases at
+  every turn's end, each turn's first look at a Chromium app still pays it; the model's document says so (agent-cursor.md's
+  background-click paragraph, the surface inventory's "#366, ruling 775" addition, the copies byte for byte).
+  1. **The limit it extends.** #292's side effect of an enablement left on, Chrome's complete mode with its screen-reader
+     flag and its window moves and resizes animated (3 to 5 frames, #288's spike), now lasts up to 5 minutes after
+     cua's last step on an app whose task has not ended, where it lasted 30 s. agent-cursor.md does not describe #292's
+     effect (the model acts on nothing there), so the limit is stated here.
+  2. **The focus hold.** Its 120 s idle bound (`focusHoldIdleMs`) used to outlast the 30 s grace, so an action after a
+     grace release could meet a focus hold left from before it, which the action's readiness wait ends first ("#366",
+     item 2). With 5 minutes the hold lapses first; the wait still ends one that remains (a release by another
+     connection's end_task).
+  3. **Tests.** The grace tests run on the default grace on the fake timers: armed 5 minutes out, nothing at 30 s or at
+     299 999 ms, released at 300 000 ms; a re-observation or an input starts it again; end_task and the stop release at
+     once with the grace pending, and the pending timer does nothing after.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 775).
+- Decision (#367's remedies and Electron, 2026-11-17, `fix/367-offscreen-reason`; the design session's ruling
+  1ea561bc:782 on the hosted measurement, run 44122922177, kit 16753e19 on `probe/367-live`, both arms on engine
+  2b7804bd and main 15acf09b; amends "#367" above, items 3 and 4): **neither remedy offers Raise; an app whose windows
+  are on another Space where accessibility lists none is refused at once as `windowOnAnotherSpace`, and so is a Raise on
+  a window on another Space.** The evidence (`docs/evidence/2026-11-17-367-hosted/tables.txt` on `probe/367-live`):
+  four public Raise calls on a window in a real fullscreen Space (TextEdit and an owned Electron fixture, each head)
+  answered success and changed nothing: active Space 1 → 1, the window's Spaces unchanged, frame and front app
+  unchanged. No route placed a window off every display (AX moves and Electron's own setBounds clamped to 24–40 px of
+  overlap), so Raise there is unmeasured. TextEdit on another Space gave the line and `windowOnAnotherSpace` meta; the
+  Electron fixture failed getApp, getAXState and getScreenshot `timeoutReached` after about 5 s on both heads, its
+  AXWindows empty before and after while CoreGraphics listed its window (not on screen, on Space 25).
+  1. **The words.** render.mjs's `WINDOW_PLACEMENT` drops Raise: off every display, "Ask the user to move it onto a
+     display."; on another Space, "Ask the user to bring it here or switch to its Space." (`ANOTHER_SPACE_REMEDY`). The
+     line and the facade's screenshot error end with them. agent-cursor.md's #367 sentence becomes two (the surface
+     inventory's "Table 3 amendment (2026-11-17, #367, ruling 1ea561bc:782)", the docs oracle and the
+     core-documentation test byte for byte): the remedies, and that some apps' windows on another Space make the
+     observation fail `windowOnAnotherSpace` instead, and a Raise there fails the same way with nothing sent.
+  2. **The refusal** (Placement.swift `windowOnAnotherSpace`): `The <app> window is on another Space. Ask the user to
+     bring it here or switch to its Space.`, error name `windowOnAnotherSpace`, the screenshot error's reason and remedy
+     after the app's name. A render test reads the Swift source and pins the sentence to `WINDOW_PLACEMENT.anotherSpace`.
+  3. **Where the observation checks** (Skyshot.swift `prepareTarget`'s `absentRefusal`, Placement.swift
+     `windowsOnAnotherSpace`): in the preparation, when a running app's primary window reads as confirmed absent and
+     before the reopen it would send, not inside the 5 s wait. Electron's window never appears to AX off its Space, so
+     the reopen and the wait could only end `timeoutReached`, and checking first spares the app a reopen as well. An app
+     with a window, a failed read, and an app not running never run it (`PreparationTests`). The check claims another
+     Space only on positive reads: one `CGWindowListCopyWindowInfo(.optionAll)` (a mean 2.5 ms with 203 windows listed,
+     the MacBook, 2026-11-17) finds the pid's layer-0 windows, none on screen; SkyLight's `SLSCopySpacesForWindows`
+     (mask 7) puts none of them on a Space `SLSCopyManagedDisplaySpaces` names as a display's current one (any window
+     there, one opening here, vetoes the claim: the review of d7784552, P2) and at least one on another Space; and
+     `NSRunningApplication.isHidden` reads false. The SPIs the #367 entry declined are needed here:
+     with no AX window there is no frame, and the on-screen flag alone cannot tell such a window from an ordered-out
+     one. The same read-only probe found ordered-out windows (helpers, closed panels) on no Space, and windows not shown
+     but on the current Space (Chrome, Safari, Obsidian) on Space 1, so neither kind is claimed. An app merely slow to
+     open its window has none listed, or one on the current Space, and is reopened and waited for as before; a missing
+     SPI or an unread Space claims nothing.
+  4. **The Raise refusal** (SecondaryAction.swift, Placement.swift `raiseRefusal`): once the action is matched and
+     before anything is sent (no focus hold, no perform), a Raise on an element whose role is AXWindow reads that
+     window's placement live (`livePlacement`, the observation's own rule) and is refused when it is another Space. A
+     Raise on a window off every display, or on one shown here, is sent as before; no other action reads the placement.
+  5. **Not proven live.** The refusals are unit-tested on fakes of the window list, the Space reads and the
+     placement; the hosted re-run (Electron on another Space answering `windowOnAnotherSpace` at once, a Raise there
+     refused) waits on GitHub Actions.
+  Date/Author: 2026-11-17, cursor235's implementer for #367 (ruling 1ea561bc:782).
+- Decision (#359, 2026-11-17, `fix/359-click-ordering`; the design session's ruling 1ea561bc:785 on the spike's runs
+  44107967517, 44112583792 and 44126242634, kit `probe/359-measure` on main 15acf09b): **a posted pointer press arms a
+  per-process window in which an accessibility action on the process's text first waits for the click to land.**
+  The measured cause is a foreground ordering race, not #341's caret write: with the browser in the background (#341's
+  route) 0 of 3,437 scorable attempts were wrong. In the foreground a coordinate click is a posted mouse event that
+  answers at once, and the browser dequeues it late: the caret's revert landed p50 14 to 19 ms after the click returned,
+  at worst 419 ms. AX actions overtake it, posted keys never do. In run 44126242634's foreground-equal scene (20 per
+  cell, caret already at the click's point): click then script selection then type_text was wrong 7, 19 and 2 of 20 in
+  Safari, Chrome for Testing and Firefox, every Safari and 13 Chrome ones answered success (a starting point read after
+  the revert, self-consistent and wrong); click then select_text then type_text was wrong 3 and 1 of 20 in Safari and
+  Chrome (one false success each), 4 of 20 in Safari's traced arm (3 false successes); click then Cmd+A then type_text
+  was wrong 0 of 20 in every browser; the no-click controls 0 everywhere. set_value's value was right 240 of 240, its
+  caret moved off the end after it in 4 of 40 Safari tails. The `stable50` candidate (a range unchanged for 50 ms,
+  sampled every 10 ms, inside the click) had 0 wrong and 0 accepted-then-late in 240 attempts, 62 to 79 ms p50 and at
+  most 110 ms.
+  1. **The window** (ClickOrdering.swift, `Engine.clickOrdering`, one per engine across connections): `deliverPointer`
+     calls `pointerPosted` once the action's own events are posted, by every caller that posts a press (a coordinate
+     click, a synthesized element click, set_value's and select_text's focusing fallback click, a drag), recording the
+     receiving process and the app. #282's element route returns before posting and arms nothing, so a background click
+     by #341's route never does. Within `pendingClickWindowMs` (1,000 ms) of that press, select_text before its range
+     write, set_value before its value write, an element click carried by a text field's action (#313) and #283/#315's
+     background focus routes each wait (`awaitRange` .stable): the field's AXSelectedTextRange, with whether the app's
+     focus was elsewhere, unchanged for `pendingClickDwellMs` (50 ms), read every `pendingClickSampleMs` (10 ms), at
+     most `pendingClickCapMs` (300 ms); a password field ends it unread, an unreadable range starts the dwell again. At
+     the cap the action goes on and its own read-back answers. type_text's snapshot takes the same wait on the focused
+     field (`readbackSnapshot`'s `baseline`) after its secure and text-role checks, the role and subrole checked before
+     every read, before #354's settle. press_key never waits. The meta's `pendingClick` (`waitMs`, `reads`, `capped`)
+     and the read-back's `baselineWait` record it.
+  2. **select_text then type_text.** select_text records the range it wrote; every other input method to the app
+     drops it at dispatch (`selectionKeepingMethods`: type_text and scroll keep it), and type_text takes it once
+     whatever its route. Within `selectedRangeWindowMs` (1,000 ms) the snapshot reads the field's range until it equals
+     that one, to the same cap. Still another at the cap, the selection the agent made is gone, and the text is **not
+     typed**: `typeUnconfirmed` with reason `selectionChanged`, `entered` 0, saying nothing was typed, that a late click
+     can move the selection, and to observe and select again. Not typing is the safe reading because nothing has been
+     posted yet, the read-back can only answer unconfirmed either way, and typing would put the text where the click
+     left the caret for the agent to repair; refusals before the first event are the engine's usual shape.
+  3. **set_value** inside the window watches the field after an accepted write (`watchWrittenValue`): its value and
+     caret read every 10 ms; once both read as written (the caret at the value's UTF-16 end), held for the dwell, it is
+     confirmed; a read off either after that, or a write never seen to land by the cap, is `valueUnconfirmed`
+     (`valueChanged`, `caretMoved`), thrown after the vendor's re-fetch so the token stays resolvable. Only a text
+     role's string is watched; a password field never; a concealed request's value is never read, only its caret.
+  4. **What stays.** #341's "placed" only on proof and nothing raised, and #354's strict equality, are untouched; no
+     wait claims a click final: a stable range is not a proof of the queue's drain (an equal range may be re-applied
+     later), and the read-back stays the judge.
+  5. **What this costs and risks.** An action within a second after a posted click pays at least one dwell (50 ms) and
+     at most the cap; outside the window a dictionary lookup. Chrome and Firefox read a stale AXSelectedTextRange for
+     tens of ms after select_text's write (the traced arm read {3, 0} at the snapshot in 20 of 20 and 16 of 20 while the
+     page held the selection; the reread100 and stable100 candidates read it 19 and 20 of 20), so item 2 waits for it;
+     an app whose range stays stale past 300 ms would answer `selectionChanged` with nothing typed where #354 answered
+     unconfirmed over the right text. Item 3 assumes a value write leaves the caret at the value's end, as all three
+     browsers measured; an app that leaves it elsewhere answers unconfirmed within the window. The activation's own
+     clicks (FakeActivation's activation-point and inert clicks) do not arm: they precede the action's events, which
+     do, or land outside the frame. The paste route keeps its own baseline (#361) and takes no wait. The hosted
+     qualification of ruling 785's success criteria (20 of 20 per browser foreground for click, select_text or
+     set_value, then type_text; Cmd+A unchanged; confirmed rate near the no-click control; a tail cell past the cap
+     answering typeUnconfirmed; #341's corpus unchanged) is still to run.
+  6. **The model's document**: one sentence after the fourth paragraph's valueUnconfirmed, one after the typing
+     paragraph's pressKey wait (the surface inventory's "(2026-11-17, #359)", the copies byte for byte).
+  Date/Author: 2026-11-17, cursor235's implementer for #359 (ruling 785).
+- Decision (#359's review, 2026-11-17, `fix/359-click-ordering`; reviewer-high on ef998db6, one P1 and two P2 findings,
+  all verified and accepted; amends "#359" above, items 2 and 3):
+  1. **P1, the starting point itself.** The selection check validated the wait's read, while the snapshot reads the
+     range again and #354's settle can replace it: a click landing in between was adopted and the read-back confirmed
+     text typed at its caret. Now the snapshot's final range, after any settle, must equal select_text's range, else
+     `selectionChanged` with nothing typed (`readbackSnapshot`). Tested with the range moving before the snapshot's own
+     read and during the settle, and with a settle that finds it back (typed over).
+  2. **P2, a value at Chromium's cap.** The watch passed any read that might be cut at the cap; a cut can explain only a
+     missing end, so a read at the cap now counts as the written value only when it is a strict prefix of it
+     (`writtenValueRead`), any other difference `valueChanged`.
+  3. **P2, the field re-classified.** The watch now asks before every read whether the field turned secure or cannot be
+     classified (`writtenValueFieldClosed`: no role, a password role or subrole, a subrole that cannot be read), as the
+     range wait and the read-back do; then it reads neither value nor caret and ends unconfirmed: `valueUnconfirmed`
+     with the new reason `fieldClosed`, since an accepted write that can no longer be checked is "sent, effect not
+     seen".
+  Date/Author: 2026-11-17, cursor235's implementer for #359 (the review of ef998db6).
+- Decision (#390, 2026-11-17, `fix/390-value-without-focus`; the issue's intent, spawned by #366's probe, smoke
+  44016387589): **set_value on a background Chromium page's text field that needs focus is written without the focus
+  preparation main would have refused, and read back: ok only on a read as written.** Main's order there was route 3's
+  focus hold (a fake activation and its inert click), focusFieldIfNeeded's AXFocused write, which Chromium applies but
+  reads back only 65 to 142 ms later (#283), so the immediate re-read is false, then the fallback click, which shared mode
+  refuses in a Chromium web area (#282): `backgroundClickRefused` before any write. #366's probe wrote the value into such
+  a field already focused (the preparation a no-op) and it delivered, 2 of 2 at 121 to 130 ms.
+  1. **The route** (ValueWithoutFocus.swift `valueFocusPlan`, decided in ValueSetting.swift before any hold): a field
+     that needs focus (`fieldNeedingFocus`), inside an AXWebArea by its parents (`webAreaAncestry`), in a Chromium-family
+     process (Chrome, Electron), by route 3 (the app does not believe it has focus), in shared mode and with no route-4
+     override. There `prepareValueFocus` runs focusFieldIfNeeded's AXFocused write alone, route 1, with no fallback;
+     never the focus hold (no activation, no inert click) and never the fallback click (no pointer event). Every other
+     field, app, route and device mode keeps main's preparation unchanged: the foreground, AppKit and WebKit fields,
+     Firefox (#315's press), dedicated mode and the override (whose fallback click is delivered), a field already
+     focused, and a Chromium field outside every web area or whose ancestry cannot be read.
+  2. **Why the AXFocused write stays.** It is #283's carrier for this very field class (a field focused with no pointer
+     event, no raise and the person's app frontmost, 102 hosted cells), not a click; it leaves the field focused as every
+     other set_value does, for a Return or typing after it, and it brings the write nearer the one the probe measured
+     (into a focused field), if Chromium's renderer takes the two actions in the order sent (an inference, not
+     measured). Its outcome is neither waited for nor required: the read-back alone decides.
+  3. **The read-back** (`unfocusedValueReadback`): after an accepted write, the field classified before every read (a
+     password field by role or subrole, or one whose role or subrole cannot be read, is read no further) and its value
+     read every 5 ms within type_text's 1 s budget (Chromium applies the write to its tree asynchronously) until it reads
+     as written. The match (`writtenValueMatches`) is exact: a string by #359's own rule (ClickOrdering.swift
+     `writtenValueRead`: UTF-16 equal, or at Chromium's 10,000 cap a strict prefix of it); any other value by CFEqual.
+     The record rides in
+     the engine meta as `unfocusedValue` {result, reads, ms}, never the value or its length; the service does not
+     forward it (as `fieldFocus`).
+  4. **The answers, from what was sent.** A write the field does not accept: nothing landed, so main's own refusal,
+     `backgroundClickRefused`, unchanged. An accepted write that reads back as written: ok. One accepted but read other
+     than written for the whole budget, or never readable: `valueUnconfirmed` (sent and accepted, effect not seen),
+     thrown after the re-fetch that keeps the token resolvable (ruling 772's failure there still answers first). No
+     sentence carries the value.
+  5. **Secrets.** A concealed request is written and never read back, not even once: `valueUnconfirmed`, saying a
+     concealed value is never read back, never ok, and so is a password field's write. Refusing before the write, as
+     main did, was the alternative; it was not taken because the write delivers and the agent can still observe the
+     field (a password field's dots), as type_text's secret in a background Firefox already answers unconfirmed when
+     it went in.
+  6. **With #359's wait and watch** (ruling 785, above), both kept as they are around the write: the wait before it
+     still runs on this route, and the watch after it still runs when a pointer press to the app is pending. This
+     route posts no pointer of its own, so only an earlier click arms that window here. The read-back runs first, after
+     the accepted write and before the watch; a refused write runs neither, as before. After the re-fetch the watch's
+     drift answers first (its sentence names the late click), then this route's unconfirmed answer, so ok needs both.
+  7. **The model's document**: the fourth paragraph of agent-cursor.md gains a closing sentence (the surface inventory's
+     "Table 3 addition (2026-11-17, #390)", the docs oracle and the core-documentation test byte for byte).
+  8. **Not proven live.** Unit tests on fakes (ValueWithoutFocusTests) cover the plan, the preparation, the read-back,
+     the answers and main's unchanged paths. The issue's check, background set_value into a Chrome for Testing and an
+     Electron text field confirming 20/20 by read-back with 0 false ok, and its measurement with a page that listens for
+     focus, wait on a hosted run. A minimized Chromium window's web field also takes this route, where main skipped the
+     fallback and answered ok unread.
+  Date/Author: 2026-11-17, cursor235's implementer for #390.
+- Decision (#390's review, 2026-11-17, `fix/390-value-without-focus`; the review of c236f268, two P2 findings, both
+  accepted; amends "#390" above, items 3 and 5): **the read-back confirms only an exact read, and a sensitive set_value
+  reads no AXValue anywhere on its path, on every route.**
+  1. **A cut read never confirms** (`writtenValueMatches`). Item 3 took #359's rule, under which a read at Chromium's
+     10,000 cap that is a strict prefix of the write counts. There it only means no drift was seen, the write proven
+     otherwise; here the read-back is the only proof the write landed, and a cut read cannot show its end did. So a
+     string matches only when equal in UTF-16 units; a read at the cap shorter than the write is its own result,
+     `possiblyTruncated`, and answers `valueUnconfirmed` ("the field holds more text than accessibility reports in
+     full"). #359's watch keeps its rule.
+  2. **No AXValue read for a secret or a password field** (`setValueReadsValue`, ValueSetting.swift). Main read it on
+     every route, the foreground's included, in three places: the token's re-reads before the write (an invalidated
+     re-read, the scroll's `.always`, #366's refresh from the handle), the coercion's read of the current value, and the
+     `.ignoringValue` re-check after the write, whose `ElementSource.publicData` requested AXValue and whose walk
+     (`matching`) read it of every element when the handle no longer matched. Now, for a concealed request, or a field
+     whose recorded identity is a password field (role or subrole AXSecureTextField), every one of those resolutions
+     takes a source that requests no AXValue (`ElementSource.readsValue`, `ElementResolver.live`'s `readsValue`), which
+     also drops any value a read answers and marks the data `valueUnread`; the coercion takes the string type without a
+     read; and a field that reads secure once resolved, or cannot be classified, takes the same for the coercion and the
+     re-check. The renewed identity keeps no value (`ElementIdentity.valueUnread`), and a match leaves the value out
+     when either side has none, so the token still resolves for a later action that re-reads the field with its value.
+     A concealed value is thereby always written as a string.
+  3. **Not changed:** the observation itself still reads every element's AXValue as it walks, a password field's
+     included (outside set_value; its value is what the app exposes there).
+  Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of c236f268).
+- Decision (#390's re-review, 2026-11-17, `fix/390-value-without-focus`; the review of 2532a1b5, two P2 findings, both
+  accepted; amends "#390's review" above): **no read at Chromium's cap confirms, and set_value's token re-reads never
+  read AXValue, on any route.**
+  1. **Equality at the cap.** A write of exactly 10,000 characters read back equal may sit in a field holding that and
+     more. Any read whose length is at the cap (`readbackMayBeTruncated`, type_text's own test) now confirms nothing,
+     shorter or equal, and answers `valueUnconfirmed` (`possiblyTruncated`).
+  2. **The classification no longer runs ahead of the reads.** The previous fix decided from the recorded identity
+     and once after the scroll, so a field that turned secure since the observation, or in the focus step, could still
+     be read. The simpler shape: set_value's resolutions (the invalidated re-read, the scroll's `.always`, the
+     `.ignoringValue` re-check after the write, its walk included) always take the valueless source, the value left out
+     of their match; set_value replaces the value, so it was weak evidence of the element there. The coercion is the
+     one remaining read before the write, and `setValueClosed` classifies the field in that same step, after the focus
+     and just before the read (concealed, a password field by role or subrole, or a role or subrole that cannot be
+     read: no read, the value written as a string). The unfocused read-back already re-checks before every read.
+     Re-classifying at each step was the alternative; it was not taken because it keeps a decision per read site,
+     where these sites need no value at all. The cost: after any set_value the token's identity keeps no value until
+     the next observation, so a later re-fetch of it matches on the other ten attributes. A field whose subrole changed
+     still fails the re-check, which answers `valueUnconfirmed` as before.
+  Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of 2532a1b5).
+- Decision (#405, 2026-11-17, `fix/405-secure-field-unread`; the issue's intent, from the audit at 290303c1 and probe
+  kit probe/pw-walk 0d77eba7, runs 44203155183, 44206136831 and 44211615666): **the observation classifies an element
+  before it reads its value, and never reads a password field's value, length, Markdown or selection, whatever the app
+  would answer.** Every tested app masked the value before cua saw it (Chromium, Electron, Safari, Firefox: U+2022 at
+  the exact length; AppKit's NSSecureTextField: U+F79A), so the walk printed the mask at the password's length, and
+  Chromium and Electron answered seven bullets for AXSelectedText, which the trailer printed. That protection was the
+  app's alone: the walk requested AXValue and AXNumberOfCharacters in the same batch as AXRole and AXSubrole, the
+  Markdown read and the focused element's AXSelectedText were unguarded, and the lineage identity kept the value as
+  `s:<text>`. "Not changed" in "#390's review", item 3, is reversed.
+  1. **Classify, then read** (Fetch.swift `ElementSource`). Each element is read in two requests: every observed
+     attribute but the value's (`valueAttributes`: AXValue, AXNumberOfCharacters) first; then those two, beside AXRole
+     and AXSubrole read again, only when the first classified the element as neither a password field (role or subrole
+     AXSecureTextField) nor unclassifiable (a role or subrole it could not read), by the rule every value read of a
+     field already follows (`writtenValueFieldClosed`, through `valueReadClosed`). A field the second request finds
+     closed, because it turned secure in between, keeps nothing of that answer; and a request keeps only the
+     attributes it asked for, whatever else an app puts beside them. The Markdown read (AXAttributedStringForRange) asks
+     the role and subrole again just before it; the focused element's AXSelectedText is read only once its role and
+     subrole, read just before, leave it open (Skyshot.swift `focusedSelectedText`); select_text refuses a password
+     field before reading its value or its attributed text (`selectionSearchText`, `selectionNotSettable`), since a
+     search's answer would tell what the field holds. AXValueDescription stays in the first request (AppKit's "contains
+     secure text"). The vendor batches everything in one request; reading the role and subrole in the same batch as the
+     value was the alternative (one request, and the classification atomic with the value), not taken because it reads
+     the plaintext into the engine from any app that would answer it.
+  2. **What a password field's node carries**: `secure: true`, no value, value type, length or Markdown, and still its
+     settable flag (counted as holding a value, as every app answers it one). Its identity keeps no value
+     (`ElementIdentity.valueUnread`, #390's mark), so a re-fetch matches it by the other ten attributes. The issue named
+     role, path and frame for that identity; the lineage's identity has never held a path or frame (tokens follow the
+     sibling rule, and a frame changes with every scroll), so it keeps the vendor's non-value attributes instead, none
+     of which is the field's text. A field that cannot be classified carries no value and no `secure`, since it is not
+     known to be one.
+  3. **Every entry point.** The walk (`data`, `listedData`); the settle's busy walk, which now reads no value attribute at
+     all (`structure`: the busy signs need none), the observation that reuses its reads adding only the value's request;
+     the focused element's selected text; and a token's re-resolution after an action (its re-read from the handle and
+     the re-fetch walk, which matches each element first without its value and asks for the value only of one the rest
+     already matches, when the match counts it).
+  4. **The renderer** (render.mjs): a node marked `secure`, or whose role or subrole is AXSecureTextField whatever value it
+     carries, keeps no value or Markdown, prints `secure text` as its Value part (bare when it is the line's only part),
+     and drops the trailer's selected text when it is the focused element; so the diff never sees what it holds change.
+     Every other node prints byte for byte as before.
+  5. **The cost**: one more request per element whose value may be read, per observation (not per busy walk), and one
+     per Markdown read. Not measured live.
+  6. **The model's document**: the typing paragraph of agent-cursor.md gains a sentence after its password-field
+     sentence: an observation never shows a password field's text or length, its value reads `secure text`, selectText
+     cannot select in it, and a screenshot shows what the field displays (the surface inventory's "Table 3 addition
+     (2026-11-17, #405)", the docs oracle and the core-documentation test byte for byte).
+  7. **Not covered**: the paste's effect reading (Paste.swift `effectReading`) still reads the focused field's
+     AXSelectedTextRange and AXNumberOfCharacters to see a paste land, and its per-line diagnostics carry the count;
+     unguarding it would leave a paste into a password field unconfirmable, so it is left to its own ticket. A
+     service-side filter of substituted secrets (#406) and the Linux engine (#407) are their own tickets.
+  8. **Proof**: unit tests over a stub app that holds PLAINTEXT as a password field's value and answers it to any
+     request (SecureFieldTests: the walk, the settle's busy walk and its reuse, a field turning secure between requests,
+     the focused selected text, re-resolution by handle and by re-fetch, select_text; the renderer and diff tests), each
+     guard mutated away and caught. The live run of the pw-walk kit across its six lanes, and the run typing a
+     `{{secret:…}}` into a password field, wait on a hosted run.
+  Date/Author: 2026-11-17, cursor235's implementer for #405.
+- Decision (#405's review, 2026-11-17, `fix/405-secure-field-unread`; the review of 2e5b3059..6dc4bcd0, five P1 and two
+  P2 findings, all accepted, and ruling 1ea561bc:808 on the paste; amends "#405" above, items 1, 2, 3 and 7): **a
+  value-bearing attribute is only ever requested in a batch that reads the role and subrole again, its whole answer
+  dropped when that classification is closed, and only after a classification made just before it** (`guardedRead`,
+  #390's principle made one function). A classification older than the read does not authorise it.
+  1. **AXValueDescription is value-bearing** (P1): it moves into the guarded batch (`valueAttributes`), a password field's
+     node and identity carry none, and the renderer drops Details on a secure node. The identity now matches the value
+     description together with the value: both are left out when either is (`ignoringValue`, `valueUnread`).
+  2. **A field the Markdown's classification finds closed** (P1) closes the walk's data too, and the source's cache: the
+     node becomes `secure` with no value or length, and its identity `valueUnread`.
+  3. **The settle's reads reused** (P1): a structure read by the busy walk is classified again (a classification-only
+     request) before the value's batch. The cost is one more request per element on an observation that reuses a
+     settled tree, three in all where main made one.
+  4. **The focused selected text** (P1): a classification-only request, then AXSelectedText in one batch with the role
+     and subrole, dropped when closed (`focusedSelectedText`).
+  5. **select_text** (P1): its value read goes through `guardedRead`; the attributed read is preceded by a
+     classification of its own, and a field closed by then is refused, nothing more read.
+  6. **A failed value read is not an omission** (P2): `ElementData.valueFailed` (the value's request failed, or AXValue's
+     slot) is kept apart from `valueUnread` (deliberately not read), and a match that needs the value fails on a side
+     whose value read failed, so a timed-out read no longer matches a different control as a wildcard.
+  7. **A listed read** (P2): the role and subrole are requested for the classification whether or not the element lists
+     them, and kept in its data only when it does.
+  8. **The paste** (ruling 1ea561bc:808, in #405's scope; item 7 above withdrawn, its debt entry removed): the ticket
+     limits what leaves the engine, not what it uses. The effect reading classifies the focused element first
+     (`focusedEffectReading`) and still reads a password field's range and count, marked `secure`; such a reading
+     confirms only a count moved by exactly the pasted line less the selection it replaced (`pasteEffectSeen`; any
+     change, as before, when a count is missing or for any other field), and the meta's records say only `secure: true`
+     for it, no range or count.
+  9. **Proof**: SecureFieldTests (10) and a paste operation test over the stub; each new guard mutated away and caught.
+     The request filter at the source's boundary (`request` keeping only what it asked for) is now covered twice (the
+     structure read keeps only its own names), so its mutation alone is not caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 2e5b3059..6dc4bcd0).
+- Decision (#405's re-review, 2026-11-17, `fix/405-secure-field-unread`; the review of 6dc4bcd0..6a1c7658, eight
+  findings, seven accepted and one dismissed by the design session; amends "#405's review" above, items 1, 2, 5, 6 and
+  8): **every closure fails closed, a failed or unverifiable value read never matches as a wildcard, and a paste is
+  judged on its numbers alone.**
+  1. **The paste reading** (P1): role, subrole, range and count are read in one batch (`focusedEffectReading`), the
+     numbers marked `secure` by that batch's own classification, or when the batch fails, so none of them reaches the
+     wire after a field turned secure between requests.
+  2. **Failing closed** (P1): a Markdown classification that fails as a whole closes the field as an unreadable role
+     does (its cached and emitted value dropped); select_text refuses when its classification before the attributed
+     read fails, searching nothing.
+  3. **An unverifiable value** (P2): a value batch that cannot classify the element, or that fails, marks it unverified
+     (`valueFailed`, `descriptionFailed`), never a deliberate omission, and a failed value matches only another failed
+     one, so a replacement that could not be verified never inherits a token whose value counts. A value batch that
+     finds the field secure, or reads its role and subrole at all, gives the data those fresher role and subrole
+     (`reclassified`), so no match is made across a known change on stale structural ones. The re-fetch walk now
+     decides every structural match by the element's full read.
+  4. **The value description apart** (P2): `descriptionUnread` and `descriptionFailed` mark it separately from the value;
+     #390's valueless source still reads and compares it, and `ignoringValue` compares it again, as main did.
+  5. **Movement is the numbers'** (P2): `EffectReading.moved` compares range and count only, in the wait and the Return's
+     settle; `secure` only chooses the privacy and confirmation rules.
+  6. **A notification and the count** (P2): where a password field's count decides (`pasteJudgedByCount`), a trusted
+     notification no longer confirms by itself; the reading must show the count moved by the paste.
+  7. **The delivered length** (P2): the count is judged against the plain text the paste delivers (`deliveredUnits`, its
+     `.string` representation), not an html or Markdown source; the request's progress accounting keeps the source's.
+  8. **Dismissed, a deliberate boundary**: a value read while a field was plain is kept when the field turns secure later
+     in the same observation (the focus trailer finding it secure leaves the node the walk already collected), as a
+     screenshot taken then keeps what the screen showed. The guard never reads a value while the field is secure; it
+     does not revise what was read before.
+  9. **Proof**: SecureFieldTests (14) and two paste operation tests over the stub; each new guard mutated away and caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 6dc4bcd0..6a1c7658).
+- Decision (#405, design ruling 1ea561bc:811, 2026-11-17, `fix/405-secure-field-unread`; with the review of
+  6a1c7658..bc52384a's four findings; supersedes "#405" item 1, "#405's review" items 3 and 4 and the preflights of its
+  items 4 and 5, and "#405's re-review" item 3's structure-first match): **one AX batch per element carries its role,
+  subrole and value-bearing attributes together; the element is classified from that same reply, and a closed one's
+  value attributes are dropped as the reply is decoded.** The ticket guards what leaves the engine or stays in it (IPC,
+  the cache, identity, render, logs); a value inside the engine's process only for the life of one AX reply is the same
+  trust domain, ruling 808's line.
+  1. **A, the separate classification request, rejected**: on smoke 44224481847 (CfT 157, p50 of 2) its second request
+     per element cost +44–61% walk time on every page: a 69-node fixture 53→77 ms wall; a 286-node page with 216 inputs
+     279→436 ms, attributesMs 88→180; a reused settle tree's final walk 150→230 ms; AppKit's large fixture 123→147 ms.
+  2. **The read** (`ElementSource.classifiedData`): `observedAttributes` (the listed read's names, with the role and
+     subrole always) in one request, `valueReadClosed` over that reply, and a closed element's value, value
+     description and length dropped in the same function, before anything reads or formats the reply; nothing logs an
+     element's attributes. An element whose role or subrole is missing or fails is treated as a password field (`secure`
+     in its node and identity, `secure text` rendered). The busy walk, the reuse of its reads and the re-fetch walk go
+     back to main's one read per element; the structure-only read, the reuse's reclassification and its cache are gone.
+  3. **Other value-bearing reads** (`classifiedRead`): the focused element's AXSelectedText and select_text's AXValue
+     each ride in one batch with the role and subrole, dropped when it is closed. The parameterized reads no batch can
+     carry keep a classification request just before them, failing closed: the walk's Markdown read (a failed or closed
+     classification closes the data and its cache entry as secure) and select_text's attributed read (refused).
+  4. **Kept from the third review**: a failed paste poll is no reading (nil), and a password field's reading moves only
+     on a number it read (a number lost since is no movement, and a lost count confirms nothing); the paste's batch
+     keeps the budget's messaging timeout (`fetchAttributesAsTimed`); the identity records `secure` and compares it, so
+     a same-labelled plain field never inherits a password field's token, whatever role and subrole each kept; and two
+     failed reads match only for the same handle (`sameElement`), never another element. Moot under one batch: the
+     closure's stale role and subrole (a single reply has no older ones).
+  5. **Proof**: SecureFieldTests (16) over a stub that answers plaintext to every request, also beside a slot it reports
+     failed, asserting no emission and no retention: node and reply, cache, identity, screenshot record, error sentences
+     and the stderr captured over an observation, resolutions and a refusal; one case reads a plain field's value and
+     then has the Markdown's classification fail. Each guard mutated away and caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:811 and the review of 6a1c7658..bc52384a).
+- Decision (#405, design ruling 1ea561bc:813, 2026-11-17, `fix/405-secure-field-unread`; with the review of
+  bc52384a..cd7a2f6d's three findings; narrows "#405, ruling 811" item 2): **a failed classification presumes a
+  password field only where one can be; elsewhere the value is dropped and said to be unread.**
+  1. **Which closures say `secure`** (`valueClassification`): a role or subrole AXSecureTextField, an unreadable role, and
+     a text-entry role (AXTextField, AXTextArea, AXComboBox, `presumedSecureRoles`) with an unreadable subrole: the node
+     says `secure`, rendered `secure text`. Another readable role with an unreadable subrole cannot be a password field:
+     its value attributes are dropped all the same, and its node says `valueUnread` instead, rendered `value unread`, so
+     the model reads the value as missing rather than empty.
+  2. **Dropped before the decoding** (P1): a closed reply's value attributes are left out of the names the data is
+     decoded from, so no plaintext is kept, converted or bounded on the way to being cleared.
+  3. **A closure by failure is unverifiable** (P2): `classificationFailed` on the data and the identity, apart from
+     `secure`; such an identity matches only another such, and only for the same handle, so two same-labelled fields
+     whose subroles cannot be read are redacted alike and never taken for each other. A closure by a password field's
+     own role or subrole matches across handles as before.
+  4. **The checks' reach** (P2): the fixture password has a length (41) no other text carries; the error sentences and
+     their wire, and the stderr captured over an observation, resolutions and a refusal, are searched for that number in
+     any form and for its run of either mask glyph, and a capture that fails fails the test.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:813 and the review of bc52384a..cd7a2f6d).
+- Decision (#395, design ruling 1ea561bc:824 under ruling 811, 2026-11-18, `fix/395-safari-marker-route`; amends
+  "#354" limit 11 and item 10.16's walk as the only route when the application names no focus): **in background
+  Safari, type_text's read-back finds the focused field by WebKit's text-marker route before #354's walk, and never
+  inspects the marker.** Background Safari answers no AXFocusedUIElement at the application, the window or the web
+  area; the walk's 200-node bound claimed nothing on a real-size page (run 44031200818: 1,600 children, 20 of 20 cut),
+  so type_text answered `noFocusedElement` there.
+  1. **The probe** (`probe/395-marker`, `scripts/probe-395/`; run 44296356927, Safari 27.2, image 20261102.0473.1, 238
+     of 245 rows valid, 0 wrong fields, 0 privacy violations; the 20-per-cell follow-up 44297805982): the web area's
+     AXSelectedTextMarkerRange, its start marker (AXTextMarkerRangeCopyStartMarker) through AXUIElementForTextMarker
+     on the web area to an AXStaticText, and one AXParent, the AXTextField or AXSecureTextField, found the field 20 of
+     20 on the large page. The marker is 28 bytes and holds the caret's character offset as a plain LE32 word (bytes 8
+     and 20). WebKit does not withhold it for a password field: all 60 secure rows resolved to the field, the start at
+     the true caret, usually the field's length, and AXStringForTextMarkerRange over a password selection answers mask
+     glyphs at the selection's exact length. The token carries position for secure fields.
+  2. **The ruling's conditions, as built** (TypeReadbackMarker.swift). (a) The marker is never inspected:
+     `readbackMarkedElement` is the only code that holds the range or the start marker; it type-checks the range
+     (AXTextMarkerRangeGetTypeID), copies the start, type-checks it (AXTextMarkerGetTypeID), passes it unchanged as
+     AXUIElementForTextMarker's argument on the web area, type-checks the element, and releases both. No code reads a
+     marker's bytes or length (neither symbol is resolved), derives an offset, passes the marker or the range to any
+     other parameterized attribute, keeps, compares, logs or emits either. (b) The end marker is not used: its copy is
+     not resolved. (c) Classify before reading: every element on the way is first checked to be the app's
+     (AXUIElementGetPid, local), then classified by role and subrole in one batch (#405's `classifyingAttributes` and
+     `valueClassification`) before anything else is read of it. A closed one ends the lookup at once with main's
+     reason for such a focused element, nothing more read of it: `.refused(.secure)` for a password field by role or
+     subrole or an unreadable subrole, `.refused(.roleUnreadable)` for an unreadable role (the design session's note on
+     the checkpoint of 2026-11-18). The web area itself is checked to be the app's and classified before its marker is
+     read, and must classify open as an AXWebArea, else no claim (it is not the field); each ancestor the claim's scope
+     climb passes is checked to be the app's. type_text still never reads a secure field and adds no confirmation for
+     one. (d) Resolve before input: the lookup is the snapshot's, before the first event. After any delivered text, a
+     field the route found is asked itself, the same handle reading AXFocused true (`readbackStillFocused`), at the
+     final poll and at every checkpoint: no marker call, no re-discovery, no application focus or parent climb. A field
+     the application's focus or the walk found keeps main's check, looked up again without the marker, even in Safari.
+     The check's reads do not depend on the request being concealed or on the secret. (e) Safari only: the bundle
+     identifier of the process read (`NSRunningApplication(processIdentifier:)`) equal to `com.apple.Safari`, the
+     provider the probe measured; Technology Preview and other WebKit apps do not take it. Only after the application's
+     AXFocusedUIElement answered no element (noValue or attributeUnsupported); a read of it that failed (any other
+     error, or a reply that is not an element) goes to the walk alone, as on main.
+  3. **The choices the ruling left.** Order: the application's focus, then the route (only on its absent answer), then
+     the walk, so the walk still claims a field the route does not (no selection, the symbols absent, a failed focus
+     read) on a page within its bounds. The web area: the primary window's first AXWebArea breadth first among the app's
+     own elements (another process's, the window included, is skipped: its role unread, never a candidate, its children
+     never followed, as the probe's `tree()` visited only the app's), under the walk's own bounds (200 nodes, depth 12,
+     40 ms; the probe's path took 28 nodes at depth 6), text-entry elements leaves as in the walk, any failed read none;
+     an iframe's web area lies inside the page's, so the outer one is found first. The climb to the field: at most
+     `typeReadbackMarkerFieldHops` (4) AXParent hops (the probe's 20 of 20 took one); a text-entry role is the field;
+     the web area, reached first, is no field. The claim: the field reads AXFocused true, and its AXParent chain reaches
+     that same web area within `typeReadbackMarkerScopeHops` (24); otherwise no claim, and the walk runs. Testability:
+     `ReadbackAX` carries every Accessibility call of the live reads (attribute, parameterized, batch, pid, and the
+     dlsym'd symbols), so `ReadbackReads.live` runs whole in the tests over a stub.
+  4. **Noted, not changed:** a later type_text's pre-input marker can carry a caret that depends on an earlier secret
+     typed into the same field. For a plain field, main's snapshot already reads that field's whole value; for a secure
+     field, the answer is refused regardless. So it adds no exposure beyond main. Also not measured: a Safari window
+     whose chrome before the web area exceeds the walk's bounds (many tabs) finds no web area and falls back to the walk;
+     a docked Web Inspector is a second web area, and the first breadth first is taken.
+  5. **Proof**: TypeReadbackMarkerTests (14) run the live reads over a stub Safari whose web area answers a real
+     AXTextMarkerRange, made with HIServices' constructors in the test alone (where they do not resolve, the tests that
+     need them skip), its markers holding known offsets at bytes 8 and 20. Ruling 824's test: across a confirmed plain
+     text, a plain mismatch with its excerpt, a concealed confirmation and mismatch, and a password field's refusal,
+     neither offset in any form (decimal, hex, its bytes, base64) reaches the reply's JSON, the read-back's record, an
+     error sentence or the stderr captured over the runs; exactly one AXUIElementForTextMarker is asked, with the start
+     marker (CFEqual), never the end marker or the range; the range's and the copied marker's retain counts show nothing
+     keeps them; a second lookup reads the range again; after the first event the identity check is the field's own
+     AXFocused. Also: the gating (another app, absent symbols, a Safari whose application names its field, before typing
+     or after; a failed or wrong-typed application focus read taking the walk alone, attributeUnsupported the route); a
+     closed field or text (seven classifications, plain and concealed) refused with main's reason, nothing read of it
+     after its classification and no value or range of anything; fifteen odd marker replies claiming nothing, then the
+     walk; a web area another process's or under another process's group (skipped unread, the search going on past a
+     foreign sibling), unreadable or classified otherwise (six cases), with no marker call; the climb's and the scope's
+     bounds; a field not focused, not under the web area (or under another, or below an ancestor another process's), or
+     under an iframe's (claimed); no marker call after the first event, a checkpoint's check included; focus lost after
+     typing answering fieldChanged; the same reads whatever the secret. Each of 31 mutations, every guard removed or
+     weakened, was caught: the web area's failed-children guard survived the first round and has its own case now, and
+     the subrole-in-the-batch mutation, first caught by a test's trap, now fails an assertion. Six more, of the guards a
+     high review of the branch added, were caught too: the web area search's ownership, its classification removed or
+     any open role taken, an ancestor's ownership, the marker on a failed focus read, the live read folding a failure
+     into an absence. Three positive controls show ruling 824's test can see a leak: the start marker's offset, decoded
+     from its bytes and written in turn to stderr, into the error sentence and into the read-back's record, each fails it.
+  Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
+- Decision (#414, design rulings 1ea561bc:826, 833, 839 and 842, 2026-11-18, `fix/414-secure-type-confirm`; ruling 808's paste
+  rule ("#405's review", item 8) applied to type_text; amends "#354", whose snapshot refused a password field unread
+  (`secure`), and "#395" item 2(c), whose route refused one): **type_text into a password field is confirmed by its
+  length, never its value, and its success says that is all it proves.** The read-back refused a secure field, so a
+  `{{secret:…}}` typed into a login form, the main use of secrets, answered `typeUnconfirmed` whether or not every
+  character landed. TypeReadbackLength.swift holds the rule; TypeReadback.swift takes the snapshot and confirms.
+  1. **What a password field is** (`readbackPasswordField`): a field #405's classification (`valueClassification`)
+     finds secure, with its role read and a field's role: AXSecureTextField by role or subrole, or a text-entry role
+     whose subrole cannot be read (ruling 813's presumption). An unreadable role still refuses `roleUnreadable`. Any
+     other element the classification closes is refused unread as before (`secure`, its sentence now "a secure element
+     that is not a text field"); `becameSecure` keeps a text field that turns secure. Safari's marker route (#395)
+     classifies such an element `.password` and claims it as it claims a text field, after its own AXFocused and its
+     place under the web area; a closed element that is not a field still ends the lookup unread. #354's walk already
+     claimed AXSecureTextField. The lookup's finding is carried to the snapshot (the review of 517ab543..bdfbcfb2,
+     P1). A field that the marker route, or the walk by its role, found to be a password field, and that the snapshot's
+     own role and subrole then find is not one (a show-password toggle landing between them), is refused
+     `noLongerSecure` and read no further, as the poll refuses one. Its value is never read as a text field's. The
+     lookup's finding makes the record a password field's at once, whatever the snapshot's own reads then find (the
+     review of 81a1aebc..52f0109a, P2): a role read that then fails is `roleUnreadable` with `secure: true`, never the
+     plain record with its reads and poll time.
+  2. **What is read.** After the role and subrole that classify it, a password field is read only by one batch of
+     AXRole, AXSubrole, AXSelectedTextRange and AXNumberOfCharacters (`readbackLengthAttributes`, the list paste's
+     effect reading takes), classified from that same reply (ruling 811's batch rule, `readbackLength`): before the
+     first event, at every poll, in the settle and in #359's wait. Never AXValue, AXValueDescription, AXSelectedText or
+     any parameterized attribute. The count and range stay in the plan (`ReadbackLengthBasis`) and the reads that
+     compare them: never formatted, logged, cached, kept on the record or emitted. The app answers a batch in one turn
+     of its accessibility server, so the caret comes from the same state as the count it qualifies. The plain path's
+     "a value read after the caret read" (the review of dad56362..af1860ef, P1) is met by the same reply, with no
+     second read.
+  3. **Units**: UTF-16 code units. AXNumberOfCharacters is an NSString's length on every provider's Cocoa side, and
+     the expected count mixes it with AXSelectedTextRange, which #354 measured in UTF-16. It is also paste's unit
+     (`deliveredUnits`). A typed unit counts its UTF-16 units (`readbackLengthUnits`). A Return's unit is one CR (a CR
+     LF too), which a field that takes it as text counts as one newline; in a single-line field it is a key that adds
+     nothing. Not measured: non-BMP text in a masked field. A provider that counted a masked surrogate pair as one
+     would answer `lengthMismatch`, which fails closed. The qualification carries an emoji row.
+  4. **The starting point**, one decision (`readbackLengthBasis`):
+     - A count read that failed allows nothing (`lengthUnreadable`). That includes the snapshot's own read before any
+       settle (the review of 517ab543..bdfbcfb2, P2): a failed read followed by an absent one compared as agreeing,
+       and the confirmation then stood on the caret alone, which ruling 839 forbids. A float CFNumber is a failure,
+       since `-0.5` would truncate to 0 (same review, P2).
+     - A count, or a caret basis's location, above `Int32.max` is no field's and allows nothing (same review, P2). An
+       `{NSNotFound, 0}` range would otherwise trap the engine on adding the typed units.
+     - A count above that limit is a failed read in `readbackLength` itself, as a negative or float count is (the
+       review of 81a1aebc..52f0109a, P2). Checked only at the basis, an `NSNotFound` count at the snapshot, then absent
+       counts in the settle beside a stable empty selection, ended on the caret's basis and could confirm, while the
+       same read without the settle was `lengthUnreadable`. The snapshot's refusal of a failed count, the settle's and
+       the poll's now all take it as one. The basis keeps its count guard as a stated invariant, and its bound on a
+       caret's location.
+     - A count allows its own confirmation with a range that lies inside it.
+     - A count with no range confirms only from an empty field, where nothing can be replaced and the caret can only
+       sit at 0. Otherwise the snapshot answers `selectionUnreadable`, as does a range outside the count. A snapshot
+       refusal still sends the keys, as every refusal does.
+     - **Ruling 839**: a field with no count at all is confirmed by its caret alone. That needs a selection read and
+       empty, and the caret must move from {location, 0} to exactly {location + typed, 0}. It keeps the same strength
+       (`confirmation: "length"`), the same batch and the same schedule, and each read must still answer no count. No
+       count means absent, split as the walk splits a read: the batch slot's error is noValue or attributeUnsupported
+       (`fetchAttributes`' `failedSlot`). A slot that failed, or holds anything but a non-negative CFNumber, is a
+       failure. No count with a non-empty selection, or with no range, stays `lengthUnreadable`. The ruling answers
+       #405's matrix: AppKit's NSSecureTextField answered no AXNumberOfCharacters there (probe/405-qual,
+       `scripts/probe-405/README-evidence.md`).
+  5. **The confirmation** (`readbackLengthJudged`). The count must be exactly the start's, less the selection, plus
+     the typed units. Whenever the snapshot read a range, the caret must also read {location + typed, 0} in the same
+     reply, whatever the selection held. That is stricter than the brief's rule, which asked for the caret only when
+     the selection spans the typed length (#354's `equalUnconsumed`). The design session approved it at the
+     checkpoint of 2026-11-18 because it closes an oracle. Under the conditional rule, a provider whose caret lags
+     would answer differently depending on whether a secret is as long as the selection the caller chose. The
+     concealed path took one schedule for the same reason (the review of a8e55870..8f465bf9, P2). The stricter rule
+     also catches text typed somewhere else in the field, as a late click can make it. Its cost: a provider whose
+     password-field caret does not track typing fails closed.
+     The poll is the value's own: `typeReadbackBudgetMs` and its interval. A count read that fails mid-poll is no
+     confirmation, and the poll goes on, as a failed value read's does: a later exact read confirms, and at the budget
+     the answer is `lengthUnreadable`. Each of these ends the poll at that read:
+     - a reply that is no longer a password field (a page's show-password toggle): `noLongerSecure`;
+     - a request that failed or a role that cannot be read: `fieldUnreadable`;
+     - another password role: `fieldChanged`.
+     After the poll, the "still the focused field" check is unchanged. A field the application's focus or the walk
+     found is looked up again that way. One #395's marker found is asked for its own AXFocused, with no marker call.
+     **Amended: the quiet window** (the hosted qualification's finding; ruling 1ea561bc:842, 2026-11-18). The poll
+     confirmed on the first reply that matched, and a reply can match before the field is done.
+     - **The defect.** An AppKit fixture puts an extra "z" in at the caret before the first typed key, so the final
+       field holds "z" and the whole text, its caret one past the text's end. The engine posts keys 250 µs apart
+       (Input.swift, the vendor's gap), so the poll begins while the app is still working through its event queue. The
+       app answers an AX batch on its main run loop between two queued keys. That reply held "z" and every key but the
+       last, its caret exactly at location + typed: the expected count and caret. It confirmed (`confirmation:
+       "length"`). Both bases were open to it, the count with its range and ruling 839's caret alone. The fixture cannot
+       fool the plain path, because its in-between value differs from the expected one. A plain field whose inserted
+       text coincides with the typed text can: literal `zz` typed into an empty plain field that prepends `z` reads
+       exactly `zz` before the last key lands, and #354's poll accepts it (the review of f35a42b8..cbce12e2, P3). That
+       is #354's, outside #414.
+     - **The window.** A reply that matches confirms only once the same reply has held for `typeReadbackLengthDwellMs`
+       (220 ms). The same means the same count and range; for the caret's basis, still no count and the same range. The
+       window is timed from the end of the matching read to the start of a later read that finds the same reply.
+     - **One cadence.** The window is read at the poll's own interval (`typeReadbackPollIntervalMs`, 5 ms), in the same
+       loop. The design session first approved a 50 ms window sampled every 10 ms; the 5 ms poll replaces the 10 ms
+       sample so a concealed request's schedule has one shape, whether or not a match came.
+     - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for the window
+       before the budget is unconfirmed, answering `lengthMismatch`. A genuine field must therefore finish taking the
+       text within 730 ms of the last post: the budget less the window and the 50 ms floor (below); wave 8 made it
+       680 ms, the budget less the window and one 100 ms slot. agent-cursor.md says so.
+     - **Ruling 842: one constant, sized from the qualification.** The window is one value for every lane, never one
+       per lane, and it is one line to change. The design session set it at 220 ms, three times AppKit's gap p99 of
+       72.6 ms (218 ms), from the hosted qualification's full run. Direct fixture edit gaps, scope "gaps ending after
+       the last post":
+
+       | Lane | p99 | max | n |
+       |---|---|---|---|
+       | AppKit | 72.6 ms | 448.5 ms | 269 |
+       | Chrome for Testing | 29 ms | 35 ms | 226 |
+       | Safari | 24 ms | 51 ms | 224 |
+       | parity Electron | 25 ms | 57 ms | 217 |
+
+       The default Electron lane was still pending. Every lane rejected 20 of 20 adds at 180 ms. If a lane's gap p99
+       times three exceeds 220 ms, the constant rises. It first stood at 50 ms, then 180 ms, and now 220 ms.
+     - **Why a change means a fault**: "A genuine field never moves away from a final match: once it has taken every
+       key nothing changes it, and before that none of its readings equals the expected one, because its caret has not
+       yet reached the end of the text (and, from an empty field read without a range, its count is still short of the
+       text's length). So a reading that matches and then changes means a character was added or dropped."
+     - **A literal request** ends its poll at a reply that leaves a held match, judged as any reply: `lengthMismatch`,
+       `caretMismatch`, or `lengthUnreadable` for a failed count. A changed reply that still judges confirmed differs
+       only in a range its basis never checks (an empty field read without one), and answers as a caret elsewhere.
+     - **Overshoot** (`readbackLengthOvershoots`) ends a literal request's poll at once, judged as any reply, in two
+       narrow forms. A caret whose location is past location + typed: a genuine caret rises from the selection's start
+       to there and never beyond. From a basis with nothing selected (an empty range, or an empty field read without
+       one), a count past the expected one. A failed count read is no evidence either way, and the poll goes on.
+     - **The count's form is narrowed.** Over a non-empty selection, a genuine field's count is the snapshot's own until
+       the app takes the first key, and that exceeds the expected count whenever the selection is longer than the text.
+       The rule would fail a genuine field there, and its timing would tell whether a secret is shorter than the
+       selection.
+     - **A concealed request's failure never ends before the budget, and its schedule never depends on the secret.**
+       Every overshoot form compares a reply with an expected count or caret that depends on the secret's length, and
+       whether a match comes and goes at all can depend on it too. Some fields would then fail early for one length
+       and not another: one that collapses a selection to its end without taking the text, or jumps its caret to the
+       end of its text. So a concealed request never ends on an overshoot. A reply that leaves a held match taints it:
+       it never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that
+       judges confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way.
+     - **The concealed timing, by construction** *(its fixed reply time, D, the padding and `lateReply` superseded by
+       wave 9, ruling 1ea561bc:851; B and the reason rule stay: kept as the record)* (the review of 1f69470e..f217f062, which found four ways the earlier
+       rounds' padding still leaked: (i) a focus read at a match moved the poll's start, (ii) a transient focus failure
+       latched the reason, (iii) a slow last batch pushed the final focus read past the deadline, (iv) the success
+       cutoff used a later origin than the padding). The earlier rounds (the review of f35a42b8..cbce12e2, P1; the
+       review of cbce12e2..1f69470e, P1 and P2) padded the reply to a deadline; this one makes the property hold by
+       construction, in five parts.
+       - **One origin, B: the last post.** Every time of the read-back counts from B, the instant the last key event
+         was posted successfully, the one `endedAt` stamps, taken on the read-back's monotonic clock in the post
+         closure `keyTextReadBack` passes. Nothing after it moves B: key-ups, the pauses, a settle, `finish()`'s own
+         work. Chrome for Testing's concealed negatives (all `lengthMismatch`) had answered 1105–1178 ms after the
+         last native post against a nominal 1100 ms (p50 1163 ms, 8 of 15 past 1150), because the deadline counted
+         from `finish()`'s start. From B, the poll's cutoff C = B + `typeReadbackBudgetMs` (1000 ms), which is also the
+         final focus read's start, and the reply deadline D = C + `typeReadbackFocusReadCapMs` (100 ms): 1100 ms.
+         `finish` takes B once and passes C and D down; nothing below takes its own start, so a focus read at a match
+         moves nothing (i), and success and failure share B (iv). A literal checkpoint keeps its own C from its start.
+       - **Bounded work** (iii). *Superseded by wave 8, which removed the bound: kept as the record.*
+         The timeout fact, corrected: every element has a 1 s AX messaging timeout
+         (`elementMessagingTimeout`), the read-back's own elements 100 ms (`typeReadbackMessagingTimeout`), and
+         neither bounds a read by a deadline. The read-back now bounds its own reads as paste does
+         (`boundedMessagingTimeout`, `effectReading`): under `ReadbackReads.bound`, an AX call is sent only while
+         time is left to its limit, under a messaging timeout of the time left (100 ms at most), the usual one put
+         back after; a call not sent fails as a timeout does. The poll starts a read only with
+         `messagingTimeoutFloorMs` (50 ms) left to its limit; the floor schedules reads and never suppresses a
+         slot's read (wave 7, below). A literal request's batches run to C and stop at the floor: its failure ends at
+         950 ms.
+       - **The reason, from observations every failure makes** (ii; `readbackConcealedReason`). Every concealed path
+         ends in the same two observations: its final batch, and the final focus read at C, a closed read's path
+         included. In order (wave 7's rule): a final batch closed `noLongerSecure` answers `noLongerSecure`, whatever
+         the focus read found, so the wrapper's warning that the field may show the secret, and the native advice, are
+         never lost when the focus moved too; then a focus read that found the focus moved answers `fieldChanged`;
+         otherwise, the focus focused or unknown, a closed final batch gives its own reason, an unreadable one (or
+         none) `lengthUnreadable`, and any other `lengthMismatch`. A focus failure at a match only taints the request.
+         A snapshot refusal after posting keeps its own reason (`lengthUnreadable`, `selectionUnreadable`,
+         `noLongerSecure`, a held field's `roleUnreadable` and the rest) and answers at D. That is intended: the
+         reason is decided at the snapshot, before any key, so it cannot depend on the secret. `selectionChanged`
+         posts nothing and stays immediate. The fixed deadline covers failures found after delivery completed;
+         failures found during delivery (an input-source change, an intervention, an event not made) throw past
+         `finish` and answer at once, #354's delivery-failure path, which predates #414 and is not specific to
+         password fields, so they are excluded here and tracked as their own ticket.
+       - **A fixed reply time, and `lateReply`.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Every concealed failure after posting waits until D against the
+         monotonic clock, sleeping the remainder, so an early wake cannot end it. A reply sent more than
+         `typeReadbackWakeToleranceMs` (10 ms, the scheduler jitter allowed) past D, after a read that overran its own
+         timeout or a padding sleep that woke late, carries `lateReply: true` in the secure record, a fixed flag with
+         no duration (wave 7: the flag was first decided only on arrival, so an oversleep went unflagged). A concealed
+         success still ends early, once its match has
+         held and its focus read passes: deferring every secret would slow every login to buy nothing the caller can
+         see. A plain field's concealed request is #354's and is not deferred.
+       - **Success eligibility uses C.** A read counts toward a success only if it finished by its limit; its window
+         is timed from read starts. A match off the 5 ms grid, a late wake (for a literal request), or a batch that
+         starts by 950 ms and returns after C, is unconfirmed (`lengthMismatch`), as a match too late to hold is,
+         plain and concealed.
+     - **Wave 7: fixed final slots and a focus that cannot answer** (the review of f217f062..45172367, findings 1, 2,
+       3 and 5; finding 4 is the delivery-time path above; and the hosted runs on 45172367, where about a third of
+       the concealed exact add and drop controls, on every lane, answered `fieldChanged` in fields that never lost
+       focus, against 0 of 15 per lane on f217f062).
+       - **Fixed final slots** (1, 2). *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* A focus check at a match could take the final focus read's time and change
+         which batch was final. A concealed request's two final observations now have fixed slots from B alone,
+         independent of any match: the final batch at C − the floor (950 ms), bounded by C, and the final focus read
+         at C. The regular batches, and a focus check at a match, end by the final batch's slot (the last regular
+         batch starts by 900 ms); a check that cannot start with the floor left before the slot is not made, and the
+         final batch and the final focus read then decide the early success as well. No other read takes either slot.
+         A closed regular reply ends the regular batches and taints the request; the final batch is still read at its
+         slot. The allowance is unchanged: a match taken by 730 ms holds by the final batch.
+       - **The final focus read's own budget.** *Superseded by wave 8's slots: kept as the record.*
+         It starts at C with the cap, 100 ms, which nothing before C can take:
+         its calls are bounded by D, or, if a read before it overran past C, by its own start + the cap, the reply then
+         late and flagged. A call in a slot is sent while any time is left, so a sleep that wakes a little late never
+         suppresses it; the floor gives way, not the read.
+       - **A tri-state focus** (`ReadbackFocus`, `readbackStillFocused`). Only a positive answer is a moved focus:
+         another element named, no element found by a lookup that finished, or the field's AXFocused false or absent.
+         A check that could not finish is unknown: a call not sent for lack of time, a call that answered
+         `cannotComplete` (a messaging timeout's error), or a walk left unfinished (its node, time or depth bound, or
+         a failed read). Unknown is no evidence either way: it bars success (it never confirms) and the reason comes
+         from the final batch, `noLongerSecure` first. A literal password-field request's focus check takes the same
+         rule: unknown is unconfirmed with its length reason, never `fieldChanged`. A plain field's check (#354's) is
+         unchanged: anything but focused is `fieldChanged`.
+       - **The root cause on 45172367.** The final focus read was the success path's own check (`stillFocused`, the
+         same lookup, the same `CFEqual` against the snapshot's handle, the same `found`); what changed was the bound
+         wave 6 put on it. Its calls were sent only with the 50 ms floor left to D, and a call not sent answered as a
+         failed read, which the lookup took for no field and the reason rule for a moved focus. Any read before it that
+         returned past C + 50 ms (the final batch, whose messaging timeout is the shortest, about 50 ms, or a late
+         wake) left it unsent: `fieldChanged`, and on time, since the reply was then padded to D, which fits 45 of the
+         78 such controls answering on time. It also fits 78 of 150 concealed controls against 0 of 75 literal ones on
+         the same fields: both kinds' last batch is bounded alike and returns as late, but the literal check after it
+         is unbounded, so only the concealed read was refused. The final focus read now has its own budget and is never
+         suppressed by the floor, and a read that cannot be made or finished is unknown.
+       - **The focus paths' reads.** A field the application's focus found (`.focus`): AXFocusedUIElement on the
+         application, one call; if that answers no element or fails, AXFocusedWindow, else AXMainWindow, then the walk
+         of that window, breadth first, each node's AXRole, a text-entry leaf's AXFocused, and every other node's
+         AXChildren, within 200 nodes, depth 12 and 40 ms: a walk-found field makes this whole walk again, up to a few
+         hundred calls. A field the marker route found (`.marker`): the field's own AXFocused, one call, nothing
+         before it. Each call's messaging timeout is the time left to the bound, 100 ms at most.
+     - **Wave 8: fixed 100 ms slots** (the hosted runs on 2e011dbf, all five lanes). Wave 7 took `fieldChanged` from 78
+       of 150 concealed controls to 0 of 150, and kept positives at 100 of 100, false adds at 0 and privacy at 0; but
+       `fieldUnreadable` came on 62 of 150 concealed controls and `lateReply` on 138 of 155 replies.
+       - **The diagnosis.** (a) The final batch started at C − 50 ms with its messaging timeout shrunk to the time left,
+         50 ms at most; a batch in a background app takes tens of milliseconds live, so it timed out, and a failed batch
+         is `.closed(.fieldUnreadable)`. (b) A messaging timeout is the caller's: the app goes on with the request, so
+         the next one, the final focus read, waits behind it; wave 7 gave that read its own start + the cap, so once the
+         final batch returned after C the reply passed D + 10 ms. Shrunk timeouts make reads time out, and reads that
+         timed out make the next ones slow. The stub now models (b): a request that times out leaves the app the rest of
+         its work, which the next request waits behind.
+       - **The simplification.** No timeout is shrunk and nothing is bounded: every read runs under the read-back's
+         standard element timeout, `typeReadbackMessagingTimeout`, T = 100 ms, as on f217f062. The live wrapper's
+         per-call timeouts, its floor refusal and its `until` bound are gone, with `ReadbackReads.bound` and
+         `ReadbackAX.setTimeout`; `messagingTimeoutFloorMs` and `boundedMessagingTimeout` stay in AX.swift for paste
+         alone. What three-state focus needs stays: a call answering `cannotComplete`, or a walk left unfinished, makes
+         the focus check unknown.
+       - **The slots,** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Sized to T so a read that takes all of its timeout still ends in its slot: no regular batch, and
+         no focus check at a match, starts after C − 2T (800 ms), so each ends by C − T; the final batch starts at
+         C − T (900 ms) and the final focus read, the success path's own unbounded check, at C; D = C + T, so
+         `typeReadbackFocusReadCapMs` is 100 and must equal T (a test pins it). The reply waits until D on the
+         monotonic clock, and `lateReply` is decided after that sleep with the 10 ms tolerance. A literal request's
+         batches start by C − T, then its unbounded focus check, as before; its full poll now ends at 900 ms.
+       - **The allowance is 680 ms** *(re-derived by wave 9: E − T − the window)*: the final batch's slot less the window (900 − 220), since a match taken by then
+         holds by the final batch, which decides a success with the final focus read; a literal request's last batch is
+         at 900 ms as well. agent-cursor.md says so. (The brief's 580 ms, C − 2T − the window, would hold only if the
+         final batch could not confirm.)
+       - **The residuals.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* A read that overruns its 100 ms slot pushes the next one later; the reply is flagged
+         `lateReply` once it passes D + 10 ms. A walk-found field's walk that cannot finish within its own bounds
+         (40 ms, 200 nodes, depth 12) or meets a read that times out is unknown.
+       - **Live result** (run 44386516599 on 405b63b3, all five lanes;
+         `docs/evidence/2026-11-18-secure-type-confirm/README.md`). On the exact controls, `fieldUnreadable` and
+         `fieldChanged` were 0 of 150, false adds 0 of 150, and privacy 0. Positives were 100 of 100, and short and
+         long secrets answered the same reasons. `lateReply` was still on 137 of 155 failures, arriving 1111–1186 ms
+         after the last post. Reply time reaches only `_meta`, so it stays informational (the residuals, below). Which
+         read overruns live, and whether to re-time the slots or drop the uniform time, is #423.
+       - **Tests.** A second property run, `testExactControlsAnswerLengthMismatchOnTimeAtLiveCosts` (seed 0x414F218,
+         2000 cases, two secrets of different lengths into one field each): batch reads cost 20 to 90 ms and focus reads
+         10 to 90 ms, within T, each a function of the read's time; a genuine field confirms, and an exact add or drop
+         answers `lengthMismatch` at D, never `fieldUnreadable`, `fieldChanged` or `lateReply`; both secrets answer
+         alike. On 2e011dbf every one of its exact controls answered `fieldUnreadable`. The first property run (seed
+         0x414F217) is kept. Restated for the slots, since they assumed wave 6's and wave 7's shrunk timeouts or bound:
+         (iii) `testASlowLastBatchCannotPushTheReplyPastTheDeadline` (90 ms batches from 760 ms and a 90 ms focus read
+         now answer the lost match's `lengthMismatch` at D, where the bound had cut the final batch to
+         `fieldUnreadable`); (iv) `testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary` (a final batch taking
+         100 ms confirms at C, one taking 101 ms times out);
+         `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes` (matches at 580, 600 and 590 ms, a change at
+         850 ms); wave 7's budget test, renamed
+         `testAReadThatOverrunsItsSlotPushesTheNextLater` (a final batch taking 100, 150 or 230 ms: on time, on time,
+         late); a slow focus read now set only after posting, since the snapshot's lookup has the same timeout; and the
+         unknown-focus test's timed-out read now covers literal requests too. The read past the cutoff starts at 900 ms.
+     - **Wave 9: one poll, and a failure answers when it is known** (ruling 1ea561bc:851, 2026-11-18; the review of
+       4a005a8c..a1939d2f). Ruling 851 drops the fixed-deadline, fixed-slot schedule. The live runs on 405b63b3 missed
+       the fixed time on 137 of 155 failures, and the review found two false oks it made: a hold completed across the
+       unsampled final slot, and a passing focus check finishing after the deadline.
+       - **Removed**, each needed only to fix a failure's time: D and the padding sleep; `lateReply`, its wire key and its
+         10 ms tolerance (`typeReadbackWakeToleranceMs`); `typeReadbackFocusReadCapMs`; the fixed final batch and final
+         focus read; the regular reads' bound of C − 2T; the focus check's slot condition; a concealed refusal answered
+         at D.
+       - **The rule.** E = B + `typeReadbackBudgetMs` is the cutoff; a literal checkpoint takes its own start + the
+         budget. One poll serves literal and concealed requests alike. A batch starts only while E − now ≥ T, every
+         5 ms. T is `typeReadbackMessagingTimeoutMs`, `typeReadbackMessagingTimeout` in ms rounded off its Float: 100.
+         A match confirms only on a hold whose start and end are both sampled reads, at least 220 ms apart, the closing
+         read ending by E. At a hold the engine makes one focus check (`fieldFocused`):
+         - focused, completed by E: it confirms;
+         - moved: `fieldChanged` at once;
+         - unknown, or completed after E: nothing is confirmed, and the poll goes on, the next hold checking again.
+       - **Exits and reasons.** A closed reply ends the poll. A change or an overshoot ends a literal poll; a concealed
+         one is tainted and polls on to E. That keeps catching a show-password toggle until the end and keeps concealed
+         failure times more uniform, at no extra cost. After a poll with no success, a literal request reads its focus
+         once (moved is `fieldChanged`) and otherwise answers its last batch's reason. A concealed one answers
+         `readbackConcealedReason` of its last batch and one focus read, which it skips when that batch closed
+         `noLongerSecure` or `fieldUnreadable`. A refusal after posting answers at once.
+       - **What stays, none of it depending on timing:**
+         - `noLongerSecure` first, now followed by `fieldUnreadable`;
+         - the three-state focus;
+         - no `caretMismatch` for a concealed request;
+         - the literal-only exits and the taint;
+         - the quiet window.
+       - **The allowance, re-derived.** The closing read starts by E − T, so the match must be read by
+         E − T − 220 = 680 ms of B. agent-cursor.md's "within 680 ms" stands, and a test pins it: a field that takes the
+         text at 680 ms confirms, and one that takes it at 681 ms does not.
+       - **The documented limit.** A failure's time can depend on the text typed. agent-cursor.md, the docs oracle, the
+         core-documentation test and the surface inventory's #414 quote now say so after the 680 sentence, byte for
+         byte: "When it fails, how long it took can depend on the text typed, a `{{secret:…}}` included." Reply time
+         reaches only `_meta`, and its limit is tracked as #423. Wave 11 (ruling 1ea561bc:856) extends the sentence to
+         the failure's reason as well (below).
+       - **The findings.**
+         - P1-1, a hold completed across the unsampled final slot, and P1-3, a passing focus check finishing after the
+           deadline, are fixed by the rule change. There is no unsampled slot, and a success's focus check must
+           complete by E.
+         - P1-2, the focus lookup bounded per call rather than as a whole: a password field's focus check after typing
+           is one AX call (`readbackFieldFocused`), chosen by how the snapshot found the field.
+           - A field the application's AXFocusedUIElement named is asked that again. An absent, failed or timed-out
+             answer is unknown, with no fallback to the window or a walk.
+           - A field the walk found (`ReadbackLookup.walk`, new; it found the field by AXFocused true), or the marker
+             route found, is asked for its own AXFocused.
+           - #354's plain path keeps `stillFocused`. The `ReadbackStarved` flag and the walk's `unfinished` callback
+             are gone.
+         - P1-4, the exposure advice lost when the final classification failed: the reason order above. A password
+           field's `fieldUnreadable` now takes `noLongerSecure`'s may-show remedy natively, its sentence saying "the
+           password field could not be read, so it may no longer hide its text". The wrapper's `secretMayShow` warns
+           for it when the record's `secure` is `true`. A plain field's `fieldUnreadable` keeps its advice. The warning
+           is conservative: a field that could not be classified is treated as one that may show its text. The
+           wrapper's sentence now says the field "may have stopped" being one, since for `fieldUnreadable` that is not
+           known.
+         - P2, a failed marker focus read becoming `.moved`: the field's own AXFocused answering another AX error or
+           the wrong type is now unknown (`readbackFieldsAXFocused`).
+         - P2, the literal overrun test never reaching the overrun: its edit now comes before the first read, so the
+           literal request polls to the overrunning last batch, and the test asserts the clock passed its cost. A new
+           test also has a closing read, or its focus check, end 1 ms past E, which confirms nothing.
+         - P3, the tests' retain cycles: the property runs' closures, and the new tests', capture the stub
+           `unowned`.
+       - **Tests (moved and removed).**
+         - Removed with the schedule: `testEveryConcealedFailureAfterPostingAnswersAtOneDeadline`, which became
+           `testAConcealedFailureAfterPostingAnswersWhenItIsKnown`. Each kind now answers when it is known:
+           - a held match with a moved focus at the window plus its check (260 ms);
+           - a closed read at that read (10 ms);
+           - a lost match or a failed count at the last batch plus its focus read (940 ms);
+           - a refusal at once (0).
+         - Also removed:
+           - `testAHeldMatchWhoseFocusFailsReadsAsALostMatchWithOneFocusReadMore`, since a moved focus at a hold now
+             answers at once;
+           - `testTheDeadlineIsWaitedForAgainstTheClock`;
+           - (i) `testAFocusReadAtAMatchDoesNotMoveTheCutoff`;
+           - (ii) `testATransientFocusFailureDoesNotChooseTheReason`, since a focus moved at a hold is `fieldChanged`
+             at once, where it was `lengthMismatch`;
+           - (iii) `testASlowLastBatchCannotPushTheReplyPastTheDeadline`;
+           - `testAReplyAfterTheDeadlineIsFlaggedLate`, which became `testAnOverrunAddsNoTimeToTheRecord`;
+           - `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes`;
+           - `testAPaddingThatWakesLateIsFlaggedLate`.
+         - Rewritten:
+           - (iv) became `testAClosingReadOrFocusCheckThatEndsPastTheCutoffDoesNotConfirm`, literal and concealed. A
+             closing read ending at E confirms; one ending 1 ms past it, or whose check does, does not.
+           - `testTheDeadlineCountsFromTheLastPost` became `testTheCutoffCountsFromTheLastPost`, which keeps only the
+             last batch: by 900 ms, within an interval of it.
+           - `testAReadThatOverrunsItsSlotPushesTheNextLater` became
+             `testASlowOrOverrunningLastBatchStillEndsOnTheFocusRead`.
+         - Unified for concealed and literal: the last batch is at 900 ms, a concealed poll reads 181 batches as a
+           literal one does (162 before), and a concealed closed read ends at that read, 5 batches (6 before). A late
+           wake into the closing read now leaves a concealed request unconfirmed too.
+         - The rule's unit cases: a `fieldUnreadable` last batch with a moved focus is `fieldUnreadable`, where it was
+           `fieldChanged`. TypeReadbackMarkerTests' held field's `roleUnreadable` answers at once.
+         - New:
+           - the reviewer's field (a match at 680 ms, a mismatch 810–885 ms, a match again), unconfirmed both ways;
+           - a hold whose check answers focused at 1130 ms, unconfirmed;
+           - a check that times out, then the next hold's check confirming;
+           - a focus moved mid-typing, which answers `fieldChanged` from the poll-end focus read for both kinds;
+           - P1-4's natively, with services-sky's three cases;
+           - the one-call checks, the application's (`callsAfterPost`) and TypeReadbackMarkerTests' AXFocused on the
+             marker and walk paths.
+         - The property runs drop every timing assertion (reply time, D, `lateReply`). They keep outcome and reason
+           equality between two secrets and add that every call after posting but the batch is the application's
+           focus:
+           - `testConcealedTimingAndReasonsHoldOverRandomCases`, seed 0x414F217, 2000 cases, 4000 runs: 1898
+             successes, 2102 failures, 47 overrun cases. Each success's closing read starts with T left, and it and its
+             check end by E. Each failure's reason follows from its last batch and the focus read after it.
+           - `testExactControlsAnswerLengthMismatchAtLiveCosts`, renamed from `…OnTimeAtLiveCosts`, seed 0x414F218,
+             2000 cases, 4000 runs: 1332 genuine, all confirmed, and 2668 controls, all `lengthMismatch`.
+         - Mutants, each caught:
+           - a focus check after E counted;
+           - a closing read after E counted;
+           - batches started until E;
+           - a concealed moved focus at a hold not answered at once;
+           - a literal request skipping its poll-end focus read.
+     - **Wave 10: a concealed reason from one final batch** (the review of a1939d2f..e8e2702e, 2026-11-18; six
+       findings verified). Each was a way the secret could still choose a concealed reason, or a literal one could
+       misjudge.
+       - **1, a reason from a hold.** In a field that ignores input but collapses a 4-character selection to its end, a
+         4-character secret matches and an 8-character one does not; with the focus away from 220 to 300 ms the first
+         answered `fieldChanged` at its hold check and the second `lengthMismatch`. A concealed request's hold check now
+         only gates its success: focused by E confirms, and moved, unknown or late means only "not confirmed now"; the
+         poll goes on and the next hold checks again. A literal request keeps moved as `fieldChanged` at once.
+       - **2, exposure displaced by hold checks.** Unknown 100 ms checks from 220 to 850 ms left the matching secret no
+         batch after the field turned visible at 870 ms (`lengthMismatch`, no warning), where a non-matching one read it
+         (`noLongerSecure`). A concealed request that ends without a success now always reads **one final length
+         batch**, however its poll ended (at the budget, or right after a closed batch, which still ends the poll), and
+         outside the start limit; it never confirms. That batch and one focus read alone decide the reason through
+         `readbackConcealedReason`, in wave 9's order, the focus read skipped when the batch closes `noLongerSecure` or
+         `fieldUnreadable`. A failure takes about T more (#423).
+       - **No latch.** Nothing seen mid-poll is kept for the reason: which batches a poll reads depends on its hold
+         checks, which depend on whether the secret matches, so a latch would let the secret choose the reason again.
+         The residual is accepted: a field toggled visible and then secure again before the final batch loses its
+         warning. That warning only shapes what the agent does next, and a field secure again at the final batch reads
+         `secure text` to getAXState() from then on, so letting the final batch and the focus read alone decide never
+         loses a warning that still matters.
+       - **3, an overshoot.** A concealed overshoot now taints the poll, as a change does: one that recovers (a caret
+         past the text, or from nothing selected a count past it, then the right reply held past 220 ms) never
+         confirms, and polls on for exposure.
+       - **4, a secure `roleUnreadable`.** A field the lookup classified as a password field (the marker route or the
+         walk, so `secure: true`) whose snapshot role read then fails now takes the may-show treatment natively, like
+         `fieldUnreadable`: "the password field could not be read, so it may no longer hide its text" and the may-show
+         remedy, not the getAXState() advice. The wrapper's `secretMayShow` warns for `noLongerSecure`, or for
+         `fieldUnreadable` or `roleUnreadable` with `secure === true`, each compared with a literal. A field never
+         classified (the marker's own `.closed(.roleUnreadable)`, `secure` false) is unchanged.
+       - **5, a poll with no batch.** A literal request whose poll took no batch after typing (the engine delayed past
+         E − T) answered `lengthUnreadable`; it now answers `fieldUnreadable`, the unclassified field's result, with no
+         focus read first, since `fieldUnreadable` comes before `fieldChanged`. `readbackConcealedReason`'s no-batch case
+         is `fieldUnreadable` too, before a moved focus; with the final batch a concealed request always has one.
+       - **6, two timestamps.** The loop checked E − now ≥ T, and the batch took its own start: a deschedule between them
+         let a read started 95 ms before E close a window. `step()` now takes its start once, makes no read and ends the
+         poll when less than T is left, and judges the hold on that same start. The allowance stays 680 ms.
+       - **Tests.** SecureTypeReadbackTests has 55. New: the reviewer's pair (the matching secret confirms at the next
+         hold once the focus is back, never `fieldChanged`; the other `lengthMismatch`), the focus away to the end (both
+         `fieldChanged`) and every focus read unknown (both `lengthMismatch`); the reviewer's exposure case (both secrets
+         `noLongerSecure` with the warning); an overshoot that recovers, by caret and by count (`lengthMismatch`, polled
+         to the end); a literal request delayed past E − T (`fieldUnreadable`, no batch, no focus read, the may-show
+         remedy) beside a concealed one (its final batch alone, `lengthMismatch`); and a match at 685 ms with a 5 ms
+         deschedule at 900 ms (unconfirmed, plain and concealed; the stub's `nowJump`). TypeReadbackMarkerTests checks a
+         classified field's `roleUnreadable` warns and an unclassified one's does not; services-sky has both sides. Each
+         failed before its fix, and five mutants (one per engine finding) each fail a test. Moved: every concealed
+         failure reads one batch more (183 for a full poll, 6 for a closed read), and a concealed held match whose checks
+         find the focus moved polls to the end (62 batches, 975 ms, `fieldChanged`). The property runs are unchanged:
+         seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47 overrun cases; seed 0x414F218, 2000
+         cases, 4000 runs, 1332 genuine (all confirmed) and 2668 controls (all `lengthMismatch`).
+     - **Wave 11: the classifying read last** (the review of e8e2702e..3b67bf4d, 2026-11-18; ruling 1ea561bc:856).
+       - **1, a failed subrole in the final batch.** `valueClassification` presumes a text-entry role secure when its
+         `AXSubrole` slot fails, so a field seen shown as text mid-poll whose final batch then read its role but failed
+         its subrole answered `lengthMismatch`, and the warning was lost. A concealed request's final batch
+         (`readbackLength(…, presumeSecure: false)`) now answers `.closed(.fieldUnreadable)` for a reply secure only by a
+         failed subrole, so the secure record's may-show remedy and the wrapper's warning apply. A role of
+         AXSecureTextField stays secure whatever its subrole did, and the poll's own batches still presume secure and go
+         on.
+       - **2, the focus read first.** A concealed request that ends without a success now reads its focus once, then
+         the final batch, so the read that classifies the field is the last before the reply: a show-password toggle
+         during the focus read is seen. The batch alone decides `noLongerSecure` or `fieldUnreadable`; the focus read
+         before it decides `fieldChanged`; wave 9's order stands. The focus read is always made now (wave 10 skipped it
+         after a closed batch).
+       - **3, a residual, not a fix.** In a field whose state matches one secret's length, that secret's poll makes hold
+         checks the other's does not, and their AX traffic, its timing, or a busy app's timeouts can change that secret's
+         failure reason, as they can its failure time. That reveals only what the outcome already reveals for such a
+         field: whether its length matched this secret, item 10's collapse-to-equal-length limit, so it adds nothing.
+         Ruling 856 accepts it. A second form needs no match (the review of 3b67bf4d..8bc291f1, P2): in a field that
+         ignores input and unmasks on a timer, a longer secret finishes posting later, so its final batch can land
+         after the toggle (`noLongerSecure`, with the warning) where a shorter one's lands before it (`lengthMismatch`,
+         the field still masked); the reason varies with the text through posting time. In both forms the reply reflects
+         the field's real state at the final read. The docs' limit sentence first named only the hold-check form ("…and
+         so can its reason where the field read as having taken exactly as many characters as were typed, in place of
+         any selection"); that review widened it, in all four copies byte for byte, to: "When it fails, how long it
+         took can depend on the text typed, a `{{secret:…}}` included, and so can its reason." #423 tracks both forms,
+         and the timing. A test pins the second form
+         (`testAToggleTimedFromTheRequestCanGiveTwoSecretsDifferentReasons`: posts at 10 ms each, the field unmasked at
+         1000 ms of the request's clock; a 2-character secret answers `lengthMismatch`, a 12-character one
+         `noLongerSecure`), so SecureTypeReadbackTests has 58.
+       - **Tests.** SecureTypeReadbackTests has 57. New: a field shown as text mid-poll whose final batch fails only its
+         subrole answers `fieldUnreadable` with the warning, a role of AXSecureTextField with a failed subrole is still
+         secure, and poll batches with a failed subrole still go on; and the collapsing fixture with every focus check a
+         failing 100 ms one and a toggle at 925 ms, where both secrets answer `noLongerSecure` with the warning (the
+         8-character one answered `lengthMismatch` before). Each failed before its fix, and the two mutants (the final
+         batch presuming secure, the focus read after it) each fail a test. Moved: every concealed failure ends on a
+         focus read and then the final batch, a closed one included (one focus read more after a closed batch, its
+         `pollMs` 50 ms, not 10, for a 40 ms focus read); the property run's failure check reads the reason from those
+         two. The property runs are unchanged: seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47
+         overrun cases; seed 0x414F218, 2000 cases, 4000 runs, 1332 genuine and 2668 controls.
+     - **What differs between concealed failures.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Under wave 10 a concealed held match whose focus
+       check is moved, unknown or late polls on, the next hold checking again, and its failure's reason comes from the
+       final batch and the focus read after it. A held match whose focus read fails goes on as a tainted one.
+       Since C is absolute, the time of that focus read displaces the polls it overlaps (8 of them for a 40 ms read)
+       rather than extending the poll; then come the final focus read at C and the wait for D, as for every failure.
+       Its AX trace is a lost match's with the focus read at the match in and the displaced polls out. That traffic
+       reaches only the target app, which holds the secret already; the caller sees the same reason, content and time.
+     - **An unavailable caret is no overshoot** (same review, P2). A range whose location is past `readbackLengthLimit`
+       (an app's `{NSNotFound, 0}`) is never evidence of a read past the text, on either basis: it is judged as any
+       read, and the poll goes on.
+     - **The schedule.** The window has a fixed length and starts only on a match, so in a given field the reads, their
+       order and their timing stay the same whatever the secret's length or content (item 9). It applies to every
+       password-field confirmation, a literal request's checkpoints included.
+     - **The residuals.** An app that stalls longer than 220 ms between consuming its last two keys can still show a
+       matching in-between reply for the whole window; AppKit's max gap of 448.5 ms shows such stalls exist. No
+       read-back sees a change made after it returns, the same limit the plain path has for a value changed after its
+       confirmation. An AX call that overruns its own messaging timeout can still bring a concealed failure's reply past
+       D; it is sent at once, flagged `lateReply` when more than the tolerance late (superseded by wave 9: no D and no
+       flag; a failure answers when it is known). A focus read can still end
+       unknown on the live paths: its one AXFocusedUIElement or AXFocused call timing out or answering
+       `cannotComplete`; a walk-found field's walk running past 40 ms or 200 nodes, reaching depth 12 with children
+       left, or meeting a failed read; a read before it overrunning so far that its own budget runs out too. Each
+       then answers the final batch's reason, never `fieldChanged`, and never confirms. Live reply times (20–80 ms
+       past D on every lane on 45172367, with no consistent direction by length) are informational; the stub's
+       property is the contract.
+     - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 220 ms and about 44 batches
+       more. A literal failure ends sooner on a change or an overshoot. Every concealed failure into a password field
+       takes about 1.1 s (the budget and the focus read's cap), a refusal included; its success does not wait. (Wave 9:
+       a concealed failure that is not closed polls to the last batch with T left and makes one focus read; a closed
+       reply or a refusal answers at once.)
+     - **Tests** (SecureTypeReadbackTests). `StubPasswordApp`'s drains-late mode (`extraFirst`, `lateUnits`) reproduces
+       the fixture: the "z" goes in before the first unit, the last `lateUnits` units are held, and they land when the
+       second batch after typing is answered.
+       - The defect, on three bases (a count over a selection, a count at a caret, the caret alone), plain and
+         concealed: it confirmed before the fix. Now it is unconfirmed with no confirmation and no note, a literal
+         request at the read that left the match, a concealed one at the deadline.
+       - The control, a field that takes only its last key late, confirms after the window on both bases.
+       - A change at each of the window's 44 reads, the last included, is caught, and one after it is not, so the
+         window spans at least 220 ms. A literal request ends at the change; a concealed one polls the budget, and a
+         change that comes back still never confirms. A closed reply in the window ends either kind's reads at once (a
+         concealed request answers at the deadline); a failed count ends a literal request's.
+       - A match at 730 ms confirms at the last batch (950 ms); one 5 ms later, or at the last batch, is unconfirmed,
+         plain and concealed.
+       - Overshoot ends a literal request's poll at the read past the text, by caret on both bases and by count from
+         nothing selected; concealed, the same fields poll the budget, and over a selection such a count polls it too.
+       - The concealed pins fail alike, with the same reads, number of reads, time, reason, message and record: a
+         field that ignores a secret in place, one that collapses its selection to its end, and one that jumps its
+         caret to its text's end, each with the secret shorter and longer than what it moves over; and a field ("zz"
+         put in first, the last two keys late) where "pass" makes a match come and go and "p" makes none. The last two
+         fields' pins, and the transient-match pin, failed before their gates. The collapsing field's schedule is not
+         independent of the secret: a secret exactly as long as the selection reads as a real replacement and confirms
+         (item 10's limit), and the test asserts it.
+       - From the review of f35a42b8..cbce12e2 (each failed before its fix): the reviewer's field, which takes the whole
+         text, cuts it to four units 10 ms later and moves its focus, answers `fieldChanged` at the same time for a
+         short and a long secret (then the budget, now the deadline); a concealed closed read mid-poll and a concealed
+         focus failure after a held match each end there, while a literal request's still end at once; an off-grid
+         match (its read ending 1 ms past the last that holds) and a late last wake are each unconfirmed, plain and
+         concealed; and an `NSNotFound` caret beside the right count,
+         then a right reply, confirms a literal request on both bases.
+       - From the review of cbce12e2..1f69470e (each failed before its fix), with a focus read that takes 40 ms:
+         every concealed failure kind (a held match then a moved focus, a lost match, a closed read, a failed count,
+         and the refusals `lengthUnreadable`, `selectionUnreadable`, `fieldUnreadable` and a settle's `noLongerSecure`)
+         answers at 1100 ms, with nothing read after a refusal or a closed read; TypeReadbackMarkerTests' held field's
+         `roleUnreadable` does too. Every sleep woken early (at most 30 ms each) still waits to the deadline. A
+         concealed success still ends at the window plus its focus read. A mutant that waits with one sleep fails the
+         early-wake test. Wave 6 restated three of these: the held match's trace is a lost match's with the focus read
+         at the match in and the 8 polls it displaced out; a focus read slower than the cap now fails at its bound, at
+         the deadline, `fieldChanged`; and the confirming read past the cutoff starts at 950 ms and returns at 1001 ms.
+       - From the review of 1f69470e..f217f062 (each failed before its fix): one test per finding,
+         `testAFocusReadAtAMatchDoesNotMoveTheCutoff` (i), `testATransientFocusFailureDoesNotChooseTheReason` (ii),
+         `testASlowLastBatchCannotPushTheReplyPastTheDeadline` (iii), and
+         `testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary` (iv), which passes on the old code too, because
+         the stub spends no time between the old origins; `testTheDeadlineCountsFromTheLastPost` (posts costing 3 ms,
+         pauses after them of 0, 17 and 60 ms: a failure at the last post + 1100 ms, no batch past + 950 ms; it fails
+         with B taken at `finish()`'s start); and `testAReplyAfterTheDeadlineIsFlaggedLate`. The property test,
+         `testConcealedTimingAndReasonsHoldOverRandomCases`, seeded (0x414F217) and deterministic over 2000 cases,
+         draws a field's behaviour (no match, a held match, a match that comes and goes, a focus lost and regained or
+         lost, a read that closes), a secret's length, a selection, every read's cost within the timeout the engine
+         set on it (with forced overruns in about 1 case in 40), and each post's and pause's cost. Every failure
+         answers at the last post + 1100 ms, or later only with `lateReply` and only after an overrun; its reason is
+         the rule applied to the stub's own final batch and final focus read; every success held for the window, its
+         confirming read finished by C. A failure prints the seed and the case.
+       - Wave 7 (the review of f217f062..45172367; each failed before its fix, by the old code or a mutant):
+         `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes` (a check at the match failing near the end
+         leaves the final batch at 950 ms and the final focus read at 1000 ms; a match held only by the final batch
+         succeeds by the final focus read, at 1000 ms + its read; a match at 690 ms whose check would have run into the
+         final slot makes none, and a change at 930 ms is read by the final batch, where the old poll confirmed);
+         `testAFieldThatStoppedBeingSecureAnswersSoWhenTheFocusMovedToo` (3), with the rule's unit cases;
+         `testAPaddingThatWakesLateIsFlaggedLate` (5: an oversleep 15 ms past D is flagged, 5 ms is not);
+         `testAFocusReadThatCannotFinishIsUnknownNotMoved` (cut by its bound, or `cannotComplete`: an exact add answers
+         `lengthMismatch`, a genuine field never confirms, plain and concealed; another element is still
+         `fieldChanged`); `testTheFinalFocusReadKeepsItsBudgetAfterBatchesThatRanToTheCutoff` (the hosted runs'
+         regression: batches costing 30 ms to the cutoff and a final batch returning 50, 110 or 180 ms after its
+         slot, then a field that kept its focus: the final focus read is made and finds it, `lengthMismatch`, late
+         only past D; with 45172367's bound and floor the read was not made for the overruns; a match held only by
+         such a final batch confirms at 1000 ms; the stub answers a fresh, CFEqual handle for the field on every focus
+         read, as an app does); TypeReadbackMarkerTests'
+         `testAPasswordFieldsFocusCheckThatTimesOutIsUnknown` (the marker route's AXFocused and the walk's failed read,
+         plain and concealed); `testAConcealedFinalFocusReadAnswersAsTheLiteralCheckDoes` (the 78/150 against 0/75
+         reproduced: one field and timeline, an exact add and an exact drop, the last batch returning 110 or 180 ms after
+         950 ms; literal and concealed both answer `lengthMismatch` with the focus read made, where 45172367's bound,
+         floor and rule gave the concealed one `fieldChanged`); and services-sky's case that a `noLongerSecure` record
+         with `lateReply` still warns.
+         The property test now types two secrets of different lengths into one field timeline per case, its changes at
+         clock times after the last post (the focus away or back, the focus read failing or answering again, shown as
+         text or secure again, the count failing or back, a character added, a late key landing), every read's cost a
+         function of its time, overruns only on the final slots' reads, posting and pause costs per case. Both secrets
+         answer with the same outcome, reason, reply time and `lateReply`; every failure has its final batch at 950 ms,
+         nothing else in the slots, and the reason the timeline makes (the field at the final slot, its focus at the
+         cutoff, an unanswerable focus read unknown). Seed 0x414F217, 2000 cases.
+       - The schedule-identity test now also compares the uncollapsed number of reads and the poll's time, the
+         window's included, and a drains-late run joins ruling 826's leak test.
+       - Mutants: the count's overshoot unnarrowed fails the selection test; a window one read short fails the
+         end-of-window case; a concealed request ending on a change fails the transient-match pin.
+     - Exact schedules moved with the window: the read logs and batch counts after a match now carry the window's
+       batches (SecureTypeReadbackTests' reads-in-order, checkpoint and settle tests, TypeReadbackTests' secure-field
+       calls and settle sleeps, TypeReadbackMarkerTests' password route log). An extra character, typed concealed,
+       still polls the budget.
+  6. **The settle and the wait.** The settle after a recent press_key (ruling 754) and #359's wait for a stable range
+     after a pending click (ruling 785) both run for a password field, on its batch; the settle waits for two readings
+     that agree. A select_text range is never a password field's. select_text refuses one (#405), and ClickOrdering
+     keeps its range per process, not per field, so a `.selection` baseline that reaches a password field is another
+     field's, a username field's say, and an equal range there would have confirmed text typed into the wrong field
+     (the review of 517ab543..bdfbcfb2, P2). It is refused `selectionChanged` before any read, and nothing is typed:
+     #359's contract, that type_text right after select_text types only over select_text's own selection (the design
+     session approved, 2026-11-18). Before #414 such a type_text typed and answered `secure`; now it types nothing, and
+     agent-cursor.md says so. A select-all key then typing is the only way to replace a password.
+     - A field the lookup found to be a password field (item 1) is refused `selectionChanged` under a `.selection`
+       baseline as soon as the lookup's result is taken, before any read of the field, its role included (the review
+       of 81a1aebc..52f0109a, P1). Before, one shown as text was refused `noLongerSecure` first, and since every
+       refusal but `selectionChanged` still types, the text went into a field that cannot hold select_text's
+       selection. A `.stable` baseline is unchanged.
+     - The settle's failure rule takes a count past the limit as a failed read (item 4).
+  7. **Keys.** A Tab, or a Return in a single-line password field, of a plain request is posted only once the text
+     before it confirms by length (a checkpoint), and is counted `keysUnconfirmed`. A mismatch there stops the key and
+     what follows (`stoppedBeforeKey`). A concealed request makes no checkpoint (ruling 593): it is read back once, and
+     its key is a flag.
+  8. **What the reply carries.**
+     - Ruling 833 fixes what a success carries. The record holds {confirmed, snapshotMs, secure: true, confirmation:
+       "length"} and the request's own key fields: `concealed: true` and the `keysUnconfirmed` flag for a secret,
+       `checkpoints` and `keysUnconfirmed` counts for plain text. Never the reads, the poll time, lengths, or the
+       settle or wait record. A plain field's record is unchanged, and a confirmed record without `confirmation` is
+       the exact read-back of a value. `confirmation` and the note come only once a length read confirmed (the review
+       of 517ab543..bdfbcfb2, P2; approved). A plain request of only a Tab, or of a Return in a single-line field,
+       reads no length: it is confirmed with its key `keysUnconfirmed`, as a text field's is, and it claims no length.
+       agent-cursor.md's typing paragraph now says so too (the review of 81a1aebc..52f0109a, P3).
+     - The success's result `note`, which the service puts in the tool result's text (NOTED_METHODS), is fixed text,
+       the same for a secret (`readbackLengthNote`): "Typed into a password field, confirmed by its length only: the
+       field took exactly as many characters as were typed, in place of any selected text, so none was dropped or
+       added. A password field's characters are never read, so whether they are the right ones is not confirmed: a
+       keyboard layout, an input method or the page itself can change what goes in."
+     - A failure carries a reason alone: `lengthUnreadable`, `selectionUnreadable`, `lengthMismatch`, `caretMismatch`
+       or `noLongerSecure`, beside the shared `fieldUnreadable`, `fieldChanged` and `selectionChanged`. Its sentence
+       has no number, and says that a screenshot shows the field's masks while an observation shows only that it is a
+       password field. The exception is `noLongerSecure`: a field that stopped being a password field may now show its
+       text, so its sentence warns against a screenshot or getAXState() of a secret, rather than recommending them (the
+       review of 517ab543..bdfbcfb2, P1). `caretMismatch` says only that the caret is not right after the text,
+       because under ruling 839 no count was checked.
+     - A secret's failure reaches the model only as the wrapper's `secret_input_failed`, which withholds the engine's
+       sentence, so `noLongerSecure`'s warning never reached it and a screenshot could then show the secret (the
+       review of 81a1aebc..52f0109a, P1). When a type_text's error carries the read-back record's reason
+       `noLongerSecure` and something was typed, the wrapper adds one fixed sentence of its own (secret-input.mjs,
+       `secretMayShow`): "The password field may have stopped being one while the secret was typed, and may now show it: do
+       not take a screenshot of it or call getAXState(); put it right with setValue." It reads the reason alone and
+       compares it with that literal; nothing of the engine's text, nor the reason, is forwarded. The README's
+       secrets paragraph says the diagnostic warns. With a `userIntervened` whose app the user changed, the wrapper's
+       re-query sentence ("re-query its state (getAXState) before sending more actions") contradicted that warning,
+       and the intervention gate wants a fresh observation before a setValue. When the warning applies, one fixed
+       instruction replaces it: "the user changed the app; ask the user to hide or clear the password field before
+       re-querying the app's state, and before any setValue" (the review of f35a42b8..cbce12e2, P1).
+     - **A concealed request never answers `caretMismatch`**: its caret elsewhere is `lengthMismatch`, whose sentence
+       says the length or the caret is wrong (the same review, P1; the design session approved). Take a field that
+       ignores input, with a non-empty selection. Its count stays the snapshot's, which equals the expected count
+       exactly when the secret is as long as the selection, so the two reasons would have told the secret's length
+       against a selection the caller chose. Item 5's caret rule closed that oracle on success; this closes it on
+       failure. Both answers poll the whole budget, so their schedule was already the same. A plain request keeps the
+       two apart, since its caller knows its text.
+  9. **The same reads whatever the secret.** The schedule (attributes, elements, order, repeated polls collapsed) and
+     the record are the same for secrets of different lengths, for a secret as long as the selection, and for plain
+     and concealed text. That holds even under a lagging caret. With a leaving key, plain text checkpoints (item 7)
+     and a secret does not (ruling 593). A secret's failure also answers the same reason whatever its length (item 8).
+  10. **The known limit**: a count cannot tell a wrong character from a right one. A password field that takes the
+      right number of other characters confirms: a keyboard layout or an input method that is not the one assumed, or
+      a page that rewrites input. The note, agent-cursor.md's typing paragraph and the README say so. Also not
+      guarded:
+      - Chromium's 10,000 value cap (#350): a count shows no cut, so a password past the cut is the residual.
+      - A field that collapses a selection to its end without inserting is indistinguishable from one that took text
+        exactly as long as the selection: its count and caret are the expected ones, and they hold (the review of
+        f35a42b8..cbce12e2, P2).
+      - Firefox: #405's lane found the page, not the field, named as focused, so its password field answers
+        `notTextField` as before. This is a documented limit, not worked around.
+  11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
+      (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
+      paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
+  12. **Proof**: SecureTypeReadbackTests (58) run the live reads over a stub app whose password field holds plaintext,
+      answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
+      - confirmations, plain, concealed and by the caret alone;
+      - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its
+        selection as long as the secret, and not), one shown as text mid-poll, a count that fails, no range, the caret
+        alone off by one;
+      - a checkpoint;
+      - an app whose extra character makes a read between its last two keys match (item 5's amendment).
+      The posting's own times (`startedAt`, `endedAt`, real Unix milliseconds) are checked to be times and fixed before
+      the scan, so a timestamp that holds a distinctive number's digits by chance cannot fail it.
+      Across them, none of the count, caret location or selection length, nor anything typing makes of them, reaches
+      the reply's JSON, the meta, the record (wire and printed struct), the note, an error sentence or the stderr
+      captured over the runs, in any form (decimal, grouped, hex either case, its LE bytes, base64). Positive
+      controls (the reply, an error sentence, the record, stderr, the bytes' base64) show that each would be caught.
+      Also tested:
+      - the reads in order, the count units, the range rules, the ruling-839 branch and its failed-versus-absent
+        split;
+      - a count or range of the wrong type, a field that changes mid-poll, the settle and the wait;
+      - checkpoints, a password text area's Return, the schedule identity and the classification matrix;
+      - from the review's fixes: a concealed field that ignores input answers alike whatever the secret's length; a
+        select_text baseline at a password field types nothing and reads no batch; a failed count is never settled
+        away; the settle reads until two reads agree; `NSNotFound` locations and an `Int.max` count are unreadable
+        without a trap; a float count is a failed read; keys alone claim no length; and a password field that the
+        marker route or the walk found, then shown as text, is read no further.
+      - from the second review's (81a1aebc..52f0109a): a select_text baseline at a field the marker route found to be
+        a password field, shown as text or not, is `selectionChanged` with nothing typed and nothing read of the field
+        after the route's own reads, while a `.stable` one is still `noLongerSecure` and types; such a field whose
+        role read then fails keeps a password field's record; a count of `Int.max` or just past `Int32.max` is refused
+        at the snapshot, one read after typing is `lengthUnreadable` at the budget, and an `Int.max` snapshot count
+        that the settle then reads as absent is `lengthUnreadable` before the settle (the first two are new tests in
+        TypeReadbackMarkerTests, the count cases extend SecureTypeReadbackTests' test of a count no field has); and
+        services-sky's wrapper test adds the shown-secret sentence for
+        `noLongerSecure` alone, and only once something was typed, with nothing of the engine's text or the reason;
+        with a changed app it also has the hide-or-clear instruction in place of the re-query one, and the re-query
+        one stays where no warning applies (the review of f35a42b8..cbce12e2, P1).
+      TypeReadbackTests' secure tests are rewritten to confirm by length. TypeReadbackMarkerTests now has #395's
+      password fields confirming by length, plain and concealed, with nothing but the batch read; its leak test's
+      password run now confirms. The service test carries cua/typeReadback's strength and the note in the tool
+      result's text, and a plain confirmation emits none. Mutation testing ran each guard removed or weakened in turn against
+      the three read-back suites: 40 mutants of the first range, then 14 of the review's fixes. Of the 40, 38 failed a
+      test. The two survivors were the settle reading on past a failed count, now tested (item 4), and the password
+      path's check, after the wait, that its range was still select_text's, a check item 6 removed. Of the 14, 13
+      failed, two of them by the overflow trap that item 4's test provokes once its bound is gone. The survivor, a held
+      field's `noLongerSecure` refusal recorded as a plain field's, is now asserted by the marker route's test. The hosted qualification of the six
+      lanes (probe/414-qual) is the design session's.
+  Date/Author: 2026-11-18, cursor235's implementer for #414 (rulings 1ea561bc:826, 833 and 839; ruling 842's quiet
+  window by its fix wave).
+- Decision (#361, 2026-11-18, `fix/361-paste-readback`; amends "#354", whose read-back covered the keyed route alone,
+  and adds to "#187" a read-back after its delivery): **type_text's paste route keeps #187's delivery exactly, and
+  answers success only once the focused field reads, exactly, what it held before with its selection replaced by the
+  text, by #354's own machinery.** Under an input method, or a background app whose per-app source is unknown, the
+  text was pasted and answered success on #187's effect check, any change in the field's range or count, so an
+  ordering race, a page that rewrote the text or a stale selection could answer success.
+  1. **Delivery is #187's, unchanged.** Each line's effect wait, the Return's settle between lines, the pasteboard's
+     snapshot, its holding and its restore, the change-count take and conflict checks, the read wait, and their errors
+     (`clipboardReadTimedOut`, `pasteUnconfirmed`, the Return's sentence, `typedPasteError`'s count clause) are main's.
+     The effect wait's second role is why: a hand-over names no reader (a clipboard manager's read at ⌘V is one), so
+     only the target's own effect shows its ⌘V was handled, and until then the line's item must stay on the
+     pasteboard. The first build replaced the effect wait with the read-back and restored at the read; the hosted run
+     44429799569 (phase 2, probe/361-qual) found Chrome for Testing handling a later line's ⌘V after that restore,
+     pasting the person's clipboard in 108 of 116 multi-line and newline rows, into the field and into the
+     `valueMismatch` excerpt (the review of a1221804..9bfb0b50, P1, saw the same by reading). A stub test has a target
+     that handles each ⌘V late, after a clipboard manager's read: with #187's pacing the field gets the engine's text;
+     with the effect wait skipped (the mutation run) it gets the person's.
+  2. **The read-back decides success.** `typeTextByPaste` runs `TypeReadback` over `pasteReadbackUnits`: each pasted
+     line a unit with no key, so never a checkpoint (a Tab inside a line is pasted text), each newline a Return unit
+     (CR LF one "\n", counting its two units in `entered`), one for one with the paste's parts and taken from the text
+     itself, never decoded back from the pasteboard's bytes, which would drop a leading U+FEFF as a byte order mark and
+     let a target that dropped it confirm (the review of main..7897cdeb, P2). The snapshot, the
+     expected value, the equality poll, truncation and an unreadable field answering unconfirmed, the ending
+     Return's placeholder line, the settle after a recent press_key and #359's waits are the keyed route's code. The
+     request is always literal: a concealed request never reaches the paste route (`textRoute`, tested for every
+     combination). A field the snapshot cannot read (Firefox's in the phase-2 run: `rangeUnreadable` 632 of 800) is
+     delivered as main delivers it and answers `typeUnconfirmed` at the end, never success.
+  3. **The snapshot comes after the paste's activation and before the pasteboard.** The paste replaces what the field
+     holds at ⌘V, and the activation precedes ⌘V and can change it: its subtype 1 restores the window's first responder
+     and runs a page's focus handlers (one that selects on focus is a stub test), and its click at an in-window
+     activation point can land after an accessibility read (⌘V queues behind it; the snapshot does not), so when the
+     activation the paste goes out under clicked inside the window within `pendingClickWindowMs`, the snapshot first
+     waits for a stable range (`activationClickPending`, #359's `.stable`). Before the pasteboard, so #359's
+     `selectionChanged` refusal pastes nothing and never touches it. Cost: the snapshot's reads (and any stable wait,
+     at least 50 ms) sit between the activation and the first ⌘V, inside the screen-update hold its 100 ms timer caps.
+  4. **The final poll runs once the pasteboard is restored, while the activation still holds** (`PasteTyping.finish`,
+     inside the paste lock), from then, not from the last ⌘V: the app inserts a paste after it reads it. Not after the
+     activation's release: the probe on main 517ab543 found background Electron naming no focused element once the
+     activation ended in 100 of 100 trials and Safari in 58 of 100, and the poll's identity check asks for the focus
+     again. Polling under the activation was chosen over equality on the snapshot's handle alone, which would turn
+     Firefox's late focus (#419) into a mismatch showing another field's text and keep no guard on a field that lost
+     the focus. Cost: the lock and the activation's lease last until the text reads back (232 ms on every probed lane
+     but one Firefox trial, 763 ms; at most the 1 s budget). Every constant is the keyed route's.
+  5. **A Return's checkpoint, where no effect showed the text before it land.** In a multi-line field a Return is text,
+     read back like any character. In a single-line field (and Gecko's `AXApplicationGroup`) the keyed route checks the
+     text before the Return and withholds it on a mismatch; on this route the line's effect wait already ran, so the
+     checkpoint runs only where it saw no effect (a line with no channel, `noChannel`): there a mismatch withholds the
+     Return and the rest (`stoppedBeforeKey`), with no excerpt (item 6).
+     Where the effect was seen the Return goes as on main, and #187's settle judges it: a single-line browser field
+     whose Return changes nothing stops as main does (`pasteUnconfirmed`, the Return's sentence); AppKit's, whose
+     Return selects the field so the second line replaces the first (main's 40 of 40 wrong successes), now answers
+     `typeUnconfirmed`. A field the snapshot cannot read gets no checkpoint, and its Return goes, as the keyed route's
+     does (`beforeUnit` returns at once when the plan expects nothing; the review's P2: the coordinator tickets both
+     routes).
+  6. **No excerpt and no lengths on this route, ever** (the review of main..7897cdeb, P1). Neither the read wait nor
+     the effect wait proves the target took its ⌘V before the restore: a clipboard manager can make the read, and an
+     unrelated change in the field can satisfy the effect wait, so a queued ⌘V can paste the person's clipboard after
+     the restore, into the field the final poll reads. A mismatch, a checkpoint's or the final poll's, answers
+     `typeUnconfirmed` with its reason alone (`valueMismatch`), and the record carries no lengths; the docs tell the
+     agent to observe the field. A stub test has exactly that: a delayed ⌘V after an unrelated effect, the person's
+     clipboard in the field, and nothing of it in the reply. Main never disclosed field text on this path either.
+  7. **The request's deadline** (the review's P3). Every poll's budget is the lesser of `typeReadbackBudgetMs` and the
+     request's time left (`TypeReadback`'s `remainingMs`, the paste route's), so a checkpoint, a password field's
+     220 ms hold included, ends by it, and no part goes out past it (`pasteDeadlineReached`, `timeoutReached` with
+     "Entered before it: n of m characters."); #187's waits already end at it.
+  8. **A password field takes #414's length rule.** The field takes the plain text whole, so the expected count is the
+     start's less the selection plus the text's UTF-16 units, the caret right after it, confirmed only on a hold
+     between two sampled length reads at least the quiet window apart inside the budget (#414's wave 9, ruling
+     1ea561bc:851), through the length batch alone; #405's count judgement still paces the delivery. Nothing reads the
+     field's characters. The success carries `readbackLengthNote`.
+  9. **The reply.** The same `typeReadback` record as the keyed route, on the result and every error once the field was
+     snapshotted; the route is the meta's existing `inputRoute: "paste"`. `meta.paste` and `entered` are #187's. The
+     docs' paste sentence (and its oracle, the docs test and the surface inventory's Table 3 amendment of 2026-11-18,
+     byte-identical) says the paste route is read back the same way and that a Tab there is pasted as text, so the
+     paragraph's pressed-Tab sentences hold for typed keys only (the review's P3). The cursor-sitting judge
+     (`item-187.mjs` `perLineProblem`) requires of a typeText row that carries `typeReadback` both its per-line delivery
+     evidence and `confirmed`, and judges older rows and the paste method by the per-line rule alone (the reviews of
+     a1221804..9bfb0b50 and main..7897cdeb, P2). The paste sentence also says that a Return between lines goes once the
+     field shows any change, before the text before it is read back, so on this route a form it submits is not
+     protected by the exact read-back as the keyed route's checkpoint protects it (the review of main..7897cdeb, P2).
+  **What the hosted runs measured.** The probe on main 517ab543 (five lanes: Safari 27.2, Chrome for Testing 156/157,
+  Firefox 160, Electron 44, an AppKit fixture; Korean 2-Set, Japanese Romaji and Kana, Pinyin, all on the paste route):
+  #187's check answered success on 599 of 599 realized controls (a rewritten character, an added one, a stale
+  selection) and on AppKit's 40 of 40 two-line single-line pastes; every plain cell delivered exactly; the clipboard was
+  restored 2000 of 2000; the expected value read back within 232 ms of the last post but one Firefox trial (763 ms) and
+  never under a control (0 of 150). Phase 2 on 9bfb0b50 (run 44429799569): Safari, Electron and AppKit passed every
+  gate (560 of 560 and 480 of 480 exact pastes confirmed, every control unconfirmed, no wrong success, the clipboard
+  restored on every row); Chrome leaked the clipboard (item 1); Firefox confirmed nothing (632 `rangeUnreadable`, 168
+  `fieldChanged`, #419's focus settling only at the first ⌘V) and its multi-line delivery fell to 59 and 71 of 80, the
+  checkpoint stopping at lines it could not read, which items 2 and 5 now deliver as main. The qualification of
+  7897cdeb against main 645202db (runs 44442976031 and 44451662130; `docs/evidence/2026-11-18-paste-readback/`):
+  Safari, Chrome for Testing, Electron and AppKit passed every gate (480 of 480 exact pastes confirmed each, 240 of 240
+  controls unconfirmed, no wrong success against main's 240 to 320 a lane, the clipboard restored 800 of 800, its
+  content in no field and no answer, delivery as main's); Firefox delivered as main (multi-line 80 of 80) and never
+  answered a false success, but confirmed none of 480 exact pastes (`rangeUnreadable` 291, `fieldChanged` 189).
+  **Residuals:** background Firefox confirms no paste (#427: the snapshot reads before Firefox's focus settles at the
+  first ⌘V; the docs tell the agent to observe the field); a Tab or a single-line Return goes after text the read-back
+  cannot read, on both routes (#426); the request's deadline is checked too early in the paste loop and too late in the
+  poll, shared with main (tech-debt-tracker.md, 2026-11-18); no contenteditable field and no pasted password field was
+  measured live.
+  Proven offline: PasteReadbackTests drives the engine's own path (the paste lock, route 3's activation on GuardSeam, a
+  test pasteboard, ⌘V and Return through the seam, #187's effect watch reading a fake field through the engine's new
+  `pasteEffectReading` seam): exact pastes confirm; rewritten, added and stale-selection pastes answer
+  `typeUnconfirmed` with no excerpt or lengths; a leading U+FEFF is expected by the read-back, while #187's delivered
+  count stays main's; a late target whose own paste the effect wait sees never pastes the person's clipboard, and where
+  an unrelated effect satisfies the wait first, the clipboard can land in the field but never in the reply; the checkpoint and the deadline; the snapshot point; the final poll before the
+  deactivation; a password field confirmed by its length with nothing but the length batch read; the clipboard restored
+  on every path. PasteTests keeps #187's tests as on main.
+  Date/Author: 2026-11-18, cursor235's implementer for #361.
+- Decision (#398, 2026-11-18, `fix/398-placeholder-identity`; spawned by #366, whose ruling 1ea561bc:772 handled the
+  complete mode's placeholder with the observation's wait, the same-handle refresh and `valueUnconfirmed`, and left the
+  fragility): **the placeholder leaves the strict comparison for the stored handle alone** (cua's departure from the
+  vendor's eleven-attribute match, F §3.6). A page changes a placeholder on focus, with input, with a mode or filter and
+  when Chromium's complete mode arrives. So any focus-then-act sequence re-checked the field against a stale
+  placeholder: set_value could write and then answer `valueUnconfirmed`, and a click on a field whose placeholder had
+  changed answered `elementNoLongerValid` after an invalidation.
+  1. **The same handle.** `Lineage.resolve`'s re-read of the stored handle matches on everything but the placeholder
+     (`matches(ignoringPlaceholder:)`). This holds in every refetch mode, set_value's post-write re-check included, and
+     covers focus-clear, rotation, input-switch and #366's re-fetch. A match that holds only because the placeholder is
+     left out renews nothing: the stored entry stays exactly as observed, and the action alone gets what the handle
+     reads now (its identity and actions). A strict match renews as on main.
+  2. **Everything beyond the same handle is main's.** That covers the observed count ("couldn't be started"), the walk
+     ("no longer valid", "couldn't be finished") and `keepRecreated`. They match strictly, placeholder included, against
+     the observation's identity. Once the handle is gone, the placeholder is evidence of which field this was, so a
+     stale handle whose field's placeholder changed answers `elementNoLongerValid`, and the agent observes again.
+  The first build (46309856) also relaxed the placeholder in the walk, as a tie-break among candidates alike in
+  everything else. The review of main..46309856 (doperpowers:reviewer-high) found it incorrect, and reproduced four
+  resolutions to another handle on fake trees, each of which main refused:
+  - A step with one unlabeled "Email" field advanced to one with an unlabeled "Phone" field. The Email token resolved to
+    Phone: one candidate alone was adopted.
+  - The observed count was taken without the placeholder. Under set_value's unread value, a sibling with another
+    placeholder was adopted.
+  - `.ifNeeded`'s placeholder refresh rewrote the revision the observed count reads. A twin's token then resolved to the
+    refreshed field.
+  - A replacement the walk adopted kept the old placeholder as its hint.
+  All four are tests now, each refused as on main. The refresh, the tie-break and the observed-alone rule are gone.
+  The second build (8ed0e07a) renewed the entry on a placeholder-only match while keeping the observation's
+  placeholder. The review of main..8ed0e07a (doperpowers:reviewer-medium) found that set_value's renewal stored an
+  identity with its value unread. After that handle went, a click on the old token walked without the value, and
+  adopted a sibling that showed the old placeholder and another value; main refuses that. A placeholder-only match
+  now renews nothing, and the sequence is a test that refuses.
+  Left as main's, with the reason:
+  - The tree diff (`diff.mjs`) compares rendered lines, so a changed placeholder still shows as a changed element.
+  - Token inheritance (`matchSiblings`) goes by handle.
+  - type_text's read-back, the stale-point check and the marker route compare handles (`CFEqual`), never identity.
+  - A text field's value still counts outside `.ignoringValue` and #390's unread value, as the vendor's rule has it. So
+    a click on a field's token after type_text changed its value, under an invalidation, is no longer valid. That is
+    not the placeholder's doing.
+  Proven offline (`PlaceholderIdentityTests`): on the same handle, click then set_value, type_text after a click and the
+  post-write re-check, each over a changed placeholder, answer neither `elementNoLongerValid` nor `valueUnconfirmed`. A
+  field that differs in its label or its identifier is still rejected. Mutations that remove the same-handle rule, or
+  renew the entry on a placeholder-only match, each fail tests. #366's
+  `testAnAcceptedWriteWhoseReFetchFailsIsValueUnconfirmed` now changes the field's label to make the re-fetch fail; its
+  passing half carries run 44068144650's placeholder. Not measured live: how often a placeholder alone separates two
+  fields on real pages (#398's measurement, run separately). The rule needs no such number, since a gone handle is
+  matched strictly whatever it finds.
+  Date/Author: 2026-11-18, cursor235's implementer for #398.
+- Decision (#431, design rulings 1ea561bc:880, 881, 884/885 and 889, 2026-11-19, `fix/431-recreated-identity`, plugin
+  0.28.19; amends #296's re-created match and #305's re-created identity of a hit, StalePoint.swift `recreatedRefused`):
+  **a handle found in place of a gone node by role, a 2 pt frame and an agreeing label is refused where the record could
+  not tell it from another element.** #340's phase 1 (run 44507959686, cell `twin`) measured the gap: link A removed, a
+  same-label link B with another destination slid into its frame, and main kept the click and landed on B, 10/10 on CfT,
+  Safari and Electron, with the record at the text and at the link.
+  The first build (3ece1a1a) proved the candidate new instead: absent from the record, under a complete recorded
+  ancestor, under no recorded control but the node's own. CfT and Electron then refused `twin`, `twincap` and `twindeep`,
+  but Safari kept all three at both points as `sameElement/recreated` and landed on B (hosted smoke, run 44520748737):
+  the kit moves B in the DOM, and WebKit gives a moved element new accessibility handles in A's own, completely recorded
+  row, which is structurally what a re-creation is. So no proof of novelty from the tree holds, and ruling 889 replaced
+  it with refusals read from the record. A re-created candidate, on #296's path and on #305's, is refused when:
+  1. **The region was not recorded whole** (`ScreenshotNode.regionCovered`). The region is the node's nearest web area
+     (else the record's root), taken from the node's own ancestors at the observation, so a container re-created since
+     cannot move the judgement to a complete ancestor. Whole means every element of its recorded subtree read its
+     AXChildren and has each child those listed in the record by handle (`screenshotNodes`' `key`), by count only where
+     the handles are unknown. Membership, because past 100 children the width rule records AXVisibleChildren, which can
+     hold others than AXChildren lists (the review of main..3ece1a1a, finding 5), and because Chromium lists a table's
+     cell under its row and its column while the walk records it once (the review of main..849bcdad, finding 9). A twin
+     past the node cap (`twincap`), below the depth cap (`twindeep`), outside the visible subset or under a failed
+     children read is refused on coverage alone. #330's lookup (`screenshotChildrenRecorded`) keeps main's count, so its
+     verdicts are main's (849bcdad's finding 4).
+  2. **Its control is unknown**: an ancestor's role or action names failed to read at the observation (carried as
+     `ScreenshotNodeRead.roleRead` and `actionsRead`, from `ElementData.unreadable` and `ElementSource.actionsFailed`),
+     so the record cannot say what the node's control was; neither is taken for inert (3ece1a1a's finding 4, 849bcdad's
+     finding 6).
+  3. **The node's own handle still lives** (its role read is not kAXErrorInvalidUIElement; only its frame read failed),
+     or the record holds the candidate as another node (849bcdad's findings 3 and 8).
+  4. **The record holds a twin** (`recreatedTwin`): another element the match could have taken for the node, of its role
+     or of a role unread then, in its region, whose recorded label agrees by the match's own rule
+     (`recreatedLabelsAgree`: never past a label read that failed on either side, 849bcdad's finding 5). Only the node's
+     own control and that control's inert content are exempt; a link, a button, anything with AXPress or whose role or
+     actions did not read, under the same control, is its own action and counts (849bcdad's finding 1). The label is
+     used only to refuse. In `twin` B and its text are recorded with A's label, so it refuses whatever handles B answers
+     now.
+  5. **The candidate's nearest web area is not the node's** (849bcdad's finding 7: an iframe's document over its place).
+     A web area node itself is left to #316's and #330's rules.
+  6. **The candidate's nearest control is not the node's** (849bcdad's finding 2, and 3ece1a1a's finding 1): where the
+     record had none, it has one; while the node's control lives, it is another element; once that control is gone, it
+     is none, an element the record holds, or of another role than the recorded control's (`ScreenshotNode.controlRole`;
+     a link's text under a button, a clickable row's under a link, `twinbtn`). A parent, role or action-name read that
+     fails on the way up refuses.
+  Findings 3 and 6 of the review of main..3ece1a1a are moot: they tightened the candidate-chain walk of the novelty
+  proof, which is gone; coverage is judged on the node's side. Its finding 2 is applied: #305's re-created identity, and
+  the element route's press verdict through it, take the same refusals.
+  Kept as before: position, role and label agreement, #298's edited-text exemption, #330's rule dL and every node found
+  by its own handle. The cost, accepted by ruling 889: a genuine re-creation now refuses (`nodeGone`) wherever the walk did
+  not record the page whole (a large page cut by the cap, the deadline or the width rule; `capremount`, `wideremount`),
+  and wherever the page holds another element of the node's role with an agreeing label (a list of "Reply" links, and
+  links or buttons with no label at all). #296's truncated-container case now refuses with its title unchanged too.
+  Proven offline (`RecreatedIdentityTests`, and the walk's record in `NewElementGuardTests`): `twin` refuses at the text
+  and at the link with B on its own handles and on new ones, as do pressable rows and `twinrow`; `twincap`, `twindeep`, a
+  twin under a failed children read and one outside the visible subset refuse on coverage, while a table's doubly listed
+  cell does not count against it; `plain`, `like` and `remount` stay kept in a whole record with no twin; `capremount`
+  and a gap anywhere in the page refuse, a gap in the browser's toolbar does not; the label rule's edges; a sibling link
+  under a shared clickable group is a twin, the node's own control is not; a control unknown by its actions or its role,
+  a living control elsewhere, a new button inside a surviving row, a plain text now in a button, a gone control's text
+  with no control or inside a recorded link or under another role, a living own handle, a candidate recorded as another
+  node, and another document's candidate all refuse; #305's path and the press verdict refuse as #296's does; #330 keeps
+  main's verdict over a visible subset. The last mutation pass, 34 mutations over every refusal, its exemptions, the
+  label rule, coverage's membership and carrying, the region, the record's classifications, #330's input and the walk's
+  three new fields, is caught by these tests, every one.
+  The review of 849bcdad..38a55469 added three things. The record's membership of a candidate, and of a replacement
+  control, reads the screenshot's whole handle map, framed and frameless, on #296's path and #305's (a link recorded
+  without a frame gains one at the node's place). The observation reads action names as the click does
+  (`decodedActionNames`: kAXErrorNoValue is none, not unread), so a text with no actions stays inert content of its
+  link, as on main. And a re-created match the record refuses is judged on as main judges it: a rule that refuses it
+  keeps its reason (#330's `newElementOverPoint` first), and a verdict that would keep it becomes `nodeGone`, so a
+  refused match never carries a pointer.
+  Not measured live: `twin`, `twincap`, `twindeep` and `twinbtn` on Safari with this build, and how often real pages lose
+  a re-created click to coverage or to a same-label element.
+  #435 (2026-11-19, plugin 0.28.20) widens refusal 4 to twins recorded without a frame. The walk reads a frameless
+  element's role, labels and action names as it reads any other's, so the record keeps each one (`screenshotRecord`'s
+  `frameless`, beside the framed nodes) with its web area and control derived as a framed node's, a null frame and
+  nothing shown, so it is never chosen at a point or matched in place. The twin search reads them under the same filter,
+  on #296's path, #305's and the press verdict's: a twin recorded frameless that gains a frame at A's place refuses at
+  the text and at the link, on its own handles or on new ones; one of another role or label, or frameless inert content
+  of the node's own control, does not (`RecreatedIdentityTests`; a mutation pass over the changed lines caught 9 of 11,
+  the two left only carrying the record on verdicts nothing reads again). The review of 66ae2e8d found the search took
+  the node's value's words again for every peer compared, before delivery (3,000 frameless peers cost about 160 ms for a
+  1,000-unit text, 1.56 s for a 10,000-unit one), so the search (`recreatedTwinFound`) takes them once, on first use;
+  its verdicts are the per-peer rule's (`testTheTwinSearchJudgesAsThePerPeerRule`, `testTheTwinSearchTakesTheNodesWordsOnce`).
+  Not measured live: a frameless twin on a real page.
+  Date/Author: 2026-11-19, cursor235's implementer for #431.
+- Decision (#433, 2026-11-20, `fix/433-overlay-target`, plugin 0.28.21; amends #296's verdict, StalePoint.swift
+  `underlyingTarget` and `underlyingRefusal`): **a point kept at an inert overlay is judged again at the recorded control
+  beneath it.** #431's qualification (cell `twincover`, run 44611947576) found the gap: a transparent overlay lies over
+  link A, the record holds the overlay at the point, A is removed and a same-label link B slides into its place. The
+  overlay lives on its own handle, so the guard answered `sameElement`, and the click passed through to B (Electron,
+  main and #431's fix alike). Safari's hit answered B, which #431 already refuses; CfT's record held another node there.
+  The rule runs only when the verdict on the node keeps the point and three things hold: the node does not act on its
+  own (no interactive role and no AXPress; where its role or actions did not read at the observation, its handle as
+  found now is read again, and one that acts now is its own target); no ancestor of it in the record, framed or
+  frameless, below its document (web area or iframe, window, sheet or application) acts on its own
+  (`ScreenshotNode.controlAbove`, carried past wrappers whose actions did not read, so an outer card never owns an
+  iframe's overlay); and the hit names no interactive element (the overlay itself, its inert content, nothing). That
+  is the inert overlay; content of a control (a link's text, a decoration in a button) keeps main's verdict whatever it
+  rests on. The guard then takes every recorded node at the point that acts on its own, or whose role or actions did
+  not read (unknown, not inert), and is neither the node nor one of its recorded ancestors, the innermost only, as the
+  browser's hit reaches the innermost control: a link inside a clickable card is the link. It keeps the point while any
+  of them is still there, and refuses, naming the first in `deepestScreenshotNode`'s order (deeper, then later in the
+  walk), only when none is. The first build judged only that first one: hosted batch B on 17942ad7 (run 44733158011,
+  `bgbutton`) put an unrelated button beside the link in one list, later in AXChildren, both under the veil and the
+  point, and removed it; the tie took the button, drawn below the link, and refused clicks main lands on the link
+  (Electron 20/20, Safari 10/10 at the text). Which sibling draws on top is not in the tree, so the check stays no worse
+  than main where several controls lie under the point.
+  Each control is judged as #296 judges a recorded node: on its own handle, its frame read now must hold the point and
+  its label's words must be unchanged (#298); a hit inside it keeps it while its frame does not read; otherwise a handle
+  re-created in place, searched among the descendants of its nearest recorded ancestor that survives (bounded as every
+  search here: a parent rebuilt in place, the overlay alive in a sibling branch), must pass #431's refusals, and a
+  control of unknown actions is never taken as re-created. A control confirmed gone with something unreadable in its
+  place refuses. Anything else refuses (`nodeGone`, `frameMoved`, `relabelled`) with a sentence of its own (design
+  ruling 905, condition 1): the point lies on an element that does not act on its own, over the control the screenshot
+  showed there, which a click passes through to; that control is gone or was replaced, moved away or reads another
+  label; aim again from a new screenshot, since the same point would reach whatever lies under the layer now. #305,
+  #330, #298's exemption and #431's and #435's refusals are unchanged. The meta's `stalePoint` carries `underlyingRole`
+  and `underlyingIdentity` (`handle` or `recreated`) whenever the check ran, the element route's press verdict included.
+  **The check vouches for the recorded control, not for stacking.** Which of two overlapping elements draws on top is not
+  in the tree, so three wrong clicks main also makes stay out of scope (the coordinator's ticket, design ruling 891's
+  stop rule): B sliding over a live, unchanged A, overlapping siblings ordered by tree order rather than by what draws on
+  top, and `decomove`, an inert decoration of A reparented into B once A is replaced, which keeps main's verdict as
+  content of a control. Two rounds that judged content of a control (its content walk, refused only on confirmed
+  departure) each turned up new refusals of clicks main keeps on link text, so that path was withdrawn rather than
+  patched again.
+  The cost: AX cannot tell an overlay that passes the click from one that eats it (design ruling 903), so a modal's scrim,
+  a sticky header or any inert layer over a control now refuses whenever that control changed, though the click would
+  have reached the layer. Over a live, unchanged control the verdict is main's. Under a layer, a re-rendered control
+  also takes #431's strict form (refused where the record is not whole or holds a same-label twin; an unlabelled inert
+  group over a clickable row is itself such a twin), and a control the page scrolled off the point under a fixed layer
+  refuses as moved.
+  Proven offline (`OverlayTargetTests`, 21 tests): `twincover` refuses with the overlay or a decorative image inside it
+  recorded at the point, B on its own handle or a new one, the hit on the overlay, its image or nothing, with the
+  sentence above, and inside an iframe under a clickable card; an unchanged A under the overlay, a window that only
+  moved, and a backdrop over a live link keep main's reasons; nothing interactive beneath, an interactive overlay (a
+  button, a group with AXPress) and an overlay of unknown actions that acts now change nothing, while one whose actions
+  still do not read, or that lies in a wrapper of unknown actions, is judged; content of a link or a clickable div
+  (re-created, drawn outside its frame, under an unknown wrapper, inside a frameless link, its parent or frame
+  unreadable, reparented into B) keeps main's verdict with a background button removed; A's frame unread, moved or
+  relabelled refuses with its reason; a control beneath of unknown actions is judged on its handle and never re-created;
+  a re-rendered A with no twin is kept as `recreated`, found from its recorded parent or, that parent rebuilt, from the
+  web area, and refused with a twin, past coverage or off the point; a gone A with an unreadable replacement refuses;
+  the deepest and later control is the target; the press verdict carries the check and its own refusal still names the
+  node. Three #431 tests that kept an inert overlay's own hit to reach the press verdict now refuse there, and reach the
+  press verdict with an overlay that acts on its own. Mutation passes over the new lines, the last of 11 over the
+  narrowed gate (the inert node, the acting ancestor and its document stop, the live re-read, the candidates), are
+  caught by these tests, every one.
+  The review of 17942ad7 narrowed the gate twice more: a hit that advertises AXPress (a clickable group, no listed role)
+  names a control for this gate, so it stands down there while main's classification of the hit (`nonInteractiveHit`)
+  is unchanged; and a node whose recorded actions included AXPress is never inert, though its role did not read
+  (`ScreenshotNode.pressRecorded`, beside #431's `actionable`, which stays nil for a role unread). Both tested, a
+  mutation pass of 3 caught.
+  Not measured live: `twincover` on CfT, Safari and Electron with this build, and how often real pages lose a click to a
+  changed control under an inert layer.
+  Date/Author: 2026-11-20, cursor235's implementer for #433.
+- Decision (#452 with #337, design ruling 928, 2026-11-20, `fix/452-same-app-overlay`, plugin 0.28.23; amends #296's guard,
+  StalePoint.swift `appWindowOverPoint` and `guardedPointVerdict`, and #282's refusal, Input.swift `WindowHit`):
+  **a coordinate click or drag start whose point lies on another window of the app's, over the observed one, is refused
+  before anything is posted, in every mode.** #337's kit (`probe/337-measure`, README fbe9e642; runs 44797144792 and
+  44799499336 on main d44a4fe1) found Chrome's omnibox popup is a layer-0 window of Chrome's own over the browser window,
+  holding the point in 19 of 19 rows, its rows absent from the tree. The engine posts to the process with the observed
+  window's id and window-local point (`stampWindow`), so Chrome delivered the click to the page under the popup: posted
+  and answered ok, the suggestion taken 0 of 12 (shared frontmost and dedicated), and refused 7 of 7 in shared mode with
+  Chrome behind by #282's sentence blaming the page, since `windowHit` turned the popup's hit into no hit.
+  The rule is the invariant, not a list of window kinds: the guard reads the window list it already reads for #316's
+  rule W (now whenever the click's window has a number, recorded list or not), and after W refuses when the app's
+  topmost window at the point is not the observed one. "Topmost at the point" is read among the app's own windows, at
+  the observed window's layer, that show something (alpha above 0), front to back down to the observed window. Other
+  apps' windows are skipped, since the events go to the process, not through the window server's hit-test, so they
+  neither take the click nor appear in the screenshot; that case stays as it was. The layer follows the screenshot:
+  ScreenCaptureKit's desktop-independent window captures the window with the child windows AppKit orders at its level
+  (the popup, a bubble, a popover), which are what the model aims at and what the stamped click goes under; a pop-up
+  menu (101) and a floating panel (3) are in neither, as W leaves them. Alpha 0 shows nothing. W stays first, so a
+  window new since the screenshot keeps W's sentence. The refusal is `appWindowOverPoint` (not
+  `screenChangedSinceScreenshot`: the screenshot may have shown the window), meta `stalePoint.reason`
+  `appWindowOverPoint` with `overWindow`, its sentence: "<App> has a window of its own over the one the screenshot
+  showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what
+  the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to
+  close it), or call getScreenshot for a new screenshot and click an element its tree holds." `windowHit` now answers a
+  hit in another window of the app's as its own outcome with that window's number (`hitWindow` in the meta); the action
+  still takes it as no hit, but #282's shared-mode refusal then answers with that sentence instead of the page's, for
+  the case the window list missed (no window number, or a window it skipped).
+  Limits, for the qualification to measure: the window list cannot tell a window that ignores mouse events (Chrome's
+  status bubble and hover cards, tooltips) from one that takes them, so a click under one at the observed window's
+  layer refuses though the click would land where the screenshot shows; a layer-0 window of the app's that is not a
+  child of the observed one (another document window in front, a non-floating panel) is not in the screenshot, yet
+  refuses too. A sheet is a window of its own in the list, so a coordinate click on a sheet refuses now (its controls
+  are in the tree). Wheel scrolls are stamped the same way and not guarded (out of scope). Re-aiming the post at the
+  overlay's window is #453.
+  Proven offline (`AppWindowOverPointTests`, two `BackgroundPointerTests`; each fails with the rule and the outcome
+  disabled): the popup over the point refuses before the tree with the sentence and meta, another app's window over both
+  changing nothing; the point outside it, another app's window alone, the observed window topmost, a menu's or floating
+  panel's layer, alpha 0 and a list without the observed window go to the tree; a click and a drag start refuse with
+  nothing posted, activated or held in shared frontmost, shared behind and dedicated; the hit-test's other-window
+  outcome carries the number and #282's refusal names the window, not the page.
+  Not measured live: any of it on Chrome; the cells the ticket names (omnibox in three modes, `<select>`, autofill, a
+  permission bubble, a native popover and its menu, a click outside each).
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#452's qualification, design rulings 928 and 940, 2026-11-20, `fix/452-same-app-overlay`; amends the entry
+  above, StalePoint.swift `guardedPointVerdict` and `PointHitPlace`, Input.swift `windowHit`): **the rule reads where the
+  app's own hit-test answered, and the window list only confirms a popover.** The hosted qualification of 5f85ffcc
+  against main 04691839 (kit `probe/337-measure` README ac805945; runs 44805302760, 44816112944 and 44822312301) found the
+  window-list rule right where main misdelivers (the omnibox popup in all three modes, a permission bubble, TextEdit's
+  colour-well popover 15 of 15, where main landed in the text beneath), but refusing 10 of 10 clicks main lands where the
+  screenshot shows on Chrome's status bubble and tab hover card (layer-0 windows that pass clicks through, Chrome
+  frontmost), and missing Chrome's `<datalist>` popup, a window at layer 999 (both heads landed on the page beneath, 5 of
+  5). The signal that separates them is the app's hit-test at the point: on the click-through windows it answers the
+  observed window's own elements (main's `nonInteractiveHit`); on real overlays, the overlay's own window (omnibox,
+  datalist, permission bubble). TextEdit's popover is the exception: its hit is an AXPopover inside the document
+  window's tree (`sameElement`), so only the window list shows a window over the point there. So, after rule W and before
+  the tree, all before anything is posted:
+  (a) the hit answered in another window of the app's, at any layer: refused (`by: "axHit"`, `overWindow` the hit's
+  window, 0 when its number did not read), whatever the window list says or whether the observed window has a number;
+  this is #337's other-window outcome made a refusal in every mode, so #282's sentence never meets it;
+  (b) the hit lies in the observed window with an AXPopover on its ancestry, and the window list holds a window of the
+  app's at the observed window's layer, alpha above 0, over the observed one at the point: refused (`by: "popover"`,
+  `overWindow` the list's window);
+  (c) anything else keeps main's verdict: a window of the app's over the point whose hit answers an ordinary element of
+  the observed window (the click-through bubbles and cards), and a hit that failed, read to no window or came late.
+  The window list is read only for W (a recorded list to compare) or for (b). The sentence and the error name are
+  unchanged; the meta's `by` names the signal, and `hitWindow` is gone, (a) refusing wherever it was set.
+  Design ruling 940 bounds the signal: the hit-test is main's own, each AX message bounded by `elementMessagingTimeout`
+  (1 s, AX.swift `prepare`, set on the application and every parent read), and `windowHit` now times it on the engine's
+  clock; past `pointHitSignalDeadlineMs` (500 ms) its place is `unread`, so the rule keeps main's verdict, while the hit
+  the action uses is still main's. The other window's number is read only within that deadline. The meta's `hitMs`
+  carries the time on every coordinate click and drag, for the qualification's p50 and p95.
+  Unchanged by (a): an open pop-up menu (layer 101: Chrome's `<select>`, TextEdit's font menu), where the qualification
+  saw both heads post and the item not taken. A menu item's AX ancestry runs to its menu, menu-bar item or pop-up button,
+  not to another AXWindow, so the hit reads as no window, or as the observed window when the menu hangs from a button in
+  it; (a) does not fire, by reading, not measured. A sheet is not an AXPopover and its hit lies in the observed window's
+  tree, so a sheet keeps main's verdict too, as does the save panel, served by another process. Re-aiming at the
+  overlay's window stays #453.
+  Proven offline (`AppWindowOverPointTests`, 5 tests; `BackgroundPointerTests`' place and deadline tests): (a) refuses
+  for the omnibox and a layer-999 popup, its number unread, an empty list and no observed number, with the sentence, `by`
+  and `hitMs` in the record; (b) refuses for a popover with the app's window over the point, another app's window over
+  both changing nothing; (c) keeps a click-through bubble, an unread hit over it, a popover hit with nothing of the app's
+  over the point (or only another app's window, one at layer 101, one of alpha 0, or the observed window topmost), and a
+  plain hit; the refusal posts nothing in shared frontmost, shared behind and dedicated, for a click and a drag start;
+  `windowHit` reports the other window's number, the AXPopover and unread, and past the deadline gives no signal, keeps
+  main's hit and reads no number. With (a), (b), the popover flag and the deadline disabled, 6 of these 7 tests fail (41
+  assertions); with 5f85ffcc's window-list-alone rule restored, the keeping test fails on the click-through bubble and
+  the unread hit.
+  Not measured live: this build on the qualification's cells, and `hitMs`'s distribution.
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#452, the review of 0469183..023a3bee, 2026-11-20; amends the entry above): five corrections, each tested
+  and each test failing with its fix reverted.
+  (1) (a) refuses only when the window the hit answered in is in the on-screen window list with alpha above 0, at any
+  layer (the `<datalist>` popup at 999 still refuses). Run 44822312301 had five inside clicks whose hit answered window
+  44, of alpha 0 at the observation and the click, with the visible page under it, which the screenshot showed and
+  main's click reached. A hit window the list does not hold keeps main's verdict too: the list is the on-screen one, so
+  such a window is not on screen and the screenshot did not show it (or the list failed to read), and an unread number
+  cannot be looked up; never worse than main (ruling 940).
+  (2) The guard's signal is the outcome of the hit-test whose hit it judges (`LatestHit`: #288's last re-hit when it
+  ran), not one inferred from the two hits being alike, which every no-hit outcome is.
+  (3) `windowHit` recognises the observed target on its walk whatever its role: a save panel observed as its AXSheet
+  (run 44816112944, AXSheet under AXWindow 948 while the observed panel was 952) places the hit in the observed window,
+  where it had read as another window over the panel; main's hit is unchanged (none there).
+  (4) The untimed element-only hit-test (scroll, the guard's re-hits) numbers no other window; the timed one asks the
+  SPI first and reads the window's frame only where it gives none, each read bounded by what is left of the deadline.
+  (5) An element route's record carries the first check's `hitMs`, as it carries `windowsMs`.
+  The re-review of 023a3bee..e98276d2 narrowed (1) and (4): the hit's window must still cover the point in the list
+  already read (`hitWindowCovers`: its bounds hold the point and, the observed window listed, it lies in front of it,
+  at any layer), else main's verdict; and its frame is read against an absolute cutoff (the deadline from the
+  hit-test's start), checked after the SPI's attempt and before the position and the size reads, each asked with what
+  is left then, neither once it has passed (`boundedFrame`; a read may overrun by the 50 ms messaging-timeout floor).
+  Left as debt (`tech-debt-tracker.md`, the same as main): the element route's post-wait recheck runs the tree verdict
+  alone, so a popup of the app's that opens during that wait is pressed under.
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#454, design ruling 946, 2026-11-20, `fix/454-menu-item`, plugin 0.28.24; amends #452's "unchanged by (a)"
+  paragraph above, MenuItemPoint.swift, Input.swift `WindowHit.answered`): **a coordinate click on an item of an open
+  menu is delivered as the item's own action and confirmed by its effect, or refused; it is never posted.** #454's kit
+  (`probe/454-measure`, README 4d87ff55; run 44848863214 on main fdd285dd, 495 rows) found every menu it opened (Chrome's
+  `<select>`, TextEdit's font pop-up, Script Editor's language pop-up) a layer-101 window of the app's own over the point,
+  the observation listing the item as an AXMenuItem with AXPick and a token, and the app's hit-test at the point answering
+  that item (315/315). Main's click is posted by route 3, answers ok and only closes the menu (45/45, nothing taken);
+  the element click on the listed item (route 1, AXPick) takes it 45/45, in shared frontmost, shared behind and
+  dedicated. No pointer post takes it without the real cursor on the item (the kit's stamped, unstamped and warped
+  posts), which the engine never moves, so the route is the item's action, not a re-aimed post (#453).
+  The rule, after the stale-point guard keeps a plain left click's point (no spike route) and before anything is posted
+  or activated: (1) the trigger needs both signals. The hit-test's own answer, whatever window its chain reads to
+  (`WindowHit.answered`: Chrome's menu is an app-level AXMenu whose chain reaches no window, so main's hit is none and the
+  guard keeps `noHit`), is an AXMenuItem whose parent is an AXMenu; the window list (read only when the hit or the
+  record names a menu item) holds a window of the app's (or the hit's process's) at layer 101, alpha above 0, over the
+  point, in front of the observed window; and the item is the one the observation recorded there (`recordedMenuItem`:
+  the deepest recorded node itself, as the guard found it, TextEdit's `sameElement`; a recorded AXMenuItem above it; or
+  #433's recorded control beneath it, Chrome's `underlyingRole: AXMenuItem`, by handle). Enabled (AXEnabled read true)
+  and advertising AXPick (else AXPress), it is performed by route 1 (`deliverAction`, no focus hold, so no activation and
+  no activation click), after the intervention guard's in-flight check, the agent cursor acting the click at the point.
+  (2) The action's return is not the effect: the menu's window must leave the on-screen list (or the item's handle die),
+  and the control the menu belongs to (the AXMenu's AXPopUpButton or AXComboBox parent, read before the action, else the
+  app's focused element of those roles, read each time, which for Chrome's parentless menu is the `<select>` the focus
+  returns to) must read the item's title as its AXValue or AXTitle; read at once and every 20 ms for up to 1 s
+  (`menuItemSettleMs`). Seen, the click answers success; otherwise `clickUnconfirmed`, "The click could not be confirmed:
+  it was carried by the menu item's <action> action in <App>, since a pointer click does not take a menu's item, and
+  <the menu closed, but nothing cua can read shows the item taken | the menu was not seen to close with the item taken>.
+  Observe the app with get_app_state before any retry, and never retry blindly." (3) Signals that disagree (the hit's
+  item is not the recorded one or none is recorded there, `notRecorded`; the record names an item and the hit answers
+  none of an open menu, `notHit`), a disabled item or one whose AXEnabled does not read (`disabled`), and an item with
+  neither action or whose actions do not read (`noAction`) are refused with nothing performed or posted, as
+  `appWindowOverPoint` (the menu is #452's window of the app's own over the observed one): "<App> has a menu open at
+  this point, which a click takes only as its item's own action, but <cause>. Nothing was sent. Use keys instead (the
+  arrow keys to the item, then Return; Escape closes the menu), or call getScreenshot for a new screenshot and click
+  the menu item its tree lists, by its element." The meta's `menuItemClick` (Interfaces) carries the menu window,
+  `delivery: "action"` with the action, the effect and its reads, or `refused`; `inputRoute` is 1 on both.
+  Main's path is kept for a hit-test that answered nothing or past `pointHitSignalDeadlineMs` (#452's no-signal rule;
+  the record alone is not taken as showing a menu item, since a stale record is what the guard exists to doubt), for a
+  menu item with no window of its own over the point (a web page's ARIA menu, which a posted click takes, and in shared
+  mode #282's element route), for any button but the left, a click count above 1 and a spike route, and for every
+  other click, which reads no window list.
+  Expected, not measured: a context menu (an AXMenu under the view that popped it, at layer 101) is delivered when its
+  item is recorded and answers `clickUnconfirmed`, having no pop-up button or combo box to read; a menu-bar menu open over
+  the window is refused (`notRecorded`) unless an observation recorded its items at the point, then delivered and
+  unconfirmed as a context menu's; a submenu's item (its own layer-101 window, its AXMenu under the parent AXMenuItem)
+  is delivered when recorded, confirmed only through the app's focused pop-up button, else unconfirmed. Chrome's
+  confirmation rests on its focused element reading the `<select>` after the pick, and the agreement on the hit and the
+  record naming the same AXMenuItem handle; either failing turns a taken item into `clickUnconfirmed` or a refusal,
+  never ok. A closed pop-up button (#458) and re-aiming (#453) are out of scope.
+  Proven offline (`MenuItemPointTests`, 8 tests): TextEdit's agreeing item is its AXPick by route 1, carried with nothing
+  posted and confirmed by the window leaving and the pop-up reading the item; Chrome's item, recorded beneath the page
+  and answered with no window, is pressed (AXPress-only) and confirmed through the focused `<select>`; a context menu's
+  item and a menu still up answer `clickUnconfirmed` with their sentences after the full settle; the three disagreements,
+  a disabled and an actionless item refuse with the sentence, nothing performed; a late or failed hit-test and every
+  click off a menu window keep main's path, reading no window list for a plain click. With the rule off 5 of the 8 fail
+  (14 assertions); with the action's return taken as proof, 3; with the deadline ignored, the late-hit test; with the
+  window gate removed, the off-menu test; with the control beneath or the recorded ancestor ignored, the Chrome and the
+  recorded-item tests.
+  Not measured live: this build on the kit's cells (the three menus by `coord` in three modes, context and menu-bar
+  menus, a submenu).
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the review of fdd285dd..32787ce3, reviewer-high, 2026-11-20; amends the entry above and #452's
+  sentence): ten corrections, each tested and each test failing with its fix reverted.
+  (1) The process serving the item, not main's bounded hit's, is refused when forbidden and registered as driven
+  (`actionTargets`), before the in-flight check, as #282's element route does.
+  (2) Confirmation needs selection evidence: the control's selection is its AXValue, its AXTitle only where it has no
+  value (a static label such as the hosted fixture's "Choice" never stands in), read before and after the action; it
+  must move to the item's title from another. Already the item, or unread before, is `unchanged`: unconfirmed, so
+  choosing the item already chosen answers `clickUnconfirmed`.
+  (3) That control is identified before the action: the AXMenu's pop-up or combo-box parent; for a menu with no parent
+  (Chrome's `<select>`), the app's focused element of those roles then; a menu with any other parent (a context menu's
+  view) has none. A control that takes the focus only after the action confirms nothing, so Chrome confirms only if its
+  focus reads the `<select>` while the menu is open, unmeasured.
+  (4) The coordinate guard's re-hits go through `LatestHit`, so a menu item the first hit-test missed and the guard's
+  re-hit recovered is the menu step's timed signal; a final re-hit that answered late or nothing stays no signal.
+  (5) The recorded item's title rides with it (`RecordedMenuItem`) and the live item must read it (nil and empty
+  alike), else refused as `relabelled` ("the item there no longer reads what the screenshot showed"): a recorded icon's
+  item kept by `hitAboveNode` in a dynamic menu that reused it.
+  (6) A menu item inside an AXWebArea (or, with no item hit, a recorded one there) is main's, whatever window of the
+  app's at layer 101 lies over the point: a page's ARIA menu under a click-through panel keeps its posted click.
+  (7) Closure is read from `onScreenWindowIDs()`; a list that does not read is unknown (`menuClosed: null`), never
+  closed, where `onScreenWindowList()` answered an empty list.
+  (8) A messaging timeout (`cannotComplete`) from the action may have taken effect while the app closed its menu, so
+  the effect is read and decides (`actionError` in the meta); any other error is `actionFailed`, read no further.
+  (9) The meta's `delivery` and `action` are set as the action is dispatched, so an owner refusal or an intervention
+  stop before it records none.
+  (10) Both `appWindowOverPoint` sentences name getAXState(), since getScreenshot answers an image: #454's now ends
+  "or call getAXState() and click the menu item it lists, by its element.", and #452's "or call getAXState() and click
+  an element it lists." (the #452 entry quotes the old wording; `docs/evidence/2026-11-20-same-app-overlay` records a
+  live reply with it). The model-facing sentence now says the control must have moved to the item, and that the item
+  already chosen answers `clickUnconfirmed` too.
+  Proven offline (`MenuItemPointTests`, 17 tests; `AppWindowOverPointTests` for #452's sentence): with each fix
+  reverted its test fails; for (4) the reverted form is the old composition (an untimed re-hit beside `latest`), since
+  the click's live wiring is not unit-reachable.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the re-review of 32787ce3..3eb2b806, 2026-11-20; amends the entry above): four corrections, each
+  tested and each test failing with its fix reverted. (1) AXTitle and AXValue read as text, absent or failed
+  (`MenuTextRead`); the selection's attribute is chosen once before the action (AXValue; AXTitle only where the value is
+  absent, never where its read failed) and the same one is read after it, so a value timing out after the action never
+  hands the judgement to a static label, and a failed read on either side is no evidence (`unread`). (2) The title the
+  decision verified against the record rides in `MenuItemTarget`, judges the selection, and is read again just before
+  the action: another, or a failed read, refuses as `relabelled` with nothing performed. (3) A page's (ARIA) item is
+  main's only when no native item is recorded at the point; with one recorded and its menu window still over the point,
+  a hit on a page item refuses (`notHit`), nothing posted or pressed. (4) The identity comparison decodes the live title
+  as the observation does (a string or an attributed string's text) and cuts it as the observation cuts what it records
+  (`bounded`: 10,000 UTF-16 units and the marker), so a long unchanged option is not refused; the full title stays the
+  selection's evidence.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454's qualification, 2026-11-20; kit `probe/454-measure` README 735d8727, fix run 44860009214 on c83ed846
+  against main 44848863214, 44856543463 and 44863373571; amends the entries above): the AppKit pop-ups are delivered and
+  confirmed (30/30), Chrome's `<select>` and TextEdit's context menu delivered and taken (30/30) but unconfirmed, and
+  every outside click unchanged; three corrections follow from the rest. (1) Chrome's already-selected option
+  (`select-same`) was refused `notRecorded` 15/15 where main closed the menu on the selection it keeps: the option lies
+  over the page's own AXPopUpButton, the deepest recorded node at the point, which acts, so neither it nor #433's control
+  beneath it was the item. Every recorded AXMenuItem whose shown frame holds the point now counts
+  (`recordedMenuItems`: `recordedMenuItem`'s first, then the rest deepest first), and the hit agrees with any of them;
+  the option is delivered and, its selection unchanged, answers `clickUnconfirmed` (`unchanged`) as AppKit's
+  already-selected items do (30/30), a stated limit. (2) The `<select>` answered `value: "unread"`: the focus is not on
+  it while its menu is open. The artifacts show the page's AXPopUpButton keeps an AXMenu child of its own listing the
+  options and reads AXValue One before and Three after; a parentless menu's control is now the one recorded pop-up or
+  combo box whose own AXMenu lists the open menu's item titles in order (`parentlessMenuOpener`, at most
+  `menuOpenerCandidateLimit` recorded controls read), none when two do, the focused one only as the fallback. Not yet
+  measured with this build. (3) The menu-bar menu and its submenu were refused `notRecorded`, rightly (the screenshot
+  does not show them and the observation lists none of their items), but with a sentence saying the item differed from
+  the screenshot's and advising keys, which took the item only with TextEdit frontmost (behind, the menu stays up
+  20/20). A hit on a native item with no recorded menu item at the point is now `unobserved`: "<App> has a menu open at
+  this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so
+  the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its
+  items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title
+  in the menu bar has been clicked by its element." An outside click closes every menu in every mode (measured); the
+  element route through the menu-bar record is the engine's own (MenuRecord.swift, MenuSpan.swift) and was not part of
+  this kit. Chrome's page context menu keeps main's refusal (`otherWebArea`), its items under the web area.
+  Proven offline (`MenuItemPointTests`, 24 tests): each of the three fails with its fix reverted.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the review of c83ed846..74c99b92, reviewer-medium, 2026-11-20; amends the entry above): four
+  corrections, each tested and each test failing with its fix reverted (7 reversions). (1) The recorded item the guard
+  identified (`recordedMenuItem`) stands; only where a node of another role won the check is the recorded AXMenuItem
+  holding the point taken, and only when exactly one does (`RecordedMenuItems`), so a neighbour row on a shared edge, or
+  rows shifted since the screenshot, never lend another row's action (refused `notRecorded`). (2) A parentless menu's
+  control is named only on complete evidence (`MenuOpenerSearch`): a failed role, children or title read, or more
+  candidates than `menuOpenerCandidateLimit`, answers unknown, and the click is then unconfirmed with no focus fallback.
+  (3) The search shares a 100 ms budget (`menuOpenerBudgetMs`) and ends at a second match (unknown), and the request's
+  deadline is checked just before the action (`timeoutReached`, nothing sent). (4) `unobserved` proves only that the
+  record holds no item of the menu at the point (the walk can reach its limits), so its sentence now says "the
+  accessibility record of the screenshot holds no item of it at this point" and offers the element route only "If a
+  fresh getAXState() lists the item"; the model-facing sentence says the same.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#458, design rulings 977 and 979, 2026-11-21, `fix/458-popup-press`, plugin 0.28.26; PopUpPoint.swift,
+  Input.swift, `ConnectionState.popUpMenuOrders`): **a coordinate click on a closed pop-up button is delivered as the
+  button's AXPress and confirmed by its menu opening; a native combo box's arrow with the app not frontmost is refused;
+  neither is posted.** #458's kit (`probe/458-measure`, scripts/probe-337/README.md §#458 at b55d2908; run 44877626226
+  on main edbfbd23, 475 rows) found main's click on TextEdit's font pop-up or Script Editor's language pop-up, the app
+  behind in shared mode, answering ok with no menu showing (10/10): the menu opens 110–260 ms in and is gone when route
+  3's hold ends and the person's window order is put back (`delivery.screenHoldMs` 180–260 in the same rows). Posted
+  events without activation, keys and the AX actions open every pop-up behind; the element click's AXPress opens them in
+  every mode (30/30 by route 3, 30/30 by route 1), and the next observation lists the items, which #454's fix then takes.
+  The owner chose open-then-restore.
+  The rule, after the stale-point guard keeps a plain left click's point (no spike route, route 3 chosen) and after
+  #454's step, before anything is posted: (1) the trigger needs both signals. The hit-test's own answer in time
+  (`WindowHit.answered`) is an AXPopUpButton (in a web page only one with an AXMenu child, Chrome's `<select>`, whose
+  options it lists; a page's ARIA pop-up button opens the page's own menu, which a posted click takes) or a native
+  AXComboBox hit on its arrow (the trailing square of its frame); it is the control the observation recorded at the point
+  (`recordedAtPoint`, #454's search: the node, a recorded ancestor of the role, or #433's control beneath); it reads
+  enabled, not expanded, and no window of the app's at layer 101 lies over or within 24 points of it (`popUpMenuMargin`).
+  A hit on an AXMenuItem is #454's, whatever the record holds above it. A web page behind in shared mode (the app not
+  believing it has focus) stays #282's element route, which already presses a `<select>`; everywhere else (shared
+  frontmost, dedicated, AppKit apps) the rule applies. (2) Advertising AXPress, the button is pressed by the element
+  click's own route (`actionRoute`: route 3's focus hold when the app does not believe it has focus, else route 1),
+  after the press owner's forbidden check, the hold, the guard's last check on the button (`finalStalePointCheck`, as
+  #282's route makes it), the in-flight check and the agent cursor's click; the request's deadline is checked before
+  the hold. The action's return is not the effect: a window of the app's at layer 101, absent from the list read before
+  the press, alpha above 0, over or within 24 points of the button's frame, must appear, read at once and every 20 ms
+  for up to 500 ms (`popUpOpenSettleMs`, about twice the slowest open measured). Seen, the click answers success; else
+  `clickUnconfirmed`, "The click could not be confirmed: it was carried by the pop-up button's AXPress action in <App>,
+  since a posted click can close the menu it opens, and no menu was seen to open at the button. Observe the app with
+  get_app_state before any retry, and never retry blindly." A messaging timeout from the press is judged by the effect,
+  as #454's; any other error is `actionFailed`. Why the menu stays open: the focus hold's activation guard, which raises
+  the person's window back over the app's while it samples, ends before the press, and the element route runs no
+  delivery guard and no after-action watch (those are `deliverPointer`'s, route 3's pointer delivery in shared mode),
+  where the posted click's delivery guard restores the order after the menu has opened and so closes it; every request
+  cancels an earlier action's watch first (`execute`). (3) A native combo box's arrow with no element action (TextEdit's
+  font-size NSComboBox: `synthesized:noAction`, AXPress unsupported, AXShowMenu opens nothing, its focus write does not
+  hold), the app not frontmost, is refused with nothing sent as `backgroundClickRefused`: "<App>'s combo box opens its
+  list only for a pointer click, and a click cua sends to <App> while it is not the frontmost app does not leave that
+  list open; the combo box has no accessibility action that opens it. Nothing was sent. Ask the person to bring <App>
+  to the front, or type the value into the combo box's text field instead (setValue on its element, or click its text
+  and use typeText)." Frontmost, the posted click opens its list (5/5): main's path (`kept: "frontmost"`). A click on its
+  text is a click into a text field, main's. (4) Main's path is kept, and the meta says so (`popUpClick.kept`), for a
+  hit late or failed with a pop-up recorded (`noSignal`: the record alone is never taken, #452's rule), signals that
+  disagree (`notRecorded`, `notHit`), a disabled button, one already open (AXExpanded true, or the app's menu window at
+  it), and a pop-up button with no AXPress or actions that do not read (`noAction`).
+  (5) The restore seam (ruling 979, item 4; not implemented): opening any menu behind raises the app's window above the
+  person's front window, and Escape does not undo it. A confirmed open compares the window list read before the press
+  with the one that saw the menu (`popUpRaisedOrder`: the person's front window is the first layer-0 window of another
+  app's, never the engine's own) and, when the app's window went from behind it to in front, records
+  `PopUpMenuOrder {menuWindow, appWindow, personWindow, personPid}` in `ConnectionState.popUpMenuOrders[app key]`, a
+  connection's state that #454's pick (which knows its menu's window) and press_key (by app) can read; an open that
+  raised nothing clears the app's entry. Nothing reads it yet: the restore's reliability and cost are being measured
+  on hosted macOS first. The meta carries `raisedAppWindow`.
+  Proven offline (`PopUpPointTests`, 8 tests, fakes only): an agreeing closed pop-up is pressed with nothing posted after
+  its hold, confirmed by its menu window, the order recorded; frontmost by route 1 and Chrome's `<select>` list below the
+  button confirm and record none; no new menu window at the button (a far one, another app's, one up before) answers
+  `clickUnconfirmed` after the full settle; a timeout is judged by the effect, another error fails; the combo box's arrow
+  behind is refused with nothing held, performed or sent, frontmost and its text are main's; disagreements, a late or
+  failed hit, disabled and open keep main's path with the reason; a button, an ARIA pop-up and an open pop-up's item are
+  unchanged, #454 still delivering the item. Each fails with its piece reverted (8 mutations: the rule off fails 6 of
+  the 8 tests; the action's return taken as proof, the unconfirmed test; the combo refusal removed, the combo test; the
+  agreement or the no-signal rule removed, the disagreement test; any role taken for a pop-up or an ARIA one for a
+  `<select>`, the unchanged test; the menu item not left to #454, its test). `recordedMenuItem` now calls the shared
+  `recordedAtPoint`, `inWebArea` gained a two-read form; #454's 27 tests pass unchanged.
+  Not measured live: this build on the kit's cells (the three pop-ups and the combo box by `button` in three modes, and
+  the item afterwards), Chrome's `<select>` in dedicated mode and shared frontmost, and the open time of an AXPress behind
+  against the 500 ms bound.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, the review of edbfbd23..75fecad2, reviewer-high, 2026-11-21; amends the entry above): eight
+  corrections, the fakes rebuilt from run 44877626226's measured shapes (results.json), each new piece failing its test
+  when reverted. (1) A closed `<select>` has no AXMenu child (`openerMenus: []` in all 125 select rows; it appears only
+  once pressed), so the first rule dropped it to main's post in dedicated mode, the false ok. A page's AXPopUpButton now
+  qualifies by evidence present while closed: the record holds one of its options, an AXMenuItem under it, which is the
+  deepest recorded node at the point (`hitAboveNode`, recorded role AXMenuItem, 15/15; `RecordedPopUp.holdsOption`); a
+  page's ARIA pop-up button has none and stays main's. (2) TextEdit's combo-box arrow hit-tests and is recorded as an
+  AXButton (15/15), so the refusal never fired; an AXButton whose parent is an AXComboBox resolves to the combo box, and
+  a hit on the combo box itself is its text, main's (the frame-square rule is gone). (3) In a shared-mode page behind,
+  #282's element route still delivers the `<select>`'s press, and that press now gets the same check just before it,
+  the effect, `clickUnconfirmed` and the order record (`popUpConfirmingRoute`, through `webAreaPress`'s `beforePress`);
+  #282 alone answered ok with no menu open, and recorded no order though the open raises Chrome. (4) A control whose
+  parents do not read to its window (`webAreaWalk` incomplete) is not taken as native: the record's AXWebArea above it
+  answers where the record holds one, else main's path (`kept: "ancestryUnread"`). (5) The decision's window list is
+  read before the focus hold and stays the restore seam's order, but just before the press, after the hold, the button
+  must still read closed (AXExpanded, no menu window of the app's at it), else `screenChangedSinceScreenshot` with
+  nothing pressed ("The screen changed since the screenshot: the pop-up button at this point now shows its menu open,
+  and a press would close it. The button was not pressed. Take a new screenshot or call getAXState() to see the menu's
+  items before clicking one."), and the effect's baseline is read then, so a window of the app's that appeared during
+  the hold is never the press's menu. (6) The window list is read as optional (`onScreenWindowListRead`): unread at
+  the decision, main's path (`kept: "windowsUnread"`); unread just before the press, the press goes and answers
+  `clickUnconfirmed` (`baselineUnread`), since the decision had already found the button closed and the hold had run;
+  an unread poll is a sample with nothing seen. (7) The deadline is checked again just before the press, after the
+  hold (`timeoutReached`, "…The button was not pressed."). (8) The press is counted by `recordingRouteAdvice` (route 3's
+  guard failures toward the route-4 advice), a kept decision not.
+  Debt: another live connection's after-action repair watch can raise the person's window over a menu just opened
+  (tech-debt-tracker.md; a rare two-session race that needs coordination across connections).
+  Proven offline (`PopUpPointTests`, 13 tests): the measured select, combo box and font pop-up shapes, the #282 route's
+  confirmation, the check after the hold, unread lists and unread ancestry. Reverted one at a time (10 mutations), each
+  fails: the select back to a live AXMenu child (3 tests) or any page pop-up taken (2); the arrow unresolved (the combo
+  test); #282's route without the effect (its test); unread ancestry taken as native; no closed re-check, or the
+  baseline taken at the decision (the after-hold test); an unread list taken as empty at the decision or before the
+  press (the unread test); no deadline check after the hold.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, the re-review of 75fecad2..1d70a333, reviewer-high, 2026-11-21, the last review wave; amends the
+  entries above): six corrections. (1) A qualifying `<select>` in a shared-mode page behind is no longer #282's
+  refusal-only fallback, which `deliverPointer` reaches only when the activation throws `PointerRefused`; where the
+  activation clicks its in-window point (Electron's) the click was still posted. Once decided, the press is the pointer's
+  `pressRoute`, run instead of any activation or event; every other page click keeps the fallback (Electron's posted
+  click unchanged). (2) #282's press goes through `deliverAction` with a judgment of non-success errors
+  (`elementActionClick`'s `tolerates`, `webAreaPress`'s `popUpPress`): on the `<select>` a messaging timeout is left to
+  the observed menu, as on the direct route; any other error, and any other control's, stays `actionFailed`. (3) The
+  option evidence is the measured shape only: the deepest recorded node at the point is an AXMenuItem under the pop-up,
+  the hit-test answering above it (`hitAboveNode`); items recorded off the point (parked offscreen) are none, and such a
+  pop-up keeps main's path. (4) The combo box's arrow is its AXButton child at its trailing edge (its frame ending
+  within 4 points of the box's, no button child further right), or with either frame unread its only button child; a
+  clear or accessory button keeps its own click (not measured: TextEdit's arrow frame). (5) The baseline before the
+  press holds every window of that list, whatever its layer or alpha; only windows after the press are filtered by
+  layer and alpha, so a window already there that later shows at the menu layer is not the press's menu. (6) The
+  deadline is checked after the last read before the press (AXExpanded can take the messaging timeout, then the window
+  list), on the unread-baseline path too. Proven offline (`PopUpPointTests` 17 tests, `BackgroundPointerTests` 1 more);
+  reverted one at a time (7 mutations), each fails its test.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, design ruling 979 item 4 carried out, 2026-11-21; kit `probe/458-restore`,
+  scripts/probe-337/README.md §"#458's restore" at f39ce428, run 44888938314, 380 rows plus 20 combo-box arrow rows;
+  amends the entries above and corrects ruling 977's combo-box refusal): **the open puts the person's window order back
+  at once, and a combo box's arrow is pressed.** Measured: opening a menu behind raises the app's window over the
+  person's (186 ms p50 after the click begins), and neither the pick nor Escape undoes it; route 3's repair (AXRaise on
+  the person's focused window) restores that window only, leaving a second one covered (0/120 whole); raising every
+  window of the person's that was in front of the app's before the open, back to front, restores the whole order
+  (180/180, 127/200/232 ms p50/p95/max, inside the screen-update hold, nothing else moved in 380/380, the frontmost app
+  and the person's focused window unchanged); done with the menu up, the menu stays usable and the pick or Escape after
+  it keeps the order (60/60); a menu left open (8 s) or closed by the person's own click leaves the app's window on top,
+  which only a restore at the open covers. The rule: the list read just before the press (`popUpBeforeDispatch`) gives
+  the person's windows in front of the app's window (`personWindowsAbove`: layer 0, alpha above 0, another process than
+  the app's, never the engine's own), front to back. Once the open is confirmed and the app's window has risen over any
+  of them (in the confirming list, or within `deliveryGuardMinimumMs` after it, sampled every `deliveryGuardSampleMs`),
+  `popUpRestoreOrder` takes the screen-update hold (`ActivationSystem.holdScreenUpdates`, SLSDisableUpdate) and samples
+  as route 3's delivery guard does: whenever the recorded order does not hold (`personOrderHolds`: each recorded window
+  still listed in front of the app's, in its recorded order), it raises every recorded window back to front by route
+  3's repair (`ActivationSystem.raise`, AXRaise on each window's element, found among its process's AXWindows by
+  number; never an activation); it ends on three samples holding the order and no sooner than 60 ms, or at
+  `popUpRestoreBoundMs` (500 ms, about twice the slowest measured). Only the recorded windows move. Meta
+  `popUpClick.restored {windows, ms, complete, raises}`; an order not back within the bound leaves the open confirmed,
+  `complete: false`, and the result carries the note "<App>'s menu is open, but the person's windows that were in front
+  of <App>'s window could not all be put back in front of it, so <App>'s window may now cover them." Nothing raised, no
+  restore. #282's `<select>` route restores the same way. The seam the earlier entry recorded (`popUpMenuOrders`,
+  `PopUpMenuOrder`) is removed: #454's pick and the key path need nothing from it.
+  The combo box (correcting ruling 977's refusal on the measurement): TextEdit's font-size combo box has one AXButton
+  child, "font size" (743, 73, 20×15), with AXPress, its trailing edge exactly 4.0 pt inside the box's, so the arrow
+  rule's 4 pt includes 4 (`<=`). Its AXPress, behind, opens the list 20/20 as a new layer-0 window of the app's
+  (706, 70, 65×250) above its document window and below the person's, raising nothing, the frontmost app unchanged.
+  So the arrow's AXPress is delivered (`PopUpTarget.element` the arrow, `control` the combo box, read for AXExpanded and
+  its frame), confirmed by a window of the app's of any layer, alpha above 0, new since the press, at or within 24 points
+  of the combo box (`isOpenedWindow`), and the restore check runs (normally nothing to do); the refusal is kept only for
+  a combo box whose arrow has no AXPress. The model-facing sentences say so.
+  Proven offline (`PopUpPointTests`, 21 tests): two person windows above, raised back to front once, the order back
+  and nothing else moved, one hold released; the engine's window never counted; a rise seen only after the open is
+  restored; nothing raised, no restore; an order not back within the bound `complete: false`; an incomplete restore
+  keeps the open confirmed with its note; the combo box's arrow at 4.0 pt pressed, its layer-0 list confirmed, no
+  restore; one with no pressable arrow refused. Reverted one at a time (10 mutations), each fails: no restore at the
+  open (4 tests), raised front to back, complete at the bound, the engine's window counted, no watch for a later rise,
+  no note, one sample and no minimum, the combo box pressed instead of its arrow, its list only at layer 101, the edge
+  rule excluding 4.0 pt.
+  Not measured with this build: the restore and the arrow press by the engine itself (the kit's restore was its own).
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the review of 97344ee7..a094f620, reviewer-high, 2026-11-21; amends the entry above):
+  seven corrections, each tested and each test failing with its fix reverted (17 mutations). (1) The person's act wins:
+  at the press's dispatch the engine takes route 3's own person baseline (`PopUpPersonSignals`: input since, by
+  `secondsSinceInput` as the delivery guard's `personActed` reads it, and the frontmost app), and input or another app
+  brought to the front since ends the watch for the rise and stops the restore before its next raise, `complete: false`,
+  `stopped: "personInput"`, with no note (the order is theirs). (2) One absolute cutoff of `popUpRestoreBoundMs` from the
+  restore's start covers resolving the windows, every raise (none is issued past it) and the hold, which a timer of its
+  own releases at the cutoff whatever blocks (`scheduleHoldRelease`, `OnceRelease`); an end there is `stopped: "bound"`.
+  (3) A person's window is raised only when told for certain (`uniqueWindow`): its own number by the SPI
+  (`axWindowNumber`, no frame fallback), else the one unnumbered AXWindow with its bounds while the list holds exactly one
+  such window of the process; two same-sized windows are ambiguous, never raised, and the restore ends
+  `stopped: "unresolved"`. (4) A restore starts only when the app's window crossed above a recorded window
+  (`appWindowCrossed`); the person's windows reordered among themselves start none, and the full order
+  (`personOrderHolds`) is what a needed restore checks. (5) A combo box's list counts only on the measured signals: a new
+  window above the app's (document) window, and the combo box not reading AXExpanded false; otherwise the click is
+  unconfirmed. (6) The arrow's own AXEnabled must read true, else main's path (`kept: "disabled"`). (7) The bound
+  reached before three stable samples is incomplete, whatever the last sample read.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the re-review of a094f620..1612abe2, reviewer-high, 2026-11-21, the last review wave;
+  amends the entry above, item 3): four corrections, each tested and failing with its fix reverted. (1) The frame
+  fallback is dropped: a person's window is resolved only by its own number (`axWindowNumber`, the SPI); one it does not
+  prove is `unresolved`, never raised. (2) The lookup (`resolveByNumber`) is handed the cutoff, scans each process's
+  AXWindows once, reads only the number (no frame), stops at the process's last recorded window, and reads nothing once
+  the cutoff is spent. (3) The order the restore checks and raises for is the resolved windows'; once they are back, an
+  unresolved window still out of order ends the restore as `unresolved` after its stable samples, instead of
+  re-raising until the cutoff. (4) The 500 ms cutoff counts from the restore's start, the 60 ms sampling minimum from a
+  timestamp taken after the resolution.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, design ruling 1004, 2026-11-21; #458's qual, kit `probe/458-qual`, scripts/probe-337/README.md
+  §"#458 qual" at efa35057, main run 44924065133 against fix run 44929018111 on 7e5bb454, 200 rows each; supersedes the
+  restore's sampling loop in the entries above): **the restore is one pass, and the menu wait is 1.5 s.** The qual found
+  the delivery right everywhere (confirmed 138/140 behind, 40/40 frontmost, no false confirmation; #454's pick taken
+  every time; parity unchanged) but the loop harmful: AXRaises land 30–150 ms late, so the loop read the order wrong
+  and re-raised 6–11 times, F1 and F2 flipping for up to a second, and the last raise to land decided the top window,
+  changing the person's focused window in 3/40 rows of layout a in dedicated mode and 11/20 of layout c; and in c (a
+  background Calculator window between the person's Finder windows) an AXRaise of the third app's window stays under
+  the active app's, so the order never read back (0/20, bound). Chrome's `<select>` opened about 940 ms after the click
+  in 2/20 rows, past the 500 ms wait, answering `clickUnconfirmed` with no restore. The rule now
+  (`popUpRestoreOrder`): of the recorded windows, those of the person's frontmost app are raised once each, back to
+  front, the person's focused window (route 3's `userWindow`, the frontmost app's AXFocusedWindow) last, inside the
+  screen-update hold (its timer at route 3's 300 ms ceiling, `activationPointHoldCeilingMs`); third apps' windows are
+  skipped (`restored.skipped`); about `popUpRestoreReadMs` (300 ms) after the first raise the order is read once and
+  recorded (`complete`), never re-raised on a mismatch. The hard bar, the person's focused window never changes, is met
+  by raising it last; when it is not known, not among the recorded windows, or not resolved by its number, nothing is
+  raised (`focusUnknown`, `unresolved`). The person-input stop before each raise and before the read, the absolute
+  500 ms cutoff and the timed hold release stay. `popUpOpenSettleMs` is 1.5 s for pop-ups and the combo box's list.
+  The model-facing sentences name no timing and are unchanged.
+  Left for the measurement: the focused window can still change outside the engine's raises (a person's click during
+  the open, which `personInput` then reports), and the AXRaise of a non-focused window of the active app may make it key
+  for the moment before the focused one is raised, which the app could see as a focus change (key-window notifications)
+  even though the end state keeps the focus.
+  Proven offline (`PopUpPointTests`, 31 tests): two windows raised once, back to front, the focused last, read once at
+  300 ms, raises landing 150 ms late seen by it; the focused window last even with another in front of it, the mismatch
+  recorded with no re-raise and one read; layout c's Calculator skipped, Finder's three raised; nothing raised with the
+  focus unknown, not recorded or unresolved; the 940 ms `<select>` confirmed. Reverted one at a time (6 mutations), each
+  fails: a re-raise on the mismatch, the focused window not last, a third app's window raised, the focused window not
+  required among the recorded, the read not delayed, the 500 ms wait.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the review of 7e5bb454..67cf8b26, reviewer-high, 2026-11-21, the last wave on that range;
+  amends the entry above; the hard bar is the person's focused window): four corrections, each tested and failing with
+  its fix reverted (7 mutations). (1) The pass can no longer end on a non-focused window's raise: the person's input
+  stops it with nothing more raised (checked before the first raise, so a stop midway only ever follows input, and before
+  each raise after it); the cutoff skips the remaining other windows but the focused window's raise is still made, past
+  the cutoff by that one call, and recorded (`bound`); each raise's AX result is read (AXRaise by `gatedPerform`, the
+  call route 3's repair makes, which `ActivationSystem.raise` discards): failures counted (`failedRaises`), and the
+  focused window's failing ends the pass as `focusRaiseFailed`, incomplete. No ordering call that cannot change key or
+  focus is known to the engine: it has no SkyLight window-ordering call, and the window server orders a window only for
+  its owning connection, so AXRaise stays the call. (2) The focused window is the person's app's AXFocusedWindow
+  numbered by `axWindowNumber` alone (`focusedWindowNumber`), never by route 3's `userWindow`, whose frame fallback could
+  name another window of the same size; none proven, nothing raised (`focusUnknown`). (3) The time left is checked
+  before and after the one order read; an end past the cutoff is `bound`, never complete. (4) The person's input is
+  checked before the focus is read and before the early return on no candidates (only third apps' windows), so their
+  switching apps during the open records `personInput`, with no note.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, design ruling 1005, 2026-11-21; #458's qual 2, kit `probe/458-qual`, scripts/probe-337/README.md
+  §"#458 qual 2" at 5246652f; supersedes the full-order restore of rulings 979 item 4 and 1004 in the entries above):
+  **the restore is route 3's own repair alone: only the person's focused window is raised back, once.** The full-order
+  restore was tried and dropped for the transient key change: a 5 ms watch saw the person's app's AXFocusedWindow go to
+  F2 or F3 for 13–49 ms during the back-to-front raise of their non-focused windows, in 38/80 behind rows on 67cf8b26 and
+  13/30 on 2bd74c6e, though the end state was always F1. Now (`popUpRestoreOrder`): the trigger is the app's window over
+  the person's focused window (their frontmost app's AXFocusedWindow, numbered by `axWindowNumber` alone; it must be among
+  the windows recorded in front of the app's before the press); that one window is raised once by AXRaise
+  (`gatedPerform`, its AX result read) inside the screen-update hold, the hold's timer at route 3's 300 ms ceiling, and
+  about 300 ms later the order is read once: `complete` means the focused window is back over the app's. No other window
+  is raised, neither the person's other windows nor a third app's; those the app's window covers are counted as
+  `restored.leftCovered` (the former `skipped` folded into it). A focused window not covered is not raised (nothing to
+  do, complete); an unread window list raises nothing (`orderUnread`). Kept: `focusUnknown`, the input check before
+  anything is read and just before the raise, `focusRaiseFailed`, the 500 ms cutoff (an end past it `bound`, never
+  complete), the timed hold release and the single read. The back-to-front pass and its full-order predicate are
+  removed. The incomplete note now reads "<App>'s menu is open, but the person's front window could not be put back in
+  front of <App>'s window, so <App>'s window may now cover it." The model-facing sentences name no restore and are
+  unchanged; the windows left covered are a debt line in tech-debt-tracker.md, and the full-order restore its own ticket.
+  The hard bar holds by construction: the only window raised is the focused one.
+  Proven offline (`PopUpPointTests`, 31 tests): the focused window alone raised, once, F2 and Calculator left covered
+  and counted, read once at 300 ms; nothing raised with the focused window uncovered, and a miss not retried; nothing
+  raised with the focus unproven, unresolved or the list unread; the person's input before anything is read, before the
+  raise and before the read; the cutoff through resolution, the raise and the read; the raise's failure recorded.
+  Reverted one at a time (8 mutations), each fails: the other covered windows raised too, a raise whatever the focused
+  window's cover, `complete` as the whole order, the others not counted, no input check before the raise, the AX result
+  ignored, no time-left check between the raise and the read, or after the read.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#469, ruling 1036, 2026-11-21, `fix/469-popup-menu-only`, plugin 0.28.27; narrows #458's entries above;
+  PopUpPoint.swift): **outside a web page, #458's AXPress goes only to a pop-up button whose AXDOMClassList is
+  unsupported (AppKit's); one whose AXDOMClassList reads, a Chromium or Electron view's, keeps main's posted click.**
+  #463's measurement (kit `probe/463-measure`, scripts/probe-337/README.md §"#463" at 7915cade, run 44959835166) found
+  two of Chrome's toolbar AXPopUpButtons, site information and tab search, open a layer-0 bubble, not a menu: #458's
+  press made Chrome frontmost (6/6 each), left the person's front window covered, and answered a false
+  `clickUnconfirmed`, where main's posted click had not activated Chrome. The signal run (§"#469 signal" at 4f8c58d1, run
+  44970638020, 4 rows per app, each value stable) found no generic pre-press attribute that separates them: AXHasPopup
+  and AXPopupValue `menu` hold for tab search as for the app menu; only the view class (`BrowserAppMenuButton` against
+  `TabStripFlatEdgeButton`, `LocationIconView`) and AXCustomContent tell the app menu apart. Every AppKit pop-up
+  measured (TextEdit, Script Editor, Finder) answers −25205 (attribute unsupported) to AXDOMClassList, and every AppKit
+  AXPopUpButton pressed in #458's and #463's runs opened a menu. The rule (`popUpPoint`, the `.native` place, pop-up
+  buttons only): AXDOMClassList read on the control; `attributeUnsupported` presses as before; any value read keeps
+  main's path (`popUpClick.kept: "browserView"`), Chrome's app menu included, which is not allowlisted by its class name
+  and goes back to the posted click (accepted for now); any other error, no value included, keeps main's path too
+  (`kept: "viewClassUnread"`), since an element that has the attribute may fail to read it. A page's `<select>` is
+  decided by its web area and recorded option as before (its AXDOMClassList, an empty list, is never consulted); the
+  combo box's arrow, an unread ancestry (`ancestryUnread`), the 1.5 s wait, the effect check and the focused-window
+  restore are unchanged. The read is made before the enabled, expanded and window-list reads, so a kept browser view
+  reads no window list. The model-facing sentence now names the supported set positively, wherever a browser view's
+  pop-up sits (a bubble's dropdowns too): "A click on a closed pop-up button in a native app (not one of a
+  Chromium-based app's own buttons), a web page's `<select>`, or a combo box's arrow, …", in agent-cursor.md, the
+  documentation test and the parity oracle; the surface inventory and PROVENANCE.md record it.
+  Proven offline (`PopUpPointTests`, 34 tests): Chrome's site information, tab search and app menu, built from the
+  measured shapes, keep main's path with nothing held or pressed and no window list read; a `<select>` (AXDOMClassList
+  answering) and TextEdit's pop-up (unsupported) are still pressed and confirmed; an AXDOMClassList read that fails
+  other than as unsupported keeps main's path, and the live mapping sends no value, cannot complete, failure and API
+  disabled there. With the fix reverted the browser-view and ambiguous-read tests fail (5 failures); the view class
+  consulted in a page too fails the `<select>` tests (7); unsupported kept too fails the AppKit tests (31); no value read
+  as unsupported fails the mapping test.
+  Date/Author: 2026-11-21, cursor235's implementer for #469.
+- Decision (#463, rulings 1036 and 1039, 2026-11-21, `fix/463-transient-ui`, plugin 0.28.28; extends #458's and #469's
+  entries above; PopUpPoint.swift, Input.swift): **with the app not frontmost, a coordinate click on what opens transient
+  UI is carried by the element's own action and confirmed per kind, or refused honestly, never answered ok while route
+  3's release closes it.** #463's measurement (kit `probe/463-measure`, scripts/probe-337/README.md §"#463", run
+  44959835166, and §"#469 signal", run 44970638020) found, with the app behind in shared mode, that the end of route 3's
+  fake activation, not its raise, closes what the posted click opened while the click answers ok: TextEdit's
+  AXMenuButton pull-down, its text view's context menu and its colour well's popover 6/6 each, Chrome's page context menu
+  4/6, its bookmark-star and profile bubbles whenever they opened; frontmost every one stays up (5/5). The rules, in the
+  cases #458 gates on (a kept point, no forced route, one click by route 3) and on its agreement of the recorded node and
+  the live hit:
+  (1) Delivered with the app not frontmost, in either mode (as #458's press), within #458's 1.5 s wait, else
+  `clickUnconfirmed`, the focused-window restore unchanged after a confirmed open: AppKit's AXMenuButton (AXDOMClassList
+  unsupported) by AXPress, confirmed by a new window of the app's at the control at any layer (`list style`'s layer-101
+  menu; `document actions`' layer-0 popover, which opens 0.5–1.5 s in and may answer unconfirmed, the wait not
+  stretched); AppKit's AXColorWell the same way (its layer-0 popover; the only popover control measured, so the only role
+  covered); a right click (`contextMenuPoint`) on an AppKit element outside every page that the record holds at the point
+  and that advertises AXShowMenu, by AXShowMenu, confirmed by a layer-101 menu; a page's `<input list>` (`datalistPoint`:
+  an AXComboBox in the page whose AXPopupValue reads `listbox` and AXAutocompleteValue `list`, 4/4) by the element
+  click's route, its focus hold then AXPress (the bare AXPress opened nothing, 0/3; the hold is what the element route
+  adds), carried by `popUpClick` rather than #282's focus route, confirmed by Chrome's suggestion window at layer 999.
+  Frontmost each keeps main's path (`kept: "frontmost"`; a right click unrecorded). The meta says what carried it:
+  `popUpClick.kind` (`menuButton`, `colorWell`, `contextMenu`, `datalist`; #458's `popUpButton` and `comboBoxArrow` now
+  named too) beside `action`.
+  (2) Refused in shared mode with the app not frontmost, nothing sent, as `backgroundClickRefused`, the family of #282's
+  web-page refusal and #458's combo box (no new error name: the cause is the same, a click a background app does not
+  keep, where #452's `appWindowOverPoint` names a different one); the meta's `popUpClick.refused` says which (`noAction`,
+  `browserView`, `webArea`), as #282's `elementClick.walkStopped` and #452's `stalePoint.by` do. A right click in a web page
+  by the hit's walk or the record's web area (a page point can answer a coarse view that walks to the window before the
+  page tree is exposed, #288): "<App>'s web page does not keep a context menu open for a right click cua sends while
+  <App> is not the frontmost app, and no accessibility action opens one there. Nothing was sent. Ask the person to bring
+  <App> to the front first, or act on the page without its context menu: click the element by its ID, or use keys." A
+  Chromium view's own button outside every page that advertises a popup (scope 1039): an AXPopUpButton whose
+  AXDOMClassList reads (the app menu, tab search, site information; #469's `kept: "browserView"` stands frontmost and in
+  dedicated mode), or an AXButton whose AXHasPopup reads true (the profile button; `browserButtonPoint`, the hit recorded
+  at the point): "<App>'s own button here opens a menu or panel, which a click cua sends while <App> is not the frontmost
+  app does not leave open, and its accessibility action would bring <App> to the front over the person's window. Nothing
+  was sent. Ask the person to bring <App> to the front first, or reach the same command another way: a keyboard
+  shortcut, or <App>'s menu bar by its elements." Back, Reload and New Tab (AXHasPopup false) keep main's click, and so
+  does the bookmark star, which no attribute measured tells from Back (a residual, #471 and tech-debt-tracker.md; no
+  class name is allow- or denylisted).
+  Dedicated mode keeps main's posted click for both refusals: the code's dedicated contract (#282, Routes.swift) lets the
+  window come forward and puts no order back, so nothing closes what the click opened, and the measurement shows the
+  posted click leaving the page's context menu and the profile bubble up there (3/3 each); Chrome frontmost after a
+  dedicated toolbar click is that contract, not the shared-mode rule the refusal enforces.
+  The `<select>`, AppKit's AXPopUpButton and the combo box's arrow are unchanged. The model-facing #296 paragraph gains two
+  sentences after #458's (agent-cursor.md, the documentation test, the parity docs oracle; the surface inventory's
+  amendment and PROVENANCE.md record it).
+  Limits stated: an ARIA combo box whose AXPopupValue and AXAutocompleteValue read as `<input list>`'s takes the element
+  click too, and with no suggestion window answers `clickUnconfirmed` where #283 placed the caret; a click on an `<input
+  list>`'s text, not its arrow, is carried the same way, since no attribute or child tells the arrow from the text; a
+  dedicated-mode posted click on these controls still often opens nothing (#458's unexplained dedicated case).
+  Proven offline (`PopUpPointTests`, fakes built from the measured shapes): 14 tests added (48 in all): each delivered
+  kind pressed or shown once after the hold and confirmed, and unconfirmed when no window of its kind comes (a far or
+  layer-0 window for a context menu, the page's layer-101 menu for an `<input list>`, a popover past 1.5 s); each
+  refusal with nothing held, performed or posted and its sentence; Back, the star, an AppKit button and an unrecorded
+  profile button left to main's click; frontmost and dedicated mode as above; a `<select>`, AppKit's pop-up button and
+  the combo box's arrow unchanged (#458's and #469's tests, the latter now frontmost). Reverted one at a time (12
+  mutations), each fails: no menu-button or colour-well control (6 failures), the Chromium pop-up button kept (1), no
+  AXButton refusal (1), no right-click decision (4), no `<input list>` decision (3), the menu button's and colour
+  well's effect read at the menu layer only (2), the suggestion window at any layer (1), frontmost not consulted (1),
+  the refusals in dedicated mode too (1), #282's route keeping every press (1), a right click pressed rather than
+  shown (1), the record's web area ignored (1).
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
+- Decision (#463, the review of 1a1956b2..5364c10b, reviewer-medium, 2026-11-21; amends the entry above): four
+  corrections, each tested and each test failing with its fix reverted. (1) The action itself may bring the target app
+  to the front (an app's own action; Chrome's toolbar AXPress did), which the person-input watch read as `personInput`,
+  so the click answered a silent ok. Now `PopUpPersonSignals.activated` tells the target app become frontmost with no
+  input of the person's since the press (input at the press itself counts as theirs) from the person's own switch: it is
+  recorded (`popUpClick.activated: true`), nothing is restored (cua never takes the front from an app), and a confirmed
+  open answers success with the note "<App>'s menu is open, but opening it brought <App> to the front over the person's
+  window, and cua does not take the front back from an app. Tell the person if that is in their way." (the noun per
+  kind). Success, not `clickUnconfirmed`: what the click was for did open, and `clickUnconfirmed` asks for an
+  observation before a retry, which would only repeat the activation; the note says what changed for the person. An
+  unconfirmed one adds "The action brought <App> to the front over the person's window." to its sentence. (2) AXShowMenu
+  takes the element and not the point, and a text element's context menu acts on the word or selection under the click,
+  so the menu it opens may be for other text: a right click behind on AppKit text (`contextMenuTextRoles`: #283's
+  editable roles and AXStaticText) is refused in shared mode, `popUpClick.refused: "textElement"`, "<App>'s context menu
+  for text acts on the text under the pointer, which no accessibility action can aim at, and a right click cua sends
+  while <App> is not the frontmost app does not leave the menu open. Nothing was sent. Ask the person to bring <App> to
+  the front first, or use keys instead: select the text with selectText, then use <App>'s keyboard shortcuts or its menu
+  bar by its elements."; dedicated mode keeps the posted one. The measured cell, TextEdit's text view, is now this
+  refusal; Show Menu remains for AppKit elements that are not text, a shape no cell measured. (3) The web right-click
+  refusal reads the record's web area before it needs a live hit, and `recordedNodeInWebArea` reads the record's own
+  `ScreenshotNode.webArea` too, so a late or missing hit, or a node under a frameless web area, never posts it. (4) An
+  `<input list>` needs the live hit's role to be AXComboBox, not only the recorded one. The model-facing sentences say a
+  right click on native text is refused and that the answer says when the action brought the app to the front.
+  Shipped with (tech-debt-tracker.md): the menu button's and colour well's effect accepts any new window of the app's at
+  the control, so an unrelated one appearing there during the wait would confirm.
+  Proven offline (`PopUpPointTests`, 52 tests): reverted one at a time (5 mutations), each fails one test: the
+  activation not told from input, a right click on text shown, the record's web area read only with a live hit, its
+  own web area field ignored, the live hit's role not read.
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
+- Decision (#463, the re-review of 5364c10b..6a702ccf, reviewer-medium, 2026-11-21; amends the two entries above and
+  replaces the design's item 1c): **in shared mode with the app not frontmost, every right click is refused; the
+  AXShowMenu delivery and the `contextMenu` kind are dropped.** AXShowMenu takes an element and no point, so no role
+  test proves the menu it opens is the one the point would open: a text element's acts on the word under the click (the
+  previous entry's reason for refusing text), a row's may depend on the column, and on a page it opens none (0/8); and
+  the role-narrowed rule still let a right click on recorded native text with a missing or late hit fall through to the
+  posted one, whose menu route 3's release closes (TextEdit's text view 6/6, Chrome's page 4/6). The simplest honest
+  shape is one refusal, whatever the point hits, text or not, page or native, hit or no hit (`contextMenuPoint`):
+  `popUpClick.refused: "rightClick"` (the former `webArea` and `textElement` folded into it; the hit's role, when one
+  answered, is the record's `role`), as `backgroundClickRefused`: "<App> does not keep a context menu open for a right
+  click cua sends while <App> is not the frontmost app, and no accessibility action opens one at a point. Nothing was
+  sent. Ask the person to bring <App> to the front first, or use keys, or, for an element's own menu, call
+  performSecondaryAction with "Show Menu" on that element by its ID." Show Menu by the model on an element it names is
+  the model choosing the target, not the engine guessing it. Frontmost (its posted menu stays up, 5/5) and dedicated mode
+  (the page's menu stayed up, 3/3) keep main's posted right click. `recordedNodeInWebArea` and `contextMenuTextRoles` are
+  gone. The model-facing sentence now says any right click behind is refused and names Show Menu as the way to an
+  element's menu. Shipped with (tech-debt-tracker.md, #472): an activation by the app that comes after its panel is
+  already up is not seen, since the foreground watch ends with the order check; unmeasured. The bookmark star's residual
+  is #471.
+  Proven offline (`PopUpPointTests`, 48 tests: the right-click delivery's two tests and the three per-place refusal tests
+  replaced by one): every right click behind in shared mode refused with nothing held, performed or posted and no window
+  list read (AppKit text, an AppKit row advertising AXShowMenu, an element the record does not hold, a page's group, a
+  coarse view before the page tree is exposed, no hit), and main's path in dedicated mode and frontmost. Reverted, each
+  fails: no refusal (2 failures), refused only with a live hit (1), refused in dedicated mode too (2).
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
+
+- Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's
+  `StalePointGate`): **the element route's recheck after its wait runs #452's same-app overlay rule on its own fresh,
+  timed hit-test before the press or the focus.** #282's and #283's element routes (shared mode, the app behind) wait
+  for action names or a focus hold and then check the point again (`stalePointRecheck`); that recheck read only the
+  tree's verdict, so a window of the app's own that opened over the point during the wait (Chrome's omnibox popup) was
+  pressed under, as on main (reviewer-high on 023a3bee, P2). The recheck now takes `hitTestOutcome` instead of the
+  untimed hit-test and passes its place to `guardedPointVerdict` (`recheckedPointVerdict`, StalePoint.swift): the same
+  (a) `axHit` and (b) `popover` signals, the same `hitWindowCovers` and `appWindowOverPoint` checks against the window
+  list (read only when the place asks for it), the same 500 ms deadline (a late or unread hit keeps the tree's verdict),
+  and the same refusal: `appWindowOverPoint`, #452's sentence naming the app (the gate now carries the app's name;
+  "The app" before), meta `by`, `overWindow` and the recheck's own `hitMs`; `windowsMs` adds the recheck's list read to
+  the first check's. After the focus hold the sentence says "The app was activated in the background, but nothing was
+  pressed." in place of "Nothing was sent.", as the guard's other refusals do there. #316's rule W is not run again (no
+  recorded list is passed): it ran at the first check, and W's own question at the recheck is left as it was. The hit
+  the tree judges is unchanged (the timed hit-test's element is the untimed one's), so an ordinary element-route click
+  reads no window list and answers as before. Unit-tested over fakes only (`RecheckAppWindowOverPointTests`); the
+  hosted cell (an omnibox popup opened during a background element-route click) is not yet measured.
+  Date/Author: 2026-11-20, cursor235's implementer for #456.
+
+- Decision (#456, the review of edbfbd23..e1a01d42, reviewer-high, 2026-11-20; amends the entry above): two
+  corrections, each tested and each test failing with its fix reverted. (1) #359's pending-click wait (up to
+  `pendingClickCapMs`, 300 ms, after a recent pointer press to the app) is a wait too: the field routes (#283's Chromium
+  focus, #315's Gecko press) now check the field after it with the recheck when it ran (`fieldRouteFirstCheck`;
+  `awaitPendingClick` answers whether it waited), where they passed "no wait" and so never hit-tested a popup that
+  opened during it when no later wait followed (boxes already there, no focus hold). (2) The gate's record adds up the
+  time and window-list reads of every check it ran (`StalePointGate`'s running costs), since a route's final check after
+  its focus hold replaces the early recheck's record in the meta; `hitMs` is the last hit-test's.
+  Date/Author: 2026-11-20, cursor235's implementer for #456.
+
+- Decision (#443, 2026-11-21, `fix/443-decoration-control-gone`, plugin 0.28.29; amends #433's scope note on `decomove`
+  and #296's verdict, StalePoint.swift `controlGoneVerdict`): **an inert node kept on its own handle whose recorded
+  control is confirmed destroyed refuses (`controlGone`).** #433's qualification (kit `probe/433-qual`, cell `decomove`,
+  batch A, run 44715767925) measured main 870dd117 landing on link B 40 of 40 times on CfT and on Electron when an inert
+  decoration of link A (nested groups the size of A) was moved into B once A was replaced; Safari refused `nodeGone`.
+  #433's entry left the case out of scope because two rounds that judged content of a control by where its content now
+  lies (a link's content must still lie inside its recorded link) kept refusing link-text clicks main keeps (text
+  re-rendered in an unchanged link, unread parents or children, overflowing labels, same-title links). This rule asks
+  nothing about where the node lies now, only whether its control still exists, and acts only on confirmation.
+  "Recorded control" is what the record already holds, so the observation is unchanged and costs nothing more:
+  `ScreenshotNode.control`, #431's nearest recorded ancestor, frameless ones included, of an interactive role or with
+  AXPress, below the node's web area, window, sheet or application; nil where a nearer ancestor's actions did not read
+  (`controlUnknown`), and then the rule does not run. "Confirmed gone" is `StalePointReads.gone`, the control's handle
+  answering its AXRole read with kAXErrorInvalidUIElement; a seam without that read never refuses (not `isGone`'s
+  fallback on an unread frame). The rule runs after #296's verdict, before #433's check of a control beneath, and refuses
+  only a point that verdict keeps where all of these hold: the node was found by its own handle (a node re-created in
+  place came with its control, so `remount` and `retext` stay main's), it does not act on its own (its role and actions
+  read inert at the observation, no AXPress recorded: a button that outlived its clickable card is its own target), and
+  the verdict is not #305's `recordedHit` (another recorded control the screenshot showed at the point, in place,
+  vouches for the click). A live control keeps main's verdict whether it still holds the node or not, and a control
+  whose reads fail with any other error keeps it too. The refusal is the guard's own, `screenChangedSinceScreenshot`,
+  meta `stalePoint.reason` `controlGone` with `controlRole` (the gone control's role), its sentence: "The screen
+  changed since the screenshot: the point lies on an <node> that does not act on its own, inside the <control> the
+  screenshot showed there; that control is gone, and the <node> now lies in whatever replaced it. Nothing was sent.
+  Call getScreenshot for a new screenshot and aim again from what it shows." (the activated form as the guard's other
+  refusals). The press verdict and the route's recheck take it through `stalePointVerdict`. The model-facing docs are
+  unchanged: "what that screenshot showed at the point is gone" already covers it.
+  Limits: a link's own text node (AXStaticText) moved into a new link is refused the same way, which is the same wrong
+  click; Chromium recreating a control's accessibility object for the same DOM element (a role change) while a child's
+  object survives would refuse a click main lands correctly, not observed and not measured.
+  Proven offline (`OverlayTargetTests`, four new tests, one rewritten): `decomove` refuses with the decoration or A's text
+  moved into B, the hit on it, on B or nothing, and with A recorded frameless, with the sentence and meta; A's handle
+  alive with every read failing, or a seam without `gone`, keeps; A alive, with the decoration inside it or moved out,
+  keeps; a re-created node, an acting node and a `recordedHit` keep. #433's test that pinned `decomove` to main's verdict
+  now asserts the refusal, and its case with B's role unread refuses too. With the call removed, 17 assertions in three
+  tests fail; mutations of the handle-only, inert-only, `recordedHit` and confirmed-only conditions each fail a test.
+  Not measured live: `decomove` with this build on CfT and Electron, and #433's keep cells (`retext`, `plain`, `like`,
+  `remount`, `textbehind`) and #340's.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the review of dfe6f443..1d3b0963, reviewer-medium, 2026-11-21; amends the entry above): one P2, a
+  false refusal against main, fixed. With two links overlapping at the point, the record can take a deeper decoration
+  of the back link A while the front link B takes the click; once A is removed and the decoration survives, B gets the
+  same click, but the hit on B's text answers `nonInteractiveHit` and on B with the decoration moved into it
+  `hitAboveNode`, so neither reached the `recordedHit` exemption and the rule refused what main lands correctly (and
+  pre-empted the element route's own `recordedHit` check of B). Now, before refusing, the control the live hit lies in
+  vouches (`hitControlVouches`): the hit itself or its nearest ancestor below its document that acts on its own (an
+  interactive role or AXPress, read now), when it is a recorded node by its recorded handle, its shown frame holding the
+  point and its frame read now in place (2 pt). A match re-created by role and label never vouches, since a same-label
+  replacement would pass it; `decomove`'s B is the replacement, not recorded at the point, so it still refuses. Proven
+  offline (`testARecordedControlInFrontOfAGoneControlVouchesForTheClick`): both shapes keep, and the route presses B; B
+  moved 3 pt off its place, or a same-label link new at the point with B gone, refuses. The case fails with the vouch
+  removed; the earlier mutations still fail a test each (`testWhatTheControlGoneRuleLeavesToMain` now takes the acting
+  node with no hit and `recordedHit` on a re-created control, which no hit's control vouches for, so the vouch does not
+  mask those conditions). 1601 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the hosted smoke of 2a3c7e53 against main dfe6f443, run 44997131965, 2026-11-21; narrows the two
+  entries above): **the rule refuses only a node that has moved into a different control.** The smoke found two false
+  refusals against main. (1) `overlaprow`, Electron: links A and F overlap in a row, the record takes A's decoration, A
+  is removed and the decoration stays in the row under the unchanged front link F; the click at F's left padding hit
+  the decoration itself (`sameElement`), so the vouch, which walked from the hit, never saw F. Main landed on F 2/2, the
+  build refused 2/2. (2) `rolechange`, Safari, measured: the page sets role="button" on A's own element, WebKit
+  re-creates A's accessibility object (the old handle confirmed gone) as an AXButton, and the decoration survives in
+  it. Main kept and landed 4/4 (`hitAboveNode`, hit AXButton), the build refused 4/4; CfT and Electron keep A's object
+  and kept. `decomove` refused 4/4 on CfT and Electron, and `overlapinto` (the review's shape) kept everywhere.
+  So, with the recorded control confirmed gone, the guard reads the control the node lies in now (`liveControl`: its
+  nearest ancestor that acts on its own, an interactive role or AXPress read now, below its document, within
+  `stalePointAncestorLevels` parents, an ancestor whose role and actions do not read passed over) and refuses
+  `controlGone` only when that control exists and is another (`controlDiffers`): its label reads otherwise
+  (`stalePointLabelsAgree`, whose absent or unread side agrees), or its frame read now is more than 2 pt off the
+  recorded control's (a recorded control without a frame, or a frame unread now, says nothing). The role is not
+  compared, so `rolechange` keeps. No control now (`overlaprow`, or an ancestor whose role does not read) keeps main's
+  verdict. The vouch stays, since a recorded control in place at the point still takes a click the narrowed rule would
+  refuse (the decoration moved into front link F, whose label is not A's), and now checks both the node's live control
+  and the hit's (`controlVouches`, by recorded handle, shown at the point, in place): with the decoration in F, the hit
+  on F, on the decoration or on nothing keeps; with it in a new link N at A's place, the hit on F's text keeps by the
+  hit's control.
+  Limit, by design: a replacement with A's label at A's place (a same-label link slid into A's row, and the decoration
+  moved into it) reads as A re-created and keeps main's verdict, which clicks it; `decomove` refuses because B reads
+  "Next" where A read "Inbox". A control re-created in place with its label read from another attribute than before
+  (title one side, description the other) still agrees, as `stalePointLabelsAgree` lets an absent side agree.
+  Proven offline (`OverlayTargetTests`, 31 tests): the `decomove` fakes now give B another label, as the cell does, and
+  refuse; `testADecorationLeftInNoControlKeepsMainsVerdict` (`overlaprow`: the hit on the decoration, nothing or F) and
+  `testADecorationInItsControlReCreatedWithAnotherRoleKeepsMainsVerdict` (`rolechange`: an AXButton with A's label and
+  frame keeps, the hit on it or the decoration; 3 pt off or another label refuses) are new; the vouch test adds the
+  no-hit case; B's role unread now keeps (no known control). Against 2a3c7e53's StalePoint.swift both new tests, the
+  vouch test and the unread-role case fail. Mutations each fail a test: the call removed, `isGone`'s fallback, the
+  inert-only and `recordedHit` conditions, the label check, the frame check, the node's vouch and the hit's vouch. One
+  survives: dropping the own-handle condition, since a node re-created with its control (`remount`) now also keeps by
+  the same-control comparison; the condition stays as the cheaper guard of the keep cells. 153 StalePoint tests and
+  1603 swift tests, 0 failures.
+  Not measured live: this build on the smoke's cells and on #433's and #340's keep cells.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the re-review of f394677e, reviewer-medium, 2026-11-21, the last review wave; amends the entry above):
+  two P2 and two P3, all fixed; the counted hosted qualification is the check from here, with no further review round.
+  (1) `liveControl`'s walk passed over an ancestor whose role or actions did not read and compared a farther control
+  (an outer clickable card) with the recorded one, so a link re-created under a card could refuse. An ancestor it
+  cannot classify (role unread with no AXPress read, or role read inert with its actions unread) now ends the walk,
+  inconclusive, and the verdict is main's. (2) A vouching control must be one the record holds as a control (an
+  interactive role, or AXPress read then: `actionable` or `pressRecorded`); an inert wrapper that gained AXPress since
+  never vouches. (3) `controlDiffers` no longer goes through `stalePointLabelsAgree`, whose unread title read as absent
+  and let the comparison fall through to the descriptions: it compares title, then description, and an attribute unread
+  on either side, then or now, ends the comparison with no label difference; the description is compared only where
+  both sides are known to lack a title. A frame confirmed off by more than 2 pt still refuses. (4) A front link's text
+  drawn outside the link's own frame, the hit on it, could not vouch, since `controlVouches` asks for the control's
+  shown frame at the point: the hit now vouches itself (`contentVouches`) when it is a recorded node by handle, shown at
+  the point and in place, whose recorded control is the control it lies in now and is in place.
+  Proven offline, four new `OverlayTargetTests`, each failing against f394677e's StalePoint.swift and with its own fix
+  reverted alone: `testAnUnclassifiedAncestorEndsTheSearchForTheLiveControl` (a re-created link whose role, or whose
+  actions, do not read, under a re-laid-out clickable card), `testAWrapperThatGainedAXPressNeverVouches` (refused),
+  `testAnUnreadTitleEndsTheLabelComparison` (the title unread then or now, the descriptions differing: kept; 3 pt off:
+  refused), `testOverflowingContentOfAControlInPlaceVouches` (kept; the front link 3 pt off: refused). The vouch test
+  adds the hit on the front link's text re-laid out 3 pt inside it, which only the hit's control vouches for, so that
+  vouch still earns its place beside the content's. The mutation pass (13 mutations) is caught but for the own-handle
+  condition, as the entry above says. 157 StalePoint tests and 1607 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#453, ruling 1071, 2026-11-22; the route changes): **a plain left click that #452 refuses on a row of the
+  app's own overlay is carried by AXPress on the row's recorded handle, not by a click posted to the overlay's window.**
+  The first build (`fix/453-overlay-click`, parked at 213fc5d6 by ruling 1067, never merged) stamped a mouse down and up
+  to the overlay's window at the point. That made the engine prove which control was on top at the point and that the
+  recorded tree was complete, and AX states neither reliably: three reviewer-high rounds (7 P1 and 2 P2, 7 P1 and 2 P2,
+  4 P1 and 2 P2) each found wrong-row or false-ok paths in the identity and stability machinery the proof needed (an
+  unrecorded descendant under a recorded row, the capture racing the walk across a relayout, the overlap root looked up
+  by the window's current bounds, which delivered "Allow this time" to "Never allow" once the bubble shrank, a failed
+  child read passing the subtree guard). Pressing the recorded element needs none of it: the target is the element the
+  screenshot's record names, and only its own identity is checked at click time. The spike (main 5580ac20, run
+  45050307595, kit `probe/453-measure` README §"#453 spike") measured the bare AXPress on the recorded row taking it
+  105/105 (omnibox, Web MIDI permission, TextEdit popover, and the datalist 15/15, whose earlier 0/6 pressed an ancestor
+  found by hit-test), the frontmost app changed 0/105, Chrome raised over the cover 0/75, no key window changed outside
+  the frontmost prompt, wrong row 0, AXPress p50 at most 13 ms.
+  The rule (OverlayClick.swift, called from Input.swift's coordinate click before #454): only main's
+  `appWindowOverPoint` for a plain left click (`overlayPressApplies`), so #316's `newWindow`, decided first, and every
+  tree verdict (#443's `controlGone` included, which #452's refusal never reaches) stay main's, and a drag, a right or
+  double click or a spike route keeps the refusal. The recorded handle is `ScreenshotNode.element` of the connection's
+  last screenshot: the observed window's walk already records these overlays' rows (README §Q3: Chromium hangs its
+  popups' and bubbles' trees under the browser window, the popover lies in its window's tree), so the observation is
+  unchanged and costs nothing more. The hit-test #452 already took is read up to the overlay's AXWindow (the nearest
+  AXPopover for the popover signal) only to find where the overlay's subtree starts in the record (the outermost element
+  of that chain the record holds by handle); the row is the deepest recorded node of that subtree, of no container role,
+  whose shown frame held the point, and two or more such nodes not nested refuse. The kind is read from the recorded
+  path from that root to the row and the two windows' layers, which the verdict now carries (`overLayer`,
+  `observedLayer`): one web area titled "Omnibox Popup" at the browser window's layer; an AXList above it; an alert
+  dialog at it, with no web area; #452's popover signal outside Chromium. At click time the row's handle must be alive,
+  read its recorded role and label (title, else description, else a text's value, equal once cut by `bounded`; a part
+  unread then or now refuses), have a frame within 2 pt of the recorded one after the window's shift, and read AXEnabled
+  true or have none. Then AXPress through `gatedPerform`, with no mouse event and no activation hold. The click succeeds
+  when the overlay's window leaves the on-screen list or the row's handle dies within 500 ms, and otherwise answers
+  `clickUnconfirmed`; an AXError other than a messaging timeout is `actionFailed`. Meta: `overlayClick {window, by, kind,
+  route: "action", confirmed}`, or `{window, by, kind, refused}` beside main's refusal, whose name and sentence are
+  unchanged. The model's paragraph says the click goes through the row's action, and (owner ruling 1042) that a
+  permission prompt's Allow grants what the site asks.
+  Not carried over from the parked branch: its post route, the observation's walk-before-capture order and stability
+  re-read (a list re-laid out between the walk and the image leaves the recorded row elsewhere, so its frame or label
+  refuses), the overlap-root and membership checks over the window's bounds, the descent from the hit, the decision
+  budget, the omnibox location-bar check (the kind only scopes the route; a lookalike overlay can at most get its
+  recorded row pressed under the same checks) and the element-ID route (#470). The element routes' recheck after a wait
+  (#456) keeps main's refusal when it answers `appWindowOverPoint`: the first check kept, so the overlay came over the
+  point after the click was judged.
+  Proven offline (`OverlayClickTests`, 19 tests): each kind delivered on its recorded handle, never on the deeper page
+  node beneath or the neighbour; each refusal (a dead handle, a changed label, an unread label, a changed role, a frame
+  moved or resized past 2 pt, disabled, AXEnabled unread, non-nested rows, six unknown kinds, no recorded handle, an
+  answer reading to no overlay); the re-laid-out bubble (the recorded button gone or moved, the neighbour at the point
+  and answered, never pressed); `clickUnconfirmed`; and main's other verdicts and clicks unchanged.
+  Each new test fails without the fix: with the decision leaving every click to main (the route removed), 17 of the 19
+  fail; the main-unchanged test fails once the trigger applies to every verdict and click, and the guard's test once
+  the verdict drops the overlay's layer. Each other condition removed alone fails a test: the dead-handle, role, label,
+  frame and enabled checks, the nesting check, the overlay membership, the recorded root, the popover's engine, the
+  Chromium kinds, the confirmation. 1626 swift
+  tests (1 skipped), 0 failures; the three docs tests pass.
+  Not measured live: this build. The spike measured the press itself on main; the hosted qualification of this build
+  (main against fix, every kind and mode) is the check from here.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, the review of c8858c2a1, reviewer-high, ruling 1072, 2026-11-22; amends the entry above): seven
+  findings, all fixed in one wave. (1) A row dying no longer confirms: only the overlay's window leaving does, so a list
+  that rebuilds its rows under a press that changed nothing answers `clickUnconfirmed`. (2) The screenshot must have
+  shown exactly one window of the app's over the observed one at the point, the one the hit reaches now: with a bubble
+  over the omnibox popup, the bubble closed since, the hit reaches the popup's unchanged row, which the screenshot showed
+  covered (`notOneOverlay`). This is the one observation change: the capture now lists the on-screen windows with their
+  owners, layers and bounds beside the numbers it already read (`ObservedScreenshot.windowsListed`, with the captured
+  window's number), one `CGWindowListCopyWindowInfo` per screenshot, about 0.3 ms (p95 1 ms, #316's measurement), timed
+  as `screenshotWindowsListed`; the record's tree alone cannot tell an overlay's subtree from the page under it. (3) The
+  row's recorded subtree must be whole (`partlyRecorded`): every recorded element of it, framed or frameless, had its
+  children read and all recorded (`ObservedScreenshot.recorded`, #330's map, and `subtreeRecorded`); no new recording.
+  (4) The title, the description and a text's value are compared each on its own (`overlayLabelsAgree`); a part
+  unread then or now, changed, gone or gained refuses, where the first non-empty part alone used to decide. (5) The
+  identity (alive, role, label parts, frame, enabled; `overlayIdentityRefusal`) is read again after the owner's and
+  intervention's preparation, just before the AXPress, as #454's item path does; a change there presses nothing and
+  #452's refusal stands. (6) The row must be of a role the kind's rows take (`OverlayKind.rowRoles`: a suggestion's
+  text, button, link or cell; an option's text, cell, row or menu item; a prompt's button, checkbox, radio button or
+  link; a popover's control), so a point in an AXList's padding or between a dialog's buttons refuses (`notARow`). (7)
+  The service forwards `cua/overlayClick` (`OPTIONAL_INPUT_META`, reset per call). A press that answers a messaging
+  timeout answers `clickUnconfirmed` even when the window then leaves (the coordinator's ruling on the wave): the press
+  may have landed, but the window leaving cannot be tied to it. The capture-walk race stays a declared
+  limit with its own ticket, with no stability re-read.
+  Proven offline: six `OverlayClickTests` (24 in all; one replaces the row-dying test), one per Swift finding, each failing with its fix reverted
+  alone (the row-dying confirmation, the one-overlay check, the whole-subtree check, the first-part label comparison,
+  the recheck before the press, the row-role check), and a service test failing against the previous service.mjs.
+  The earlier mutations (identity checks, nesting, membership, recorded root, kinds, trigger, confirmation, the route
+  removed) each still fail a test. 1631 swift tests (1 skipped), 0 failures; the service test file 44/44 and the
+  three docs tests pass.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, the review of c8858c2a..e7e78424, reviewer-medium, 2026-11-22; amends the two entries above): one P1,
+  one P2 and one P3, all fixed. (P1) The identity's last reads came after the deadline and intervention checks, so a
+  request that expired, or a person who acted, during them still got the row pressed: the owner's checks and
+  registration stay before the reads, and the deadline and the in-flight intervention check run again after them, just
+  before the press (`overlayClick`'s `beforePress`), answering timeoutReached or userIntervened with nothing sent, as
+  main's other paths do. (P3) The agent cursor's click is announced only after those checks pass, never for a row the
+  last check refuses. (P2) A cached capture that failed was retried with the window list read before the failed
+  attempt: the list is now sampled immediately before each attempt and kept from the one that captured
+  (`captureSamplingList`). Proven offline: `testAnExpiryOrAnInterventionDuringTheLastReadsSendsNoPress` fails with the
+  checks after the reads removed or moved before them, `testTheCursorsClickComesOnlyAfterTheLastChecks` with the cursor
+  announced before the last check, `testTheWindowListIsTheOneSampledBeforeTheAttemptThatCaptured` with one list
+  sampled before the first attempt. 27 `OverlayClickTests`; 1634 swift tests (1 skipped), 0 failures.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, ruling 1082, the row-selection wave, 2026-11-22; amends the entries above): the counted qualification
+  (probe/453-measure README d542abaf, 652e673b) failed safe, 0 wrong rows and 0 false oks, but delivered only the
+  permission prompt (20/20): the omnibox refused `notARow` 18/18 (the deepest node at the point was the row text's
+  unlabelled AXGroup 410×40), the datalist answered `clickUnconfirmed` 18/18 (the press went to the option's inner
+  AXStaticText, which Chromium ignores), and the popover refused `partlyRecorded` 18/18. (1) Row choice: when the
+  recorded chain from the overlay's root down to the deepest node at the point passes an AXList or AXGrid (the
+  outermost on the chain), the row is that container's child on the chain (the omnibox's AXStaticText 426×40, the
+  datalist's outer "apricot", the popover's swatch), still of a row role for its kind and through every identity check
+  on its own handle; two of the container's children at the point refuse (`notNested`, `rowsOverlap`). With no list or
+  grid (the permission bubble) the deepest node stays the row, every recorded node at the point on one chain. (2)
+  `partlyRecorded`, scoped: the row's own children, and those of each recorded descendant of it whose frame holds the
+  point, must have been read and all recorded; other descendants do not block. The leaf line: AXChildren absent
+  (kAXErrorAttributeUnsupported, kAXErrorNoValue) is a leaf, whole; a read that failed otherwise (a timeout, any other
+  AXError) is unread and refuses. The observation already told the two apart (`ElementData.unreadable`, from the batched
+  read's slot), but the record dropped the difference: it now keeps one flag per element (`ElementData.childrenLeaf`,
+  `ScreenshotNodeRead.childrenLeaf`) and one state per framed node (`ScreenshotNode.children`: whole, childrenUnread,
+  childrenNotRecorded), computed in the record's existing pass; no AX read is added. #330's and #431's coverage inputs
+  are unchanged. The #1072 coverage over the row's whole subtree, frameless elements included, is replaced by this rule.
+  (3) The meta names the chosen row (`row: {role, frame}`) and, on a refusal, the node it stands on and why
+  (`refusedBy: {role, reason}`: the row's identity reason, `childrenUnread` or `childrenNotRecorded` for a node, the list
+  for `rowsOverlap`); the service forwards it whole as `cua/overlayClick`.
+  Proven offline over fakes built from the three recorded chains (`OverlayClickTests`, 31): the omnibox row text pressed,
+  never its inner group; the datalist's outer text pressed; the swatch with leaf children pressed; a row whose remove
+  button went unread refused; each side of the leaf line, from the AX error through `ElementData` and the record;
+  two list or grid children at the point refused; the permission bubble unchanged. Mutations each fail a test: the row
+  choice removed, the row-level overlap check, the leaf line removed or widened to every failed read, the scope widened
+  to every descendant or narrowed to the row alone or to its descendants alone, the meta's row and refusedBy, and the
+  earlier wave's checks (one overlay, the recheck, the row role, the nesting check, labels). 1638 swift tests (1
+  skipped), 0 failures; the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
+- Decision (#453, ruling 1083, the final wave, no review after it; amends the entry above): a focused review found 4 P1
+  and 3 P2, each only adding refusals; all fixed. (1) The row is promoted to the list's or grid's child only over nodes
+  inside it at the point that are inert (role and actions read, no interactive role, no AXPress: #433's inert layer) or
+  repeat it (same role, same recorded label parts, frame within 2 pt: the datalist's inner text); a distinct control
+  there, the omnibox's remove button, refuses (`actionableDescendant`). (2) The container's one child at the point must
+  be the row on the chain; none refuses (`rowNotAtPoint`). (3) Coverage is the row's whole recorded subtree again,
+  framed and frameless: any element of it whose own children are unread or not all recorded refuses. (4) The
+  container's own children must all be recorded (`partlyRecorded`, `containerNotRecorded`). (5) The row must be the
+  container's direct child in the record (`ScreenshotNode.parentFramed`); a frameless element between them refuses
+  (`notDirectChild`). (6) A node's own children are looked for along the record's parent edges, so a child it lists but
+  the record holds under another parent is not recorded for it; #330's and #431's coverage inputs are unchanged. (7) A
+  leaf is only an AXChildren slot that explicitly answered kAXErrorAttributeUnsupported or kAXErrorNoValue
+  (`absentSlot`, `AttributeRead.absent`, `ElementData.childrenLeaf`); a null slot or a missing entry is unread.
+  Inertness reads AXPress and the interactive roles, not every action name: Chromium lists AXShowMenu and
+  AXScrollToVisible on plain groups, which a press does not reach.
+  Proven offline (`OverlayClickTests`, 37): a test per item, each failing with its fix reverted alone; the datalist's
+  outer text, the omnibox's row text and the popover's swatch still deliver with their trees whole and leaf children;
+  the remove button recorded with its children unread away from the point now refuses. 1644 swift tests (1 skipped),
+  0 failures; the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
 
 ## Outcomes & Retrospective
 

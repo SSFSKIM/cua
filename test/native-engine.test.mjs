@@ -323,7 +323,8 @@ test('a second engine on the same socket loses the lock and exits, leaving the f
   const second = spawn(bin, [], {env: engineEnv({CUA_ENGINE_SOCKET: socket}), stdio: ['ignore', 'ignore', 'pipe']});
   let stderr = '';
   second.stderr.on('data', chunk => { stderr += chunk; });
-  const code = await new Promise(resolve => second.once('exit', resolve));
+  // 'close', not 'exit': 'exit' may come before the stderr pipe is read to its end (#444).
+  const code = await new Promise(resolve => second.once('close', resolve));
   assert.equal(code, 75);
   assert.match(stderr, /engine\.lock/);
   assert.equal((await wire.result('ping', {clientApiVersion: API_VERSION})).serverApiVersion, API_VERSION);

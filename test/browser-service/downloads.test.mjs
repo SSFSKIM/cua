@@ -13,6 +13,7 @@ import {DocumentResponses, Downloads} from '../../src/browser-service/downloads.
 import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
 import {execute, readyBrowser, rejection, scriptedPages, serviceOnHost, waitFor} from './support/service-on-host.mjs';
+import {earlyTimers, settle} from './support/early-timer.mjs';
 
 const DOCUMENTS = {requestStage: 'Response', resourceType: 'Document'};
 const URL_A = 'https://example.com/files/parity.txt';
@@ -350,6 +351,25 @@ test('a download\'s release that hangs: the wait times out in its own words, and
   assert.equal(responses.hasOwnedPausedResponses(6), false);
 });
 
+test('a wait answered timeout by its timer lets nothing through after it, though the timer fired before the clock reached the end', async t => {
+  const clock = earlyTimers(t);
+  const {cdp, api} = scriptedController();
+  const responses = new DocumentResponses(cdp);
+  const downloads = new Downloads(api, responses);
+  let refusals = 1;
+  cdp.answers['Fetch.continueResponse'] = () => { if (refusals-- > 0) throw new Error('Internal error'); return {}; };
+  await downloads.enableDownload(6);
+  const waiting = rejection(downloads.waitForDownload(6, 20));
+  cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 6}, params: pausedResponse({requestId: 'dl'})});
+  await settle();
+  assert.equal(methods(cdp).filter(m => m === 'Fetch.continueResponse').length, 1, 'the first release, refused; the next waits its turn');
+  clock.elapse(20);
+  assert.equal((await waiting).message, 'Timed out after 20ms waiting for download.');
+  await settle();
+  assert.equal(methods(cdp).filter(m => m === 'Fetch.continueResponse').length, 1, 'no release of the download after the wait timed out');
+  assert.ok(methods(cdp).includes('Fetch.failRequest'), 'the cleanup fails the paused download');
+});
+
 test('a release refused by an open dialog is left to the dialog (the recorded vendor gap): no recovery', async () => {
   const {cdp} = scriptedController();
   const responses = new DocumentResponses(cdp, {releaseMs: 100, recoveryMs: 100});
@@ -418,11 +438,11 @@ test('removing a media download\'s interceptor that Chrome refuses or never answ
     const responses = new DocumentResponses(cdp, {cleanupMs: 200, recoveryMs: 100});
     await responses.ensureInterceptionReady(9);
     const remove = await responses.addRequestInterceptor(9, () => {});
-    // Refused three times (every attempt), or one hung answer that outlasts the removal's budget.
+    // Every attempt of the removal refused (at most three, as many as its budget lets through), or one hung answer that
+    // outlasts the budget; Chrome answers again once the recovery has disabled Fetch.
     let refusals = 0;
-    const limit = kind === 'hung' ? 1 : 3;
     cdp.answers['Fetch.enable'] = params => {
-      if (params.patterns.length === 1 && refusals < limit) {
+      if (params.patterns.length === 1 && !methods(cdp).includes('Fetch.disable')) {
         refusals += 1;
         if (kind === 'hung') return never();
         throw new Error('Internal error');
@@ -440,6 +460,6 @@ test('removing a media download\'s interceptor that Chrome refuses or never answ
       assert.deepEqual(cdp.detached, [], kind);
     }
     assert.equal(responses.ownsRequestStage(9), false, kind);
-    assert.ok(refusals >= 1, kind);
+    assert.ok(refusals >= 1 && refusals <= (kind === 'hung' ? 1 : 3), `${kind}: ${refusals} attempts`);
   }
 });

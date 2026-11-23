@@ -192,6 +192,11 @@ struct CapturedScreenshot {
   let scale: CGFloat
   /// The on-screen window numbers read just before the capture (#316): what the screenshot's window list held.
   var windowList: Set<CGWindowID>? = nil
+  /// #453: the on-screen windows with their owners, layers and bounds, front to back, read with `windowList` (nil when
+  /// unread), and the captured window's number: which of the app's windows lay over it where (OverlayClick.swift
+  /// `recordedOverlays`).
+  var windowsListed: [ListedWindow]? = nil
+  var windowNumber: CGWindowID? = nil
 
   var wire: [String: Any] { ["url": url, "width": width, "height": height, "scale": Double(scale)] }
 }
@@ -216,20 +221,31 @@ struct ObservedScreenshot {
   /// The on-screen window numbers when the image was captured (#316's rule W, StalePoint.swift `newWindowAbove`): a
   /// window of the app's above this one that the list did not hold is new since the screenshot. Nil when unread.
   let windowList: Set<CGWindowID>?
+  /// #453: the windows listed with their bounds when the image was captured, and this window's number then
+  /// (`CapturedScreenshot.windowsListed`).
+  let windowsListed: [ListedWindow]?
+  let windowNumber: CGWindowID?
   /// The image's size in pixels, the space the model's coordinates arrive in (#328: a point outside it is refused).
   let width: Int
   let height: Int
   /// Every element the walk recorded, framed or frameless, with whether it recorded all of the element's children
   /// (#330's rule dL, StalePoint.swift `screenshotChildrenRecorded`).
   let recorded: [ElementKey: Bool]
+  /// The walk's frameless elements (#435, StalePoint.swift `screenshotRecord`), which #431's twin search reads beside
+  /// `nodes`.
+  let frameless: [ScreenshotNode<AXUIElement>]
 
-  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = [], recorded: [ElementKey: Bool] = [:]) {
+  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = [],
+       frameless: [ScreenshotNode<AXUIElement>] = [], recorded: [ElementKey: Bool] = [:]) {
     self.window = window
     self.recorded = recorded
+    self.frameless = frameless
     width = image.width
     height = image.height
     windowOrigin = image.frame.origin
     windowList = image.windowList
+    windowsListed = image.windowsListed
+    windowNumber = image.windowNumber
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
     scaleY = CGFloat(image.height) / image.frame.height
     self.nodes = nodes
@@ -304,20 +320,41 @@ extension Engine {
     // Route 3 releases its screen-update hold off the request path (Activation.swift): a capture after an action waits
     // for that release, so it never captures a display the action still holds.
     timings.time("screenshotReleaseWait") { ScreenUpdateReleases.shared.drain() }
-    let image: CGImage
-    do {
-      image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
-    } catch where lookup.cached {
+    // #453: the app's windows over this one, with their bounds, listed just before each capture attempt (about 0.3 ms,
+    // p95 1 ms), the list kept the one of the attempt that captured.
+    var listedMs = 0.0
+    let (image, listed) = try captureSamplingList(cached: lookup.cached, list: { () -> [ListedWindow]? in
+      let started = monotonicMilliseconds()
+      defer { listedMs += monotonicMilliseconds() - started }
+      return onScreenWindowListRead()
+    }, capture: {
+      try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
+    }, refresh: {
       // A cached window that no longer captures: list the shareable content again and retry once.
       lookup = try shareableWindows.window(number, timings: &timings, refresh: true)
       guard let fresh = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
       target = fresh
-      image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
-    }
+    })
+    timings.add("screenshotWindowsListed", listedMs)
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
     let path = try timings.time("screenshotWrite") { try writePrivately(data, into: directory, name: screenshotFileName(revision: revision)) }
     return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale,
-                              windowList: lookup.onScreen)
+                              windowList: lookup.onScreen, windowsListed: listed, windowNumber: number)
+  }
+}
+
+/// One capture with its window list sampled immediately before it (#453; the review of c8858c2a..e7e78424, P2): `list`,
+/// then `capture`; when that fails on a cached window (`cached`), `refresh` (the shareable content listed again), `list`
+/// again and `capture` once more. Answers the image and the list of the attempt that captured it.
+func captureSamplingList<Image, List>(cached: Bool, list: () -> List, capture: () throws -> Image,
+                                      refresh: () throws -> Void) throws -> (image: Image, list: List) {
+  do {
+    let listed = list()
+    return (try capture(), listed)
+  } catch where cached {
+    try refresh()
+    let listed = list()
+    return (try capture(), listed)
   }
 }
 

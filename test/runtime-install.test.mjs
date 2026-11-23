@@ -2,8 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync, existsSync, lstatSync, readlinkSync, readdirSync, statSync, rmSync, mkdirSync, realpathSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {join} from 'node:path';
-import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
+import {download, installRuntime, useRuntime} from '../src/runtime/install.mjs';
 import {parsePin, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {verifyCodeSignatures} from '../src/runtime/checks.mjs';
 import {scratch, zipFixture, fixturePin, acceptSignatures, XATTR_NAME} from './fixtures/runtime-fixture.mjs';
@@ -279,6 +281,44 @@ test('download mode fetches the pinned URL, verifies it like a local archive, an
   await assert.rejects(install(fresh, {archivePath: undefined, fetch: async () => new Response(tampered)}), expectCode('archive_hash_mismatch'));
   assert.equal(pointer(fresh.home), null);
   assert.deepEqual(stagingLeftovers(fresh.home), []);
+});
+
+// #441: a body that overruns the pin can fail the download before its file has finished opening (the open waits on
+// libuv's thread pool, the body does not); were the failure returned then, the file would appear afterwards, in a
+// staging directory its caller is already removing (ENOTEMPTY in place of the typed error). Here the file's open is
+// held until well after the body has failed: the failure still returns only once the file is opened and closed.
+test('a failed download returns only once its file is closed: nothing lands in staging after the typed error', async () => {
+  const s = scratch();
+  const real = fs.createWriteStream;
+  const events = [];
+  // Every write stream download() makes opens 50 ms late and records its open and its close.
+  fs.createWriteStream = (path, options) => real(path, {...options, fs: {
+    open: (...args) => { const done = args.pop(); setTimeout(() => fs.open(...args, (error, fd) => { events.push('opened'); done(error, fd); }), 50); },
+    write: fs.write, writev: fs.writev,
+    close: (fd, done) => fs.close(fd, error => { events.push('closed'); done(error); }),
+  }});
+  syncBuiltinESMExports();
+  try {
+    const dest = join(s.dir, 'archive.zip');
+    const failure = await download({url: 'https://example.invalid/a.zip', length: 10}, dest, async () => new Response(Buffer.alloc(11))).then(() => null, error => error);
+    assert.equal(failure?.code, 'archive_length_mismatch');
+    assert.deepEqual(events, ['opened', 'closed'], 'the failure returned while the file was still opening');
+    assert.ok(existsSync(dest));
+  } finally {
+    fs.createWriteStream = real;
+    syncBuiltinESMExports();
+    s.cleanup();
+  }
+});
+
+test('a body that cannot be read fails the download as download_failed before any file is opened', async () => {
+  const s = scratch();
+  try {
+    const dest = join(s.dir, 'missing', 'archive.zip');
+    const locked = () => { const response = new Response('x'); response.body.getReader(); return response; };
+    await assert.rejects(download({url: 'https://example.invalid/a.zip', length: 10}, dest, async () => locked()), expectCode('download_failed'));
+    await new Promise(resolve => setTimeout(resolve, 50));  // an unopenable file left behind would fail the run here
+  } finally { s.cleanup(); }
 });
 
 test('install on an unsupported host refuses before touching the network or the home', async () => {

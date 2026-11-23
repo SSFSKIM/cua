@@ -14,8 +14,9 @@ const CANDIDATES = [process.env.CUA_TEST_CHROME, '/Applications/Google Chrome fo
 export const chromePath = () => CANDIDATES.find(p => existsSync(p)) ?? null;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// -> {cdp, load(path, {origin}), evaluate(expression), url(path, origin), requests}; `pages` maps a path to its HTML, read
-// at each request, and `requests` lists what the pages asked for ({host, path, found}).
+// -> {cdp, load(path, {origin}), evaluate(expression), url(path, origin), requests, pageSocketUrl}; `pages` maps a path to
+// its HTML, read at each request, and `requests` lists what the pages asked for ({host, path, found}). `pageSocketUrl`
+// is the page's DevTools WebSocket, for a test that opens debugger sessions of its own beside the helper's.
 export async function realChrome(t, pages = {}) {
   const path = chromePath();
   if (path == null) return null;
@@ -46,10 +47,13 @@ export async function realChrome(t, pages = {}) {
     // Chrome's helpers can still be writing its profile as it exits (macOS): retried, and a leftover tmp dir is no failure
     try { rmSync(home, {recursive: true, force: true, maxRetries: 10, retryDelay: 200}); } catch {}
   });
+  // Chrome creates the file before it writes the port into it: read on until its first line is a port, since an empty
+  // read becomes `http://127.0.0.1:/json/list`, which is port 80 (#444)
   const portFile = join(home, 'profile', 'DevToolsActivePort');
-  for (let i = 0; i < 400 && !existsSync(portFile); i++) await sleep(50);
-  if (!existsSync(portFile)) throw new Error(`real Chrome (${path}) wrote no DevToolsActivePort in 20 s`);
-  const devtools = readFileSync(portFile, 'utf8').split('\n')[0].trim();
+  const portIn = () => { try { return /^\d+$/.exec(readFileSync(portFile, 'utf8').split('\n')[0].trim())?.[0] ?? null; } catch { return null; } };
+  let devtools = portIn();
+  for (let i = 0; i < 400 && devtools == null; i++) { await sleep(50); devtools = portIn(); }
+  if (devtools == null) throw new Error(`real Chrome (${path}) wrote no port to DevToolsActivePort in 20 s`);
   let target;
   for (let i = 0; i < 100 && target == null; i++) {
     target = (await (await fetch(`http://127.0.0.1:${devtools}/json/list`, {signal: AbortSignal.timeout(5000)})).json()).find(x => x.type === 'page');
@@ -92,5 +96,5 @@ export async function realChrome(t, pages = {}) {
     await Promise.race([loaded, sleep(20_000).then(() => { throw new Error(`real Chrome did not load ${pathname} in 20 s`); })]);
     sent.length = 0;
   };
-  return {cdp, load, evaluate, url, requests};
+  return {cdp, load, evaluate, url, requests, pageSocketUrl: target.webSocketDebuggerUrl};
 }

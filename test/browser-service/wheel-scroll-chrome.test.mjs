@@ -69,14 +69,27 @@ async function setup(t) {
   const wheels = () => chrome.cdp.sent.filter(c => c.method === 'Input.dispatchMouseEvent' && c.params.type === 'mouseWheel').length;
   return {chrome, scroll, wheels};
 }
-const timed = async work => { const started = Date.now(); const value = await work; return {value, ms: Date.now() - started}; };
+// What the scroll sent after its wheel, read from the CDP log (cleared at each load). "At once" is this, not a time: a
+// clock around scroll() also counts the page's load and a loaded runner's probe, and failed at 1.6 s on hosted macOS
+// (#444). With no room the wait for movement is never entered, so the wheel is followed only by the release;
+// with room it is followed by reads of the scroller.
+const afterWheel = chrome => {
+  const sent = chrome.cdp.sent;
+  const wheel = sent.findIndex(c => c.method === 'Input.dispatchMouseEvent' && c.params.type === 'mouseWheel');
+  assert.ok(wheel >= 0, 'the wheel was sent');
+  return sent.slice(wheel + 1).map(c => c.method);
+};
+const answeredAtOnce = (chrome, label) => assert.deepEqual(afterWheel(chrome), ['Runtime.releaseObjectGroup'],
+  `${label}: answered at once, nothing read after the wheel (the wait for movement never entered)`);
+const waitedForMovement = (chrome, label) => assert.ok(afterWheel(chrome).includes('Runtime.callFunctionOn'), `${label}: the scroller was read after the wheel`);
 
 test('real Chrome: a page with room moves and the scroll answers ok; one with none answers ok at once', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   assert.equal(await scroll('/tall', {scrollY: 400}), undefined);
+  waitedForMovement(chrome, '/tall');
   assert.ok(await chrome.evaluate('scrollY') > 0, 'the page moved before the answer');
-  const fits = await timed(scroll('/fits', {scrollY: 400}));
-  assert.ok(fits.ms < BOUND / 2, `no room, answered at once (${fits.ms} ms)`);
+  assert.equal(await scroll('/fits', {scrollY: 400}), undefined);
+  answeredAtOnce(chrome, '/fits');
 });
 
 test('real Chrome: a page that handles the wheel itself gets the honest no-movement answer', {skip, timeout}, async t => {
@@ -139,8 +152,8 @@ test('real Chrome: a scroller inside an open shadow root is the one watched', {s
 test('real Chrome: horizontal room in an RTL and an LTR scroller, both directions', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   for (const [path, toEdge, inward, sign] of [['/rtl', 100, -100, -1], ['/ltr', -100, 100, 1]]) {
-    const edge = await timed(scroll(path, {scrollX: toEdge}));
-    assert.ok(edge.ms < BOUND / 2, `${path}: at its starting edge, no room that way, ok at once (${edge.ms} ms)`);
+    assert.equal(await scroll(path, {scrollX: toEdge}), undefined, `${path}: at its starting edge`);
+    answeredAtOnce(chrome, `${path}: at its starting edge, no room that way`);
     assert.equal(await scroll(path, {scrollX: inward}), undefined, `${path}: room the other way`);
     assert.ok(Math.sign(await chrome.evaluate('document.getElementById("x").scrollLeft')) === sign, `${path}: it moved before the answer`);
   }
@@ -148,11 +161,10 @@ test('real Chrome: horizontal room in an RTL and an LTR scroller, both direction
 
 // Review finding 5 (P2): the viewport's own overflow decides whether the document scrolls at all.
 test('real Chrome: a scroll-locked page (overflow hidden on html, or on body) has no room and answers ok at once', {skip, timeout}, async t => {
-  const {scroll} = await setup(t);
+  const {chrome, scroll} = await setup(t);
   for (const path of ['/locked', '/locked-body']) {
-    const locked = await timed(scroll(path, {scrollY: 400}));
-    assert.equal(locked.value, undefined, path);
-    assert.ok(locked.ms < BOUND / 2, `${path}: answered at once (${locked.ms} ms)`);
+    assert.equal(await scroll(path, {scrollY: 400}), undefined, path);
+    answeredAtOnce(chrome, path);
   }
 });
 
@@ -182,11 +194,11 @@ test('real Chrome: a scroller inside a closed shadow root is found and watched; 
 test('real Chrome: a same-site cross-origin frame (the same host, another port) is unobservable: the wheel goes and the scroll answers ok, whether the frame scrolls or takes the wheel', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   for (const inner of ['scroll', 'prevent']) {
-    const answered = await timed(scroll(`/frame-port-${inner}`, {scrollY: 300}));
-    assert.equal(answered.value, undefined, inner);
-    assert.ok(answered.ms < BOUND / 2, `${inner}: answered without waiting (${answered.ms} ms)`);
+    assert.equal(await scroll(`/frame-port-${inner}`, {scrollY: 300}), undefined, inner);
+    answeredAtOnce(chrome, inner);
     assert.ok(chrome.requests.some(r => r.path === `/port-${inner}` && r.host === '127.0.0.1' && r.found), `${inner}: the frame loaded its cross-origin page`);
   }
   assert.equal(await scroll('/frame-same', {scrollY: 300}), undefined);
+  waitedForMovement(chrome, '/frame-same');
   assert.ok(await chrome.evaluate('document.getElementById("f").contentWindow.scrollY') > 0, 'a same-origin frame is still observed');
 });

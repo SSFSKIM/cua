@@ -41,7 +41,9 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   witnesses green; every runner witness waits on T10's harness or the `probe/420-qual` kit (specified, not built).
 - [x] T8b — reviewed clean 2026-11-23 (99a2e812b..213b3da02, fixes fb19298b8, 1e3670839, a0bb24116). The Korean and
   per-context rows' runner witnesses wait on T10's pilot.
-- [ ] T8c
+- [x] T8c — reviewed 2026-11-23 (d7e8ddbf3..69392a7b6, fixes b0e488cb2..16143e579 and 730dda11d..cd9e08265);
+  converged after round 2: the save-sheet cell ships observation-only (`SAVE_PANEL_CONTROLS` null, no Return, no act)
+  until the pilot reads the Save panel's controls, and its identification logic is reviewed when they are filled in.
 - [ ] T8d
 - [ ] T10
 - [ ] T3b

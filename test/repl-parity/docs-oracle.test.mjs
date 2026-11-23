@@ -36,6 +36,17 @@ test('confirmation overrides count UTF-8 bytes, preserve whitespace, and reject 
  assert.throws(()=>coreDocument({host:'unknown'}),/host/i);
 });
 const selected=(name='Fixture browser',id='extension:fixture')=>`# Selected Browser\n- Name: ${name}\n- Type: extension\n- ID: ${id}\n- Service: cua browser service 0.1.0\nKeep extension:fixture in this prose and https://example.invalid/Fixture browser.\n`;
+test('the #494 slot: api-reference/<the header\'s own ID> is normalised; another ID\'s pointer or the ID elsewhere still differs',()=>{
+ const doc=(id,{pointer=id,prose='Keep this prose.'}={})=>`# Selected Browser\n- Name: Fixture\n- Type: extension\n- ID: ${id}\n- Service: cua browser service 0.1.0\n${prose}\n\n# Additional Documentation\n- \`api-reference/${pointer}\`: every interface\n\n\`\`\`ts\n// Every member: nodeRepl.write(await agent.documentation.get("api-reference/${pointer}")).\n\`\`\`\n`;
+ const canonical=normalizeSelectedBrowserDocument(doc('1'));
+ assert.equal(canonical,doc('<browser-id>').replace('- Name: Fixture','- Name: <browser-name>'),'the bound slot takes the header\'s placeholder');
+ assert.equal(normalizeSelectedBrowserDocument(doc('137')),canonical,'whatever the run numbered the browser');
+ assert.equal(normalizeSelectedBrowserDocument(doc('extension:a.b(c)')),normalizeSelectedBrowserDocument(doc('extension:x')),'an ID is matched literally');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{pointer:'2'})),canonical,'a pointer to a different ID still differs');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{pointer:'12'})),canonical,'nor is a longer ID that starts with it the slot');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{prose:'Keep browser 1 here.'})),normalizeSelectedBrowserDocument(doc('2',{prose:'Keep browser 2 here.'})),'the ID elsewhere still differs');
+ assert.notEqual(normalizeSelectedBrowserDocument(doc('1',{prose:'See api-reference/1 too.'})),normalizeSelectedBrowserDocument(doc('2',{prose:'See api-reference/2 too.'})),'outside a quoted or backticked name it still differs');
+});
 test('selected-browser projection changes only explicit header identity slots',()=>{
  const actual=selected(),canonical=normalizeSelectedBrowserDocument(actual);
  assert.equal(canonical,selected('<browser-name>','<browser-id>'));

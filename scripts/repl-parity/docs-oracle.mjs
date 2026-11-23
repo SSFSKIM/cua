@@ -76,11 +76,20 @@ export function coreDocument({host,requestMeta,agentCursor=false}={}){
  const policy=typeof candidate==='string'&&candidate.trim()!==''&&Buffer.byteLength(candidate,'utf8')<=12000?candidate:confirmations;
  return host==='vendor'?`${vendorCore}\n${policy}`:`${ownCore}\n${agentCursor?`${AGENT_CURSOR}\n`:''}${policy}`;
 }
-// Only Name and ID in the first Selected Browser header are volatile. Type, service version, prose, URLs and
-// repeated occurrences of an identity elsewhere are not substitutions. Refuse a malformed header instead of hiding it.
+// Only Name and ID in the first Selected Browser header are volatile, and one slot bound to that ID: since #494 the
+// full API reference is looked up as `api-reference/<the header's own ID>` (the catalogue entry and the summary's
+// pointer), so exactly that name, ending at its quote or backtick, takes the same placeholder. Type, service version,
+// prose, URLs, a pointer to any other ID and the ID anywhere else are not substitutions. Refuse a malformed header
+// instead of hiding it.
 export function normalizeSelectedBrowserDocument(text){
  assert.match(text,/^# Selected Browser\n- Name: [^\n]+\n- Type: [^\n]+\n- ID: [^\n]+\n/,'selected browser identity header malformed');
- const lines=text.split('\n');lines[1]='- Name: <browser-name>';lines[3]='- ID: <browser-id>';return lines.join('\n');
+ const lines=text.split('\n'),id=lines[3].slice('- ID: '.length);lines[1]='- Name: <browser-name>';lines[3]='- ID: <browser-id>';
+ return replaceReferenceSlot(lines.join('\n'),id,'<browser-id>');
+}
+// The #494 slot: `api-reference/<id>` for exactly `id`, delimited, so `api-reference/<id>0` is not it.
+export function replaceReferenceSlot(text,id,placeholder){
+ const escaped=id.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ return text.replace(new RegExp(`api-reference/${escaped}(?=[\`"])`,'g'),()=>`api-reference/${placeholder}`);
 }
 export function projectDocumentationRow(row,{host,agentCursor=false}={}){
  if(!/^cells\/documentation\//.test(row.case??'')||!Array.isArray(row.content))return row;

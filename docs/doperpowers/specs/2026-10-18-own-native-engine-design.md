@@ -8553,6 +8553,73 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   1721 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
   Date/Author: 2026-11-23, cursor235's builder for #519.
 
+- Decision (#519, ruling 1150, the re-review of 34818106..3a8276c6, 2026-11-23; amends the two entries above): the
+  invariant is monotonicity. #519 may only turn main's (0d19fdfa) verdict into a refusal. It never changes which element
+  is the target, and it never turns a refusal into a press.
+  The re-review found two places where 3a8276c6 broke the invariant, and two more fixes it asked for:
+  - (a) #433 and #442 moved to another candidate (P1). Chrome's parentless `<select>` menu: the guard's hit is nil, the
+    raw hit names item Two, and a deeper inert page group covers the edge that One and Two share. One ranks first, its
+    title fails to read now, and it has no description. Main kept One as the control beneath, and #454 refused Two as
+    `notRecorded`. 3a8276c6 refused One as unverified, took Two, and #454 pressed Two.
+    - The fix: `StalePointRelabel.added`, and `added` in `underlyingRefusal`, mark a refusal that main did not make. In
+      #433's loop such a refusal refuses and names the candidate it judged. It never goes on to the next candidate.
+    - #442's named candidate is handled the same way. 3a8276c6 left it to the moved-control rule, which kept the
+      other candidate.
+    - Only a refusal main made lets #433 move on, as main did.
+  - (b) The relabel part walk read every AXStaticText's live AXValue unclassified (P1). That value could be quoted in
+    the refusal even when its element had since become a secure field.
+    - The fix: the value is read now only where the record holds it as non-empty text or as null, and only when no
+      earlier part has settled the label. A value the record holds as unknown or empty is never read now.
+    - Every live label value goes through #405's classified read (`stalePointClassifiedValueRead`, with the role and
+      subrole in the same batch). A closed or failed reply is unread: it is never decoded, compared or quoted.
+    - When main's own walk stops at an unknown part (a value now closed among them), the part walk counts it as
+      unknown.
+  - (c) A refusal with no verified label now says the label "could not be verified against the screenshot". This
+    covers #298's sentence and #433's.
+  - (d) #296's re-created match (`recreatedLabelVerified`), a gap that predates #519. A unique button is re-created in
+    place, its title was numeric or failed at the observation, it has no title now, and neither side has a description.
+    The lenient match took the replacement, and the press gate passed it.
+    - The fix: when the record has an unknown label part, the match needs its first part read as non-empty text on
+      both sides to agree. Otherwise it is refused. The match itself does not change, so no other candidate is taken.
+    - This changes the lenient path, which the previous entry left unchanged.
+  - The part walks of `relabelledLabel` and `controlDiffers` now follow main's priority. Where main keeps, the first
+    part read as non-empty text on both sides settles the label: the same text keeps. Other text refuses only past an
+    unknown part, because with none before it main's comparison across parts already judged it (an empty title gives
+    way to the description). Otherwise the rule of the entry above applies: an unknown part, or no part known, refuses
+    as unverified.
+  Named exceptions, where main's own verdict was a wrong press and #519 refuses:
+  - #296's re-created match with an unverified label, as in (d).
+  - #453's row and #298's relabel when a title was numeric at the observation and absent now (#519's own finding).
+  - #454's menu item whose recorded title was failed, null or non-text.
+  How the invariant is checked:
+  - Label consumers: `LabelMonotonicityTests` (the differential oracle) has a frozen copy of main's functions at
+    0d19fdfa, verbatim apart from names and inlined file-private helpers. Each copy runs over main's own encoding of
+    the same slots: main recorded a non-text slot as absent, read a non-text value now as none, and read a value
+    whatever its element's classification.
+    - The slots: absent, empty, two texts, failed, null and non-text; recorded, a withheld value; now, a value whose
+      element classifies closed.
+    - The consumers: `relabelledLabel`, `controlDiffers`, `overlayLabelsAgree`, `overlayDuplicate`,
+      `recreatedLabelsAgree`, the re-created match's label rule, and #454's menu decision.
+    - It runs every combination of these slots, for buttons and AXStaticTexts. The head's verdict is main's verdict or
+      a refusal, a refusal not marked `added` is one main made, and the named exceptions are exercised.
+    - It found the closed-value case above before the fix.
+  - Target choices: these are proven on fixtures (#433 through #454's menu decision; #442's named candidate; #296's
+    re-created match; the value reads), not by a frozen copy, because the whole verdict is too large to freeze. Main's
+    verdicts on them were recorded by running the same fixtures in a throwaway worktree at 0d19fdfa, and they are
+    written beside the assertions.
+  Evidence:
+  - On 3a8276c6 the fixtures fail with 17 assertions:
+    - (a): One's handle lost, and Two delivered by #454.
+    - #442: the other link taken.
+    - (d): kept with the replacement as the target.
+    - (b): the value read past a settled title, a withheld value and an empty value.
+  - At 0d19fdfa each fixture's verdict is main's keep, and the head's is a refusal.
+  - 1732 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  - If the next re-review finds another introduced P1, #519 narrows (ruling 1150). Each consumer's change is a separate
+    function or hunk, so each can be reverted on its own: `relabelledLabel`'s part walk, `controlDiffers`' part walk,
+    #433's loop, #442's named branch, `recreatedLabelVerified`, the classified value read, and #454's `titleUnread`.
+  Date/Author: 2026-11-23, cursor235's builder for #519.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

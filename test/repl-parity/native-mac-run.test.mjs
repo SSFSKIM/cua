@@ -202,6 +202,22 @@ test('refused on the attestation, never on the selection: the first result names
   assert.equal(laneAttestationProblem({attested: [ATTEST.vendor], unattested: 0}, {engine: 'vendor', release: RELEASE}), null);
 });
 
+// Ruling 1149: a cua lane that fell back to the vendor's engine (state 1) answers from the vendor's host as well; the
+// engine is named as the cause, not hidden behind the host, and the lane is incomplete: its settle cell NO VERDICT.
+test('ruling 1149: a cua lane answered by the vendor engine and host stops incomplete naming the engine, its settle cell no-verdict; never a pass', async () => {
+  const device = fakeDevice();
+  const lane = fakeLane(device, {engine: 'vendor', host: 'vendor'});
+  const run = await runLane({engine: 'cua', device, lane});
+  assert.equal(run.code, 1);
+  assert.match(run.meta.error, /the vendor engine answered, not the requested cua/);
+  assert.equal(run.meta.hostAttestation.host, 'vendor', 'the host is still recorded');
+  assert.deepEqual(run.meta.engineAttestation.attested, [ATTEST.vendor]);
+  assert.equal(run.device.calls.some(c => c[1] === 'up'), false);
+  const result = JSON.parse(fs.readFileSync(join(run.out, 'result.json'), 'utf8'));
+  assert.deepEqual([result.verdict, result.complete], ['no-verdict', false]);
+  assert.ok(result.problems.some(p => /the vendor engine answered, not the requested cua/.test(p)), result.problems.join('; '));
+});
+
 test('an engine that changes mid-run stops the run at that result, incomplete, with the scenes put back', async () => {
   const device = fakeDevice();
   const lane = fakeLane(device, {engine: 'cua', attest: n => (n > 6 ? {...ATTEST.cua, build: 'e'.repeat(64)} : ATTEST.cua)});

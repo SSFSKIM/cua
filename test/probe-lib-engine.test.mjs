@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketPeers,
+  approvalsByBehaviour, attestationProblem, boundedError, classifyAttestation, classifyAttestedRecord, STATE_1, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketPeers,
   bindRefusal, isAppApproval, isLifecycleRejection, leftoverProcesses, resultAttestation, abandonedCountProblem, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
 } from '../scripts/probe/lib.mjs';
 
@@ -108,6 +108,41 @@ test('the attestation must name the pinned engine with the expected version and 
   // The vendor's attestation carries a null version when the helper's plist is unreadable; the same reading is expected.
   const vendor = {engine: 'vendor', version: null, build: '26.928.40906-darwin-arm64'};
   assert.equal(attestationProblem({'cua/nativeEngine': {...vendor}}, vendor), null);
+});
+
+// Ruling 1149: that no lane reaches state 1 (a cua side that silently fell back to the vendor engine, which compares the
+// vendor with itself) is checked in the runs. One classifier, which the lanes that lacked the check now ask.
+test('ruling 1149: an attestation is ok, the vendor on the cua side (state 1), missing, or mismatched; each named', () => {
+  const cua = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  const vendor = {engine: 'vendor', version: '26.924.1001281', build: '26.928.40906-darwin-arm64'};
+  assert.deepEqual(classifyAttestation({...cua}, cua), {status: 'ok', problem: null});
+  const fellBack = classifyAttestation(vendor, cua);
+  assert.equal(fellBack.status, 'vendor-on-cua-side');
+  assert.ok(fellBack.problem.startsWith(STATE_1), fellBack.problem);
+  assert.match(fellBack.problem, /attested engine vendor .* where engine cua .* was expected/);
+  // Where the lane knows only the side's engine, only the engine is compared.
+  assert.equal(classifyAttestation(vendor, {engine: 'cua'}).status, 'vendor-on-cua-side');
+  assert.deepEqual(classifyAttestation(cua, {engine: 'cua'}), {status: 'ok', problem: null});
+  assert.equal(classifyAttestation(undefined, cua).status, 'missing');
+  assert.match(classifyAttestation(null, cua).problem, /no cua\/nativeEngine attestation/);
+  assert.equal(classifyAttestation({...cua, build: 'b'.repeat(64)}, cua).status, 'mismatched');
+  assert.equal(classifyAttestation(cua, vendor).status, 'mismatched', 'cua\'s engine on the vendor side is no fallback, and no measurement of the vendor either');
+  assert.equal(attestationProblem({'cua/nativeEngine': vendor}, cua), fellBack.problem, 'attestationProblem is the classifier\'s problem');
+});
+
+test('ruling 1149: a lane\'s collected attestations ({attested, unattested}) are classified as a whole; any vendor answer on the cua side is state 1', () => {
+  const cua = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  const vendor = {engine: 'vendor', version: null, build: 'r'};
+  assert.deepEqual(classifyAttestedRecord({attested: [cua], unattested: 0}, {engine: 'cua'}), {status: 'ok', problem: null});
+  const mixed = classifyAttestedRecord({attested: [cua, vendor], unattested: 2}, {engine: 'cua'});
+  assert.equal(mixed.status, 'vendor-on-cua-side', 'the vendor answering outranks results left unattested');
+  assert.ok(mixed.problem.startsWith(STATE_1), mixed.problem);
+  assert.equal(classifyAttestedRecord({attested: [vendor], unattested: 0}, {engine: 'cua'}).status, 'vendor-on-cua-side');
+  assert.match(classifyAttestedRecord({attested: [cua], unattested: 1}, {engine: 'cua'}).problem, /1 js result\(s\) carry no cua\/nativeEngine attestation/);
+  assert.equal(classifyAttestedRecord({attested: [], unattested: 0}, {engine: 'cua'}).status, 'missing');
+  assert.equal(classifyAttestedRecord(null, {engine: 'cua'}).status, 'missing');
+  assert.equal(classifyAttestedRecord({attested: [cua], unattested: 0}, {engine: 'vendor'}).status, 'mismatched');
+  assert.deepEqual(classifyAttestedRecord({attested: [vendor], unattested: 0}, {engine: 'vendor'}), {status: 'ok', problem: null});
 });
 
 const approval = (app, overrides = {}) => ({

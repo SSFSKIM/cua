@@ -124,6 +124,29 @@ test('the verdict: a worse method, a launch that failed, a lower finding measure
   assert.ok(slow.owner.some(o => /missed the 10% beat/.test(o)));
 });
 
+// Ruling 1149: a full run whose lane attests another engine than its rows measure is no measurement of its side. The cua
+// side answered by the vendor's engine (state 1) would compare the vendor with itself: its rows are not judged, and the
+// missing proof names it, whatever the run says of itself.
+test('ruling 1149: a cua run whose lane attests the vendor engine is NO VERDICT naming state 1, its rows not judged; never a pass', () => {
+  const fellBack = judged({vendor: {axMs: 50, resolved: 9}, cua: {lane: {engine: 'vendor', build: 'b-vendor'}, meta: {nativeEngine: {requested: 'cua', approved: {build: 'a'.repeat(64)}}}}});
+  assert.equal(fellBack.verdict, 'NO VERDICT');
+  for (const n of [1, 2, 3]) {
+    assert.ok(fellBack.missing.some(p => p.includes(`cua/run-${n}: the cua side attested the vendor engine, a fallback that compares the vendor with itself (state 1)`)
+      && p.endsWith('its rows are not judged')), fellBack.missing.join('\n'));
+  }
+  assert.deepEqual(fellBack.runs, {vendor: 3, cua: 0}, 'counted on neither side as a cua run nor as a vendor one');
+  assert.ok(!fellBack.missing.some(p => /repeat run number/.test(p)), 'not read as a second vendor run');
+  assert.ok(fellBack.methods.every(row => row.cua.valid === 0), 'no cua row judged');
+  // Without meta.nativeEngine.requested, the rows' own engine names the side.
+  const unnamed = judged({vendor: {axMs: 50, resolved: 9}, cua: {lane: {engine: 'vendor'}}});
+  assert.equal(unnamed.verdict, 'NO VERDICT');
+  assert.equal(unnamed.missing.filter(p => p.includes('(state 1)')).length, 3);
+  // The other way: cua's engine on the vendor side is named too.
+  const swapped = judged({vendor: {lane: {engine: 'cua'}}});
+  assert.equal(swapped.verdict, 'NO VERDICT');
+  assert.ok(swapped.missing.some(p => /vendor\/run-1: the result attested engine cua .* where engine vendor was expected; its rows are not judged/.test(p)), swapped.missing.join('\n'));
+});
+
 test('missing proof is NO VERDICT, never a pass: fewer than three runs, a missing row, a repeated sample, two sittings, two builds', () => {
   const two = judged({runs: 2, vendor: {resolved: 9}});
   assert.equal(two.verdict, 'NO VERDICT');

@@ -8095,6 +8095,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   rule) and R3's comparison could not run hosted.
   Date/Author: 2026-11-23, the owner (answered directly; first relayed as ruling 1136); recorded by cursor235 (#175, #506).
 
+- Decision (2026-11-23, ruling 1141; amends O0a above): pre-recording replayd's approval does not prevent its alert, so
+  no kit writes replayd's store. H0's run 45163139714 merged entries in replayd's own format into
+  `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist` before either copy's first capture
+  (keys: the bundle's percent-encoded file URL with a trailing slash; `kScreenCaptureApprovalLastAlerted` and
+  `kScreenCapturePrivacyHintDate` far in the future, `kScreenCaptureApprovalLastUsed` now,
+  `kScreenCaptureAlertableUsageCount` 1; imported through cfprefsd, then replayd restarted). replayd read them (it
+  incremented the count), still alerted both copies, and rewrote both entries itself (adding
+  `kScreenCapturePrivacyHintPolicy`): the decision lives elsewhere, so don't try this store again. The hosted
+  condition is instead "alert up, scene activated first", under ruling 1136's judge rule unchanged: front and key are
+  sampled around each judged cell, a cell with the alert frontmost is NO VERDICT and never a pass, and the activate
+  step checks it took front and key before the cell runs (NO VERDICT, not FAIL, when it did not). Dismissing the alert
+  stays unauthorized; it goes to the owner, with T10's NO VERDICT counts, only if too few cells get verdicts. The
+  guard and its spy test stay for O0's TCC rows.
+  Date/Author: 2026-11-23, the design session (ruling 1141) from H0's run; recorded by cursor235 (#175, #506).
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

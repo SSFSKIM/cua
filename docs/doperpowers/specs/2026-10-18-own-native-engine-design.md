@@ -537,9 +537,11 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     each repair is also a `route3.afterAction.repair` signpost event
   pointerRefusal: a shared-mode pointer refused before its events because no route-3 activation stood for it while
     another app was in front (#538, ruling 1173), on the refusal (`backgroundClickRefused`, nothing posted) and on the
-    element route that carried it instead: {reason ("keyFocusOnly"), frontmostPid, keyFocusPid (null: none read),
-    keyFocusIsTarget (key focus is the target's serving process or the app: the state S, else a front lost since the
-    activation's decision)}, read just before the events would have gone; carried by the service as cua/pointerRefusal
+    element route that carried it instead (set_value's and select_text's focus fallback click included, ruling 1174):
+    {reason ("keyFocusOnly"), frontmostPid, keyFocusPid (null: none read), keyFocusIsTarget (key focus is the target's
+    serving process or the pointer's own bound app: the state S, else a front lost since the activation's decision or
+    a joined hold's key focus gone)}, read just before the events would have gone; carried by the service as
+    cua/pointerRefusal
   paste: the paste route's value-free diagnostics of its last line (#187), on its result and every error after its first
     line began: {line, lines, notificationSource ("trusted" | "untrusted" | "none"), baselineEmpty, keyFocusAtPaste?
     {holds, frontmost, keyFocusProcess, focusedInWindow (null: unreadable)}, readWait? ("handedOver" | "released" |
@@ -8789,7 +8791,7 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - Live proof is M5's sitting C cell `electron/frontmost/click.selection` on GitHub-hosted runners; nothing ran live
     on this Mac.
   Date/Author: 2026-11-23, cursor235's builder for #258.
-- Decision (#538, rulings 1172 and 1173, 2026-11-23, `fix/538-key-focus-refuse` from 6baf3e36; amends #200's delivery
+- Decision (#538, rulings 1172, 1173 and 1174, 2026-11-23, `fix/538-key-focus-refuse` from 6baf3e36; amends #200's delivery
   guard and #282's refusal path): **in shared mode, a pointer for which no route-3 activation stands is refused, with
   nothing posted, when another app is in front at a front read made just before its events.** The state is S: the
   target holds window-server key focus while another app is frontmost. `believesItHasFocus` counts key focus, so
@@ -8806,7 +8808,8 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - The rule (1173, `FakeActivation.deliver`, Activation.swift). For a pointer (`pointer: true`, shared mode's; dedicated
     mode never calls `deliver`) with no activation standing (`activated` false: its own early exit, or the joined
     entry's), `deliver` reads the front once more with route 3's identity (`frontmostIsTarget`) as the last step before
-    `post`. This path makes no Accessibility lookup of its own (the person's window is never read), so nothing lies
+    `post`, judged for the pointer's own bound app (`ranBy`'s `appPid`, ruling 1174). This path makes no Accessibility
+    lookup of its own (the person's window is never read), so nothing lies
     between the read and the events. Another app in front throws `PointerRefused` carrying the readings
     (`PointerRefusalRecord`: the frontmost pid, the key-focus pid and whether that is the target's serving process or
     the app); no app frontmost, or the target's, posts alone as on main. `deliverPointer` then runs #282's path: the
@@ -8816,10 +8819,10 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - The refusal (`keyFocusOnlyRefused`, `backgroundClickRefused`, -10005), in S: "Another app is in front of <App>
     while <App> holds keyboard focus, so nothing was sent: a <click|drag> sent now could bring <App>'s window over the
     person's. Act on <App> through its elements' own actions (performSecondaryAction, setValue) or keys (typeText,
-    pressKey), or ask the person to bring <App> to the front." When key focus is not the target's (the front was lost
-    since the decision), the sentence says what was read instead: "Another app came in front of <App> just before the
-    <click|drag>, so nothing was sent. Observe <App> with get_app_state and try again." A retry then runs a real
-    activation under the guard.
+    pressKey), or ask the person to bring <App> to the front." When key focus is not the target's (the front lost since
+    the decision, or a joined hold's key focus gone), the clause "while <App> holds keyboard focus" is left out and the
+    rest is the same. It never asks for a retry (ruling 1174): a pointer joining a still-held never-activated entry
+    would meet the refusal again however often it observed and clicked.
   - What it reaches: an element click on a strict descendant, an element with neither AXPick nor AXPress, an element's
     right, middle or multi-click, focusField's fallback click, every coordinate left click route 3 posts, and every drag.
     A coordinate right click is refused before this by #463 (`contextMenuPoint` reads the front).
@@ -8845,6 +8848,32 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     no hold, the target's window left above and no record; the 5 pins pass there as after the fix. The service's test
     carries cua/pointerRefusal and resets it on the next call. 1767 swift tests (1 skipped), 0 failures; the release build
     passes on Xcode 27.2.
+  - Ruling 1174, one fix round after the review of 6baf3e36..dfd93038 (rule (c) unchanged):
+    - (P1) `HeldActivations` shares an entry by serving process alone, and the check used the standing activation's
+      `appPid`, so a pointer for app B joining a never-activated entry made for app A on the same serving process was
+      judged against A: posted unguarded with A frontmost, refused with B frontmost. The check now uses `ranBy`'s
+      `appPid` (the pointer's own activation, which `deliverPointer` passes for a joiner too) for both the front and the
+      key-focus comparisons.
+    - (P2) `send()` announced to the agent cursor before the now-throwing `deliver`, so a refused pointer moved the
+      cursor and an element route after it announced a second time. `announce` now runs inside the posting closure, after
+      the refusal; `testTheCursorIsToldAfterTheGuardAndBeforeTheClicksEventsAndNeverForARefusedClick` passes unchanged.
+    - (P2) `focusingClick` copied `delivery` back to set_value's and select_text's meta but not `pointerRefusal`, so a
+      Gecko focus fallback refused and carried by its press lost the record; it is copied now.
+    - (P2) the front-lost sentence's "Observe <App> … and try again" could loop against a held never-activated entry;
+      replaced as above.
+    - (P3) a right or middle click (an element's; a coordinate middle click) refused as "the app": every pointer target
+      its callers build now names the bound app (`PointerTarget.acceptingFirstMouse(in:)`).
+    - Proof: `KeyFocusOnlyTests` grows to 12 (a cross-app joiner on a shared serving process in both front orders; a
+      joiner after key focus left, twice, never told to retry; a right and a middle click naming the app; zero
+      announcements on every refusal and on the element route), and `ValueSettingTests` runs set_value's chain
+      (focusFieldIfNeeded, focusFallbackClick, focusingClick, deliverClick) in S to a successful press that keeps the
+      record. Red at dfd93038 with the tests alone (bc79711f): 5 of 11 `KeyFocusOnlyTests` fail with 15 assertions,
+      one an unexpected throw (B frontmost refused), and the focusing chain loses the record; the P3 test does not
+      compile there. 1771 swift tests (1 skipped), 0 failures; the release build passes on Xcode 27.2.
+    - Left for its own ticket: the registry's sharing by serving process reaches past this check. With an activation
+      standing, a joiner for another bound app is guarded and watched with the entry's `appPid` (`activate`'s sample,
+      `deliver`'s front test and sample, the after-action watch), shares the entry's arm and activation point, and a
+      focus hold or element action for app B on a process another connection holds for app A runs under A's activation.
   - The test plan asked for the front to switch inside `deliver`'s lookup of the person's window. On this path
     `deliver` makes no such lookup, so the front-lost scene switches it in the last caller seam before the events and
     asserts the window was never read.

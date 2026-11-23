@@ -191,6 +191,29 @@ pub enum EndStep {
     Check((i16, i16)),
 }
 
+/// What a handle's hold for a take at its end saw (ruling 888.1): a take at its first read, which skips the wait, or
+/// one in the wait.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HoldTake {
+    pub at_first_read: bool,
+    pub in_wait: bool,
+}
+
+/// Whether a handle's end settles its Electron drop (`drop_settle::Settle`): the engine settles drops (`on`), the
+/// button is down, the family rests at a held move's end (`held_rest`), and a take is seen, by the hold (`hold`, at its
+/// first read or in its wait) or by the cursor's watch (`watch_seen`, asked only when the hold saw none). A take the
+/// hold saw counts though the watch, on its own thread, may not have read it yet (#488: one the first read saw skipped
+/// the settle).
+pub fn settles(
+    on: bool,
+    pressed: bool,
+    held_rest: Duration,
+    hold: HoldTake,
+    watch_seen: impl FnOnce() -> bool,
+) -> bool {
+    on && pressed && !held_rest.is_zero() && (hold.at_first_read || hold.in_wait || watch_seen())
+}
+
 /// Why a handle's end runs no tail (ruling 998, confirmed by 1026), or None when it runs one. The tail is the drag's
 /// (`release_sync.rs`) for a Chrome source with a drag and drop under way at the agent's `end`: `form` its form (`off`
 /// restores the end of f9d1f86b, for A/B runs), `agent_end` the agent's `end` (the exit's, the idle bound's and a lost
@@ -876,6 +899,8 @@ impl Engine {
         // judged below as a take before the end is. Only at the agent's `end`: the exit's, the idle bound's and a lost
         // handle's releases go at once, as they did, so the exit stays inside its backstop and nobody's drop begins then
         let mut held_take = false;
+        // what the hold saw of a take, at its first read or in its wait: the settle below counts either
+        let mut hold_take = HoldTake::default();
         // whether that take came only in the extended hold, past B (`Confirming::Extended`)
         let mut extended_take = false;
         let mut hold_record = Value::Null;
@@ -922,6 +947,10 @@ impl Engine {
             if held && !held_take {
                 still = ended - since;
             }
+            hold_take = HoldTake {
+                at_first_read: taken_by_now,
+                in_wait: held_take,
+            };
             hold_record = json!({
                 "bound_ms": ms(bound),
                 "start_after_press_ms": ms(since.saturating_duration_since(pressed_at)),
@@ -939,10 +968,8 @@ impl Engine {
         // runs behind the pointer is waited for here, so the rest is the page's to answer the pointer's last place, and
         // the release reaches a loop that holds that answer. A take the hold above saw counts though the cursor's
         // watch, on its own thread, may not have read it yet
-        let settling = self.cfg.drop_settle
-            && handle.pressed
-            && !pacing.held_rest.is_zero()
-            && matches!(&handle.cursor, Some(Ok(cursor)) if held_take || cursor.take_seen());
+        let settling = matches!(&handle.cursor, Some(Ok(cursor))
+            if settles(self.cfg.drop_settle, handle.pressed, pacing.held_rest, hold_take, || cursor.take_seen()));
         let before_rest = match handle.cursor.as_mut() {
             Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
             _ => {
@@ -1612,6 +1639,36 @@ mod tests {
         );
         assert_eq!(first(None, (300, 260)), EndStep::Motion((301, 260)));
         assert_eq!(first(None, (639, 260)), EndStep::Motion((638, 260)));
+    }
+
+    /// #488: a take the hold's first read already saw skips the hold's wait, and the cursor's watch, on its own thread,
+    /// may not have read it by the settle: the end settles all the same, as for a take seen in the wait or by the
+    /// watch. No take, settles off, nothing pressed or a family that does not rest: no settle.
+    #[test]
+    fn a_take_the_hold_s_first_read_saw_settles_though_the_cursor_s_watch_lags() {
+        let rest = Duration::from_millis(30);
+        let first = HoldTake {
+            at_first_read: true,
+            in_wait: false,
+        };
+        let waited = HoldTake {
+            at_first_read: false,
+            in_wait: true,
+        };
+        let lagging = || false;
+        assert!(settles(true, true, rest, first, lagging), "the first read's take");
+        assert!(settles(true, true, rest, waited, lagging), "the wait's take");
+        assert!(
+            settles(true, true, rest, HoldTake::default(), || true),
+            "the watch's take"
+        );
+        assert!(!settles(true, true, rest, HoldTake::default(), lagging), "no take");
+        assert!(!settles(false, true, rest, first, || true), "settles off");
+        assert!(!settles(true, false, rest, first, || true), "nothing pressed");
+        assert!(
+            !settles(true, true, Duration::ZERO, first, || true),
+            "a family that does not rest"
+        );
     }
 
     #[test]

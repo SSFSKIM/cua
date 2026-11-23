@@ -8,9 +8,10 @@
 //   2. the approved home prepared under the admission (scripts/native-baseline/prepare.mjs, which stops the engine
 //      again), the serve's preflight for --host and --engine, the approved engine checked against --approved-engine and
 //      this checkout's build
-//   3. the plan's scenes up (scripts/repl-parity/scenes-mac.mjs) with Finder's setup steps, then the engine those steps
-//      used stopped, so the lane's engine is the one its first call launches; the window readers compiled once into the
-//      run directory, and the screen's windows kept as the paste rows' alert baseline (./matrix-device.mjs)
+//   3. the plan's scenes up (scripts/repl-parity/scenes-mac.mjs) with Finder's setup steps, each window that would
+//      overlap an alert window moved clear of it (placeScenes, ruling 1154), then the engine those steps used stopped,
+//      so the lane's engine is the one its first call launches; the window readers compiled once into the run directory,
+//      and the screen's windows kept as the paste rows' alert baseline (./matrix-device.mjs)
 //   4. the activation watcher started (`watch start`, its pid kept), the lane connected (./lane.mjs), every scene bound
 //      by path with its window brought to the front first, so the bind's text (getApp emits it) is the run's own window
 //   5. the frontmost regime: each target's app activated (a harness step), its speed cells (getAXState, getScreenshot,
@@ -60,12 +61,14 @@ import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs
 import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
-import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
+import {CLOSE_PANEL, CLOSE_PANEL_KEY, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
-import {CASES, caseId, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {manifestOf} from './manifest.mjs';
+import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {activate, activated, activationOf, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
-  TEXTEDIT} from './steps.mjs';
+import {clearFrame, guardCause} from './alert-guard.mjs';
+import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
+  TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
@@ -268,6 +271,7 @@ async function runOnce(options, io) {
       ctx.records[id] = ops.scenes(['up', id, '--run', run, ...extra]);
       ops.goldens(['steps', id, '--run', run, '--phase', 'setup']);
     }
+    placeScenes(ctx);
     // Finder's setup steps drove cua's engine socket: stopped, so the lane's engine is the one the lane launches.
     meta.engineStopAfterSetup = ops.goldens(['engine-stop']);
     ops.matrix(['compile', '--run', run]);
@@ -277,7 +281,7 @@ async function runOnce(options, io) {
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
-    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile});
+    ctx.lane = guardLane(ctx, await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile}));
     for (const id of scenes) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);
@@ -295,6 +299,12 @@ async function runOnce(options, io) {
     complete = true;
   } catch (error) {
     problems.push(error instanceof Stop ? `stopped: ${error.message}` : error.message);
+    // A harness cell (no row of its own: the Open panel's Cancel, a fixture's reset) the alert guard refused stops the
+    // run rather than click where an alert is: its proof is missing, not failed (../hosted-sittings/checks.mjs).
+    if (error instanceof AlertGuarded) {
+      meta.alertGuardStop = {cause: error.guard.category, detail: error.guard.detail};
+      recordUnrun(ctx, plan, error.guard);
+    }
     log(`run ${n} stopped: ${error.message}`);
   } finally {
     if (ctx.watcher !== null) finishWatch(ctx);
@@ -444,13 +454,65 @@ function finishWatch(ctx) {
   if (unaccounted.length) ctx.problems.push(`${unaccounted.length} activation(s) fell in no step of the run: not accounted for`);
 }
 
+// ---- the placement ------------------------------------------------------------------------------------------------------
+
+// The run's scene windows placed clear of the alert windows (ruling 1154; ./alert-guard.mjs clearFrame), so the alert
+// guard need not refuse their pointer cells: read once its scenes are up and set up, each window that overlaps an alert
+// moved, the same size, by the smallest move on its display, through the frame probe (./matrix-device.mjs place), and
+// read back. Both sides run it alike; the alerts stay put once raised (H0 (ii)), so both put each window in one place.
+// meta.placement keeps the alert windows' bounds and, per scene, where its window was (`from`) and where it was put
+// (`to`, `matched` the read-back), or why it stayed (`reason`); `unread` when the screen was not read, which places
+// nothing and leaves the guard to refuse what would overlap.
+function placeScenes(ctx) {
+  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
+  if (!bounds) { ctx.meta.placement = {unread: true}; return; }
+  const alerts = bounds.alerts.map(a => a.bounds), scenes = {};
+  // The scenes' recorded windows: the ones up placed; a window a cell opens later is the guard's alone.
+  for (const {scene, bounds: from} of bounds.windows.filter(w => w.recorded && w.scene !== 'openPanel')) {
+    if (!from) continue;
+    const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
+    if (!moved) { scenes[scene] = {from, moved: false, ...(reason ? {reason} : {})}; continue; }
+    const placed = ctx.ops.matrix(['place', '--run', ctx.run, '--scene', scene, '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')])?.answer ?? null;
+    scenes[scene] = {from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null};
+  }
+  ctx.meta.placement = {alerts, scenes};
+}
+
+// The Open panel, just opened, placed clear of the alerts as the scenes are (placeScenes): its window (the service's,
+// by its number) moved through the frame probe and read back, each opening kept in meta.placement.panel ({beforeRow,
+// number, from, to, moved, matched, readBack, pid} or why it stayed, or {beforeRow, unread}).
+function placePanel(ctx) {
+  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
+  const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;
+  if (!bounds) { kept.push({beforeRow, unread: true}); return; }
+  const alerts = bounds.alerts.map(a => a.bounds);
+  for (const {number, bounds: from} of bounds.windows.filter(w => w.scene === 'openPanel' && w.bounds)) {
+    const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
+    if (!moved) { kept.push({beforeRow, number, from, moved: false, ...(reason ? {reason} : {})}); continue; }
+    const placed = device(ctx, ['place', '--scene', 'openPanel', '--window', String(number), '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')]);
+    kept.push({beforeRow, number, from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null, pid: placed?.pid ?? null});
+  }
+}
+
+// A run the alert guard stopped (a harness cell refused): every sample its plan still had to take recorded NO VERDICT by
+// the guard's cause, as an activation that did not take records its target's (skippedTarget), so the per-cell counts see
+// them (./manifest.mjs manifestOf, the rows the judge expects).
+function recordUnrun(ctx, plan, guard) {
+  const have = new Set(ctx.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
+  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when the alert guard refused a harness cell (${guard.detail})`});
+  for (const {section, id, sample, expect} of manifestOf({run: ctx.n, samples: ctx.samples}, plan)) {
+    if (have.has(`${section} ${id} ${sample}`)) continue;
+    push(ctx, {section, id, engine: ctx.engine, sample, ok: false, ...(section === 'method' ? {regime: id.split('/')[1], expect} : {}), ...mark});
+  }
+}
+
 // ---- the regimes --------------------------------------------------------------------------------------------------------
 
 // Every case of a target left invalid for one reason (its precondition could not be set up).
 const invalidCases = (ctx, target, regime, reason, user = null) => caseRows(ctx, target, regime, {invalid: reason}, user);
 // Every case of a target pushed with `extra` (its invalid reason, or the readings of an activation that did not take).
 const caseRows = (ctx, target, regime, extra, user = null) => {
-  for (const c of CASES[target]) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
+  for (const c of casesOf(target, regime)) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
     method: c.method, case: c.case, expect: c.expect, ...(user ? {user} : {}), ...extra});
 };
 // Every sample a frontmost target planned, skipped because its activation did not take front and key (./steps.mjs
@@ -460,7 +522,7 @@ const caseRows = (ctx, target, regime, extra, user = null) => {
 function skippedTarget(ctx, target, plan, frontKey, held = {}) {
   const scene = SCENE_OF[target], measured = {...frontKey, apps: [SCENES[scene].bundleId]};
   if (!plan.onlyMeasures) caseRows(ctx, target, 'frontmost', {frontKey, ...held});
-  if (plan.speed && !plan.onlyMeasures) for (const c of CASES[target]) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey, ...held});
+  if (plan.speed && !plan.onlyMeasures) for (const c of casesOf(target, 'frontmost')) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey, ...held});
   if (target === 'openPanel') return;
   if (plan.speed) for (const op of SPEED_OPS) for (let i = 1; i <= ctx.samples; i++)
     push(ctx, {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene, frontKey: measured});
@@ -484,6 +546,7 @@ async function openPanel(ctx, apps) {
   }
   if (opened === null) return {problem: 'the key guard did not send ⌘O'};
   if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
+  placePanel(ctx);
   return null;
 }
 
@@ -501,11 +564,19 @@ async function frontmostTarget(ctx, target, plan) {
     if (plan.speed) await speedCells(ctx, scene);
     if (plan.finding) await findingRows(ctx, scene);
   }
-  if (!plan.onlyMeasures) for (const c of CASES[target]) await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
+  if (!plan.onlyMeasures) for (const c of casesOf(target, 'frontmost')) await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
   if (target === 'openPanel') await closePanel(ctx);
 }
 
+// The panel closed after its cases: by Escape under the key guard, and only when that did not close it (the key held,
+// skipped, or not taken by the out-of-process panel) by its Cancel, a click under the alert guard (ruling 1154), whose
+// refusal stops the run (runOnce records the samples it would still have taken).
 async function closePanel(ctx) {
+  let keyed = null;
+  try { keyed = await sendKeys(ctx, CLOSE_PANEL_KEY, ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'}); } catch (error) {
+    if (!(error instanceof AlertHeld)) throw error;
+  }
+  if (keyed?.ok && keyed.value?.closed) return;
   const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL, {apps: TEXTEDIT});
   if (!closed.ok || !closed.value?.closed) throw new Stop('TextEdit\'s Open panel stayed open after its cases');
 }
@@ -528,7 +599,7 @@ async function backgroundPairing(ctx, {driven, user}) {
     const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
     if (skipped) caseRows(ctx, driven, 'background', {frontKey: skipped}, user);
     else if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
-    else for (const c of CASES[driven]) await caseRow(ctx, driven, 'background', c, {user, userWindow});
+    else for (const c of casesOf(driven, 'background')) await caseRow(ctx, driven, 'background', c, {user, userWindow});
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
   }
@@ -555,6 +626,12 @@ async function speedCells(ctx, scene) {
       const row = {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene};
       if (reason) { push(ctx, {...row, invalid: reason}); continue; }
       await ctx.checkpoint();
+      // A screenshot of a window under an alert could be the vendor's display crop showing the alert (./alert-guard.mjs):
+      // NO VERDICT at its fresh read, unsent.
+      if (op === 'getScreenshot') {
+        const cause = guardCause(read(ctx, null, {alertBounds: true})?.alertBounds ?? null, {}, {scenes: [scene]});
+        if (cause) { noteGuard(ctx, cause); boundary = null; push(ctx, {...row, ...guardRow(cause)}); continue; }
+      }
       const before = boundary ?? readKeyAt(ctx);
       const r = await measured(ctx, `${scene}/${op}`, code, before, () => (boundary = readKeyAt(ctx)));
       series.push(push(ctx, {...row, ok: r.ok && !r.value?.invalid, inCellMs: r.inCellMs, wallMs: r.wallMs, ...(r.value?.invalid ? {invalid: r.value.invalid} : {}),
@@ -590,8 +667,15 @@ function measuredReadings(ctx, scene, before, after) {
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
   const before = readKeyAt(ctx);
-  let after = null;
-  const r = await measured(ctx, `${scene}/finding`, findingCell(scene), before, () => (after = readKeyAt(ctx)));
+  let after = null, r;
+  try { r = await measured(ctx, `${scene}/finding`, findingCell(scene), before, () => (after = readKeyAt(ctx))); } catch (error) {
+    if (!(error instanceof AlertGuarded)) throw error;
+    // Finder's cell scrolls its list back up first: the alert guard refused it, unsent, and each of its rows says so.
+    after = readKeyAt(ctx);
+    const refused = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ok: false, frontKey: measuredReadings(ctx, scene, before.reading, after.reading), ...error.row};
+    for (const id of [...SCENES[scene].targets.map(t => `target.${t.id}`), 'lines', 'ids']) push(ctx, {...refused, id: `${scene}/${id}`});
+    return;
+  }
   // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
   const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {}),
     frontKey: measuredReadings(ctx, scene, before.reading, after.reading)};

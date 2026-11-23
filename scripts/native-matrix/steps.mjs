@@ -5,6 +5,8 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {guardCause, PANEL_SERVICE, sceneOfCell, sendsPointer} from './alert-guard.mjs';
+import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
@@ -53,9 +55,10 @@ export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
 const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
 // `electronMode`: the Electron fixture's accessibility mode as its record last showed it, read with the rest
 // (./matrix-device.mjs read --electron-mode); `frontKey`: the front and key applications' bundle ids (./front-key.mjs);
-// `windowOrder`: every on-screen window front to back (the window-order oracle, #485).
-export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false} = {}) => {
-  const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : [])];
+// `windowOrder`: every on-screen window front to back (the window-order oracle, #485); `alertBounds`: the alert guard's
+// reading of the alert windows and the run's own (./alert-guard.mjs).
+export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false, alertBounds = false} = {}) => {
+  const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : []), ...(alertBounds ? ['alert-bounds'] : [])];
   return ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
     ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : []), ...(also.length ? ['--with', also.join(',')] : [])]);
 };
@@ -98,13 +101,55 @@ export class AlertHeld extends Error {
   }
 }
 
+// A cell the alert guard refused (ruling 1154, ./alert-guard.mjs): nothing of it was sent, and it is never retried. Thrown
+// in the cell's place, it is an AlertHeld, so every place that makes a row of a held key makes one of it alike (the
+// readings around it the row's), its `row` mark (`alertGuard` {cause, detail}) making the sample NO VERDICT `alert` or
+// `unread` (./front-key.mjs sampleCause), with an invalid reason as a backstop. `reading`: the front and key the guard read;
+// `guard`: the guard's cause ({category, detail}).
+export const GUARD_INVALID = 'the alert guard refused the cell: nothing of it was sent';
+export const guardRow = cause => ({alertGuard: {cause: cause.category, detail: cause.detail}, invalid: GUARD_INVALID});
+export class AlertGuarded extends AlertHeld {
+  constructor(cause, reading) {
+    super([], reading);
+    this.message = `nothing sent: ${cause.detail} (the alert guard, ruling 1154)`;
+    this.guard = cause;
+    this.row = guardRow(cause);
+  }
+}
+// A refusal kept in the run's meta (`alertGuards`: {beforeRow, cause, detail}).
+export const noteGuard = (ctx, cause) => (ctx.meta.alertGuards ??= []).push({beforeRow: ctx.rows.length, cause: cause.category, detail: cause.detail});
+// The guard before a cell: refused when `cause` (./alert-guard.mjs guardCause) names one.
+function refuse(ctx, cause, reading) {
+  noteGuard(ctx, cause);
+  throw new AlertGuarded(cause, reading);
+}
+// The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
+// sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over its target's
+// windows (the scene its prelude binds, sceneOfCell; every window of the run when it binds none) and the alert holding
+// neither front nor key; else AlertGuarded, the cell unsent.
+export function guardLane(ctx, lane) {
+  return {...lane, js: async (code, timeoutMs) => {
+    if (sendsPointer(code)) {
+      const r = read(ctx, null, {frontKey: true, alertBounds: true});
+      const scene = sceneOfCell(code);
+      const reading = keyReading(r), cause = guardCause(r?.alertBounds ?? null, reading, {scenes: scene ? [scene] : null});
+      if (cause) refuse(ctx, cause, reading);
+    }
+    return lane.js(code, timeoutMs);
+  }};
+}
+
 // A key cell sent only under the key guard: the driven scene's process in front, or (given `userWindow`) the run's
 // user window. A skip with one of the run's windows in front leaves the row invalid; any other front (the owner at the
 // Mac, an alert) stops the run, except on a hosted run with UserNotificationCenter in front while the alert watch holds
 // replayd's capture alert and nothing else: then AlertHeld, the key never sent, the device-clock window from the run's
 // last marked step through a read of front and key marked as the sample's (`kind` 'row'; else 'setup'), so the alert's
-// own activation is accounted to it. -> the cell's answer, or null when it was not sent.
+// own activation is accounted to it. Before all that, a key the alert holds is refused (the alert guard, ruling 1154:
+// AlertGuarded), the keys unsent: an alert with the key and some other app in front would take them.
+// -> the cell's answer, or null when it was not sent.
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
+  const seenKey = keyReading(front?.frontKey ? front : read(ctx, null, {frontKey: true}));
+  if (seenKey.key === CAPTURE_ALERT_PROCESS && seenKey.front !== CAPTURE_ALERT_PROCESS) refuse(ctx, guardCause(null, {key: seenKey.key}), seenKey);
   const target = guardOf(scene, ctx.records[scene]);
   const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
     send: () => js(ctx, kind, key, code, {apps: [SCENES[scene].bundleId]}),
@@ -142,8 +187,7 @@ export async function userFront(ctx, user, userWindow, {rekey = true} = {}) {
 
 // ---- the readings around a judged act (./front-key.mjs) -------------------------------------------------------------
 
-// The service that serves TextEdit's Open panel out of process: its window is the panel's.
-export const PANEL_SERVICE = 'com.apple.appkit.xpc.openAndSavePanelService';
+export {PANEL_SERVICE};
 // A target's app (a scene, the Open panel's TextEdit, the windowless app), by bundle id.
 export const bundleOf = target => (target === 'windowless' ? WINDOWLESS_BUNDLE_ID : SCENES[SCENE_OF[target] ?? target].bundleId);
 // The target's own windows' apps, for the window-order oracle (#485): its app's and, for the Open panel, its service's.
@@ -216,6 +260,9 @@ export async function quiet(ctx, scene) {
 
 // ---- a case's row ----------------------------------------------------------------------------------------------------
 
+// The caret after-read's settle (#258, #259): reads at most, and the time between them.
+export const CARET_SETTLE = 3, CARET_SETTLE_MS = 150;
+
 // The scenes whose rows keep the engine's per-call meta of their prepare, act and check (./lane.mjs engineMetaOf, its
 // nulls dropped): the web-shaped ones, whose observations depend on enablement, the web area and the settle.
 const DIAGNOSED = Object.freeze(['chrome', 'electron']);
@@ -238,7 +285,9 @@ const presentMeta = meta => {
 // the user window's in the background regime, likewise), the reading just before the act, and one after its check (and
 // after Acceptance 3's keystroke witness, which TextEdit's background click carries). An activation that did not take
 // front and key skips the act, its readings saying so. An act that threw records the engine's own error name where its
-// meta carries it (errorNameOf).
+// meta carries it (errorNameOf). A caret case (#258, #259) reads the field's range on the device before the act and
+// after it (`caret` {before, after} on the row), and its reading joins the outcome and the row's `ok` (./caret.mjs).
+// A prepare or act the alert guard refused (./alert-guard.mjs, guardLane and sendKeys) is the row's NO VERDICT, unsent.
 export async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false, section = 'method', id = null, userValue = null, extra = {}} = {}) {
   await ctx.checkpoint();
   const scene = SCENE_OF[target];
@@ -256,7 +305,14 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     if (meta) (row.engineMeta ??= {})[phase] = meta;
   };
   const electron = scene === 'electron';
-  const prepared = span(await ctx.lane.js(cells.prepare));
+  let prepared;
+  try { prepared = span(await ctx.lane.js(cells.prepare)); } catch (error) {
+    if (!(error instanceof AlertGuarded)) throw error;
+    // The alert guard refused the prepare (a pointer it would send): nothing of the case sent, its timing with it.
+    const refused = done({...error.row});
+    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, ...error.row});
+    return refused;
+  }
   keep('prepare', prepared);
   if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
   if (Array.isArray(prepared.value?.prepared)) row.prepared = prepared.value.prepared;
@@ -267,6 +323,24 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     row.focusReadBy = verdict.by;
     if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
   }
+  // A caret case (#258, #259, ./caret.mjs): the field's range read on the device, outside either engine, before the act
+  // (it must be the one the prepare made, or nothing is sent) and after it, inside the row's window.
+  const rangeRead = () => span(ctx.ops.matrix(['text-range', '--scene', scene, '--run', ctx.run]))?.answer ?? null;
+  const caretBefore = c.caret ? rangeRead() : null;
+  // After the click the caret is read until two reads agree (a web field's selection follows its DOM a moment later),
+  // CARET_SETTLE reads at most, CARET_SETTLE_MS apart. -> {reading, settled}.
+  const settledRange = async () => {
+    let last = rangeRead();
+    for (let n = 1; n < CARET_SETTLE; n++) {
+      await ctx.sleep(CARET_SETTLE_MS);
+      const next = rangeRead();
+      if (JSON.stringify(next) === JSON.stringify(last)) return {reading: next, settled: true};
+      last = next;
+    }
+    return {reading: last, settled: false};
+  };
+  const unprepared = c.caret ? caretPrepared(c.caret, caretBefore) : null;
+  if (unprepared) return done({invalid: `not prepared: ${unprepared}`, caret: {before: caretBefore}});
   // The row's window runs through the final before-read, so what it saw (an alert that prompted a re-activation) is
   // the row's even when the act is then skipped; a harness step's own app keeps its precedence (./oracle.mjs).
   const before = span(regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target));
@@ -300,21 +374,27 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
   if (!act.ok) return finish({invalid: 'the act cell failed', error: act.error});
   Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(electron ? {actAt: act.value.at ?? act.at} : {})});
+  const caretAfter = c.caret ? await settledRange() : null;
+  if (c.caret) row.caret = {before: caretBefore, after: caretAfter.reading};
   const oracleAfter = regime === 'background' ? read(ctx, focusOf(userWindow), {electronMode: electron, windowOrder: true}) : null;
   const check = span(await ctx.lane.js(cells.check));
   keep('check', check);
   if (electron) row.electronMode = (oracleAfter ?? after({electronMode: true}))?.electronMode ?? null;
   if (!check.ok) return finish({invalid: 'the check cell failed', error: check.error});
   if (check.value?.invalid) return finish({invalid: check.value.invalid});
+  // A caret that never settled proves nothing: no verdict, never a difference.
+  if (caretAfter && !caretAfter.settled) return finish({invalid: `the caret did not settle after the click: ${CARET_SETTLE} reads ${CARET_SETTLE_MS} ms apart never agreed`});
+  const caret = c.caret ? caretOutcome(c.caret, row.caret.after) : null;
+  if (caret?.invalid) return finish({invalid: caret.invalid});
   if (oracleAfter && oracleAfter.watcher !== true) return finish({invalid: 'the activation watcher was not running after the action'});
   const witness = isAcceptance3(target, regime, c, user) ? await keystrokeWitness(ctx, span, userWindow) : null;
   if (witness?.invalid) return finish({invalid: witness.invalid});
   // With `userValue`, the user window's field must also have kept that value (the focus probe's hash after the act).
   const kept = userValue === null ? null : oracleAfter?.focus?.named === true && oracleAfter.focus.valueHash === userValue;
-  const outcome = {...(check.value?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept}), ...(witness ? {keystroke: witness.keystroke} : {})};
+  const outcome = {...(check.value?.outcome ?? {}), ...(caret?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept}), ...(witness ? {keystroke: witness.keystroke} : {})};
   if (Object.hasOwn(outcome, 'errorName')) outcome.errorName = errorNameOf(act, outcome.errorName);
   const witnessed = !witness || (witness.keystroke.posted && witness.keystroke.finderSelected && witness.keystroke.documentUnchanged);
-  const pushed = finish({ok: check.value?.ok === true && kept !== false && witnessed, outcome});
+  const pushed = finish({ok: check.value?.ok === true && kept !== false && witnessed && caret?.ok !== false, outcome});
   ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
     ? {before: before.reading, after: oracleAfter.reading, focus: oracleAfter.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
       order: {before: before.windowOrder ?? null, after: oracleAfter.windowOrder ?? null}, targets: targetsOf(target),

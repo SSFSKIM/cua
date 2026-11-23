@@ -34,6 +34,19 @@ test('record: an incomplete run whose cause is the alert in front is NO VERDICT;
   assert.deepEqual(check('record', step, 0, {[step.record]: {...alert, complete: true}}), ['PASS', null], 'a complete run is read as complete');
 });
 
+// Ruling 1154: a matrix run the alert guard stopped (a harness cell it refused, nothing clicked) has no verdict to give.
+test('record: a matrix run the alert guard stopped is NO VERDICT, by its meta\'s mark, never by its message', () => {
+  const step = {record: '/o/c/vendor/run-1/result.json'};
+  const detail = 'alert window 90 (500,300 300x200) overlaps the openPanel window (300,150 800x500)';
+  const stopped = {complete: false, problems: [`nothing sent: ${detail} (the alert guard, ruling 1154)`], meta: {alertGuardStop: {cause: 'alert', detail}}};
+  assert.deepEqual(check('record', step, 1, {[step.record]: stopped}),
+    ['NO VERDICT', `alert: /o/c/vendor/run-1/result.json stopped: the alert guard refused a harness cell (${detail})`]);
+  assert.equal(check('record', step, 1, {[step.record]: {...stopped, meta: {}}})[0], 'FAIL', 'the message alone names no cause');
+  // A fixture's reset the guard refused for an unread screen is missing proof too.
+  const unread = {complete: false, problems: ['stopped: the textedit fixture could not be reset'], meta: {fixturesHeld: [{row: 'r', sample: 1, scene: 'textedit', reset: false, blockedBy: 'unread'}]}};
+  assert.equal(check('record', step, 1, {[step.record]: unread})[0], 'NO VERDICT');
+});
+
 // Ruling 1149: a run whose side answered on another engine measured nothing of that side. Above all the cua side that
 // attested the vendor's (state 1): NO VERDICT, its cause named, whatever the record says of itself.
 test('ruling 1149: a run of the cua side that attests the vendor engine is NO VERDICT naming state 1, in each record\'s shape; never a pass', () => {

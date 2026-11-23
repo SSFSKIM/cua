@@ -31,15 +31,26 @@ test('per cell: the runs every sample of which has a verdict, and each run\'s ve
   const counts = cellCounts([{path: 'c/vendor/run-1/result.json', result: {cell: 'matrix', meta: {planId: 'full'}, rows: []}}, saveSheet], {judgeFull: () => JUDGMENT});
   assert.deepEqual(counts, [
     {cell: 'method textedit/frontmost/click.control', source: 'matrix', pairs: 0, qualifies: false,
-      vendor: {complete: 1, runs: 1, byRun: {1: {verdicts: 10, samples: 10}}}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 7, samples: 10}}}},
+      vendor: {complete: 1, runs: 1, byRun: {1: {verdicts: 10, samples: 10}}, alert: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 7, samples: 10}}, alert: 0}},
     {cell: 'intervention textedit/intervention.saveSheet', source: 'intervention-save-sheet', pairs: null, qualifies: null,
-      vendor: {complete: 0, runs: 0, byRun: {}}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 1, samples: 2}}}},
+      vendor: {complete: 0, runs: 0, byRun: {}, alert: 0}, cua: {complete: 0, runs: 1, byRun: {1: {verdicts: 1, samples: 2}}, alert: 0}},
   ], 'a cell with no sample on either side is left out');
   const text = renderCounts(counts);
-  assert.match(text, /^\| cell \| source \| vendor: complete runs \| vendor: verdicts by run \| cua: complete runs \| cua: verdicts by run \| complete pairs \|$/m);
-  assert.match(text, /^\| method textedit\/frontmost\/click\.control \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 of 1 \| 1: 7\/10 \| 0 \|$/m);
-  assert.match(text, /^\| intervention textedit\/intervention\.saveSheet \| intervention-save-sheet \| 0 of 0 \| - \| 0 of 1 \| 1: 1\/2 \| - \|$/m);
+  assert.match(text, /^\| cell \| source \| vendor: complete runs \| vendor: verdicts by run \| vendor: NO VERDICT alert \| cua: complete runs \| cua: verdicts by run \| cua: NO VERDICT alert \| complete pairs \|$/m);
+  assert.match(text, /^\| method textedit\/frontmost\/click\.control \| matrix \| 1 of 1 \| 1: 10\/10 \| 0 \| 0 of 1 \| 1: 7\/10 \| 0 \| 0 \|$/m);
+  assert.match(text, /^\| intervention textedit\/intervention\.saveSheet \| intervention-save-sheet \| 0 of 0 \| - \| 0 \| 0 of 1 \| 1: 1\/2 \| 0 \| - \|$/m);
   assert.match(renderCounts([]), /No matrix cell result/);
+});
+
+test('ruling 1154: per cell and per side, the samples NO VERDICT alert, the alert guard\'s refusals among them', () => {
+  const judged = {cells: [{section: 'method', id: 'electron/frontmost/click.point', verdict: 'no-verdict', qualifies: false,
+    account: (() => { const a = account({vendor: {1: {verdicts: 9, samples: 10}}, cua: {1: {verdicts: 7, samples: 10}}}); a.vendor.noVerdict = {alert: 1}; a.cua.noVerdict = {alert: 2, unread: 1}; return a; })()}]};
+  const guarded = {path: 'c/save-sheet/vendor/run-1/result.json', result: {cell: 'intervention-save-sheet', meta: {run: 1, hosted: true}, rows: [
+    {section: 'intervention', id: 'textedit/intervention.saveSheet', engine: 'vendor', sample: 1, ok: false, invalid: 'the alert guard refused the cell: nothing of it was sent',
+      alertGuard: {cause: 'alert', detail: 'com.apple.UserNotificationCenter holds the key'}}]}};
+  const counts = cellCounts([{path: 'c/vendor/run-1/result.json', result: {cell: 'matrix', meta: {planId: 'full'}, rows: []}}, guarded], {judgeFull: () => judged});
+  assert.deepEqual(counts.map(c => [c.cell, c.vendor.alert, c.cua.alert]), [['method electron/frontmost/click.point', 1, 2], ['intervention textedit/intervention.saveSheet', 1, 0]]);
+  assert.match(renderCounts(counts), /^\| method electron\/frontmost\/click\.point \| matrix \| 0 of 1 \| 1: 9\/10 \| 1 \| 0 of 1 \| 1: 7\/10 \| 2 \| 0 \|$/m);
 });
 
 test('without any full run the judge is not asked', () => {

@@ -9,7 +9,7 @@
 //       the two window readers (scripts/accept/front-window.swift, ./system-windows.swift) compiled once into the run
 //       directory and reused by every read after (an interpreted read costs seconds)
 //   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>] [--approved-runtime <home> --approved-engine <bundle>]
-//        [--electron-mode latest] [--with front-key,window-order]
+//        [--electron-mode latest] [--with front-key,window-order,alert-bounds]
 //       the oracle's reading (./oracle.mjs ownedReading): the frontmost application and the top on-screen window, the
 //       run's processes by pid and any other application by bundle id only; whether the activation watcher <pid> still
 //       runs (`watch-activations` of the approved bundle), so a row's coverage is proven at both its ends; with --focus,
@@ -17,7 +17,17 @@
 //       fixture's accessibility mode as its record last showed it, {enabled, at} or null (read after the window closes);
 //       with front-key, the front and key applications' bundle ids (./front-key.mjs: the key from the focus probe, the
 //       --focus one when given, else one naming no window); with window-order, every on-screen window front to back, the
-//       run's own by pid and number, any other by bundle id and layer only (the window-order oracle, #485)
+//       run's own by pid and number, any other by bundle id and layer only (the window-order oracle, #485); with
+//       alert-bounds, the alert windows' bounds, the run's own windows' and the displays', read afresh (the alert guard,
+//       ./alert-guard.mjs alertBoundsOf; null when the window list was unread)
+//   place --run <dir> --scene <id> --frame <x,y,w,h> [--window <number>]
+//       the scene's recorded window (with --scene openPanel, the Open panel's window of that number) moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
+//       is pinned, ./goldens-device.mjs), read back -> {answer: {requested, readBack, matched, exitStatus}, at}: the run's
+//       placement of a window clear of the alerts (./run.mjs placeScenes)
+//   text-range --run <dir> --scene <id>
+//       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
+//       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
+//       cells of #258 and #259, ./caret.mjs) -> {answer: {range, focused} | {error}, at}: offsets and booleans only
 //   electron-mode --run <dir>
 //       the Electron fixture's whole accessibility record (its app.isAccessibilitySupportEnabled readings, written to
 //       the scene's user-data directory: fixtures/electron/main.js), each line kept as {at, enabled, source} only
@@ -87,6 +97,8 @@ import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {alertBoundsOf, isPanelWindow} from './alert-guard.mjs';
+import {fieldRange} from './caret.mjs';
 import {alertWatch, bundlePids} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
 import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from './fixtures/electron-fixture.mjs';
@@ -154,10 +166,11 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // skipped by the front-window probe, so a transient ordering never makes the panel the oracle's front window.
 // With `frontKey`, the front application (the front-window probe's lsappinfo reading) and the key one (the system-wide
 // focused application, the focus probe's), each a bundle id or null when unread (./front-key.mjs). With `windowOrder`,
-// the on-screen windows front to back (windowOrderOf). Both inside the reading's `at`.
+// the on-screen windows front to back (windowOrderOf). With `alertBounds`, the alert guard's reading (alertBoundsOf of
+// one screen read, null when unread). All inside the reading's `at`.
 // io: {enginePids(bundles), frontWindow({skipPids}), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids),
-// electronRecord(), windows()}.
-export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false, frontKey = false, windowOrder = false}, io) {
+// electronRecord(), windows(), screen() ({windows, displays})}.
+export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false, frontKey = false, windowOrder = false, alertBounds = false}, io) {
   const skipPids = approvedEngine ? io.enginePids([approvedEngine]) : [];
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
@@ -173,6 +186,7 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
   }
   if (frontKey) out.frontKey = {front: bundleOf(raw?.frontmost?.bundleId), key: keyOf(report ?? unnamedFocus(io))};
   if (windowOrder) out.windowOrder = windowOrderOf(io.windows(), owned, skipPids);
+  if (alertBounds) out.alertBounds = guardReading(io);
   const at = [from, Date.now()];
   if (unownedTop) out.reading.topWindow.engine = engineOwns(unownedTop.pid, [approvedRuntime, approvedEngine], io);
   if (electronMode) {
@@ -180,6 +194,36 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
     out.electronMode = latest && {enabled: latest.enabled, at: latest.at};
   }
   return {...out, at};
+}
+
+// The alert guard's reading: one read of the screen, an unreadable one unread (null), never a screen free of alerts.
+function guardReading(io) {
+  let screen = null;
+  try { screen = io.screen(); } catch { return null; }
+  return alertBoundsOf(screen?.windows, io.state().scenes, screen?.displays ?? undefined);
+}
+
+// The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, or for `openPanel` the panel's window
+// numbered `window` (its service's pid read from the window list), moved by the frame probe and read back.
+// io: {state(), probe(args), screen()}. -> {requested, readBack, matched, exitStatus, pid?}.
+export function placeScene({scene, frame, window = null}, io) {
+  let pid, number;
+  if (scene === 'openPanel') {
+    const shown = (io.screen()?.windows ?? []).find(w => isPanelWindow(w) && w.number === Number(window));
+    if (!shown) throw new Error(`--window names no Open panel window on screen (${window})`);
+    [pid, number] = [shown.ownerPid, shown.number];
+  } else {
+    const record = io.state().scenes?.[scene];
+    if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
+    [pid, number] = [record.pid, record.window.number];
+  }
+  const parts = String(frame ?? '').split(',').map(Number);
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
+  const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
+  const out = io.probe(['window-frame', '--pid', String(pid), '--window', String(number), '--frame', parts.join(',')]);
+  const readBack = out?.readBack ?? null;
+  return {requested, readBack, matched: out?.matched === true && ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]), exitStatus: out?.exitStatus ?? null,
+    ...(scene === 'openPanel' ? {pid} : {})};
 }
 
 // A bundle id as it may leave the device, or null.
@@ -245,6 +289,15 @@ function engineOwns(pid, roots, io) {
 
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).
 export const isWatcher = (table, pid) => table.some(p => p.pid === pid && /\/cua-engine --probe watch-activations\b/.test(p.command));
+
+// The selected range of one of the run's scenes' text field, by the approved bundle's `--probe text-view` (the caret
+// cells of #258 and #259, ./caret.mjs fieldRange: the first text area of the scene's process, read outside either
+// engine). A probe that failed is the reading's error, never the command's. -> {range, focused} | {error}.
+export function textRange(scene, io) {
+  const pid = io.state().scenes?.[scene]?.pid;
+  if (!Number.isSafeInteger(pid)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
+  try { return fieldRange(io.probe(['text-view', '--pid', String(pid)])); } catch (error) { return {error: String(error.message).slice(0, 160)}; }
+}
 
 // ---- the scheduled probes -------------------------------------------------------------------------------------------------
 
@@ -518,8 +571,8 @@ function parse(argv) {
   return {command, positional, flags};
 }
 // The readings `read --with` adds.
-const READ_WITH = Object.freeze(['front-key', 'window-order']);
-const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const READ_WITH = Object.freeze(['front-key', 'window-order', 'alert-bounds']);
+const USAGE = 'usage: matrix-device.mjs compile|read|text-range|place|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -533,6 +586,7 @@ export async function main(argv, {io: given = {}} = {}) {
     frontWindow: ({skipPids = []} = {}) => JSON.parse(run(compiled(FRONT_WINDOW_SCRIPT, dir), ['front', ...skipPids.flatMap(pid => ['--skip-pid', String(pid)])])),
     enginePids: bundles => bundlePids(processTable(), bundles.flatMap(bundle => { try { return [bundle, fs.realpathSync(bundle)]; } catch { return [bundle]; } })),
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
+    screen: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])),
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
@@ -550,9 +604,11 @@ export async function main(argv, {io: given = {}} = {}) {
       const also = flags.with === undefined ? [] : flags.with.split(',');
       if (also.some(w => !READ_WITH.includes(w))) throw new Error(`--with names readings of ${READ_WITH.join(', ')}`);
       return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest',
-        frontKey: also.includes('front-key'), windowOrder: also.includes('window-order'), ...roots}, io);
+        frontKey: also.includes('front-key'), windowOrder: also.includes('window-order'), alertBounds: also.includes('alert-bounds'), ...roots}, io);
     }
     case 'electron-mode': return electronModeRecord(io);
+    case 'text-range': return timed(() => textRange(flags.scene, io));
+    case 'place': return timed(() => placeScene({scene: flags.scene, frame: flags.frame, window: flags.window ?? null}, io));
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {
       const from = Date.now();

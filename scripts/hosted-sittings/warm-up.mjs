@@ -23,6 +23,7 @@ import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess} from '../accept/key-guard.mjs';
 import {openSession} from '../accept/mcp-session.mjs';
 import {cell, parseCell} from '../native-baseline/cells.mjs';
+import {isAlertWindow} from '../native-matrix/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../native-matrix/live-checks.mjs';
 import {assertGithubHosted} from './runner.mjs';
 
@@ -59,7 +60,7 @@ export async function waitForAlertToLeave({frontmost, sleep = sleepFor, now = ()
 // or null for an unread list, which is not an empty screen.
 export function alertWindows(list) {
   if (!Array.isArray(list)) return null;
-  return list.filter(w => w.ownerBundleId === CAPTURE_ALERT_PROCESS || w.ownerName === 'UserNotificationCenter')
+  return list.filter(isAlertWindow)
     .map(w => ({pid: w.ownerPid, number: w.number, layer: w.layer, titled: typeof w.name === 'string' ? w.name.length > 0 : null, bounds: w.bounds ?? null}));
 }
 

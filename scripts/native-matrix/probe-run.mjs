@@ -64,7 +64,8 @@ async function resetHeldFixture(ctx) {
   let failed;
   try { activate(ctx, held.scene); failed = await cleanedUp({cleanup: held.cleanup}); } catch (error) { failed = error; }
   held.entry.reset = !failed;
-  if (failed instanceof AlertHeld) held.entry.blockedBy = 'alert';
+  // The guard's own cause when it refused the cleanup (./steps.mjs AlertGuarded: `alert` or `unread`), else the held key's.
+  if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
   if (failed) throw new Stop(`the ${held.scene} fixture ${held.entry.row} left (its cleanup held by the capture alert) could not be reset: ${String(failed.message ?? failed).slice(0, 300)}; the run stopped collecting evidence`);
 }
 

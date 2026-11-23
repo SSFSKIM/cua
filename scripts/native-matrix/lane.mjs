@@ -75,16 +75,17 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
 // is its last facade call's. The vendor reports none. With route 3, the activation's guard time and what its click did
 // (`cua/activationClick`: "posted", or why it was skipped) when the service passes them on; on the paste route its
 // value-free diagnostics (`cua/paste`, #187: which wait ended it, the read's time against ⌘V, the key focus at ⌘V); on
-// an element click its plan, the ladder's reason and the hit-test's answer (`cua/elementClick`, #188). An observation's
+// an element click its plan, the ladder's reason and the hit-test's answer (`cua/elementClick`, #188); on a coordinate
+// click its placement from the screenshot point to the posted events (`cua/coordinateClick`, #259). An observation's
 // `cua/observation` names the focused element by index and role (#188), which ./plan.mjs focusVerdict reads. `cua/errorName`
 // is the engine's own name for the error a failed call threw (backgroundClickRefused, typeUnconfirmed, …), which the REPL's
 // boundary drops from the error a cell catches (the trusted worker returns a rejection's message alone, and the kernel
 // rejects with a plain Error): the rows record it as `outcome.errorName` where it is present (./steps.mjs errorNameOf).
 // -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick, paste, elementClick,
-// interruption, errorName}, each null when absent.
+// coordinateClick, interruption, errorName}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
   ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation'], ['activationGuardMs', 'cua/activationGuardMs'],
-  ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick'], ['interruption', 'cua/interruption'],
+  ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick'], ['coordinateClick', 'cua/coordinateClick'], ['interruption', 'cua/interruption'],
   ['errorName', 'cua/errorName']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
@@ -137,7 +138,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
   const step = (name, answer) => (...args) => { log(`dry: ${name} ${JSON.stringify(args.length === 1 ? args[0] : args)}`); return typeof answer === 'function' ? answer(...args) : answer; };
   const bounds = {x: 100, y: 100, width: 800, height: 600};
   // The scenes as up made them, and the last one activated in front: what the dry reads and key guard see.
-  const records = {};
+  const records = {}, placed = {};
   let front = null;
   // The scheduled probe pending, and the focused field's hash the focus probe reads: empty once a scene is activated
   // (each probe cell empties its field after one), the keystroke's text after its finish (an ANSI r composes ㄱ).
@@ -171,7 +172,15 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
             ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {}),
             ...(also.includes('front-key') ? {frontKey: {front: front?.bundleId ?? null, key: front?.bundleId ?? null}} : {}),
             ...(also.includes('window-order') ? {windowOrder: [front, ...Object.values(records).filter(r => r !== front)].filter(Boolean)
-              .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {})};
+              .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {}),
+            // No alert window, the scenes where they were put, one display.
+            ...(also.includes('alert-bounds') ? {alertBounds: {alerts: [], windows: Object.entries(records).map(([scene, r]) => ({scene, number: r.window.number, recorded: true, bounds: placed[scene] ?? r.window.bounds})),
+              displays: [{x: 0, y: 0, width: 1920, height: 1080}]}} : {})};
+        }
+        case 'place': {
+          const [x, y, width, height] = args[args.indexOf('--frame') + 1].split(',').map(Number);
+          placed[args[args.indexOf('--scene') + 1]] = {x, y, width, height};
+          return {answer: {requested: {x, y, width, height}, readBack: {x, y, width, height}, matched: true, exitStatus: 0}, at};
         }
         case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
         case 'electron-counters': return {answer: {seq: 0, at: 0, counts: {appDidBecomeActive: 0, appDidResignActive: 0}}, at};

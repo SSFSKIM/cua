@@ -2,7 +2,7 @@
 // declared-departures file's checks (./departures.mjs), which may name only a judged row of it.
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {CASES, caseId, methodTimingId, SCENE_OF} from './plan.mjs';
+import {caseId, casesOf, methodTimingId, SCENE_OF} from './plan.mjs';
 import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN, SPEED_OPS} from './run.mjs';
 import {unicodeRowsOf} from './unicode-plan.mjs';
@@ -17,12 +17,12 @@ export {SPEED_OPS};
 // expect?}].
 export function manifestOf({run, samples}, plan = FULL_PLAN) {
   const out = [];
-  for (const target of plan.frontmost) for (const c of CASES[target]) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
-  for (const {driven, user} of plan.background) for (const c of CASES[driven]) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});
+  for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
+  for (const {driven, user} of plan.background) for (const c of casesOf(driven, 'background')) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});
   const scenes = [...new Set(plan.frontmost.filter(t => t !== 'openPanel').map(t => SCENE_OF[t]))];
   if (plan.speed) for (const scene of scenes) for (const op of SPEED_OPS) for (let i = 1; i <= samples; i++) out.push({section: 'speed', id: `${scene}/${op}`, sample: (run - 1) * samples + i});
   // Each frontmost case's own timing, one per run (./steps.mjs caseRow's `speed`): part 5's "each method cell".
-  if (plan.speed) for (const target of plan.frontmost) for (const c of CASES[target]) out.push({section: 'speed', id: methodTimingId(target, c), sample: run});
+  if (plan.speed) for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) out.push({section: 'speed', id: methodTimingId(target, c), sample: run});
   if (plan.finding) for (const scene of scenes) {
     for (const t of SCENES[scene].targets) out.push({section: 'finding', id: `${scene}/target.${t.id}`, sample: run});
     out.push({section: 'finding', id: `${scene}/lines`, sample: run}, {section: 'finding', id: `${scene}/ids`, sample: run});

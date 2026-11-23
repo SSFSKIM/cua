@@ -31,8 +31,11 @@ test('one pairing of the background regime: the hold in order, a conforming resu
   assert.ok(method.every(r => r.interference?.ok === true), 'no activation, the front unchanged, the focus kept');
   assert.deepEqual(result.lanes, [{host: 'cua', engine: 'cua', build: 'd'.repeat(64), version: '0.0.0'}]);
   assert.deepEqual([result.meta.planId, result.meta.sitting], ['background:textedit@finder', 's1']);
-  // Every read names the watcher; the after-read carries the focus probe on the user window.
-  assert.ok(matrixSteps(steps, 'read').every(a => a.includes('--watcher')));
+  // Every read names the watcher but the placement's (./run.mjs placeScenes), made before the watcher starts; the
+  // after-read carries the focus probe on the user window.
+  const [placement, ...reads] = matrixSteps(steps, 'read');
+  assert.deepEqual([placement.includes('--watcher'), placement[placement.indexOf('--with') + 1]], [false, 'alert-bounds']);
+  assert.ok(reads.every(a => a.includes('--watcher')));
   assert.ok(matrixSteps(steps, 'read').some(a => a.includes('--focus') && /^\d+,100,100,800,600$/.test(a[a.indexOf('--focus') + 1])));
   // Each scene is brought to the front before its bind, so getApp's emitted text is the run's window.
   assert.deepEqual(matrixSteps(steps, 'step').slice(0, 2).map(a => a.slice(1, 3)), [['activate', 'textedit'], ['activate', 'finder']]);
@@ -110,18 +113,18 @@ test('an activation the run cannot place makes the run incomplete, never clean',
 });
 
 test('the watcher\'s coverage: gone at a row\'s read leaves that row invalid; a record lost leaves every judged row invalid', async () => {
-  // Reads: the user window (1), the first row's before (2) and after (3).
+  // Reads: the run's placement (1), the user window (2), the first row's before (3) and after (4).
   let reads = 0;
   const gone = await runWith({ops: {matrix: (base, a) => {
     const answer = base(a);
-    return a[0] === 'read' && ++reads === 3 ? {...answer, watcher: false} : answer;
+    return a[0] === 'read' && ++reads === 4 ? {...answer, watcher: false} : answer;
   }}});
   assert.deepEqual(gone.result.rows.filter(r => /watcher was not running/.test(r.invalid ?? '')).map(r => r.id), ['textedit/background/getAXState.tree@finder']);
   // An activation inside a row that ended invalid is kept as that row's, not dropped.
   const calls = [], first = cellsOf('textedit', 'getAXState', 'tree').act;
   reads = 0;
   const kept = await runWith({calls, ops: {
-    matrix: (base, a) => { const answer = base(a); return a[0] === 'read' && ++reads === 3 ? {...answer, watcher: false} : answer; },
+    matrix: (base, a) => { const answer = base(a); return a[0] === 'read' && ++reads === 4 ? {...answer, watcher: false} : answer; },
     ...stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: calls.find(c => c.code.includes(first)).at[0] + 1}]})),
   }});
   assert.deepEqual(kept.result.meta.activations.accounted.map(a => a.kind), ['invalid-row']);
@@ -279,7 +282,9 @@ test('a key skipped with one of the run\'s windows in front leaves the row inval
   assert.deepEqual(skipped.map(r => r.id).sort(), ['textedit/frontmost/paste.replace', 'textedit/frontmost/pressKey.selectAll', 'textedit/frontmost/typeText.replace']);
   assert.ok(own.result.rows.filter(r => r.target === 'finder').every(r => !r.invalid), 'Finder\'s own keys went with Finder in front');
   assert.ok(own.result.meta.keySkipped.every(k => k.front.owned === true));
-  const foreign = await runWith({plan, ops: {matrix: (base, a) => (a[0] === 'read' ? {reading: {at: 0, frontmost: {pid: null, bundleId: 'com.google.Chrome', owned: false}, topWindow: null}, watcher: true, at: [1, 2]} : base(a))}});
+  // (The alert guard's reading of the windows kept as the device gave it: the screen read, no alert on it.)
+  const foreign = await runWith({plan, ops: {matrix: (base, a) => (a[0] === 'read' ? {reading: {at: 0, frontmost: {pid: null, bundleId: 'com.google.Chrome', owned: false}, topWindow: null}, watcher: true, at: [1, 2],
+    ...(base(a).alertBounds ? {alertBounds: base(a).alertBounds} : {})} : base(a))}});
   assert.equal(foreign.code, 1);
   assert.ok(foreign.result.problems.some(p => /not one of the run's windows/.test(p)));
   assert.ok(names(foreign.steps).includes('live recover'));

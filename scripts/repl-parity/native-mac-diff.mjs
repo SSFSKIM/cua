@@ -102,11 +102,16 @@ export function loadNativeMacRun(dir) {
 // Ruling 1149: whether a run's kept attestations (meta.engineAttestation, ./native-mac.mjs) prove its engine: every
 // result its requested engine's, cua's at the approved version and the checkout's build, the vendor's at the run's
 // runtime release (laneAttestationProblem's rule, ./native-mac.mjs). -> null, or the gap (the cua lane answered by the
-// vendor's engine is state 1; scripts/probe/lib.mjs classifyAttestedRecord).
+// vendor's engine is state 1; scripts/probe/lib.mjs classifyAttestedRecord). An identity the run does not name proves
+// nothing: an absent one would match an attestation that leaves it out too.
 function attestationGap(meta) {
   if (!meta.engineAttestation) return 'it keeps no engine attestation (meta.engineAttestation)';
-  const expected = meta.engine === 'cua' ? {engine: 'cua', version: meta.approved?.engineVersion, build: meta.checkoutBuild} : {engine: meta.engine, build: meta.runtimeRelease};
-  return classifyAttestedRecord(meta.engineAttestation, expected).problem;
+  const named = meta.engine === 'cua'
+    ? [['approved engine version', 'version', meta.approved?.engineVersion], ['checkout build', 'build', meta.checkoutBuild]]
+    : [['runtime release', 'build', meta.runtimeRelease]];
+  const unnamed = named.find(([, , value]) => typeof value !== 'string' || !value);
+  if (unnamed) return `it names no ${unnamed[0]} to hold its attestation to`;
+  return classifyAttestedRecord(meta.engineAttestation, {engine: meta.engine, ...Object.fromEntries(named.map(([, key, value]) => [key, value]))}).problem;
 }
 
 // Whether two runs may be compared: both complete runs of this suite on macOS whose attestations prove their engine

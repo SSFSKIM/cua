@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {checkPair, diffNativeMac, isSettled, loadNativeMacRun, summaryLine, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
-import {ATTESTED, laneTexts, lanesMeta, settledAfter, writeRun} from './native-mac-fixtures.mjs';
+import {APPROVED, ATTESTED, laneTexts, lanesMeta, settledAfter, writeRun} from './native-mac-fixtures.mjs';
 
 const scratches = [];
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -202,6 +202,11 @@ test('checkPair: one sitting, one checkout, one approved engine, the vendor-engi
   assert.throws(() => checkPair(vendor, proof('u5', {attested: [{...ATTESTED.cua, build: 'e'.repeat(64)}], unattested: 0}), {declarations}), /unproven: the result attested .*build e{64}/);
   assert.throws(() => checkPair(run('u6', 'vendor', {engineAttestation: {attested: [ATTESTED.cua], unattested: 0}}), cua, {declarations}), /u6's lane is unproven: the result attested engine cua/);
   assert.throws(() => checkPair(run('u7', 'vendor', {engineAttestation: {attested: [{...ATTESTED.vendor, build: '26.1.0'}], unattested: 0}}), cua, {declarations}), /u7's lane is unproven/);
+  // An identity the run does not name proves nothing, even when the attestation leaves it out too.
+  const bare = {engine: 'cua', version: APPROVED.engineVersion};
+  assert.throws(() => checkPair(vendor, run('u8', 'cua', {checkoutBuild: undefined, engineAttestation: {attested: [bare], unattested: 0}}), {declarations}), /u8's lane is unproven: it names no checkout build/);
+  assert.throws(() => checkPair(vendor, run('u9', 'cua', {approved: {...APPROVED, engineVersion: ''}, engineAttestation: {attested: [{...ATTESTED.cua, version: ''}], unattested: 0}}), {declarations}), /u9's lane is unproven: it names no approved engine version/);
+  assert.throws(() => checkPair(run('u10', 'vendor', {runtimeRelease: undefined, engineAttestation: {attested: [{engine: 'vendor'}], unattested: 0}}), cua, {declarations}), /u10's lane is unproven: it names no runtime release/);
   assert.throws(() => checkPair(vendor, run('c3', 'cua', {approved: {build: 'e'.repeat(64), engineVersion: '0.1.0'}}), {declarations}), /approved engine/);
   assert.throws(() => checkPair(vendor, run('c4', 'cua', {commit: 'f'.repeat(40)}), {declarations}), /commit/);
   assert.throws(() => checkPair(vendor, run('c5', 'cua', {harness: {commit: 'f'.repeat(40), dirty: false}}), {declarations}), /cells/);

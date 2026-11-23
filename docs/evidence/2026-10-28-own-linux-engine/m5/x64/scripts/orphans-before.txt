@@ -1,0 +1,3 @@
+3297578 start=167255552 exe=/usr/bin/Xvfb cmd=Xvfb -displayfd 3 -noreset -screen 0 1280x800x24 -nolisten tcp 
+3297624 start=167255565 exe=/usr/bin/openbox cmd=openbox 
+Xvfb 3297578 holds socket 213007008 = @/tmp/.X11-unix/X1 (/proc/net/unix): display :1; openbox 3297624's environ DISPLAY=:1, its parent 1. Neither's cmdline names :1 (Xvfb takes its display by -displayfd).

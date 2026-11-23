@@ -1,0 +1,18 @@
+== keys in the throwaway keyring:
+fpr 3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4
+uid Codex Linux Repository
+primary fingerprint equals the pins' record
+== 1. gpgv InRelease
+gpgv: Signature made Thu Nov 12 17:19:28 2026 PST
+gpgv:                using RSA key 3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4
+gpgv: Good signature from "Codex Linux Repository"
+gpgv exit 0
+   Packages sha256 a78db77fb00faae851a4ab3999aec680c84862a18ace48daf0f0b8e0ca14fec3; in InRelease: 1
+   deb sha256 4b443bc557350a1b193bc2f1bae207c9ea3c9fb5d94f7c94a5d3dbaa8b552352; in Packages: 1
+   control (one byte changed): gpgv exit 1 (nonzero expected)
+== 2. the deb's _gpgorigin
+   ar members: debian-binary control.tar.xz data.tar.xz _gpgorigin 
+[GNUPG:] GOODSIG 4A3B4A566C4660E4 Codex Linux Repository
+[GNUPG:] VALIDSIG 3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4 2026-11-13 1794532504 0 4 0 1 10 00 3BFA0E4AE8B8CC16A2D9BA684
+   control (without debian-binary): [GNUPG:] BADSIG 4A3B4A566C4660E4 Codex Linux Repository
+== results: InRelease gpgv 0; deb signature gpg 0

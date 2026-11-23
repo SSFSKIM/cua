@@ -1,0 +1,889 @@
+== 2026-11-23T02:30:03.762Z sample 1
+/tmp entries newer than the start (not the tmproot):
+== 2026-11-23T02:30:33.807Z sample 2
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   firefox
+      1   firefox/.parentlock
+      1   firefox/lock
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:31:03.873Z sample 3
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  systemd-private-3e886c1935f34c2ea2950a8fffe1042d-systemd-timedated.service-BeXWHP
+== 2026-11-23T02:31:33.932Z sample 4
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:32:03.985Z sample 5
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:32:34.040Z sample 6
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:33:04.100Z sample 7
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:33:34.144Z sample 8
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:34:04.215Z sample 9
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:34:34.262Z sample 10
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:35:04.322Z sample 11
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:35:34.388Z sample 12
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:36:04.432Z sample 13
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:36:34.479Z sample 14
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:37:04.538Z sample 15
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:37:34.576Z sample 16
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:38:04.625Z sample 17
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:38:34.675Z sample 18
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:39:04.732Z sample 19
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:39:34.800Z sample 20
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:40:04.845Z sample 21
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:40:34.886Z sample 22
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:41:04.930Z sample 23
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:41:34.974Z sample 24
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:42:05.018Z sample 25
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:42:35.064Z sample 26
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:43:05.125Z sample 27
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:43:35.178Z sample 28
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:44:05.246Z sample 29
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:44:35.293Z sample 30
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:45:05.342Z sample 31
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:45:35.398Z sample 32
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:46:05.444Z sample 33
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:46:35.485Z sample 34
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:47:05.539Z sample 35
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:47:35.584Z sample 36
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:48:05.632Z sample 37
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:48:35.689Z sample 38
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:49:05.753Z sample 39
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:49:35.807Z sample 40
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:50:05.858Z sample 41
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:50:35.898Z sample 42
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:51:05.954Z sample 43
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:51:35.999Z sample 44
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:52:06.058Z sample 45
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:52:36.102Z sample 46
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:53:06.147Z sample 47
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:53:36.191Z sample 48
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:54:06.241Z sample 49
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:54:36.295Z sample 50
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:55:06.339Z sample 51
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:55:36.396Z sample 52
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:56:06.457Z sample 53
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:56:36.511Z sample 54
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:57:06.573Z sample 55
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:57:36.624Z sample 56
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:58:06.683Z sample 57
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:58:36.729Z sample 58
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:59:06.772Z sample 59
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T02:59:36.817Z sample 60
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:00:06.873Z sample 61
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:00:36.917Z sample 62
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:01:06.965Z sample 63
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:01:37.010Z sample 64
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:02:07.071Z sample 65
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:02:37.128Z sample 66
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:03:07.183Z sample 67
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:03:37.228Z sample 68
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:04:07.271Z sample 69
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:04:37.312Z sample 70
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:05:07.361Z sample 71
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:05:37.407Z sample 72
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:06:07.458Z sample 73
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:06:37.517Z sample 74
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-23T03:07:07.573Z sample 75
+run tmp /tmp/c71-xoXwcg/cua171-run-8Y8c1N/tmp:
+      1   02eacf0d-9125-4cea-ab8a-8cc23fd49be7.zip
+      1   com.google.Chrome.btGvXN
+      1   com.google.Chrome.btGvXN/SingletonCookie
+      1   com.google.Chrome.btGvXN/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-c9t.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix

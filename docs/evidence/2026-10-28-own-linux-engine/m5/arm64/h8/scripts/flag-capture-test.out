@@ -1,0 +1,55 @@
+{
+ "owner": {
+  "pid": 1067433,
+  "comm": "python3",
+  "ppid": 1067430,
+  "start_ticks": 35558801,
+  "cmdline": [
+   "python3",
+   "-I",
+   "~/.local/share/cua-171/task136/flag-capture-test.py",
+   "~/.local/share/cua-171/bin/flag-capture.py",
+   "~/.local/share/cua-171/m5/capture-test-h8"
+  ]
+ },
+ "parent_pid": 1067430,
+ "holders_in_ring": [
+  {
+   "pid": 1067433,
+   "comm": "python3",
+   "ancestry": [
+    {
+     "pid": 1067433,
+     "comm": "python3"
+    },
+    {
+     "pid": 1067430,
+     "comm": "zsh"
+    },
+    {
+     "pid": 1067429,
+     "comm": "sshd"
+    },
+    {
+     "pid": 1067376,
+     "comm": "sshd"
+    },
+    {
+     "pid": 1266,
+     "comm": "sshd"
+    }
+   ]
+  }
+ ],
+ "proc_net_unix_lines": 2,
+ "ring_samples": 11,
+ "files": [
+  "owners.json",
+  "ring.txt",
+  "sidecar.log",
+  "ss-at-flag.txt"
+ ],
+ "sidecar_exit": 0,
+ "exit_after_stop_s": 0.03
+}
+PASS

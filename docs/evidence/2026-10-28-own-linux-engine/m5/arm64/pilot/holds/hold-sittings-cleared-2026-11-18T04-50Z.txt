@@ -1,0 +1,6 @@
+cleared by the controller (session linux171) on dc-linux171arm-996d; the design session's session had ended, and ruling 730(b) lets the controller clear a hold
+the hold: V1's :0 pilot rerun (--run pdev-V1, scratch under the TMPDIR, wrap71 0 flags) ended with the harness's end row missing, because run.mjs restoreLaneScene threw "...-gedit-text_newest did not close for its scene's restore"
+cause, a harness defect (T4's static-round restart path, live for the first time): restoreLaneScene closes the old window and waits for it by X window id alone. On arm64 both vendor lanes keep ending gedit, freed ids are reused across lanes, and the pinned lane's restore closed the newest lane's fresh window, which held the same id; the newest lane's restore then waited on an id the pinned lane's window held. Only the run's own windows were touched
+what reached the person: nothing. This VM's :0 is nobody's; wrap71 flagged 0 reaches, 0 decoys, no leftovers; the pointer was restored
+checked before clearing: no cua-engine, sky_linux or gedit process alive; /tmp/.X11-unix holds X0 only; no /tmp/cua171-run-*
+next: V1 is skipped in the pilot; V2-V5 and Z0 continue; T4's arm64 part keys the restore's close and wait on pid as well as id

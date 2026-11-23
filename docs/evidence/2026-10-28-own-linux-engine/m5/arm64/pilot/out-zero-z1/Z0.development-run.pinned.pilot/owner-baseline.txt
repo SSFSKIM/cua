@@ -1,0 +1,7 @@
+owner pid=9512 start=52059
+tmproot /tmp/c71-Lj8hKM
+args: --experiment drag --vendor /Users/new/.local/share/cua-171/m5/pilot-arm64/home/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --occlusion visible --family firefox,writer --ops dnd,select --trials 2 --cua /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine --run pdev-Z0 --pinned --pilot
+started 2026-11-18T05:30:47Z finished 2026-11-18T05:32:28Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference

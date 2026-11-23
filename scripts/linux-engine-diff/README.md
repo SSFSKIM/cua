@@ -88,6 +88,47 @@ nothing run. Either way the run's `meta` and summary rows, its `summary.md` head
 stdout carry its label, `release gate` or `development run, not a release gate`; a gate verdict run's heading and
 verdict line now say `release gate` too.
 
+### Acceptance on the pinned release (`--pinned`, #171 M5)
+
+M5 runs on the release already pinned, from a checkout past it (M5's harness changes), so a release gate's commit rule
+cannot hold. `--pinned`, on a verdict run or an experiment in place of `--dev` or `--gate`, checks the candidate by the
+pinned rule instead and labels every artifact `acceptance on the pinned release` (`gate` is `pinned` in the `meta` and
+`end` rows). The candidate is the engine a run home's `cua install --engine` placed, `<CUA_HOME>/engine/linux/cua-engine`
+(`scripts/linux-engine-gate/gate.mjs --pinned <CUA_HOME>` names it for every step). In order, it refuses:
+
+- an override in the environment: `CUA_LINUX_ENGINE_BIN` set and not empty;
+- bytes that are not the checkout pin's asset for this host's architecture (`runtime/engine/linux-engine.json`), the
+  other architecture's asset named as such;
+- an engine with no `install.json` beside it recording a `pinned` build of the pin's release and those bytes: one no
+  `cua install` placed;
+- then, as a gate's: not a static musl ELF for this host, an unclean checkout, an unattested file, a digest mismatch;
+- a checkout whose `native/linux-engine/` differs from every attested source commit's (`git diff --name-only <commit>
+  HEAD -- native/linux-engine`), the files named, or that cannot be compared (the commit not fetched);
+- then, the engine's first run, a `--version` that does not name that commit or the pin's version.
+
+The record adds `pin` (`arch`, `version`, `release`, `sha256`), `installed` (the install record) and `engine_tree` (the
+commit whose engine sources the checkout holds); `attestation` keeps the attestations of that commit.
+
+What a pinned run runs is the installed file itself, never the check's copy (the design session's ruling 708,
+`pinned-home.mjs`): the one cua's own selection picks in that home with `CUA_NATIVE_ENGINE=cua` and no override,
+refused unless it is the checked file with the checked bytes. A `cua serve` the harness starts (engine-stop) runs in a
+HOME of the run's under its scratch, with an empty secret store, CUA_HOME the run home and no `CUA_LINUX_ENGINE_BIN`, so
+it selects the installed engine itself; the services the harness builds in its own process (the settle, the facade's
+two services) are given that installed path, and so are the wire-driven verdict runs and experiments.
+
+### A pilot (`--pilot`, #171 M5's T4 round 2)
+
+`--pilot` marks a development run as a pilot, a step's smallest form (`gate.mjs --pilot <n>` passes it with the form):
+it takes no top-up (the design session's ruling 722), so a pilot step lasts about as long as its form, not its full
+step. A series it could not decide is reported **unjudged** in every record it writes: a verdict run's verdict
+`unjudged` (`run.mjs` `pilotVerdict`) and its `end` row's `unjudged` list, a drag cell's speed and the events
+experiment's groups in their summary row's `unjudged`, R2's `unjudged.txt` (`suites.sh`). Unjudged is never a pass, so
+the run's line reads "no verdict FAIL", never "every verdict PASS"; it fails nothing, and everything else a run judges
+(answers, witness, audit, effect, a decided loss) is judged as before. With `--pinned` a pilot is a **development run on
+the pinned release** (`gate` `pinned-dev`, candidate.mjs `PINNED_DEVELOPMENT`): its engine taken by the pinned rule
+above, so the rule runs inside the step, every artifact labelled `development run on the pinned release, not
+acceptance, never counted`. `--pilot` is refused with `--gate`, and on a verdict run without `--dev` or `--pinned`.
+
 ## M4's gate as steps (`../linux-engine-gate/`, T18)
 
 `scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
@@ -96,13 +137,110 @@ else on private displays, idle and at twice the load. `node scripts/linux-engine
 step's minutes, display, load and command with the totals; `print <step>` prints one step's command and writes its
 labelled directory; `run <step>` runs one step that is not `:0`'s, under the host lock (the printed commands include
 `locked.sh`). The `:0` steps are only ever printed: they run in the declared sitting through task 50's guards
-(`run71.sh` under `wrap71.py`). A gate step runs from a clean checkout at the candidate's commit (a symlinked
+(`run71.sh` under `wrap71.py`, M5's copy in `docs/evidence/2026-10-28-own-linux-engine/m5/guards/`, ruling 773). A gate step runs from a clean checkout at the candidate's commit (a symlinked
 `node_modules` counts as a change), with its out directory outside it; `--dev` runs a development build, and `--dev
---pilot <n>` each step's smallest form. Each step's directory is named `<step>.release-gate` or
-`<step>.development-run[.pilot]` and opens with a README and `step.json` carrying the label. T17's Electron cells
+--pilot <n>` each step's smallest form; `--pinned <home> --pilot <n>` the same as a development run on the pinned
+release, the pinned rule run inside the step. Each step's directory is named `<step>.release-gate`,
+`<step>.pinned-release`, `<step>.development-run[.pilot]` or `<step>.development-run.pinned.pilot` and opens with a README
+and `step.json` carrying the label; a pilot's record lists what it left unjudged. T17's Electron cells
 (`drop-signals --family electron --plan t17-fix3`) are judged by `drop-signals-judge.mjs` `electronDropVerdict`: a false
 ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
 findings with their counts.
+
+**C1 and L4c on 0.4.2: the freeze bands (ruling 931, task 121).** 0.4.2 holds a frozen, identified Chrome's drag until
+press + 650 ms. If the run's browser thaws before then, the take comes inside the hold and the drop lands. If it thaws
+after, Chrome refuses the drag and the reply carries the hold notice. A late take came only from a thaw within about
+3 ms of the release (`docs/evidence/…/m5/engine-042/h6/`).
+
+So `t14-late` runs three bands (`drop-signals-judge.mjs` `LATE_BANDS`):
+- **inside** (`freeze-600`), whose drops must land;
+- **edge** (`freeze-646` to `-652`), whose late takes are counted and each judged in full, but never required;
+- **past** (`freeze-700`), which must answer the hold notice, with no drop and nothing sent after it.
+
+The inside and past bands each need their outcome 7 times in 10, or the band fails as unexercised. Every answer is
+judged: a plain ok on a drag its page started that did not land is a false ok. The knife-edge freeze at 650 is the
+development plan `t14-late-edge`, held to T14's late-take contract.
+
+Since H7 (rulings 954–956), a freeze cell's stop waits until the browser marks the drag's press read
+(`_NET_WM_USER_TIME`, which the harness watches with `xprop -spy`), plus 55 ms. The engine's identification of the
+source asks the browser over AT-SPI before the press, and a stop during it left the source unidentified. The mark
+counts for a trial only by its value, the X server time of the press: newer than every value seen before it, and not
+before the send's server time, which the harness reads from this machine's monotonic clock (the X server's own clock).
+A stop that can't begin before its thaw is skipped, and so is one whose timer wakes at or past it; the row says why.
+The judge counts a row as unexercised for its band when its source ended unidentified, or when its record shows no stop
+begun before the thaw. Such a row is shown, but never counted as the band's outcome, and a band's late-take column
+counts its exercised rows only.
+The inside band's freeze is 600 on both architectures (task 122's arm64 sweep, at twice the load, landed 10 of 10 there).
+
+**A drop counts as landed only where the path ended** (rulings 957 and 961, task 128). The pages count drops by source
+and record no position, so the judges place each cell's own path end (`PATH_ENDS`, the last point of its path; the
+cells off the window end outside) against the zone (`ZONE`, the page's `#zone`):
+- the path ended inside the zone: a landing there is landed, as before;
+- it ended outside: a landing is "a drop at a stale position", a named wrong outcome that fails the step as a false ok
+  does, and is never counted as landed (Chrome dropped where an earlier motion left it, #459);
+- it ended within 3 px of the border (`STALE_MARGIN_PX`): ambiguous, neither landed nor wrong, named and counted, and
+  unexercised where a band needs a landing. No planned cell ends that close.
+
+The measurement lane's release at the accept ends the drag at the accept, in the zone. `chromeDropVerdict`,
+`electronDropVerdict`, `holdRegressionVerdict` and device.mjs's drop cases (`DRAG_TARGET`, each case's `endsAt`) all
+judge by it.
+
+**Step L4d** (ruling 962) runs the plan of parts `t14-stale` (drop-signals-judge.mjs `PART_PLANS`) at twice the load,
+on the shipped lane. Its three parts sit in turn in one run, each in its own scene and judged by its own plan's judge:
+Chrome's `t14-long`, Chrome's `t14-floor`, and Electron's `t17-long` (the long path out of the zone, 30 drags). The run's
+`--family` names the parts' families, `chrome,electron`.
+
+**The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1, K2 and V5 by
+architecture (rulings 930 and 932), as `--hold-canary`:
+- **x64, `relative`:** a press that started a drag must wait 3x the run's plain control's warm maximum, and at least
+  5 ms.
+- **arm64, `absolute`:** the engine's 20 ms. Every other run uses this default.
+
+`scripts/linux-engine-gate/launch-plan.mjs` prints what `gate.mjs run` would launch for each step, dry, for comparing
+two heads byte for byte (ruling 929.2).
+
+## The run's cleanup and the end check (#171 M5's T4 round 2)
+
+A run's end (`Desktop.closeEverything`) tries every step whatever an earlier one did: the windows, the reader, the
+holder, the run's Chrome, the session bus, the engines' scratch, the scratch directory, the logs, the trace. The failures
+are recorded in the end record (`cleanup_failures`) and mark the run's end unclean: never a verdict failure (the one
+rule below, ruling 730). It runs on a normal
+end, a throw (each runner's `finally`), a stop (SIGINT, SIGTERM, the watchdog's own stop) and an error nothing caught
+(`stop.mjs` `cleanupOnFatal`: an uncaught exception, a child's unhandled `error` event, an unhandled rejection; then exit
+1). Its last step is the end check (`leftovers.mjs`): every `cua171-run-*` directory under TMPDIR and /tmp but the run's
+own, and every session-bus process (`dbus-daemon`, `at-spi-bus-launcher`, `at-spi2-registryd`) whose config or socket
+lies in one, listed in the end record's `leftovers` as findings, named and never removed or signalled, since another run
+may own them. A process killed past all of this (SIGKILL) gets the same check from its launcher: `gate.mjs` makes it
+after every step and records it in the step's `step.json` and README (`end_check`), and `gate.mjs leftovers` makes it
+alone. A bus is found by the scratch path it names, so one outliving its removed directory is still a finding.
+
+One unclean-end rule, drawn by who can see it (the design session's ruling 730):
+
+- **The run's own side** (a cleanup step that threw, its own session bus still running, its Chrome's processes, its
+  scratch still there, the scratch a step left) marks the end record `unclean`, never a verdict failure; the run's
+  summary, the step's `step.json` and README name it, and `gate.mjs summary --out <dir>` lists every step's. Each
+  Desktop marks its scratch at once (`cua171-run.json`: the run, its pid and start time, when). The next run's
+  **start check** (every Desktop's start, every gate step, every `:0` sitting) detects and refuses; it never removes
+  and never signals. On any leftover (a `cua171-run-*` directory but the run's own, marked or not, or a scratch
+  already gone that a process of this user's still refers to: an orphaned bus, a scene process that outlived its run)
+  it refuses to start, naming each one with its evidence (its marker, its creator, the processes referring to it).
+  **Removal is a separate, explicit command** for a person or the controller: `gate.mjs leftovers --remove <dir>`
+  prints the proof, and with `--confirm` removes the directory only when every part holds: a `cua171-run-*` directory
+  (not a link), its marker, this user's, mode 700, its creator absent by its stat, the marker's time before now, every
+  process of this user's fully observed, and none referring to it. Otherwise it refuses with the reason (exit 2).
+  One reference model serves both (`process-references.mjs`): each process's argv, environment, cwd, root,
+  executable, open files and mappings, read from /proc, every field kept that was read when another was not. A
+  reference is a literal or relative path naming the directory in argv or environment, or a link inside it, a
+  `(deleted)` one included. A field that cannot be read is unobserved: never proof of absence, so it fails the
+  removal proof, and in detection never proof of presence, so it blocks no run. (On the x64 VM `(sd-pam)` is never
+  observable, so the removal proof refuses there, and a leftover is a person's to remove by hand.)
+- **The person's side on `:0`**: gate.mjs prints every `:0` step under `scripts/linux-engine-gate/sitting.mjs`, which
+  refuses while hold-sittings exists, and after the sitting, however it ended, makes the end check and the all-clear
+  (`all-clear.json`, `all-clear.txt` in the step's directory), keeping the sitting's exit. A window of the run's left
+  on `:0`, a held key or button, a process of the run still alive (the only way a grab outlives the sitting), the
+  pointer not put back, a change to a window the harness did not open, the owner's side changed, or a reach into the
+  person's session fails it, and so does a missing record or a failed read; then hold-sittings is written with the
+  reason, and no `:0` work starts until the controller or the design session clears it and removes the file.
 
 ## Instances of the run's own (task 43)
 
@@ -335,7 +473,17 @@ variants included; their evidence is written either way. The run's `end` row kee
   ConfigureWindow with a stack mode, WarpPointer, a `_NET_ACTIVE_WINDOW` ClientMessage and XTEST FakeInput (matched
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
-  the witness and the audit both fail it. `--no-audit` leaves the pass out. A proxy's credentials (task 46's finding
+  the witness and the audit both fail it. `--no-audit` leaves the pass out. Each audited operation's lifecycle traces
+  are kept beside the results (`audit-traces/<run>-<execution id>/`, `audit-traces.mjs`; task 106, rulings 858 and
+  863), never as raw text: as the foreign-window judge's own elements cut to an allowlist of the fields it reads, so no
+  title, property or clipboard text reaches the disk, and judged to the raw trace's findings. The audit row's
+  `kept_traces` names them, their run and execution, and the windows they were judged against. A ClientMessage's type
+  is kept, and named in a finding, only when it is one of the protocol's own atoms (`CLIENT_MESSAGE_TYPES`); any other
+  reads `a ClientMessage`, live and replayed. An operation's files are written into a staging directory and published
+  whole by renaming it, or not at all (a staging the rollback could not remove is recorded, never thrown), every byte
+  charged to `--audit-traces <MB>` a run (256 by default; `off` keeps none), and none once the out directory's
+  filesystem would fall below 2 GB free; the row says why where they were not kept.
+  `rejudge-audit.mjs` re-judges a stored run from them. A proxy's credentials (task 46's finding
   3): on a private display xtrace copies none and reads no authority file (the harness's X server has none); on a
   person's display it reads the person's authority file where it is (xtrace 1.4.0 reads from its `-F` file and writes
   into its `-f` file, the reverse of its help) and writes the proxy's credentials into the proxy's own directory,
@@ -364,8 +512,13 @@ variants included; their evidence is written either way. The run's `end` row kee
     client of a live harness window opens during an engine's operation on that window (`Desktop.operations`, from
     `engine.mjs` `watchOperations`: Chrome's drag image during the drag, a select's list during the click). Chrome
     serves the person's windows from the same client, so a popup opened at any other time is foreign. A life ends at
-    its DestroyNotify, a DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
-    keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
+    its DestroyNotify, a DestroyWindow, or its creating client's end, so a reused id is foreign again. A request to the
+    id of a registered life that has ended is judged by the life it reaches (task 106; rulings 857 and 858): the record
+    sees every creation, so with no newer life under the id it is the harness's; xtrace sees only our connections, so
+    there it is the harness's only where the server refused it as BadWindow naming that id (the vendor builds'
+    teardown, a FocusOut and an UnredirectWindow, to the gedit they had ended), and foreign where it was accepted. The
+    rule only adds to what is the harness's; which life a finding binds in the record is H''''s (#425). A window
+    reparented into one of ours keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
     the run.
   - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
     command connects (`xtools.mjs`; a test keeps it so), and every audit pass's engine trace, the activating stub's
@@ -680,6 +833,19 @@ variants included; their evidence is written either way. The run's `end` row kee
     sample invalid. The caps count the resample as before.
   - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
     (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
+  - **A window its lane ended** (M5's T4, `scene-ended.mjs`). The pinned build's text input ended gedit on every
+    sample on arm64 (2026-10-06), so before each request of a lane's on its text window (each timed sample, the
+    audit's and the bus pass's), and once at the run's end, the harness looks whether the window is still the run's
+    (`scenes.mjs` `sceneEnded`, three reads before an end is taken).
+    - The look is the same for every lane.
+    - A vendor's ended window is restarted before its next request, as the backstop restores a scene (warmed by the
+      operation for a warm sample, and once more unwarmed when the warm-up ended it too), and recorded with the request
+      that last reached it (`scene-ended`). The request that ended it stays that build's answer; none of its later
+      requests meets a dead window, so no vendor failure the harness caused lowers the bar, and no restart counts
+      against the caps.
+    - The verdict line and the summary count the ends per lane, every lane named.
+    - A candidate's window is never restarted: a request of its lane ended the application, so the run stops as a
+      failure (`scene-lost`).
 - **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness, closes every window the harness opened, and
   stops the run's Chrome and its session bus before the process exits 130 or 143. A stop during the run's start
   waits for it: the start ends what it acquired (its trace, record, session bus and watchdog) and starts nothing more.
@@ -795,8 +961,54 @@ variants included; their evidence is written either way. The run's `end` row kee
   next acting request's answer (`preflight`, run whatever the read carried) with the engine's raw record of the watch
   (`late_watch`: the read's `notice`, the refused request's `late_dnd`). The late cases drag along a path that lingers
   in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
-  unexercised, a failure of its case. A development run (`--dev --trace-engine`) puts each cua series's engine behind
+  unexercised, a failure of its case, unless Chrome never started a drag session for it at all (ruling 823, below). A development run (`--dev --trace-engine`) puts each cua series's engine behind
   an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
+  The design session's rulings 823, 825 and 841 (`premise.mjs`; route D: the judge alone decides).
+  - In the cancel, late and late-take cells, a sample whose premise was unmet is excluded and counted: a plain-drag ok
+    with no notice on its reply (`reply_notice`), where the page proves Chrome never started a drag session.
+  - The proof is the drag page's own status lines, kept as the page wrote them (`drop_status.raw`) and parsed strictly.
+    The press must be the sample's own: its count up by one, the log numbered with it, its time inside the sample's
+    attempt. Its log must carry an explicit pointerup time and an explicit `-1` for dragstart, pointercancel and
+    dragend, and no drag start, end or drop may be counted. Each line must be the one distinct line of its kind, in a
+    tree that carries the scene's page title.
+  - Chrome fires dragstart before it starts the X session, and a started drag ends the press in pointercancel and
+    dragend, never a pointerup.
+  - Anything missing, truncated or foreign proves nothing: the sample is judged as before. So is a sample the engine's
+    own take records contradict (its drag, press and late-take records), or one that dropped or changed the desktop.
+  - A reply or notice that claims or implies a drop, where the page proves no session, fails its cell. An excluded
+    sample whose own reads failed still fails its cell.
+  - Each premise sample's evidence is on its row (`premise_evidence`). It is also in the run's
+    `premise-evidence.jsonl`, the only record of the audit's samples. Each line is bound to its run, scene, case,
+    block, request number, engine lifecycle (one id per engine process), request id, window (its XID) and fixture (the
+    scene's label, which carries the run's nonce), with the run's head, engine sha256 and load, and cua's reply recorded
+    whole (its ok, error and notice, each present).
+  - Only evidence bound to the run's own sidecar excludes. The in-run judge binds to this process's records of the run,
+    a re-judge to the step's `premise-evidence.jsonl`.
+    - A timed row binds to exactly one line, its ok, error and notice the line's reply, one to one both ways: a line
+      its row does not carry is a binding error.
+    - The rows and the audit are checked against the run's recorded plan, whether or not evidence exists: the meta's
+      blocks, the case's warm count, and the audit, or `--no-audit` (the runner's sentinel). A run whose meta records
+      no plan is judged as before, marked `plan_unverified`, and nothing in it is excluded.
+    - A binding or plan error in either pass excludes nothing in the cell: both passes are judged from their own rows
+      and answers. Bare audit answers carry only the runner's four reply fields.
+    - A planned audit binds only with both its requests bound. An audit the run skipped (`--no-audit`, the runner's
+      sentinel) must have no audit lines.
+    - A binding error never excludes, and fails its cell. Without a sidecar, nothing is excluded.
+  - The next request on an engine, for every rule, is the one on the same lifecycle (`adjacency`).
+  - An obscured case's engine guard (the drag watched with the signature already held, not in front) is checked on every
+    sample, the excluded ones too.
+  - An audit line's follow-up reads are its case's alone (`FOLLOW_UPS`: none for the cancel case, `readPending`'s for
+    the late case, the read and the next acting request for the late take), each of its shape. An unknown or missing
+    one binds nothing, and nothing it carries replaces a field the binding set.
+  - Where every sample was excluded, an existence condition (a drop landed, an answer said the drop may have happened)
+    reads `untested`, a part of the cell's shortage, not a failure of its own.
+  - A cell left short of its planned count, of its cold or warm quota or of its audit's, fails with `incomplete` in the
+    run's own verdict, its rate reported cold and warm apart (`premise_unmet.timed.quotas`). Its first reason names
+    the cause:
+    - "incomplete only by N proven premise-unmet samples (a whole V5 rerun under §8.2, the controller's call)" where
+      that is all it fails for;
+    - "incomplete by N proven premise-unmet samples, and failing for more than that (below)" where it fails for more.
+    Nothing reruns V5 on its own; a rerun is the controller's call, another V5 step judged as any is.
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
@@ -1122,6 +1334,12 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
   2 s of the answer (`late_ms`) or never. A run whose judging failed (its preparation, a reader, the settled reading, or
   the settle the service deferred not the cell's) is `invalid`, apart from a command that failed (`refused`;
   `runClass`).
+- **#302**, a declared limit: on the shipped lane an Electron page's key release can reach the tree after the
+  settle. A late run counts toward the streak, listed apart, only in its input's form: press_key's (`lateKeyUpMiss`)
+  or key_up's (`heldKeyUpMiss`, rulings 864 and 865). A key held across a `key_down` and a `key_up` is subject to X
+  autorepeat (`native/linux-engine/README.md`, Keys), so on the input page key-downs run ahead of key-ups and, under
+  load, late repeats arrive with the late release; key_up's form allows those repeats and nothing else. The page counts key events
+  and names the last key, but records no repeat flag, so a key's press and its repeats read alike.
 - **The lanes**: every settle at one step (`settle-0`, `-10`, `-25`, `-50`, `-75`, `-100`, and from 100 by 25 ms to 400
   for an animating family's element action, `ANIMATED_STEPS`) or the shipped constants (`shipped`). Without `--lanes` a
   sitting searches each cell upward from 0 ms, the control, through its settle's steps, stopping at the first step that
@@ -1190,6 +1408,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `cli.mjs` | the command line |
 | `../linux-engine-gate/` | M4's gate as steps (T18): `steps.mjs` the plan and its commands, `gate.mjs` the runner that lists, prints or runs one, `display.mjs` a step's private display, `norecord.mjs` its harness script with no whole-run RECORD; a launcher above the harness, outside this directory's source checks |
 | `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
+| `pinned-home.mjs` | on the pinned release: the installed engine cua's selection runs, and a `cua serve`'s home of the run's |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |
 | `audit.mjs` | the X request audit through `xtrace` |
@@ -1219,6 +1438,9 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
+| `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4); a replayed pass of ruling 823's cells is diagnostic only, never a release pass (exit 1; `--diagnostic` exits on agreement with the stored verdicts) |
+| `audit-traces.mjs`, `rejudge-audit.mjs` | the route audits' kept projections (the judge's allowlisted elements, never raw text), and a stored run's foreign-window findings judged again from them by this checkout's judge, beside the stored ones, read-only (task 106; exit 1 where an audit kept nothing, or the run is incomplete) |
+| `premise.mjs` | rulings 823, 825 and 841: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding to the run's sidecar, the exclusion, its quotas and its rate) |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

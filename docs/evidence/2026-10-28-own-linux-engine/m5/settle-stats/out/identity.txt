@@ -1,0 +1,27 @@
+== files in each copy
+recorded: ./engine-stats/3863144.cua.3865117.jsonl
+recorded: ./engine-stats/3863144.cua.3865351.jsonl
+recorded: ./engine-stats/3863144.cua.3865523.jsonl
+recorded: ./engine-stats/3863144.cua.3866317.jsonl
+recorded: ./engine-stats/3863144.cua.3866483.jsonl
+recorded: ./engine-stats/3863144.cua_0ms.3865147.jsonl
+recorded: ./engine-stats/3863144.cua_0ms.3865382.jsonl
+recorded: ./engine-stats/3863144.cua_0ms.3865560.jsonl
+recorded: ./engine-stats/3863144.cua_0ms.3865722.jsonl
+recorded: ./engine-stats/3863144.cua_0ms.3866594.jsonl
+recorded: ./engine-stats/3863144.reader.3863188.jsonl
+recorded: ./results.jsonl
+recorded: ./settle-counts.json
+recorded: ./summary.md
+recorded: ./watchdog.jsonl
+stats removed: ./results.jsonl
+stats removed: ./summary.md
+stats removed: ./watchdog.jsonl
+== sha256
+854ae3236bf27332b4dce0cfe37db7b15562f8160c6f86b926aa06ba6578b0b5  /Users/new/.local/share/cua-171/task103/proof/out/judge-report.recorded.txt
+854ae3236bf27332b4dce0cfe37db7b15562f8160c6f86b926aa06ba6578b0b5  /Users/new/.local/share/cua-171/task103/proof/out/judge-report.stats-removed.txt
+judge and report: BYTE-IDENTICAL
+== summary.md written by the run itself vs each copy's
+70b194a7a5986ecbcd6a73fdf1ae3c53a3950d9e23580aa292a359519a07d888  /Users/new/.local/share/cua-171/task103/out-on/D1.development-run.pilot/run/summary.md
+70b194a7a5986ecbcd6a73fdf1ae3c53a3950d9e23580aa292a359519a07d888  /Users/new/.local/share/cua-171/task103/proof/copyA/summary.md
+70b194a7a5986ecbcd6a73fdf1ae3c53a3950d9e23580aa292a359519a07d888  /Users/new/.local/share/cua-171/task103/proof/copyB/summary.md

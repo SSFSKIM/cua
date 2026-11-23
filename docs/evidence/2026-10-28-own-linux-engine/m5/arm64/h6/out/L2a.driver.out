@@ -1,0 +1,2 @@
+step.sh 2026-11-21T01:44:30Z start L2a after 170 s quiet wait: load=0.96 9.33 12.22 stress-ng=none
+step.sh 2026-11-21T02:12:11Z end L2a exit 0 load=16.86 16.97 16.23

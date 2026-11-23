@@ -1,0 +1,22 @@
+# linux-engine-diff summary
+
+## pinned-L1 (experiment drag; acceptance on the pinned release)
+
+candidate: sha256 a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.2 (9371d2348cf8); the pin's x64 asset of linux-engine-v0.4.2; native/linux-engine as at 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da, the checkout at 69bd7993e1f1cb252574939bd6e8e80674bab5b8; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44796908527/attempts/1, built from 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da (refs/heads/release/linux-engine-v0.4.2) on a github-hosted runner
+
+Every engine drags the same path 40 times per family and kind, in its own window (visible, under load: 2 stress-ng workers per core), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). `cua:0ms` has no wait after a sample, after the press or before the release.
+The judges (T10), for the shipped lane `cua`: under load the landed counts decide, cua's at least the pinned build's, 40 a side. Every other cua lane is measured, not judged.
+
+| family | kind | pinned took | newest took | cua took | cua:0ms took | newest warm ms | cua warm ms | cua:0ms warm ms | pinned warm ms | witness | judges | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|
+| Chrome | range | 40/40 | 40/40 | 40/40 | 27/40 | 331.1 | 462 | 459.7 | 504.4 | clean | load: pinned 40/40 (mean 50.6), cua 40/40 (mean 50.6, shortest 50), cua:0ms 27/40 (mean 39.6, shortest 0, Fisher p 0.000); received, coalesced samples (events), raw/moves, median: pinned 204.5 (188.5)/204.5 (21.5), newest 57 (46.5)/57 (8), cua 167 (108)/167 (9.5), cua:0ms 19 (7.5)/19 (2) | cua PASS, cua:0ms **FAIL** |
+| Chrome | scroller | 40/40 | 40/40 | 40/40 | 6/40 | 267.2 | 458 | 459 | 285.6 | clean | reach (pinned mean 129.9 px): cua 40/40 (shortest 146, mean 146.3), cua:0ms 1/40 (shortest 0, mean 25.5); load: pinned 40/40 (mean 129.9), cua 40/40 (mean 146.3, shortest 146), cua:0ms 6/40 (mean 25.5, shortest 0, Fisher p 0.000); received, coalesced samples (events), raw/moves, median: pinned 55 (49.5)/0 (0), newest 16 (14.5)/0 (0), cua 33 (25)/0 (0), cua:0ms 1 (1)/0 (0) | cua PASS, cua:0ms **FAIL** |
+| Electron (cua fixture) | range | 40/40 | 40/40 | 40/40 | 40/40 | 327.9 | 461.1 | 461.7 | 499.1 | clean | load: pinned 40/40 (mean 50.6), cua 40/40 (mean 50.6, shortest 50), cua:0ms 40/40 (mean 50.6, shortest 50); received, coalesced samples (events), raw/moves, median: pinned 192.5 (175.5)/192.5 (21), newest 50 (48)/50 (8), cua 167 (127)/167 (14), cua:0ms 80.5 (42.5)/80.5 (16) | cua PASS, cua:0ms PASS |
+| Electron (cua fixture) | scroller | 40/40 | 40/40 | 40/40 | 40/40 | 264.8 | 460.2 | 460.9 | 283.2 | clean | reach (pinned mean 133.1 px): cua 40/40 (shortest 143, mean 145.8), cua:0ms 40/40 (shortest 143, mean 145.3); load: pinned 40/40 (mean 133.1), cua 40/40 (mean 145.8, shortest 143), cua:0ms 40/40 (mean 145.3, shortest 143); received, coalesced samples (events), raw/moves, median: pinned 57.5 (51.5)/0 (0), newest 17 (15)/0 (0), cua 56 (38)/0 (0), cua:0ms 26 (22)/0 (0) | cua PASS, cua:0ms PASS |
+
+Cells where a cua lane missed a run the pinned build took: chrome range (cua:0ms); chrome scroller (cua:0ms).
+
+The judges' verdict for `cua`: PASS.
+
+desktop: started with 0x0080000c active (foreign), ended with 0x0080000c active (foreign), neither acted on; holder 0x00c0000c; the harness's own trace: 9458 requests, 2121 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

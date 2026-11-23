@@ -1,0 +1,32 @@
+== after-step 2026-11-19T11:24:56Z /Users/new/.local/share/cua-171/m5/out-arm64-h5/Z0.pinned-release
+--- kept traces
+audit rows 0, with kept_traces files 0, files 0, missing 0
+kept-traces exit 1
+--- rejudge-audit
+rejudge-audit exit 1
+run pinned-Z0: audits 0, moved 0, unkept 0, incomplete no end row: the run did not finish, so its verdict is unknown, foreign stored 0, now 0: DIFFERS
+row lines (moved or unkept): 0
+rejudge: DIFFERS from the stored findings
+--- settle-check
+/Users/new/.local/share/cua-171/m5/out-arm64-h5/Z0.pinned-release: unknown: 18 of 20 cua engines (20 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle
+  cua 2161817: no stats: not recorded
+  cua:0ms 2162203: no stats: not recorded
+  cua 2162731: no stats: not recorded
+  cua:0ms 2162974: no stats: not recorded
+  cua 2163450: no stats: not recorded
+  cua:0ms 2163639: no stats: not recorded
+  cua 2165470: no stats: not recorded
+  cua:0ms 2165708: no stats: not recorded
+  cua 2166174: no stats: not recorded
+  cua:0ms 2166467: no stats: not recorded
+  cua:0ms 2167184: no stats: not recorded
+  cua 2168003: no stats: not recorded
+  cua 2171314: no stats: not recorded
+  cua:0ms 2172097: no stats: not recorded
+  cua 2173802: no stats: not recorded
+  cua:0ms 2174664: no stats: not recorded
+  cua 2176313: no stats: not recorded
+  cua:0ms 2177151: no stats: not recorded
+  reader 2158557: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 2159328: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 1

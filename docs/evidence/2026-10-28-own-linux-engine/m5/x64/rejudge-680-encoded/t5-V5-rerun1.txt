@@ -1,0 +1,13 @@
+# pinned-V5: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out-rerun1/V5.pinned-release/run/results.jsonl.gz
+| verdict row | stored | 680 script | base judge | encoded judge |
+|---|---|---|---|---|
+| device-chrome-dnd chrome_dnd_shared cua | fail | fail | pass | pass (replayed pass: diagnostic only; V5's premise cells pass only in a live run) |
+| device-chrome-dnd chrome_dnd_late_take_shared cua | fail | pass | fail | pass (replayed pass: diagnostic only; V5's premise cells pass only in a live run) |
+
+the base judge reproduces the stored verdict and reasons on 51 of 52 (not on: device-chrome-dnd chrome_dnd_shared cua)
+rows: 52; the encoded judge agrees with the 680 script on 51 of 52; not on: device-chrome-dnd chrome_dnd_shared cua (script fail, encoded pass)
+moved against the base judge (verdict or reasons): device-chrome-dnd chrome_dnd_late_take_shared cua: fail -> pass
+  base: fail ["a drop the witness did not record on 1 of 9 samples (0/0)"]
+  encoded: replayed pass: diagnostic only; V5's premise cells pass only in a live run []
+span_limited, as the run's verdict row would carry it: {"chrome_dnd_late_take_shared":[{"sample":"0/0","dragend_ms":190,"answer_ms":162.14}]}
+the run's other terminal failures (they stand as stored): none

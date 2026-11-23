@@ -1,0 +1,22 @@
+== 2026-11-22T03:42:26.262Z sample 1
+/tmp entries newer than the start (not the tmproot):
+== 2026-11-22T03:42:56.267Z sample 2
+run tmp /tmp/c71-CxZpna/cua171-run-8z28R7/tmp:
+      1   com.google.Chrome.CEHvPB
+      1   com.google.Chrome.CEHvPB/SingletonCookie
+      1   com.google.Chrome.CEHvPB/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  systemd-private-e67811fffe8e4afb95b6570483291598-systemd-timedated.service-7XzwUI
+== 2026-11-22T03:43:26.273Z sample 3
+run tmp /tmp/c71-CxZpna/cua171-run-8z28R7/tmp:
+      1   3ad6356e-eb7a-40fa-adc0-8552ac3505f1.zip
+      1   com.google.Chrome.CEHvPB
+      1   com.google.Chrome.CEHvPB/SingletonCookie
+      1   com.google.Chrome.CEHvPB/SingletonSocket
+      1   qipc_sharedmemory_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   qipc_systemsem_tQFDGoWcXYNXmOYZwBPDIQnQmsiOjvDWJZuaQNdd09a1dda4ec5bc23908fc2c69e82335
+      1   tQF0_DGo9WcX6YNXmOYZwBP1DIQnQmsiOjvDWJZ6uaQ=
+      1   tmp-zcl.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix

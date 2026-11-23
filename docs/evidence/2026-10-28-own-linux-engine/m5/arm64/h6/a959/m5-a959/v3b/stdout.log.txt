@@ -1,0 +1,6 @@
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v3b, at twice the load)
+development run, not a release gate; candidate: sha256 25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f, aarch64-unknown-linux-musl static, cua-engine 0.4.2 (9371d2348cf8); attestation not checked (a development run)
+negative check: the witness failed the activating stub (focus, stacking, active); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+run valid; development run, not a release gate: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/a959-arm64-m5a959/v3b/run/results.jsonl

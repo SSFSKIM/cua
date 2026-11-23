@@ -1,0 +1,2 @@
+ring samples 30, lines 7961 -> kept 2; ss-at-flag kept 2
+holders in the ring: the original 2, from the narrowed lines 2; the same: True

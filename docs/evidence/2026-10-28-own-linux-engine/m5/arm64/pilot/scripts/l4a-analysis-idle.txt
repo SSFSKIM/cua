@@ -1,0 +1,319 @@
+drags 560; lanes cua, cua:desktop, cua:handle; load idle
+verdict pass=true failed=[]
+counts {"load":"idle","drags":560,"landed":200,"false_ok":0,"race_false_ok":0,"race_drags":60,"missing_landing":0,"false_error":0,"pending_broken":0,"unconfirmed_landed":0,"by_class":{"move-link":0,"cold-load":0,"other":0},"unverified":0,"over_share":false}
+
+| lane cell | drags | classes |
+| cua plain | 100 | {"landed":100} |
+| cua left | 30 | {"notice-unconfirmed":30} |
+| cua inzone-out | 30 | {"notice-unconfirmed":30} |
+| cua:desktop root | 30 | {"notice-unconfirmed":30} |
+| cua:desktop xterm | 30 | {"notice-unconfirmed":30} |
+| cua:desktop other | 30 | {"notice-unconfirmed":30} |
+| cua:desktop slow | 30 | {"notice-unconfirmed":30} |
+| cua:handle plain | 100 | {"landed":100} |
+| cua:handle left | 30 | {"notice-unconfirmed":30} |
+| cua:handle inzone-out | 30 | {"notice-unconfirmed":30} |
+| cua:handle root | 30 | {"notice-unconfirmed":30} |
+| cua:handle xterm | 30 | {"notice-unconfirmed":30} |
+| cua:handle other | 30 | {"notice-unconfirmed":30} |
+| cua:handle slow | 30 | {"notice-unconfirmed":30} |
+
+cua:handle, every drag: cell i cold ms class | confirmed_by | take_after_press take_after_release | accept_shown accept_indeterminate | shown cursor first seen (ms after press) vs release (ms after press)
+plain 0 cold 86 landed | Cursor(true) | 29 -53 | true true | 64.1 vs 81.9
+plain 1 warm 89.4 landed | Cursor(true) | 38.6 -46.6 | true true | 52.5 vs 85.2
+plain 2 warm 89.4 landed | Cursor(true) | 25.9 -59.6 | true true | 52.5 vs 85.5
+plain 3 warm 89.2 landed | Cursor(true) | 25.1 -59.8 | true true | 52.8 vs 84.9
+plain 4 warm 89.3 landed | Cursor(true) | 25 -59.6 | true true | 51.6 vs 84.6
+plain 5 warm 89.3 landed | Cursor(true) | 31.1 -53.6 | true true | 52.4 vs 84.7
+plain 6 warm 89.3 landed | Cursor(true) | 35.5 -49.5 | true true | 52.6 vs 85.0
+plain 7 warm 89.2 landed | Cursor(true) | 36.4 -48.5 | true true | 52.5 vs 84.9
+plain 8 warm 89.1 landed | Cursor(true) | 36.5 -48.7 | true true | 52.6 vs 85.2
+plain 9 warm 89.3 landed | Cursor(true) | 36.7 -48.4 | true true | 52.8 vs 85.1
+left 0 cold 141.4 notice-unconfirmed | Cursor(false) | 45.8 -91.5 | false false | 47 vs 137.3
+left 1 warm 119.4 notice-unconfirmed | Cursor(false) | 24.5 -91 | false false | 26.6 vs 115.4
+left 2 warm 122.5 notice-unconfirmed | Cursor(false) | 28 -88.6 | false false | 29.1 vs 116.6
+left 3 warm 122.5 notice-unconfirmed | Cursor(false) | 27.9 -88.7 | false false | 29 vs 116.6
+left 4 warm 120.4 notice-unconfirmed | Cursor(false) | 27.9 -88.3 | false false | 30.1 vs 116.2
+left 5 warm 122.5 notice-unconfirmed | Cursor(false) | 28.8 -87.8 | false false | 31 vs 116.6
+left 6 warm 120.3 notice-unconfirmed | Cursor(false) | 17.7 -98.2 | true true | 18.9 vs 115.9
+left 7 warm 121.4 notice-unconfirmed | Cursor(false) | 23.8 -92.6 | false false | 24.9 vs 116.4
+left 8 warm 120.4 notice-unconfirmed | Cursor(false) | 29.8 -86.2 | false false | 30.9 vs 116.0
+left 9 warm 120.4 notice-unconfirmed | Cursor(false) | 17.5 -97.9 | true true | 17.6 vs 115.4
+inzone-out 0 cold 160.9 notice-unconfirmed | Cursor(false) | 97.9 -58.5 | true true | 110.6 vs 156.3
+inzone-out 1 warm 97.3 notice-unconfirmed | Cursor(false) | 45.2 -46.7 | false true | 47.5 vs 91.9
+inzone-out 2 warm 97.4 notice-unconfirmed | Cursor(false) | 43.5 -49.8 | false true | 45.6 vs 93.3
+inzone-out 3 warm 99.4 notice-unconfirmed | Cursor(false) | 33.9 -60.2 | false true | 36 vs 94.1
+inzone-out 4 warm 97.4 notice-unconfirmed | Cursor(false) | 41.2 -51.4 | false true | 42.3 vs 92.7
+inzone-out 5 warm 97.4 notice-unconfirmed | Cursor(false) | 33.7 -59.5 | false true | 34.9 vs 93.2
+inzone-out 6 warm 99.6 notice-unconfirmed | Cursor(false) | 46 -48.4 | false true | 48.2 vs 94.4
+inzone-out 7 warm 99.4 notice-unconfirmed | Cursor(false) | 40.5 -53.8 | false true | 41.6 vs 94.3
+inzone-out 8 warm 99.5 notice-unconfirmed | Cursor(false) | 33.4 -60.6 | false true | 34.5 vs 94.0
+inzone-out 9 warm 97.6 notice-unconfirmed | Cursor(false) | 42.5 -50 | false true | 44.7 vs 92.5
+root 0 cold 200 notice-unconfirmed | Cursor(false) | 103.8 -91.6 | false false | 126.2 vs 195.4
+root 1 warm 114.4 notice-unconfirmed | Cursor(false) | 17.5 -92.2 | true true | 38.8 vs 109.7
+root 2 warm 112.2 notice-unconfirmed | Cursor(false) | 22.3 -84.8 | true true | 38.3 vs 107.0
+root 3 warm 112.3 notice-unconfirmed | Cursor(false) | 11.9 -95.3 | true true | 37.4 vs 107.2
+root 4 warm 114.2 notice-unconfirmed | Cursor(false) | 15.1 -94.4 | true true | 38.6 vs 109.5
+root 5 warm 112 notice-unconfirmed | Cursor(false) | 18 -89.5 | true true | 38.3 vs 107.5
+root 6 warm 112.1 notice-unconfirmed | Cursor(false) | 9.7 -96.4 | true true | 37.3 vs 106.1
+root 7 warm 112.2 notice-unconfirmed | Cursor(false) | 17.2 -89.4 | false false | 37.4 vs 106.6
+root 8 warm 114.3 notice-unconfirmed | Cursor(false) | 9.4 -99.3 | true true | 38.2 vs 108.8
+root 9 warm 112.3 notice-unconfirmed | Cursor(false) | 10.6 -97.3 | false false | 38.2 vs 107.9
+xterm 0 cold 127.2 notice-unconfirmed | Cursor(false) | 26.2 -95.5 | false true | 39.1 vs 121.8
+xterm 1 warm 114.3 notice-unconfirmed | Cursor(false) | 13.6 -95.3 | false false | 38.1 vs 108.9
+xterm 2 warm 112.1 notice-unconfirmed | Cursor(false) | 14.2 -94 | true true | 37.6 vs 108.2
+xterm 3 warm 113.3 notice-unconfirmed | Cursor(false) | 15.8 -92.7 | true true | 38.2 vs 108.5
+xterm 4 warm 112.1 notice-unconfirmed | Cursor(false) | 19.4 -88.3 | true true | 37.6 vs 107.7
+xterm 5 warm 114.2 notice-unconfirmed | Cursor(false) | 22.3 -88.1 | true true | 39.4 vs 110.4
+xterm 6 warm 112.3 notice-unconfirmed | Cursor(false) | 8.5 -99.6 | true true | 38.3 vs 108.1
+xterm 7 warm 112.1 notice-unconfirmed | Cursor(false) | 17.4 -90.7 | true true | 37.6 vs 108.1
+xterm 8 warm 112.2 notice-unconfirmed | Cursor(false) | 19 -88.1 | true true | 39.2 vs 107.1
+xterm 9 warm 112.2 notice-unconfirmed | Cursor(false) | 20.3 -86.3 | true true | 37.4 vs 106.6
+other 0 cold 129.2 notice-unconfirmed | Cursor(false) | 25.2 -98.8 | false false | 26.3 vs 123.9
+other 1 warm 114.3 notice-unconfirmed | Cursor(false) | 9.4 -99.3 | false false | 11.5 vs 108.7
+other 2 warm 112.1 notice-unconfirmed | Cursor(false) | 10.2 -97.7 | false false | 12.5 vs 108.0
+other 3 warm 114.2 notice-unconfirmed | Cursor(false) | 13.2 -95.6 | false false | 15.4 vs 108.9
+other 4 warm 112.2 notice-unconfirmed | Cursor(false) | 13.2 -94.6 | false false | 15.4 vs 107.8
+other 5 warm 112.2 notice-unconfirmed | Cursor(false) | 14.9 -93.3 | false false | 17.1 vs 108.2
+other 6 warm 112.3 notice-unconfirmed | Cursor(false) | 20.8 -87.5 | false false | 21.9 vs 108.3
+other 7 warm 112.3 notice-unconfirmed | Cursor(false) | 8.5 -98.9 | true true | 8.6 vs 107.5
+other 8 warm 112.3 notice-unconfirmed | Cursor(false) | 11.4 -95.7 | false false | 12.5 vs 107.1
+other 9 warm 112.2 notice-unconfirmed | Cursor(false) | 13.8 -92.9 | false false | 16 vs 106.8
+slow 0 cold 127.3 notice-unconfirmed | Cursor(false) | 32.7 -89.7 | false true | 46.6 vs 122.5
+slow 1 warm 114.2 notice-unconfirmed | Cursor(false) | 7.7 -100.9 | true true | 9.9 vs 108.6
+slow 2 warm 112.2 notice-unconfirmed | Cursor(false) | 7.5 -100.4 | true true | 38.3 vs 107.9
+slow 3 warm 114.2 notice-unconfirmed | Cursor(false) | 14.6 -94.3 | false false | 39 vs 108.9
+slow 4 warm 114.3 notice-unconfirmed | Cursor(false) | 14.2 -94.7 | true true | 38.8 vs 109.0
+slow 5 warm 112.2 notice-unconfirmed | Cursor(false) | 15 -92.1 | true true | 37.4 vs 107.1
+slow 6 warm 114.4 notice-unconfirmed | Cursor(false) | 19.7 -89.3 | true true | 37.8 vs 109.0
+slow 7 warm 114.3 notice-unconfirmed | Cursor(false) | 20.5 -88.7 | true true | 38.6 vs 109.2
+slow 8 warm 114.2 notice-unconfirmed | Cursor(false) | 9.9 -98.9 | true true | 38.7 vs 108.8
+slow 9 warm 112.1 notice-unconfirmed | Cursor(false) | 9.6 -98.2 | true true | 38.3 vs 107.8
+plain 10 cold 88 landed | Cursor(true) | 22.1 -60.7 | true true | 54.1 vs 82.9
+plain 11 warm 89.4 landed | Cursor(true) | 26.6 -58.8 | true true | 53.2 vs 85.4
+plain 12 warm 89.3 landed | Cursor(true) | 28.2 -56.8 | true true | 52.7 vs 85.0
+plain 13 warm 91.3 landed | Cursor(true) | 25.4 -60.3 | true true | 52 vs 85.7
+plain 14 warm 89.2 landed | Cursor(true) | 39.4 -44.8 | true true | 52.3 vs 84.1
+plain 15 warm 89.4 landed | Cursor(true) | 22.7 -62.4 | true true | 52.5 vs 85.1
+plain 16 warm 89.4 landed | Cursor(true) | 37.9 -47.5 | true true | 52.9 vs 85.3
+plain 17 warm 89.3 landed | Cursor(true) | 35 -50 | true true | 53.2 vs 85.1
+plain 18 warm 90.4 landed | Cursor(true) | 33.7 -51.8 | true true | 51.9 vs 85.4
+plain 19 warm 89.3 landed | Cursor(true) | 31.4 -54 | true true | 52.8 vs 85.4
+left 10 cold 141.4 notice-unconfirmed | Cursor(false) | 45.8 -91.7 | false false | 48 vs 137.6
+left 11 warm 122.4 notice-unconfirmed | Cursor(false) | 23.4 -93.2 | false false | 25.6 vs 116.6
+left 12 warm 120.3 notice-unconfirmed | Cursor(false) | 21.9 -92.7 | false false | 23.1 vs 114.6
+left 13 warm 120.4 notice-unconfirmed | Cursor(false) | 21.2 -95 | false false | 22.4 vs 116.2
+left 14 warm 120.3 notice-unconfirmed | Cursor(false) | 21.9 -94.1 | false false | 24.1 vs 116.0
+left 15 warm 122.5 notice-unconfirmed | Cursor(false) | 23.6 -93.7 | false false | 24.7 vs 117.3
+left 16 warm 120.4 notice-unconfirmed | Cursor(false) | 20.8 -94.1 | false false | 22 vs 114.8
+left 17 warm 120.5 notice-unconfirmed | Cursor(false) | 27.5 -87.6 | false false | 28.7 vs 115.1
+left 18 warm 120.4 notice-unconfirmed | Cursor(false) | 26.3 -89.4 | false false | 28.6 vs 115.7
+left 19 warm 120.3 notice-unconfirmed | Cursor(false) | 26.5 -89.2 | false false | 28.6 vs 115.6
+inzone-out 10 cold 161 notice-unconfirmed | Cursor(false) | 99.4 -56.1 | true true | 113.3 vs 155.6
+inzone-out 11 warm 97.3 notice-unconfirmed | Cursor(false) | 43.7 -48.9 | false true | 45.9 vs 92.6
+inzone-out 12 warm 99.5 notice-unconfirmed | Cursor(false) | 32.5 -61.5 | false true | 34.7 vs 93.9
+inzone-out 13 warm 99.5 notice-unconfirmed | Cursor(false) | 40.1 -53.9 | false true | 42.3 vs 94.0
+inzone-out 14 warm 99.4 notice-unconfirmed | Cursor(false) | 45.2 -48.4 | false true | 46.3 vs 93.6
+inzone-out 15 warm 99.5 notice-unconfirmed | Cursor(false) | 32.6 -61.4 | false true | 34.9 vs 94.0
+inzone-out 16 warm 97.3 notice-unconfirmed | Cursor(false) | 38.3 -54.3 | false true | 39.4 vs 92.6
+inzone-out 17 warm 96.3 notice-unconfirmed | Cursor(false) | 44.5 -47.9 | false true | 45.6 vs 92.3
+inzone-out 18 warm 99.5 notice-unconfirmed | Cursor(false) | 36 -58 | false true | 38.2 vs 94.0
+inzone-out 19 warm 99.4 notice-unconfirmed | Cursor(false) | 42.9 -51.5 | false true | 44 vs 94.4
+root 10 cold 200 notice-unconfirmed | Cursor(false) | 91.9 -102.9 | true true | 94.1 vs 194.8
+root 11 warm 112.2 notice-unconfirmed | Cursor(false) | 6.8 -101.2 | false true | 9 vs 108.0
+root 12 warm 112.2 notice-unconfirmed | Cursor(false) | 7.6 -100.3 | true true | 9.8 vs 107.9
+root 13 warm 112.1 notice-unconfirmed | Cursor(false) | 7.4 -100.4 | true true | 9.7 vs 107.8
+root 14 warm 114.2 notice-unconfirmed | Cursor(false) | 7 -101.9 | true true | 9.2 vs 108.8
+root 15 warm 114.3 notice-unconfirmed | Cursor(false) | 8 -101 | true true | 37.7 vs 108.9
+root 16 warm 114.2 notice-unconfirmed | Cursor(false) | 8 -100.8 | true true | 10.2 vs 108.8
+root 17 warm 114.2 notice-unconfirmed | Cursor(false) | 11.7 -97.1 | true true | 38.2 vs 108.8
+root 18 warm 114.2 notice-unconfirmed | Cursor(false) | 11.1 -97.8 | true true | 38.8 vs 108.8
+root 19 warm 112.2 notice-unconfirmed | Cursor(false) | 9.8 -97.3 | true true | 37.4 vs 107.1
+xterm 10 cold 127.1 notice-unconfirmed | Cursor(false) | 25.3 -97 | true true | 38.1 vs 122.3
+xterm 11 warm 113.4 notice-unconfirmed | Cursor(false) | 8.2 -100.2 | false true | 37.9 vs 108.4
+xterm 12 warm 114.3 notice-unconfirmed | Cursor(false) | 9.8 -99.4 | true true | 38.6 vs 109.2
+xterm 13 warm 114.4 notice-unconfirmed | Cursor(false) | 12.9 -95.9 | false false | 38.5 vs 108.8
+xterm 14 warm 112.2 notice-unconfirmed | Cursor(false) | 15.8 -92.5 | true true | 39.3 vs 108.3
+xterm 15 warm 114.2 notice-unconfirmed | Cursor(false) | 14.8 -94.1 | false false | 38.2 vs 108.9
+xterm 16 warm 114.4 notice-unconfirmed | Cursor(false) | 13.5 -95.4 | true true | 38 vs 108.9
+xterm 17 warm 112.3 notice-unconfirmed | Cursor(false) | 11.6 -96.2 | true true | 38.2 vs 107.7
+xterm 18 warm 112.2 notice-unconfirmed | Cursor(false) | 13.8 -94.4 | true true | 39.3 vs 108.2
+xterm 19 warm 112.2 notice-unconfirmed | Cursor(false) | 17.4 -90.6 | true true | 37.7 vs 108.0
+other 10 cold 129.4 notice-unconfirmed | Cursor(false) | 31.1 -92.8 | false false | 33.3 vs 124.0
+other 11 warm 114.4 notice-unconfirmed | Cursor(false) | 14.5 -94.6 | false false | 16.7 vs 109.0
+other 12 warm 114.4 notice-unconfirmed | Cursor(false) | 12.9 -95.5 | false false | 14.1 vs 108.4
+other 13 warm 112.3 notice-unconfirmed | Cursor(false) | 11.4 -96.6 | true true | 13.6 vs 108.0
+other 14 warm 112.3 notice-unconfirmed | Cursor(false) | 13.9 -94.4 | false false | 16.1 vs 108.3
+other 15 warm 114.4 notice-unconfirmed | Cursor(false) | 14.3 -95.5 | false false | 16.5 vs 109.8
+other 16 warm 114.3 notice-unconfirmed | Cursor(false) | 16.5 -92.4 | false false | 18.6 vs 108.9
+other 17 warm 113.4 notice-unconfirmed | Cursor(false) | 15.9 -93.5 | false false | 18.1 vs 109.4
+other 18 warm 114.3 notice-unconfirmed | Cursor(false) | 16.9 -91.7 | false false | 18 vs 108.6
+other 19 warm 112.1 notice-unconfirmed | Cursor(false) | 15.5 -92.5 | true true | 17.7 vs 108.0
+slow 10 cold 127.2 notice-unconfirmed | Cursor(false) | 35.6 -86.3 | false true | 48.3 vs 121.9
+slow 11 warm 112.2 notice-unconfirmed | Cursor(false) | 21.5 -85.5 | false false | 38.5 vs 107.0
+slow 12 warm 114.3 notice-unconfirmed | Cursor(false) | 6.8 -103.5 | true true | 9 vs 110.3
+slow 13 warm 112.1 notice-unconfirmed | Cursor(false) | 23.2 -85.1 | true true | 39.2 vs 108.3
+slow 14 warm 112.3 notice-unconfirmed | Cursor(false) | 8.7 -99.5 | false true | 38.5 vs 108.3
+slow 15 warm 114.3 notice-unconfirmed | Cursor(false) | 12.5 -96.3 | false false | 38.1 vs 108.8
+slow 16 warm 112.3 notice-unconfirmed | Cursor(false) | 11.2 -97.2 | true true | 37.7 vs 108.3
+slow 17 warm 112.3 notice-unconfirmed | Cursor(false) | 15.6 -92.2 | true true | 38 vs 107.8
+slow 18 warm 112.3 notice-unconfirmed | Cursor(false) | 15.9 -91.2 | true true | 38.3 vs 107.1
+slow 19 warm 114.1 notice-unconfirmed | Cursor(false) | 16.4 -92.5 | true true | 37.8 vs 108.9
+plain 20 cold 87.9 landed | Cursor(true) | 36.6 -46.6 | true true | 69.5 vs 83.2
+plain 21 warm 89.3 landed | Cursor(true) | 33.7 -50.1 | true true | 51.8 vs 83.8
+plain 22 warm 89.3 landed | Cursor(true) | 30.9 -54.2 | true true | 52.1 vs 85.1
+plain 23 warm 89.3 landed | Cursor(true) | 30.6 -54.4 | true true | 51.9 vs 85.0
+plain 24 warm 89.3 landed | Cursor(true) | 28.7 -55.8 | true true | 53.2 vs 84.5
+plain 25 warm 89.3 landed | Cursor(true) | 23.9 -60.9 | false false | 52.7 vs 84.8
+plain 26 warm 89.3 landed | Cursor(true) | 37.6 -47 | true true | 52.6 vs 84.7
+plain 27 warm 89.3 landed | Cursor(true) | 38.4 -46.6 | false false | 52.3 vs 85.0
+plain 28 warm 89.3 landed | Cursor(true) | 34.6 -50.2 | true true | 52.8 vs 84.9
+plain 29 warm 89.2 landed | Cursor(true) | 31.1 -53.8 | true true | 52.5 vs 84.9
+left 20 cold 143.5 notice-unconfirmed | Cursor(false) | 47.7 -90.5 | true true | 49.9 vs 138.2
+left 21 warm 120.3 notice-unconfirmed | Cursor(false) | 23 -92.8 | false false | 24.2 vs 115.8
+left 22 warm 122.5 notice-unconfirmed | Cursor(false) | 22.2 -95.1 | false false | 24.4 vs 117.3
+left 23 warm 120.3 notice-unconfirmed | Cursor(false) | 18.4 -97.6 | false false | 19.5 vs 116.0
+left 24 warm 120.3 notice-unconfirmed | Cursor(false) | 16.3 -99.4 | false false | 16.3 vs 115.6
+left 25 warm 122.4 notice-unconfirmed | Cursor(false) | 30.1 -86.3 | false false | 32.3 vs 116.4
+left 26 warm 122.4 notice-unconfirmed | Cursor(false) | 30.8 -85.7 | false false | 31.9 vs 116.5
+left 27 warm 120.3 notice-unconfirmed | Cursor(false) | 26.2 -89.3 | false false | 28.4 vs 115.5
+left 28 warm 120.3 notice-unconfirmed | Cursor(false) | 14.6 -101.2 | false false | 15.6 vs 115.8
+left 29 warm 120.3 notice-unconfirmed | Cursor(false) | 14.2 -101.8 | true true | 14.3 vs 116.0
+inzone-out 20 cold 160.8 notice-unconfirmed | Cursor(false) | 108.1 -48 | false true | 120.9 vs 156.2
+inzone-out 21 warm 97.4 notice-unconfirmed | Cursor(false) | 32.2 -60.4 | false true | 33.3 vs 92.6
+inzone-out 22 warm 98.5 notice-unconfirmed | Cursor(false) | 37.4 -57.1 | false true | 39.6 vs 94.5
+inzone-out 23 warm 99.5 notice-unconfirmed | Cursor(false) | 41 -53.1 | false true | 43.2 vs 94.1
+inzone-out 24 warm 97.4 notice-unconfirmed | Cursor(false) | 47.5 -45.9 | false true | 48.6 vs 93.4
+inzone-out 25 warm 97.3 notice-unconfirmed | Cursor(false) | 37.1 -56.3 | false true | 39.2 vs 93.3
+inzone-out 26 warm 99.5 notice-unconfirmed | Cursor(false) | 42.6 -51.9 | false true | 44.8 vs 94.5
+inzone-out 27 warm 99.4 notice-unconfirmed | Cursor(false) | 45.7 -48.7 | false true | 47.9 vs 94.4
+inzone-out 28 warm 98.3 notice-unconfirmed | Cursor(false) | 30.3 -63.1 | false true | 32.5 vs 93.4
+inzone-out 29 warm 97.5 notice-unconfirmed | Cursor(false) | 39.7 -53.1 | false true | 41.9 vs 92.8
+root 20 cold 200.3 notice-unconfirmed | Cursor(false) | 106.5 -89.9 | false false | 125.7 vs 196.4
+root 21 warm 114.3 notice-unconfirmed | Cursor(false) | 19.8 -89.2 | true true | 37.9 vs 109.0
+root 22 warm 112.2 notice-unconfirmed | Cursor(false) | 16.3 -91.3 | true true | 37.6 vs 107.6
+root 23 warm 112.3 notice-unconfirmed | Cursor(false) | 18.1 -88.5 | true true | 38.3 vs 106.6
+root 24 warm 114.4 notice-unconfirmed | Cursor(false) | 16.4 -93.1 | true true | 37.7 vs 109.5
+root 25 warm 112.2 notice-unconfirmed | Cursor(false) | 14.2 -93.6 | true true | 37.6 vs 107.7
+root 26 warm 112.5 notice-unconfirmed | Cursor(false) | 19.6 -88.4 | true true | 37.8 vs 108.0
+root 27 warm 112.1 notice-unconfirmed | Cursor(false) | 19 -88.5 | true true | 38.2 vs 107.5
+root 28 warm 111.3 notice-unconfirmed | Cursor(false) | 19 -87.2 | true true | 38.2 vs 106.2
+root 29 warm 112 notice-unconfirmed | Cursor(false) | 21.2 -85.4 | true true | 38.3 vs 106.5
+xterm 20 cold 129.2 notice-unconfirmed | Cursor(false) | 25.1 -98.6 | false true | 37.9 vs 123.7
+xterm 21 warm 112.3 notice-unconfirmed | Cursor(false) | 6.4 -100.3 | true true | 8.6 vs 106.7
+xterm 22 warm 112.3 notice-unconfirmed | Cursor(false) | 9.5 -98.3 | true true | 38.2 vs 107.8
+xterm 23 warm 112.2 notice-unconfirmed | Cursor(false) | 8.6 -98.1 | true true | 38.4 vs 106.7
+xterm 24 warm 112.2 notice-unconfirmed | Cursor(false) | 8.6 -98.7 | true true | 38.3 vs 107.3
+xterm 25 warm 114.3 notice-unconfirmed | Cursor(false) | 6 -103.4 | true true | 8.2 vs 109.3
+xterm 26 warm 113.5 notice-unconfirmed | Cursor(false) | 8.2 -100.3 | true true | 37.9 vs 108.5
+xterm 27 warm 114.3 notice-unconfirmed | Cursor(false) | 6.9 -102.2 | true true | 9.1 vs 109.1
+xterm 28 warm 114.3 notice-unconfirmed | Cursor(false) | 5.2 -103.9 | true true | 8.5 vs 109.1
+xterm 29 warm 112.3 notice-unconfirmed | Cursor(false) | 18.8 -89.4 | true true | 39 vs 108.2
+other 20 cold 127.4 notice-unconfirmed | Cursor(false) | 25.4 -97.5 | false false | 26.5 vs 122.9
+other 21 warm 112.4 notice-unconfirmed | Cursor(false) | 14.4 -93.6 | false false | 15.5 vs 108.0
+other 22 warm 112.5 notice-unconfirmed | Cursor(false) | 18.6 -89.7 | false false | 19.7 vs 108.2
+other 23 warm 114.3 notice-unconfirmed | Cursor(false) | 6 -102.8 | false false | 7 vs 108.8
+other 24 warm 114.6 notice-unconfirmed | Cursor(false) | 20.6 -88.4 | false false | 22.9 vs 109.0
+other 25 warm 112.2 notice-unconfirmed | Cursor(false) | 18.1 -89.2 | false false | 20.3 vs 107.3
+other 26 warm 112.2 notice-unconfirmed | Cursor(false) | 21.9 -86.3 | false false | 23 vs 108.2
+other 27 warm 114.3 notice-unconfirmed | Cursor(false) | 20.9 -87.8 | false false | 23.1 vs 108.6
+other 28 warm 114.4 notice-unconfirmed | Cursor(false) | 18.5 -90.6 | false false | 20.7 vs 109.1
+other 29 warm 112.3 notice-unconfirmed | Cursor(false) | 15.6 -91.8 | false false | 16.8 vs 107.4
+slow 20 cold 127.3 notice-unconfirmed | Cursor(false) | 22.9 -100.6 | false true | 35.6 vs 123.5
+slow 21 warm 112.3 notice-unconfirmed | Cursor(false) | 9.6 -98.5 | true true | 38.4 vs 108.1
+slow 22 warm 114.3 notice-unconfirmed | Cursor(false) | 7.3 -101.3 | true true | 9.5 vs 108.6
+slow 23 warm 114.3 notice-unconfirmed | Cursor(false) | 7.3 -101.7 | true true | 9.5 vs 109.0
+slow 24 warm 112.2 notice-unconfirmed | Cursor(false) | 21.4 -86.8 | true true | 37.4 vs 108.2
+slow 25 warm 112.2 notice-unconfirmed | Cursor(false) | 19.6 -88.1 | false false | 37.7 vs 107.7
+slow 26 warm 112.2 notice-unconfirmed | Cursor(false) | 5.3 -102.6 | true true | 7.6 vs 107.9
+slow 27 warm 114.2 notice-unconfirmed | Cursor(false) | 6 -102.8 | true true | 8.3 vs 108.9
+slow 28 warm 111.2 notice-unconfirmed | Cursor(false) | 20.1 -87.3 | true true | 38.2 vs 107.3
+slow 29 warm 112.3 notice-unconfirmed | Cursor(false) | 6.2 -102.1 | true true | 8.5 vs 108.3
+plain 30 cold 88.1 landed | Cursor(true) | 24.3 -58.9 | false false | 59.5 vs 83.2
+plain 31 warm 91.4 landed | Cursor(true) | 36.2 -49.4 | true true | 52.2 vs 85.6
+plain 32 warm 89.3 landed | Cursor(true) | 32.9 -51.3 | true true | 53.2 vs 84.2
+plain 33 warm 89.2 landed | Cursor(true) | 28.3 -57.1 | true true | 52.8 vs 85.4
+plain 34 warm 89.3 landed | Cursor(true) | 28.2 -56.6 | false false | 52.7 vs 84.8
+plain 35 warm 89.2 landed | Cursor(true) | 24.4 -60.5 | true true | 52.1 vs 84.9
+plain 36 warm 89.3 landed | Cursor(true) | 25.8 -58.5 | true true | 52.4 vs 84.3
+plain 37 warm 89.2 landed | Cursor(true) | 37.6 -47.4 | true true | 52.6 vs 85.0
+plain 38 warm 89.2 landed | Cursor(true) | 32.1 -52.1 | true true | 52.3 vs 84.2
+plain 39 warm 91.4 landed | Cursor(true) | 29.7 -56 | true true | 52.1 vs 85.7
+plain 40 cold 104.3 landed | Cursor(true) | 52.8 -46.3 | true true | 65.6 vs 99.1
+plain 41 warm 89.3 landed | Cursor(true) | 33.7 -51.5 | true true | 53 vs 85.2
+plain 42 warm 89.3 landed | Cursor(true) | 30.4 -54.3 | false false | 51.8 vs 84.7
+plain 43 warm 89.3 landed | Cursor(true) | 32.9 -52.3 | true true | 53.2 vs 85.2
+plain 44 warm 89.3 landed | Cursor(true) | 32.8 -52.5 | true true | 53 vs 85.2
+plain 45 warm 91.3 landed | Cursor(true) | 27.6 -58 | true true | 52.2 vs 85.7
+plain 46 warm 89.3 landed | Cursor(true) | 23.7 -61.2 | true true | 52.4 vs 84.9
+plain 47 warm 89.3 landed | Cursor(true) | 36.3 -48.5 | true true | 52.3 vs 84.9
+plain 48 warm 89.3 landed | Cursor(true) | 33.2 -50.8 | true true | 52.3 vs 84.0
+plain 49 warm 89.2 landed | Cursor(true) | 29 -55.3 | true true | 52.4 vs 84.3
+plain 50 cold 104.1 landed | Cursor(true) | 42.1 -55.7 | true true | 76.2 vs 97.8
+plain 51 warm 91.3 landed | Cursor(true) | 22.4 -63.3 | true true | 52.1 vs 85.7
+plain 52 warm 89.2 landed | Cursor(true) | 35.1 -50 | true true | 52.2 vs 85.0
+plain 53 warm 91.3 landed | Cursor(true) | 30.8 -55 | true true | 52.1 vs 85.8
+plain 54 warm 91.3 landed | Cursor(true) | 26.6 -59.1 | false false | 52.2 vs 85.8
+plain 55 warm 89.3 landed | Cursor(true) | 24.1 -61.1 | true true | 52.8 vs 85.2
+plain 56 warm 89.2 landed | Cursor(true) | 23.2 -61.9 | true true | 53 vs 85.1
+plain 57 warm 89.2 landed | Cursor(true) | 24.4 -60.7 | true true | 53.1 vs 85.1
+plain 58 warm 89.4 landed | Cursor(true) | 38.6 -46.1 | true true | 52.6 vs 84.7
+plain 59 warm 89.2 landed | Cursor(true) | 35 -49.8 | true true | 52.1 vs 84.8
+plain 60 cold 102.2 landed | Cursor(true) | 40.8 -56.6 | true true | 65.3 vs 97.5
+plain 61 warm 91.4 landed | Cursor(true) | 23.1 -62.4 | true true | 51.9 vs 85.6
+plain 62 warm 89.2 landed | Cursor(true) | 35.1 -49 | true true | 52.3 vs 84.1
+plain 63 warm 89.3 landed | Cursor(true) | 36.6 -48.4 | true true | 52.6 vs 85.0
+plain 64 warm 89.3 landed | Cursor(true) | 36.7 -48.7 | true true | 52.7 vs 85.4
+plain 65 warm 89.3 landed | Cursor(true) | 32.9 -52.3 | true true | 53.2 vs 85.2
+plain 66 warm 89.3 landed | Cursor(true) | 28.4 -56.4 | true true | 51.8 vs 84.7
+plain 67 warm 89.3 landed | Cursor(true) | 29 -55.8 | true true | 52.5 vs 84.8
+plain 68 warm 89.3 landed | Cursor(true) | 25.2 -60.1 | true true | 52.9 vs 85.3
+plain 69 warm 89.3 landed | Cursor(true) | 38.5 -46.1 | true true | 52.5 vs 84.6
+plain 70 cold 102.2 landed | Cursor(true) | 42.6 -56.1 | true true | 75.6 vs 98.7
+plain 71 warm 89.3 landed | Cursor(true) | 25.7 -59.3 | true true | 52.3 vs 85.0
+plain 72 warm 89.3 landed | Cursor(true) | 23.1 -61.4 | true true | 51.8 vs 84.5
+plain 73 warm 89.3 landed | Cursor(true) | 35.8 -49 | true true | 52.9 vs 84.8
+plain 74 warm 89.2 landed | Cursor(true) | 32 -52.2 | true true | 52.3 vs 84.2
+plain 75 warm 89.3 landed | Cursor(true) | 30.6 -54.4 | true true | 53 vs 84.9
+plain 76 warm 91.3 landed | Cursor(true) | 26.6 -59.3 | true true | 52.2 vs 85.9
+plain 77 warm 89.2 landed | Cursor(true) | 38.8 -46.3 | false false | 52.7 vs 85.1
+plain 78 warm 89.4 landed | Cursor(true) | 38.6 -45.6 | true true | 52.5 vs 84.2
+plain 79 warm 89.4 landed | Cursor(true) | 32.5 -52.1 | false false | 51.7 vs 84.6
+plain 80 cold 101.2 landed | Cursor(true) | 42.3 -55.6 | false false | 75.3 vs 97.9
+plain 81 warm 89.2 landed | Cursor(true) | 29.7 -54.3 | true true | 51.1 vs 84.1
+plain 82 warm 89.3 landed | Cursor(true) | 26.2 -58.5 | true true | 51.8 vs 84.7
+plain 83 warm 91.3 landed | Cursor(true) | 37.2 -48.4 | true true | 52.2 vs 85.6
+plain 84 warm 89.2 landed | Cursor(true) | 36.7 -48 | false false | 52.8 vs 84.8
+plain 85 warm 89.2 landed | Cursor(true) | 34.9 -49.3 | true true | 52.1 vs 84.2
+plain 86 warm 89.4 landed | Cursor(true) | 32.1 -52.2 | true true | 52.4 vs 84.3
+plain 87 warm 89.3 landed | Cursor(true) | 32.4 -52.4 | true true | 52.6 vs 84.8
+plain 88 warm 89.3 landed | Cursor(true) | 29.2 -55.4 | false false | 52.6 vs 84.6
+plain 89 warm 91.3 landed | Cursor(true) | 24.5 -61.2 | false false | 52.1 vs 85.7
+plain 90 cold 102.2 landed | Cursor(true) | 44.3 -54 | true true | 65.7 vs 98.3
+plain 91 warm 91.3 landed | Cursor(true) | 29.8 -55.9 | false false | 52.2 vs 85.7
+plain 92 warm 89.2 landed | Cursor(true) | 24.6 -60.3 | true true | 52.3 vs 84.9
+plain 93 warm 89.2 landed | Cursor(true) | 36 -49.1 | true true | 52 vs 85.0
+plain 94 warm 89.2 landed | Cursor(true) | 34.1 -50 | true true | 52.3 vs 84.1
+plain 95 warm 89.3 landed | Cursor(true) | 29.1 -56 | true true | 52.6 vs 85.1
+plain 96 warm 89.2 landed | Cursor(true) | 25.6 -59.4 | true true | 52.2 vs 85.0
+plain 97 warm 89.2 landed | Cursor(true) | 22.8 -62.4 | true true | 52.7 vs 85.2
+plain 98 warm 87.1 landed | Cursor(true) | 35.2 -47.8 | true true | 51.3 vs 83.0
+plain 99 warm 89.3 landed | Cursor(true) | 35.4 -49.1 | false false | 52.6 vs 84.5
+
+cua:handle class by accept_shown, accept_indeterminate and what confirmed the handle:
+  landed accept_shown=true indeterminate=true confirmed_by=Cursor(true): 86
+  notice-unconfirmed accept_shown=false indeterminate=false confirmed_by=Cursor(false): 64
+  notice-unconfirmed accept_shown=true indeterminate=true confirmed_by=Cursor(false): 80
+  notice-unconfirmed accept_shown=false indeterminate=true confirmed_by=Cursor(false): 36
+  landed accept_shown=false indeterminate=false confirmed_by=Cursor(true): 14
+
+the judge's lines:
+| lane | cell | drags | end not verified | landed | ok, nothing pending | unconfirmed | other notice | error | false ok | landed, unconfirmed (move or link / cold handle at load / other) |
+| cua:handle | plain | 100 | 0 | 100 | 100 | 0 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+| cua:handle | left | 30 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+| cua:handle | inzone-out | 30 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+| cua:handle | root | 30 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+| cua:handle | xterm | 30 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+| cua:handle | other | 30 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+| cua:handle | slow | 30 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 0 (0 / 0 / 0) |
+Findings (counted, not fails): #365's declared race, load idle: the hung sink answered ok with no drop and nothing pending on 0 of 60 drags (cua:desktop 0 of 30, cua:handle 0 of 30), a finding, not a fail; T14's share, reported and not a fail for these cells: 0 of 200 landed drops answered unconfirm

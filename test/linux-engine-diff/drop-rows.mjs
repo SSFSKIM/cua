@@ -5,6 +5,8 @@
 /** What an Electron and a Chrome drag left pending, in the engine's words (dnd.rs `pending_cause`). */
 export const CAUSES = {
   unconfirmed: (app) => `an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not confirm a drop after the release, so the drop may not have landed as the drag answered`,
+  // an Electron drop whose application did not answer the settle's syncs in time (M5's ruling 827): the same kind
+  unanswered: (app) => `an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered`,
   late: (app) => `a late drag and drop: ${app} started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop`,
   failed: (app) => `a failed watch: the drag-and-drop watch after your drag into ${app} failed (connection lost), so a drop may have happened unseen and changed the desktop`,
 };
@@ -25,7 +27,8 @@ const SRC = { 'inzone-out': 'inzone', move: 'move', 'freeze-250': 'press-150' };
  * (the stored sittings'), with the dragstart's latency from the press `lat`.
  */
 export function dropRow({ family = 'electron', app = family === 'chrome' ? 'Google-chrome' : 'cua171-electron-page', lane = 'cua', cell = 'plain', i = 0, load = 'idle', ok = true, pending = null, landed = cell === 'plain' || cell === 'plain-long', effect = landed ? 1 : 0, cold = false, verified, started = true, inherited = {}, stamp = true, lat = 4, next, late = false, escaped = false, accepted } = {}) {
-  const src = SRC[cell] ?? 'plain';
+  // a freeze cell drags the press-150 source (drop-signals-judge.mjs `CELL_SOURCE`)
+  const src = SRC[cell] ?? (/^freeze-\d+$/.test(cell) ? 'press-150' : 'plain');
   const earlier = { src: 'plain', ...(stamp ? { seq: 9 } : {}), effect: 1, lat: 3, dur: 300, ...inherited };
   const before = { dnd: { [src]: { starts: 9, drops: 7 } }, press: { seq: 9, at: 1 }, last: earlier };
   const after = {
@@ -34,7 +37,7 @@ export function dropRow({ family = 'electron', app = family === 'chrome' ? 'Goog
     last: started ? { src, ...(stamp ? { seq: 10 } : {}), effect, lat, dur: 300 } : earlier,
   };
   const cause = pending && CAUSES[pending](app);
-  const lateDnd = pending === 'late' ? { app, escaped: true } : pending === 'unconfirmed' ? { app, unconfirmed: true } : pending ? { app, failed: 'connection lost' } : null;
+  const lateDnd = pending === 'late' ? { app, escaped: true } : pending === 'unconfirmed' ? { app, unconfirmed: true } : pending === 'unanswered' ? { app, unconfirmed: true, unanswered: true } : pending ? { app, failed: 'connection lost' } : null;
   return {
     kind: 'drop-signal',
     load,

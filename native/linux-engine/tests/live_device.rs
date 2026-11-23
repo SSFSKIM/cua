@@ -231,6 +231,7 @@ fn sent(inputs: &[Input]) -> bool {
 
 #[test]
 fn capabilities_reports_the_x11_backend_and_the_device_mode_it_was_started_with() {
+    support::fresh_display();
     let version = std::process::Command::new(support::engine_bin())
         .arg("--version")
         .output()
@@ -273,6 +274,7 @@ fn capabilities_reports_the_x11_backend_and_the_device_mode_it_was_started_with(
 /// the route it was made on. Its clicks are not listed and stay on the background route in either mode.
 #[test]
 fn keys_to_a_family_that_ignores_them_are_refused_when_shared_and_sent_to_the_activated_window_when_dedicated() {
+    support::fresh_display();
     let xterm = Probe::open("XTerm", (0, 0, 320, 200));
     let mut shared = Engine::start();
     let refusal = format!("{}{SENTENCE}", app_of(&mut shared, xterm.id));
@@ -343,6 +345,7 @@ fn keys_to_a_family_that_ignores_them_are_refused_when_shared_and_sent_to_the_ac
 /// `--ignore-pointer` (measurement only) the pointer is not judged.
 #[test]
 fn gecko_pointer_input_takes_the_background_route_only_while_the_real_pointer_is_in_its_window() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     pointer_to(100, 60);
     let mut shared = Engine::start();
@@ -448,6 +451,7 @@ fn gecko_pointer_input_takes_the_background_route_only_while_the_real_pointer_is
 /// the release. A drag the pointer stays in for answers success.
 #[test]
 fn a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 400, 300));
     let mut shared = Engine::start();
     let app = app_of(&mut shared, firefox.id);
@@ -601,6 +605,7 @@ fn gecko_dragging_window(
 /// a leave, and so is a pointer that leaves and stays out.
 #[test]
 fn a_gecko_drag_that_begins_its_own_drag_and_drop_with_the_pointer_in_its_window_answers_success() {
+    support::fresh_display();
     use x11rb::protocol::xproto::GrabMode;
     // a zigzag, every corner a rest of the browsers' pacing: a drag of a few hundred milliseconds
     let path: Vec<Value> = (0..12)
@@ -689,6 +694,7 @@ fn a_gecko_drag_that_begins_its_own_drag_and_drop_with_the_pointer_in_its_window
 /// measures what the application does with it.
 #[test]
 fn the_ignore_cover_flag_sends_a_drag_along_a_covered_path_on_the_background_route() {
+    support::fresh_display();
     let chrome = Probe::open("Google-chrome", (0, 0, 320, 200));
     let _cover = Probe::open("Cover", (0, 100, 400, 400));
     let mut measuring = Engine::start_with(&["--ignore-cover"]);
@@ -708,6 +714,7 @@ fn the_ignore_cover_flag_sends_a_drag_along_a_covered_path_on_the_background_rou
 /// cover is refused in shared mode with nothing sent.
 #[test]
 fn a_chromium_drag_takes_the_background_route_only_along_a_visible_path() {
+    support::fresh_display();
     let chrome = Probe::open("Google-chrome", (0, 0, 400, 300));
     let _cover = Probe::open("Cover", (0, 150, 400, 150));
     let mut shared = Engine::start();
@@ -743,10 +750,56 @@ fn a_chromium_drag_takes_the_background_route_only_along_a_visible_path() {
 /// starts the drag and drop after a short path has ended (task 22). It records the input events it receives until told
 /// to stop, and the motions that came after its take (`AFTER_TAKE_MOTIONS`).
 fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
+    drag_source_answering(on_release, None)
+}
+
+/// [`drag_source`] whose window lists `_NET_WM_PING` when `pings` is Some, and answers each ping that long after it reads
+/// it, as Chromium answers on its browser's thread: the message sent on to the root (the hold's pings, `hold_ping.rs`).
+/// Its loop does nothing else meanwhile, as a busy browser would not.
+fn drag_source_answering(
+    on_release: OnRelease,
+    pings: Option<Duration>,
+) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
     let (ready, window) = mpsc::channel();
     let (stop, stopped) = mpsc::channel();
+    let identity = *SOURCE_IDENTITY.lock().unwrap();
     let handle = std::thread::spawn(move || {
         let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        let atom = |name: &[u8]| probe.conn.intern_atom(false, name).unwrap().reply().unwrap().atom;
+        let (protocols, ping) = (atom(b"WM_PROTOCOLS"), atom(b"_NET_WM_PING"));
+        if let Some(Identity { role, pid }) = identity {
+            let host = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap();
+            let string = |property: u32, value: &str| {
+                probe
+                    .conn
+                    .change_property8(
+                        PropMode::REPLACE,
+                        probe.id,
+                        property,
+                        AtomEnum::STRING,
+                        value.as_bytes(),
+                    )
+                    .unwrap();
+            };
+            string(atom(b"WM_WINDOW_ROLE"), role);
+            string(AtomEnum::WM_CLIENT_MACHINE.into(), host.trim());
+            probe
+                .conn
+                .change_property32(
+                    PropMode::REPLACE,
+                    probe.id,
+                    atom(b"_NET_WM_PID"),
+                    AtomEnum::CARDINAL,
+                    &[pid],
+                )
+                .unwrap();
+        }
+        if pings.is_some() {
+            probe
+                .conn
+                .change_property32(PropMode::REPLACE, probe.id, protocols, AtomEnum::ATOM, &[ping])
+                .unwrap();
+        }
         let mask = EventMask::KEY_PRESS
             | EventMask::KEY_RELEASE
             | EventMask::BUTTON_PRESS
@@ -870,8 +923,10 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         *TAKE_TO_RELEASE.lock().unwrap() = None;
         *PRESS_TO_RELEASE.lock().unwrap() = None;
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
+        AFTER_TAKE_EVENTS.lock().unwrap().clear();
         ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
-        while stopped.try_recv().is_err() {
+        PINGS_READ.lock().unwrap().clear();
+        while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
             if let Some(took) = took_at {
                 pending_cursors.retain(|&(after, cursor)| {
                     let due = took.elapsed() >= after;
@@ -898,6 +953,10 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                     }
                     Event::MotionNotify(e) if took_at.is_some() => {
                         AFTER_TAKE_MOTIONS.lock().unwrap().push((e.event_x, e.event_y));
+                        AFTER_TAKE_EVENTS
+                            .lock()
+                            .unwrap()
+                            .push(("motion", Instant::now(), (e.event_x, e.event_y)));
                     }
                     Event::FocusOut(_) if sent => {
                         ESCAPES_AND_FOCUS_OUTS
@@ -915,11 +974,31 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                         seen.push(Input::KeyPress { sent })
                     }
                     Event::KeyRelease(_) => seen.push(Input::KeyRelease { sent }),
+                    Event::ClientMessage(e) if e.type_ == protocols && e.data.as_data32()[0] == ping => {
+                        let after_release = seen.iter().any(|i| matches!(i, Input::ButtonRelease { .. }));
+                        PINGS_READ.lock().unwrap().push(after_release);
+                        if let Some(delay) = pings {
+                            sleep(delay);
+                            let answer = x11rb::protocol::xproto::ClientMessageEvent::new(
+                                32,
+                                probe.root,
+                                protocols,
+                                e.data.as_data32(),
+                            );
+                            let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
+                            probe.conn.send_event(false, probe.root, mask, answer).unwrap();
+                            probe.conn.flush().unwrap();
+                        }
+                    }
                     Event::ButtonPress(e) => {
                         pressed_at = Some(Instant::now());
                         seen.push(Input::ButtonPress { button: e.detail, sent })
                     }
                     Event::ButtonRelease(e) => {
+                        AFTER_TAKE_EVENTS
+                            .lock()
+                            .unwrap()
+                            .push(("release", Instant::now(), (e.event_x, e.event_y)));
                         seen.push(Input::ButtonRelease { button: e.detail, sent });
                         *TAKE_TO_RELEASE.lock().unwrap() = took_at.map(|t| t.elapsed());
                         *PRESS_TO_RELEASE.lock().unwrap() = pressed_at.map(|t| t.elapsed());
@@ -995,6 +1074,12 @@ static DROP_ACTIVATES: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(
 /// The window-relative places of the motions the last drag's source saw after its take.
 static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex::new(Vec::new());
 
+/// What the last drag's source read after its take, in order, each with when it read it and where: `motion` and
+/// `release` (`release_sync.rs`: what comes just before the release).
+#[allow(clippy::type_complexity)]
+static AFTER_TAKE_EVENTS: std::sync::Mutex<Vec<(&'static str, Instant, (i16, i16))>> =
+    std::sync::Mutex::new(Vec::new());
+
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
 
@@ -1006,6 +1091,10 @@ static ESCAPES_AND_FOCUS_OUTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = 
 /// long after the press: what the release schedule after a take is measured by.
 static TAKE_TO_RELEASE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
 static PRESS_TO_RELEASE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+
+/// Each `_NET_WM_PING` the last drag's source read, in order: whether it read the button's release before it (the
+/// hold's pings, `hold_ping.rs`, go only inside the hold).
+static PINGS_READ: std::sync::Mutex<Vec<bool>> = std::sync::Mutex::new(Vec::new());
 
 /// The input focus on no window, so a drop's activation shows.
 fn focus_nothing() {
@@ -1046,6 +1135,7 @@ fn set_active_window(window: Option<Window>) {
 /// and ends with its release as any drag does.
 #[test]
 fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::Focuses);
     focus_nothing();
@@ -1109,6 +1199,7 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
 /// have happened and never that nothing was dropped.
 #[test]
 fn a_cancel_too_late_answers_that_the_drop_may_have_happened() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::Focuses);
     focus_nothing();
@@ -1139,6 +1230,7 @@ fn a_cancel_too_late_answers_that_the_drop_may_have_happened() {
 /// shared mode: its drop changes nothing the person sees, so it goes ahead.
 #[test]
 fn a_drag_into_chrome_already_in_front_drops_when_shared() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::Nothing);
     let (conn, _) = x11rb::connect(None).expect("an X connection");
@@ -1168,6 +1260,7 @@ fn a_drag_into_chrome_already_in_front_drops_when_shared() {
 /// take); a drag whose source takes nothing keeps its own pace.
 #[test]
 fn a_drag_and_drop_the_engine_lets_drop_is_released_no_sooner_than_350_ms_after_the_take() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     for args in [&[][..], &["--desktop", "dedicated"][..]] {
         let (window, stop, recorder) = drag_source(OnRelease::Nothing);
@@ -1189,8 +1282,8 @@ fn a_drag_and_drop_the_engine_lets_drop_is_released_no_sooner_than_350_ms_after_
             "{args:?}: released {after_take:?} after the take"
         );
     }
-    // no take: the drag keeps its pace, then holds its button for a take until 250 ms after the press (task 22), well
-    // under the 350 ms after a take
+    // no take: the drag keeps its pace, then holds its button for a take until B after the press (ruling 888.1), and
+    // no longer
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     in_front(window);
     let mut engine = Engine::start();
@@ -1201,16 +1294,32 @@ fn a_drag_and_drop_the_engine_lets_drop_is_released_no_sooner_than_350_ms_after_
     stop.send(()).unwrap();
     recorder.join().unwrap();
     let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
-    assert!(whole < Duration::from_millis(300), "a plain drag took {whole:?}");
+    assert!(
+        whole < hold_bound() + Duration::from_millis(80),
+        "a plain drag took {whole:?}"
+    );
+}
+
+/// B, the hold for a Chromium source's take after the press (`dnd::TAKE_HOLD_AFTER_PRESS`), read from the engine's
+/// source, so these tests follow its one line when the design session sets the bound (ruling 888.1).
+fn hold_bound() -> Duration {
+    let source = include_str!("../src/dnd.rs");
+    let ms = source
+        .split_once("pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis(")
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .and_then(|(ms, _)| ms.parse().ok())
+        .expect("dnd.rs names TAKE_HOLD_AFTER_PRESS in milliseconds");
+    Duration::from_millis(ms)
 }
 
 /// A short drag whose source takes `XdndSelection` only after the path has ended, as Chrome's renderer does when it gets
 /// the drag's first moves late (task 22, `m3-gate-final`'s cold misses): the button stays down for the take, and the
 /// release comes no sooner than 350 ms after it, the floor filled with motions on the path's last two samples that end
-/// on the last; with no take at all, the drag holds until 250 ms after the press, is released, answers success, and
-/// sends no motion past its path.
+/// on the last; with no take at all, the drag holds until B after the press (ruling 888.1), is released, answers
+/// success, and sends no motion past its path.
 #[test]
 fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions_ending_on_the_last_sample() {
+    support::fresh_display();
     // 40 px: the path ends about 20 ms after the press
     let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
     for args in [&[][..], &["--desktop", "dedicated"][..]] {
@@ -1237,12 +1346,19 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
             "{args:?}: the floor filled with motions: {motions:?}"
         );
         assert_eq!(motions.last(), Some(&(60, 20)), "{args:?}: ending on the last sample");
+        // the floor's keepalives on the path's last two samples; on an XTEST route the tail inside the floor
+        // (`release_sync.rs`, rulings 1000 and 1001) then steps 1 px forward of the end and back, twice
+        let tail = motions.len().saturating_sub(4);
         assert!(
-            motions.iter().all(|m| *m == (59, 20) || *m == (60, 20)),
-            "{args:?}: on the path's last two samples: {motions:?}"
+            motions[..tail].iter().all(|m| *m == (59, 20) || *m == (60, 20))
+                && motions[tail..]
+                    .iter()
+                    .all(|m| [(59, 20), (60, 20), (61, 20)].contains(m)),
+            "{args:?}: on the path's last two samples, then the tail's step forward: {motions:?}"
         );
     }
-    // no take at all: held to 250 ms after the press, released, answered success, and no keepalive
+    // no take at all: held to B after the press, released, answered success, and no keepalive
+    let bound = hold_bound();
     for args in [&[][..], &["--desktop", "dedicated"][..]] {
         let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
         in_front(window);
@@ -1261,11 +1377,11 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
         recorder.join().unwrap();
         let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
         assert!(
-            whole >= Duration::from_millis(245) && whole < Duration::from_millis(330),
+            whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
             "{args:?}: released {whole:?} after the press"
         );
         assert!(
-            answered >= Duration::from_millis(245),
+            answered + Duration::from_millis(5) >= bound,
             "{args:?}: answered after {answered:?}"
         );
         assert!(TAKE_TO_RELEASE.lock().unwrap().is_none());
@@ -1274,6 +1390,1370 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
             "{args:?}: keepalives only after a take"
         );
     }
+}
+
+/// One drag of a 40 px path, about 20 ms long, from a `drag_source` window, on one route: the background route in front
+/// (`InFront`), the foreground route on a dedicated desktop (`Dedicated`), the desktop route with no window named
+/// (`Desktop`), or a guarded background drag on a shared desktop, Chrome not in front (`Guarded`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HoldRoute {
+    InFront,
+    Dedicated,
+    Desktop,
+    Guarded,
+}
+
+/// The drag on `route` from a fresh source with `on_release`, on an engine with `--stats`: its answer, how long the
+/// request took, when the source saw the release after the press and after its take, and the drag's `--stats` line.
+fn held_drag(route: HoldRoute, on_release: OnRelease, pings: Option<Duration>) -> HeldDrag {
+    held_drag_with(route, on_release, pings, &[])
+}
+
+/// [`held_drag`] on an engine started with `options` too.
+fn held_drag_with(route: HoldRoute, on_release: OnRelease, pings: Option<Duration>, options: &[&str]) -> HeldDrag {
+    held_drag_on(route, on_release, pings, options, false).expect("an engine")
+}
+
+/// [`held_drag_with`], the engine inside a PID namespace of its own when `sandboxed` (as cua's worker sandbox runs it:
+/// `support::Engine::start_sandboxed_with_stats`); None where this host makes no such namespace.
+fn held_drag_on(
+    route: HoldRoute,
+    on_release: OnRelease,
+    pings: Option<Duration>,
+    options: &[&str],
+    sandboxed: bool,
+) -> Option<HeldDrag> {
+    support::fresh_display();
+    let path = HELD_PATH
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]));
+    let (window, stop, recorder) = drag_source_answering(on_release, pings);
+    match route {
+        HoldRoute::InFront | HoldRoute::Dedicated => in_front(window),
+        HoldRoute::Desktop => managed(window),
+        HoldRoute::Guarded => focus_nothing(),
+    }
+    let mut args = match route {
+        HoldRoute::Dedicated => vec!["--desktop", "dedicated"],
+        _ => vec![],
+    };
+    args.extend_from_slice(options);
+    let mut engine = match sandboxed {
+        true => match Engine::start_sandboxed_with_stats(&args) {
+            Some(engine) => engine,
+            None => {
+                stop.send(()).unwrap();
+                recorder.join().unwrap();
+                return None;
+            }
+        },
+        false => Engine::start_with_stats(&args),
+    };
+    let app = app_of(&mut engine, window);
+    let request = match route {
+        HoldRoute::Desktop => json!({"path": path}),
+        _ => json!({"window": {"id": window}, "path": path}),
+    };
+    let started = Instant::now();
+    let line = engine.exchange("drag", request);
+    let answered = started.elapsed();
+    let answer = match line["ok"] == json!(true) {
+        true => Ok(line["output"].clone()),
+        false => Err(line["error"].as_str().unwrap_or_default().to_string()),
+    };
+    let stats = engine.stats_of(engine.last_id());
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let inputs = recorder.join().unwrap();
+    Some(HeldDrag {
+        app,
+        answer,
+        notice: line.get("notice").cloned(),
+        answered,
+        press_to_release: PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release"),
+        take_to_release: *TAKE_TO_RELEASE.lock().unwrap(),
+        inputs,
+        stats,
+    })
+}
+
+/// The path [`held_drag_on`] drags along, when a test sets one (None: a short one, 40 px).
+static HELD_PATH: std::sync::Mutex<Option<Value>> = std::sync::Mutex::new(None);
+
+struct HeldDrag {
+    app: String,
+    answer: Result<Value, String>,
+    /// The answer's `notice`, when it carried one.
+    notice: Option<Value>,
+    answered: Duration,
+    press_to_release: Duration,
+    take_to_release: Option<Duration>,
+    inputs: Vec<Input>,
+    stats: Value,
+}
+
+/// The hold for a Chromium source's take (ruling 888.1, B = `dnd::TAKE_HOLD_AFTER_PRESS`), on every route a drag
+/// takes: a source that takes after 0.4.1's hold of 250 ms has ended but before B (arm64's V5 at H⁵: renderers that
+/// started their drag and drop 47-108 ms after 0.4.1's release, which Chrome refused) finds the button still down, and
+/// the drag goes on as any take's does: the floor after the take, then the drop, where the engine lets it drop; Escape,
+/// then the release, and the drag-and-drop sentence on a guarded drag. A source that takes only after B finds the
+/// button up at B after the press, and the drag answers as a plain one. The hold's record on the `--stats` line has the
+/// bound the engine ran.
+#[test]
+fn a_chromium_source_s_drag_holds_its_button_until_b_after_the_press_for_its_take_on_every_route() {
+    support::fresh_display();
+    let bound = hold_bound();
+    let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+    for route in [
+        HoldRoute::InFront,
+        HoldRoute::Dedicated,
+        HoldRoute::Desktop,
+        HoldRoute::Guarded,
+    ] {
+        // the take 330 ms after the press: past 0.4.1's hold, inside B's
+        let take = Duration::from_millis(330);
+        assert!(take + Duration::from_millis(50) < bound, "the test's take inside B");
+        let drag = held_drag(route, OnRelease::TakesAfter(take), None);
+        let hold = &drag.stats["hold"];
+        assert_eq!(hold["bound_ms"], json!(ms(bound)), "{route:?}: {hold}");
+        assert_eq!(
+            (&hold["held"], &hold["taken"]),
+            (&json!(true), &json!(true)),
+            "{route:?}: {hold}"
+        );
+        if route == HoldRoute::Guarded {
+            assert_eq!(
+                drag.answer,
+                Err(format!(
+                    "{} began a drag and drop, which changes the desktop; it was cancelled before the drop, so \
+                     nothing was dropped. Use a dedicated desktop, or activate the window first",
+                    drag.app
+                )),
+                "{route:?}"
+            );
+            assert_eq!(
+                drag.inputs,
+                vec![
+                    Input::ButtonPress { button: 1, sent: true },
+                    Input::KeyPress { sent: true },
+                    Input::KeyRelease { sent: true },
+                    Input::ButtonRelease { button: 1, sent: true },
+                ],
+                "{route:?}: Escape before the release"
+            );
+            let released = drag.take_to_release.expect("the take came before the release");
+            assert!(
+                released < Duration::from_millis(60),
+                "{route:?}: cancelled at once, {released:?} after the take"
+            );
+        } else {
+            assert_eq!(drag.answer, Ok(Value::Null), "{route:?}: a drop answers success");
+            let released = drag.take_to_release.expect("the take came before the release");
+            assert!(
+                released >= Duration::from_millis(345) && released < Duration::from_millis(600),
+                "{route:?}: the floor after the take, released {released:?} after it"
+            );
+        }
+
+        // the take due after B: never comes, the button up at B after the press, a plain drag's answer
+        let drag = held_drag(route, OnRelease::TakesAfter(bound + Duration::from_millis(150)), None);
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}: no take by B, a plain drag");
+        assert!(drag.take_to_release.is_none(), "{route:?}: the take never came");
+        let whole = drag.press_to_release;
+        assert!(
+            whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
+            "{route:?}: released {whole:?} after the press"
+        );
+        assert!(
+            drag.answered + Duration::from_millis(5) >= bound && drag.answered < bound + Duration::from_millis(150),
+            "{route:?}: answered {:?} after the request",
+            drag.answered
+        );
+        let hold = &drag.stats["hold"];
+        assert_eq!(
+            (&hold["held"], &hold["taken"]),
+            (&json!(true), &json!(false)),
+            "{route:?}: {hold}"
+        );
+    }
+}
+
+/// The hold is a Chromium source's alone: a drag from another family's window is released as before, the path's own
+/// pace and no hold.
+#[test]
+fn a_drag_whose_source_is_not_chromium_is_not_held_for_a_take() {
+    support::fresh_display();
+    let mut engine = Engine::start();
+    let (stop, listening) = held_listener("XTerm", (100, 100, 400, 300));
+    sleep(Duration::from_millis(100));
+    engine
+        .request("drag", json!({"path": [{"x": 150, "y": 150}, {"x": 190, "y": 150}]}))
+        .unwrap();
+    sleep(Duration::from_millis(100));
+    stop.send(()).unwrap();
+    let seen = listening.join().unwrap();
+    let pressed = seen.iter().find_map(|h| match h {
+        Held::Press(t) => Some(*t),
+        _ => None,
+    });
+    let released = seen.iter().find_map(|h| match h {
+        Held::Release(t) => Some(*t),
+        _ => None,
+    });
+    let (Some(pressed), Some(released)) = (pressed, released) else {
+        panic!("a press and a release: {seen:?}")
+    };
+    assert!(
+        released - pressed < 150,
+        "released {} ms after the press",
+        released - pressed
+    );
+}
+
+/// The hold follows the window the drag's press reaches, not the window the drag names (the review of task 115, P2).
+/// The foreground route's press goes through XTEST to whatever is under the path's start, and the route waits only for
+/// the points inside its window: a dedicated-mode drag named for Chrome that starts over an XTerm beside it is the
+/// XTerm's, released at its path's pace, with Chrome neither held for nor pinged.
+#[test]
+fn a_foreground_drag_named_for_chrome_that_starts_over_another_family_s_window_is_not_held() {
+    support::fresh_display();
+    let (chrome, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::ZERO));
+    managed(chrome);
+    let (xterm_stop, xterm) = held_listener("XTerm", (420, 0, 300, 200));
+    pointer_to(1000, 600);
+    let mut dedicated = Engine::start_with_stats(&["--desktop", "dedicated"]);
+    let answer = dedicated.request(
+        "drag",
+        json!({"window": {"id": chrome}, "path": [{"x": 450, "y": 20}, {"x": 490, "y": 20}]}),
+    );
+    let stats = dedicated.stats_of(dedicated.last_id());
+    sleep(SETTLE);
+    xterm_stop.send(()).unwrap();
+    let seen = xterm.join().unwrap();
+    stop.send(()).unwrap();
+    let inputs = recorder.join().unwrap();
+    assert_eq!(answer, Ok(Value::Null), "{stats}");
+    assert_eq!(stats["route"], json!("foreground"), "{stats}");
+    let held = |seen: &[Held]| {
+        let press = seen.iter().find_map(|h| match h {
+            Held::Press(t) => Some(*t),
+            _ => None,
+        });
+        let release = seen.iter().find_map(|h| match h {
+            Held::Release(t) => Some(*t),
+            _ => None,
+        });
+        match (press, release) {
+            (Some(press), Some(release)) => release - press,
+            _ => panic!("a press and a release: {seen:?}"),
+        }
+    };
+    let xterm_held = held(&seen);
+    assert!(xterm_held < 150, "the XTerm's drag held {xterm_held} ms");
+    assert_eq!(
+        stats["hold"],
+        Value::Null,
+        "no hold for a press into the XTerm: {stats}"
+    );
+    assert!(
+        !inputs.iter().any(|i| matches!(i, Input::ButtonPress { .. })),
+        "nothing pressed in Chrome: {inputs:?}"
+    );
+    assert!(PINGS_READ.lock().unwrap().is_empty(), "Chrome not pinged");
+}
+
+/// The other way round (the review of task 115, P2): a dedicated-mode drag named for another family (Gecko, on the
+/// foreground route with the real pointer outside it) that starts over Chrome is Chrome's, held until B after the
+/// press, Chrome pinged meanwhile, and nothing reaches the window named.
+#[test]
+fn a_foreground_drag_named_for_another_family_that_starts_over_chrome_is_held_for_chrome() {
+    support::fresh_display();
+    let bound = hold_bound();
+    let (chrome, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::ZERO));
+    managed(chrome);
+    let firefox = Probe::open("firefox", (420, 0, 300, 200));
+    managed(firefox.id);
+    pointer_to(1000, 600);
+    let mut dedicated = Engine::start_with_stats(&["--desktop", "dedicated"]);
+    let answer = dedicated.request(
+        "drag",
+        json!({"window": firefox.target(), "path": [{"x": -400, "y": 20}, {"x": -360, "y": 20}]}),
+    );
+    let stats = dedicated.stats_of(dedicated.last_id());
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let inputs = recorder.join().unwrap();
+    assert_eq!(answer, Ok(Value::Null), "{stats}");
+    assert_eq!(stats["route"], json!("foreground"), "{stats}");
+    assert_eq!(
+        inputs,
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press and the release in Chrome"
+    );
+    let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+    assert!(
+        whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(25),
+        "held for Chrome's take, Gecko's release dwell inside the hold: released {whole:?} after the press"
+    );
+    let hold = &stats["hold"];
+    assert_eq!(
+        (&hold["held"], &hold["taken"]),
+        (&json!(true), &json!(false)),
+        "{stats}"
+    );
+    assert_eq!(hold["pings"]["asked"], json!(true), "Chrome pinged: {stats}");
+    assert!(!PINGS_READ.lock().unwrap().is_empty(), "Chrome read its pings");
+    assert_eq!(firefox.inputs(), vec![], "nothing reached the window named");
+}
+
+/// The hold at a Chromium `drag_handle`'s end (ruling 888.1): a source that has not taken by the end finds the button
+/// still down until B after the start's press, so a take inside it is a drag and drop under way, settled after the take
+/// as any; one due after B finds it up at B: the family's rest before the release and its revisit fit inside the hold,
+/// whose motionless wait is that rest (the review of task 115, P3). Both answer success. The handle's record carries the
+/// hold.
+#[test]
+fn a_chromium_handle_s_end_holds_its_button_until_b_after_its_press_for_a_take() {
+    support::fresh_display();
+    let bound = hold_bound();
+    for (take, inside) in [
+        (Duration::from_millis(330), true),
+        (bound + Duration::from_millis(150), false),
+    ] {
+        support::fresh_display();
+        let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(take));
+        managed(window);
+        let mut engine = Engine::start_with_stats(&[]);
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
+            .unwrap();
+        let ended = engine.request("drag_handle", json!({"action": "end"}));
+        let stats = engine.stats_of(engine.last_id());
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        assert_eq!(ended, Ok(Value::Null), "take {take:?}: {stats}");
+        let hold = &stats["handle"]["hold"];
+        assert_eq!(hold["held"], json!(true), "{hold}");
+        assert_eq!(hold["taken"], json!(inside), "{hold}");
+        let after_take = *TAKE_TO_RELEASE.lock().unwrap();
+        assert_eq!(
+            after_take.is_some(),
+            inside,
+            "take {take:?}: the take came before the release"
+        );
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        if inside {
+            // the rest after a real take, then the release
+            let rest = after_take.unwrap();
+            assert!(
+                rest >= Duration::from_millis(25) && rest < Duration::from_millis(150),
+                "released {rest:?} after the take"
+            );
+        } else {
+            assert!(
+                whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(25),
+                "released {whole:?} after the press: the rest and the revisit inside B"
+            );
+        }
+    }
+}
+
+/// The ping predictor (ruling 888.2, measurement only): while a hold runs with no take, the source is sent
+/// `_NET_WM_PING` and each round trip is recorded in `--stats` (`hold.pings.round_trips`), one ping out at a time. An
+/// answer that comes late is recorded and changes nothing: the release comes at B, and the answer is a plain drag's. A
+/// source that lists no ping is not asked, and the record says why. On a guarded drag too.
+#[test]
+fn a_hold_with_no_take_pings_its_source_and_records_each_round_trip_without_changing_the_drag() {
+    support::fresh_display();
+    let bound = hold_bound();
+    for (route, answer_after) in [
+        (HoldRoute::InFront, Duration::ZERO),
+        (HoldRoute::InFront, Duration::from_millis(150)),
+        (HoldRoute::Guarded, Duration::ZERO),
+    ] {
+        let drag = held_drag(route, OnRelease::NeverTakes, Some(answer_after));
+        let what = format!("{route:?}, answered {answer_after:?} after each ping");
+        assert_eq!(drag.answer, Ok(Value::Null), "{what}: a plain drag");
+        let whole = drag.press_to_release;
+        assert!(
+            whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
+            "{what}: released {whole:?} after the press, whatever the pings"
+        );
+        let pings = &drag.stats["hold"]["pings"];
+        assert_eq!(pings["asked"], json!(true), "{what}: {pings}");
+        let trips = pings["round_trips"].as_array().expect("round trips").clone();
+        let answered: Vec<f64> = trips.iter().filter_map(|t| t["rtt_ms"].as_f64()).collect();
+        assert!(!answered.is_empty(), "{what}: {pings}");
+        if answer_after.is_zero() {
+            assert!(trips.len() >= 3, "{what}: a ping every 25 ms or so: {pings}");
+            assert!(answered.iter().all(|&ms| ms < 50.0), "{what}: {pings}");
+        } else {
+            assert!(answered.iter().all(|&ms| ms >= 145.0), "{what}: {pings}");
+            assert!(trips.len() <= 4, "{what}: one at a time: {pings}");
+        }
+        // every ping went out inside the hold, none in its last 25 ms, whose answer could not come inside it (the
+        // engine's clock: the source reads the press a little after the engine sent it)
+        let last_ping = bound.as_secs_f64() * 1000.0 - 25.0;
+        assert!(
+            trips
+                .iter()
+                .all(|t| t["sent_after_press_ms"].as_f64().is_some_and(|ms| ms <= last_ping)),
+            "{what}: {pings}"
+        );
+        // and the source read every one before the release: no ping went out after the hold
+        let read = PINGS_READ.lock().unwrap().clone();
+        assert_eq!(read.len(), trips.len(), "{what}: {pings}");
+        assert!(read.iter().all(|&after| !after), "{what}: a ping after the release");
+    }
+    // a source that lists no ping: not asked, and why
+    let drag = held_drag(HoldRoute::InFront, OnRelease::NeverTakes, None);
+    assert_eq!(drag.answer, Ok(Value::Null));
+    assert_eq!(
+        drag.stats["hold"]["pings"],
+        json!({"asked": false, "why": "the window lists no _NET_WM_PING"})
+    );
+    // the pings turned off (`--drag-dnd-hold-ping off`, measurement only, ruling 892): a source that answers pings is
+    // asked none, the record says so, and the drag holds and answers as with them on
+    for route in [HoldRoute::InFront, HoldRoute::Guarded] {
+        let drag = held_drag_with(
+            route,
+            OnRelease::NeverTakes,
+            Some(Duration::ZERO),
+            &["--drag-dnd-hold-ping", "off"],
+        );
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["hold"]["pings"],
+            json!({"asked": false, "why": "disabled"}),
+            "{route:?}"
+        );
+        assert_eq!(drag.stats["hold"]["held"], json!(true), "{route:?}");
+        assert!(PINGS_READ.lock().unwrap().is_empty(), "{route:?}: no ping asked");
+        let whole = drag.press_to_release;
+        assert!(
+            whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
+            "{route:?}: released {whole:?} after the press"
+        );
+    }
+}
+
+/// What a drag source's window says of itself beyond its class, for the adaptive hold's identification (`browser.rs`,
+/// ruling 899): its `WM_WINDOW_ROLE`, this host as its `WM_CLIENT_MACHINE`, and the process its `_NET_WM_PID` names.
+/// None (the default): none of them, a source the engine cannot identify, whose hold is fixed.
+#[derive(Debug, Clone, Copy)]
+struct Identity {
+    role: &'static str,
+    pid: u32,
+}
+
+static SOURCE_IDENTITY: std::sync::Mutex<Option<Identity>> = std::sync::Mutex::new(None);
+
+/// The browser identity fixture (`tests/support/browser-app.py`): a process whose accessible application is named
+/// `name`, run as a copy of the Python interpreter named `exe` ("chrome", a browser's executable) or as the interpreter
+/// itself (`python3`, an executable that is no browser's).
+struct BrowserApp {
+    child: std::process::Child,
+    pid: u32,
+}
+
+const BROWSER_APP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/browser-app.py");
+
+impl BrowserApp {
+    /// None, said on stderr, where python3-gi with GTK 3 is not installed, unless the run requires it
+    /// (`CUA171_GTK_TESTS=required`).
+    fn start(name: &str, exe: &str) -> Option<BrowserApp> {
+        use std::io::BufRead;
+        let gtk = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk",
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+        if !gtk {
+            assert!(
+                std::env::var("CUA171_GTK_TESTS").as_deref() != Ok("required"),
+                "python3-gi with GTK 3 is not installed, which this run requires (CUA171_GTK_TESTS=required)"
+            );
+            eprintln!("skipped: python3-gi with GTK 3 is not installed");
+            return None;
+        }
+        let python = std::fs::canonicalize(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap())
+                .map(|dir| dir.join("python3"))
+                .find(|p| p.exists())
+                .expect("python3 on PATH"),
+        )
+        .unwrap();
+        let program = match exe {
+            "python3" => python,
+            name => {
+                let dir = std::env::temp_dir().join(format!("cua-live-browser-{}", std::process::id()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let copy = dir.join(name);
+                if !copy.exists() {
+                    std::fs::copy(&python, &copy).unwrap();
+                }
+                copy
+            }
+        };
+        let mut child = std::process::Command::new(&program)
+            .args([BROWSER_APP, name])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("cannot start {}: {e}", program.display()));
+        let mut line = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let ready: Value = serde_json::from_str(&line).unwrap_or_else(|e| panic!("{e}: {line:?}"));
+        assert_eq!(ready["ready"], json!(true), "{line}");
+        let pid = child.id();
+        Some(BrowserApp { child, pid })
+    }
+}
+
+impl Drop for BrowserApp {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// A held drag (`held_drag_on`) from a source carrying `identity`, whose pings are answered `pings` after each.
+fn identified_drag(
+    identity: Option<Identity>,
+    route: HoldRoute,
+    on_release: OnRelease,
+    pings: Option<Duration>,
+    options: &[&str],
+    sandboxed: bool,
+) -> Option<HeldDrag> {
+    *SOURCE_IDENTITY.lock().unwrap() = identity;
+    let drag = held_drag_on(route, on_release, pings, options, sandboxed);
+    *SOURCE_IDENTITY.lock().unwrap() = None;
+    drag
+}
+
+/// The adaptive hold's three constants (`adaptive_hold.rs`), read from the engine's source.
+fn adaptive_constant(name: &str) -> Duration {
+    let source = include_str!("../src/adaptive_hold.rs");
+    let ms = source
+        .split_once(&format!("pub const {name}: Duration = Duration::from_millis("))
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .and_then(|(ms, _)| ms.parse().ok())
+        .unwrap_or_else(|| panic!("adaptive_hold.rs names {name} in milliseconds"));
+    Duration::from_millis(ms)
+}
+
+/// The notice an extended hold with no take answers beside its ok, word for word (ruling 897).
+const HOLD_NOTICE: &str = "the page may have started a drag that did not complete";
+
+/// The extensible hold (rulings 897-900), through the real drag path, from a fake source identified as Chrome (its class,
+/// its role "browser", this host, and a process whose accessible application is "Google Chrome" running `chrome`). On
+/// the background route in front, the guarded drag and the foreground route:
+/// - pings answered at once and no take: released at B (450), a plain drag, no notice (`fixed`): no release before B;
+/// - pings answered 40 ms late and no take: held to press + 650, then a plain drag's ok carrying the notice (`noticed`);
+/// - pings answered late and a take at +520, past B: the take is held for and goes the way any take goes (`extended`):
+///   dropped in front, cancelled with the drag-and-drop sentence when guarded;
+/// - a window that lists no `_NET_WM_PING`: no answer is no evidence, so it is held to 650 with the notice;
+/// - pings off (`--drag-dnd-hold-ping off`): the fixed 450, no notice.
+#[test]
+fn an_identified_chrome_source_releases_at_b_on_fast_pings_and_holds_slow_ones_to_650_with_the_notice() {
+    support::fresh_display();
+    let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
+        return;
+    };
+    let chrome = Some(Identity {
+        role: "browser",
+        pid: app.pid,
+    });
+    let bound = hold_bound();
+    let extended = adaptive_constant("EXTENDED_HOLD_AFTER_PRESS");
+    let within = |whole: Duration, at: Duration, what: &str| {
+        assert!(
+            whole + Duration::from_millis(5) >= at && whole < at + Duration::from_millis(45),
+            "{what}: released {whole:?} after the press, not at {at:?}"
+        );
+    };
+    for route in [HoldRoute::InFront, HoldRoute::Guarded, HoldRoute::Dedicated] {
+        // fast: released at B, never sooner
+        let drag = identified_drag(chrome, route, OnRelease::NeverTakes, Some(Duration::ZERO), &[], false).unwrap();
+        let what = format!("{route:?}, fast pings");
+        let adaptive = &drag.stats["hold"]["adaptive"];
+        assert_eq!(drag.answer, Ok(Value::Null), "{what}");
+        assert_eq!(drag.notice, None, "{what}");
+        assert_eq!(adaptive["way"], json!("fixed"), "{what}: {adaptive}");
+        assert_eq!(
+            adaptive["why"],
+            json!("every ping answered by B came back under 20 ms"),
+            "{what}: {adaptive}"
+        );
+        assert_eq!(adaptive["source"]["identified"], json!(true), "{what}: {adaptive}");
+        within(drag.press_to_release, bound, &what);
+        // slow: held to 650, the notice on the ok
+        let drag = identified_drag(
+            chrome,
+            route,
+            OnRelease::NeverTakes,
+            Some(Duration::from_millis(40)),
+            &[],
+            false,
+        )
+        .unwrap();
+        let what = format!("{route:?}, slow pings");
+        let adaptive = &drag.stats["hold"]["adaptive"];
+        assert_eq!(drag.answer, Ok(Value::Null), "{what}");
+        assert_eq!(drag.notice, Some(json!(HOLD_NOTICE)), "{what}: {adaptive}");
+        assert_eq!(adaptive["way"], json!("noticed"), "{what}: {adaptive}");
+        assert_eq!(drag.stats["hold_notice"], json!(true), "{what}");
+        within(drag.press_to_release, extended, &what);
+        // slow, a take past B inside the extension
+        let take = bound + Duration::from_millis(70);
+        let drag = identified_drag(
+            chrome,
+            route,
+            OnRelease::TakesAfter(take),
+            Some(Duration::from_millis(40)),
+            &[],
+            false,
+        )
+        .unwrap();
+        let what = format!("{route:?}, slow pings, a take at {take:?}");
+        let adaptive = &drag.stats["hold"]["adaptive"];
+        assert_eq!(adaptive["way"], json!("extended"), "{what}: {adaptive}");
+        assert!(
+            drag.take_to_release.is_some(),
+            "{what}: the take came before the release"
+        );
+        match route {
+            HoldRoute::Guarded => {
+                assert_eq!(drag.notice, None, "{what}");
+                assert!(
+                    drag.answer
+                        .as_ref()
+                        .is_err_and(|e| e.starts_with(&format!("{} began a drag and drop", drag.app))),
+                    "{what}: cancelled in time: {:?}",
+                    drag.answer
+                )
+            }
+            // a take only the extension caught, its drop let land where nothing can confirm it (this display lists no
+            // `_NET_ACTIVE_WINDOW`, the source no Electron cursor): before the extension the after-release watch
+            // cancelled and reported that take, so it is never a plain ok now; the drop is pending unconfirmed
+            _ => {
+                assert_eq!(drag.answer, Ok(Value::Null), "{what}: dropped");
+                assert!(
+                    drag.notice
+                        .as_ref()
+                        .and_then(Value::as_str)
+                        .is_some_and(|n| n.starts_with(&format!(
+                            "Pending from your last drag, an unconfirmed drop: your drag into {} began a drag and drop",
+                            drag.app
+                        ))),
+                    "{what}: {:?}, {}",
+                    drag.notice,
+                    drag.stats["after_release"]
+                );
+                assert_eq!(drag.stats["after_release"]["confirmed_by"], json!("Extended"), "{what}");
+            }
+        }
+    }
+    // no _NET_WM_PING: not evidence of a fast browser
+    let drag = identified_drag(chrome, HoldRoute::InFront, OnRelease::NeverTakes, None, &[], false).unwrap();
+    assert_eq!(
+        drag.stats["hold"]["adaptive"]["way"],
+        json!("noticed"),
+        "{}",
+        drag.stats["hold"]
+    );
+    assert_eq!(drag.notice, Some(json!(HOLD_NOTICE)));
+    within(drag.press_to_release, extended, "no ping support");
+    // pings off: the fixed hold
+    let drag = identified_drag(
+        chrome,
+        HoldRoute::InFront,
+        OnRelease::NeverTakes,
+        Some(Duration::from_millis(40)),
+        &["--drag-dnd-hold-ping", "off"],
+        false,
+    )
+    .unwrap();
+    let adaptive = &drag.stats["hold"]["adaptive"];
+    assert_eq!(adaptive["way"], json!("fixed"), "{adaptive}");
+    assert_eq!(adaptive["why"], json!("the hold's pings are off"), "{adaptive}");
+    assert_eq!(drag.notice, None);
+    within(drag.press_to_release, bound, "pings off");
+}
+
+/// Only a source positively identified as a Chrome or Chromium browser gets the extensible hold (ruling 899). Each of
+/// these, whose pings come back fast or slow, keeps the fixed hold to B, with no extension and no
+/// notice, and its record says why: an Electron-like window (role "browser-window"), a process whose executable is not a
+/// browser's, an accessible application named for another app, and a window with no role, host or pid at all.
+#[test]
+fn a_source_not_positively_identified_as_a_browser_keeps_the_fixed_hold() {
+    support::fresh_display();
+    let (Some(chrome), Some(python), Some(other)) = (
+        BrowserApp::start("Google Chrome", "chrome"),
+        BrowserApp::start("Google Chrome", "python3"),
+        BrowserApp::start("Spotify", "chrome"),
+    ) else {
+        return;
+    };
+    let bound = hold_bound();
+    let cases = [
+        (
+            Some(Identity {
+                role: "browser-window",
+                pid: chrome.pid,
+            }),
+            "WM_WINDOW_ROLE \"browser-window\"",
+        ),
+        (
+            Some(Identity {
+                role: "browser",
+                pid: python.pid,
+            }),
+            "not a Chrome or Chromium browser",
+        ),
+        (
+            Some(Identity {
+                role: "browser",
+                pid: other.pid,
+            }),
+            "named \"Spotify\"",
+        ),
+        (None, "WM_WINDOW_ROLE"),
+    ];
+    for (identity, why) in cases {
+        for pings in [Duration::ZERO, Duration::from_millis(40)] {
+            let drag = identified_drag(
+                identity,
+                HoldRoute::InFront,
+                OnRelease::NeverTakes,
+                Some(pings),
+                &[],
+                false,
+            )
+            .unwrap();
+            let what = format!("{identity:?}, pings answered after {pings:?}");
+            let adaptive = &drag.stats["hold"]["adaptive"];
+            assert_eq!(adaptive["way"], json!("fixed"), "{what}: {adaptive}");
+            assert_eq!(adaptive["source"]["identified"], json!(false), "{what}: {adaptive}");
+            assert!(
+                adaptive["source"]["why"].as_str().is_some_and(|w| w.contains(why)),
+                "{what}: {adaptive}"
+            );
+            assert_eq!(drag.answer, Ok(Value::Null), "{what}");
+            assert_eq!(drag.notice, None, "{what}");
+            let whole = drag.press_to_release;
+            assert!(
+                whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(45),
+                "{what}: released {whole:?} after the press"
+            );
+        }
+    }
+}
+
+/// A `drag_handle`'s `end` from an identified Chrome source holds the same way: released at B on fast pings;
+/// on slow ones held to 650, its ok carrying the notice; and a take only the extension caught, past B, where nothing can
+/// confirm its drop, is pending unconfirmed, never a plain ok (the re-review of wave 3, I1).
+#[test]
+fn an_identified_chrome_handle_s_end_extends_on_slow_pings_and_carries_the_notice() {
+    support::fresh_display();
+    let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
+        return;
+    };
+    let past_b = hold_bound() + Duration::from_millis(70);
+    for (pings, on_release, way, at) in [
+        (Duration::ZERO, OnRelease::NeverTakes, "fixed", hold_bound()),
+        (
+            Duration::from_millis(40),
+            OnRelease::NeverTakes,
+            "noticed",
+            adaptive_constant("EXTENDED_HOLD_AFTER_PRESS"),
+        ),
+        (
+            Duration::from_millis(40),
+            OnRelease::TakesAfter(past_b),
+            "extended",
+            past_b,
+        ),
+    ] {
+        support::fresh_display();
+        *SOURCE_IDENTITY.lock().unwrap() = Some(Identity {
+            role: "browser",
+            pid: app.pid,
+        });
+        let (window, stop, recorder) = drag_source_answering(on_release, Some(pings));
+        *SOURCE_IDENTITY.lock().unwrap() = None;
+        managed(window);
+        let mut engine = Engine::start_with_stats(&[]);
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
+            .unwrap();
+        let ended = engine.exchange("drag_handle", json!({"action": "end"}));
+        let stats = engine.stats_of(engine.last_id());
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let hold = &stats["handle"]["hold"];
+        assert_eq!(ended["ok"], json!(true), "{ended}");
+        assert_eq!(hold["adaptive"]["way"], json!(way), "{hold}");
+        match way {
+            "noticed" => assert_eq!(ended["notice"], json!(HOLD_NOTICE), "{ended}"),
+            "extended" => {
+                assert!(
+                    ended["notice"].as_str().is_some_and(|n| n.starts_with(
+                        "Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag \
+                         and drop"
+                    )),
+                    "{ended}: {}",
+                    stats["handle"]
+                );
+                assert_eq!(
+                    stats["handle"]["confirmed_by"],
+                    json!("Extended"),
+                    "{}",
+                    stats["handle"]
+                );
+            }
+            _ => assert_eq!(ended.get("notice"), None, "{ended}"),
+        }
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        // a take's release comes after its rest; one with none at the hold's end
+        let late = Duration::from_millis(if way == "extended" { 450 } else { 60 });
+        assert!(
+            whole + Duration::from_millis(5) >= at && whole < at + late,
+            "{way}: released {whole:?} after the press, not at {at:?}"
+        );
+    }
+}
+
+/// In service the engine runs in a PID namespace of its own, where the browser's process cannot be seen (ruling 899):
+/// there the accessible application's name identifies Chrome, so its slow pings extend the hold, and one named for another
+/// app still does not: its hold stays fixed at B.
+#[test]
+fn in_its_own_pid_namespace_the_engine_identifies_chrome_by_its_accessible_application() {
+    support::fresh_display();
+    let (Some(chrome), Some(other)) = (
+        BrowserApp::start("Google Chrome", "chrome"),
+        BrowserApp::start("Spotify", "chrome"),
+    ) else {
+        return;
+    };
+    let identity = |pid| Some(Identity { role: "browser", pid });
+    let Some(drag) = identified_drag(
+        identity(chrome.pid),
+        HoldRoute::InFront,
+        OnRelease::NeverTakes,
+        Some(Duration::from_millis(40)),
+        &[],
+        true,
+    ) else {
+        return;
+    };
+    let adaptive = &drag.stats["hold"]["adaptive"];
+    assert_eq!(adaptive["way"], json!("noticed"), "{adaptive}");
+    assert_eq!(adaptive["source"]["identified"], json!(true), "{adaptive}");
+    assert!(
+        adaptive["source"]["by"]
+            .as_str()
+            .is_some_and(|by| by.ends_with("executable not visible here")),
+        "{adaptive}"
+    );
+    let drag = identified_drag(
+        identity(other.pid),
+        HoldRoute::InFront,
+        OnRelease::NeverTakes,
+        Some(Duration::from_millis(40)),
+        &[],
+        true,
+    )
+    .unwrap();
+    let adaptive = &drag.stats["hold"]["adaptive"];
+    assert_eq!(adaptive["way"], json!("fixed"), "{adaptive}");
+    assert_eq!(adaptive["source"]["identified"], json!(false), "{adaptive}");
+}
+
+/// A drag whose path ends at or past B never enters the hold (the re-review of wave 3, I2): its last look for a take
+/// stays, but no sampler ran, so its pings say nothing and nothing extends: an identified Chrome's slow-answering source
+/// dragged along a path that lasts past B (zigzags, each reversal a browser's rest), and a short path with
+/// `--drag-dnd-hold-ms 0`, each released at its path's end, a plain ok with no notice.
+#[test]
+fn a_drag_whose_path_ends_at_or_past_b_is_not_held_and_gets_no_notice() {
+    support::fresh_display();
+    let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
+        return;
+    };
+    let chrome = Some(Identity {
+        role: "browser",
+        pid: app.pid,
+    });
+    let bound = hold_bound();
+    let zigzag: Vec<Value> = (0..20)
+        .map(|i| json!({"x": if i % 2 == 0 { 20 } else { 60 }, "y": 20 + i}))
+        .collect();
+    for (path, options) in [
+        (Some(Value::Array(zigzag)), &[][..]),
+        (None, &["--drag-dnd-hold-ms", "0"][..]),
+    ] {
+        let long = path.is_some();
+        *HELD_PATH.lock().unwrap() = path;
+        let drag = identified_drag(
+            chrome,
+            HoldRoute::InFront,
+            OnRelease::NeverTakes,
+            Some(Duration::from_millis(40)),
+            options,
+            false,
+        )
+        .unwrap();
+        *HELD_PATH.lock().unwrap() = None;
+        let what = if long { "a path past B" } else { "B of 0" };
+        let hold = &drag.stats["hold"];
+        let path_ms = Duration::from_secs_f64(hold["path_ms"].as_f64().expect("the path's length") / 1000.0);
+        if long {
+            assert!(path_ms >= bound, "{what}: the test's path lasts past B: {hold}");
+        }
+        assert_eq!(drag.answer, Ok(Value::Null), "{what}");
+        assert_eq!(drag.notice, None, "{what}: {hold}");
+        assert_eq!(drag.stats.get("hold_notice"), None, "{what}");
+        assert_eq!(hold["adaptive"]["way"], json!("fixed"), "{what}: {hold}");
+        assert_eq!(hold["pings"], Value::Null, "{what}: no sampler: {hold}");
+        assert!(
+            drag.press_to_release < path_ms + Duration::from_millis(80),
+            "{what}: released {:?} after the press, its path {path_ms:?}",
+            drag.press_to_release
+        );
+    }
+}
+
+/// The root window's `AT_SPI_BUS` set to `address` until dropped, then put back as it was.
+struct RootBusAddress {
+    conn: RustConnection,
+    root: Window,
+    atom: u32,
+    saved: Option<(u32, u8, Vec<u8>)>,
+}
+
+impl RootBusAddress {
+    fn set(address: &str) -> RootBusAddress {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        let atom = conn.intern_atom(false, b"AT_SPI_BUS").unwrap().reply().unwrap().atom;
+        let reply = conn
+            .get_property(false, root, atom, AtomEnum::ANY, 0, 4096)
+            .unwrap()
+            .reply()
+            .unwrap();
+        let saved = (reply.type_ != x11rb::NONE).then(|| (reply.type_, reply.format, reply.value.clone()));
+        conn.change_property8(PropMode::REPLACE, root, atom, AtomEnum::STRING, address.as_bytes())
+            .unwrap();
+        conn.sync().unwrap();
+        RootBusAddress {
+            conn,
+            root,
+            atom,
+            saved,
+        }
+    }
+}
+
+impl Drop for RootBusAddress {
+    fn drop(&mut self) {
+        match &self.saved {
+            Some((type_, format, value)) => {
+                let len = value.len() as u32 / (u32::from(*format) / 8).max(1);
+                let _ = self
+                    .conn
+                    .change_property(PropMode::REPLACE, self.root, self.atom, *type_, *format, len, value);
+            }
+            None => {
+                let _ = self.conn.delete_property(self.root, self.atom);
+            }
+        }
+        let _ = self.conn.sync();
+    }
+}
+
+/// The identification's whole bus lookup is bounded (the re-review of wave 3, I3): an accessibility bus that accepts the
+/// connection and then says nothing, met cold (the engine's first bus use), leaves the source unidentified within the
+/// bound, before the press, and its drag keeps the fixed hold at B; the engine never waits out its 2 s I/O timeout.
+#[test]
+fn a_silent_accessibility_bus_met_cold_leaves_the_source_unidentified_within_the_bound() {
+    support::fresh_display();
+    let socket = std::env::temp_dir().join(format!("cua-live-silent-bus-{}", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    // every connection accepted and kept, never read from or answered
+    let held = std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        for stream in listener.incoming().take(4) {
+            match stream {
+                Ok(stream) => kept.push(stream),
+                Err(_) => break,
+            }
+        }
+        kept
+    });
+    let silent = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound("a silent bus");
+    drop(silent);
+    let _ = std::fs::remove_file(&socket);
+    drop(held);
+}
+
+/// The connection itself is bounded too (the re-review of wave 4, I3): an accessibility bus whose listener's accept
+/// queue is full (a live socket that never accepts, its backlog taken) would hold a blocking connect until it accepts,
+/// and 0.4.1 never made a drag wait on the bus. Met cold, it leaves the source unidentified within the bound. The
+/// listener ends by itself after 8 s, so an engine that waits on it fails this test rather than hanging it.
+#[test]
+fn a_saturated_accessibility_bus_met_cold_leaves_the_source_unidentified_within_the_bound() {
+    use std::io::BufRead;
+    support::fresh_display();
+    let socket = std::env::temp_dir().join(format!("cua-live-full-bus-{}", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    // a listener with a backlog of none, filled by connections it never accepts until a connect would block
+    const FULL: &str = "import select, socket, sys\n\
+        path = sys.argv[1]\n\
+        l = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); l.bind(path); l.listen(0)\n\
+        kept = []\n\
+        while True:\n\
+        \x20   c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.setblocking(False)\n\
+        \x20   try:\n\
+        \x20       c.connect(path); kept.append(c)\n\
+        \x20   except BlockingIOError:\n\
+        \x20       break\n\
+        print(len(kept), flush=True)\n\
+        select.select([sys.stdin], [], [], 8)\n";
+    let mut full = std::process::Command::new("python3")
+        .args(["-I", "-c", FULL])
+        .arg(&socket)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("python3");
+    let mut filled = String::new();
+    std::io::BufReader::new(full.stdout.take().unwrap())
+        .read_line(&mut filled)
+        .unwrap();
+    assert!(
+        filled.trim().parse::<u32>().is_ok_and(|n| n >= 1),
+        "the listener's queue filled: {filled:?}"
+    );
+    let saturated = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound("a saturated bus");
+    drop(saturated);
+    drop(full.stdin.take());
+    let _ = full.wait();
+    let _ = std::fs::remove_file(&socket);
+}
+
+/// The bus's writes are bounded too, and a stall is not for the connection's life (the final review of wave 5; ruling
+/// 913.2): an engine whose bus connection is warm (its last drag identified Chrome through it) meets a bus that stops
+/// draining (`tests/support/bus-stall-proxy.py`: thousands of children, then nothing read, so the batch that follows
+/// fills the socket). That drag goes ahead on the fixed hold within the bound, the connection is dropped, and once the
+/// bus drains again the next drag connects anew and identifies Chrome.
+#[test]
+fn a_warm_bus_that_stops_draining_costs_one_drag_its_identification_and_the_next_reconnects() {
+    use std::io::{BufRead, Write};
+    support::fresh_display();
+    let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
+        return;
+    };
+    let upstream = root_bus_address().expect("the display names its accessibility bus");
+    let socket = std::env::temp_dir().join(format!("cua-live-stall-bus-{}", std::process::id()));
+    let mut proxy = std::process::Command::new("python3")
+        .args([
+            "-I",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/bus-stall-proxy.py"),
+        ])
+        .arg(&socket)
+        .arg(&upstream)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("python3");
+    // the proxy's lines, each waited for at most 10 s, so a proxy that stops answering fails the test, never hangs it
+    let (lines, said) = mpsc::channel();
+    let out = proxy.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            if lines.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let next = || {
+        said.recv_timeout(Duration::from_secs(10))
+            .expect("the proxy's next line")
+    };
+    let mut tell = proxy.stdin.take().unwrap();
+    assert_eq!(next(), "ready");
+    let proxied = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    *SOURCE_IDENTITY.lock().unwrap() = Some(Identity {
+        role: "browser",
+        pid: app.pid,
+    });
+    let (window, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::from_millis(40)));
+    *SOURCE_IDENTITY.lock().unwrap() = None;
+    in_front(window);
+    let mut engine = Engine::start_with_stats(&[]);
+    let bound = hold_bound();
+    let identify = adaptive_constant("IDENTIFY_BOUND");
+    let mut drag = |what: &str| {
+        let started = Instant::now();
+        let answer = engine.exchange(
+            "drag",
+            json!({"window": {"id": window}, "path": [{"x": 20, "y": 20}, {"x": 60, "y": 20}]}),
+        );
+        let answered = started.elapsed();
+        let stats = engine.stats_of(engine.last_id());
+        assert_eq!(answer["ok"], json!(true), "{what}: {answer}");
+        sleep(SETTLE);
+        (stats, answered)
+    };
+    let (warm, _) = drag("warm");
+    assert_eq!(
+        warm["hold"]["adaptive"]["source"]["identified"],
+        json!(true),
+        "warm: {}",
+        warm["hold"]
+    );
+    writeln!(tell, "stall").unwrap();
+    assert_eq!(next(), "ok");
+    let (stalled, answered) = drag("stalled");
+    let adaptive = &stalled["hold"]["adaptive"];
+    let ms = Duration::from_secs_f64(stalled["browser_identity"]["ms"].as_f64().unwrap() / 1000.0);
+    assert_eq!(adaptive["source"]["identified"], json!(false), "stalled: {adaptive}");
+    assert_eq!(adaptive["way"], json!("fixed"), "stalled: {adaptive}");
+    assert!(
+        ms < identify + Duration::from_millis(15),
+        "stalled: the lookup took {ms:?}"
+    );
+    assert!(
+        answered < bound + identify + Duration::from_millis(200),
+        "stalled: answered {answered:?} after the request"
+    );
+    assert_eq!(next(), "stalled", "the bus stalled the drag's connection");
+    writeln!(tell, "forward").unwrap();
+    // a connection the drag made again inside its bound may have stalled too
+    while next() != "ok" {}
+    let (again, _) = drag("drained again");
+    assert_eq!(
+        again["hold"]["adaptive"]["source"]["identified"],
+        json!(true),
+        "drained again: {}",
+        again["hold"]
+    );
+    drop(engine);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    drop(proxied);
+    drop(tell);
+    let _ = proxy.kill();
+    let _ = proxy.wait();
+    let _ = std::fs::remove_file(&socket);
+}
+
+/// The root window's `AT_SPI_BUS`, the accessibility bus's address, when the display names one.
+fn root_bus_address() -> Option<String> {
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots[screen].root;
+    let atom = conn.intern_atom(false, b"AT_SPI_BUS").ok()?.reply().ok()?.atom;
+    let reply = conn
+        .get_property(false, root, atom, AtomEnum::ANY, 0, 4096)
+        .ok()?
+        .reply()
+        .ok()?;
+    (reply.type_ != x11rb::NONE).then(|| String::from_utf8_lossy(&reply.value).into_owned())
+}
+
+/// An identified Chrome's drag on a fresh engine whose accessibility bus does not answer (`what`): the lookup ends
+/// within IDENTIFY_BOUND, the source unidentified, and the drag keeps the fixed hold at B.
+fn a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound(what: &str) {
+    let bound = hold_bound();
+    let identify = adaptive_constant("IDENTIFY_BOUND");
+    let drag = identified_drag(
+        Some(Identity {
+            role: "browser",
+            pid: std::process::id(),
+        }),
+        HoldRoute::InFront,
+        OnRelease::NeverTakes,
+        Some(Duration::from_millis(40)),
+        &[],
+        false,
+    )
+    .unwrap();
+    let identity = &drag.stats["browser_identity"];
+    let adaptive = &drag.stats["hold"]["adaptive"];
+    assert_eq!(identity["bus"], json!(true), "{what}: {identity}");
+    let ms = Duration::from_secs_f64(identity["ms"].as_f64().unwrap() / 1000.0);
+    assert!(
+        ms < identify + Duration::from_millis(15),
+        "{what}: the lookup took {ms:?}: {identity}"
+    );
+    assert_eq!(adaptive["source"]["identified"], json!(false), "{what}: {adaptive}");
+    assert_eq!(adaptive["way"], json!("fixed"), "{what}: {adaptive}");
+    assert_eq!(drag.notice, None, "{what}");
+    assert!(
+        drag.answered < bound + identify + Duration::from_millis(200),
+        "{what}: answered {:?} after the request",
+        drag.answered
+    );
+}
+
+/// A window's identification is read again at every drag (the re-review of wave 3, I3): a reused source window whose
+/// role, then whose process's accessible application, stops being a Chrome browser's is unidentified at once, and
+/// identified again once it is back. Its slow pings extend the hold only while it is identified.
+#[test]
+fn a_reused_window_s_identity_that_changes_and_recovers_is_read_again_at_every_drag() {
+    support::fresh_display();
+    let (Some(chrome), Some(other)) = (
+        BrowserApp::start("Google Chrome", "chrome"),
+        BrowserApp::start("Spotify", "chrome"),
+    ) else {
+        return;
+    };
+    *SOURCE_IDENTITY.lock().unwrap() = Some(Identity {
+        role: "browser",
+        pid: chrome.pid,
+    });
+    let (window, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::from_millis(40)));
+    *SOURCE_IDENTITY.lock().unwrap() = None;
+    in_front(window);
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let atom = |name: &[u8]| conn.intern_atom(false, name).unwrap().reply().unwrap().atom;
+    let (role, pid) = (atom(b"WM_WINDOW_ROLE"), atom(b"_NET_WM_PID"));
+    let set_role = |value: &str| {
+        conn.change_property8(PropMode::REPLACE, window, role, AtomEnum::STRING, value.as_bytes())
+            .unwrap();
+        conn.sync().unwrap();
+    };
+    let set_pid = |value: u32| {
+        conn.change_property32(PropMode::REPLACE, window, pid, AtomEnum::CARDINAL, &[value])
+            .unwrap();
+        conn.sync().unwrap();
+    };
+    let mut engine = Engine::start_with_stats(&[]);
+    let mut drag = |what: &str, identified: bool| {
+        let answer = engine.exchange(
+            "drag",
+            json!({"window": {"id": window}, "path": [{"x": 20, "y": 20}, {"x": 60, "y": 20}]}),
+        );
+        let stats = engine.stats_of(engine.last_id());
+        let adaptive = &stats["hold"]["adaptive"];
+        assert_eq!(answer["ok"], json!(true), "{what}: {answer}");
+        assert_eq!(
+            adaptive["source"]["identified"],
+            json!(identified),
+            "{what}: {adaptive}"
+        );
+        assert_eq!(
+            adaptive["way"],
+            json!(if identified { "noticed" } else { "fixed" }),
+            "{what}: {adaptive}"
+        );
+        sleep(SETTLE);
+    };
+    drag("Chrome", true);
+    set_role("browser-window");
+    drag("its role changed", false);
+    set_role("browser");
+    drag("its role back", true);
+    set_pid(other.pid);
+    drag("its process's application another", false);
+    set_pid(chrome.pid);
+    drag("its process back", true);
+    drop(engine);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+}
+
+/// The late-take watch after a release with no take (ruling 888.3) runs 700 ms after the release, past 0.4.1's 300 ms,
+/// off the request path: the drag answers at its release, a take 500 ms after it is still cancelled and reported, the
+/// read that follows carries the notice and the next acting request is refused with it, on a guarded drag and on one the
+/// engine lets drop; a take after the watch's end is not seen, and nothing is pending.
+#[test]
+fn a_take_up_to_700_ms_after_a_plain_drag_s_release_is_reported_and_one_later_is_not() {
+    support::fresh_display();
+    let bound = hold_bound();
+    for route in [HoldRoute::Guarded, HoldRoute::InFront] {
+        let late = Duration::from_millis(500);
+        assert!(late > Duration::from_millis(300) && late < WATCH);
+        support::fresh_display();
+        let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+        let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(late));
+        match route {
+            HoldRoute::Guarded => focus_nothing(),
+            _ => in_front(window),
+        }
+        let mut engine = Engine::start();
+        let app = app_of(&mut engine, window);
+        let started = Instant::now();
+        assert_eq!(
+            engine.request("drag", json!({"window": {"id": window}, "path": path})),
+            Ok(Value::Null),
+            "{route:?}: no take by the release, a plain drag"
+        );
+        assert!(
+            started.elapsed() < bound + Duration::from_millis(150),
+            "{route:?}: answered at the release, the watch not waited for: {:?}",
+            started.elapsed()
+        );
+        sleep(late + Duration::from_millis(200));
+        let read = engine.exchange("list_windows", json!({}));
+        assert_eq!(
+            read["notice"],
+            json!(late_notice(&app)),
+            "{route:?}: the read carries the notice"
+        );
+        assert_eq!(
+            engine.request("preflight", json!({})),
+            Err(late_refusal(&app, "preflight")),
+            "{route:?}: the next acting request refused"
+        );
+        assert_eq!(
+            engine.request("preflight", json!({})),
+            Ok(Value::Null),
+            "{route:?}: once"
+        );
+        stop.send(()).unwrap();
+        let seen = recorder.join().unwrap();
+        assert!(
+            seen.contains(&Input::KeyPress { sent: true }),
+            "{route:?}: the late take's Escape: {seen:?}"
+        );
+    }
+    // a take after the watch's end: not seen, nothing pending
+    support::fresh_display();
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(WATCH + Duration::from_millis(200)));
+    focus_nothing();
+    let mut engine = Engine::start();
+    assert_eq!(
+        engine.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(WATCH + Duration::from_millis(400));
+    let read = engine.exchange("list_windows", json!({}));
+    assert_eq!(read["notice"], Value::Null, "{read}");
+    assert_eq!(engine.request("preflight", json!({})), Ok(Value::Null));
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
 }
 
 /// What a [`coalescing_source`] dispatched: each motion it handed on (window-relative, with its button state), and when
@@ -1316,7 +2796,7 @@ fn coalescing_source(stall: Duration) -> (Window, mpsc::Sender<()>, std::thread:
         let mut queue: std::collections::VecDeque<Event> = std::collections::VecDeque::new();
         let mut pressed: Option<(Instant, i16, i16)> = None;
         let mut stalled = false;
-        while stopped.try_recv().is_err() {
+        while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
             while let Some(event) = probe.conn.poll_for_event().unwrap() {
                 queue.push_back(event);
             }
@@ -1390,6 +2870,7 @@ fn coalescing_source(stall: Duration) -> (Window, mpsc::Sender<()>, std::thread:
 /// stated residual).
 #[test]
 fn a_chromium_window_busy_through_a_background_drag_s_path_still_gets_its_end_from_the_hold() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
     let (window, stop, source) = coalescing_source(Duration::from_millis(100));
     in_front(window);
@@ -1448,6 +2929,7 @@ fn managed(window: Window) {
 /// either mode, as one into a named window in front (task 18 review).
 #[test]
 fn a_windowless_drag_and_drop_over_chromium_is_released_no_sooner_than_350_ms_after_the_take() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     for args in [&[][..], &["--desktop", "dedicated"][..]] {
         let (window, stop, recorder) = drag_source(OnRelease::Nothing);
@@ -1484,6 +2966,7 @@ fn a_windowless_drag_and_drop_over_chromium_is_released_no_sooner_than_350_ms_af
 /// nothing sent (the design session's rulings, 2026-10-31).
 #[test]
 fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_request() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
     focus_nothing();
@@ -1589,6 +3072,7 @@ impl Drop for ActiveWindowSupported {
 #[test]
 fn a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply()
  {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     for (case, args, named, synthetic) in [
         ("in front, shared", &[][..], true, true),
@@ -1676,6 +3160,7 @@ fn a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_d
 /// for the rest of the window rather than run first. With no window manager support, the floor answers as before.
 #[test]
 fn a_chrome_drop_under_way_at_its_release_is_confirmed_by_its_activation_request_or_reported_unconfirmed() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let drop_with = |activates: bool, supported: bool| {
         let listed = supported.then(ActiveWindowSupported::listed);
@@ -1769,6 +3254,7 @@ fn a_chrome_drop_under_way_at_its_release_is_confirmed_by_its_activation_request
 /// request). A drop that window never confirms is still unconfirmed.
 #[test]
 fn a_dedicated_foreground_drag_from_one_chrome_window_into_another_is_confirmed_by_the_window_under_its_release() {
+    support::fresh_display();
     // from inside the source, at (0, 0) 400 by 300, to inside the destination at (700, 0)
     let path = json!([{"x": 100, "y": 200}, {"x": 800, "y": 200}]);
     let listed = ActiveWindowSupported::listed();
@@ -1830,6 +3316,7 @@ fn a_dedicated_foreground_drag_from_one_chrome_window_into_another_is_confirmed_
 /// stale accept that Chrome confirmed and the page never took; the design session's ruling, 2026-11-10).
 #[test]
 fn a_chrome_drop_keeps_its_floor_and_only_the_measurement_flag_releases_it_at_its_accept_cursor() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     const ACCEPTS: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept)];
     const LEAVES: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept), (70, Shape::NoDrop)];
@@ -1895,6 +3382,7 @@ const EXIT_SETTLE: Duration = Duration::from_millis(300);
 /// Escape cut at exit lets a late drop land).
 #[test]
 fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_settles_after_its_escape() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
     focus_nothing();
@@ -1956,14 +3444,134 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_se
     );
 }
 
-/// The after-release watch's lifetime after the release (`dnd::SETTLE`).
-const WATCH: Duration = Duration::from_millis(300);
+/// An engine stopped straight after a Chromium source's plain drag answered runs the drag's late-take watch on past
+/// 0.4.1's 300 ms, to 650 ms after the stop (ruling 893), inside the stop's 1 s backstop (the review of task 115, P4: the
+/// exit cut the watch 300 ms after the release, so a take at +500 ms went uncancelled): the take 500 ms after the
+/// release is cancelled, the exit's settle follows its Escape, and the exit is the orderly one, its `--stats` line
+/// written, before the backstop.
+#[test]
+fn an_exit_straight_after_a_drag_s_answer_cancels_a_take_500_ms_after_the_release_inside_the_backstop() {
+    support::fresh_display();
+    let late = Duration::from_millis(500);
+    assert!(
+        late > Duration::from_millis(300) && late < WATCH,
+        "past 0.4.1's watch, inside 0.4.2's"
+    );
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(late));
+    focus_nothing();
+    let mut shared = Engine::start_with_stats(&[]);
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null),
+        "no take by the release: a plain drag"
+    );
+    let signalled = Instant::now();
+    shared.signal(rustix::process::Signal::TERM);
+    let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143));
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the drag, then the watch's Escape"
+    );
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        vec!["escape", "focus-out"],
+        "the Escape inside the drag's session, then its FocusOut"
+    );
+    assert!(
+        exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(20),
+        "the exit settled after the Escape: {:?}",
+        exited.saturating_duration_since(order[0].1)
+    );
+    assert!(
+        exited - signalled < Duration::from_millis(990),
+        "inside the 1 s backstop: {:?} after the stop",
+        exited - signalled
+    );
+    let exit_line = shared
+        .stats_where(|line| line["settle_final"] == json!(true))
+        .expect("the orderly exit's --stats line");
+    assert!(exit_line["exit_settle"]["waited_ms"].is_number(), "{exit_line}");
+}
+
+/// At an orderly exit after a stop signal the late-take watch ends 650 ms after the signal (the design session's ruling
+/// 893), so a take it sees keeps the exit's whole 300 ms settle inside the 1 s backstop: stopped straight after a
+/// plain drag's answer, a take 590 ms after the release, just inside that end, is cancelled and the exit waits 300 ms
+/// after its Escape; one 680 ms after the release, past that end though inside the watch's own 700 ms, is not.
+#[test]
+fn an_orderly_exit_ends_the_watch_650_ms_after_the_stop_so_a_take_it_cancels_settles_its_whole_300_ms() {
+    for (late, cancelled) in [(590, true), (680, false)] {
+        support::fresh_display();
+        let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+        let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(Duration::from_millis(late)));
+        focus_nothing();
+        let mut shared = Engine::start();
+        assert_eq!(
+            shared.request("drag", json!({"window": {"id": window}, "path": path})),
+            Ok(Value::Null)
+        );
+        let signalled = Instant::now();
+        shared.signal(rustix::process::Signal::TERM);
+        let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+        assert_eq!(status.code(), Some(143));
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        let inputs = recorder.join().unwrap();
+        assert!(
+            exited - signalled < Duration::from_millis(990),
+            "+{late} ms: inside the backstop, {:?} after the stop",
+            exited - signalled
+        );
+        let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+        if cancelled {
+            assert!(
+                inputs.contains(&Input::KeyPress { sent: true }),
+                "+{late} ms: cancelled: {inputs:?}"
+            );
+            assert_eq!(order[0].0, "escape", "{order:?}");
+            assert!(
+                exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(3),
+                "+{late} ms: the whole settle after the Escape: {:?}",
+                exited.saturating_duration_since(order[0].1)
+            );
+        } else {
+            assert!(
+                !inputs.contains(&Input::KeyPress { sent: true }),
+                "+{late} ms: past the exit's end for the watch: {inputs:?}"
+            );
+        }
+    }
+}
+
+/// The after-release watch's lifetime after a release with no take (`dnd::LATE_TAKE_WATCH`, ruling 888.3; a drag's
+/// hold ends at its release, so the settle after the hold's end comes sooner).
+const WATCH: Duration = Duration::from_millis(700);
 
 /// A watched drag's session stays focused until its late-take watch ends, with no request to end it (the design
 /// session's ruling on task 60): a take well after the drag answered gets its Escape inside the session, and the
-/// session's `FocusOut` follows only then, by the watch's end 300 ms after the release, whether a take came or not.
+/// session's `FocusOut` follows only then, by the watch's end 700 ms after the release, whether a take came or not.
 #[test]
 fn a_watched_drag_s_focus_out_waits_for_its_watch_to_end_so_a_late_take_s_escape_comes_inside_the_session() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     for take in [Some(EXIT_LATE_TAKE), None] {
         let (window, stop, recorder) = drag_source(match take {
@@ -2013,6 +3621,7 @@ fn a_watched_drag_s_focus_out_waits_for_its_watch_to_end_so_a_late_take_s_escape
 /// the drag's `FocusOut` goes with that request, not at the watch's end.
 #[test]
 fn an_acting_request_inside_the_watch_ends_the_watched_drag_s_session_first() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     focus_nothing();
@@ -2054,6 +3663,7 @@ fn an_acting_request_inside_the_watch_ends_the_watched_drag_s_session_first() {
 /// and the watch still runs out and cancels its late take.
 #[test]
 fn the_exit_releases_a_held_key_before_it_waits_out_the_late_take_watch() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
     focus_nothing();
@@ -2113,6 +3723,7 @@ fn the_exit_releases_a_held_key_before_it_waits_out_the_late_take_watch() {
 /// after it runs.
 #[test]
 fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_request() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::Focuses);
     focus_nothing();
@@ -2175,6 +3786,7 @@ fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_
 /// and the one after it runs; after a failed watch it answers the watch-failure sentence. It sends nothing either way.
 #[test]
 fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_request_and_sends_nothing() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::Focuses);
     focus_nothing();
@@ -2254,6 +3866,7 @@ fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
 /// or may not be out first; the next request is never answered.
 #[test]
 fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     focus_nothing();
@@ -2347,6 +3960,7 @@ fn cut_connection(pid: u32, fd: i32) {
 /// keeps between drags. The X client gone once the socket is cut shows the socket was that client's connection.
 #[test]
 fn a_watch_whose_x_connection_is_lost_refuses_the_next_acting_request_and_sends_nothing() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     focus_nothing();
@@ -2358,7 +3972,8 @@ fn a_watch_whose_x_connection_is_lost_refuses_the_next_acting_request_and_sends_
         assert_eq!(drag, Ok(Value::Null), "a plain drag, its watch handed over");
     };
     drag(&mut engine);
-    sleep(SETTLE);
+    // the first drag's watch ended, its connection closed, so the server hands the next one no id of its
+    sleep(WATCH + Duration::from_millis(100));
     for (command, input) in [
         ("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
         ("preflight", json!({})),
@@ -2443,6 +4058,7 @@ fn in_front(window: Window) {
 /// a change (Acceptance 8; the design session's ruling of 2026-10-31).
 #[test]
 fn with_the_signature_already_held_the_answer_follows_the_order_of_the_take_and_the_release() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (conn, _) = x11rb::connect(None).expect("an X connection");
     let corner = override_redirect(&conn, (360, 260, 40, 40));
@@ -2513,6 +4129,7 @@ fn with_the_signature_already_held_the_answer_follows_the_order_of_the_take_and_
 /// chord, and characters the layout cannot type each answer their error and leave the window unfocused, nothing sent.
 #[test]
 fn a_foreground_request_refused_for_its_input_activates_nothing() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let chrome = Probe::open("Google-chrome", (400, 0, 320, 200));
     let xterm = Probe::open("XTerm", (0, 300, 320, 200));
@@ -2594,7 +4211,7 @@ fn capturing_window(nudge: bool) -> (Window, mpsc::Sender<()>, std::thread::Join
         probe.conn.sync().unwrap();
         ready.send(probe.id).unwrap();
         let mut seen = Vec::new();
-        while stopped.try_recv().is_err() {
+        while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
             while let Some(event) = probe.conn.poll_for_event().unwrap() {
                 let sent = event.sent_event();
                 match event {
@@ -2651,6 +4268,7 @@ fn may_not_have_started(app: &str) -> String {
 /// design session's rulings, 2026-11-01).
 #[test]
 fn a_chromium_drag_with_the_real_pointer_outside_its_window_answers_that_it_may_not_have_started() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     for front in [false, true] {
         let (window, stop, recorder) = capturing_window(false);
@@ -2704,6 +4322,7 @@ fn a_chromium_drag_with_the_real_pointer_outside_its_window_answers_that_it_may_
 /// release is the target's cleanup of its own capture.
 #[test]
 fn a_foreign_grab_released_during_the_drag_answers_that_the_drag_may_not_have_started() {
+    support::fresh_display();
     use x11rb::protocol::xproto::GrabMode;
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = capturing_window(false);
@@ -2751,6 +4370,7 @@ static PRESS_SEEN: std::sync::Mutex<Option<mpsc::Sender<()>>> = std::sync::Mutex
 /// not have started, never success.
 #[test]
 fn a_real_pointer_motion_in_the_press_window_answers_that_the_drag_may_not_have_started() {
+    support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = capturing_window(true);
     focus_nothing();
@@ -2812,7 +4432,7 @@ impl SlowRaises {
                 let _ = conn.flush();
             };
             let mut pending: Vec<(Instant, ConfigureRequestEvent)> = Vec::new();
-            while stopped.try_recv().is_err() {
+            while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
                 while let Some(event) = conn.poll_for_event().unwrap() {
                     match event {
                         Event::ConfigureRequest(e) if e.window == slow => {
@@ -2859,6 +4479,7 @@ impl Drop for SlowRaises {
 /// which received every one of them while the route waited for the focus alone.
 #[test]
 fn foreground_pointer_input_waits_for_the_window_manager_to_raise_its_window() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let cover = Probe::open("Cover", (0, 0, 400, 300));
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
@@ -2909,6 +4530,7 @@ fn foreground_pointer_input_waits_for_the_window_manager_to_raise_its_window() {
 /// reaches the window or the window covering it.
 #[test]
 fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_on_top_at_its_points() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let cover = Probe::open("Cover", (0, 0, 400, 300));
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
@@ -2935,6 +4557,7 @@ fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_
 /// press in the window (which holds the implicit grab to the release), and a move to a point beyond the window too.
 #[test]
 fn a_foreground_drag_from_its_window_into_another_window_is_sent_not_refused() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let other = Probe::open("Other", (330, 0, 300, 200));
     let cover = Probe::open("Cover", (0, 0, 320, 200));
@@ -2970,6 +4593,7 @@ fn a_foreground_drag_from_its_window_into_another_window_is_sent_not_refused() {
 /// nothing else sent (the design session's ruling on task 63, 2026-11-06).
 #[test]
 fn activate_window_answers_once_its_window_is_on_top_so_a_pipelined_click_lands_in_it() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let cover = Probe::open("Cover", (0, 0, 400, 300));
     for mode in ["shared", "dedicated"] {
@@ -3028,6 +4652,7 @@ fn activate_window_answers_once_its_window_is_on_top_so_a_pipelined_click_lands_
 /// application's: the foreground click goes to it at once, as it did before the wait, and is not refused.
 #[test]
 fn a_foreground_click_into_the_window_s_own_popup_is_not_held_back() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let menu = override_redirect(&firefox.conn, (80, 80, 60, 60));
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
@@ -3069,6 +4694,7 @@ fn set_atoms(probe: &Probe, property: &str, values: &[&str]) {
 /// refused, never sent to the strip or the window.
 #[test]
 fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_one_is_not_sent() {
+    support::fresh_display();
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
     let cover = Probe::open("Cover", (0, 0, 400, 300));
     let above = Probe::open("Above", (250, 40, 120, 60));
@@ -3158,6 +4784,7 @@ fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread
 /// Read from the motions' server times, which the engine's own timing cannot blur.
 #[test]
 fn a_desktop_move_pauses_between_two_positions_and_not_after_the_pointer_s_own() {
+    support::fresh_display();
     let mut engine = Engine::start();
     engine.request("move", json!({"x": 10, "y": 10})).unwrap();
     let (stop, listening) = motion_listener((0, 0, 400, 300));
@@ -3239,6 +4866,7 @@ fn held_listener(class: &str, rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, 
 /// neither. Read from the events' server times.
 #[test]
 fn a_browser_s_drag_handle_rests_at_each_held_move_s_end_and_before_its_release() {
+    support::fresh_display();
     for (class, rests) in [("firefox", true), ("Google-chrome", true), ("XTerm", false)] {
         let mut engine = Engine::start();
         engine.request("move", json!({"x": 20, "y": 20})).unwrap();
@@ -3577,6 +5205,7 @@ fn ungrabbed_window(class: &str) -> Probe {
 /// `start` is refused with nothing pressed, in either device mode; with the grab gone, a handle starts and ends.
 #[test]
 fn a_drag_handle_started_while_another_client_holds_the_pointer_is_refused_with_nothing_pressed() {
+    support::fresh_display();
     for args in [&[][..], &["--desktop", "dedicated"][..]] {
         let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
         managed(probe.id);
@@ -3622,6 +5251,7 @@ fn a_drag_handle_started_while_another_client_holds_the_pointer_is_refused_with_
 /// under the pointer, and the handle presses and releases as asked.
 #[test]
 fn a_click_sent_during_the_pre_press_try_still_lands() {
+    support::fresh_display();
     let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start_with_fault(&[], "handle-try-click");
@@ -3648,6 +5278,7 @@ fn a_click_sent_during_the_pre_press_try_still_lands() {
 /// the answer.
 #[test]
 fn a_grab_taken_during_a_drag_handle_s_hold_makes_its_end_answer_that_the_drag_may_not_have_been_received() {
+    support::fresh_display();
     let probe = ungrabbed_window("probe-handle");
     let mut engine = Engine::start();
     let app = app_of(&mut engine, probe.id);
@@ -3714,6 +5345,7 @@ fn a_grab_taken_during_a_drag_handle_s_hold_makes_its_end_answer_that_the_drag_m
 /// nothing, and a start then an end is a press and a release in place.
 #[test]
 fn a_drag_handle_whose_pointer_the_person_moved_reports_it_at_its_end() {
+    support::fresh_display();
     let probe = Probe::open("XTerm", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start();
@@ -3752,6 +5384,7 @@ fn a_drag_handle_whose_pointer_the_person_moved_reports_it_at_its_end() {
 /// background route run. After the end, desktop pointer input runs again.
 #[test]
 fn desktop_pointer_input_is_refused_while_a_drag_handle_is_held() {
+    support::fresh_display();
     let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
     managed(probe.id);
     // a Gecko window away from the pointer: its pointer input takes the foreground route in dedicated mode (T19)
@@ -3806,6 +5439,7 @@ fn desktop_pointer_input_is_refused_while_a_drag_handle_is_held() {
 /// reported unconfirmed, never left at ok. A confirmed drop leaves nothing pending.
 #[test]
 fn a_chromium_drag_handle_s_end_arms_the_after_release_watch() {
+    support::fresh_display();
     let handle = |engine: &mut Engine| {
         engine
             .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
@@ -3911,6 +5545,104 @@ fn idle_cause(app: &str, seconds: &str, at: (i16, i16)) -> String {
     )
 }
 
+/// The engine's settle counts in its `--stats` lines with no request of their own (task 103's review): an idle handle's
+/// release carries the cumulative `drop_settles` mid-run, and the orderly exit's line, written after the shutdown's own
+/// release of a handle still held at EOF (whose record it carries), carries the same counts with `settle_final` and
+/// `exit_settle`, which no other line has.
+#[test]
+fn the_exit_s_stats_line_is_the_settles_final_snapshot_after_the_shutdown_s_release_and_no_other_line_is() {
+    support::fresh_display();
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::process::{Command, Stdio};
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    support::clear_display_record();
+    let mut child = Command::new(support::engine_bin())
+        .args(["server", "--stats", "--drag-handle-idle-ms", "300"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stderr = child.stderr.take().unwrap();
+    let errors = std::thread::spawn(move || {
+        let mut text = String::new();
+        stderr.read_to_string(&mut text).unwrap();
+        text
+    });
+    let mut ask = |id: u64, command: &str, input: Value| -> Value {
+        writeln!(stdin, "{}", json!({"id": id, "command": command, "input": input})).unwrap();
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        serde_json::from_str(&line).unwrap()
+    };
+    // a handle the idle bound releases, with no request come
+    assert_eq!(
+        ask(1, "drag_handle", json!({"action": "start", "x": 150, "y": 150}))["ok"],
+        json!(true)
+    );
+    sleep(Duration::from_millis(700));
+    assert!(!button1_down(), "released by the idle bound");
+    // its pending refusal answered, then a handle held at EOF
+    assert_eq!(
+        ask(2, "drag_handle", json!({"action": "start", "x": 160, "y": 160}))["ok"],
+        json!(false)
+    );
+    assert_eq!(
+        ask(3, "drag_handle", json!({"action": "start", "x": 170, "y": 170}))["ok"],
+        json!(true)
+    );
+    assert!(button1_down(), "held at EOF");
+    // EOF: the closure's borrow of the engine's stdin ended with its last call
+    drop(stdin);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("the engine did not exit at EOF");
+        }
+        sleep(Duration::from_millis(20));
+    };
+    assert!(status.success());
+    assert!(!button1_down(), "the shutdown released it");
+    let lines: Vec<Value> = errors
+        .join()
+        .unwrap()
+        .lines()
+        .filter(|line| line.starts_with(r#"{"stats""#))
+        .map(|line| serde_json::from_str::<Value>(line).unwrap()["stats"].clone())
+        .collect();
+    let idle: Vec<_> = lines.iter().filter(|line| line.get("idle_handle").is_some()).collect();
+    assert_eq!(idle.len(), 1, "{lines:?}");
+    assert!(
+        idle[0]["drop_settles"]["entered"].is_u64(),
+        "the idle line's snapshot: {}",
+        idle[0]
+    );
+    assert_eq!(idle[0].get("settle_final"), None);
+    let exit = lines.last().unwrap();
+    assert_eq!(exit["id"], json!(null));
+    assert_eq!(exit["settle_final"], json!(true), "the last line is the exit's: {exit}");
+    // no key went to a covered window, so no exit settle ran: no `exit_settle`, the final snapshot all the same
+    assert_eq!(exit.get("exit_settle"), None, "{exit}");
+    assert!(exit["drop_settles"]["entered"].is_u64(), "{exit}");
+    assert_eq!(
+        exit["handle"]["pressed"],
+        json!(true),
+        "written after the shutdown's release: {exit}"
+    );
+    assert_eq!(
+        lines.iter().filter(|line| line.get("settle_final").is_some()).count(),
+        1,
+        "no other line carries settle_final"
+    );
+}
+
 /// A handle whose cell lost it (an agent's cell that threw between `start` and `end`) gets no request again, and every
 /// desktop pointer request was refused for good with button 1 held (task 73's review, P1). A handle that gets no request
 /// for the idle bound (30 s; `--drag-handle-idle-ms` sets another, here 300 ms) is released by the engine where the
@@ -3919,6 +5651,7 @@ fn idle_cause(app: &str, seconds: &str, at: (i16, i16)) -> String {
 /// refused desktop request does not extend it, and the refusal while held names the bound.
 #[test]
 fn a_drag_handle_that_gets_no_request_for_its_idle_bound_is_released_where_it_is_and_the_next_request_says_so() {
+    support::fresh_display();
     let probe = Probe::open("XTerm", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
@@ -4123,6 +5856,7 @@ fn pointer_place() -> (i16, i16) {
 /// move with no start at all, in an engine that released no handle, still moves the pointer and presses nothing.
 #[test]
 fn a_drag_handle_released_for_its_idle_bound_refuses_every_later_move_and_end_until_a_new_start() {
+    support::fresh_display();
     let probe = Probe::open("XTerm", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
@@ -4199,6 +5933,7 @@ fn a_drag_handle_released_for_its_idle_bound_refuses_every_later_move_and_end_un
 /// once with it, through the same pending path.
 #[test]
 fn a_drag_handle_s_idle_bound_holds_while_another_request_blocks_the_engine() {
+    support::fresh_display();
     let probe = Probe::open("XTerm", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
@@ -4258,6 +5993,7 @@ fn a_drag_handle_s_idle_bound_holds_while_another_request_blocks_the_engine() {
 /// request runs; with no handle held the release sends nothing.
 #[test]
 fn a_reset_s_release_frees_desktop_pointer_input_at_once() {
+    support::fresh_display();
     let probe = Probe::open("XTerm", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start();
@@ -4304,6 +6040,7 @@ fn a_reset_s_release_frees_desktop_pointer_input_at_once() {
 /// request (task 73's review, P2: such a drop answered ok with nothing pending).
 #[test]
 fn a_chrome_handle_s_drop_released_where_nothing_can_confirm_it_is_unconfirmed() {
+    support::fresh_display();
     let listed = ActiveWindowSupported::listed();
     let (window, stop, recorder) = drag_source(OnRelease::Drops {
         activates: true,
@@ -4343,6 +6080,7 @@ fn a_chrome_handle_s_drop_released_where_nothing_can_confirm_it_is_unconfirmed()
 /// dwell (a second client's XTEST motion, the live build's hook) is reported.
 #[test]
 fn a_pointer_moved_during_the_release_dwell_is_the_one_the_end_reports() {
+    support::fresh_display();
     let probe = Probe::open("firefox", (0, 0, 400, 300));
     managed(probe.id);
     let mut engine = Engine::start_with_fault(&[], "handle-dwell-move");
@@ -4360,4 +6098,498 @@ fn a_pointer_moved_during_the_release_dwell_is_the_one_the_end_reports() {
     );
     assert!(!button1_down(), "released");
     probe.inputs();
+}
+
+/// #459's fix (`release_sync.rs`): a path long enough that its steps after the take outlast the floor (about 1,220 px,
+/// some 640 ms at Chrome's 500 µs a sample; the source's take at its first motion), so its release would follow its end
+/// with no keepalive, as `t14-long`'s long-left drags do.
+fn outlasting_path() -> Value {
+    json!([{"x": 20, "y": 20}, {"x": 380, "y": 20}, {"x": 380, "y": 280}, {"x": 20, "y": 280}, {"x": 20, "y": 40}])
+}
+
+/// How long before the last drag's release (the first its source read) the source read its last motion, and the
+/// motions it read in the 20 ms before that release (the tail's last two rests), each with how long before it.
+fn source_before_release() -> (Duration, Vec<Duration>) {
+    let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+    let release = events
+        .iter()
+        .find(|(kind, ..)| *kind == "release")
+        .expect("a release")
+        .1;
+    let motions: Vec<Duration> = events
+        .iter()
+        .filter(|(kind, at, _)| *kind == "motion" && *at <= release)
+        .map(|(_, at, _)| release - *at)
+        .collect();
+    let last = *motions.last().expect("a motion after the take");
+    (
+        last,
+        motions.into_iter().filter(|d| *d < Duration::from_millis(20)).collect(),
+    )
+}
+
+/// The tail as it ships (ruling 995): a Chrome drop the engine lets drop whose path outlasts its floor, on every route
+/// such a drop takes, gets 8 ms, a motion at the path's last point, 8 ms, the same motion, 8 ms, then its release (on
+/// the background route each motion one synthetic motion; on XTEST's routes a step 1 px forward and back). Off
+/// (`--drag-dnd-release-sync off`, measurement only), the background route's release follows the path's last motion at
+/// once, #459's shape. A short path, whose floor's keepalives rest on its end, shuts the gate and gets the tail inside its
+/// floor, its release when 0.4.2's floor releases it (ruling 1000); `--drag-dnd-release-sync-when always` opens the
+/// gate there too. A guarded drag and the release at the accept never reach
+/// the gate.
+#[test]
+fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_on_the_tail_inside_its_floor() {
+    support::fresh_display();
+    *HELD_PATH.lock().unwrap() = Some(outlasting_path());
+    let ms = Duration::from_millis;
+    for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
+        // 0.4.2's release: the gate opens, and nothing is sent at it
+        let drag = held_drag_with(route, OnRelease::Nothing, None, &["--drag-dnd-release-sync", "off"]);
+        // the route the engine took (a dedicated desktop takes the background route where it works)
+        let background = drag.stats["route"] == json!("background");
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["hold"]["keepalives"],
+            json!(0),
+            "{route:?}: the path outlasts the floor"
+        );
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(
+            (&sync["form"], &sync["open"], &sync["last_step_spaced"]),
+            (&json!("off"), &json!(true), &json!(false)),
+            "{route:?}: {sync}"
+        );
+        assert!(sync.get("motions").is_none(), "{route:?}: {sync}");
+        let (gap, _) = source_before_release();
+        if background {
+            assert!(gap < ms(4), "{route:?}: off, released {gap:?} after the last motion");
+        }
+        // as it ships: the tail
+        let drag = held_drag_with(route, OnRelease::Nothing, None, &[]);
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["route"] == json!("background"),
+            background,
+            "{route:?}: the same route"
+        );
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(
+            (&sync["form"], &sync["when"], &sync["open"]),
+            (&json!("tail"), &json!("outlasted"), &json!(true)),
+            "{route:?}: {sync}"
+        );
+        assert_eq!(
+            sync["motions"],
+            json!(if background { 2 } else { 4 }),
+            "{route:?}: {sync}"
+        );
+        let added = sync["added_ms"].as_f64().unwrap();
+        assert!((24.0..60.0).contains(&added), "{route:?}: {sync}");
+        assert_eq!(
+            sync["unconfirm_outlasted"],
+            json!(false),
+            "{route:?}: option (c) is off as it ships"
+        );
+        let motions = AFTER_TAKE_MOTIONS.lock().unwrap().clone();
+        assert_eq!(
+            motions.last(),
+            Some(&(20, 40)),
+            "{route:?}: ending on the path's last point"
+        );
+        // the source reads its events on a 1 ms poll, so each time it reads is up to a poll late: 6 ms of the 8
+        let (gap, recent) = source_before_release();
+        assert!(
+            gap >= ms(6) && gap < ms(40),
+            "{route:?}: released {gap:?} after the last motion"
+        );
+        if background {
+            // the path's own last motion and the tail's two, each a rest apart, all at its end
+            assert!(
+                motions.ends_with(&[(20, 40), (20, 40), (20, 40)]),
+                "{route:?}: {motions:?}"
+            );
+            assert_eq!(
+                recent.len(),
+                2,
+                "{route:?}: the tail's two motions in its last 20 ms: {recent:?}"
+            );
+            assert!(recent[0] - recent[1] >= ms(6), "{route:?}: {recent:?}");
+        }
+        // on XTEST the pair's two motions may reach the source as one: the server's event queue folds a device's motion
+        // into the one still queued before it (`mieqEnqueue`), so the place it ends on is what counts
+    }
+    // a guarded drag cancels its take before the drop, and the release at the accept keeps its own floor: no gate
+    let drag = held_drag_with(HoldRoute::Guarded, OnRelease::Nothing, None, &[]);
+    assert!(drag.stats.get("release_sync").is_none(), "guarded: {}", drag.stats);
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &["--drag-dnd-release-at-accept"],
+    );
+    assert!(
+        drag.stats.get("release_sync").is_none(),
+        "at the accept: {}",
+        drag.stats
+    );
+    // a short path: its steps spread over the floor to its end (the last one spaced, as D1's are), or its keepalives
+    // fill what they leave, and the gate stays shut; the tail runs inside the floor (ruling 1000), released when the
+    // floor alone releases it, 350 ms after the take, as 0.4.2's floor does (`off`)
+    *HELD_PATH.lock().unwrap() = None;
+    // the button-up, on the engine's own clock (`after_take.release_after_take_ms`, read as the release goes out):
+    // at the floor's end and within a millisecond of off's, never later (ruling 1001)
+    let released_after_take = |drag: &HeldDrag| drag.stats["after_take"]["release_after_take_ms"].as_f64().unwrap();
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &["--drag-dnd-release-sync", "off"],
+    );
+    let off = released_after_take(&drag);
+    assert!((350.0..351.0).contains(&off), "off: released {off} ms after the take");
+    assert!(drag.stats["release_sync"].get("motions").is_none(), "{}", drag.stats);
+    let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &[]);
+    let tail = released_after_take(&drag);
+    assert!(
+        (350.0..351.0).contains(&tail) && (tail - off).abs() < 1.0,
+        "the tail: released {tail} ms after the take, off {off}"
+    );
+    let sync = &drag.stats["release_sync"];
+    assert_eq!(
+        (&sync["form"], &sync["open"], &sync["in_floor"], &sync["motions"]),
+        (&json!("tail"), &json!(false), &json!(true), &json!(2)),
+        "{sync}"
+    );
+    assert_eq!(
+        (&sync["schedule"], &sync["visits_dropped"]),
+        (&json!("in_floor"), &json!(0)),
+        "{sync}"
+    );
+    assert!(sync["past_floor_ms"].as_f64().unwrap() < 1.0, "{sync}");
+    let (gap, recent) = source_before_release();
+    assert!(gap >= ms(6) && gap < ms(20), "released {gap:?} after the last motion");
+    assert_eq!(
+        recent.len(),
+        2,
+        "the tail's two motions in the floor's last 20 ms: {recent:?}"
+    );
+    assert!(recent[0] - recent[1] >= ms(6), "{recent:?}");
+    assert_eq!(
+        sync["skipped_for"]["keepalives"], drag.stats["hold"]["keepalives"],
+        "{}",
+        drag.stats
+    );
+    assert!(
+        drag.stats["hold"]["keepalives"].as_u64().unwrap() > 0 || sync["last_step_spaced"] == json!(true),
+        "{}",
+        drag.stats
+    );
+    assert_eq!(AFTER_TAKE_MOTIONS.lock().unwrap().last(), Some(&(60, 20)));
+    // measurement only: `always` opens the gate on it too
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &["--drag-dnd-release-sync-when", "always"],
+    );
+    let sync = &drag.stats["release_sync"];
+    assert_eq!((&sync["open"], &sync["motions"]), (&json!(true), &json!(2)), "{sync}");
+    let (gap, _) = source_before_release();
+    assert!(gap >= ms(6), "released {gap:?} after the last motion");
+}
+
+/// What option (c) leaves pending (`dnd::WatchEnd::Outlasted`), as every reply carries it and the first acting request
+/// is refused with it.
+fn outlasted_cause(app: &str) -> String {
+    format!(
+        "Pending from your last drag, an unconfirmed drop: your drag into {app} began a drag and drop and went on past \
+         the engine's settle time, and {app}'s confirmation cannot tell a drop the page took from one {app} completed \
+         without the page taking it, so read the page to see whether the drop landed where your drag ended"
+    )
+}
+
+/// Option (c) (ruling 995, `--drag-dnd-unconfirm-outlasted on`; off as 0.4.3 ships, ruling 997): a Chrome drop whose
+/// path outlasts its floor, from a source whose activation request comes after the release and is its only
+/// confirmation, answers unconfirmed at once with the outlasted notice, and the next acting request is refused with it,
+/// on every route such a drop takes. Off, the same drop is confirmed by that request, as in 0.4.2. On, a short path,
+/// which shuts the gate, is confirmed as before.
+#[test]
+fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_unconfirmed() {
+    support::fresh_display();
+    let listed = ActiveWindowSupported::listed();
+    for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
+        for (outlasting, unconfirm) in [(true, true), (true, false), (false, true)] {
+            let case = format!("{route:?}, outlasting {outlasting}, option (c) {unconfirm}");
+            let (window, stop, recorder) = drag_source_answering(
+                OnRelease::Drops {
+                    activates: true,
+                    cursors: &[],
+                },
+                None,
+            );
+            // the foreground route's drop window is the managed top-level under the pointer at the release
+            match route {
+                HoldRoute::Desktop => managed(window),
+                HoldRoute::Dedicated => {
+                    in_front(window);
+                    managed(window);
+                }
+                _ => in_front(window),
+            }
+            let mut args = vec!["--drag-dnd-unconfirm-outlasted", if unconfirm { "on" } else { "off" }];
+            if route == HoldRoute::Dedicated {
+                args.extend(["--desktop", "dedicated"]);
+            }
+            let mut engine = Engine::start_with_stats(&args);
+            let app = app_of(&mut engine, window);
+            let path = match outlasting {
+                true => outlasting_path(),
+                false => json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]),
+            };
+            let request = match route {
+                HoldRoute::Desktop => json!({"path": path}),
+                _ => json!({"window": {"id": window}, "path": path}),
+            };
+            let dragged = engine.exchange("drag", request);
+            let stats = engine.stats_of(engine.last_id());
+            sleep(SETTLE);
+            let read = engine.exchange("list_windows", json!({}));
+            let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+            set_active_window(None);
+            stop.send(()).unwrap();
+            recorder.join().unwrap();
+            assert_eq!(dragged["ok"], json!(true), "{case}: {dragged}");
+            let sync = &stats["release_sync"];
+            assert_eq!(sync["open"], json!(outlasting), "{case}: {sync}");
+            let confirmed_by = stats["after_release"]["confirmed_by"].as_str().unwrap_or_default();
+            if outlasting && unconfirm {
+                assert_eq!(sync["unconfirm_outlasted"], json!(true), "{case}: {sync}");
+                assert_eq!(confirmed_by, "Outlasted", "{case}: {stats}");
+                let notice = format!(
+                    "{}. Read the window before sending input again: your next input request will not be run",
+                    outlasted_cause(&app)
+                );
+                assert_eq!(
+                    dragged["notice"],
+                    json!(notice),
+                    "{case}: the drag's own answer carries it"
+                );
+                assert_eq!(read["notice"], json!(notice), "{case}: {read}");
+                assert_eq!(
+                    next,
+                    Err(format!(
+                        "{}; this click request was not run, so read the window before sending it again",
+                        outlasted_cause(&app)
+                    )),
+                    "{case}"
+                );
+            } else {
+                assert_eq!(sync["unconfirm_outlasted"], json!(false), "{case}: {sync}");
+                assert!(confirmed_by.starts_with("Activation"), "{case}: {stats}");
+                assert_eq!(dragged.get("notice"), None, "{case}: {dragged}");
+                assert_eq!(read.get("notice"), None, "{case}: a confirmed drop: {read}");
+                assert_eq!(next, Ok(Value::Null), "{case}");
+            }
+        }
+    }
+    drop(listed);
+}
+
+/// Ruling 1001 (3): on XTEST's routes (the desktop route here) a motion to where the pointer already is generates no
+/// event, so each of the tail's visits steps 1 px forward along the path's last segment and back to its end
+/// (`release_sync::xtest_step`). Both reach the source as motions, the last at the end, and nothing behind the end is
+/// shown: for an end entered on the path's last sample (x = 60, entered from 59), no motion after the path's end is at
+/// x < 60; for a repeated end (the request's last point twice, so the path's last two samples are one point), the
+/// visits are still real motions. Inside the floor (a short path) and after a path that outlasts it alike.
+#[test]
+fn on_xtest_routes_each_tail_visit_steps_forward_and_back_and_shows_nothing_behind_the_end() {
+    support::fresh_display();
+    let cases = [
+        (
+            "an end entered on the last sample",
+            json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]),
+            (60, 20),
+            (61, 20),
+            "in_floor",
+        ),
+        (
+            "a repeated end",
+            json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}, {"x": 60, "y": 20}]),
+            (60, 20),
+            (61, 20),
+            "in_floor",
+        ),
+        (
+            "an outlasting path",
+            outlasting_path(),
+            (20, 40),
+            (20, 39),
+            "after_path",
+        ),
+    ];
+    for (case, path, end, forward, schedule) in cases {
+        *HELD_PATH.lock().unwrap() = Some(path);
+        let drag = held_drag_with(HoldRoute::Desktop, OnRelease::Nothing, None, &[]);
+        assert_eq!(drag.answer, Ok(Value::Null), "{case}");
+        assert_eq!(drag.stats["route"], json!("desktop"), "{case}: {}", drag.stats);
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(
+            (&sync["schedule"], &sync["motions"], &sync["visits_dropped"]),
+            (&json!(schedule), &json!(4), &json!(0)),
+            "{case}: {sync}"
+        );
+        let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+        let release = events
+            .iter()
+            .find(|(kind, ..)| *kind == "release")
+            .expect("a release")
+            .1;
+        // what the source read in the tail's span before the release: the visits' motions
+        let tail: Vec<(i16, i16)> = events
+            .iter()
+            .filter(|(kind, at, _)| *kind == "motion" && *at <= release && release - *at < Duration::from_millis(20))
+            .map(|(_, _, p)| *p)
+            .collect();
+        assert!(
+            tail.contains(&forward),
+            "{case}: the step reached the source as a motion: {tail:?}"
+        );
+        assert_eq!(
+            tail.last(),
+            Some(&end),
+            "{case}: the last motion before the release is the end: {tail:?}"
+        );
+        assert!(
+            tail.iter().all(|p| *p == end || *p == forward),
+            "{case}: only the end and the step forward of it: {tail:?}"
+        );
+        let after_end: Vec<(i16, i16)> = events
+            .iter()
+            .filter(|(kind, at, _)| *kind == "motion" && *at <= release)
+            .map(|(_, _, p)| *p)
+            .skip_while(|p| *p != end)
+            .collect();
+        if case == "an end entered on the last sample" {
+            assert!(
+                after_end.iter().all(|p| p.0 >= 60),
+                "{case}: nothing behind the end: {after_end:?}"
+            );
+        }
+    }
+    *HELD_PATH.lock().unwrap() = None;
+}
+
+/// The re-review of 75718f55 (2): a nonzero release dwell (`--drag-release-dwell-ms`; Gecko's 30 ms is the default
+/// family that has one, reached by a foreground drag named for Firefox whose press lands in Chrome) stays on top of the
+/// floor, as 0.4.2's: a short taken drag releases 350 ms plus the dwell after its take with the tail inside the floor,
+/// within a millisecond of off's, and both of the tail's visits go out before it.
+#[test]
+fn a_release_dwell_stays_on_top_of_the_floor_with_the_tail_inside_it() {
+    support::fresh_display();
+    *HELD_PATH.lock().unwrap() = None;
+    let released_after_take = |drag: &HeldDrag| drag.stats["after_take"]["release_after_take_ms"].as_f64().unwrap();
+    let dwell = ["--drag-release-dwell-ms", "30"];
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &[&dwell[..], &["--drag-dnd-release-sync", "off"]].concat(),
+    );
+    let off = released_after_take(&drag);
+    assert!((380.0..381.0).contains(&off), "off: released {off} ms after the take");
+    let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &dwell);
+    let tail = released_after_take(&drag);
+    assert!(
+        (380.0..381.0).contains(&tail) && (tail - off).abs() < 1.0,
+        "the tail: released {tail} ms after the take, off {off}"
+    );
+    let sync = &drag.stats["release_sync"];
+    assert_eq!(
+        (&sync["schedule"], &sync["motions"], &sync["visits_dropped"]),
+        (&json!("in_floor"), &json!(2), &json!(0)),
+        "{sync}"
+    );
+}
+
+/// Ruling 998 (confirmed by 1026): a Chrome source's `drag_handle` end with its drag and drop under way gets the tail:
+/// after the end's rest, the step 1 px forward along the last segment and back to the pointer's place, 8 ms, the same,
+/// 8 ms, then the release (a handle's input is XTEST's). `--drag-dnd-release-sync off` gives f9d1f86b's end: the
+/// end's rest, then one revisit to the pointer's own place with the release at once after it. Live proof only, no
+/// counted rate.
+#[test]
+fn a_chrome_handle_s_end_with_a_drop_under_way_gets_the_tail_and_off_gives_the_old_end() {
+    support::fresh_display();
+    let ms = Duration::from_millis;
+    for off in [false, true] {
+        let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+        managed(window);
+        let args: &[&str] = if off { &["--drag-dnd-release-sync", "off"] } else { &[] };
+        let mut engine = Engine::start_with_stats(args);
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
+            .unwrap();
+        let ended = engine.request("drag_handle", json!({"action": "end"}));
+        let stats = engine.stats_of(engine.last_id());
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        assert_eq!(ended, Ok(Value::Null), "off {off}");
+        let tail = &stats["handle"]["release_sync"];
+        let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+        let release = events
+            .iter()
+            .find(|(kind, ..)| *kind == "release")
+            .expect("a release")
+            .1;
+        let before: Vec<(Duration, (i16, i16))> = events
+            .iter()
+            .filter(|(kind, at, _)| *kind == "motion" && *at <= release)
+            .map(|(_, at, p)| (release - *at, *p))
+            .collect();
+        let last = before.last().expect("a motion after the take").0;
+        if off {
+            assert_eq!(
+                (&tail["ran"], &tail["why_not"]),
+                (&json!(false), &json!("the form is off")),
+                "{tail}"
+            );
+            // f9d1f86b's end: after the end's rest (30 ms, Chrome's held rest) one revisit of the pointer's own place,
+            // then the release, and no step. Whether the same-place XTEST revisit reaches the source as a motion of its
+            // own depends on the server (on this Xvfb it does; ruling 1001 takes it as no event), so either delivery
+            // passes: the revisit read just before the release after the rest, or nothing read after the rest. The
+            // request sequence is pinned by the unit tests (`every_end_without_the_tail_keeps_f9d1f86b_s_sequence`)
+            let tail_of = &before[before.len().saturating_sub(2)..];
+            let revisit_read = tail_of.len() == 2 && tail_of[0].0 - tail_of[1].0 >= ms(25) && last < ms(6);
+            let nothing_after_rest = last >= ms(25);
+            assert!(
+                before.last().map(|(_, p)| *p) == Some((60, 20)) && (revisit_read || nothing_after_rest),
+                "off: the rest, then the revisit (delivered or not) and the release: {tail_of:?}"
+            );
+            assert!(before.iter().all(|(_, p)| *p != (61, 20)), "off: no step: {before:?}");
+        } else {
+            assert_eq!(
+                (&tail["ran"], &tail["motions"], &tail["form"]),
+                (&json!(true), &json!(4), &json!("tail")),
+                "{tail}"
+            );
+            // the source polls every 1 ms: each time it reads may be up to a poll late, so 6 ms of the 8
+            assert!(
+                last >= ms(6) && last < ms(20),
+                "released {last:?} after the last motion"
+            );
+            // the tail follows the end's revisit and the take read (the re-review of 9fb61c32, 1): a revisit that
+            // reaches the source as a motion can fall inside the last 20 ms just before the first step
+            let recent: Vec<&(Duration, (i16, i16))> = before
+                .iter()
+                .filter(|(d, _)| *d < ms(20))
+                .skip_while(|(_, p)| *p == (60, 20))
+                .collect();
+            let places: Vec<(i16, i16)> = recent.iter().map(|(_, p)| *p).collect();
+            assert_eq!(places, vec![(61, 20), (60, 20), (61, 20), (60, 20)], "{recent:?}");
+            // the two visits a rest apart: each visit's return to the end against the next
+            assert!(recent[1].0 - recent[3].0 >= ms(6), "{recent:?}");
+        }
+    }
 }

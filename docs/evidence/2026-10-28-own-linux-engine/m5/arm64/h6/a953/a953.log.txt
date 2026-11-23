@@ -1,0 +1,5 @@
+2026-11-21T04:56:01Z start t14-floor df 114G load=0.11 0.25 2.24
+2026-11-21T05:12:35Z end t14-floor exit 0 load=16.82 16.52 12.07
+2026-11-21T05:12:35Z start t14-long df 114G load=16.82 16.52 12.07
+2026-11-21T05:18:51Z end t14-long exit 1 load=17.62 16.78 13.54
+2026-11-21T05:18:51Z t14-long exited 1: stopped for the controller

@@ -1,0 +1,2 @@
+== 2026-11-22T05:06:17.023Z sample 1
+/tmp entries newer than the start (not the tmproot):

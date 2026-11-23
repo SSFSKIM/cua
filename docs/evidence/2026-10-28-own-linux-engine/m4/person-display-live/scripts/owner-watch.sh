@@ -5,10 +5,11 @@
 # the person's session bus and the person's running user units. Any change from the first reading, or a stall line in
 # the run's watchdog file, stops the step: SIGTERM to the pid in <out>/driver.pid (the guard's child, the harness's own
 # stop), logged, and <out>/owner-changed made. Ends when <out>/session.done appears.
+# M5's T4: the person's home read from the session (person.sh), never assumed.
 # usage: owner-watch.sh <out> <owner pid> [watchdog file]
 set -u
 out=$1; pid=$2; wdog=${3:-}
-H=/Users/new
+. "$(dirname "$0")/person.sh"
 X() { DISPLAY=:0 XAUTHORITY=$H/.Xauthority timeout 5 "$@" 2>&1; }
 log="$out/owner-watch.log"
 # a count of the owner's windows, or "unread" when xdotool's walk of every window on :0 did not finish in time (a full

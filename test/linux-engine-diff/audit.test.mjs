@@ -137,7 +137,7 @@ test('a background hold released on its minimized window: the hold proven, then 
   const sample = (i, release) => [m(`hold:${i}`), FOCUS_IN('0010'), KEY_PRESS('0011'), m(`held:${i}`), m(`release:${i}`), ...release, m(`released:${i}`)];
   const clean = held('background', [...sample(0, [KEY_RELEASE('0012'), FOCUS_OUT('0013')]), ...sample(1, [KEY_RELEASE('0022')])]);
   assert.deepEqual([clean.clean, clean.forbidden], [true, []]);
-  assert.deepEqual(clean.samples.map((s) => s.held), [['key 50'], ['key 50']]);
+  assert.deepEqual(clean.samples.map((s) => s.held), [{ keys: 1, buttons: 0 }, { keys: 1, buttons: 0 }]);
   // the negative controls: a no-op release, and one that sends an extra press
   assert.equal(held('background', sample(0, [])).clean, false, 'a no-op key_up');
   assert.equal(held('background', sample(0, [FOCUS_OUT('0013')])).clean, false, 'only the teardown');
@@ -159,7 +159,7 @@ test('a foreground hold released on its minimized window: XTEST releases exactly
   const sample = (i, release) => [m(`hold:${i}`), ACTIVATE, RAISE, FOCUS, XTEST_PRESS('0011'), m(`held:${i}`), m(`release:${i}`), ...release, m(`released:${i}`)];
   const clean = held('foreground', [...sample(0, [XTEST_RELEASE('0012')]), ...sample(1, [XTEST_RELEASE('0022')])]);
   assert.deepEqual([clean.clean, clean.forbidden], [true, []]);
-  assert.deepEqual(clean.samples.map((s) => s.held), [['key 50'], ['key 50']]);
+  assert.deepEqual(clean.samples.map((s) => s.held), [{ keys: 1, buttons: 0 }, { keys: 1, buttons: 0 }]);
   assert.equal(held('foreground', sample(0, [])).clean, false, 'a no-op key_up');
   assert.equal(held('foreground', sample(0, [XTEST_PRESS('0012'), XTEST_RELEASE('0013')])).clean, false, 'an extra press');
   assert.equal(held('foreground', sample(0, [fake('0012', '0x06', '0x00'), XTEST_RELEASE('0013')])).clean, false, 'motion');

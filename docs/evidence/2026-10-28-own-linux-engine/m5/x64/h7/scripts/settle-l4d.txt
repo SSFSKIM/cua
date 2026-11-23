@@ -1,0 +1,3 @@
+/Users/new/.local/share/cua-171/m5/out-x64-h7/L4d.pinned-release: TAKEN (entered 30, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 50 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 2472226: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 1

@@ -1,0 +1,50 @@
+✔ an experiment on a private display: the harness, its pinned arguments and --out, and CUA_HOME the run home (14.291171ms)
+✔ a step on its own display is spawned, without DISPLAY; a :0 step is never launched, only printed (14.41208ms)
+✔ the plan's text: every step not skipped, the suites' fresh log directory as its pattern (229.414737ms)
+✔ envDelta and normalize (0.73404ms)
+✔ a drop-signals step's plan contents on each architecture: its cells, counts and freezes with their start rule (ruling 954) (4.830429ms)
+✔ the review of cf1ef10f, finding 5: a plan is rendered from the launch's own arguments through the runner's parser: its lanes, its --trials cap and its default plan (0.74429ms)
+✖ the review of cf1ef10f, finding 5: each architecture's full plan through --arch, every drop-signals step's contents its printed launch's own (627.25735ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1298.498762
+
+✖ failing tests:
+
+test at test/linux-engine-diff/launch-plan.test.mjs:85:1
+✖ the review of cf1ef10f, finding 5: each architecture's full plan through --arch, every drop-signals step's contents its printed launch's own (627.25735ms)
+  AssertionError [ERR_ASSERTION]: file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-gate/gate.mjs:115
+    if (!dir || !existsSync(join(dir, 'google-chrome'))) throw new GateRefused(`no current stable Chrome at ${root} (its \`current\` and \`<version>/bin/google-chrome\`): the canary on it does not start`);
+                                                               ^
+  
+  GateRefused: no current stable Chrome at /tmp/cua171-t-DdBKjc/cua171-launch-plan-Y0z7MK/.local/share/cua-171/chrome-stable (its `current` and `<version>/bin/google-chrome`): the canary on it does not start
+      at currentStableChrome (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-gate/gate.mjs:115:62)
+      at runStep (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-gate/gate.mjs:442:56)
+      at dryLaunch (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-gate/launch-plan.mjs:62:9)
+      at launchPlan (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-gate/launch-plan.mjs:94:37)
+      at async file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/scripts/linux-engine-gate/launch-plan.mjs:117:24
+  
+  Node.js v24.22.1
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/launch-plan.test.mjs:90:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

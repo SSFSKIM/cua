@@ -1,0 +1,11 @@
+time 2026-11-19T02:27:13Z
+hold-sittings: absent
+stress-ng: none
+owner chrome: 2546101 Mon Nov  2 20:16:10 2026 chrome
+load 0.12 0.25 1.11
+lock, last line: 2026-11-19T02:16:23Z release m5-audit-own status=0 load=1.55 0.96 2.09 render-host=none :: timeout -s TERM -k 60 20m node test/linux-engine-diff/suite-check.mjs
+pointer: x:142 y:130 screen:0 window:5912655
+/tmp/cua171-run-* present: []
+firefox on PATH (sitting.sh): /Users/new/.local/share/cua-171/task59/bin/firefox
+google-chrome: Google Chrome 156.0.8078.73 
+gate leftovers: end check: clear 

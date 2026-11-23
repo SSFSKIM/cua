@@ -1,0 +1,2 @@
+step.sh 2026-11-18T17:05:04Z start F2 after 170 s quiet wait: load=0.96 9.25 10.47 stress-ng=none
+step.sh 2026-11-18T17:08:59Z end F2 exit 0 load=0.22 4.33 8.17

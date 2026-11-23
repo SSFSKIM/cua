@@ -1,0 +1,8 @@
+2026-11-19T13:30:31Z sitting start (V2:39 V3:35), hard stop 2026-11-19T18:50:31Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox, node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, google-chrome /usr/local/bin/google-chrome
+2026-11-19T13:30:31Z start V2 load=0.69 0.64 0.63 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T13:46:32Z end V2 exit 0 load=1.23 1.24 1.00
+2026-11-19T13:46:32Z after V2: audit rows 30, with kept_traces files 30, files 30, missing 0;kept-traces exit 0;rejudge: reproduces the stored findings; settle:  1 not taken 
+2026-11-19T13:46:32Z start V3 load=1.23 1.24 1.00 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T13:47:03Z end V3 exit 1 load=1.09 1.22 0.99
+2026-11-19T13:47:03Z after V3: audit rows 0, with kept_traces files 0, files 0, missing 0;kept-traces exit 1;rejudge: DIFFERS from the stored findings; settle:  2 unknown 
+2026-11-19T13:47:03Z hold-sittings written after V3: every later :0 step stopped

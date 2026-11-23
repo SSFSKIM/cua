@@ -1,0 +1,68 @@
+{
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR",
+  "commit": "01ff0648f3afc4a234669cd381395c91543ce3f7",
+  "dirty": false,
+  "release": "26.928.40906-linux-x64",
+  "node": "v24.22.1",
+  "runtimeNode": "v24.21.0",
+  "platform": "linux",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "browserRoute": {
+    "route": null,
+    "recordPath": null,
+    "chatgptRecordPath": null,
+    "manifests": []
+  },
+  "device": "cua-171",
+  "nativeOnly": true,
+  "profile": null,
+  "chromeProfileDirectory": null,
+  "extensionInstanceId": null,
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "discoveryHome": "/Users/new/.local/share/cua",
+  "fixturePort": 48732,
+  "userHome": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR.home",
+  "ownedPreparation": {
+    "device": "cua-171",
+    "home": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR",
+    "experiment": "parity",
+    "token": "5fc51dc1-44dc-49c0-a226-e91c07ac19c8"
+  },
+  "display": ":1",
+  "xSession": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-1097562-e6dbe9dc8676",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-JEGbqj/parity/desktop/session/bus/dbus-b0m7t4pxNr,guid=bcd81ce64911639b2358df026af94620",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "environment": {
+    "PATH": "/Users/new/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/Users/new/.cargo/bin:/Users/new/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "LANG": "C.UTF-8",
+    "USER": "new",
+    "LOGNAME": "new",
+    "HOME": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR.home",
+    "CUA_HOME": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR",
+    "CHROME_CONFIG_HOME": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR.home/.config",
+    "XDG_CONFIG_HOME": "/Users/new/.local/share/cua-parity-remote/parity-eDtnYR.home/.config",
+    "CUA_PARITY_NODE_MODE": "managed",
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-1097562-e6dbe9dc8676",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-JEGbqj/parity/desktop/session/bus/dbus-b0m7t4pxNr,guid=bcd81ce64911639b2358df026af94620",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "load": {
+    "average": [
+      0.88,
+      0.87,
+      1.01
+    ],
+    "cpus": 8
+  }
+}

@@ -10,6 +10,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import { allowingProductionScratch } from './fixture-scope.mjs';
 
 import { GEDIT_TITLE_MAX, geditTitle } from '../../scripts/linux-engine-diff/gedit-title.mjs';
 import { Desktop, scratchRoot } from '../../scripts/linux-engine-diff/scenes.mjs';
@@ -57,7 +59,8 @@ function withDesktop(run, tmp, fn) {
   process.env.TMPDIR = tmp;
   let desktop;
   try {
-    desktop = new Desktop({ cua: 'unused', run, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0 });
+    // the rule's own fallback to /tmp is what these tests read, so their scratch may lie there, for as long as `fn` runs
+    desktop = allowingProductionScratch(() => new Desktop({ cua: 'unused', run, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0 }));
   } finally {
     if (saved === undefined) delete process.env.TMPDIR;
     else process.env.TMPDIR = saved;
@@ -91,7 +94,7 @@ test("no gedit window the scenes build gets a shortened title, under the plain T
 test("the scratch root is the harness's TMPDIR when the run's longest gedit title fits under it, else /tmp", () => {
   // the suite's own directory (suite-check.mjs) fits a short run's titles; macOS's per-user TMPDIR
   // (/var/folders/…/T, which plain `npm test` there runs under) does not
-  assert.equal(scratchRoot('a11y', '/tmp/cua171-suite-AbC123'), '/tmp/cua171-suite-AbC123');
+  assert.equal(scratchRoot('a11y', '/tmp/cua171-s-AbC123'), '/tmp/cua171-s-AbC123');
   assert.equal(scratchRoot('a11y', '/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T'), '/tmp');
   assert.equal(scratchRoot('t49-recordjudge', '/tmp/cua171-task49-WqJ6Jx'), '/tmp', "task 49's session TMPDIR");
   // the Desktop takes its scratch where the rule says, under this test's TMPDIR and under a long one

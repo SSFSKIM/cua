@@ -1,0 +1,2 @@
+{"t": 34.287, "kind": "outside-peer-connection", "pids": [336134], "comm": "google-chrome-s", "peer_path": "@011e2", "peer_pids": [], "peer_comm": null, "peer_inode": "2692414"}
+{"t": 34.287, "kind": "stop-sent", "pid": 333853, "why": "outside-peer-connection"}

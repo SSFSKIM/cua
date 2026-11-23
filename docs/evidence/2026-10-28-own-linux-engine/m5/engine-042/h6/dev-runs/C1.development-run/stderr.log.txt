@@ -1,0 +1,2 @@
+development run, not a release gate
+[1120/120531.995515:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA

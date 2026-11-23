@@ -1,0 +1,6 @@
+2026-11-22T06:11:47Z == device head 51f6b281692c47060a47399b72da363748aad7db label counted device cua-171-arm64 engine installed selection explicit dirty=no
+2026-11-22T06:12:08Z run home /tmp/t137arm-b-51f6b281-device/device/home installed
+2026-11-22T06:12:12Z pinned check of /tmp/t137arm-b-51f6b281-device/device/home/cua: exit 0, acceptance on the pinned release: /tmp/t137arm-b-51f6b281-device/device/home/cua/engine/linux/cua-engine
+2026-11-22T06:12:40Z scripts/accept/linux-device-mode.mjs (selection explicit) exit 0
+2026-11-22T06:12:40Z engine watch: PASS (only /tmp/t137arm-b-51f6b281-device/device/home/cua/engine/linux/cua-engine, under the trusted worker; no sky_linux)
+2026-11-22T06:12:40Z == device exit 0

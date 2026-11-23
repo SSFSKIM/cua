@@ -10,9 +10,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os';
 import { basename, delimiter, join, relative } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { launchEnvironment } from '../../scripts/linux-engine-diff/app-env.mjs';
-import { CHROME_COMMAND, CHROME_ENV, CHROME_FLAGS, ChromeInstance, assertOwnChrome, isChromeCommand, procCmdline, profileSwitches } from '../../scripts/linux-engine-diff/chrome.mjs';
+import { CHROME_COMMAND, CHROME_COMMAND_VAR, CHROME_ENV, CHROME_FLAGS, ChromeInstance, assertOwnChrome, browserIdentity, chromeCommand, cmdlineArgs, isChromeCommand, procCmdline, profileSwitches } from '../../scripts/linux-engine-diff/chrome.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 
 const HARNESS = join(import.meta.dirname, '../../scripts/linux-engine-diff');
@@ -150,12 +152,15 @@ test("the run's end stops only the pids it spawned whose command line carries th
         kills.push([pid, signal]);
         if (signal === 'SIGTERM') alive.delete(pid);
       },
+      identity: (pid) => ({ exe: '/opt/google/chrome/chrome', version: `Google Chrome 156.0.8078.73 (pid ${pid})` }),
     });
     for (let i = 0; i < 5; i++) chrome.open(`file:///page-${i}`);
     assert.ok(existsSync(profile));
     const record = await chrome.stop({ graceMs: 500 });
     assert.deepEqual(kills, [[201, 'SIGTERM']], 'no name, no other Chrome, no renderer: only the browser it spawned');
-    assert.deepEqual(record, { profile, spawned: [201, 202, 203, 204, 205], terminated: [201], killed: [], left: [] });
+    // what ran, read from the browser it stopped (the re-review of wave 3, I5): only that one's
+    const browsers = [{ pid: 201, exe: '/opt/google/chrome/chrome', version: 'Google Chrome 156.0.8078.73 (pid 201)' }];
+    assert.deepEqual(record, { profile, spawned: [201, 202, 203, 204, 205], browsers, terminated: [201], killed: [], left: [] });
     assert.equal(existsSync(profile), false, 'the profile is removed after');
     assert.throws(() => chrome.open('file:///late'), /stopped/);
     assert.equal(await chrome.stop(), record, 'a second stop is the first');
@@ -185,6 +190,7 @@ test('a browser that outlives SIGTERM is killed, checked again just before, and 
         kills.push([pid, signal]);
         if (signal === 'SIGKILL') delete cmdlines[pid];
       },
+      identity: () => ({ exe: null, version: null }),
     });
     chrome.open('file:///a');
     chrome.open('file:///b');
@@ -402,6 +408,54 @@ test("the launcher's one process start comes after its guard", () => {
   assert.equal(starts.length, 1, 'one place starts Chrome');
   assert.equal(text.slice(starts[0].index - 6, starts[0].index + 'this.spawnProcess)('.length), 'guard(this.spawnProcess)(');
   const open = text.slice(text.indexOf('  open(url) {'), starts[0].index);
-  assert.match(open, /assertOwnChrome\(CHROME_COMMAND, args, this\.scratch\);\n(?:\s*\/\/.*\n)*\s*const child = guard\($/, "the guard checks the very command line the start runs");
+  assert.match(open, /assertOwnChrome\(this\.command, args, this\.scratch\);\n(?:\s*\/\/.*\n)*\s*const child = guard\($/, "the guard checks the very command line the start runs");
+  assert.match(text.slice(starts[0].index), /^this\.spawnProcess\)\(this\.command, args,/, 'and starts that command');
   assert.doesNotMatch(text.replace(/^\s*(\/\/|\*).*$/gm, ''), /(?<![.\w])(execFile|execFileSync|spawnSync|exec|execSync|fork)\(/, 'no other process API');
+});
+
+// The re-review of wave 3, I5: a gate step names the Chrome it means (`CUA171_CHROME_COMMAND`, an absolute path to its
+// wrapper), and the run's Chrome starts that one, never whichever `google-chrome` PATH finds; what ran is read from the
+// running browser: its executable and that executable's own version.
+test("a step's named Chrome is the one the run starts, and what ran is read from the running browser", async () => {
+  const d = dirs();
+  try {
+    const { spawnFake, calls } = fakeSpawn();
+    const named = '/home/x/.local/share/cua-171/chrome-stable/158.0.8127.36-1/bin/google-chrome';
+    assert.equal(chromeCommand({ [CHROME_COMMAND_VAR]: named }), named);
+    assert.equal(chromeCommand({}), CHROME_COMMAND);
+    const chrome = new ChromeInstance({ scratch: d.scratch, environment: runEnvironment(d.scratch), spawn: spawnFake, command: named });
+    chrome.open('file:///a');
+    assert.deepEqual(calls.map((c) => c.cmd), [named]);
+    assert.throws(() => new ChromeInstance({ scratch: d.scratch, environment: runEnvironment(d.scratch), spawn: spawnFake, command: '/usr/bin/firefox' }), /starts a Chrome command/, 'only a Chrome command');
+    const exe = '/home/x/.local/share/cua-171/chrome-stable/158.0.8127.36-1/root/opt/google/chrome/chrome';
+    const asked = [];
+    const identity = browserIdentity(4242, { readlink: () => `${exe} (deleted)`, run: (cmd, args) => (asked.push([cmd, ...args]), 'Google Chrome 158.0.8127.36 \n') });
+    assert.deepEqual(identity, { exe, version: 'Google Chrome 158.0.8127.36' });
+    assert.deepEqual(asked, [[exe, '--version']], 'the running executable asked, not PATH');
+    assert.deepEqual(browserIdentity(4242, { readlink: () => { throw new Error('gone'); } }), { exe: null, version: null });
+    assert.deepEqual(browserIdentity(4242, { readlink: () => exe, run: () => { throw new Error('no'); } }), { exe, version: null });
+    // Chrome's browser rewrites its process title: its arguments read as one string, joined by spaces, which is split
+    // (the fix wave's probe: read as one argument, the run's Chrome was never its own at the run's end)
+    const profile = join(d.scratch, 'chrome-profile');
+    assert.deepEqual(cmdlineArgs(`/opt/google/chrome/chrome --no-first-run --user-data-dir=${profile} --new-window about:blank${'\0'.repeat(40)}`), ['/opt/google/chrome/chrome', '--no-first-run', `--user-data-dir=${profile}`, '--new-window', 'about:blank']);
+    assert.deepEqual(cmdlineArgs(`/usr/bin/google-chrome\0--user-data-dir=${profile}\0`), ['/usr/bin/google-chrome', `--user-data-dir=${profile}`]);
+    // what ran is read while the browser runs (once its window shows): one that exited before the run's end is kept
+    let alive = true;
+    const seenChrome = new ChromeInstance({
+      scratch: d.scratch,
+      environment: runEnvironment(d.scratch),
+      spawn: fakeSpawn([501]).spawnFake,
+      cmdline: () => (alive ? [exe, `--user-data-dir=${profile}`] : null),
+      kill: () => {},
+      identity: () => ({ exe, version: 'Google Chrome 158.0.8127.36' }),
+      command: named,
+    });
+    seenChrome.open('file:///a');
+    seenChrome.seen();
+    alive = false;
+    const record = await seenChrome.stop({ graceMs: 10 });
+    assert.deepEqual(record.browsers, [{ pid: 501, exe, version: 'Google Chrome 158.0.8127.36' }]);
+  } finally {
+    d.done();
+  }
 });

@@ -1,0 +1,3 @@
+ring.txt: 11 sample headers, 22 lines; ss-at-flag.txt: 2 lines; owners.json narrowed counts {'ring_lines': 22, 'ss_at_flag_lines': 2}
+lines that name neither the inode nor the peer path: 0
+PASS: only lines naming the peer inode or its path were written

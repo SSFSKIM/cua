@@ -1,0 +1,2 @@
+step.sh 2026-11-19T01:02:30Z start L2c after 170 s quiet wait: load=0.99 9.55 13.28 stress-ng=none flags=[]
+step.sh 2026-11-19T01:35:00Z end L2c exit 0 load=18.31 18.25 17.48

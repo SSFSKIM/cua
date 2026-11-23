@@ -1,0 +1,1 @@
+[1120/214743.213472:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA

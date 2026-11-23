@@ -1,0 +1,13 @@
+{
+  "finished": "2026-11-18T05:09:00.853Z",
+  "exit": 0,
+  "clear": true,
+  "person": [],
+  "run": [],
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  }
+}

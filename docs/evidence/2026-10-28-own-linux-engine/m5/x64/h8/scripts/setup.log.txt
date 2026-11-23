@@ -1,0 +1,14 @@
+== 2026-11-22T02:50:57Z setup at 048140a2bde0f6398cc910c1aa14ecf2e7e51004, load 0.40 0.30 0.17
+changes: 0
+package.json and package-lock.json against ae3fc1e8 (the npm ci): 0 lines of diff
+xprobe source against ae3fc1e8 (its build): 0 lines of diff
+node /usr/bin/node v24.22.1, npm 11.19.1, x86_64
+-rwxr-xr-x 1 new new 229489992 Dec 31  1979 node_modules/electron/dist/electron
+electron 44.9.0
+-rwx------ 2 new new 1749584 Nov 20 23:44 scripts/linux-engine-diff/xprobe/target/release/xprobe
+Google Chrome 156.0.8078.73 
+158.0.8127.36-1
+current
+index
+changes after: 0
+== 2026-11-22T02:50:57Z setup done

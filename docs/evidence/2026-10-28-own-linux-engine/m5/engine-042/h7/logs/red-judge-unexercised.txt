@@ -1,0 +1,9 @@
+✖ a banded sitting passes on honest answers in every band, its late takes counted, not required (12.200187ms)
+✖ ruling 954: a row whose source ended unidentified is unexercised for its band, never its outcome, counted and shown (3.815977ms)
+✖ ruling 955: a row whose stop was skipped (the press marked too late for a stop before the thaw) is unexercised, counted and shown (4.024991ms)
+ℹ pass 10
+ℹ fail 3
+✖ failing tests:
+✖ a banded sitting passes on honest answers in every band, its late takes counted, not required (12.200187ms)
+✖ ruling 954: a row whose source ended unidentified is unexercised for its band, never its outcome, counted and shown (3.815977ms)
+✖ ruling 955: a row whose stop was skipped (the press marked too late for a stop before the thaw) is unexercised, counted and shown (4.024991ms)

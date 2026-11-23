@@ -1,0 +1,16 @@
+development run on the pinned release, not acceptance, never counted; candidate: sha256 a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.2 (9371d2348cf8); the pin's x64 asset of linux-engine-v0.4.2; native/linux-engine as at 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da, the checkout at 69bd7993e1f1cb252574939bd6e8e80674bab5b8; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44796908527/attempts/1, built from 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da (refs/heads/release/linux-engine-v0.4.2) on a github-hosted runner
+[1120/211211.477965:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+the run's end is unclean (its own side, not a verdict failure): a process it spawned still runs: pid 1918796 openbox
+# ruling 950: the x64 activation measurement, 0.4.1 against 0.4.2 (development run, never counted)
+
+chrome-text's activate_window from the front window (covered), 2 runs per engine alternating, at load factor 2; at the answer GetInputFocus and _NET_ACTIVE_WINDOW on a connection of the experiment's own, then both polled 500 ms beside press_key "x".
+
+| engine | runs | failed to start | answered ok | X focus on the target at the answer | _NET_ACTIVE_WINDOW the target at the answer | … by answer + 10 ms | late (not by + 10 ms) | never in 500 ms | lag after the answer median / p95 / max ms | focus left the target in 500 ms | key in the target |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
+| 0.4.1 | 2 | 0 | 2 | 2 | 1 | 1 | 1 | 0 | 0 / 32.6 / 32.6 | 0 | 2 |
+| 0.4.2 | 2 | 0 | 2 | 2 | 1 | 2 | 0 | 0 | 0 / 3.7 / 3.7 | 0 | 2 |
+
+Late rates: 0.4.1 1/2, 0.4.2 0/2; one-sided Fisher exact p (0.4.2 higher) = 1.00: not clearly above. At these rates the test can catch only a large difference.
+
+The reading by the rule fixed before the run: (b): the focus on the target at the answer in every run of both engines, the key in the target in every run, and the late rate not clearly above.
+development run on the pinned release, not acceptance, never counted: smoke complete

@@ -1,0 +1,52 @@
+owner pid=9512 start=52059
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1795043460.265402005
+---
+> mtime ~/.config/google-chrome 1795044863.460404581
+all-clear: NOT CLEAR: a window the harness did not open was changed: pinned on gedit type_text: SendEvent FocusOut on 0x01800064; a window the harness did not open was changed: pinned on gedit type_text: UnredirectWindow on 0x01800064; a window the harness did not open was changed: pinned on gedit type_text: SendEvent FocusOut on 0x01800064; a window the harness did not open was changed: pinned on gedit type_text: UnredirectWindow on 0x01800064; a window the harness did not open was changed: pinned on gedit type_text_selection: SendEvent FocusOut on 0x01800064; a window the harness did not open was changed: pinned on gedit type_text_selection: UnredirectWindow on 0x01800064; a window the harness did not open was changed: pinned on gedit type_text_selection: SendEvent FocusOut on 0x02c00064; a window the harness did not open was changed: pinned on gedit type_text_selection: UnredirectWindow on 0x02c00064; a window the harness did not open was changed: pinned on gedit clipboard_write: SendEvent FocusOut on 0x01800064; a window the harness did not open was changed: pinned on gedit clipboard_write: UnredirectWindow on 0x01800064; a window the harness did not open was changed: pinned on gedit clipboard_write: SendEvent FocusOut on 0x01800064; a window the harness did not open was changed: pinned on gedit clipboard_write: UnredirectWindow on 0x01800064; a window the harness did not open was changed: newest on gedit clipboard_write: SendEvent FocusOut on 0x01a00064; a window the harness did not open was changed: newest on gedit clipboard_write: UnredirectWindow on 0x01a00064; a window the harness did not open was changed: newest on gedit clipboard_write: SendEvent FocusOut on 0x01800064; a window the harness did not open was changed: newest on gedit clipboard_write: UnredirectWindow on 0x01800064
+--- V1 exit 1
+--- owner-baseline
+owner pid=9512 start=52059
+tmproot /tmp/c71-j4Rzwe
+args: --vendor /Users/new/.local/share/cua-171/m5/home-arm64-041/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine --scene gedit --ops type_text,type_text_selection,type_text_dedicated,clipboard_read,clipboard_write,clipboard_release,caret_placed --blocks 3 --run pinned-V1 --pinned
+started 2026-11-18T23:15:59Z finished 2026-11-18T23:34:19Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1795043460.265402005
+---
+> mtime ~/.config/google-chrome 1795044863.460404581
+--- pointer
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 
+--- wrap.out tail
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+case gedit caret_placed 0: PASS
+run valid; acceptance on the pinned release: FAIL: a window the harness did not open was changed: pinned on gedit type_text: SendEvent FocusOut on 0x01800064, a window the harness did not open was changed: pinned on gedit type_text: UnredirectWindow on 0x01800064, a window the harness did not open was changed: pinned on gedit type_text: SendEvent FocusOut on 0x01800064, a window the harness did not open was changed: pinned on gedit type_text: UnredirectWindow on 0x01800064, a window the harness did not open was changed: pinned on gedit type_text_selection: SendEvent FocusOut on 0x01800064, a window the harness did not open was changed: pinned on gedit type_text_selection: UnredirectWindow on 0x01800064, a window the harness did not open was changed: pinned on gedit type_text_selection: SendEvent FocusOut on 0x02c00064, a window the harness did not open was changed: pinned on gedit type_text_selection: UnredirectWindow on 0x02c00064, a window the harness did not open was changed: pinned on gedit clipboard_write: SendEvent FocusOut on 0x01800064, a window the harness did not open was changed: pinned on gedit clipboard_write: UnredirectWindow on 0x01800064, a window the harness did not open was changed: pinned on gedit clipboard_write: SendEvent FocusOut on 0x01800064, a window the harness did not open was changed: pinned on gedit clipboard_write: UnredirectWindow on 0x01800064, a window the harness did not open was changed: newest on gedit clipboard_write: SendEvent FocusOut on 0x01a00064, a window the harness did not open was changed: newest on gedit clipboard_write: UnredirectWindow on 0x01a00064, a window the harness did not open was changed: newest on gedit clipboard_write: SendEvent FocusOut on 0x01800064, a window the harness did not open was changed: newest on gedit clipboard_write: UnredirectWindow on 0x01800064; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0; text windows a lane ended (a vendor's restarted, never scored): pinned 189, newest 63, cua 0; vendor ends declared (never scored): gedit type_text pinned (26.928.40906-linux-arm64) 63, gedit type_text_selection pinned (26.928.40906-linux-arm64) 63, gedit clipboard_write pinned (26.928.40906-linux-arm64) 63, gedit clipboard_write newest (26.1023.51421-linux-arm64) 63
+results: /Users/new/.local/share/cua-171/m5/out-arm64-h4/V1.pinned-release/run/results.jsonl
+{"exit": 1, "samples": 9834, "maps_samples": 3279, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1472, "browsers": 28}
+--- all-clear
+all-clear: NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text: SendEvent FocusOut on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text: UnredirectWindow on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text: SendEvent FocusOut on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text: UnredirectWindow on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text_selection: SendEvent FocusOut on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text_selection: UnredirectWindow on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text_selection: SendEvent FocusOut on 0x02c00064
+- the person's side: a window the harness did not open was changed: pinned on gedit type_text_selection: UnredirectWindow on 0x02c00064
+- the person's side: a window the harness did not open was changed: pinned on gedit clipboard_write: SendEvent FocusOut on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit clipboard_write: UnredirectWindow on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit clipboard_write: SendEvent FocusOut on 0x01800064
+- the person's side: a window the harness did not open was changed: pinned on gedit clipboard_write: UnredirectWindow on 0x01800064
+- the person's side: a window the harness did not open was changed: newest on gedit clipboard_write: SendEvent FocusOut on 0x01a00064
+- the person's side: a window the harness did not open was changed: newest on gedit clipboard_write: UnredirectWindow on 0x01a00064
+- the person's side: a window the harness did not open was changed: newest on gedit clipboard_write: SendEvent FocusOut on 0x01800064
+- the person's side: a window the harness did not open was changed: newest on gedit clipboard_write: UnredirectWindow on 0x01800064
+- the run's own side: clean
+- the sitting's exit: 1

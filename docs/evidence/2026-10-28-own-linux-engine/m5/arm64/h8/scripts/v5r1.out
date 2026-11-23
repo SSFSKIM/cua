@@ -1,0 +1,5 @@
+2026-11-22T05:06:16Z sitting start (V5:38), hard stop 2026-11-22T06:06:16Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox, node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, google-chrome /usr/local/bin/google-chrome
+2026-11-22T05:06:16Z start V5 load=10.74 15.63 15.51 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-22T05:06:47Z end V5 exit 1 load=6.51 14.14 15.02
+2026-11-22T05:06:47Z after V5: audit rows 0, with kept_traces files 0, files 0, missing 0;kept-traces exit 1;rejudge: DIFFERS from the stored findings; settle:  2 unknown 
+2026-11-22T05:06:47Z hold-sittings written after V5: every later :0 step stopped

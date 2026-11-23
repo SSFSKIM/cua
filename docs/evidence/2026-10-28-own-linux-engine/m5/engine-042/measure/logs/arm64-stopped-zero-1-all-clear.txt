@@ -1,0 +1,5 @@
+all-clear: NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)
+- the person's side: wrap71 flagged 4 reaches into the person's session and 0 decoy connections
+- the person's side: the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+- the run's own side: clean
+- the sitting's exit: 1

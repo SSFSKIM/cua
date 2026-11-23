@@ -1,0 +1,13 @@
+S1: reasons 50: too short 50, other 0
+S2: reasons 30: too short 30, other 0
+S3: reasons 31: too short 31, other 0
+S4: reasons 37: too short 37, other 0
+F1a: reasons 24: too short 24, other 0
+F1b: reasons 9: too short 9, other 0
+L3a: reasons 26: too short 26, other 0
+L3b: reasons 24: too short 24, other 0
+L3c: reasons 30: too short 30, other 0
+L3d: reasons 31: too short 31, other 0
+L3e: reasons 37: too short 37, other 0
+F3a: reasons 24: too short 24, other 0
+F3b: reasons 9: too short 9, other 0

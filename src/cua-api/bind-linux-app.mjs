@@ -23,6 +23,11 @@
 // source:`, so the model reads it before it acts again. A state without it, or with an empty one, renders as before,
 // byte for byte. The screenshot alone, the window and app lists and the releases show no notice: the next acting
 // request is refused with it, so the model cannot act again without meeting it.
+//
+// And its third (#171 M5, the design session's ruling 897): a drag whose answer carries a `notice` (cua-engine's
+// "the page may have started a drag that did not complete", from a Chrome hold that waited for a drag and drop that
+// never came) writes that sentence, and a newline, as the cell's state output, so the model reads it though the drag
+// resolves to nothing, as before. A drag without one writes nothing.
 import {image, one_screenshot, positive_pixels, require_plain_text, text} from './display.mjs';
 
 // The causes of `truncated`, in the order the line names them.
@@ -83,7 +88,10 @@ export function bind_linux_app(sky, window) {
       if ((options == null ? undefined : options.clickCount) !== undefined) request.click_count = options.clickCount;
       return sky.click(request);
     },
-    drag: (from, to) => sky.drag({window, path: [{x: from[0], y: from[1]}, {x: to[0], y: to[1]}]}),
+    async drag(from, to) {
+      const answer = await sky.drag({window, path: [{x: from[0], y: from[1]}, {x: to[0], y: to[1]}]});
+      if (typeof answer?.notice === 'string' && answer.notice !== '') await text(`${answer.notice}\n`);
+    },
     scroll(target, direction, distance) {
       if (typeof distance == 'number') throw new Error('Linux scroll accepts { pixels }, not pages.');
       const request = {window, direction};

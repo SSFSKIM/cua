@@ -1,0 +1,36 @@
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794879204.279633542
+---
+> mtime ~/.config/google-chrome 1794879981.447380295
+all-clear: clear
+--- V4 exit 0
+--- owner-baseline
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-Kffkr6
+args: --vendor /Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine --scene chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-xterm,device-qt --ops type_text,focus_change,focus_change_takeover,silent_owner,concurrent,contention,late_page,ignored_page,restore_refused,gte_type_text_shared,stalled_incr,late_convert,unreadable,gtk4_click_shared,gtk4_click_dedicated,gtk4_key_shared,gtk4_key_dedicated,gtk4_key_down_shared,gtk4_right_click_shared,gtk4_element_click,gtk4_scroll_shared,gtk4_scroll_dedicated,gtk4_move_shared,gtk4_move_dedicated,gtk4_drag_shared,gtk4_drag_dedicated,xterm_key_shared,xterm_key_dedicated,xterm_click_shared,qt_scroll_shared,qt_scroll_dedicated --blocks 3 --run pinned-V4 --pinned
+started 2026-11-17T01:33:37Z finished 2026-11-17T01:59:58Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794879204.279633542
+---
+> mtime ~/.config/google-chrome 1794879981.447380295
+--- pointer
+pointer at start 142 130
+pointer restored to 142 130, reads 142 130 
+--- wrap.out tail
+case paste-target late_convert 2: PASS
+case paste-target unreadable 0: PASS
+case gnome-text-editor restore_refused 0: PASS
+run valid; acceptance on the pinned release: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0; text windows a lane ended (a vendor's restarted, never scored): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/out-x64/V4.pinned-release/run/results.jsonl
+{"exit": 0, "samples": 11982, "maps_samples": 3995, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 4624, "browsers": 183}
+--- all-clear
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 0

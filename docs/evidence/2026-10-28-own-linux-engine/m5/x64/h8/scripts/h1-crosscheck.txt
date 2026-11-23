@@ -1,0 +1,39 @@
+
+## | load | rule | drags | predicted never | false negatives | of them after the path | true negatives | cells of the false negatives |
+- idle | role:range: =
+- idle | role:text: =
+- idle | role:canvas: =
+- idle | role:any: =
+- idle | role:any-hit-chain: =
+- idle | xdnd-aware: =
+
+## | load | signal | drags | drops | leaves | true positives | false negatives | false positives | true negatives | indeterminate drops / leaves | false positives, indeterminates counted | drop latency p50 / p95 / max (ms) |
+- idle | activation: =
+- idle | accept cursor at the release: true positives 67/200 → 63/200 (Fisher p 0.749); false negatives 51/200 → 58/200 (Fisher p 0.501); indeterminate drops / leaves 82 / 0 → 79 / 0
+
+## | load | lane | cell | drags | released at the accept | false releases | at the ceiling | of them not landed | accept after the take p50 / p95 / max (ms) | answer median (ms) |
+
+## | load | lane | cell | drags | took | late takes | answered ok | landed | take after the release p50 / max (ms) |
+- idle | cua | plain: =
+- idle | cua:handle | plain: =
+
+## | cell | covered part | cover | drags | survived | start role |
+
+## | lane | cell | drags | end not verified | landed | ok, nothing pending | unconfirmed | other notice | error | false ok | landed, unconfirmed (move or link / cold handle at load / other) | (H8 adds: stale-position drops | ambiguous; shown apart)
+- cua | plain: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua | left: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua | inzone-out: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:desktop | root: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:desktop | xterm: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:desktop | other: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:desktop | slow: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | plain: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | left: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | inzone-out: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | root: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | xterm: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | other: = [H8 only: stale-position drops 0; ambiguous 0]
+- cua:handle | slow: = [H8 only: stale-position drops 0; ambiguous 0]
+
+counts with a denominator that differ: 2; beyond chance (p < 0.01): 0
+h1-compare exit 0

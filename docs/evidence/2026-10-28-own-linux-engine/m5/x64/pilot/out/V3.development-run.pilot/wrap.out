@@ -1,0 +1,70 @@
+development run, not a release gate; candidate: sha256 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.0 (c55c8e08d9cb); attestation not checked (a development run)
+negative check: the witness failed the activating stub (stacking, focus, active); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 23; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 319; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 5; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 303; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 310; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 301; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 2; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 305; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 11; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 317; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 301; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 302; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 302; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 302; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 2; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 314; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 312; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 319; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 5; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 301; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 2; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 320; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 4; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 321; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 316; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 6; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 316; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 304; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 2; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 310; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 319; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 309; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 312; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 7; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 301; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 13; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 315; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 311; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 316; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 6; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 309; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 9; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 301; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 302; back to the top
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+cua171-diff-m4-dev-V3-pilot-08966653-input-pinned: the scroll series ended at 339; back to the top
+cua171-diff-m4-dev-V3-pilot-08966653-input-newest: the scroll series ended at 339; back to the top
+run valid; development run, not a release gate: no verdict FAIL; declared refusal (a loss, not a pass): chrome-input drag cua; declared unconfirmed (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua; declared gap (a loss, not a pass): chrome-input activate_window cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/pilot-x64/out/V3.development-run.pilot/run/results.jsonl
+{"exit": 0, "samples": 16258, "maps_samples": 5420, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1549, "browsers": 48}

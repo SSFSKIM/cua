@@ -2,11 +2,15 @@
 // service" and "Process model"; Interfaces): the service's one cua-engine, a stdio child of the trusted worker.
 //
 // Starting. Before each start the client runs `<engine> --version` and refuses an engine older than
-// MIN_ENGINE_VERSION, the oldest whose wire this service relies on (0.4.0: `animated_action`, which the settle reads), or one whose
-// version line it cannot read; nothing is spawned then. It spawns `<engine> server --desktop <mode>` and sends
-// `capabilities` as the new process's first request, keeping that process's answer. A request may carry a check of the
-// report, made against the process the request is then written to. Requests made while it starts wait for it, in call
-// order.
+// MIN_ENGINE_VERSION, the oldest whose wire and behaviour this service relies on (0.4.0: `animated_action`, which the settle
+// reads; 0.4.1: an Electron drop settled before its release, so its ok is never a drop that did not land; 0.4.2: a
+// Chromium-family drag held until its page can take it, so a drag Chrome refused never answers as a plain one, and the
+// hold's notice beside the ok; 0.4.3: a long Chrome drag and a Chrome source's drag-handle end released on a tail that
+// refreshes Chrome's drop status at the path's end, for #459's drops on a position the path had left, which 0.4.2
+// answered ok under load; a residual is measured and bounded, not zero), or one whose version line it cannot read;
+// nothing is spawned then. It spawns `<engine> server --desktop <mode>` and sends `capabilities` as the new process's
+// first request, keeping that process's answer. A request may carry a check of the report, made against the process the request is then written to. Requests
+// made while it starts wait for it, in call order.
 //
 // The wire is the vendor's (R/A §1.6): one `{id, command, input}` line per request on stdin, ids increasing from 1 for
 // the client's life; each stdout line `{id, ok, output | error, restart?}` settles the pending request with that id, so
@@ -23,7 +27,7 @@
 import {execFile, spawn} from 'node:child_process';
 import {heldRecordStdio} from './held-record.mjs';
 
-export const MIN_ENGINE_VERSION = '0.4.0';
+export const MIN_ENGINE_VERSION = '0.4.3';
 const STDERR_TAIL = 8192;
 const VERSION_TIMEOUT_MS = 5000;
 const REMEDY = 'run cua install --engine';

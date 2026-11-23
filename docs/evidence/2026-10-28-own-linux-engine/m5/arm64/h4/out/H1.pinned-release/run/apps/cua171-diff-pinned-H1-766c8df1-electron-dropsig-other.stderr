@@ -1,0 +1,5 @@
+[1531364:1118/144156.037932:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.filetransfer to kAtomsToCache
+[1531364:1118/144156.038045:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.files to kAtomsToCache
+[1531398:1118/145008.724937:ERROR:components/viz/service/display/display.cc:271] Frame latency is negative: -0.099 ms
+[1531364:1118/145733.379614:ERROR:content/browser/network_service_instance_impl.cc:650] Network service crashed or was terminated, restarting service.
+[1531364:1118/145733.385859:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote

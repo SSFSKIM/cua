@@ -14,6 +14,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { watchAncestry } from '../../scripts/linux-engine-diff/audit.mjs';
+import { lifecycleAudit } from '../../scripts/linux-engine-diff/run.mjs';
 import { XPROBE } from '../../scripts/linux-engine-diff/xtools.mjs';
 
 const proxy = { display: ':cua171-test-ancestry', env: { PATH: process.env.PATH, DISPLAY: ':cua171-test-ancestry', XAUTHORITY: '/nonexistent/cua171-proxy-auth' } };
@@ -111,5 +112,9 @@ test("the route audit watches its window's ancestry before the engine starts, an
   const watched = pass.indexOf('watchAncestry(p, ');
   assert.ok(watched > 0, 'the audit pass starts the watcher on its proxy');
   assert.ok(watched < pass.indexOf('makeEngine('), 'before the engine connects');
-  assert.match(pass, /const clean = audited\.clean && foreign\.length === 0 && ancestry\.watched;/);
+  // every lifecycle's watch (one per audit lifecycle, a recovered window's included: M5's T4 fix wave 1)
+  assert.match(pass, /= lifecycleAudit\(judgedSegments\);/, "the audit's record is judged from every lifecycle");
+  const lifecycle = (watched) => ({ audited: { clean: true, traced: true, requests: 1, forbidden: [] }, judgedForeign: { foreign: [] }, ancestry: { watched }, watch: { chain: [] } });
+  assert.equal(lifecycleAudit([lifecycle(true), lifecycle(true)]).judged.clean, true);
+  assert.equal(lifecycleAudit([lifecycle(true), lifecycle(false)]).judged.clean, false, "the second lifecycle's watch failed");
 });

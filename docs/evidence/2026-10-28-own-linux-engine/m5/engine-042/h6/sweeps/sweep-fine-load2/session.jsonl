@@ -1,0 +1,4 @@
+{"t":"2026-11-20T19:58:31.741Z","label":"development run, not a release gate (task 121, sweep-fine-load2)","kind":"server","display":":1","pid":913045}
+{"t":"2026-11-20T19:58:32.115Z","label":"development run, not a release gate (task 121, sweep-fine-load2)","kind":"setup","openbox":913052,"person":"8388620"}
+{"t":"2026-11-20T20:02:56.940Z","label":"development run, not a release gate (task 121, sweep-fine-load2)","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-20T20:02:57.955Z","label":"development run, not a release gate (task 121, sweep-fine-load2)","kind":"server-stopped","clean":true,"reason":null}

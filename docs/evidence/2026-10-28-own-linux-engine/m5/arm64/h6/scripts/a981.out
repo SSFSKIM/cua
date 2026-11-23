@@ -1,0 +1,7 @@
+2026-11-21T08:46:40Z start smoke at bb4d7c1f0925fb80411fba285b479676d16217ef, df 109G load=7.51 9.49 11.10
+development run, not a release gate (task 122, ruling 981 on m5-a959 bb4d7c1f, set smoke): {"code":0,"signal":null,"clean":true,"reason":null}
+2026-11-21T09:02:28Z end smoke exit 0 load=10.29 3.42 5.08
+2026-11-21T09:02:28Z start run at bb4d7c1f0925fb80411fba285b479676d16217ef, df 109G load=10.29 3.42 5.08
+development run, not a release gate (task 122, ruling 981 on m5-a959 bb4d7c1f, set run): {"code":0,"signal":null,"clean":true,"reason":null}
+2026-11-21T09:20:10Z end run exit 0 load=17.28 17.03 13.55
+2026-11-21T09:20:10Z a981 done: smoke run

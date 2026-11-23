@@ -1,0 +1,5 @@
+# x64 out/L4c.pinned-release: the drop-signals verdict re-judged at 74a5a91a (task 139; the final review's P2s)
+
+run pinned-L4c: chrome t14-late, gate pinned, lanes null, trials null, judge chromeDropVerdict
+  stored: pass
+  now: pass

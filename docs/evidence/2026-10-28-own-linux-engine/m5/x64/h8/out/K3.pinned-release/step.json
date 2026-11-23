@@ -1,0 +1,50 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "K3",
+  "pilot": false,
+  "what": "the hold's regression cells: drops whose page starts them 150 and 400 ms late land inside B, the engine sandboxed (ruling 900)",
+  "display": "private",
+  "load": "idle",
+  "minutes": 6,
+  "run_name": "pinned-K3",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/",
+    "commit": "048140a2bde0f6398cc910c1aa14ecf2e7e51004",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-x64-043/engine/linux/cua-engine",
+    "sha256": "f1513e79f4efdb3dd950e108fec05ce59b090926907a3071ee65ca3899d4921f"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-x64-043",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64/scripts/linux-engine-gate/gate.mjs run K3 --pinned /Users/new/.local/share/cua-171/m5/home-x64-043 --out /Users/new/.local/share/cua-171/m5/out-x64-h8",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "chrome",
+    "--plan",
+    "hold-regression",
+    "--engine-sandbox",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-x64-043/engine/linux/cua-engine",
+    "--run",
+    "pinned-K3",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-x64-h8/K3.pinned-release/run"
+  ],
+  "started": "2026-11-22T03:24:58.471Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-22T03:26:08.018Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

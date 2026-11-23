@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import { rmSync } from 'node:fs';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { QT_ALWAYS_ON, qtBridgeRefusal, readStatus, setSwitch } from '../../scripts/linux-engine-diff/a11y-status.mjs';
 import { openFamily } from '../../scripts/linux-engine-diff/families.mjs';

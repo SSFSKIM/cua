@@ -1,0 +1,28 @@
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+all-clear: clear
+--- Z0 exit 0
+--- owner-baseline
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-9yUq02
+args: --experiment drag --vendor /Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --occlusion visible --family firefox,writer --ops dnd,select --cua /Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine --run pinned-Z0 --pinned
+started 2026-11-17T03:57:19Z finished 2026-11-17T04:08:05Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference
+--- pointer
+pointer at start 142 130
+pointer restored to 142 130, reads 142 130 
+--- wrap.out tail
+
+Cells where a cua lane missed a run the pinned build took: firefox dnd (cua:0ms).
+
+The judges' verdict for `cua`: PASS.
+acceptance on the pinned release: pinned-Z0 complete
+{"exit": 0, "samples": 4649, "maps_samples": 1551, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 372, "browsers": 27}
+--- all-clear
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 0

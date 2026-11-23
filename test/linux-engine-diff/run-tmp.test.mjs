@@ -11,6 +11,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
@@ -49,10 +51,13 @@ function standIns() {
   tool('xwininfo', 'echo "xwininfo: Window id: 0x293 (the root window) (has no name)"');
   tool('xprop', 'echo "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0"');
   tool('xdotool', 'exit 0');
-  // the application and the engine each write their TMPDIR and exit (the engine once its stdin closes)
-  tool('qtcreator-standin', `printf '%s' "\${TMPDIR-unset}" > ${JSON.stringify(join(dir, 'app.tmpdir'))}`);
+  // the application and the engine each write their TMPDIR and exit (the engine once its stdin closes), each by a
+  // rename, so the file appears whole: the test reads it as soon as it exists, and a file written in place exists empty
+  // first (an application's TMPDIR read as '' once, under the whole suite)
+  const app = join(dir, 'app.tmpdir');
+  tool('qtcreator-standin', `printf '%s' "\${TMPDIR-unset}" > ${JSON.stringify(`${app}.part`)} && mv ${JSON.stringify(`${app}.part`)} ${JSON.stringify(app)}`);
   const engine = join(dir, 'engine-standin');
-  writeFileSync(engine, `#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(join(dir, 'engine.'))} + process.pid, process.env.TMPDIR ?? 'unset');\nprocess.stdin.resume();\n`);
+  writeFileSync(engine, `#!${process.execPath}\nconst fs = require('fs');\nconst file = ${JSON.stringify(join(dir, 'engine.'))} + process.pid;\nfs.writeFileSync(file + '.part', process.env.TMPDIR ?? 'unset');\nfs.renameSync(file + '.part', file);\nprocess.stdin.resume();\n`);
   chmodSync(engine, 0o755);
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${delimiter}${saved}`;
@@ -62,7 +67,7 @@ function standIns() {
   };
   return {
     engine,
-    appTmpdir: () => read(join(dir, 'app.tmpdir')),
+    appTmpdir: () => read(app),
     engineTmpdir: (pid) => read(join(dir, `engine.${pid}`)),
     done() {
       process.env.PATH = saved;

@@ -1,0 +1,2 @@
+{"t": 323.092, "kind": "own-audit-proxy-not-accepted", "pids": [1059650], "comm": null, "peer_path": "/tmp/.X11-unix/X40", "peer_inode": "241684457", "proxy_pid": 1038480, "proxy_display": ":40"}
+{"t": 1780.375, "kind": "own-audit-proxy-not-accepted", "pids": [1154313], "comm": null, "peer_path": "/tmp/.X11-unix/X40", "peer_inode": "242414674", "proxy_pid": 1038480, "proxy_display": ":40"}

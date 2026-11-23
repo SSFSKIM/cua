@@ -7,7 +7,7 @@
 // starts nothing.
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
-import {DEFAULT_NATIVE_ENGINE, replHostFor} from '../../src/runtime/launch.mjs';
+import {defaultNativeEngine, replHostFor} from '../../src/runtime/launch.mjs';
 import {EXECUTABLE} from '../../src/runtime/engine-bundle.mjs';
 import {plistString, socketPathFor} from '../../src/services/engine/client.mjs';
 import {pinnedEngine} from './lib.mjs';
@@ -24,7 +24,7 @@ export function pinLane({flag, env, home, surfaces, platform = process.platform}
   if (flag !== undefined && !engineDriven) throw new LaneUsageError('--engine applies only to the computer surface on macOS');
   let pin = null;
   if (engineDriven) {
-    try { pin = pinnedEngine({flag, env, defaultEngine: DEFAULT_NATIVE_ENGINE}); } catch (error) { throw new LaneUsageError(error.message); }
+    try { pin = pinnedEngine({flag, env, defaultEngine: defaultNativeEngine(platform)}); } catch (error) { throw new LaneUsageError(error.message); }
   }
   return {pin, serveEnv: {...env, CUA_HOME: home, ...(pin ? {CUA_NATIVE_ENGINE: pin.engine} : {})}};
 }

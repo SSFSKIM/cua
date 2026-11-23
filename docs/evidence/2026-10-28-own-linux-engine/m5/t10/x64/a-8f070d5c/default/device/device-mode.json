@@ -1,0 +1,49 @@
+{
+ "engine": null,
+ "engineBin": null,
+ "selection": {
+  "mode": "default",
+  "selected": "vendor",
+  "reason": "default",
+  "row": "skip"
+ },
+ "text": "cua171 안녕 é 🙂\nline2",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "display": ":1",
+    "engine": null,
+    "mode": "default",
+    "xprobe": true
+   }
+  },
+  {
+   "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+   "status": "PASS"
+  },
+  {
+   "name": "the default selects cua's engine (cua doctor --json)",
+   "status": "FAIL",
+   "detail": {
+    "mode": "default",
+    "selected": "vendor",
+    "reason": "default",
+    "row": "skip",
+    "doctorExit": 0,
+    "problem": "the session selects vendor (default), not cua's engine by default"
+   }
+  },
+  {
+   "name": "cleanup: every process the fixture started has exited, the witness stopped, and its directory removed after them",
+   "status": "PASS",
+   "detail": {
+    "processes": [],
+    "witnessStopped": true,
+    "removed": true
+   }
+  }
+ ],
+ "status": "FAIL"
+}

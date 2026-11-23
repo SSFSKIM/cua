@@ -1,0 +1,2 @@
+step.sh 2026-11-19T06:34:57Z start D3 after 0 s quiet wait: load=0.64 5.74 10.30 stress-ng=none flags=[--dev --pilot 2 --engine-stats]
+step.sh 2026-11-19T06:36:31Z end D3 exit 0 load=0.85 4.48 9.41

@@ -1,0 +1,2 @@
+step.sh 2026-11-18T19:55:39Z start P5 after 120 s quiet wait: load=0.93 1.12 0.58 stress-ng=none
+step.sh 2026-11-18T20:14:02Z end P5 exit 0 load=0.23 0.27 0.36

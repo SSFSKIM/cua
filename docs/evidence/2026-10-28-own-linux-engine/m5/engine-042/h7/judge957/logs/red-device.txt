@@ -1,0 +1,131 @@
+✔ a refused request is audited for nothing sent: a SendEvent of any kind, or XTEST input, fails it (4.49449ms)
+✔ Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background (1.649246ms)
+✔ a refusal passes only with the exact sentence, nothing changed, the witness unchanged and nothing sent (1.537387ms)
+✔ a foreground case passes only with its effect, the foreground route recorded and its window left active (0.519565ms)
+✔ capabilities answers the X11 backend's report for the engine's own version and build (0.631374ms)
+✔ a declared refusal is a recorded loss: listed apart, never a pass, not a failure; only the Device mode sentence matches (0.784061ms)
+✔ Chrome's drag-and-drop answers mirror the engine's (dnd.rs), and the cancel's is the declared refusal's (0.338586ms)
+✔ a cancelled drag and drop passes only with the cancel sentence, nothing dropped, the witness unchanged and no XTEST (2.581006ms)
+✔ a cancel forced too late passes only if every answer is honest and the drop was seen at least once (1.030425ms)
+✖ the in-front drop passes only where the engine recorded the window in front and the desktop ended as it began (1.814827ms)
+✔ V5's cells: an ok with the hold's exact notice is honest only where the page shows no drop, and a false alarm where it dropped (1.551172ms)
+✔ the hold canary: a draggable press must read slow at least once, a warm plain drag never, and Chrome must be identified (2.219447ms)
+✔ GTK 4's scale is dragged away from where it stands, whichever sample of whichever block (0.269075ms)
+✔ with the signature already held, the cases pass only where the engine watched the drag and recorded the bits held (0.506442ms)
+✔ the forced late take passes only where the drag answered plainly, the read carried the notice, the next request was refused with it, and the witness saw the drop (1.191017ms)
+✔ a cancel case's take after the release is judged by the late-take rules; one before the release still needs the sentence (ruling 756) (2.559256ms)
+✔ an unconfirmed drop's refusal is dnd.rs's, naming the request not run (0.140324ms)
+✔ an unanswered drop's notice and refusal are dnd.rs's, under the unconfirmed drop's kind (M5's ruling 827) (0.318819ms)
+✔ a drop case's notice holds only with the next acting request refused with it (the harness-fix wave): without the refusal it excuses nothing (0.616738ms)
+✖ a landed drop reported unconfirmed is honest, counted apart; a false ok fails its case (the design session, 2026-11-10) (0.680258ms)
+✔ a run's landed drops reported unconfirmed are a finding only above 5% of its landed drops (0.375324ms)
+✔ a Chromium drag a stray pointer event may have reset passes only with the engine's sentence, nothing dropped, the witness unchanged and the background audit clean (0.521511ms)
+✔ every Chromium case that takes the background route parks the real pointer in its window first, so no case depends on where the one before left it (0.189655ms)
+✔ the pointer allowance lifts the pointer field alone, and only for a case whose harness moves the pointer (0.248407ms)
+✔ a case's pointer goes only onto the root or a live window of the run's, read at the point just before each move (2.720698ms)
+✔ a case's park is verified where it landed, over the run's window on top at the point, and refused elsewhere (1.032559ms)
+✔ a drag-and-drop sample's pointer log must be its own press's: a stale or unread log fails the case (V5's in-zone sample) (0.387759ms)
+✔ a late case proves something only on its late branch: a sample Chrome took no drag and drop for by the release is unexercised, and every sample's notice is held to the next acting request's refusal (0.96375ms)
+✔ the late cases drag along a path that lingers in the drop zone, so Chrome's take comes before the release at the gate's load (0.726564ms)
+✔ after a late case's answer, the notice and the next acting request's answer are read through the engine, the watch's raw record kept with each request's id (1615.574917ms)
+✔ a drop case whose next acting request was refused with no notice on the read breaks T14's contract (0.586571ms)
+✖ ruling 957 in the device scene: a drop on the target from a drag whose path ended outside it is a drop at a stale position, never landed, and fails its case (1.137246ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 29
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1837.211893
+
+✖ failing tests:
+
+test at test/linux-engine-diff/device.test.mjs:177:1
+✖ the in-front drop passes only where the engine recorded the window in front and the desktop ended as it began (1.814827ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+      drops: {
+  -     ambiguous: 0,
+        false_ok: 0,
+        landed: 1,
+        ok: 1,
+        samples: 1,
+  -     stale_position: 0,
+        unconfirmed_landed: 0
+      },
+      pass: true,
+      reasons: []
+    }
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-p2/test/linux-engine-diff/device.test.mjs:182:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } },
+    expected: { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 0, ambiguous: 0 } },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/device.test.mjs:490:1
+✖ a landed drop reported unconfirmed is honest, counted apart; a false ok fails its case (the design session, 2026-11-10) (0.680258ms)
+  AssertionError [ERR_ASSERTION]: chrome_dnd_in_front_shared
+  + actual - expected
+  
+    {
+      drops: {
+  -     ambiguous: 0,
+        false_ok: 0,
+        landed: 1,
+        ok: 1,
+        samples: 1,
+  -     stale_position: 0,
+        unconfirmed_landed: 0
+      },
+      pass: true,
+      reasons: []
+    }
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-p2/test/linux-engine-diff/device.test.mjs:496:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } },
+    expected: { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 0, ambiguous: 0 } },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/device.test.mjs:779:1
+✖ ruling 957 in the device scene: a drop on the target from a drag whose path ended outside it is a drop at a stale position, never landed, and fails its case (1.137246ms)
+  AssertionError [ERR_ASSERTION]: chrome_dnd_inzone_out_in_front_shared
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-p2/test/linux-engine-diff/device.test.mjs:791:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

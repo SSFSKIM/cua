@@ -1,0 +1,50 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "F1b",
+  "pilot": false,
+  "what": "T7 revised on the shipped engine: click then paste, a click into another field then paste",
+  "display": "own",
+  "load": "idle",
+  "minutes": 12,
+  "run_name": "pinned-F1b",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/",
+    "commit": "f6275fb600ae719f29cf32b206676e1a70a02e26",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64/engine/linux/cua-engine",
+    "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t7-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/gate.mjs run F1b --pinned /Users/new/.local/share/cua-171/m5/home-arm64 --out /Users/new/.local/share/cua-171/m5/out-arm64",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "focus-timer",
+    "--scenarios",
+    "click-paste,click-field",
+    "--lanes",
+    "shipped",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64/engine/linux/cua-engine",
+    "--run",
+    "pinned-F1b",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64/F1b.pinned-release/run"
+  ],
+  "started": "2026-11-18T16:31:10.365Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T16:40:58.274Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unclean": [
+    "a process it spawned still runs: pid 1091564 openbox"
+  ]
+}

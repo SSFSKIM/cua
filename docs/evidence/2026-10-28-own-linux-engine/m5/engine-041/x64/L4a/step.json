@@ -1,0 +1,54 @@
+{
+  "label": "development run, not a release gate",
+  "step": "L4a",
+  "pilot": true,
+  "what": "T17's Electron cells at twice the load",
+  "display": "private",
+  "load": "load2",
+  "minutes": 25,
+  "run_name": "m5-dev-L4a-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a817caeccef5345cc/",
+    "commit": "2d8f6ad962960150f0728a004a2a87372c56d499",
+    "clean": false
+  },
+  "candidate": {
+    "path": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a817caeccef5345cc/native/linux-engine/target/release/cua-engine",
+    "sha256": "cb879d77133076707aee1c16d267e489f4366488dc0bafcac2dc6e8f5b2abbab"
+  },
+  "pinned_home": null,
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-engine041 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a817caeccef5345cc/scripts/linux-engine-gate/gate.mjs run L4a --candidate /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a817caeccef5345cc/native/linux-engine/target/release/cua-engine --out /Users/new/.local/share/cua-171/task101/out-x64/gate --dev --pilot 100",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--load-factor",
+    "2",
+    "--trials",
+    "100",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a817caeccef5345cc/native/linux-engine/target/release/cua-engine",
+    "--run",
+    "m5-dev-L4a-pilot",
+    "--pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/task101/out-x64/gate/L4a.development-run.pilot/run"
+  ],
+  "started": "2026-11-18T12:24:50.983Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T12:44:13.964Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unjudged": [],
+  "unclean": []
+}

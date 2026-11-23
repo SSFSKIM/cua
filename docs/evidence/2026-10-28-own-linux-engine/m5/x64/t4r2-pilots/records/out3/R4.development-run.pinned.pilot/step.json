@@ -1,0 +1,114 @@
+{
+  "label": "development run on the pinned release, not acceptance, never counted",
+  "step": "R4",
+  "pilot": true,
+  "what": "scripts/accept/linux-device-mode.mjs on the candidate",
+  "display": "own",
+  "load": "idle",
+  "minutes": 3,
+  "run_name": null,
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a458977939f1feb0d/",
+    "commit": "a2bb0f8ac865949bae54e9d9618c30eb9ff25de8",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5-t4r2/home/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca",
+    "record": {
+      "gate": "pinned-dev",
+      "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca",
+      "target": "x86_64-unknown-linux-musl",
+      "linkage": "static-pie",
+      "version": "cua-engine 0.4.0 (c55c8e08d9cb)",
+      "commit": "a2bb0f8ac865949bae54e9d9618c30eb9ff25de8",
+      "clean": true,
+      "attestation": {
+        "verified": true,
+        "signer_workflow": "SSFSKIM/cua/.github/workflows/linux-engine.yml",
+        "attestations": [
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+            "source_ref": "refs/heads/release/linux-engine-v0.4.0",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/release/linux-engine-v0.4.0",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43637317960/attempts/1",
+            "runner": "github-hosted"
+          },
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+            "source_ref": "refs/heads/feat/171-m4",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/feat/171-m4",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43608161213/attempts/1",
+            "runner": "github-hosted"
+          }
+        ]
+      },
+      "pin": {
+        "arch": "x64",
+        "version": "0.4.0",
+        "release": "linux-engine-v0.4.0",
+        "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+      },
+      "installed": {
+        "path": "/Users/new/.local/share/cua-171/m5-t4r2/home/engine/linux/install.json",
+        "build": "pinned",
+        "release": "linux-engine-v0.4.0",
+        "version": "0.4.0",
+        "installedAt": "2026-11-15T11:03:19.776Z"
+      },
+      "engine_tree": {
+        "path": "native/linux-engine",
+        "commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+        "equal": true
+      }
+    }
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5-t4r2/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-t4r2 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a458977939f1feb0d/scripts/linux-engine-gate/gate.mjs run R4 --pinned /Users/new/.local/share/cua-171/m5-t4r2/home --out /Users/new/.local/share/cua-171/m5-t4r2/out3 --pilot 1",
+  "argv": [
+    "scripts/linux-engine-gate/suites.sh",
+    "device"
+  ],
+  "env": {
+    "ENGINE": "installed",
+    "OUT": "/Users/new/.local/share/cua-171/m5-t4r2/out3/R4.development-run.pinned.pilot/run",
+    "LOGS": "/tmp/cua171-gl-MS9I8M",
+    "LABEL": "pilot",
+    "PINNED_RULE": "enforce",
+    "DEVICE": "cua-171"
+  },
+  "started": "2026-11-15T12:19:11.007Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-15T12:20:16.958Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unjudged": [],
+  "unclean": []
+}

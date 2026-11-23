@@ -148,9 +148,15 @@ fn takes_input(a: &Above) -> bool {
     a.viewable && !a.own
 }
 
+/// Whether the root point `p` lies in `window` and inside every ancestor: a point the foreground route waits for the
+/// window to be on top at ([`reach`]). Real pointer input at any other point goes to whatever is there.
+pub fn inside(window: Rect, levels: &[Level], p: (i32, i32)) -> bool {
+    window.contains_point(p) && levels.iter().all(|level| level.clip.contains_point(p))
+}
+
 /// [`Reach`] of real pointer input at `points` (root coordinates) into `window`.
 pub fn reach(window: Rect, levels: &[Level], points: &[(i32, i32)]) -> Reach {
-    let inside = |p| window.contains_point(p) && levels.iter().all(|level| level.clip.contains_point(p));
+    let inside = |p| inside(window, levels, p);
     let under_another = |p| {
         levels
             .iter()
@@ -505,6 +511,20 @@ mod tests {
         let (w, mut levels) = framed(rect(0, 20, 1000, 780), vec![]);
         levels[0].above.push(above(rect(290, 90, 20, 20)));
         assert_eq!(reach(w, &levels, &[(300, 100)]), Reach::Covered);
+    }
+
+    #[test]
+    fn a_point_is_inside_the_window_only_within_its_rectangle_and_every_ancestor() {
+        let (w, levels) = framed(rect(100, 100, 400, 300), vec![above(rect(0, 0, 1280, 800))]);
+        assert!(inside(w, &levels, (100, 100)), "its corner, covered or not");
+        assert!(!inside(w, &levels, (99, 150)), "beside it");
+        assert!(!inside(w, &levels, (500, 150)), "past its right edge");
+        assert!(!inside(w, &levels, (300, 90)), "its frame's title bar");
+        // clipped by its frame: the part outside the frame is not where input reaches it
+        let (w, mut levels) = framed(rect(100, 100, 400, 300), vec![]);
+        levels[0].clip = rect(95, 75, 200, 330);
+        assert!(inside(w, &levels, (250, 150)));
+        assert!(!inside(w, &levels, (350, 150)), "outside its frame");
     }
 
     #[test]

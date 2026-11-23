@@ -1,0 +1,28 @@
+== rejudge-late-take-window.mjs /Users/new/Developer/GitHub/cua/.claude/worktrees/t5-x64 /Users/new/.local/share/cua-171/m5/out-x64-rerun1/V5.pinned-release/run/results.jsonl
+# pinned-V5 re-judged with the witness span's limit on a late take's drop (the design session, 2026-11-14 (sminos 680))
+label: release gate; candidate 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca (cua-engine 0.4.0 (c55c8e08d9cb)); /Users/new/.local/share/cua-171/m5/out-x64-rerun1/V5.pinned-release/run/results.jsonl
+
+| verdict row | stored | re-judged | why |
+|---|---|---|---|
+| device-chrome-dnd chrome_dnd_shared cua | fail | fail | stored verdict |
+| device-chrome-dnd chrome_dnd_late_take_shared cua | fail | pass | 9 samples; the witness span's limit: 0/0 (dragend 190 ms after the press, answer 162.14 ms + 20); every other rule passes |
+
+rows: 52; failing: device-chrome-dnd chrome_dnd_shared cua
+coverage: 52 of the step's 52 operations (V5) with a verdict
+replaced by the ruling: device-chrome-dnd chrome_dnd_late_take_shared cua
+other terminal failures retained: device-chrome-dnd chrome_dnd_shared cua
+run problems: the run's own failure: device-chrome-dnd chrome_dnd_shared cua
+VERDICT (the run's verdicts, chrome_dnd_late_take_shared with the witness span's limit): FAIL
+== exit 1
+== controls: rejudge-late-take-controls.mjs
+// usage: node rejudge-late-take-controls.mjs <harness checkout> <results.jsonl>
+BAD  the stored rows: FAIL (expected PASS): run problems: the run's own failure: device-chrome-dnd chrome_dnd_shared cua
+ok   the notice missing on the span-limited sample: FAIL (expected FAIL): the candidate's judge does not reproduce the stored reasons (the read did not carry the notice on 1 of 9 samples (0/0); a drop the witness did not record on 1 of 9 samples (0/0)); 0/0: not the span's limit: the read did not run with the notice; the case without them: the read did not carry the notice on 1 of 9 samples (0/0); a drop the witness did not record on 1 of 9 samples (0/0)
+ok   its next acting request not refused: FAIL (expected FAIL): the candidate's judge does not reproduce the stored reasons (the next acting request did not carry the late drag and drop on 1 of 9 samples (0/0); a drop the witness did not record on 1 of 9 samples (0/0)); 0/0: not the span's limit: the next acting request was not refused with the notice; the case without them: the next acting request did not carry the late drag and drop on 1 of 9 samples (0/0); a drop the witness did not record on 1 of 9 samples (0/0)
+ok   its drop early: a clean witness on a drop that ended inside the span: FAIL (expected FAIL): 0/0: not the span's limit: the dragend (162 ms after the press) came before the span closed (answer 162.14 + 20 ms); the case without them: a drop the witness did not record on 1 of 9 samples (0/0)
+ok   no drop in the case the witness recorded: FAIL (expected FAIL): the candidate's judge does not reproduce the stored reasons (a drop the witness did not record on 7 of 9 samples (0/0, 0/1, 0/2); no drop landed: the case showed no change for the notice to report); the case without them: no drop landed: the case showed no change for the notice to report
+ok   a change to a window the harness did not open, at the run's cleanup: FAIL (expected FAIL): run problems: the run's own failure: device-chrome-dnd chrome_dnd_shared cua; the run's own failure: a window the harness did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised)
+ok   preparation failures over the cap (the rule failed, and its failure in the end row): FAIL (expected FAIL): run problems: the preparation-fault rule did not pass (device-chrome-dnd chrome_dnd_shared: 5 of 18 samples resampled or invalid (5 resampled, 0 invalid), more than the case's cap of 2); the run's own failure: device-chrome-dnd chrome_dnd_shared cua; the run's own failure: harness preparation failures over the cap (device-chrome-dnd chrome_dnd_shared: 5 of 18 samples resampled or invalid (5 resampled, 0 invalid), more than the case's cap of 2)
+ok   a planned operation with no verdict (its rows gone): FAIL (expected FAIL): run problems: the step's operations with no verdict: identity-kate identity_kate; the run's own failure: device-chrome-dnd chrome_dnd_shared cua
+controls: NOT as expected
+== exit 1

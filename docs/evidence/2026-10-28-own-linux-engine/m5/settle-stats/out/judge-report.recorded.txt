@@ -1,0 +1,472 @@
+== judge
+{
+ "cells": [
+  {
+   "kind": "drag-cell",
+   "family": "chrome",
+   "drag": "select",
+   "route": "background",
+   "expected": {
+    "0": "pha_bravo_charlie_",
+    "1": "a_echo_foxtrot_g"
+   },
+   "pinned_took": 2,
+   "reference": true,
+   "pinned_witness": true,
+   "lanes": {
+    "cua": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": true,
+     "pass": true
+    },
+    "cua:0ms": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": true,
+     "pass": true
+    }
+   },
+   "ms": {
+    "pinned": 449.2,
+    "newest": 322.1,
+    "cua": 129.3,
+    "cua:0ms": 24.1
+   },
+   "received": {
+    "pinned": {
+     "raw": 183,
+     "moves": 183,
+     "raw_events": 182.5,
+     "move_events": 15
+    },
+    "newest": {
+     "raw": 53,
+     "moves": 53,
+     "raw_events": 53,
+     "move_events": 8
+    },
+    "cua": {
+     "raw": 200,
+     "moves": 200,
+     "raw_events": 191,
+     "move_events": 8
+    },
+    "cua:0ms": {
+     "raw": 166.5,
+     "moves": 166.5,
+     "raw_events": 143.5,
+     "move_events": 2
+    }
+   }
+  },
+  {
+   "kind": "drag-cell",
+   "family": "chrome",
+   "drag": "range",
+   "route": "background",
+   "expected": {
+    "0": 75,
+    "1": 25
+   },
+   "pinned_took": 2,
+   "reference": true,
+   "pinned_witness": true,
+   "lanes": {
+    "cua": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": true,
+     "pass": true
+    },
+    "cua:0ms": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": true,
+     "pass": true
+    }
+   },
+   "ms": {
+    "pinned": 441.1,
+    "newest": 318.7,
+    "cua": 128.5,
+    "cua:0ms": 23.4
+   },
+   "received": {
+    "pinned": {
+     "raw": 240,
+     "moves": 240,
+     "raw_events": 239.5,
+     "move_events": 19
+    },
+    "newest": {
+     "raw": 62,
+     "moves": 62,
+     "raw_events": 62,
+     "move_events": 8
+    },
+    "cua": {
+     "raw": 235,
+     "moves": 235,
+     "raw_events": 229.5,
+     "move_events": 9.5
+    },
+    "cua:0ms": {
+     "raw": 211.5,
+     "moves": 211.5,
+     "raw_events": 186,
+     "move_events": 2.5
+    }
+   }
+  },
+  {
+   "kind": "drag-cell",
+   "family": "chrome",
+   "drag": "scroller",
+   "route": "background",
+   "expected": {
+    "0": {
+     "moved": 134
+    },
+    "1": {
+     "moved": 144
+    }
+   },
+   "pinned_took": 2,
+   "reference": true,
+   "pinned_witness": true,
+   "lanes": {
+    "cua": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": true,
+     "pass": true
+    },
+    "cua:0ms": {
+     "took": 0,
+     "n": 2,
+     "misses": [
+      0,
+      1
+     ],
+     "witness": true,
+     "pass": false
+    }
+   },
+   "ms": {
+    "pinned": 280.4,
+    "newest": 261.9,
+    "cua": 62.5,
+    "cua:0ms": 8.7
+   },
+   "reach": {
+    "pinned_mean": 139,
+    "lanes": {
+     "cua": {
+      "reached": 2,
+      "n": 2,
+      "shortest": 146,
+      "mean": 146.5
+     },
+     "cua:0ms": {
+      "reached": 0,
+      "n": 2,
+      "shortest": 0,
+      "mean": 18.5
+     }
+    }
+   },
+   "received": {
+    "pinned": {
+     "raw": 60,
+     "moves": 0,
+     "raw_events": 60,
+     "move_events": 0
+    },
+    "newest": {
+     "raw": 17,
+     "moves": 0,
+     "raw_events": 17,
+     "move_events": 0
+    },
+    "cua": {
+     "raw": 55.5,
+     "moves": 0,
+     "raw_events": 54,
+     "move_events": 0
+    },
+    "cua:0ms": {
+     "raw": 36,
+     "moves": 0,
+     "raw_events": 34,
+     "move_events": 0
+    }
+   }
+  },
+  {
+   "kind": "drag-cell",
+   "family": "chrome",
+   "drag": "dnd",
+   "route": "in-front",
+   "expected": {},
+   "pinned_took": 2,
+   "reference": true,
+   "pinned_witness": false,
+   "lanes": {
+    "cua": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": false,
+     "pass": true
+    },
+    "cua:0ms": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": false,
+     "pass": true
+    }
+   },
+   "ms": {
+    "pinned": 516.3,
+    "newest": 344.8,
+    "cua": 374.7,
+    "cua:0ms": 357.6
+   },
+   "speed": {
+    "cua": {
+     "verdict": "undetermined",
+     "against": null,
+     "bar": null,
+     "candidate": 374.7,
+     "interval": null,
+     "bound": null,
+     "label": null,
+     "failed_bar": [],
+     "reasons": [
+      "cua: 1 usable samples of 2, fewer than 20"
+     ],
+     "usable": {
+      "pinned": 1,
+      "newest": 1,
+      "cua": 1
+     },
+     "sampled": {
+      "pinned": 2,
+      "newest": 2,
+      "cua": 2
+     }
+    },
+    "cua:0ms": {
+     "verdict": "undetermined",
+     "against": null,
+     "bar": null,
+     "candidate": 357.6,
+     "interval": null,
+     "bound": null,
+     "label": null,
+     "failed_bar": [],
+     "reasons": [
+      "cua:0ms: 1 usable samples of 2, fewer than 20"
+     ],
+     "usable": {
+      "pinned": 1,
+      "newest": 1,
+      "cua:0ms": 1
+     },
+     "sampled": {
+      "pinned": 2,
+      "newest": 2,
+      "cua:0ms": 2
+     }
+    }
+   },
+   "received": {
+    "pinned": {
+     "raw": 12,
+     "moves": 12,
+     "raw_events": 11.5,
+     "move_events": 2
+    },
+    "newest": {
+     "raw": 6.5,
+     "moves": 6.5,
+     "raw_events": 6.5,
+     "move_events": 1
+    },
+    "cua": {
+     "raw": 17,
+     "moves": 17,
+     "raw_events": 16.5,
+     "move_events": 1
+    },
+    "cua:0ms": {
+     "raw": 5.5,
+     "moves": 7,
+     "raw_events": 1,
+     "move_events": 1
+    }
+   }
+  },
+  {
+   "kind": "drag-cell",
+   "family": "chrome",
+   "drag": "canvas",
+   "route": "background",
+   "expected": {},
+   "pinned_took": 2,
+   "reference": true,
+   "pinned_witness": true,
+   "lanes": {
+    "cua": {
+     "took": 2,
+     "n": 2,
+     "misses": [],
+     "witness": true,
+     "pass": true
+    },
+    "cua:0ms": {
+     "took": 0,
+     "n": 2,
+     "misses": [
+      0,
+      1
+     ],
+     "witness": true,
+     "pass": false
+    }
+   },
+   "ms": {
+    "pinned": 1194.3,
+    "newest": 513.4,
+    "cua": 476.1,
+    "cua:0ms": 78.6
+   },
+   "speed": {
+    "cua": {
+     "verdict": "undetermined",
+     "against": null,
+     "bar": null,
+     "candidate": 476.1,
+     "interval": null,
+     "bound": null,
+     "label": null,
+     "failed_bar": [],
+     "reasons": [
+      "cua: 1 usable samples of 2, fewer than 20"
+     ],
+     "usable": {
+      "pinned": 1,
+      "newest": 1,
+      "cua": 1
+     },
+     "sampled": {
+      "pinned": 2,
+      "newest": 2,
+      "cua": 2
+     }
+    },
+    "cua:0ms": {
+     "verdict": "undetermined",
+     "against": null,
+     "bar": null,
+     "candidate": null,
+     "interval": null,
+     "bound": null,
+     "label": null,
+     "failed_bar": [],
+     "reasons": [
+      "cua:0ms: 0 usable samples of 2, fewer than 20"
+     ],
+     "usable": {
+      "pinned": 1,
+      "newest": 1,
+      "cua:0ms": 0
+     },
+     "sampled": {
+      "pinned": 2,
+      "newest": 2,
+      "cua:0ms": 2
+     }
+    }
+   },
+   "received": {
+    "pinned": {
+     "raw": 768,
+     "moves": 768,
+     "raw_events": 767,
+     "move_events": 59.5
+    },
+    "newest": {
+     "raw": 195.5,
+     "moves": 195.5,
+     "raw_events": 195.5,
+     "move_events": 20
+    },
+    "cua": {
+     "raw": 763,
+     "moves": 763,
+     "raw_events": 756.5,
+     "move_events": 28.5
+    },
+    "cua:0ms": {
+     "raw": 743,
+     "moves": 743,
+     "raw_events": 659.5,
+     "move_events": 5.5
+    }
+   }
+  }
+ ],
+ "reproduces_recorded_cells": true,
+ "verdict": {
+  "pass": true,
+  "failed": [],
+  "declared": [],
+  "unjudged": [
+   "chrome dnd: cua speed unjudged (a pilot takes no top-up): cua: 1 usable samples of 2, fewer than 20",
+   "chrome canvas: cua speed unjudged (a pilot takes no top-up): cua: 1 usable samples of 2, fewer than 20"
+  ]
+ },
+ "verdict_text": "no FAIL; unjudged in this pilot (not a pass): 2 speeds",
+ "completeness": {
+  "complete": true,
+  "failed": []
+ },
+ "summary_row": [
+  {
+   "complete": true,
+   "failed": []
+  }
+ ]
+}
+== report (summary.md)
+# linux-engine-diff summary
+
+## m5-dev-D1-pilot (experiment drag; development run, not a release gate)
+
+Every engine drags the same path 2 times per family and kind, in its own window (visible), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). `cua:0ms` has no wait after a sample, after the press or before the release.
+The judges (T10), for the shipped lane `cua`: every run takes effect; Chrome's and Electron's thumbs land at or past the pinned build's mean distance of the same sitting; the long paths (Chrome's and Firefox's canvas, Chrome's drag and drop in front) pass on warm speed under Acceptance 3's interval rule, topped up to 40 a side. Every other cua lane is measured, not judged.
+
+| family | kind | pinned took | newest took | cua took | cua:0ms took | newest warm ms | cua warm ms | cua:0ms warm ms | pinned warm ms | witness | judges | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|
+| Chrome | select | 2/2 | 2/2 | 2/2 | 2/2 | 322.1 | 129.3 | 24.1 | 449.2 | clean | received, coalesced samples (events), raw/moves, median: pinned 183 (182.5)/183 (15), newest 53 (53)/53 (8), cua 200 (191)/200 (8), cua:0ms 166.5 (143.5)/166.5 (2) | cua PASS, cua:0ms PASS |
+| Chrome | range | 2/2 | 2/2 | 2/2 | 2/2 | 318.7 | 128.5 | 23.4 | 441.1 | clean | received, coalesced samples (events), raw/moves, median: pinned 240 (239.5)/240 (19), newest 62 (62)/62 (8), cua 235 (229.5)/235 (9.5), cua:0ms 211.5 (186)/211.5 (2.5) | cua PASS, cua:0ms PASS |
+| Chrome | scroller | 2/2 | 2/2 | 2/2 | 0/2 | 261.9 | 62.5 | 8.7 | 280.4 | clean | reach (pinned mean 139 px): cua 2/2 (shortest 146, mean 146.5), cua:0ms 0/2 (shortest 0, mean 18.5); received, coalesced samples (events), raw/moves, median: pinned 60 (60)/0 (0), newest 17 (17)/0 (0), cua 55.5 (54)/0 (0), cua:0ms 36 (34)/0 (0) | cua PASS, cua:0ms **FAIL** |
+| Chrome | dnd | 2/2 | 2/2 | 2/2 | 2/2 | 344.8 | 374.7 | 357.6 | 516.3 | **changed** | speed (warm): cua **undetermined**: cua: 1 usable samples of 2, fewer than 20; cua:0ms **undetermined**: cua:0ms: 1 usable samples of 2, fewer than 20; received, coalesced samples (events), raw/moves, median: pinned 12 (11.5)/12 (2), newest 6.5 (6.5)/6.5 (1), cua 17 (16.5)/17 (1), cua:0ms 5.5 (1)/7 (1) | cua speed unjudged (a pilot), cua:0ms speed unjudged (a pilot) |
+| Chrome | canvas | 2/2 | 1/2 | 2/2 | 0/2 | 513.4 | 476.1 | 78.6 | 1194.3 | clean | speed (warm): cua **undetermined**: cua: 1 usable samples of 2, fewer than 20; cua:0ms **undetermined**: cua:0ms: 0 usable samples of 2, fewer than 20; received, coalesced samples (events), raw/moves, median: pinned 768 (767)/768 (59.5), newest 195.5 (195.5)/195.5 (20), cua 763 (756.5)/763 (28.5), cua:0ms 743 (659.5)/743 (5.5) | cua speed unjudged (a pilot), cua:0ms **FAIL** |
+
+Cells where a cua lane missed a run the pinned build took: chrome scroller (cua:0ms); chrome canvas (cua:0ms).
+
+The judges' verdict for `cua`: no FAIL; unjudged in this pilot (not a pass): 2 speeds.
+
+Unjudged in this pilot (no top-up; not passes): chrome dnd: cua speed unjudged (a pilot takes no top-up): cua: 1 usable samples of 2, fewer than 20; chrome canvas: cua speed unjudged (a pilot takes no top-up): cua: 1 usable samples of 2, fewer than 20.
+
+desktop: started with 0x0080000c active (foreign), ended with 0x0080000c active (foreign), neither acted on; holder 0x00c0000c; the harness's own trace: 1180 requests, 225 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

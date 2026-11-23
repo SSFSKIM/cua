@@ -1,0 +1,24 @@
+✔ L4d is a counted step of the twice-load block on a private display, within the step limit, its plan the three parts (3.492534ms)
+✔ L4d's Electron cell in Electron's window: it crosses the zone, ends outside it, is long enough to outlast the floor, and stays in the window clear of the run's other windows (1.15994ms)
+✔ a plan of parts is judged part by part, each by its own plan's judge, its fails named by the part (15.608592ms)
+✔ launch-plan.mjs prints L4d's plan part by part (1.059772ms)
+✔ a plan of parts opens the run's front window once, before its first sitting, and sits every part (the x64 L4d development run: the second sitting's front xterm was a second window of the same name) (0.582715ms)
+✔ the judge's zone is the page's #zone, and every drop cell's path end is its path's own last point (2.420518ms)
+✔ a path end against the zone: inside, outside, and within the border margin ambiguous (0.405893ms)
+✔ ruling 957: Chrome's long-left control, its path ended left of the zone, a drop landed in the zone: a drop at a stale position, never landed, and the step fails (3.944782ms)
+✔ ruling 957 on t14-floor: left and inzone-out end outside the zone, the long drop inside; only the controls' landings are stale (0.515058ms)
+✔ the review of 2dd2b0d8, finding 1: the measurement lane's accept is no proof the path ended in the zone (the engine sends every sample before it reads the cursor): its landings are judged by the path's end too (0.667714ms)
+✔ ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised (1.201036ms)
+✔ ruling 957 in Electron: the controls' and the off-window releases' landings in the zone are stale; the short drop's and the move's land (1.26649ms)
+✔ the hold's regression cells land only where their paths end, inside the zone (0.889472ms)
+✔ the review of 2dd2b0d8, finding 2: an off-window drag whose end was not verified is still judged on the zone's drop: a landing there is stale, never dropped from the evidence (0.671442ms)
+✔ the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts a row only when it took, its motion after the take outlasted the floor, and it ended as expected; short of its minimum the part is unexercised (3.869832ms)
+✔ ruling 972: the motion after the take outlasts the floor only by more than the floor's own jitter: a short path the engine spreads over the floor ends 350–358 ms after the take (1.252794ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 195.02264

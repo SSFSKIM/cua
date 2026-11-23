@@ -1,0 +1,10 @@
+2026-11-21T06:09:43Z start v1 at da2deeb2fda47733e53eca9918646e15775f1d57, cua cua-engine 0.4.2 (9371d2348cf8), df 111G load=8.07 14.51 15.14
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v1, at twice the load): {"code":0,"signal":null,"clean":true,"reason":null}
+2026-11-21T06:34:00Z end v1 exit 0 load=17.21 17.14 16.74
+2026-11-21T06:34:00Z start v2 at da2deeb2fda47733e53eca9918646e15775f1d57, cua cua-engine 0.4.2 (9371d2348cf8), df 110G load=17.21 17.14 16.74
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v2, at twice the load): {"code":0,"signal":null,"clean":true,"reason":null}
+2026-11-21T06:58:34Z end v2 exit 0 load=16.86 17.01 16.84
+2026-11-21T06:58:34Z start v3 at da2deeb2fda47733e53eca9918646e15775f1d57, cua cua-engine 0.4.2 (9371d2348cf8), df 110G load=16.86 17.01 16.84
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v3, at twice the load): {"code":1,"signal":null,"clean":true,"reason":null}
+2026-11-21T07:12:07Z end v3 exit 1 load=19.34 17.83 17.32
+2026-11-21T07:12:07Z a959 done: v1 v2 v3

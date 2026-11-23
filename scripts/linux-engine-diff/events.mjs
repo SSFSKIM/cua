@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import { parseXtrace, startProxy } from './audit.mjs';
+import { inputEvent, parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
 import { runTmp } from './app-env.mjs';
@@ -362,12 +362,16 @@ const childPress = (e) => e.type === 'ButtonPress' && e.window === 'child' && e.
  * child pressed with button 1 before it) and the events up to and including that press. What follows the press is
  * the race with the recorder's destruction, and is kept apart (`suffix`), as is the failing request's name.
  */
-export function interruptedStep(response, events) {
+export function interruptedStep(response, events, { child = null } = {}) {
   const press = events.findIndex(childPress);
+  // the window an X Window error names, read before the answer is masked, beside the recorder's own child (fix wave 1)
+  const bad = !response.ok && /\berror_kind: Window, error_code: 3\b/.test(String(response.error)) ? String(response.error).match(/\bbad_value: (\d+)/) : null;
   return {
     answer: { ok: response.ok, x_window_error: !response.ok && /error_kind: Window\b/.test(String(response.error)), child_pressed: press >= 0 },
     events: press >= 0 ? events.slice(0, press + 1) : events,
     suffix: press >= 0 ? events.slice(press + 1) : [],
+    ...(child === null ? {} : { child }),
+    ...(response.ok ? {} : { bad_value: bad ? Number(bad[1]) : null }),
   };
 }
 
@@ -380,14 +384,135 @@ export function normalizeAnswer(response) {
   return { ok: false, error: String(response.error).replace(/sequence: \d+/g, 'sequence: N').replace(/\b\d{5,}\b/g, '<id>') };
 }
 
-/** The first difference between two scenario records (`{answers, events}` per step), or null. */
-export function firstDifference(reference, candidate) {
+/** A pointer event's root position in an xtrace SendEvent line, or nothing. */
+const rootOf = (text) => {
+  const m = String(text).match(/\broot-x=(-?\d+) root-y=(-?\d+)/);
+  return m ? { root_x: Number(m[1]), root_y: Number(m[2]) } : {};
+};
+const POINTER = ['ButtonPress', 'ButtonRelease', 'MotionNotify', 'EnterNotify', 'LeaveNotify'];
+/** A button event's button in an xtrace SendEvent line: xtrace names it, `button=left button(0x01)`, with its number. */
+const buttonOf = (e, text) => (e.type === 'ButtonPress' || e.type === 'ButtonRelease' ? Number.parseInt(String(text).match(/\bbutton=[^(=]*\(0x([0-9a-f]+)\)/)?.[1] ?? 'NaN', 16) : e.detail);
+
+/**
+ * What the engine sent the fragile recorder's child during one interrupted step (#171 M5, T4's arm64 round, fix wave 1:
+ * the record ruling 818's "whole drag" is judged against), from the step's span of the engine's own trace (the audit
+ * proxy's; `requests` its parsed requests between the step's marks): the button-1 press SendEvent whose destination is
+ * `child` (the recorder's child XID, from its own `ready` line, so a trace of another run or another recorder never
+ * matches), then every pointer event the same connection sent to `child` after it, up to and including button 1's
+ * release when there is one (`released` true only for button 1's: another button's release is one more event sent the
+ * child). `{traced, conn, press, after: [{type, detail, root_x, root_y}], released, xtest}`;
+ * `traced` false for an empty trace. Input through XTEST (`xtest`) names no destination to tie it to the child and is
+ * reported apart, never paired. Only the connection that sent the press counts: another connection's requests in the
+ * span are not this drag's.
+ */
+export function sentDrag({ requests, extensions }, child) {
+  const sent = requests.map((r) => ({ r, e: inputEvent(r, extensions) })).filter((x) => x.e).map((x) => ({ ...x, e: { ...x.e, detail: buttonOf(x.e, x.r.text) } }));
+  const xtest = sent.some((x) => x.e.via === 'xtest' && POINTER.includes(x.e.type));
+  const at = sent.findIndex((x) => x.e.via === 'send' && x.e.type === 'ButtonPress' && x.e.detail === 1 && x.e.destination === child);
+  if (at < 0) return { traced: requests.length > 0, conn: null, press: null, after: [], released: false, xtest };
+  const conn = sent[at].r.conn;
+  const after = [];
+  let released = false;
+  for (const x of sent.slice(at + 1)) {
+    if (x.r.conn !== conn || x.e.via !== 'send' || x.e.destination !== child || !POINTER.includes(x.e.type)) continue;
+    after.push({ type: x.e.type, detail: x.e.detail, ...rootOf(x.r.text) });
+    // button 1's release ends the drag; another button's release is only one more event the child is owed
+    if (x.e.type === 'ButtonRelease' && x.e.detail === 1) {
+      released = true;
+      break;
+    }
+  }
+  return { traced: true, conn, press: rootOf(sent[at].r.text), after, released, xtest };
+}
+
+/**
+ * Why the recorder's events on the child (`events`, the step's whole record) are not the whole drag the step requested
+ * (`step.input.path`, in the recorder's coordinates), or null: button 1's press at the path's start, then only motions
+ * on the child with button 1 held (Button1Mask) visiting every point of the path in order and ending at its last, then
+ * button 1's release on the child there, the last event. Judged from the recorder alone (#171 M5, T4's arm64 round,
+ * fix wave 2: ruling 818's "the press, every motion, the release"), so a truncated drag that the trace and the recorder
+ * agree on still fails. No path to judge against fails closed.
+ */
+export function wholeDragFault(events, step) {
+  const path = step?.command === 'drag' ? step.input?.path : null;
+  if (!Array.isArray(path) || path.length < 2) return "no requested path to judge the drag's whole against";
+  const at = (e, point) => e.root_x === RECORDER.x + point.x && e.root_y === RECORDER.y + point.y;
+  const press = events.findIndex(childPress);
+  if (press < 0 || !at(events[press], path[0])) return "button 1's press is not at the requested path's start";
+  const tail = events.slice(press + 1);
+  const release = tail.at(-1);
+  const motions = tail.slice(0, -1);
+  if (!release || release.type !== 'ButtonRelease' || release.window !== 'child' || release.detail !== 1 || !at(release, path.at(-1))) return "the drag does not end with button 1's release on the child at the requested path's end, the last event";
+  if (!motions.length || motions.some((e) => e.type !== 'MotionNotify' || e.window !== 'child' || !(e.state & 256))) return 'between the press and the release, an event other than a motion on the child with button 1 held, or no motion at all';
+  let next = 1;
+  for (const e of motions) if (next < path.length && at(e, path[next])) next++;
+  if (next < path.length || !at(motions.at(-1), path.at(-1))) return 'the motions do not reach every point of the requested path in order, ending at its last';
+  return null;
+}
+
+/**
+ * Why an interrupted drag's answer does not pass (the design session's ruling 818, applied to what E1 records; #171
+ * M5, T4's arm64 round, and its fix wave 1), or null when it does. Which of the drag and the recorder's destruction of
+ * its child comes first is a race: on x64 the destruction cut the drag (an X Window error), on arm64 the drag finished
+ * first (ok). So:
+ * - ok:false passes only as the interruption whose error names the destroyed child: an X Window error (BadWindow) whose
+ *   bad value, read before the answer is masked (`bad_value`), is the recorder's own child XID (`child`);
+ * - ok:true passes only when both hold:
+ *   - the recorder shows every pointer event the engine's trace says it sent the child between its press and its
+ *     release (`sent`, `sentDrag`), paired one by one in order, each the same type at the same root position, the
+ *     release last, and nothing else on the recorder after the press;
+ *   - the recorder, on its own, shows the whole requested drag (`wholeDragFault`, fix wave 2: two records agreeing on a
+ *     truncated drag do not make it whole): button 1 pressed at the path's start, motions with button 1 held visiting
+ *     every point of the path in order and ending at its last, and button 1 released there.
+ *   Each reached the child before it was destroyed, since no event reaches a destroyed window and the recorder lists them
+ *   in the server's order.
+ * The drag is sent by SendEvent to the child itself, so the judge does not rely on the implicit grab after the press:
+ * every event the trace shows is owed, a motion to the pointer's own position included, since a SendEvent is delivered
+ * whatever the pointer's position. Only an XTEST motion that moves the pointer nowhere delivers nothing; XTEST input
+ * names no window, so it is never paired, and a sample that shows any fails closed. A missing or empty trace, or one
+ * with no press to this run's child, fails closed.
+ */
+export function interruptedDragFault(record, step) {
+  const answer = record.answer;
+  if (answer.ok === false) {
+    if (JSON.stringify(answer) !== JSON.stringify(INTERRUPTED)) return 'not an interruption after the press of the child';
+    if (!Number.isSafeInteger(record.child) || !Number.isSafeInteger(record.bad_value)) return "the error's window and the recorder's child were not both recorded, so the error cannot be shown to name the destroyed window";
+    return record.bad_value === record.child ? null : `the error names window ${record.bad_value}, not the destroyed child ${record.child}`;
+  }
+  if (answer.ok !== true || !answer.child_pressed) return 'neither an interruption nor a drag that pressed the child';
+  const sent = record.sent;
+  if (!sent?.traced) return 'no trace of what the engine sent, so the drag cannot be shown whole';
+  if (sent.xtest) return 'the engine sent XTEST pointer input, which names no window to pair with the child';
+  if (!sent.press) return "the trace holds no button-1 press to this run's child";
+  if (!sent.released) return 'the trace holds no release of button 1 to the child after its press';
+  const all = [...record.events, ...(record.suffix ?? [])];
+  const whole = wholeDragFault(all, step);
+  if (whole) return whole;
+  const tail = all.slice(all.findIndex(childPress) + 1);
+  if (tail.length !== sent.after.length) return `the recorder shows ${tail.length} events on the child after the press, the trace ${sent.after.length} sent to it`;
+  for (const [i, e] of tail.entries()) {
+    const s = sent.after[i];
+    if (e.window !== 'child' || e.type !== s.type || e.root_x !== s.root_x || e.root_y !== s.root_y || (e.type === 'ButtonRelease' && e.detail !== s.detail)) return `event ${i + 1} after the press: the recorder shows ${e.type} at (${e.root_x}, ${e.root_y}) on ${e.window}, the trace sent ${s.type} at (${s.root_x}, ${s.root_y})`;
+  }
+  return null;
+}
+
+/**
+ * The first difference between two scenario records (`{answers, events}` per step), or null. An interrupted drag is
+ * judged by its own record (`interruptedDragFault`): its child, its error's window and its trace, and against its own
+ * step (`steps`, the scenario's; without them an ok drag fails closed).
+ */
+export function firstDifference(reference, candidate, steps = null) {
   for (let i = 0; i < reference.length; i++) {
     const [a, b] = [reference[i], candidate[i]];
     if (!b) return { step: i, what: 'missing step' };
     // an interruption scenario proves nothing unless the reference was interrupted as planned
     if (a.interrupted && JSON.stringify(a.answer) !== JSON.stringify(INTERRUPTED)) return { step: i, what: 'reference not interrupted', reference: a.answer };
-    if (JSON.stringify(a.answer) !== JSON.stringify(b.answer)) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer };
+    if (a.interrupted && b.interrupted && b.command === 'drag') {
+      // ruling 818: an interrupted drag passes as the interruption or as the whole drag, never otherwise
+      const why = interruptedDragFault(b, steps?.[i]);
+      if (why) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer, why };
+    } else if (JSON.stringify(a.answer) !== JSON.stringify(b.answer)) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer };
     const n = Math.max(a.events.length, b.events.length);
     for (let j = 0; j < n; j++) {
       const [ea, eb] = [a.events[j], b.events[j]];
@@ -419,9 +544,10 @@ class Recorder {
     }
   }
 
+  /** The recorder's windows once it is ready: `{window, child}`, the top-level's and its child's XIDs. */
   async ready() {
     const [ready] = (await this.next((m) => m.ready)).slice(-1);
-    return ready.window;
+    return { window: ready.window, child: ready.child };
   }
 
   /** The events received since the last mark. */
@@ -471,15 +597,23 @@ export async function settleFocus(events, { open = 0, mark, sleep = (ms) => new 
 async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {}) {
   parkAtStart(env);
   const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile, fragileKey: scenario.fragileKey });
-  const window = await recorder.ready();
-  const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
+  const { window, child } = await recorder.ready();
+  // a fragile scenario's engine is traced through the audit proxy, in the judged run itself (M5's T4 arm64 round, fix
+  // wave 1): an interrupted step is judged against what its engine sent the child (`sentDrag`). The proxy is on the
+  // engine's path for every engine alike, so the scenario's times are not counted (`timedScenario`)
+  const proxy = traced(scenario, via) ? await startProxy({ display: env.DISPLAY }) : null;
+  const baseEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
+  const engineEnv = proxy ? { ...baseEnv, DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY } : baseEnv;
   const process_ = (via === 'vendor-js' ? new VendorJsEngine({ label: engine.label, bin: engine.bin, skyDir, env: engineEnv }) : new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv })).start();
   const steps = [];
+  const spans = [];
   let open = 0;
+  let stopped = false;
   try {
     for (const [i, step] of scenario.steps.entries()) {
       const { command, input } = bindStep(step, window);
       const before = step.effect ? pointerOn(env) : null;
+      const from = proxy && step.interrupted ? await proxy.mark(`step-${i}`) : null;
       const { response, ms } = await process_.request(command, input, { timeoutMs: 30000 });
       let polls = 0;
       const settled = await settleFocus(await recorder.mark(`step-${i}`), { open, mark: () => recorder.mark(`step-${i}-focus-${polls++}`) });
@@ -487,10 +621,18 @@ async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {})
       const { events } = settled;
       const timed = { ms: Math.round(ms * 100) / 100, first: i === 0 };
       const effect = step.effect ? { effect: response.ok === true && step.effect({ before, after: pointerOn(env), events }) } : {};
-      if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response), ...timed });
-      else steps.push({ command, answer: normalizeAnswer(response), events, ...timed, ...effect });
+      if (step.interrupted) {
+        if (proxy) spans.push({ step: steps.length, from, to: await proxy.mark(`step-${i}-done`) });
+        steps.push({ command, interrupted: true, ...interruptedStep(response, events, { child }), raw: normalizeAnswer(response), ...timed });
+      } else steps.push({ command, answer: normalizeAnswer(response), events, ...timed, ...effect });
     }
     await process_.close();
+    if (proxy) {
+      // each interrupted step's span of the trace: what its engine sent the child, from the press on
+      const trace = await proxy.stop({ parse: (log) => parseXtraceFile(log) });
+      stopped = true;
+      for (const { step, from, to } of spans) steps[step].sent = sentDrag({ requests: trace.requests.filter((r) => r.at >= from && r.at < to), extensions: trace.extensions }, child);
+    }
     steps.push({ command: 'exit', answer: { ok: true }, events: await recorder.mark('exit') });
     if (scenario.apps) {
       // the launched program's effect, then cleared for the next engine
@@ -501,10 +643,14 @@ async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {})
     }
   } finally {
     await process_.close();
+    if (proxy && !stopped) await proxy.stop();
     await recorder.close();
   }
   return steps;
 }
+
+/** Whether a scenario's engine runs through the audit proxy: a fragile scenario over the wire (`runScenario`). */
+export const traced = (scenario, via = 'wire') => via === 'wire' && Boolean(scenario.fragile);
 
 /** A speed group is judged only when every engine has at least this many samples in it; a smaller one is recorded. */
 export const MIN_JUDGED = 20;
@@ -607,9 +753,18 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
  * failing (Acceptance 3) and every `required` group judged, none left with too few samples; through the vendor client the
  * times include its deferred settle, so they are recorded, not judged.
  */
-export function eventsPass({ answers, speeds, via, required = [] }) {
+export function eventsPass({ answers, speeds, via, required = [], pilot = false }) {
   if (via === 'vendor-js') return answers;
+  // a pilot takes no top-up (ruling 722): a group it left too short or undetermined is unjudged (`pilotUnjudged`), never
+  // a pass, and fails nothing; a decided loss and a wrong answer still fail
+  if (pilot) return answers && speeds.every((s) => s.verdict !== 'fail');
   return answers && speeds.every((s) => s.verdict !== 'fail' && s.verdict !== 'undetermined') && missingSpeedGroups(speeds, required).length === 0;
+}
+
+/** A pilot's groups no top-up decided (ruling 722): undetermined ones and required ones too short to judge, by name. */
+export function pilotUnjudged(speeds, required = []) {
+  const open = speeds.filter((s) => s.verdict === 'undetermined').map((s) => `${s.route} ${s.command} ${s.series}`);
+  return [...new Set([...open, ...missingSpeedGroups(speeds, required).map((g) => `${g.route} ${g.command} ${g.series}`)])];
 }
 
 /**
@@ -778,6 +933,32 @@ export function eventEngines(args) {
   ];
 }
 
+/**
+ * One scenario's records judged (`records` by engine label, `labels` the engines that ran it): each engine's first
+ * difference from the build the scenario is judged against (the pinned one, or the newest for its own command), and the
+ * declared deviations that excused an answer. `{verdicts, declared}`, as the `events` row records them; a cua engine
+ * with a difference fails the run. Shared with the re-judge of stored rows (rejudge-events.mjs).
+ */
+export function judgeScenario(scenario, records, labels, { first = firstDifference } = {}) {
+  const verdicts = {};
+  const declared = {};
+  const reference = scenario.reference ?? 'pinned';
+  for (const label of labels.filter((l) => l !== reference && !(reference === 'newest' && l === 'pinned'))) {
+    let difference = first(records[reference], records[label], scenario.steps);
+    // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
+    if (difference?.what === 'answer' && scenario.deviation) {
+      const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
+      if (deviation) {
+        const excused = records[label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
+        difference = first(records[reference], excused, scenario.steps);
+        if (!difference) declared[label] = deviation.op;
+      }
+    }
+    verdicts[label] = difference;
+  }
+  return { verdicts, declared };
+}
+
 /** `--experiment events`: every scenario on every engine; whether cua matched the pinned build everywhere, and its speed. */
 export async function runEvents(args, emit) {
   // the harness's own private server, watched from its first client on, before anything probes or drives it (task 44)
@@ -805,24 +986,9 @@ export async function runEvents(args, emit) {
     for (const scenario of via === 'vendor-js' ? VENDOR_JS_SCENARIOS : scenarios()) {
       const records = {};
       for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env, { via, skyDir: args.vendorJs });
-      const verdicts = {};
-      const declared = {};
-      // the build the scenario is judged against: the pinned one, or the newest for its own command
       const reference = scenario.reference ?? 'pinned';
-      for (const engine of engines.filter((e) => e.label !== reference && !(reference === 'newest' && e.label === 'pinned'))) {
-        let difference = firstDifference(records[reference], records[engine.label]);
-        // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
-        if (difference?.what === 'answer' && scenario.deviation) {
-          const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
-          if (deviation) {
-            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
-            difference = firstDifference(records[reference], excused);
-            if (!difference) declared[engine.label] = deviation.op;
-          }
-        }
-        verdicts[engine.label] = difference;
-        if (difference && engine.label.startsWith('cua')) pass = false;
-      }
+      const { verdicts, declared } = judgeScenario(scenario, records, engines.map((e) => e.label));
+      if (Object.entries(verdicts).some(([label, difference]) => difference && label.startsWith('cua'))) pass = false;
       // effects, where a scenario reads them: every effect-bearing step must take effect in cua's engines
       let misses = {};
       const judged = scenario.steps.some((s) => s.effect);
@@ -834,7 +1000,8 @@ export async function runEvents(args, emit) {
       emit({ kind: 'events', scenario: scenario.name, route: scenario.route, via, records, differences: verdicts, declared, ...(judged ? { effect_misses: misses } : {}) });
       // a build the scenario is not judged against (the pinned build has no type_characters) times nothing in it
       const timed = reference === 'newest' ? Object.fromEntries(Object.entries(records).filter(([label]) => label !== 'pinned')) : records;
-      scenarioRows.push({ route: scenario.route, records: timed });
+      // a traced scenario's times carry the proxy on the engine's path (`traced`): recorded, never counted
+      if (!traced(scenario, via)) scenarioRows.push({ route: scenario.route, records: timed });
       const cell = (label) => (label === reference ? 'the reference' : verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
       const took = (label) => `${records[label].filter((s) => s.effect === true).length}/${records[label].filter((s) => typeof s.effect === 'boolean').length}`;
       md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} | ${judged ? `${took('pinned')} / ${took('newest')} / ${took('cua')}${misses.cua?.length ? ` (**cua missed step ${misses.cua.join(', ')}**)` : ''}` : '–'} |`);
@@ -849,7 +1016,8 @@ export async function runEvents(args, emit) {
         const sofar = { blocks, mismatches: blocks.flatMap((b) => b.mismatches) };
         const stage = eventStage(eventSpeeds(scenarioRows, { ...sofar, final: false }), eventSpeeds(scenarioRows, { ...sofar, final: true }), frozen);
         frozen = stage.frozen;
-        if (!stage.needs.length || more > TOP_UPS) break;
+        // a pilot takes no top-up (ruling 722): what its rounds leave open is unjudged
+        if (!stage.needs.length || more > TOP_UPS || args.pilot) break;
         const extra = topUpRoundsFor(stage.needs, rounds);
         emit({ kind: 'events-top-up', top_up: more, rounds: extra, groups: stage.needs.map((s) => ({ route: s.route, command: s.command, series: s.series, n: s.n, target: s.target, interval: s.interval, bar: s.bar })) });
         blocks.push(await desktopBlocks(engines, env, emit, { rounds: extra, firstRound: rounds, commands: new Set(stage.needs.map((s) => s.command)) }));
@@ -901,5 +1069,7 @@ export async function runEvents(args, emit) {
     if (listed('declared gap').length) md.push('', `Declared speed gaps (deviations.mjs; not a pass): ${line(listed('declared gap'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, ${s.gap.section}: ${s.gap.reason}`)}.`);
     if (listed('fail').length) md.push('', `cua is slower than the faster vendor build over the wire: ${line(listed('fail'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, [${s.interval.join(', ')}]`)}.`);
   }
-  return { md, pass: eventsPass({ answers: pass, speeds, via, required }), answers: pass, speeds, missing };
+  const unjudged = args.pilot && via !== 'vendor-js' ? pilotUnjudged(speeds, required) : [];
+  if (unjudged.length) md.push('', `Unjudged in this pilot (no top-up; not passes): ${unjudged.join('; ')}.`);
+  return { md, pass: eventsPass({ answers: pass, speeds, via, required, pilot: Boolean(args.pilot) }), answers: pass, speeds, missing, unjudged };
 }

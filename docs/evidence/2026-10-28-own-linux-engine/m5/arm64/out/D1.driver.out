@@ -1,0 +1,2 @@
+step.sh 2026-11-18T11:07:59Z start D1 after 100 s quiet wait: load=0.98 9.34 12.40 stress-ng=none
+step.sh 2026-11-18T11:30:32Z end D1 exit 0 load=0.77 0.83 3.32

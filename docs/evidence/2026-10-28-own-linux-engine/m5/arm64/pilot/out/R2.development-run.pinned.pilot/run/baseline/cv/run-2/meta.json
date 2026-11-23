@@ -1,0 +1,410 @@
+{
+  "measurement": {
+    "schema": 2,
+    "experiment": "171-m5-20261118",
+    "freshInstall": true
+  },
+  "nodeMode": "managed",
+  "preparation": {
+    "device": "cua-171-arm64",
+    "home": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp",
+    "userHome": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp.home",
+    "token": "fb175009-2ea7-4ac3-ab41-c496422205d9",
+    "xSession": {
+      "DISPLAY": ":1",
+      "XAUTHORITY": "/tmp/cua171-no-xauthority-60024-7865d2adbfb7",
+      "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-NUTZsi/baseline/desktop/session/bus/dbus-MwsrSDOTT1,guid=8043f4a42c5cd827295a7df46afd05ce",
+      "XDG_RUNTIME_DIR": "/run/user/501",
+      "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+    },
+    "nodeMode": "managed",
+    "nodeOverride": null,
+    "ownNode": {
+      "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    }
+  },
+  "controllerIdentity": {
+    "hostname": "dc-linux171arm-996d",
+    "platform": "linux",
+    "arch": "arm64",
+    "os": "7.0.0-1017-gcp",
+    "node": "v24.22.1",
+    "cpu": {
+      "model": "Neoverse-V2",
+      "count": 8
+    }
+  },
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp.home",
+  "xSession": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-60024-7865d2adbfb7",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-NUTZsi/baseline/desktop/session/bus/dbus-MwsrSDOTT1,guid=8043f4a42c5cd827295a7df46afd05ce",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "deviceIdentity": {
+    "alias": "cua-171-arm64",
+    "arch": "arm64",
+    "hostname": "dc-linux171arm-996d",
+    "os": {
+      "name": "Ubuntu",
+      "version": "24.04.5 LTS",
+      "build": "7.0.0-1017-gcp"
+    },
+    "cpu": {
+      "model": "Neoverse-V2",
+      "count": 8
+    }
+  },
+  "load": {
+    "device": {
+      "before": "18:03:24 up  1:01,  3 users,  load average: 0.44, 0.53, 0.76",
+      "after": "18:06:44 up  1:04,  3 users,  load average: 0.10, 0.37, 0.66"
+    },
+    "controller": {
+      "before": "18:03:24 up  1:01,  2 users,  load average: 0.44, 0.53, 0.76",
+      "after": "18:06:44 up  1:04,  3 users,  load average: 0.10, 0.37, 0.66"
+    }
+  },
+  "device": "cua-171-arm64",
+  "platform": "linux",
+  "host": "cua",
+  "surface": "computer",
+  "hostAttestations": [
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 135,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "b352b6a8-66d3-4736-b31d-5636e0c2f191",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 135,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "dd89fb10-8ef7-4d81-bb24-abaad7c90d48",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 130,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c5a3695e-4b74-4de3-8552-be3e17e73744",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 131,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "4df5b7f0-2b61-44e7-b594-650db3008d1e",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 133,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c5056205-cab8-4392-b079-9ae098abd463",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 134,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2752cbe6-accd-4f5b-aeaf-517ebc7d933d",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    }
+  ],
+  "connections": 6,
+  "protocolVersion": "2025-06-18",
+  "environment": {
+    "CUA_REPL_HOST": "cua",
+    "CUA_NATIVE_ENGINE": "vendor",
+    "CUA_SHIM_SURFACES": "computer",
+    "CUA_SHIM_PERSIST": "session",
+    "CUA_SHIM_SECRETS": "off",
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-60024-7865d2adbfb7",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-NUTZsi/baseline/desktop/session/bus/dbus-MwsrSDOTT1,guid=8043f4a42c5cd827295a7df46afd05ce",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "plan": {
+    "samples": 30,
+    "cold": 5,
+    "tasks": 10,
+    "coldPlan": [
+      "miss",
+      "hit",
+      "miss",
+      "hit",
+      "hit"
+    ]
+  },
+  "started": "2026-11-18T02:03:24.467Z",
+  "spikeWaitMs": 604,
+  "elicitations": [
+    {
+      "t": "2026-11-18T02:03:32.471Z",
+      "at": 46212.487441,
+      "app": "org.gnome.gedit",
+      "action": "accept"
+    }
+  ],
+  "complete": true,
+  "nativeEngine": {
+    "requested": "vendor",
+    "bin": null,
+    "expected": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+    "error": null,
+    "observed": [
+      {
+        "exe": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+        "kind": "vendor",
+        "parent": "trusted-worker.mjs",
+        "service": "vendor"
+      }
+    ]
+  },
+  "engineStop": {},
+  "commit": "da306cc6319e7e9da282812402308c074b872dee",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp",
+  "node": "v26.13.1",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "runtime": {
+    "release": "26.928.40906-linux-arm64"
+  },
+  "sandbox": {
+    "mode": "scoped",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "Google Compute Engine",
+    "chip": "arm64, 8 CPUs",
+    "memoryBytes": 33573736448
+  },
+  "os": {
+    "name": "Ubuntu",
+    "version": "24.04.5 LTS",
+    "build": "7.0.0-1017-gcp"
+  },
+  "display": {
+    "pixels": "1280 x 800",
+    "resolution": "1280 x 800",
+    "scale": 1,
+    "depth": 24
+  },
+  "gedit": {
+    "version": "gedit - Version 46.2",
+    "locale": {
+      "LANG": "C.UTF-8"
+    },
+    "owned": [
+      {
+        "pid": 69062,
+        "dir": "/tmp/cua-native-baseline-JtmBBJ",
+        "file": "/tmp/cua-native-baseline-JtmBBJ/scratch-858278.txt",
+        "role": "scratch"
+      },
+      {
+        "pid": 69260,
+        "dir": "/tmp/cua-native-baseline-UGmwmy",
+        "file": "/tmp/cua-native-baseline-UGmwmy/victim-8bbd8c.txt",
+        "role": "victim"
+      },
+      {
+        "pid": 69438,
+        "dir": "/tmp/cua-native-baseline-FF99t6",
+        "file": "/tmp/cua-native-baseline-FF99t6/victim-e3dea9.txt",
+        "role": "victim"
+      }
+    ],
+    "targetCleanup": [
+      {
+        "op": "method.typeText",
+        "terminated": [],
+        "notOwned": [],
+        "gone": [
+          69260
+        ],
+        "removed": [
+          "/tmp/cua-native-baseline-UGmwmy"
+        ]
+      },
+      {
+        "op": "method.paste",
+        "terminated": [],
+        "notOwned": [],
+        "gone": [
+          69438
+        ],
+        "removed": [
+          "/tmp/cua-native-baseline-FF99t6"
+        ]
+      }
+    ],
+    "crashReportsBefore": {
+      "files": 1,
+      "newest": "2026-11-18T01:43:34.477Z"
+    },
+    "cleanup": {
+      "terminated": [
+        69062
+      ],
+      "notOwned": [],
+      "gone": [
+        69260,
+        69438
+      ],
+      "removed": [
+        "/tmp/cua-native-baseline-JtmBBJ"
+      ]
+    },
+    "crashReportsAfter": {
+      "files": 1,
+      "newest": "2026-11-18T01:43:34.477Z"
+    }
+  },
+  "x": {
+    "display": ":1",
+    "xauthority": "/tmp/cua171-no-xauthority-60024-7865d2adbfb7",
+    "xauthorityPresent": false,
+    "bus": "unix:path=/tmp/cua171-gl-NUTZsi/baseline/desktop/session/bus/dbus-MwsrSDOTT1,guid=8043f4a42c5cd827295a7df46afd05ce"
+  },
+  "helperAtStart": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "answeringNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "sandboxLaunch": {
+    "launcher": "cua",
+    "tmpdir": "session"
+  },
+  "helpersAtBind": {
+    "helper": "pinned runtime",
+    "helpers": [
+      {
+        "path": "/Users/new/.local/share/cua-native-baseline/run-TgLMPp/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+        "origin": "pinned runtime",
+        "ageSeconds": 1,
+        "startedDuringRun": true
+      }
+    ]
+  },
+  "service": {
+    "surface": "computer",
+    "engine": "vendor",
+    "answered": "vendor"
+  },
+  "leftovers": {
+    "serves": 0,
+    "geditRunning": 0
+  },
+  "finished": "2026-11-18T02:06:44.986Z",
+  "preparationCleanup": {
+    "removed": true
+  }
+}

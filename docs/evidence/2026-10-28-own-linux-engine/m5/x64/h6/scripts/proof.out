@@ -1,0 +1,3 @@
+2026-11-20T22:27:32Z node /usr/bin/node v24.22.1
+proof: PASS: every part exited 0 (harness harness-dbus)
+2026-11-20T22:28:43Z proof exit 0

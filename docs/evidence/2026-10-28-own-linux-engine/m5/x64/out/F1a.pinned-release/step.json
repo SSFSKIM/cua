@@ -1,0 +1,50 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "F1a",
+  "pilot": false,
+  "what": "T7 revised on the shipped engine: burst, A-B-A, key then paste",
+  "display": "own",
+  "load": "idle",
+  "minutes": 20,
+  "run_name": "pinned-F1a",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t5-x64/",
+    "commit": "fefe306c288956a48b6c086017f3cd1a58462a07",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-x64",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t5-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t5-x64/scripts/linux-engine-gate/gate.mjs run F1a --pinned /Users/new/.local/share/cua-171/m5/home-x64 --out /Users/new/.local/share/cua-171/m5/out-x64",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "focus-timer",
+    "--scenarios",
+    "burst,aba,paste",
+    "--lanes",
+    "shipped",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine",
+    "--run",
+    "pinned-F1a",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-x64/F1a.pinned-release/run"
+  ],
+  "started": "2026-11-16T19:46:05.650Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-16T20:02:22.606Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unclean": [
+    "a process it spawned still runs: pid 3782942 openbox"
+  ]
+}

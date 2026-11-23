@@ -20,8 +20,9 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'no
 import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PreparationStopped, candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
-import { dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
+import { PreparationStopped, candidateLine, gateLabel, isCounted, isPinnedRule, prepareCandidate } from './candidate.mjs';
+import { pinnedEngine } from './pinned-home.mjs';
+import { dropSignalsVerdict, judgedDropSignalsPlan } from './drop-signals-judge.mjs';
 import { RunRefused, runHasRows } from './run.mjs';
 
 import { elementClick, partialCover } from './clicks.mjs';
@@ -34,7 +35,7 @@ import { runFocusTimer } from './focus-timer.mjs';
 import { runQtActivation } from './qt-activation.mjs';
 import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
-import { runDropSignals } from './drop-signals.mjs';
+import { lanesLeftOut, runDropSignals } from './drop-signals.mjs';
 import { runWriterDrag } from './writer-drag.mjs';
 import { runKinds } from './kinds.mjs';
 import { runPredicates } from './predicates.mjs';
@@ -318,15 +319,20 @@ const STOP_CODES = { SIGINT: 130, SIGTERM: 143 };
 
 /**
  * `body(args, record)` on the experiment's candidate (M4's T18, the design session's ruling: an experiment that joins the
- * gate takes its candidate as a verdict run does). With `--gate` the candidate `--cua` names is stored as `cua-engine`
+ * gate takes its candidate as a verdict run does). With `--gate` (or M5's `--pinned`, `args.gate` 'pinned', checked by
+ * the pinned rule) the candidate `--cua` names is stored as `cua-engine`
  * (mode 0700) in a directory of the run's own and checked by candidate.mjs's preparation before anything runs; a refusal
  * is thrown as a `CandidateRefused` and nothing starts. `body` gets the stored copy and its record, and the copy is
  * removed on a refusal, an error, the end and a stop. A stop (SIGINT or SIGTERM) while this listener is the process's
  * only one (the checks, or a part of the run before a Desktop hooks its own cleanup, stop.mjs) kills the command the
  * checks wait on, removes the copy and exits as the signal would; once a Desktop's handler is in place it is that
  * handler's, and the exit removes the copy. Without `--gate`, `body` gets `--cua` as given and no record.
+ *
+ * On the pinned release (`--pinned`, the design session's ruling 708) the copy is the check's alone: `body` gets the
+ * run home's installed engine itself, the one cua's selection picks there (pinned-home.mjs `pinnedEngine`), as `cua`,
+ * and that home as `pinnedHome`, so a service an experiment starts runs in the run home and selects it itself.
  */
-export async function withExperimentCandidate(args, body, { prepare = prepareCandidate, proc = process } = {}) {
+export async function withExperimentCandidate(args, body, { prepare = prepareCandidate, proc = process, pinned = pinnedEngine } = {}) {
   if (!args.gate) return body(args, null);
   const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
   const remove = () => rmSync(dir, { recursive: true, force: true });
@@ -345,7 +351,7 @@ export async function withExperimentCandidate(args, body, { prepare = prepareCan
   };
   for (const signal of Object.keys(STOP_CODES)) proc.on(signal, onStop);
   try {
-    preparing = prepare({ source: args.cua, gate: true, dir, signal: stopping.signal });
+    preparing = prepare({ source: args.cua, gate: args.gate, dir, signal: stopping.signal });
     let candidate;
     try {
       candidate = await preparing;
@@ -354,6 +360,10 @@ export async function withExperimentCandidate(args, body, { prepare = prepareCan
     }
     // stopped during the checks: the stop exits once the command in flight has ended, and nothing more starts
     if (stopping.signal.aborted) await new Promise(() => {});
+    if (isPinnedRule(args.gate)) {
+      const { cua, cuaHome } = pinned(args.cua, candidate.record);
+      return await body({ ...args, cua, pinnedHome: cuaHome }, candidate.record);
+    }
     return await body({ ...args, cua: candidate.path }, candidate.record);
   } finally {
     for (const signal of Object.keys(STOP_CODES)) proc.off(signal, onStop);
@@ -372,27 +382,31 @@ const LABELLED = new Set(['meta', 'experiment-summary']);
  * experiment proper (the tests pass their own): it gets the run's args and `{emit, results}`, and answers whether the
  * run is complete.
  */
-export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun } = {}) {
+export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun, pinned = pinnedEngine } = {}) {
   const run = args.run ?? `${args.experiment}-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   // nothing runs, and no candidate is checked, for a run that cannot stand as one execution's or a gate's: a name the
   // out directory already has rows of (a retry with the same --out and --run would render under the first run's label
   // and candidate), or a gate step with no judge to fail it
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
-  if (args.gate && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args)) {
-    throw new RunRefused(`no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'}): its counts would pass whatever they are; run it as a development run`);
+  if (isCounted(args.gate) && args.experiment === 'drop-signals' && !judgedDropSignalsPlan(args)) {
+    throw new RunRefused(`${unjudgedPlan(args)}: its counts would pass whatever they are; run it as a development run`);
   }
-  if (args.gate && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
+  if (isCounted(args.gate) && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
+  const leftOut = isCounted(args.gate) && args.experiment === 'drop-signals' ? lanesLeftOut(args) : [];
+  if (leftOut.length) throw new RunRefused(`a gate drop-signals step runs its plan whole: --lanes ${args.lanes.join(',')} leaves out the counted plan ${args.plan}'s cells: ${leftOut.join(', ')}`);
   return withExperimentCandidate(args, async (runArgs, record) => {
     mkdirSync(args.out, { recursive: true });
-    const gate = Boolean(args.gate);
+    // true (a release gate), 'pinned' (acceptance on the pinned release), 'pinned-dev' (a development run on it, a pilot)
+    // or false (a development run)
+    const gate = args.gate || false;
     const label = gateLabel(gate);
     const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row, ...(LABELLED.has(row.kind) ? { gate, label, ...(row.kind === 'meta' && record ? { candidate: record } : {}) } : {}) })}\n`);
     process.stdout.write(`${label}${record ? `; ${candidateLine(record)}` : ''}\n`);
     const complete = await start({ ...runArgs, run }, { emit, results });
     process.stdout.write(`${label}: ${run} ${complete ? 'complete' : 'incomplete or failed'}\n`);
     return complete;
-  }, { prepare });
+  }, { prepare, pinned });
 }
 
 async function experimentRun(args, { emit, results }) {
@@ -400,8 +414,9 @@ async function experimentRun(args, { emit, results }) {
   if (args.experiment === 'focus-timer') {
     // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runFocusTimer(args, { emit, run, startLoad });
-    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    const { md, complete, failed, unjudged = [], ending } = await runFocusTimer(args, { emit, run, startLoad });
+    // a pilot's series shorter than its minimum (ruling 730), listed apart, never a pass
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, ...(unjudged.length ? { unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return complete;
@@ -418,8 +433,9 @@ async function experimentRun(args, { emit, results }) {
   if (args.experiment === 'settle') {
     // through cua's own service, on a private X server of its own (action-settle.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, kinds: args.kinds ?? [], routes: args.routes ?? [], lanes: args.lanes ?? null, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runSettle(args, { emit, run, startLoad });
-    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    const { md, complete, failed, unjudged = [], ending } = await runSettle(args, { emit, run, startLoad });
+    // a pilot's series shorter than its minimum (ruling 730), listed apart, never a pass
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, ...(unjudged.length ? { unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return complete;
@@ -445,8 +461,8 @@ async function experimentRun(args, { emit, results }) {
   emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), ...(args.experiment === 'drop-signals' ? { plan: args.plan ?? 'main', ballast: args.ballast ?? null, load_factor: args.load ? (args.loadFactor ?? 1) : null, lanes: args.lanes ?? null, trials: args.samplesTrials ?? null } : {}), ...(args.experiment === 'writer-drag' ? { plan: args.plan ?? 'observe', trials: args.samplesTrials ?? null, variants: args.variants.map((v) => v.label) } : {}), ...(args.experiment === 'drag' ? { load_factor: args.load ? (args.loadFactor ?? 1) : null, ops: args.ops, trials: args.samplesTrials ?? null } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
-    const { md, pass } = await runEvents(args, emit);
-    emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], finished: new Date().toISOString() });
+    const { md, pass, unjudged } = await runEvents(args, emit);
+    emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], ...(unjudged.length ? { unjudged } : {}), finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return pass;
@@ -475,18 +491,21 @@ async function experimentRun(args, { emit, results }) {
       const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, predicates: runPredicates, 'pointer-route': runPointerRoute, 'writer-drag': runWriterDrag }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
-      // the drag experiment's judges (T10) and the predicate cases' (T15) fail the run as an incomplete one does; the others
-      // report completeness only
-      outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
+      outcome = measuredOutcome(result);
+      // a pilot's series no top-up decided (ruling 722), listed apart in the summary row, never a pass
+      if (result.unjudged?.length) outcome.unjudged = result.unjudged;
       // the gate's drop-signals cells are judged (drop-signals-judge.mjs `dropSignalsVerdict`): T17's Electron cells and
       // T14's Chrome cells. A false ok, an unreported late take, a broken pending contract, a missing landing or a
       // missing cell fails the run; the unconfirmed drops are findings with their counts. A gate run of any other plan
-      // was refused before it began (`runExperiment`)
-      const judged = args.experiment === 'drop-signals' ? dropSignalsVerdict(args, readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run)) : null;
-      if (judged) {
-        emit({ kind: judged.judge === 'electronDropVerdict' ? 'electron-drop-verdict' : 'chrome-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
-        md = [...md, ...judged.md];
-        outcome = { complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] };
+      // was refused before it began (`runExperiment`), and fails here if one ran (`dropSignalsOutcome`)
+      if (args.experiment === 'drop-signals') {
+        const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+        const { judged, outcome: judgedOutcome } = dropSignalsOutcome(args, rows, outcome);
+        if (judged) {
+          emit({ kind: { electronDropVerdict: 'electron-drop-verdict', partsVerdict: 'drop-parts-verdict' }[judged.judge] ?? 'chrome-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
+          md = [...md, ...judged.md];
+        }
+        outcome = judgedOutcome;
       }
     } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
@@ -501,9 +520,39 @@ async function experimentRun(args, { emit, results }) {
   // the harness's own trace, judged once every window of the run's is closed: a change of a window it did not open
   // makes the run incomplete, whatever it measured
   const ending = desktopEnding(desktop.ending);
-  if (ending.foreign.length) outcome = { complete: false, failed: [...outcome.failed, ...ending.foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
-  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, desktop: ending.record, finished: new Date().toISOString() });
+  outcome = finishOutcome(outcome, ending.foreign);
+  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, ...(outcome.unjudged?.length ? { unjudged: outcome.unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
   return outcome.complete;
+}
+
+/** Why a counted drop-signals run is not judged: no gate judge holds its family and plan. */
+const unjudgedPlan = (args) => `no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'})`;
+
+/**
+ * A drop-signals run's outcome, judged (drop-signals-judge.mjs `dropSignalsVerdict`): the judge's fails fail it. A
+ * counted run no judge holds fails (its admission refuses one; this is the dispatch's side of the same predicate, the
+ * final review's P2), never passing on the runner's own `complete`; a development run's measure stands. Answers
+ * `{judged, outcome}`.
+ */
+export function dropSignalsOutcome(args, rows, outcome) {
+  const judged = dropSignalsVerdict(args, rows);
+  if (!judged) return { judged, outcome: isCounted(args.gate) ? { ...outcome, complete: false, failed: [...outcome.failed, `${unjudgedPlan(args)}: a counted run is never passed unjudged`] } : outcome };
+  return { judged, outcome: { ...outcome, complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] } };
+}
+
+/**
+ * A measuring experiment's outcome from its result (`{complete, pass, failed}`): the drag experiment's judges (T10) and
+ * the predicate cases' (T15) fail the run as an incomplete one does; the others report completeness only.
+ */
+export const measuredOutcome = (result) => ({ complete: result.complete && result.pass !== false, failed: result.failed });
+
+/**
+ * The outcome as the run ends it, with the harness's own trace judged once every window of the run's is closed: each
+ * change of a window it did not open (`foreign`) makes the run incomplete, whatever it measured.
+ */
+export function finishOutcome(outcome, foreign) {
+  if (!foreign.length) return outcome;
+  return { ...outcome, complete: false, failed: [...outcome.failed, ...foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
 }

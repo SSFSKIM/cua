@@ -1,0 +1,10 @@
+# Z0 (development run on the pinned release, not acceptance, never counted, pilot)
+
+**development run on the pinned release, not acceptance, never counted.** A pilot: the step's smallest form, to show it starts; no verdict of it is the gate's.
+
+- what: on :0: T11's end rest landing Firefox's plain drop, and Writer's drag cell unprimed (T16)
+- display: :0; load: idle; estimated 25 min
+- run: `m5-pinned-dev-Z0-pilot`; the harness's output in `run/`
+- checkout: /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/ at da306cc6319e7e9da282812402308c074b872dee, clean
+- candidate: /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine (sha256 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42 as given)
+- command: `/Users/new/.local/share/cua-171/locked.sh t96-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/m5/pa/z1/Z0.development-run.pinned.pilot --hold /Users/new/.local/share/cua-171/hold-sittings --terminal experiment-summary -- env WRAP=/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/m5/pa/z1/Z0.development-run.pinned.pilot /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/ --experiment drag --vendor /Users/new/.local/share/cua-171/m5/pilot-arm64/home/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --occlusion visible --family firefox,writer --ops dnd,select --trials 2 --cua /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine --run m5-pinned-dev-Z0-pilot --pinned --pilot`

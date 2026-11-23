@@ -1,0 +1,32 @@
+thread 'release_sync::tests::ping_asks_answered_then_moves_then_asks_again_and_releases_on_the_second_answer' (2029221) panicked at src/release_sync.rs:274:9:
+assertion `left == right` failed
+  left: []
+ right: [Ping, Motion((10, 10)), Ping]
+
+---- release_sync::tests::keepalive_sends_one_motion_at_the_last_point_on_the_background_route_and_the_pair_on_xtest stdout ----
+
+thread 'release_sync::tests::keepalive_sends_one_motion_at_the_last_point_on_the_background_route_and_the_pair_on_xtest' (2029219) panicked at src/release_sync.rs:254:9:
+assertion `left == right` failed
+  left: []
+ right: [Motion((10, 10))]
+
+---- release_sync::tests::ping_s_dwell_follows_the_second_answer stdout ----
+
+thread 'release_sync::tests::ping_s_dwell_follows_the_second_answer' (2029222) panicked at src/release_sync.rs:295:28:
+index out of bounds: the len is 0 but the index is 2
+
+
+failures:
+    release_sync::tests::a_motion_that_fails_ends_the_step_with_its_error
+    release_sync::tests::a_ping_that_cannot_be_asked_expires_the_step_with_its_reason
+    release_sync::tests::both_answers_share_one_bound_and_an_expired_bound_releases_at_once_unconfirmed
+    release_sync::tests::keepalive_leaves_its_keepalive_s_spacing_before_the_release
+    release_sync::tests::keepalive_sends_one_motion_at_the_last_point_on_the_background_route_and_the_pair_on_xtest
+    release_sync::tests::ping_asks_answered_then_moves_then_asks_again_and_releases_on_the_second_answer
+    release_sync::tests::ping_s_dwell_follows_the_second_answer
+
+test result: FAILED. 2 passed; 7 failed; 0 ignored; 0 measured; 534 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--bin cua-engine`
+
+[exited with code 0]

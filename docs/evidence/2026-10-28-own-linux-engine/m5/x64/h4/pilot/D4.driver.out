@@ -1,0 +1,2 @@
+step.sh 2026-11-18T23:28:42Z start D4 --dev --pilot 2 --engine-stats after 80 s quiet wait: load=0.98 1.19 0.97 stress-ng=none
+step.sh 2026-11-18T23:34:07Z end D4 exit 0 load=1.13 1.13 1.00

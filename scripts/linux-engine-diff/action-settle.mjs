@@ -47,12 +47,12 @@ import { POINTER_INSIDE, parkInside } from './drag.mjs';
 import { AsyncOracle } from './bus-client.mjs';
 import { startOwner, startReader } from './clip.mjs';
 import {
-  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, planLanes, runClass,
-  runPasses, settleOf, settleVerdict, settledFields,
+  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, expectsRefusal, cellName, cellsFor, chosenPlan, judgeSettleSeries, landed, laneSettles, planLanes,
+  runClass, runPasses, settleOf, settledFields, sittingVerdict,
 } from './action-settle-cells.mjs';
 import { Engine, runTmpdirInProcess } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
-import { CHROMIUM, pasteTexts, seriesVerdict } from './focus-timer.mjs';
+import { CHROMIUM, pasteTexts } from './focus-timer.mjs';
 import { preorder } from './normalize.mjs';
 import { parseInputStatus } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
@@ -520,12 +520,12 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
     const { answers, after, answered, answered_ms: answeredMs, read_ms: readMs, waited_ms: waitedMs } = span.value;
     const background = cell.route === 'background' && !ACTIVATING.includes(cell.kind);
     const frontActive = background ? activeWindow() === ctx.desktop.front.id : null;
-    // each a success, but the control's menuUnconfirmed (action-settle-cells.mjs `answersAsExpected`)
+    // each a success, but a refusal cell's expected error (action-settle-cells.mjs `answersAsExpected`)
     const answersOk = answersAsExpected(cell.kind, answers);
     const invalid = [];
     const awaited = cell.kind === 'activate_click' ? 'click' : settleOf(cell);
     // a failure defers nothing (src/services/engine/linux/methods.mjs), the control's included
-    if (cell.kind === 'menu_unconfirmed') {
+    if (expectsRefusal(cell.kind)) {
       if (answersOk && settler.deferred.length) invalid.push(`the service deferred ${settler.deferred.join(', ')} after an error`);
     } else if (answersOk && settler.deferred.at(-1) !== awaited) invalid.push(`the service settled it as ${settler.deferred.at(-1)}, not ${awaited}`);
     const fields = settledFields(sc.effects, cell.kind);
@@ -574,14 +574,14 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
       late_ms: lateMs,
       ...(invalid.length ? { invalid: invalid.join('; ').slice(0, 300) } : {}),
       ...(left.length ? { left } : {}),
-      ...(cell.kind === 'menu_unconfirmed' ? { expected_error: true } : {}),
+      ...(expectsRefusal(cell.kind) ? { expected_error: true } : {}),
       answers: answers.map((a) => (a.ok ? { ok: true } : { ok: false, error: a.error })),
       deferred: [...settler.deferred],
       source,
       before: shown(before.reading),
       after: after.ok ? shown(after.value) : { error: after.error },
       ...(run.settled ? { settled: shown(run.settled) } : {}),
-      sent: { key: run.key, point: run.point, path: run.path, direction: run.direction, steps: run.steps, text: run.text, dx: run.dx, line: run.line, action: run.action },
+      sent: { key: run.key, point: run.point, path: run.path, direction: run.direction, steps: run.steps, text: run.text, dx: run.dx, line: run.line, action: run.action, on: run.on },
       desktop_clean: desktopClean,
       front_active: frontActive,
       ...(desktopClean ? {} : { witness: judgeSpan(span.report).fields, activations: spanActivations(span.report) }),
@@ -616,14 +616,15 @@ function serviceFor(ctx, cell, lane) {
 /** A lane's series on one cell: the wait rule's 30 consecutive in at most 60 (`ctx.need` for a development count). */
 async function series(ctx, cell, sc, lane) {
   const { svc, settler } = serviceFor(ctx, cell, lane);
-  const oks = [];
   const rows = [];
+  // the lane's judge over the series' rows as written, #302 where the cell takes it (action-settle-cells.mjs)
+  const judged = [];
+  const max = ctx.need * (MAX_RUNS / CONSECUTIVE);
   try {
     await svc.handleRpc({ type: 'setup' });
     trimText(ctx, sc);
     arrange(ctx, cell, sc);
     await sleep(300);
-    const max = ctx.need * (MAX_RUNS / CONSECUTIVE);
     for (let trial = 0; trial < max; trial++) {
       let row;
       try {
@@ -632,15 +633,20 @@ async function series(ctx, cell, sc, lane) {
         // a preparation the scene refused: the run fails, its reason recorded, and the series goes on
         row = { ok: false, landed: false, late_ms: null, error: String(error.message).slice(0, 300) };
       }
-      oks.push(row.ok);
       rows.push(row);
-      ctx.emit({ kind: 'settle-run', cell: cellName(cell), scene: cell.scene, input: cell.kind, route: cell.route, lane, load: ctx.load, trial, ...row });
-      if (seriesVerdict(oks, ctx.need).reached || hopeless(oks, ctx.need, max)) break;
+      const written = { kind: 'settle-run', cell: cellName(cell), scene: cell.scene, input: cell.kind, route: cell.route, lane, load: ctx.load, trial, ...row };
+      ctx.emit(written);
+      judged.push(written);
+      // a #302 run awaits the next run's before-read, so the series goes on until it is shown or can no longer pass
+      const so = judgeSettleSeries(judged, { need: ctx.need, max });
+      if (so.reached || so.lost) break;
     }
   } finally {
     svc.close();
   }
-  const verdict = seriesVerdict(oks, ctx.need);
+  // a false ok fails the series whatever its streak (ruling 650, in every cell by ruling 707)
+  const { runs, misses, streak, reached, late_302: late302, false_ok: falseOk } = judgeSettleSeries(judged, { need: ctx.need, max });
+  const verdict = { runs, misses, streak, reached, late_302: late302, false_ok: falseOk };
   const missed = rows.filter((r) => !r.ok);
   const classes = rows.map(runClass);
   const count = (c) => classes.filter((x) => x === c).length;
@@ -886,6 +892,8 @@ export async function runSettle(args, { emit, run, startLoad }) {
   const all = [];
   const audits = [];
   const skipped = [];
+  // the cells this sitting audits: each background cell of the shipped lane, but the activating kinds
+  const audited = (cell) => !plan.search && plan.lanes.includes('shipped') && cell.route === 'background' && !ACTIVATING.includes(cell.kind) && args.audit !== false;
   let wm = null;
   let loadRun = null;
   let witness = null;
@@ -926,7 +934,7 @@ export async function runSettle(args, { emit, run, startLoad }) {
             all.push(s);
             if (plan.search && s.reached) break;
           }
-          if (!plan.search && plan.lanes.includes('shipped') && cell.route === 'background' && !ACTIVATING.includes(cell.kind) && args.audit !== false) audits.push(await auditCell(ctx, cell, sc, 'shipped'));
+          if (audited(cell)) audits.push(await auditCell(ctx, cell, sc, 'shipped'));
         }
       } finally {
         await desktop.close(Object.values(scenes));
@@ -949,15 +957,9 @@ export async function runSettle(args, { emit, run, startLoad }) {
     watched = await server.stop();
   }
   const ending = desktopEnding(desktop.ending);
-  const measured = cells.filter((c) => !skipped.some((s) => s.cell === cellName(c))).map(cellName);
-  const { md, failed, held } = settleVerdict(all, { search: plan.search, cells: measured });
-  for (const s of skipped) failed.push(`${s.cell} could not be opened: ${s.why}`);
-  for (const a of audits) if (!a.pass) failed.push(`${a.cell}: the audit failed: ${a.failed.join('; ')}`);
-  for (const f of ending.foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
-  if (!watched.clean) failed.push(`the private display's watchdog: ${watched.reason}`);
-  if (plan.search) md.push('', '| cell | held step (ms) |', '|---|---:|', ...Object.entries(held).map(([c, ms]) => `| ${c} | ${ms ?? '**none**'} |`));
-  if (audits.length) md.push('', '| cell | audit | requests | runs that ran their input | effects missed |', '|---|---|---:|---:|---:|', ...audits.map((a) => `| ${a.cell} | ${a.pass ? 'clean' : `**${a.failed.join('; ')}**`} | ${a.requests} | ${a.runs.filter((r) => r.class !== 'invalid' && r.class !== 'refused').length} of ${a.runs.length} | ${a.missed} |`));
-  if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
-  emit({ kind: 'settle-verdict', pass: failed.length === 0, failed, held });
-  return { md, complete: failed.length === 0, failed, ending };
+  const { md, failed, held, unjudged } = sittingVerdict({
+    series: all, cells: cells.map(cellName), search: plan.search, skipped, audits, audited: cells.filter(audited).map(cellName), foreign: ending.foreign, watchdog: watched, pilot: Boolean(args.pilot),
+  });
+  emit({ kind: 'settle-verdict', pass: failed.length === 0, failed, held, ...(unjudged.length ? { unjudged } : {}) });
+  return { md, complete: failed.length === 0, failed, unjudged, ending };
 }

@@ -170,7 +170,8 @@ until the next plugin update). Without the plugin, register the same script your
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns the `cua` API document to the model, which then writes small JavaScript cells against that API.
 On cua's own host the document is a port of OpenAI's, with the recorded exclusions and, for a macOS computer session
-(cua's own engine), one paragraph of cua's on the agent cursor (Licences and sources; The agent cursor, below). That first
+(cua's own engine), one paragraph of cua's on the agent cursor (Licences and sources; The agent cursor, below), and for
+a Linux computer session cua's own Linux document (Linux, cua's own engine). That first
 call is also when `cua serve` launches the runtime (a few seconds; see Process footprint below), so it takes longer than
 the ones after it. The server adds rules covering what that document leaves out: how to run a task, in the host notes
 it appends to the server instructions (see Operating guidance for agents), and the native quirks (index-first
@@ -1083,14 +1084,35 @@ rest.
 
 ## Linux
 
-cua still installs its retained native engine from OpenAI's official Linux package of the same ChatGPT release, the
-`chatgpt` deb for amd64 or arm64 (pins `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`). The `@oai/*`
-JavaScript is the macOS release's byte for byte; the platform binary cua uses is the computer-use helper `sky_linux`
-(the deb's `codex` and its Chrome native host are no longer installed: #115, #79). Every Linux session runs cua's own
-REPL host on Node 24 or later (Use): the vendor host is retired on Linux, `CUA_REPL_HOST=vendor` is refused
-(`repl_host_refused`), and a machine with no Node 24 is refused (`repl_host_node`) until `cua install` places one. The
-own host drives the pinned `sky_linux` and confines its children with cua's sandbox helper (below). The computer
-surface under that sandbox is shown on an Ubuntu 24.04 arm64 GCE box with Xvfb and Openbox
+The Linux computer surface runs on one of two native engines, selected per session, cua's own by default (cua's own
+engine, below):
+
+- **cua's own engine, `cua-engine`** (#171; `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`): a
+  static binary built from `native/linux-engine/` for x86-64 and arm64, with no shared libraries. The release workflow
+  `.github/workflows/linux-engine.yml` builds it, tests it and attests its build provenance, and
+  `runtime/engine/linux-engine.json` pins its version (0.4.3), URLs and SHA-256s. `cua install` fetches the asset for
+  this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` installs or
+  replaces it on its own. cua's own Linux service (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript
+  runs for the computer surface. It is the default.
+- **The vendor engine,** OpenAI's computer-use helper `sky_linux` behind the vendor's `@oai/sky` service, from
+  OpenAI's official Linux package of the same ChatGPT release, the `chatgpt` deb for amd64 or arm64 (pins
+  `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`). The `@oai/*` JavaScript is the macOS release's byte for
+  byte (the deb's `codex` and its Chrome native host are no longer installed: #115, #79). It is the rollback,
+  `CUA_NATIVE_ENGINE=vendor` or `"engine": "vendor"` (below), and what a home keeps until it holds an engine of cua's
+  that this cua can drive.
+
+Either way `cua install` still installs that package: until #171's M6a, the module tree the cells import from and the
+runtime record that names the installed release come from it. With cua's engine nothing of it drives the computer
+surface: `ps` shows `cua-engine` as the trusted worker's child and no `sky_linux`. cua's engine
+passed its release gate on x64 (`docs/evidence/2026-10-28-own-linux-engine/m4/gate/README.md`); its acceptance on the
+pinned release on both architectures is recorded under `docs/evidence/2026-10-28-own-linux-engine/m5/x64/` and
+`…/m5/arm64/`.
+
+Every Linux session runs cua's own REPL host on Node 24 or later (Use): the vendor host is retired on Linux,
+`CUA_REPL_HOST=vendor` is refused (`repl_host_refused`), and a machine with no Node 24 is refused (`repl_host_node`)
+until `cua install` places one. The own host drives the selected engine and confines its children with cua's sandbox
+helper (below). The vendor engine's computer surface under that sandbox is shown on an Ubuntu 24.04 arm64 GCE box
+with Xvfb and Openbox
 (`docs/evidence/2026-10-17-own-sandbox/m3/`: gedit through `sky_linux` with the kernel confined, the #116 parity
 suites). The vendor host was shown earlier on an Ubuntu 24.04 arm64 VM with Xorg and Openbox
 (`docs/evidence/2026-10-06-linux-acceptance.md`), and the x64 pin and the agent as a systemd user unit, driven through
@@ -1110,11 +1132,14 @@ agent.
 What it needs:
 
 - **An X11 session.** Use Xorg, Xvfb or a VNC session, with an EWMH window manager (Openbox is enough) and the XTEST,
-  Composite and XFIXES extensions. Wayland is not supported; the helper has no Wayland code. cua passes `DISPLAY` and
+  Composite and XFIXES extensions. cua's engine also uses DAMAGE, to know when a window's offscreen copy is ready for
+  a screenshot (without it, a fixed 100 ms wait each time that copy is made), and MIT-SHM for desktop screenshots where
+  the display is local. Wayland is not supported; neither engine has Wayland code (#224). cua passes `DISPLAY` and
   `XAUTHORITY` through to the runtime. Over SSH, export `DISPLAY` (and `XAUTHORITY` when the file is not
   `~/.Xauthority`). When `DBUS_SESSION_BUS_ADDRESS` is unset, cua derives the session bus from `XDG_RUNTIME_DIR`.
 - **A session bus with AT-SPI** (`at-spi2-core`). Without it, accessibility trees fall back to window-level X11
-  entries.
+  entries. Qt 6 applications put their tree on the bus only when `org.a11y.Status` `IsEnabled` is true when they
+  start; the cloud template sets it at session start, and doctor's `accessibility.enabled` row checks it.
 - **Packages.** On Debian or Ubuntu:
 
   ```sh
@@ -1221,12 +1246,17 @@ lack of `DISPLAY`.
   id (so a launch and the first action on its window are two approvals), and "the whole desktop" for input that names
   no window. `DISPLAY` and `XAUTHORITY` reach the runtime; under `scoped` and `default` a model cell has no socket to
   use them with, but under `disabled` it can talk to X directly, and the trusted wrapper is then not a boundary.
-- **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
-  they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
-  `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
+- **Typing.** It depends on the engine. With cua's engine, `typeText` and `paste` insert exact Unicode text (Korean,
+  emoji, combining marks, several lines) through one paste the engine verifies by reading the field back, and answer
+  whether the text was applied, was not applied (nothing was sent) or was sent once and could not be confirmed
+  (cua's own engine, below). The vendor engine's `typeText` and `paste` insert text through AT-SPI: in GTK3 text views
+  (gedit, mousepad) they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert
+  text"); `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
+  The `js` tool's rules say which applies, for the engine the session selected.
 - **Secrets.** The same file store as on macOS (see Secrets): `secrets_list` lists `~/.config/claude-secrets` and the project's tier, and a
   `{{secret:KEY}}` reference is substituted as the whole text of `typeText` or `paste` (both arrive as `type_text
-  {window, text}`). The typing caveat above applies: in a GTK3 text view the substituted `type_text` is what crashes.
+  {window, text}`). The typing caveat above applies to the vendor engine: in a GTK3 text view the substituted
+  `type_text` is what crashes. With cua's engine the value is pasted like any other text.
 - **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows, and
   `sandbox.launcher` checks the placed helper against its pin.
 - **Remote control.** `cua remote enroll`, `cua agent run` and the relay work as on macOS, and `cua agent install`
@@ -1238,6 +1268,115 @@ lack of `DISPLAY`.
   AT-SPI when toolkit accessibility is on (`gsettings set org.gnome.desktop.interface toolkit-accessibility true`).
   Web content appears only when Chrome is also started with `--force-renderer-accessibility`. The browser surface
   needs neither.
+
+### cua's own engine
+
+**Selecting it.** `CUA_NATIVE_ENGINE=cua` in `cua serve`'s environment selects cua's engine for that server's
+sessions, and `"engine": "cua"` in `~/.config/cua/engine.json` selects it for every session of the account; the
+variable wins over the file. `vendor` in either selects the vendor engine. With neither set, a session gets the default,
+which is cua's engine. The default takes the installed engine only when it is at least the version this cua needs
+(0.4.3), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its SHA-256 is the
+file's. A home with no engine of cua's, with an older one, or with one its `install.json` does not match keeps the
+vendor engine, and `cua doctor`'s `engine` row warns, naming which (`engine_not_installed`, `engine_outdated`,
+`engine_unrecorded`) and that `cua install --engine` replaces it. A connection resolves its engine once, when it opens, and keeps it for every launch after.
+An explicit selection of cua's engine with none installed is refused (`engine_not_installed`, naming `cua install
+--engine`). cua's service checks the engine's version before a session's first request: one older than this cua needs
+is refused there, with `cua-engine <found> is older than 0.4.3, which this cua needs; run cua install --engine`, and `cua install
+--engine` fixes it. `CUA_LINUX_ENGINE_BIN` names another engine file in place of the installed one, for the
+development harnesses only.
+
+**The device mode** says whom the desktop belongs to. `shared` (the default) means a person may be using it: input to a
+background window changes neither the active window, the stacking order, the keyboard focus nor the pointer, and input
+to an application that ignores input sent to a background window is refused instead of brought forward, with
+`<App> does not accept background input; use a dedicated desktop or activate the window first` and nothing sent. That
+covers GTK 4's clicks at coordinates, keys, text, scroll, moves and drags, xterm's keys, and Firefox's pointer input
+while the real pointer is outside its window, among others (`native/linux-engine/src/families.rs` lists each family
+with the run that showed it). Element actions, such as a click on an element by its index, take effect in both modes.
+`dedicated` means the desktop belongs to the agent: such input activates the window and goes through the desktop's
+own input, and leaves the window active. `CUA_DESKTOP_MODE=shared|dedicated` sets it per server, `"desktop"` in
+`~/.config/cua/engine.json` per account; the cloud template writes `"desktop": "dedicated"` (`deploy/cloud-vm/`).
+
+**What a session sees that the vendor engine does not answer:**
+
+- **Text** is applied (success, once the field shows it), not applied (`… nothing was sent`: the field, its selection
+  or the focus changed, the clipboard was busy, or the input was refused outright) or unconfirmed (`Paste was sent once
+  and could not be confirmed; read the field before retrying`). Nothing is ever sent twice. The paste never calls
+  AT-SPI's `PasteText`, `InsertText` or `SetTextContents`, and the clipboard holds what it held before.
+- **Minimized windows** are listed by `listWindows()` with `minimized: true`, and a window the person minimizes stays
+  bound: its tree still reads, its screenshot is unavailable, and input to it answers `Window <id> is minimized;
+  activate it first` with nothing sent. The vendor engine omits such windows.
+- **A cut tree** says so. A read that hits the element limit (5,000) or the depth limit (63), or loses an element it
+  could not read, ends with `Accessibility tree truncated: at least <n> elements not shown (<reason>)`, where the
+  vendor engine omits them silently.
+- **Duplicate windows** of one application with one title and one size that the engine cannot tell apart answer
+  `Window <id> matches several accessibility windows; close or retitle the duplicates`, never a one-node fallback tree.
+
+The model reads the same in cua's Linux document (`docs/cua-api/linux-engine.md`), which the first call returns after
+the API document on every Linux computer session, under either engine, and in the `js` tool's rules, which follow the
+selected engine.
+
+**Doctor.** The `engine` row reports the selected engine, its version and SHA-256 against the pin (or a local build
+from `cua engine build`, an older release or an unknown file), the service that drives it, the device mode and the
+engine's capability report (`backend`, `tree`, `input`, `capture`, `text`), read from the engine started for the check
+and stopped. `accessibility.enabled` checks `IsEnabled`. While the vendor engine is selected the row is `skip`.
+
+### Known limitations (cua's engine)
+
+- **Electron.** An Electron application exposes its tree only when started with `--force-renderer-accessibility`
+  (#228). Without it cua sees one X11 node. cua does not add the flag.
+- **GTK 4 needs `dedicated` mode for input.** Clicks at coordinates, keys, text, scroll, move and drag are refused in
+  `shared` mode with `<App> does not accept background input; use a dedicated desktop or activate the window first`.
+  Element actions work in both modes.
+- **Firefox** takes background pointer input only while the real pointer is inside its window; otherwise `shared` mode
+  refuses it with the same sentence (#353, its residue #362). **xterm** ignores background keys, so they are refused in
+  `shared` mode.
+- **Context menus.** Only an element's `showContextMenu` accessibility action checks for the menu it asks for (also
+  when it is the fallback of a right click on an element with no visible point): it answers ok only once a menu is
+  seen, and otherwise `showContextMenu was sent and no menu was seen within 1 s; the application may have shown its
+  own menu or ignored the request; read the window before retrying`. A page that draws its own menu gets this answer
+  (#377). GTK 4's, Firefox's and Qt's menus are not detected (#379). A right click at an element's visible point is a
+  button-3 click that answers once it is released, with no menu check.
+- **Chromium's menus** (#378), as the engine states it: In Chromium, a context menu requested on a window that is not
+  focused (perform_secondary_action showContextMenu, the right-button fallback, or a window-bound right click) does not
+  stay open after the request. To use a menu item, focus the window first where you may (on a shared desktop, only when
+  the person allows it), or use the clipboard operations for copy and paste.
+- **A context-menu Copy** that Chrome does not serve within 2 s answers `clipboard update timed out`, and that window's
+  menus may then stop opening (#375, #376).
+- **Chromium drags** are refused on a `shared` desktop unless their whole path is visible. A window-targeted drag on a
+  `shared` desktop into a family whose drop changes the desktop (Chrome; not Electron or Firefox) is watched for a
+  drag and drop, unless the window is already active, focused and fully unobscured: one that starts is cancelled
+  before the drop, or the answer says the cancel may have come too late and the drop may have happened. A drag whose
+  source is a Chromium window (Chrome, Electron) keeps its button down until 450 ms after its press, however short its
+  path, unless the page starts its drag and drop sooner, since Chrome drops a drag its page starts after the button is
+  up; a drag and drop the engine sees start within 700 ms after the drag's release is reported as a late drop (below).
+  When the source is a Chrome or Chromium browser (known by its window's class and role and its accessible
+  application's name) that still answers the engine slowly at 450 ms, as it does while it starts a drag and drop, the
+  button stays down up to 650 ms after the press, and a drag with no drag and drop by then answers ok with `the page
+  may have started a drag that did not complete`. A page whose own code takes longer than about 450 ms to start its drag
+  can still lose it while the drag answers ok with no notice: on Chrome 156 a dragstart handler busy 400 ms still
+  landed 6 of 6, and one busy 500 or 600 ms lost 6 of 6 each. A Chrome drag and drop ends with a rest of about 25 ms on its last
+  point, moved there twice more, since under load Chrome could otherwise drop on a position the path had already left
+  and report the drop as made (#459; engine 0.4.3); it falls inside the 350 ms after the take that a drop is held for,
+  so only a path that goes on past 350 ms after its take takes longer for it.
+- **Late drops.** A drag that may not have ended as it answered (a drag and drop that started late, a drop its target
+  did not confirm, a failed watch, an idle drag handle released) is reported at the next reply, and the next acting
+  request is refused once. In M4's final drag-handle proof on Electron, 6 of 100 handle drops that landed answered
+  unconfirmed at the gate's window load and 6 of 100 at twice the load, each a block's cold first handle; plain drags
+  and idle drops had none (`docs/evidence/2026-10-28-own-linux-engine/m4/drag-handle/fix3/README.md`, #364). Stated
+  races: #365, #372.
+- **Qt** ignores synthetic wheel events in the background, so on a `shared` desktop a scroll to a Qt window is refused
+  with the device-mode sentence; on a `dedicated` one it activates the window and scrolls through the desktop's own
+  input. A paste into kate or Qt Creator lands and answers unconfirmed.
+- **Minimized windows** refuse input with `Window <id> is minimized; activate it first`. **Duplicate windows** that
+  cannot be told apart refuse reads and the inputs that act through the window's accessibility frame with
+  `Window <id> matches several accessibility windows; close or retitle the duplicates`; an input that needs no
+  accessibility association, such as `pressKey`, is still sent.
+- **Speed.** The measured bar is met except for these declared gaps against the vendor: Chrome's long drop (#358),
+  `activate_window` (#373), the hold in a Chromium drop (#263) and the short drop (#269). An Electron key
+  release can show in the tree only after the settle (#302).
+- **Out of scope**, each with its ticket: Wayland (#224), characters off the keyboard layout through
+  `type_characters` (#226), pixel-precise scrolling (#227), and input held after the engine dies on a shared display
+  (#277).
 
 ## Operating guidance for agents
 
@@ -1377,7 +1516,19 @@ The opt-in flags add live scenarios:
 
 On Linux, `scripts/accept/linux-secret.mjs --key KEY [--app zenity|gedit]` is the same check against a key in your
 store: it types `{{secret:KEY}}` into a zenity entry dialog (whose printed answer is compared outside the MCP stream)
-or a gedit window (whose GTK3 text view the helper's text input crashes on arm64; the fixture records it).
+or a gedit window (whose GTK3 text view the vendor engine's text input crashes on arm64; the fixture records it).
+
+For cua's Linux engine, two fixtures run over `cua serve` in the X session's environment, each printing a JSON report
+and exiting 0 when every step passes:
+
+```sh
+CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs        # bind gedit, typeText a marker, read it back, screenshot, the sandbox's confinement
+CUA_NATIVE_ENGINE=cua node scripts/accept/linux-device-mode.mjs   # gnome-text-editor in shared mode (refused, desktop untouched) and dedicated mode (applied)
+```
+
+`linux-device-mode.mjs` needs the harness's xprobe (`cargo build --release` in `scripts/linux-engine-diff/xprobe`)
+and checks its own judges against two negative controls. Both drive the display they run on: run them on a desktop
+that is yours to use, or on a private one.
 
 A macOS permission prompt is never answered by these scripts: the step stops and is reported BLOCKED with the human
 action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned helper's own cold
@@ -1419,6 +1570,8 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
 | `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
+| `CUA_NATIVE_ENGINE` | `cua` on Linux, `vendor` on macOS | `vendor` or `cua`: the native engine of computer sessions, on macOS (#117) and on Linux (#171; Linux, cua's own engine). Unset or empty, `"engine"` in `~/.config/cua/engine.json` decides, else the default: on Linux cua's engine where one this cua can drive is installed (else the vendor engine, with a warning in `cua doctor`), on macOS the vendor engine. cua's engine needs one installed: on Linux `cua-engine` (`cua install --engine`), on macOS an approved engine (`cua engine build`, `cua engine approve`). An explicit selection with none installed is refused (`engine_not_installed`, naming the remedy). Any other value refuses (`invalid_setting`). Each connection resolves it once at its open; `cua doctor`'s `engine` row reports it |
+| `CUA_DESKTOP_MODE` | `shared` | `shared` or `dedicated`: the device mode cua's engine runs in (Linux, cua's own engine; macOS since #282). `shared`: a person may be using this desktop, so input an application ignores in the background is refused with nothing sent. `dedicated`: the desktop is the agent's, so such input brings its window forward. Unset or empty, `"desktop"` in `~/.config/cua/engine.json` decides, else `shared`; the cloud template writes `dedicated`. Any other value refuses (`invalid_setting`) |
 | `CUA_CURSOR` | on | `0` turns this session's agent cursor off (macOS, cua's own engine: the cursor that shows where the agent acts, labelled and coloured per session). `"cursor": false` in `~/.config/cua/engine.json` turns it off for every session on the device, read when the engine starts (any other value of the key stops the engine at start); `cua engine status` and `cua doctor` report `cursor: on` or `cursor: off (engine.json)`. A remote device session takes the client's setting, not the device's environment |
 | `CUA_CURSOR_LABEL` | the session's sminos name, else the project folder's name | the label on this session's cursor (MAWS sets it for the sessions it supervises); trimmed, control characters removed, cut at 24 characters |
 | `CUA_CURSOR_COLOR` | one of eight colours, picked by the session's id | this session's cursor colour as `#rrggbb` (MAWS sets it); any other value is logged and ignored |

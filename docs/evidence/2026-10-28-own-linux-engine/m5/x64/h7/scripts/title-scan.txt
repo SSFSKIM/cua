@@ -1,0 +1,2 @@
+{"files":44,"json_fields":2593,"sentence_quotes":0,"text_quotes":10,"own":2603,"not_own":0,"distinct":14}
+title scan exit 0

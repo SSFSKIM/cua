@@ -1,0 +1,16 @@
+7nTGZK cmdline pid=199857 user=new start=Fri Nov 13 02:29:53 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-7nTGZK/session/session.conf --nofork --nopidfile --print-address=3 
+7nTGZK environ pid=199857 user=new start=Fri Nov 13 02:29:53 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-7nTGZK/session/session.conf --nofork --nopidfile --print-address=3 
+7nTGZK environ pid=199861 user=new start=Fri Nov 13 02:29:53 2026 ppid=1 :: /usr/libexec/at-spi-bus-launcher 
+7nTGZK environ pid=199866 user=new start=Fri Nov 13 02:29:53 2026 ppid=199861 :: /usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 10 
+AdXsUJ cmdline pid=2365706 user=new start=Sun Nov  8 18:41:36 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-AdXsUJ/session/session.conf --nofork --nopidfile --print-address=3 
+AdXsUJ environ pid=2365706 user=new start=Sun Nov  8 18:41:36 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-AdXsUJ/session/session.conf --nofork --nopidfile --print-address=3 
+AdXsUJ environ pid=2365710 user=new start=Sun Nov  8 18:41:36 2026 ppid=1 :: /usr/libexec/at-spi-bus-launcher 
+AdXsUJ environ pid=2365715 user=new start=Sun Nov  8 18:41:36 2026 ppid=2365710 :: /usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 10 
+OJWaJi cmdline pid=3484098 user=new start=Thu Nov 12 15:54:11 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-OJWaJi/session/session.conf --nofork --nopidfile --print-address=3 
+OJWaJi environ pid=3484098 user=new start=Thu Nov 12 15:54:11 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-OJWaJi/session/session.conf --nofork --nopidfile --print-address=3 
+OJWaJi environ pid=3484102 user=new start=Thu Nov 12 15:54:11 2026 ppid=1 :: /usr/libexec/at-spi-bus-launcher 
+OJWaJi environ pid=3484107 user=new start=Thu Nov 12 15:54:11 2026 ppid=3484102 :: /usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 10 
+q8ExPO cmdline pid=2369948 user=new start=Sun Nov  8 18:43:08 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-q8ExPO/session/session.conf --nofork --nopidfile --print-address=3 
+q8ExPO environ pid=2369948 user=new start=Sun Nov  8 18:43:08 2026 ppid=1 :: dbus-daemon --config-file=/tmp/cua171-run-q8ExPO/session/session.conf --nofork --nopidfile --print-address=3 
+q8ExPO environ pid=2369952 user=new start=Sun Nov  8 18:43:08 2026 ppid=1 :: /usr/libexec/at-spi-bus-launcher 
+q8ExPO environ pid=2369957 user=new start=Sun Nov  8 18:43:08 2026 ppid=2369952 :: /usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 10 

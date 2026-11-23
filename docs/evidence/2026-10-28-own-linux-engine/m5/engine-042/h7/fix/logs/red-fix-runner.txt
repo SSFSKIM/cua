@@ -1,0 +1,95 @@
+(node:2089198) TimeoutNaNWarning: NaN is not a number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ the page's status lines parse into counts by source and each kind's last press (4.399723ms)
+✔ the page stamps its last dragend record with the press its dragstart followed, and the parser reads the page's own line (1.450312ms)
+✔ a drag's outcome: a source's start and the zone's drop, or a kind's effect on its own press, never another's (1.87611ms)
+✔ a drag's signals from the watch: the take, a late take after the release, Chrome's activation after it, the cursors (1.163142ms)
+✔ the accept read at the release follows the cursor the drag ends on: an accept a later change withdrew does not count (0.29833ms)
+✔ a change the records cannot order against the release makes the drag's reading indeterminate, never a negative (0.633359ms)
+✔ the least offset of the watch's wall clock to the server's, over the lines that carry a server time (0.393037ms)
+✔ the engine's probe after the release: a 1×1 window at the origin, read at or after the release stamp (0.439424ms)
+✔ the never-take rules read the deepest accessible at the start point (0.69298ms)
+✔ the never-take table counts each rule's false negatives, and those whose take came after the path, by load (4.606732ms)
+✔ the after-release table: Chrome's activation against the drop, for drags that took by the release (1.405857ms)
+✔ the accept table: false releases are accept-released drops that did not land, against the ceiling's (0.739628ms)
+✔ the late-take table: takes after the release, whether the drag still answered ok, and whether it landed (0.390592ms)
+✔ the cover table: survival by kind, covered part and cover, with the start role beside it (0.573626ms)
+✔ the block plan: blocks of ten, each cell's lanes interleaved and rotating, every drag counted once (0.811081ms)
+✔ a covered range's drag ends where its own path ends, and a plain range's at the default ends (93.597864ms)
+✔ the plan's cells: every drop path 40 px into the zone, the covers placed on the part they name, every spec capped by --trials (1.79638ms)
+✔ a handle lane's drag: the path as drag_handle steps on the screen, the end sent whatever came before, answered as the step that failed or the end (M4's T17 fix wave) (1.639676ms)
+✔ the second fix wave's cells: a desktop drag that leaves the window for the bare root, and a drop that only moves (M4's T17) (1.05566ms)
+✔ the third fix wave's cells: a release over a drop target that never answers, and one the pointer was moved from (M4's T17) (0.834896ms)
+✔ the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it (1.880458ms)
+✔ the freeze cell's browser: the run's profile and no child type, its title read as text, never another's (1.735215ms)
+✔ V5's motion-loss cells: the run's browser stopped from the drag's send, a plain drop and one whose path outlasts the stop (0.563798ms)
+✔ 0.4.1's failed settle, end to end (task 101's review): Electron's browser stopped across the end of a plain drop, so neither of the settle's pings is answered in time (0.290124ms)
+✔ the lost motion's bound and the guarded route: a sweep of stops past the hold's refresh, and the same stops on a drag the engine watches (0.413316ms)
+✔ 0.4.2's freeze sweep (task 121): the press-150 source stopped from 60 ms to ends bracketing a release at press + 450 and + 650 (0.540985ms)
+✔ the freeze cells wait for the browser's mark of the press, after the engine's identification (ruling 954); a stop past the thaw is skipped and says so (ruling 955) (2.021112ms)
+✖ ruling 956: the press mark is the browser's own or none; never seen, or seen past the thaw, the stop is skipped, never begun from 60 ms alone (13.185506ms)
+✖ the review of cf1ef10f, finding 2: the press mark is bound to the trial by its value, the press's server time; a queued earlier mark and a repeated value are never this trial's press (4.743259ms)
+✖ the review of cf1ef10f, finding 1: a stop whose timer wakes at or past the thaw sends no signal and is skipped, with why; the judge counts it unexercised (1.237381ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 27
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 228.415933
+
+✖ failing tests:
+
+test at test/linux-engine-diff/drop-signals.test.mjs:546:1
+✖ ruling 956: the press mark is the browser's own or none; never seen, or seen past the thaw, the stop is skipped, never begun from 60 ms alone (13.185506ms)
+  AssertionError [ERR_ASSERTION]: a later change is the press
+  + actual - expected
+  
+  + null
+  - {
+  -   time: 1795239959603,
+  -   wall: 1795240959604
+  - }
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/drop-signals.test.mjs:559:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: { wall: 1795240959604, time: 1795239959603 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/drop-signals.test.mjs:573:1
+✖ the review of cf1ef10f, finding 2: the press mark is bound to the trial by its value, the press's server time; a queued earlier mark and a repeated value are never this trial's press (4.743259ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + null
+  - {
+  -   time: 1795240459594,
+  -   wall: 1795240959595
+  - }
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/drop-signals.test.mjs:587:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: { wall: 1795240959595, time: 1795240459594 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/drop-signals.test.mjs:609:1
+✖ the review of cf1ef10f, finding 1: a stop whose timer wakes at or past the thaw sends no signal and is skipped, with why; the judge counts it unexercised (1.237381ms)
+  TypeError [Error]: freezeBrowser is not a function
+      at run (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/drop-signals.test.mjs:616:26)
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/drop-signals.test.mjs:625:22)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7)

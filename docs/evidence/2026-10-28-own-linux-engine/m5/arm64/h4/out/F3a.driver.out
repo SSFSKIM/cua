@@ -1,0 +1,2 @@
+step.sh 2026-11-19T05:43:44Z start F3a after 160 s quiet wait: load=0.89 5.34 9.79 stress-ng=none flags=[]
+step.sh 2026-11-19T06:04:40Z end F3a exit 0 load=15.53 17.11 15.44

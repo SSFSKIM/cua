@@ -490,6 +490,12 @@ pub fn confirms_drop(family: &str) -> bool {
 /// and the Chromium browsers of other classes that take its entry, which send no activation request (the design
 /// session's ruling on task 73's review, 2026-11-11). Chrome's drop keeps its activation request: a stale accept cursor
 /// is what made task 69's press-inside control drop where the page took nothing.
+///
+/// Such a drop is settled before its release (`drop_settle::settled`, M5's ruling 827): the engine asks the source's
+/// application where it has got to with a `_NET_WM_PING`, and the answer means something only because Chromium answers
+/// it on the thread that runs its drag loop, in the order of its events (`X11Window::HandleEvent`). A family added here
+/// later must be checked for that first: one that answers pings off its event thread, or not at all, would make the
+/// answer say nothing about its drag loop (or leave every drop unconfirmed).
 pub fn confirms_drop_by_cursor(family: &str) -> bool {
     family == "Chromium"
 }

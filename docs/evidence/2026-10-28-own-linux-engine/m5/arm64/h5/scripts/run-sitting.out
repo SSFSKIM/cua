@@ -1,0 +1,20 @@
+2026-11-19T09:41:17Z sitting start (V1:40 V2:39 V3:35 V4:34 Z0:25 V5:38), hard stop 2026-11-19T15:01:17Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox, node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, google-chrome /usr/local/bin/google-chrome
+2026-11-19T09:41:17Z start V1 load=0.00 0.00 0.52 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T09:59:47Z end V1 exit 0 load=0.19 0.26 0.35
+2026-11-19T09:59:47Z after V1: audit rows 16, with kept_traces files 16, files 20, missing 0;kept-traces exit 0;rejudge: reproduces the stored findings; settle:  1 not taken 
+2026-11-19T09:59:47Z start V2 load=0.19 0.26 0.35 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T10:15:48Z end V2 exit 0 load=0.82 0.89 0.72
+2026-11-19T10:15:48Z after V2: audit rows 30, with kept_traces files 30, files 30, missing 0;kept-traces exit 0;rejudge: reproduces the stored findings; settle:  1 not taken 
+2026-11-19T10:15:48Z start V3 load=0.82 0.89 0.72 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T10:49:49Z end V3 exit 0 load=0.38 0.73 0.78
+2026-11-19T10:49:50Z after V3: audit rows 69, with kept_traces files 69, files 69, missing 0;kept-traces exit 0;rejudge: reproduces the stored findings; settle:  1 unknown 
+2026-11-19T10:49:50Z start V4 load=0.38 0.73 0.78 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T11:14:56Z end V4 exit 0 load=0.34 0.35 0.43
+2026-11-19T11:14:56Z after V4: audit rows 28, with kept_traces files 28, files 28, missing 0;kept-traces exit 0;rejudge: reproduces the stored findings; settle:  1 unknown 
+2026-11-19T11:14:56Z start Z0 load=0.34 0.35 0.43 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T11:24:56Z end Z0 exit 0 load=0.20 0.39 0.46
+2026-11-19T11:24:57Z after Z0: audit rows 0, with kept_traces files 0, files 0, missing 0;kept-traces exit 1;rejudge: DIFFERS from the stored findings; settle:  2 unknown 
+2026-11-19T11:24:57Z start V5 load=0.20 0.39 0.46 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-19T11:25:27Z end V5 exit 1 load=0.32 0.40 0.46
+2026-11-19T11:25:27Z after V5: audit rows 0, with kept_traces files 0, files 0, missing 0;kept-traces exit 1;rejudge: DIFFERS from the stored findings; settle:  2 unknown 
+2026-11-19T11:25:27Z hold-sittings written after V5: every later :0 step stopped

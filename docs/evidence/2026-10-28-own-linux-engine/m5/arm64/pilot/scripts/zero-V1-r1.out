@@ -1,0 +1,37 @@
+owner pid=9512 start=52059
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1794976503.024268174
+---
+> mtime ~/.config/google-chrome 1794976860.243268513
+all-clear: NOT CLEAR: the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+--- V1 exit 1
+--- owner-baseline
+owner pid=9512 start=52059
+tmproot /tmp/c71-t9o4e2
+args: --vendor /Users/new/.local/share/cua-171/m5/pilot-arm64/home/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine --scene gedit --ops type_text,type_text_selection,type_text_dedicated,clipboard_read,clipboard_write,clipboard_release,caret_placed --blocks 1 --run pdev-V1 --pinned --pilot
+started 2026-11-18T04:37:53Z finished 2026-11-18T04:42:56Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1794976503.024268174
+---
+> mtime ~/.config/google-chrome 1794976860.243268513
+--- pointer
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 
+--- wrap.out tail
+    at async diffRun (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/run.mjs:1415:27)
+    at async runDiff (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/run.mjs:1084:12)
+    at async file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff.mjs:53:19
+
+Node.js v24.22.1
+{"exit": 1, "samples": 2728, "maps_samples": 910, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 374, "browsers": 28}
+--- all-clear
+all-clear: NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)
+- the person's side: the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+- the run's own side: clean
+- the sitting's exit: 1

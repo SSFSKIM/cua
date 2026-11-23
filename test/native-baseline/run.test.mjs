@@ -690,3 +690,30 @@ test('a kill that fails is recorded in the TextEdit record, not swallowed', asyn
   assert.equal(meta.textEdit.quitByRun, false);
   assert.match(meta.textEdit.quitError, /kill: 4242: Operation not permitted/);
 });
+
+// #171 M5, T1's fix wave (the design session's ruling 708): R2's own homes. With --pinned-check, a cua-lane run checks
+// its prepared home by the pinned rule on the device after the preparation and before any session; a refusal ends the
+// run there, cleaned up, and an accepted home's provenance is the run's record.
+test('--pinned-check refuses a prepared home whose engine the pinned rule refuses, before any connection, and cleans up', async t => {
+  const {state, io} = fakeDevice({host: 'cua'});
+  const remote = io.remote;
+  io.remote = script => (/gate\.mjs check --pinned/.test(script) ? (state.scripts.push(script), `not the pinned engine: its sha256 is abc, and the pin's x64 asset of linux-engine-v0.4.0 is 751e\nPINNED_EXIT:2`) : remote(script));
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', engine: 'cua', pinnedCheck: true, ...plan, io}), /does not hold the pinned release's engine \(the pinned rule exit 2\): not the pinned engine/);
+  assert.ok(state.scripts.some(s => /gate\.mjs check --pinned/.test(s) && s.includes(HOME)), 'the run\'s own home was checked');
+  assert.ok(!state.scripts.some(s => /hostIdentity/.test(s)), 'no preflight, no session');
+  assert.equal(state.serves, undefined);
+  assert.ok(state.scripts.some(s => s.includes('prepare.mjs cleanup')), 'the preparation is cleaned up');
+});
+
+test('--pinned-check records an accepted home\'s provenance in the run\'s meta; it is the cua lane\'s alone', async t => {
+  const {state, io} = fakeDevice({host: 'cua'});
+  const remote = io.remote;
+  const record = {gate: 'pinned', sha256: '751ec9be'.padEnd(64, '0'), pin: {arch: 'x64', release: 'linux-engine-v0.4.0'}};
+  io.remote = script => (/gate\.mjs check --pinned/.test(script) ? `acceptance on the pinned release: ${HOME}/engine/linux/cua-engine\ncandidate: …\n${JSON.stringify(record)}\nPINNED_EXIT:0` : remote(script));
+  const out = outDir(t);
+  await run({device: 'cua-linux', out, host: 'cua', engine: 'cua', pinnedCheck: true, ...plan, io}).catch(() => {});
+  assert.deepEqual(metaOf(out).pinnedEngine, {sha256: record.sha256, record});
+  assert.ok(state.scripts.some(s => /hostIdentity/.test(s)), 'the run went on to its preflight');
+  for (const lane of [{engine: 'vendor'}, {engine: 'cua', engineBin: '/b/cua-engine'}])
+    await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', ...lane, pinnedCheck: true, ...plan, io}), /--pinned-check is a Linux computer run's on cua's installed engine/);
+});

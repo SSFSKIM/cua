@@ -15,15 +15,17 @@
 // through the facade; the drag cells (every family and kind 30 of 30, Chrome's and Firefox's canvas, Chrome's drag and
 // drop, the thumbs, Writer unprimed since T16 removed the priming); the events experiment's `move`; the settle through
 // the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
-// compare --engines, linux-native, linux-device-mode: w5's facade.sh); T7 revised's acceptance on the shipped engine (the focus-timer
-// experiment's shipped lane and its stops); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
-// takes of `t14-late`, which the device scene cannot produce, judged by drop-signals-judge.mjs `chromeDropVerdict`);
+// compare --engines, linux-native, linux-device-mode: suites.sh, M4's facade.sh made one runner); T7 revised's acceptance on the shipped engine (the focus-timer
+// experiment's shipped lane and its stops); T7b's engine stop through cua serve on the installed engine (ES, from M5); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
+// takes' path through `t14-late`'s freeze bands, which the device scene cannot produce, judged by drop-signals-judge.mjs
+// `chromeDropVerdict` and its `LATE_BANDS`, ruling 931);
 // T19's predicates manifest, Firefox's drag and drop included (P6); T17's Electron cells (`t17-fix3`, judged by
 // `electronDropVerdict`). Apart in the same sitting, at twice the load
 // (16 stress-ng workers on 8 cores, `--load-factor 2`): thumbs and ranges at 40 a side, the Chromium and Gecko kinds,
 // the settle's observations, the paste and exit settle, the accept signal's false releases and the late takes, T17's
 // Electron cells, and GTK 4's covered capture.
 
+import { DEVELOPMENT_ON_PINNED, PINNED_DEVELOPMENT, PINNED_RELEASE, isCounted, isPinnedRule } from '../linux-engine-diff/candidate.mjs';
 import { SCENE_OPS } from '../linux-engine-diff/ops.mjs';
 
 /** The M3 gate's scenes (`m3-gate-musl`), then M4's, in the frozen order. */
@@ -34,12 +36,16 @@ export const GATE_SCENES = [...M3_SCENES, ...M4_SCENES];
 /** gedit's operations split across two steps: the newest build's failing clipboard_write alone is about 15 minutes (T2). */
 const GEDIT_TEXT = ['type_text', 'type_text_selection', 'type_text_dedicated', 'clipboard_read', 'clipboard_write', 'clipboard_release', 'caret_placed'];
 
-const verdict = (name, minutes, scenes, what, { only = {}, ballast = false } = {}) => ({ name, kind: 'verdict', display: ':0', load: 'idle', minutes, scenes, only, ballast, what });
+const verdict = (name, minutes, scenes, what, { only = {}, ballast = false, holdCanary = false } = {}) => ({ name, kind: 'verdict', display: ':0', load: 'idle', minutes, scenes, only, ballast, what, ...(holdCanary ? { holdCanary } : {}) });
 const experiment = (name, display, load, minutes, args, what, { pilot = null } = {}) => ({ name, kind: 'experiment', display, load, minutes, args, what, pilot });
 const LOAD2 = ['--load-factor', '2'];
-/** w5's runner of the facade suites (T18), relative to the checkout. */
-export const FACADE_SCRIPT = 'docs/evidence/2026-10-28-own-linux-engine/m4/facade/scripts/facade.sh';
-/** A facade suite's part, run by facade.sh on a private desktop of its own; its pilot is the part itself. */
+/**
+ * The runner of the facade suites, relative to the checkout: M4's facade.sh (T18) made the one runner (M5's T1), on a
+ * candidate it is given or on the engine each part's own home installed (`suiteEnv`'s ENGINE). M4's
+ * docs/evidence/…/m4/facade/scripts/facade.sh stays as the record of what M4 ran; no step runs it.
+ */
+export const SUITES_SCRIPT = 'scripts/linux-engine-gate/suites.sh';
+/** A facade suite's part, run by suites.sh on a private desktop of its own; its pilot is the part itself. */
 const suite = (name, minutes, part, what) => ({ name, kind: 'suite', display: 'own', load: 'idle', minutes, args: [part], what, pilot: (args) => args });
 
 /** A drag step under load: `--trials` under 40 is refused at load (T10), so its pilot drops the load. */
@@ -63,13 +69,33 @@ const FOCUS_CLICKS = ['--experiment', 'focus-timer', '--scenarios', 'click-paste
 // family named, the others go unmeasured and fail the sitting (the pilot's F2)
 const FOCUS_STOPS = ['--experiment', 'focus-timer', '--stops-only', '--family', 'chrome,electron'];
 
+/**
+ * The hold canary (task 117; the design session's rulings 897.3, 898.4, 899 and 900): V5's in-front short drop and its
+ * select control on a private display under the gate's Chrome ballast, every cua engine inside cua's worker sandbox
+ * as the service runs it (`--engine-sandbox`), judged by device.mjs `holdCanary` from the engine's own hold records:
+ * a press on a draggable source reads slow at least once, a warm plain drag never, and Chrome is identified. Once on
+ * the installed Chrome the gate's other steps drive (`installed`) and once on the current stable one, extracted from
+ * Google's signed index and never installed (`current-stable`: gate.mjs puts its directory first on PATH, and refuses
+ * the step without it).
+ */
+const CANARY_OPS = ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'];
+/**
+ * The canary's criterion for its draggable cell by architecture (the design session's ruling 930; device.mjs
+ * `holdCanary`): on x64 Chrome 158 often takes its drag before a ping has waited 20 ms (task 119: 0 and then 1 of 9 held
+ * presses reached it, every drop landing), so there a press is judged against the run's own plain control; arm64, where
+ * the extension is meant to fire, keeps the engine's own 20 ms. Any other architecture keeps it too. V5's own canary cells
+ * take the same criterion (ruling 932: its verdict step is marked `holdCanary`).
+ */
+export const CANARY_CRITERION = { x64: 'relative', arm64: 'absolute' };
+const canary = (name, chrome, what) => ({ name, kind: 'canary', display: 'private', load: 'idle', minutes: 15, scenes: ['device-chrome-dnd'], only: { 'device-chrome-dnd': CANARY_OPS }, ballast: true, chrome, what, pilot: (args) => args });
+
 export const STEPS = [
   // ---- the verdict run on :0, M3's scenes and M4's in the frozen order
   verdict('V1', 40, ['gedit'], "gedit's text operations and its caret case (the newest build's clipboard_write about 15 min)", { only: { gedit: GEDIT_TEXT } }),
   verdict('V2', 39, ['desktop', 'gedit', 'chrome', 'over-budget'], "the desktop's operations (run here alone), gedit's reads and input, Chrome's, the over-budget page", { only: { gedit: SCENE_OPS.gedit.filter((op) => !GEDIT_TEXT.includes(op)) } }),
   verdict('V3', 35, ['chrome-input', 'retention', 'minimized', 'minimized-xterm', 'minimized-recorder'], "Chrome's input page, retention, the minimized scenes (T4)"),
   verdict('V4', 34, ['chrome-textarea', 'chrome-address-bar', 'gnome-text-editor', 'paste-target', 'device-gtk4', 'device-xterm', 'device-qt'], 'the browsers\' and GTK 4\'s text with the paste cases; the GTK 4, xterm and Qt device cases'),
-  verdict('V5', 38, ['device-firefox', 'device-chrome', 'device-chrome-dnd', 'identity', 'identity-gtk3', 'identity-gtk4', 'identity-kate'], "Firefox's device cases (T19), Chrome's drags and drops with #263's and #264's cases, under the gate's Chrome ballast; identity (T5), its Chrome windows after device-chrome-dnd", { ballast: true }),
+  verdict('V5', 38, ['device-firefox', 'device-chrome', 'device-chrome-dnd', 'identity', 'identity-gtk3', 'identity-gtk4', 'identity-kate'], "Firefox's device cases (T19), Chrome's drags and drops with #263's and #264's cases, under the gate's Chrome ballast; identity (T5), its Chrome windows after device-chrome-dnd", { ballast: true, holdCanary: true }),
   experiment('Z0', ':0', 'idle', 25, drag('firefox,writer', ['--ops', 'dnd,select']), "on :0: T11's end rest landing Firefox's plain drop, and Writer's drag cell unprimed (T16)"),
 
   // ---- private, idle
@@ -78,12 +104,14 @@ export const STEPS = [
   experiment('D3', 'private', 'idle', 30, drag('firefox'), "Firefox's drag cells, the pointer parked inside (T19), its canvas judged on speed"),
   experiment('D4', 'private', 'idle', 25, drag('gedit,gtk-scale,gnome-text-editor,kate,qtcreator'), 'the GTK and Qt editors\' drag cells'),
   experiment('D5', 'private', 'idle', 25, drag('writer,xterm,xterm-allow,gtk4-input,gnome-terminal,writer-gen'), 'Writer (unprimed, T16), the terminals, GTK 4\'s scale, Writer through gen'),
-  // the facade suites on the candidate (the design session's requirement, 2026-11-12): w5's facade.sh, each part on a
+  // the facade suites on the candidate (the design session's requirement, 2026-11-12): suites.sh, each part on a
   // private desktop it starts itself, the candidate as its ENGINE_BIN; they count only when they pass on the artifact
   suite('R1', 40, 'parity', "repl-parity's native suite on both engine lanes, and the diff against its expected differences"),
   // R2's 45: the counted sitting about 21 min (T18's), and its one top-up as long again when a series needs it (the
-  // design session, 2026-11-13: facade.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate)
-  suite('R2', 45, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines; a series it leaves undetermined gets one top-up of three more runs a lane, pooled by the same rule, and one still undetermined after it is reported, not failed'),
+  // design session, 2026-11-13: suites.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate). From
+  // M5 the engine-answered series are judged in-cell (#370, F8), and one still undetermined after the top-up fails R2
+  // unless declared a gap by name (F8a, compare.mjs DECLARED_ENGINE_GAPS), then unproved and never a pass
+  suite('R2', 45, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines, the operations the engine answers judged by their in-cell time with the wall time beside it, which fails an operation only past a gross backstop of max(10%, 500 ms) over the vendor wall median (ruling 706); a series it leaves undetermined gets one top-up of three more runs a lane, pooled by the same rule, and one still undetermined after it fails, unless the design session declared it a gap by name: then it is unproved, listed apart from the passes'),
   suite('R3', 5, 'accept', "scripts/accept/linux-native.mjs on the candidate, in a home of the run's"),
   suite('R4', 3, 'device', 'scripts/accept/linux-device-mode.mjs on the candidate'),
   { name: 'FB', kind: 'facade', display: 'private', load: 'idle', minutes: 5, args: ['--scenes', 'over-budget'], what: 'the over-budget scene through the real facade: the truncation line in getAXState and the combined observation (T3)', pilot: asIs },
@@ -95,6 +123,11 @@ export const STEPS = [
   experiment('F1a', 'own', 'idle', 20, FOCUS_KEYS, 'T7 revised on the shipped engine: burst, A-B-A, key then paste'),
   experiment('F1b', 'own', 'idle', 12, FOCUS_CLICKS, 'T7 revised on the shipped engine: click then paste, a click into another field then paste'),
   experiment('F2', 'own', 'idle', 8, FOCUS_STOPS, 'T7 revised: SIGTERM straight after keys and after clicks, 30 each on Chrome and Electron, and SIGKILL as the control', { pilot: asIs }),
+  // T7b's stop through cua serve itself (M5's T4 round 2, ruling 728): on the pinned release the serve runs in a HOME of
+  // the run's and selects the run home's installed engine itself, each run's one engine that installed path, so the
+  // Decision Log's claim for it stands on a gate step. The drain lane alone: the kill lane's control is a checkout from
+  // before T7b, no gate's. 17 cells of 10 runs; M4's 160 runs took 12 min
+  experiment('ES', 'own', 'idle', 15, ['--experiment', 'engine-stop', '--lanes', 'drain'], "T7b's engine stop through cua serve itself, the run home's installed engine: every production path (idle, eof, signal, remote, held-back) and case (hold, burst, pairs, handle), 10 runs each"),
   experiment('P1', 'private', 'idle', 30, predicates('click'), "T19's predicates manifest: Firefox's click cases", { pilot: leavePilot }),
   experiment('P2', 'private', 'idle', 30, predicates('scroll'), "T19's predicates manifest: scroll", { pilot: leavePilot }),
   experiment('P3', 'private', 'idle', 30, predicates('move'), "T19's predicates manifest: move", { pilot: leavePilot }),
@@ -105,7 +138,10 @@ export const STEPS = [
   experiment('P5', 'private', 'idle', 20, [...predicates('click,scroll,move,select,dnd'), '--plan', 'leave'], "T19's leave cases: the pointer moved out during the request", { pilot: asIs }),
   experiment('H1', 'private', 'idle', 22, signals('electron', 't17-fix3'), "T17's Electron cells: plain drags and handles, the controls, the four releases off the window"),
   experiment('H2', 'private', 'gate-windows', 25, signals('electron', 't17-fix3', ['--ballast', 'gate']), "T17's Electron cells at the gate's window load"),
-  experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's real late takes (T14), which the gate's device scene cannot produce"),
+  experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's late-take path (T14) in three freeze bands: landed inside the hold, the edge's late takes counted, refused with the hold notice past it (ruling 931)"),
+  canary('K1', 'installed', "the hold canary on the gate's Chrome: a draggable press reads slow, a plain drag fast, Chrome identified, the engine sandboxed as in service"),
+  canary('K2', 'current-stable', 'the hold canary on the current stable Chrome (extracted, not installed)'),
+  experiment('K3', 'private', 'idle', 6, signals('chrome', 'hold-regression', ['--engine-sandbox']), "the hold's regression cells: drops whose page starts them 150 and 400 ms late land inside B, the engine sandboxed (ruling 900)"),
 
   // ---- private, twice the load
   experiment('L1', 'private', 'load2', 22, drag('chrome,electron', ['--ops', 'scroller,range', ...LOAD2]), 'thumbs and ranges at 40 a side against the pinned build (T12, #265)', { pilot: dragLoadPilot }),
@@ -119,7 +155,12 @@ export const STEPS = [
   experiment('L3e', 'own', 'load2', 38, settle('xterm,gtk3,qt5,qt6,gtk4', LOAD2), "the settle's observations: xterm, GTK 3, Qt 5 and 6, GTK 4"),
   experiment('L4a', 'private', 'load2', 25, signals('electron', 't17-fix3', LOAD2), "T17's Electron cells at twice the load"),
   experiment('L4b', 'private', 'load2', 25, signals('chrome', 't14', LOAD2), "the accept signal's false releases (the measurement lane, T14's 300 long drops and the controls)"),
-  experiment('L4c', 'private', 'load2', 4, signals('chrome', 't14-late', LOAD2), 'the late-take rate: real late takes at twice the load'),
+  experiment('L4c', 'private', 'load2', 4, signals('chrome', 't14-late', LOAD2), "the same freeze bands at twice the load (ruling 931)"),
+  // ruling 962: the drops at a stale position (ruling 957, #459) at twice the load, on the shipped lane: t14-long and
+  // t14-floor in Chrome, each its own plan, and Electron's long path that leaves the zone (`t17-long`), sat in turn in
+  // one run (drop-signals-judge.mjs `PART_PLANS`), each part judged by its own plan's judge. 30 min: task 122's a953 sat
+  // the two Chrome plans in 23 on arm64 (t14-floor 16.5, t14-long 6.3), and Electron's 30 drags take about 3
+  experiment('L4d', 'private', 'load2', 30, signals('chrome,electron', 't14-stale', LOAD2), "the stale-position drops at twice the load (rulings 957 and 962): Chrome's long control and the floor's cells, and Electron's long path out of the zone, any false ok and any drop at a stale position a fail"),
   experiment('L5', 'private', 'load2', 4, ['--experiment', 'engine-readiness', '--vendor', '{vendor}', '--family', 'gnome-text-editor', ...LOAD2], "GTK 4's covered first captures judged by content (T9's shortened cap)"),
   experiment('F3a', 'own', 'load2', 30, [...FOCUS_KEYS, ...LOAD2], 'T7 revised at twice the load: burst, A-B-A, key then paste'),
   experiment('F3b', 'own', 'load2', 15, [...FOCUS_CLICKS, ...LOAD2], 'T7 revised at twice the load: click then paste, a click into another field then paste'),
@@ -138,54 +179,98 @@ export const stepNamed = (name) => {
 /** A verdict step's operations: each scene's own (`SCENE_OPS`), or the part `only` names for a scene split across steps. */
 export const verdictOps = (step) => [...new Set(step.scenes.flatMap((scene) => step.only[scene] ?? SCENE_OPS[scene]))];
 
-/** A step's run name: one of its own per execution kind, so a gate's rows and a development run's never share one. */
+/**
+ * A step's run name: one of its own per execution kind, so a gate's rows, a development run's and acceptance on the
+ * pinned release's (`gate` 'pinned') never share one. M5's (task 87's finding 6; M4's read `m4-gate-` and `m4-dev-`).
+ */
 export function runName(step, { gate, pilot }) {
-  return `m4-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
+  if (gate === 'pinned') return `pinned-${step.name}`;
+  // the pinned pilot's is shortened (M5's T4, arm64 round, item (b)): `m5-pinned-dev-V1-pilot` kept no gedit title
+  // whole under run71.sh's TMPDIR, so the run's scratch left it (scenes.mjs `scratchRoot`; gate.mjs `zeroStepProblems`)
+  if (gate === PINNED_DEVELOPMENT) return pilot ? `m5-pdev-${step.name}-pilot` : `m5-pinned-dev-${step.name}`;
+  return `m5-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
 }
 
 /** The label every artifact of a step carries, and the directory name's form of it (candidate.mjs `gateLabel`). */
 export function stepLabel({ gate, pilot }) {
-  if (gate && pilot) throw new Error('a pilot is never a release gate: drop --pilot, or run it as a development run');
+  // a pilot on the pinned rule is a development run on the pinned release (`PINNED_DEVELOPMENT`), never counted
+  if (gate === PINNED_DEVELOPMENT) return { label: DEVELOPMENT_ON_PINNED, slug: `development-run.pinned${pilot ? '.pilot' : ''}`, pilot: Boolean(pilot) };
+  if (gate && pilot) throw new Error('a pilot is never a release gate, nor acceptance: drop --pilot, or run it as a development run');
+  if (gate === 'pinned') return { label: PINNED_RELEASE, slug: 'pinned-release', pilot: false };
   return { label: gate ? 'release gate' : 'development run, not a release gate', slug: gate ? 'release-gate' : `development-run${pilot ? '.pilot' : ''}`, pilot: Boolean(pilot) };
 }
 
 /**
  * A step's arguments to its harness script, `--out` left to the launcher (run71.sh, gate.mjs): `paths` names the
  * candidate, the vendor builds and the vendor's JavaScript client. A gate's experiment takes `--gate` (candidate.mjs's
- * checks), a gate's verdict run takes none (it is a gate unless `--dev`); a development run's verdict takes `--dev`. A
+ * checks), a gate's verdict run takes none (it is a gate unless `--dev`); a development run's verdict takes `--dev`;
+ * acceptance on the pinned release (`gate` 'pinned') gives either kind `--pinned`, candidate.mjs's pinned rule. A
  * pilot (`pilot`, a count) runs the step's smallest form: its `pilot` transform, or `--trials <count>`, and for a
- * verdict one block.
+ * verdict one block; and the harness's `--pilot`, so it takes no top-up and reports what it could not decide unjudged
+ * (ruling 722). A pilot on the pinned rule (`gate` 'pinned-dev') gives `--pinned --pilot`. `arch`, the machine the step
+ * runs on, sets a canary's criterion (`CANARY_CRITERION`).
  */
-export function stepArgs(step, { paths, gate, pilot = null }) {
+export function stepArgs(step, { paths, gate, pilot = null, engineStats = false, arch = process.arch }) {
   const run = runName(step, { gate, pilot });
+  // the opt-in --stats of every cua lane (engine.mjs `recordEngines`), a development run's, whose refusal is gate.mjs's
+  const stats = engineStats ? ['--engine-stats'] : [];
   const fill = (args) => args.map((a) => ({ '{vendor}': paths.vendor, '{newest}': paths.newest })[a] ?? a);
-  if (step.kind === 'verdict') {
+  if (step.kind === 'verdict' || step.kind === 'canary') {
     return [
       '--vendor', paths.vendor, '--newest', paths.newest, '--cua', paths.candidate,
       '--scene', step.scenes.join(','), '--ops', verdictOps(step).join(','),
       '--blocks', pilot ? '1' : '3', '--run', run,
       ...(step.ballast ? ['--ballast', 'gate'] : []),
-      ...(gate ? [] : ['--dev']),
+      ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? [] : ['--dev']),
+      ...(pilot ? ['--pilot'] : []),
+      ...stats,
+      // the canary's engines as the service runs them (engine-sandbox.mjs)
+      ...(step.kind === 'canary' ? ['--engine-sandbox'] : []),
+      // the hold canary's criterion by architecture: K1's and K2's (ruling 930), and V5's in-step canary (ruling 932)
+      ...(step.kind === 'canary' || step.holdCanary ? ['--hold-canary', CANARY_CRITERION[arch] ?? 'absolute'] : []),
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];
-  // the suite's part alone: its engine, out and label are facade.sh's environment (`suiteEnv`)
+  // the suite's part alone: its engine, out and label are suites.sh's environment (`suiteEnv`)
   if (step.kind === 'suite') return [...step.args];
   const base = fill(step.args);
   const sized = pilot ? (step.pilot ?? ((args, n) => [...args, '--trials', String(n)]))(base, pilot) : base;
-  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate ? ['--gate'] : [])];
+  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? ['--gate'] : []), ...(pilot ? ['--pilot'] : []), ...stats];
 }
 
-/** The harness script a step runs, relative to the checkout. */
-export const stepScript = (step) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: FACADE_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
+/**
+ * Whether a step's measured engines start through engine.mjs, where the opt-in `--engine-stats` reaches them: the
+ * verdict runs and the experiments, except the settle (cua's own service starts its engines) and the engine stop (cua
+ * serve does); the facade and the suites start theirs through cua's service too.
+ */
+export function startsEnginesThroughHarness(step) {
+  if (!['verdict', 'experiment'].includes(step.kind)) return false;
+  const experiment = step.kind === 'experiment' ? step.args[step.args.indexOf('--experiment') + 1] : null;
+  return !['settle', 'engine-stop'].includes(experiment);
+}
+
+/** The harness script a step runs, relative to the checkout: a suite's is suites.sh, whatever its engine. */
+export const stepScript = (step) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: SUITES_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
 
 /**
- * A suite step's environment for facade.sh: the candidate (a gate's the checked copy), its out directory in the step's
- * labelled directory, its log directory `logs` (a short scratch one: facade.sh starts the private desktop's session bus
- * under it, and a socket's path has 108 bytes; the pilot's R3 and R4 met "Socket name too long"), and its label
- * (`counted`, which refuses an unclean tree, or `pilot`).
+ * A suite step's environment for suites.sh: which engine its cua lanes run (`ENGINE`): on the pinned release
+ * (`pinned`) `installed`, the engine each part's own home's cua install placed, with no ENGINE_BIN; else `candidate`,
+ * the candidate (a gate's the checked copy) as ENGINE_BIN. Its out directory in the step's labelled directory, its log
+ * directory `logs` (a short scratch one: the runner starts the private desktop's session bus under it, and a socket's
+ * path has 108 bytes; the pilot's R3 and R4 met "Socket name too long"), its label (`counted`, which refuses an
+ * unclean tree, or `pilot`), and the device its lanes are declared on (`DEVICE`).
  */
-export const suiteEnv = ({ candidate, dir, gate, logs }) => ({ ENGINE_BIN: candidate, OUT: `${dir}/run`, LOGS: logs, LABEL: gate ? 'counted' : 'pilot' });
+export const suiteEnv = ({ candidate, dir, gate, logs, pinned = false, device }) => ({
+  ENGINE: pinned ? 'installed' : 'candidate',
+  ...(pinned ? {} : { ENGINE_BIN: candidate }),
+  OUT: `${dir}/run`,
+  LOGS: logs,
+  LABEL: isCounted(gate) ? 'counted' : 'pilot',
+  // the pinned rule enforced in the suites' own homes on both pinned modes, apart from whether the run counts (review
+  // finding 1): a development run on the pinned release refuses a home the rule refuses, as acceptance does
+  ...(isPinnedRule(gate) ? { PINNED_RULE: 'enforce' } : {}),
+  DEVICE: device,
+});
 
 /** The planned minutes: in all, per display (`:0`, and private, the experiments' own servers included) and per load. */
 export function totals(steps = STEPS) {

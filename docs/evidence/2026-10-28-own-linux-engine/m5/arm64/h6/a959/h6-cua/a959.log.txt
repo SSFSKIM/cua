@@ -1,0 +1,9 @@
+2026-11-21T05:48:09Z start s1 at 69bd7993e1f1cb252574939bd6e8e80674bab5b8, cua cua-engine 0.4.2 (9371d2348cf8), df 112G load=0.73 9.12 12.52
+2026-11-21T05:48:09Z load started: stress-ng pid 602944, 16 workers
+2026-11-21T05:58:39Z load ended
+2026-11-21T05:58:39Z end s1 exit 0 load=17.39 16.18 14.81
+2026-11-21T05:58:39Z start s2 at 69bd7993e1f1cb252574939bd6e8e80674bab5b8, cua cua-engine 0.4.2 (9371d2348cf8), df 112G load=17.39 16.18 14.81
+2026-11-21T05:58:39Z load started: stress-ng pid 610711, 16 workers
+2026-11-21T06:08:54Z load ended
+2026-11-21T06:08:54Z end s2 exit 0 load=17.12 16.94 15.92
+2026-11-21T06:08:54Z a959 done: s1 s2

@@ -1,0 +1,16 @@
+== D1.pinned-release
+== C1.pinned-release
+  40 | idle | freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable chrome
+== K1.pinned-release
+  36 | - | non-freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable not visible here
+== K2.pinned-release
+  36 | - | non-freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable not visible here
+== K3.pinned-release
+  20 | idle | non-freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable not visible here
+== L2a.pinned-release
+== L4b.pinned-release
+  360 | load2 | non-freeze | adaptive null: no identification recorded for this hold
+== L4c.pinned-release
+  40 | load2 | freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable chrome
+== L4d.pinned-release
+  490 | load2 | non-freeze | adaptive null: no identification recorded for this hold

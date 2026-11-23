@@ -1,0 +1,109 @@
+// The gate runner's launches, dry (task 121, ruling 929.2): launch-plan.mjs drives gate.mjs `runStep` through its own
+// seams, so what it prints is what the runner would hand its display or its spawn, launching nothing. Display-free.
+
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { after, test } from 'node:test';
+import './fixture-scope.mjs';
+
+import { dryLaunch, envDelta, launchPlan, normalize, planContents } from '../../scripts/linux-engine-gate/launch-plan.mjs';
+import { launchCommand, parseGateArgs } from '../../scripts/linux-engine-gate/gate.mjs';
+import { STEPS, stepArgs, stepNamed } from '../../scripts/linux-engine-gate/steps.mjs';
+
+const scratch = mkdtempSync(join(tmpdir(), 'cua171-launch-plan-'));
+after(() => rmSync(scratch, { recursive: true, force: true }));
+const home = join(scratch, 'home');
+mkdirSync(join(home, 'engine', 'linux'), { recursive: true });
+writeFileSync(join(home, 'engine', 'linux', 'cua-engine'), 'x');
+let n = 0;
+const fresh = () => join(scratch, `out-${n++}`);
+
+test('an experiment on a private display: the harness, its pinned arguments and --out, and CUA_HOME the run home', async () => {
+  const out = fresh();
+  const base = { ...process.env, CUA_HOME: '/elsewhere' };
+  const { print, launch } = await dryLaunch(stepNamed('C1'), { pinned: home, out, base });
+  const a = parseGateArgs(['run', 'C1', '--pinned', home, '--out', out]);
+  assert.equal(print, launchCommand(stepNamed('C1'), a));
+  assert.equal(launch.via, 'private display');
+  assert.match(launch.command, /scripts\/linux-engine-diff\.mjs$/);
+  assert.deepEqual(launch.args, [...stepArgs(stepNamed('C1'), { paths: a, gate: 'pinned' }), '--out', join(out, 'C1.pinned-release', 'run')]);
+  assert.ok(launch.env.includes(`CUA_HOME=${home}`), launch.env.join('\n'));
+});
+
+test('a step on its own display is spawned, without DISPLAY; a :0 step is never launched, only printed', async () => {
+  const base = { ...process.env, DISPLAY: ':42', XAUTHORITY: '/x' };
+  const own = await dryLaunch(stepNamed('F2'), { pinned: home, out: fresh(), base });
+  assert.equal(own.launch.via, 'spawn');
+  assert.equal(own.launch.command, process.execPath);
+  assert.ok(own.launch.env.includes('-DISPLAY') && own.launch.env.includes('-XAUTHORITY'), own.launch.env.join('\n'));
+  const zero = await dryLaunch(stepNamed('V5'), { pinned: home, out: fresh(), base });
+  assert.equal(zero.launch, null);
+  assert.match(zero.print, /sitting\.mjs/);
+});
+
+test("the plan's text: every step not skipped, the suites' fresh log directory as its pattern", async () => {
+  const text = await launchPlan({ pinned: home, out: fresh(), skip: /^K/ });
+  const names = [...text.matchAll(/^## (\S+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(names, STEPS.map((s) => s.name).filter((s) => !s.startsWith('K')));
+  assert.match(text, /LOGS=\/tmp\/cua171-gl-XXXXXX/);
+  assert.doesNotMatch(text, /cua171-gl-(?!XXXXXX)/);
+});
+
+test('envDelta and normalize', () => {
+  assert.deepEqual(envDelta({ A: '1', B: '3', D: '4' }, { A: '1', B: '2', C: '0' }), ['B=3', '-C', 'D=4']);
+  assert.equal(normalize('LOGS=/tmp/cua171-gl-aB3dE9 and /tmp/cua171-gl-XXXXXX'), 'LOGS=/tmp/cua171-gl-XXXXXX and /tmp/cua171-gl-XXXXXX');
+});
+
+test("a drop-signals step's plan contents on each architecture: its cells, counts and freezes with their start rule (ruling 954)", async () => {
+  const { launch } = await dryLaunch(stepNamed('C1'), { pinned: home, out: fresh() });
+  const lines = await planContents(launch.args, 'arm64');
+  assert.equal(lines[0], 'plan t14-late on arm64:');
+  assert.ok(lines.some((l) => /^  cua freeze-700 x10 freeze \{"from":60,"to":700,"afterPress":55\}$/.test(l)), lines.join('\n'));
+  assert.deepEqual(await planContents((await dryLaunch(stepNamed('D1'), { pinned: home, out: fresh() })).launch.args, 'x64'), [], 'not a drop-signals step');
+  const text = await launchPlan({ pinned: home, out: fresh(), skip: /^(?!C1$)/, arch: 'x64' });
+  assert.match(text, /plan t14-late on x64:\n  cua freeze-600 x10 freeze/);
+});
+
+test("the review of cf1ef10f, finding 5: a plan is rendered from the launch's own arguments through the runner's parser: its lanes, its --trials cap and its default plan", async () => {
+  const launched = (...extra) => ['--experiment', 'drop-signals', '--family', 'chrome', ...extra, '--cua', '/x/cua-engine', '--run', 'r', '--out', '/x/out'];
+  // the lanes the launch names, each cell capped by --trials, as drop-signals.mjs runs them
+  const lanes = await planContents(launched('--plan', 't14', '--lanes', 'cua:accept', '--trials', '3'), 'x64');
+  assert.equal(lanes[0], 'plan t14 on x64:');
+  assert.ok(lanes.length > 1 && lanes.slice(1).every((l) => /^  cua:accept \S+ x[1-3] freeze /.test(l)), lanes.join('\n'));
+  // no --plan: the runner's default plan
+  const main = await planContents(launched(), 'x64');
+  assert.equal(main[0], 'plan main on x64:');
+  assert.ok(main.some((l) => l.startsWith('  cua plain x60 ')), main.join('\n'));
+  // the gate ballast adds the gate's cells to the default plan
+  assert.ok((await planContents(launched('--ballast', 'gate'), 'x64')).length > main.length);
+});
+
+test("the review of cf1ef10f, finding 5: each architecture's full plan through --arch, every drop-signals step's contents its printed launch's own", async () => {
+  const cli = fileURLToPath(new URL('../../scripts/linux-engine-gate/launch-plan.mjs', import.meta.url));
+  const plans = {};
+  for (const arch of ['x64', 'arm64']) {
+    // K2's launch needs the extracted current stable Chrome, which a CI runner (here a HOME of the test's) has none of
+    const r = spawnSync(process.execPath, [cli, '--pinned', home, '--out', fresh(), '--arch', arch, '--skip', '^K2$'], { encoding: 'utf8', env: { ...process.env, HOME: scratch } });
+    assert.equal(r.status, 0, r.stderr);
+    plans[arch] = r.stdout;
+    const sections = r.stdout.split(/^## /m).slice(1);
+    assert.deepEqual(sections.map((x) => x.split('\n')[0]), STEPS.map((x) => x.name).filter((x) => x !== 'K2'));
+    let signals = 0;
+    for (const section of sections) {
+      const args = /\nargs:\n((?: {2}.*\n)*)/.exec(section)?.[1].split('\n').filter(Boolean).map((x) => x.slice(2)) ?? [];
+      const contents = await planContents(args, arch);
+      if (contents.length) signals += 1;
+      for (const line of contents) assert.ok(section.includes(`\n${line}\n`), `${section.split('\n')[0]}: ${line}`);
+    }
+    assert.equal(signals, STEPS.filter((x) => x.kind === 'experiment' && x.display !== ':0' && x.args.includes('drop-signals')).length);
+  }
+  // the switch reaches the launches: the canary's criterion and the vendor's runtime are the architecture's
+  assert.match(plans.x64, /## K1\n[^#]*\n {2}--hold-canary\n {2}relative\n/);
+  assert.match(plans.arm64, /## K1\n[^#]*\n {2}--hold-canary\n {2}absolute\n/);
+  assert.match(plans.arm64, /linux-arm64/);
+  assert.doesNotMatch(plans.arm64, /linux-x64/);
+});

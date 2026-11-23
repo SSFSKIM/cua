@@ -1,0 +1,52 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "L3b",
+  "pilot": false,
+  "what": "the settle's observations: Electron",
+  "display": "own",
+  "load": "load2",
+  "minutes": 24,
+  "run_name": "pinned-L3b",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t105-x64/",
+    "commit": "3b5c0441b41e67ab87dd1265d2ca74325f93dec3",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-x64-041/engine/linux/cua-engine",
+    "sha256": "c432c8c2bc4f905b32a171f439bd5e500724b8ff7f8f961f64a34437d9241626"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-x64-041",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t105-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t105-x64/scripts/linux-engine-gate/gate.mjs run L3b --pinned /Users/new/.local/share/cua-171/m5/home-x64-041 --out /Users/new/.local/share/cua-171/m5/out-x64-h4",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "settle",
+    "--lanes",
+    "shipped",
+    "--family",
+    "electron",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-x64-041/engine/linux/cua-engine",
+    "--run",
+    "pinned-L3b",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-x64-h4/L3b.pinned-release/run"
+  ],
+  "started": "2026-11-19T00:58:58.176Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-19T01:16:27.567Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unclean": [
+    "a process it spawned still runs: pid 574911 openbox"
+  ]
+}

@@ -1,0 +1,4 @@
+2026-11-18T04:07:26Z prepared /Users/new/.local/share/cua-parity-remote/parity-JBepqZ; pinned check exit 0; release 26.928.40906-linux-arm64
+2026-11-18T04:20:01Z vendor exit 1 {"out":"/Users/new/.local/share/cua-171/m5/pilot-arm64/vendor-reruns/rerun-2/vendor","cases":34,"pending":0,"pendingEnvironmentCells":0,"pendingObligations":[],"complete":true,"assertions":"FAIL","coveredCases":31,"recordedVendorDefects":0,"engine":"vendor"}
+2026-11-18T04:20:02Z cleanup exit 0
+private-desktop: :1 session; command exit 0; watchdog clean

@@ -298,7 +298,7 @@ test("the private server's own clients, its watchdog, its mark and the run's rec
  * What reaches an X display when the harness starts it: its X tools (xtrace among them, started through `setpriv` for
  * its parent-death signal, audit.mjs), the engines, the applications, the bus daemon.
  */
-const X_FACING = new Set(["'xtrace'", "'setpriv'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'cmd', 'CHROME_COMMAND']);
+const X_FACING = new Set(["'xtrace'", "'setpriv'", "'stdbuf'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'launch.command', 'values.engine', 'args.cua', 'cmd', 'this.command', 'exe']);
 
 /**
  * What the harness starts that reaches no X display: the bus tools, its load and its build steps, and the run's
@@ -325,7 +325,7 @@ test('every start of an X-facing tool goes through the spawner, and nothing else
   assert.deepEqual(unguarded.map(({ file, line, command }) => `${file}:${line}: ${command}`), [], 'an X-facing start, or an unknown one, outside the spawner');
   const unknown = starts.filter((s) => !X_FACING.has(s.command) && !NOT_X_FACING.has(s.command));
   assert.deepEqual(unknown.map(({ file, line, command }) => `${file}:${line}: ${command}`), [], 'every command the harness starts is known to reach a display or not');
-  for (const tool of ["'setpriv'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'this.bin', 'cmd', 'CHROME_COMMAND']) {
+  for (const tool of ["'setpriv'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'this.bin', 'cmd', 'this.command', 'exe']) {
     assert.ok(starts.some((s) => s.command === tool && s.guarded), `${tool} is started, through the spawner`);
   }
 });

@@ -1,0 +1,29 @@
+== /Users/new/.local/share/cua-171/m5/out-x64-h7/C1.pinned-release/run/results.jsonl: 40 drags, load idle, lanes cua
+verdict: pass true; failed []
+findings: ["5 late takes, 5 reported","11 drags whose drag and drop never took, answered as plain drags","T14's share, reported and not a fail: 0 of 24 landed drops answered unconfirmed, within 5%"]
+counts: false_ok 0, unjudged 0, missing_landing 0, false_alarms 0, harness_escapes 0, late 5, late_reported 5, untaken 11, landed 24, unconfirmed_landed 0
+judge's bands: {"inside":{"drags":10,"expected":10,"late":0,"unexercised":0},"edge":{"drags":20,"expected":null,"late":5,"unexercised":0},"past":{"drags":10,"expected":10,"late":0,"unexercised":0}}
+
+| band | drags | identified | stop skipped | stop not before the thaw | unexercised | judge's outcome (exercised) | late takes (exercised) | late takes (all) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| inside | 10 | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
+| edge | 20 | 20 | 0 | 0 | 0 | – | 5 | 5 |
+| past | 10 | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
+
+| cell | n | identified | bound | press marked (ms after send) | median | value − send (server ms) | stop began | thawed | skipped | marks passed over |
+|---|---:|---:|---:|---|---:|---|---|---|---:|---|
+| freeze-600 | 10 | 10 | 10 | 4.4–12.4 | 5.75 | 2–10 | 59.4–67.2 | 600–602.8 | 0 | none |
+| freeze-646 | 5 | 5 | 5 | 4.8–9.4 | 5.2 | 2–6 | 59–64 | 646.8–648.3 | 0 | none |
+| freeze-648 | 5 | 5 | 5 | 4.9–11.4 | 5.2 | 2–8 | 59.3–65.1 | 647.9–651.2 | 0 | none |
+| freeze-650 | 5 | 5 | 5 | 4.7–10 | 6.1 | 2–8 | 59.3–64.4 | 651.9–653.4 | 0 | none |
+| freeze-652 | 5 | 5 | 5 | 4.4–10.3 | 8.8 | 2–8 | 59.6–64.7 | 653.5–655.8 | 0 | none |
+| freeze-700 | 10 | 10 | 10 | 4.5–10.8 | 5.1 | 2–9 | 58.9–65.5 | 699.4–700.7 | 0 | none |
+
+binding: 40 of 40 press marks bound; value − send over the bound: 2–10 server ms (median 3)
+freeze rows with no freeze record: 0
+stops begun more than 1 ms before max(60, mark + 55): 7 (freeze-600 #7: mark 5.9, stop 59.7; freeze-646 #2: mark 5.2, stop 59; freeze-648 #0: mark 11.4, stop 65.1; freeze-648 #2: mark 5.5, stop 59.4; freeze-650 #3: mark 6.1, stop 59.6; freeze-700 #5: mark 6.3, stop 59.9; freeze-700 #6: mark 5, stop 58.9)
+
+unexercised rows: 0
+
+identification over every drag:
+  40 | identified by: Google-chrome, role browser, application "Google Chrome", executable chrome

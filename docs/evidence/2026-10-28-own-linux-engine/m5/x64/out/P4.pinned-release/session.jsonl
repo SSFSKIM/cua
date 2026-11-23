@@ -1,0 +1,4 @@
+{"t":"2026-11-16T21:58:05.867Z","label":"acceptance on the pinned release","kind":"server","display":":2","pid":4088972}
+{"t":"2026-11-16T21:58:06.262Z","label":"acceptance on the pinned release","kind":"setup","openbox":4088983,"person":"8388620"}
+{"t":"2026-11-16T22:27:02.046Z","label":"acceptance on the pinned release","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-16T22:27:03.061Z","label":"acceptance on the pinned release","kind":"server-stopped","clean":true,"reason":null}

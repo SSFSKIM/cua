@@ -24,7 +24,7 @@ const lateSitting = ({ late = 3, landed = 5, unconfirmed = 2, lateOf = {} } = {}
 const lateSpecs = (n) => specs(['cua', 'freeze-250', n]);
 
 test("the gate's Chrome plans each get a judge: t14-late and t14, with t14-floor and the long controls; the surveys none", () => {
-  for (const plan of ['t14', 't14-late', 't14-floor', 't14-long', 't14-long-gate']) assert.equal(judgedChromePlan({ families: ['chrome'], plan }), true, plan);
+  for (const plan of ['t14', 't14-late', 't14-late-edge', 't14-floor', 't14-long', 't14-long-gate']) assert.equal(judgedChromePlan({ families: ['chrome'], plan }), true, plan);
   assert.equal(judgedChromePlan({ plan: 't14-late' }), true, 'chrome is the experiment\'s default family');
   assert.equal(judgedChromePlan({ families: ['electron'], plan: 't14-late' }), false);
   assert.equal(judgedChromePlan({ families: ['chrome'], plan: 'main' }), false, "T13's survey measures, and judges nothing");
@@ -34,36 +34,36 @@ test("the gate's Chrome plans each get a judge: t14-late and t14, with t14-floor
   assert.equal(dropSignalsVerdict({ families: ['chrome'], plan: 't14-late' }, []).judge, 'chromeDropVerdict');
 });
 
-test('a t14-late sitting whose late takes were each reported passes, its counts kept', () => {
-  const v = chromeDropVerdict(lateSitting(), { specs: lateSpecs(10), plan: 't14-late' });
+test('a t14-late-edge sitting (the knife-edge ride-along, ruling 931.5) whose late takes were each reported passes, its counts kept', () => {
+  const v = chromeDropVerdict(lateSitting(), { specs: lateSpecs(10), plan: 't14-late-edge' });
   assert.deepEqual(v.failed, []);
   assert.deepEqual([v.counts.late, v.counts.late_reported, v.counts.landed, v.counts.false_ok], [3, 3, 5, 0]);
 });
 
-test('a t14-late sitting with no late take proves nothing of #264, and fails', () => {
-  const v = chromeDropVerdict(lateSitting({ late: 0, landed: 8 }), { specs: lateSpecs(10), plan: 't14-late' });
+test('a t14-late-edge sitting (the knife-edge ride-along) with no late take proves nothing of #264, and fails', () => {
+  const v = chromeDropVerdict(lateSitting({ late: 0, landed: 8 }), { specs: lateSpecs(10), plan: 't14-late-edge' });
   assert.deepEqual(v.failed, ['no late take came: the sitting proves nothing of #264']);
 });
 
 test('a candidate that reports none of the real late takes fails: no notice, no refusal, no Escape', () => {
-  const v = chromeDropVerdict(lateSitting({ lateOf: { pending: null } }), { specs: lateSpecs(10), plan: 't14-late' });
+  const v = chromeDropVerdict(lateSitting({ lateOf: { pending: null } }), { specs: lateSpecs(10), plan: 't14-late-edge' });
   assert.ok(v.failed.includes('cua freeze-250: a late take not reported (its notice on the read, the next acting request refused with it, its Escape) on 3 of 10 (#0, #1, #2)'), v.failed.join('\n'));
   assert.ok(v.failed.some((f) => /answered ok with no drop and nothing pending on 3 of 10/.test(f)), 'and the ok on a drop that did not land is a false ok');
 });
 
 test("a late take's notice is not enough: the next acting request refused with it, and its Escape, are T14's contract too", () => {
-  const unrefused = chromeDropVerdict(lateSitting({ late: 1, lateOf: { next: { ok: true, error: null, late_dnd: null } } }), { specs: lateSpecs(8), plan: 't14-late' });
+  const unrefused = chromeDropVerdict(lateSitting({ late: 1, lateOf: { next: { ok: true, error: null, late_dnd: null } } }), { specs: lateSpecs(8), plan: 't14-late-edge' });
   assert.ok(unrefused.failed.some((f) => /a late take not reported .* on 1 of 8/.test(f)), unrefused.failed.join('\n'));
   assert.ok(unrefused.failed.some((f) => /the read carried a notice, and the next acting request was not refused with it, on 1 of 8/.test(f)));
   const row = chrome({ cell: 'freeze-250', landed: false, late: true, pending: 'late' });
   row.next.late_dnd.escaped = false;
-  const unescaped = chromeDropVerdict([row], { specs: lateSpecs(1), plan: 't14-late' });
+  const unescaped = chromeDropVerdict([row], { specs: lateSpecs(1), plan: 't14-late-edge' });
   assert.ok(unescaped.failed.some((f) => /a late take not reported .* on 1 of 1/.test(f)), unescaped.failed.join('\n'));
 });
 
 test('a late notice on a drag with no late take fails: a normal drop leaves no notice and no Escape', () => {
   const rows = [...lateSitting({ late: 1 }), chrome({ cell: 'freeze-250', i: 9, landed: true, pending: 'late' })];
-  const v = chromeDropVerdict(rows, { specs: lateSpecs(9), plan: 't14-late' });
+  const v = chromeDropVerdict(rows, { specs: lateSpecs(9), plan: 't14-late-edge' });
   assert.deepEqual(v.failed, ['cua freeze-250: a late drag and drop reported, and its Escape sent, on a drag with no late take, on 1 of 9 (#9)']);
 });
 
@@ -124,7 +124,7 @@ test("a drag whose drag and drop never took answers as a plain drag: its ok clai
   const lost = chrome({ cell: 'freeze-250', i: 1, landed: false });
   lost.signals.take_after_press_ms = null;
   lost.hold = { taken: false };
-  const v = chromeDropVerdict([chrome({ cell: 'freeze-250', i: 0, landed: false, late: true, pending: 'late' }), lost], { specs: lateSpecs(2), plan: 't14-late' });
+  const v = chromeDropVerdict([chrome({ cell: 'freeze-250', i: 0, landed: false, late: true, pending: 'late' }), lost], { specs: lateSpecs(2), plan: 't14-late-edge' });
   assert.deepEqual(v.failed, []);
   assert.equal(v.counts.untaken, 1);
   // a control: one took and was reported, one never took: honest; none took: the control proved nothing
@@ -136,7 +136,7 @@ test("a drag whose drag and drop never took answers as a plain drag: its ok clai
 });
 
 test('a sitting capped by --trials (a pilot) with no late take is unjudged on that count, a finding; the whole plan must make one', () => {
-  const v = chromeDropVerdict(lateSitting({ late: 0, landed: 2, unconfirmed: 0 }), { specs: lateSpecs(2), plan: 't14-late', capped: true });
+  const v = chromeDropVerdict(lateSitting({ late: 0, landed: 2, unconfirmed: 0 }), { specs: lateSpecs(2), plan: 't14-late-edge', capped: true });
   assert.deepEqual(v.failed, []);
   assert.match(v.findings.join('\n'), /no late take came in a sitting capped by --trials: #264 unjudged here/);
 });

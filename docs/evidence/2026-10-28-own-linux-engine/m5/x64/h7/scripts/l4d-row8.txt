@@ -1,0 +1,38 @@
+lane: "cua"
+cell: "long-left"
+i: 8
+block: 0
+cold: false
+end: {"x":504,"y":587}
+end_park: null
+ok: true
+ms: 482.3
+route: "background"
+reply_notice: null
+notice: null
+escaped: false
+outcome: {"started":true,"landed":false,"effect":null}
+after_release: {"by_cursor":null,"confirmed_by":"Activation(18874370)","confirming":true,"drop_window":18874370,"release_over":null,"released_with_take":true}
+after_take: {"release_after_take_ms":445.082134,"steps_after_take":895}
+wall: {"press_ms":1795251676590.413,"release_ms":1795251677062.5425}
+press: {"crossed":true,"grab_ms":1.531256,"pointer_inside":true,"samples":5,"strays":{"count":1,"first":["leave_grab"]},"taken":true}
+xdnd_aware: true
+next: {"ok":true,"error":null,"late_dnd":null}
+hold: {"adaptive":null,"bound_ms":450,"held":false,"keepalives":0,"path_ms":471.99921500000005,"pings":null,"refreshes":null,"take_after_press_ms":26.972284,"taken":true,"waited_ms":0}
+signals: {"take_after_press_ms":27.8,"take_after_release_ms":-444.3,"late_take":false,"activation_after_release_ms":4.8,"accept_shown":true,"accept_indeterminate":false}
+cursors: [{"serial":81,"image":"bd1dda57d32d72d7","named":false,"t_ms":20.2},{"serial":82,"image":"bd1dda57d32d72d7","named":false,"t_ms":28.9},{"serial":83,"image":"1dc357097b1e7b9e","named":false,"t_ms":31.4},{"serial":81,"image":"b46b902abf52318c","named":false,"t_ms":476.9},{"serial":80,"image":"b46b902abf52318c","named":false,"t_ms":480.4}]
+before.dnd: {"plain":{"starts":8,"drops":0},"nested":{"starts":0,"drops":0},"nested-late":{"starts":0,"drops":0},"slider":{"starts":0,"drops":0},"dragstart-150":{"starts":0,"drops":0},"press-150":{"starts":0,"drops":0},"dragstart-400":{"starts":0,"drops":0},"press-400":{"starts":0,"drops":0},"dragstart-500":{"starts":0,"drops":0},"dragstart-600":{"starts":0,"drops":0},"link":{"starts":0,"drops":0},"image":{"starts":0,"drops":0},"seltext":{"starts":0,"drops":0},"canvas-drag":{"starts":0,"drops":0},"inzone":{"starts":0,"drops":0},"move":{"starts":0,"drops":0}}
+after.dnd: {"plain":{"starts":9,"drops":0},"nested":{"starts":0,"drops":0},"nested-late":{"starts":0,"drops":0},"slider":{"starts":0,"drops":0},"dragstart-150":{"starts":0,"drops":0},"press-150":{"starts":0,"drops":0},"dragstart-400":{"starts":0,"drops":0},"press-400":{"starts":0,"drops":0},"dragstart-500":{"starts":0,"drops":0},"dragstart-600":{"starts":0,"drops":0},"link":{"starts":0,"drops":0},"image":{"starts":0,"drops":0},"seltext":{"starts":0,"drops":0},"canvas-drag":{"starts":0,"drops":0},"inzone":{"starts":0,"drops":0},"move":{"starts":0,"drops":0}}
+dnd: {"in_front":true}
+ownDragend: 1; stampedDragend: 1; pendingOf: {"kind":null,"notice":false,"refused":false,"kept":true}; landingOf: null; pathEndOf: outside
+watch: [{"kind":"create","window":33554448,"override_redirect":false,"x":0,"y":0,"w":1,"h":1,"wall_ms":1795251676590.14},{"kind":"destroy","window":33554448,"wall_ms":1795251676590.163},{"kind":"create","window":18876934,"override_redirect":true,"x":-100,"y":-100,"w":10,"h":10,"wall_ms":1795251676610.518},{"kind":"cursor","serial":81,"named":false,"server_time":2083885044,"image_serial":81,"w":32,"h":32,"xhot":16,"yhot":16,"image":"bd1dda57d32d72d7","wall_ms":1795251676610.566},{"kind":"create","window":18876935,"override_redirect":true,"x":546,"y":197,"w":50,"h":36,"wall_ms":1795251676610.718},{"kind":"map","window":18876935,"override_redirect":true,"wall_ms":1795251676615.038},{"kind":"take","owner":18876934,"subtype":0,"server_time":2083885052,"wall_ms":1795251676618.257},{"kind":"create","window":18876937,"override_redirect":true,"x":-100,"y":-100,"w":10,"h":10,"wall_ms":1795251676618.271},{"kind":"map","window":18876937,"override_redirect":true,"wall_ms":1795251676618.274},{"kind":"cursor","serial":82,"named":false,"server_time":2083885053,"image_serial":82,"w":32,"h":32,"xhot":16,"yhot":16,"image":"bd1dda57d32d72d7","wall_ms":1795251676619.348},{"kind":"create","window":18876938,"ov…(35829)
+crossings: 2
+probe: {"ms":90.3,"chain":[{"id":":1.0:/org/a11y/atspi/accessible/206","role":"panel","name":"Plain source","states":["enabled","sensitive","showing","visible"],"interfaces":["Accessible","Action","Component","Text","Hypertext","Collection","Document","Hyperlink"],"attributes":{"text-align":"left","id":"plain","class":"abs src","explicit-name":"true","name-from":"attribute","setsize":"0","tag":"div","display":"block"}}],"deepest":{"id":":1.0:/org/a11y/atspi/accessible/206","role":"panel","name":"Plain source","states":["enabled","sensitive","showing","visible"],"interfaces":["Accessible","Action","Co…(844)
+
+the cell's other 99 rows:
+  after_release.confirmed_by: {"Activation(<w>)":99}
+  after_release.confirming: {"true":99}; released_with_take: {"true":99}
+  activation_after_release_ms null: 99
+  accept_shown: {"false":93,"true":6}; outcome.started: {"true":99}; ownDragend: {"0":99}
+  hold.adaptive.way: {"null":99}; hold.held: {"false":99}; keepalives>0: 0
+  block: {"0":9,"1":10,"2":10,"3":10,"4":10,"5":10,"6":10,"7":10,"8":10,"9":10}; cold: {"true":10,"false":89}

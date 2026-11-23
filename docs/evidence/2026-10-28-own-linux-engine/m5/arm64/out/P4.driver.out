@@ -1,0 +1,2 @@
+step.sh 2026-11-18T18:57:38Z start P4 after 0 s quiet wait: load=0.33 0.19 0.19 stress-ng=none
+step.sh 2026-11-18T19:25:41Z end P4 exit 0 load=0.18 0.17 0.18

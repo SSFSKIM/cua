@@ -1,0 +1,88 @@
+## K1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task121/cmp/tree/scripts/linux-engine-gate/gate.mjs run K1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task121/cmp/out/K1
+launch: private display
+command: /Users/new/.local/share/cua-171/task121/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task121/cmp/tree/
+args:
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --scene
+  device-chrome-dnd
+  --ops
+  chrome_dnd_short_in_front_shared,chrome_select_nudged_shared
+  --blocks
+  3
+  --run
+  pinned-K1
+  --ballast
+  gate
+  --pinned
+  --engine-sandbox
+  --hold-canary
+  relative
+  --out
+  /Users/new/.local/share/cua-171/task121/cmp/out/K1/K1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## K2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task121/cmp/tree/scripts/linux-engine-gate/gate.mjs run K2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task121/cmp/out/K2
+launch: private display
+command: /Users/new/.local/share/cua-171/task121/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task121/cmp/tree/
+args:
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --scene
+  device-chrome-dnd
+  --ops
+  chrome_dnd_short_in_front_shared,chrome_select_nudged_shared
+  --blocks
+  3
+  --run
+  pinned-K2
+  --ballast
+  gate
+  --pinned
+  --engine-sandbox
+  --hold-canary
+  relative
+  --out
+  /Users/new/.local/share/cua-171/task121/cmp/out/K2/K2.pinned-release/run
+env:
+  CUA171_CHROME_COMMAND=/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/bin/google-chrome
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/bin:/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## K3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task121/cmp/tree/scripts/linux-engine-gate/gate.mjs run K3 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task121/cmp/out/K3
+launch: private display
+command: /Users/new/.local/share/cua-171/task121/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task121/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  chrome
+  --plan
+  hold-regression
+  --engine-sandbox
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-K3
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task121/cmp/out/K3/K3.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin

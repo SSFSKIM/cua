@@ -1,0 +1,6 @@
+2026-11-18T21:13:01Z setup t7-h4 exit 0
+2026-11-18T21:13:05Z setup t7-main2 exit 0
+2026-11-18T21:13:31Z install-home-h4 exit 0
+2026-11-18T21:13:31Z chrome-check exit 0
+2026-11-18T21:19:56Z proof exit 1
+2026-11-18T21:19:57Z setup-all-h4 done

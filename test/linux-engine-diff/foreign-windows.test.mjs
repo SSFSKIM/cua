@@ -9,6 +9,8 @@ import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { openFamily } from '../../scripts/linux-engine-diff/families.mjs';

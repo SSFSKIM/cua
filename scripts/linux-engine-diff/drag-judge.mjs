@@ -145,8 +145,12 @@ export function speedGap(cell, lane) {
   return { gap, within: typeof upper === 'number' && upper <= gap.bound_ms };
 }
 
-/** Why a cell fails one lane: its effect, or under load its counts; the thumb judge; the long path's speed. */
-export function laneFailures(cell, lane) {
+/**
+ * Why a cell fails one lane: its effect, or under load its counts; the thumb judge; the long path's speed. In a pilot
+ * (`pilot`, ruling 722) a long path's speed left undetermined, with no top-up to decide it, fails nothing: it is
+ * unjudged (`dragVerdict`), never a pass.
+ */
+export function laneFailures(cell, lane, { pilot = false } = {}) {
   const l = cell.lanes?.[lane];
   if (!l) return [];
   const at = `${cell.family} ${cell.drag}: ${lane}`;
@@ -177,7 +181,7 @@ export function laneFailures(cell, lane) {
   // a declared gap excuses its own measured loss within its bound, never a missed effect or an undecided series
   if (declared && !declared.within) failed.push(`${at} speed beyond its declared gap (${declared.gap.issue}, ${declared.gap.bound_ms} ms): the interval [${speed.interval?.join(', ') ?? 'none'}]; ${speed.reasons.join('; ')}`);
   else if (!declared && speed?.verdict === 'fail') failed.push(`${at} speed: ${speed.reasons.join('; ')}`);
-  if (speed?.verdict === 'undetermined') failed.push(`${at} speed undetermined after the top-ups${speed.reasons.length ? `: ${speed.reasons.join('; ')}` : ''}`);
+  if (speed?.verdict === 'undetermined' && !pilot) failed.push(`${at} speed undetermined after the top-ups${speed.reasons.length ? `: ${speed.reasons.join('; ')}` : ''}`);
   return failed;
 }
 
@@ -187,13 +191,17 @@ export function laneFailures(cell, lane) {
  * cannot fail). A measurement lane (`cua:0ms`, a variant) is an outcome, never a failure; a cell without a usable
  * reference is recorded, not judged; a long path with no vendor bar is recorded.
  */
-export function dragVerdict(cells, { lane = 'cua' } = {}) {
+export function dragVerdict(cells, { lane = 'cua', pilot = false } = {}) {
   const failed = [];
   // the cells whose speed is a declared gap: listed apart, never a pass (Acceptance 3)
   const declared = [];
+  // a pilot's long paths whose speed no top-up decided (ruling 722): listed apart, never a pass
+  const unjudged = [];
   for (const cell of cells) {
-    const own = laneFailures(cell, lane);
+    const own = laneFailures(cell, lane, { pilot });
     failed.push(...own);
+    const speed = cell.speed?.[lane];
+    if (pilot && speed?.verdict === 'undetermined') unjudged.push(`${cell.family} ${cell.drag}: ${lane} speed unjudged (a pilot takes no top-up)${speed.reasons.length ? `: ${speed.reasons.join('; ')}` : ''}`);
     const gap = speedGap(cell, lane);
     if (gap?.within && !own.length) {
       const s = cell.speed[lane];
@@ -203,14 +211,28 @@ export function dragVerdict(cells, { lane = 'cua' } = {}) {
     const ref = cell.select_reference;
     if (ref && (ref.n === 0 || ref.covers < ref.n)) failed.push(`${cell.family} ${cell.drag}: REFERENCE MISMATCH: the unprimed judge took ${ref.covers} of the select cell's ${ref.n} even runs that took`);
   }
-  return { pass: failed.length === 0, failed, declared };
+  return { pass: failed.length === 0, failed, declared, ...(unjudged.length ? { unjudged } : {}) };
 }
 
-/** A cell's verdict for one lane, as the summary shows it: PASS, a declared speed gap (never a pass), or **FAIL**. */
-export function cellVerdict(cell, lane) {
-  if (laneFailures(cell, lane).length) return '**FAIL**';
+/**
+ * The run's drag verdict in the summary's words: PASS only when nothing failed and nothing is unjudged; a pilot's
+ * unjudged speeds (ruling 722) read "no FAIL", never PASS.
+ */
+export function dragVerdictText(verdict) {
+  if (!verdict.pass) return `**FAIL**: ${verdict.failed.join('; ')}`;
+  const n = verdict.unjudged?.length ?? 0;
+  return n ? `no FAIL; unjudged in this pilot (not a pass): ${n} speed${n === 1 ? '' : 's'}` : 'PASS';
+}
+
+/**
+ * A cell's verdict for one lane, as the summary shows it: PASS, a declared speed gap (never a pass), in a pilot its
+ * speed unjudged (never a pass), or **FAIL**.
+ */
+export function cellVerdict(cell, lane, { pilot = false } = {}) {
+  if (laneFailures(cell, lane, { pilot }).length) return '**FAIL**';
   const gap = speedGap(cell, lane);
-  return gap?.within ? `declared speed gap (${gap.gap.issue})` : 'PASS';
+  if (gap?.within) return `declared speed gap (${gap.gap.issue})`;
+  return pilot && cell.speed?.[lane]?.verdict === 'undetermined' ? 'speed unjudged (a pilot)' : 'PASS';
 }
 
 const r1 = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');

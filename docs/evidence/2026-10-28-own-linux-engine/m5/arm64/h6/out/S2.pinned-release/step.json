@@ -1,0 +1,50 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "S2",
+  "pilot": false,
+  "what": "the settle: Firefox's and gedit's cells",
+  "display": "own",
+  "load": "idle",
+  "minutes": 25,
+  "run_name": "pinned-S2",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h6/",
+    "commit": "69bd7993e1f1cb252574939bd6e8e80674bab5b8",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+    "sha256": "25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-042",
+  "command": "/Users/new/.local/share/cua-171/locked.sh task122-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h6/scripts/linux-engine-gate/gate.mjs run S2 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-042 --out /Users/new/.local/share/cua-171/m5/out-arm64-h6",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "settle",
+    "--lanes",
+    "shipped",
+    "--family",
+    "firefox,gedit",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+    "--run",
+    "pinned-S2",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64-h6/S2.pinned-release/run"
+  ],
+  "started": "2026-11-21T04:29:43.648Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-21T04:54:56.115Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unclean": [
+    "a process it spawned still runs: pid 526772 openbox"
+  ]
+}

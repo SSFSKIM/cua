@@ -1,0 +1,7 @@
+2026-11-21T07:48:57Z pre setup: hold-sittings absent, df / 110G, load 17.49 17.14 16.82
+2026-11-21T07:54:14Z setup t122-h7c exit 0
+2026-11-21T07:54:19Z home check: sha256 equals H7's pin, check --pinned exit 0
+2026-11-21T07:54:19Z pre C1: hold-sittings absent, df / 109G, load 11.63 15.78 16.47
+2026-11-21T07:54:19Z run C1 as printed, the quiet wait inside its hold: /Users/new/.local/share/cua-171/locked.sh task122-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t122-h7c/scripts/linux-engine-gate/gate.mjs run C1 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-042 --out /Users/new/.local/share/cua-171/m5/out-arm64-h7
+2026-11-21T08:13:25Z end C1 exit 2 load=0.93 9.49 14.06 quiet wait 180 s: load 0.93 9.49 14.06 stress-ng 0
+2026-11-21T08:13:25Z C1 exited 2: stopped for the controller

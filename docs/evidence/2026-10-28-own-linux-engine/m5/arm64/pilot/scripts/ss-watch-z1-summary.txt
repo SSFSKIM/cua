@@ -1,0 +1,5 @@
+# ss-watch-z1.log summary (the raw log, 63672 lines and 60M, stays on the VM)
+# V5 rerun flagged nothing, so no flagged peer to look up. Autobind-shaped addresses seen, by holder process name:
+  31836 users:(("chrome"
+  31833 users:(("chrome_crashpad"
+# distinct autobind-shaped addresses: 24

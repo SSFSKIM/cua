@@ -1,0 +1,14 @@
+2026-11-19T02:30:01Z sitting start (V1:55 V2:55 V3:55 V4:55 Z0:55 V5:55), hard stop 2026-11-19T08:00:00Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox
+2026-11-19T02:30:01Z start V1 load=0.02 0.16 0.93
+2026-11-19T03:07:05Z end V1 exit 0 load=0.58 0.54 0.58
+2026-11-19T03:07:05Z start V2 load=0.58 0.54 0.58
+2026-11-19T03:33:08Z end V2 exit 0 load=0.97 1.50 1.39
+2026-11-19T03:33:08Z start V3 load=0.97 1.50 1.39
+2026-11-19T04:11:41Z end V3 exit 0 load=0.96 1.17 1.16
+2026-11-19T04:11:42Z start V4 load=0.96 1.17 1.16
+2026-11-19T04:38:44Z end V4 exit 0 load=0.62 0.89 0.91
+2026-11-19T04:38:45Z start Z0 load=0.62 0.89 0.91
+2026-11-19T04:49:46Z end Z0 exit 0 load=0.69 0.81 0.91
+2026-11-19T04:49:46Z start V5 load=0.69 0.81 0.91
+2026-11-19T05:27:20Z end V5 exit 1 load=0.88 0.94 0.93
+2026-11-19T05:27:20Z sitting done

@@ -1,0 +1,12 @@
+development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v3, at twice the load)
+file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t122-a959/scripts/linux-engine-diff/scenes.mjs:333
+    if (check.refused.length) throw new Error(startRefusalText(check.refused));
+                                    ^
+
+Error: the start check refuses to run: /tmp/cua171-run-ctwkzq: its directory is gone and a process still references it: pid 665991 node (its fds), pid 666143 dbus-daemon (its argv, environ), pid 666147 at-spi-bus-launcher (its environ), pid 666152 dbus-daemon (its environ)
+    at Desktop.runStart (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t122-a959/scripts/linux-engine-diff/scenes.mjs:333:37)
+    at async diffRun (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t122-a959/scripts/linux-engine-diff/run.mjs:1240:41)
+    at async runDiff (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t122-a959/scripts/linux-engine-diff/run.mjs:1165:12)
+    at async file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t122-a959/scripts/linux-engine-diff.mjs:65:19
+
+Node.js v24.22.1

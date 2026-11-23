@@ -1,0 +1,14 @@
+head 4fffcdd314f892f5cbffe9df893cb65b09de0b09 clean=0
+C1 (development run) exit 0
+L4c (development run) exit 0
+development run, not a release gate (task 121, edge-idle): {"code":0,"signal":null,"clean":true,"reason":null}
+t14-late-edge idle exit 0
+development run, not a release gate (task 121, edge-load2): {"code":0,"signal":null,"clean":true,"reason":null}
+t14-late-edge load2 exit 0
+K2 run 1 exit 0
+K2 run 2 exit 0
+K2 run 3 exit 0
+K2 run 4 exit 0
+K2 run 5 exit 0
+K1 exit 0
+head 4fffcdd314f892f5cbffe9df893cb65b09de0b09 clean=0

@@ -34,7 +34,8 @@
 // Where it runs: only on a private X server it starts itself, with Openbox and the harness's own Desktop on it (the
 // run's applications, homes and session bus, its own Chrome), the live-run declaration withdrawn first, as the
 // focus-timer experiment does. cua serve gets that display and that bus; it uses this machine's cua home (its runtime,
-// its run directory), the computer surface alone and no secrets.
+// its run directory), the computer surface alone and no secrets; on the pinned release (`--pinned`), the run home's, in
+// a HOME of the run's, its installed engine selected by the serve itself (`serveEnv`).
 
 import { randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
@@ -48,6 +49,7 @@ import { openFamily } from './families.mjs';
 import { verifiedScene } from './app-identity.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
+import { pinnedServeEnvironment } from './pinned-home.mjs';
 import { Desktop, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
 import { startPrivateServer, xdotool, xprobe } from './xtools.mjs';
@@ -337,12 +339,18 @@ function keysDown() {
   }
 }
 
-/** The environment of a `cua serve` under test: this display and bus, cua's engine, `dedicated`, nothing more. */
-function serveEnv(ctx, path, extra = {}) {
+/**
+ * The environment of a `cua serve` under test: this display and bus, cua's engine, `dedicated`, nothing more. On the
+ * pinned release (`ctx.pinnedHome`, the run home whose installed engine is `ctx.cua`) the serve runs in a home of the
+ * run's with CUA_HOME that run home and selects its installed engine itself (pinned-home.mjs); otherwise the engine
+ * under test is named, CUA_LINUX_ENGINE_BIN, and the serve uses this machine's cua home.
+ */
+export function serveEnv(ctx, path, extra = {}, base = process.env) {
+  const engine = ctx.pinnedHome
+    ? pinnedServeEnvironment({ base, cuaHome: ctx.pinnedHome, scratch: join(ctx.desktop.dir, 'serve') })
+    : { ...base, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: ctx.cua };
   return {
-    ...process.env,
-    CUA_NATIVE_ENGINE: 'cua',
-    CUA_LINUX_ENGINE_BIN: ctx.cua,
+    ...engine,
     CUA_DESKTOP_MODE: 'dedicated',
     CUA_SHIM_SURFACES: 'computer',
     CUA_SHIM_SECRETS: 'off',
@@ -663,9 +671,19 @@ function useDisplay(display) {
   process.env.DISPLAY = display;
 }
 
+/**
+ * Why a run cannot start without a control checkout, or null: the `kill` lane runs `--control-root`'s REPL host, and
+ * every lane runs unless `--lanes` names some. The drain lane alone (the gate's ES step, M5) needs none.
+ */
+export function controlRootRefusal({ controlRoot, lanes }) {
+  const named = lanes?.length ? lanes : LANES;
+  return named.includes('kill') && !controlRoot ? '--control-root names the checkout whose REPL host is the control (a stop that SIGKILLs at once)' : null;
+}
+
 /** `--experiment engine-stop`: every lane, path and case; `{md, complete, failed, ending}`. */
 export async function runEngineStop(args, { emit, run, startLoad }) {
-  if (!args.controlRoot) throw new Error('--control-root names the checkout whose REPL host is the control (a stop that SIGKILLs at once)');
+  const refusal = controlRootRefusal(args);
+  if (refusal) throw new Error(refusal);
   const paths = args.paths?.length ? args.paths : PATHS;
   const cases = args.cases?.length ? args.cases : CASES;
   const lanes = args.lanes?.length ? args.lanes : LANES;
@@ -697,7 +715,7 @@ export async function runEngineStop(args, { emit, run, startLoad }) {
     const oracle = new Oracle();
     desktop.oracle = oracle;
     await desktop.openFront('covered');
-    const ctx = { desktop, oracle, emit, cua: args.cua, controlRoot: args.controlRoot, sandbox };
+    const ctx = { desktop, oracle, emit, cua: args.cua, pinnedHome: args.pinnedHome ?? null, controlRoot: args.controlRoot, sandbox };
     const scenes = await openScenes(ctx, cases.some((c) => BURSTS.includes(c)) ? browsers : []);
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the control last: the keys a killed engine cuts reach the window only with a later FocusIn

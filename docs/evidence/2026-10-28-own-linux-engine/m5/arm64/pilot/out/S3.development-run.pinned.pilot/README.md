@@ -1,0 +1,47 @@
+# S3 (development run on the pinned release, not acceptance, never counted, pilot)
+
+**development run on the pinned release, not acceptance, never counted.** A pilot: the step's smallest form, to show it starts; no verdict of it is the gate's.
+
+- what: the settle: kate's, Qt Creator's, Writer's (its drag at 25 ms, T16) and gnome-terminal's cells
+- display: own; load: idle; estimated 26 min
+- run: `m5-pinned-dev-S3-pilot`; the harness's output in `run/`
+- checkout: /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/ at da306cc6319e7e9da282812402308c074b872dee, clean
+- candidate: /Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine (sha256 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42 as given)
+- command: `/Users/new/.local/share/cua-171/locked.sh t96-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-gate/gate.mjs run S3 --pinned /Users/new/.local/share/cua-171/m5/pilot-arm64/home --out /Users/new/.local/share/cua-171/m5/pilot-arm64/out --pilot 2`
+- started 2026-11-18T02:35:53.429Z
+- finished 2026-11-18T02:42:32.109Z; exit 0
+- unjudged (a pilot takes no top-up; not passes): 31
+  - kate click desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate drag desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate press_key background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate key_down background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate click background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate key_click background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate drag background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - kate activate_window background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator click desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator drag desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator press_key background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator key_down background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator click background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator key_click background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator drag background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - qtcreator activate_window background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer click desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer press_key background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer key_down background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer click background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer drag background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer activate_window background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - writer type_text background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal click desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal scroll desktop (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal press_key background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal key_down background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal click background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal scroll background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal type_text background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+  - gnome-terminal activate_window background (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)
+- end check: clear (no cua171-run-* directory or session bus of one)
+- unclean end (the run's own side, not a verdict failure): 1
+  - a process it spawned still runs: pid 115731 openbox

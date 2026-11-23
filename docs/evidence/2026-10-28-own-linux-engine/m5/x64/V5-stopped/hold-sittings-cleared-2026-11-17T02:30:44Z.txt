@@ -1,0 +1,7 @@
+cleared 2026-11-17T02:30:44Z by the controller (session linux171), on the design session's rulings 749 and 750 (sminos 1ea561bc:749, 1ea561bc:750)
+proof: /Users/new/.local/share/cua-171/task89/v5-flag-proof.py and /Users/new/.local/share/cua-171/task89/v5-flag-proof.txt, read from /Users/new/.local/share/cua-171/m5/out-x64/V5.pinned-release/wrap-summary.json (processes) and flags.jsonl
+finding: the flagged peer /tmp/.X11-unix/X40 was the run's own live audit proxy (xtrace pid 398197, ppid 398109 the harness, -D :40, seen 5.478-973.843 s); the flag came at 968.282 s; its empty peer list was xtrace's accept queue (the task-71 race, on the proxy); a guard false stop that failed closed
+checked before clearing: no cua-engine or sky_linux process alive (464215 gone); the owner's Chrome 2546101 present; /tmp/.X11-unix holds X0 only
+the hold's text was:
+2026-11-17T02:16:40.132Z the :0 sitting /Users/new/.local/share/cua-171/m5/out-x64/V5.pinned-release is not all-clear: wrap71 flagged 1 reach into the person's session and 0 decoy connections; processes of the run still alive after it, which can hold a grab or a window on :0: 464215 cua-engine; the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+next: V5 and Z0 rerun at H (fefe306c) unchanged, under a new GO; if the same race stops the rerun, (B): fix wrap71, H', all six :0 steps rerun (749)

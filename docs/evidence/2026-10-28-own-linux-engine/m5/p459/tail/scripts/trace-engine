@@ -1,0 +1,8 @@
+#!/bin/bash
+# task 130: run an engine with its X connections through xtrace (timestamps) into $T130_TRACE_DIR.
+# Linked as trace-<name>; the engine binary is read from T130_BIN_<name>.
+name=${0##*/trace-}
+var=T130_BIN_$name
+bin=${!var}
+d=$(( 400 + RANDOM % 400 ))
+exec xtrace -n --timestamps -m 64 -d "$DISPLAY" -D ":$d" -o "$T130_TRACE_DIR/$name.$$.xtrace" -- "$bin" "$@"

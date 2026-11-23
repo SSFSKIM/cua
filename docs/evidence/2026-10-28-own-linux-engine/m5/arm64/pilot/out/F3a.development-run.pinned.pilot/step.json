@@ -1,0 +1,81 @@
+{
+  "label": "development run on the pinned release, not acceptance, never counted",
+  "step": "F3a",
+  "pilot": true,
+  "what": "T7 revised at twice the load: burst, A-B-A, key then paste",
+  "display": "own",
+  "load": "load2",
+  "minutes": 30,
+  "run_name": "m5-pinned-dev-F3a-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/",
+    "commit": "da306cc6319e7e9da282812402308c074b872dee",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine",
+    "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t96-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-gate/gate.mjs run F3a --pinned /Users/new/.local/share/cua-171/m5/pilot-arm64/home --out /Users/new/.local/share/cua-171/m5/pilot-arm64/out --pilot 2",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "focus-timer",
+    "--scenarios",
+    "burst,aba,paste",
+    "--lanes",
+    "shipped",
+    "--load-factor",
+    "2",
+    "--trials",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine",
+    "--run",
+    "m5-pinned-dev-F3a-pilot",
+    "--pinned",
+    "--pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/pilot-arm64/out/F3a.development-run.pinned.pilot/run"
+  ],
+  "started": "2026-11-18T06:46:22.322Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T06:51:36.713Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unjudged": [
+    "chrome burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "chrome aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "chrome paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "electron burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "electron aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "electron paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "gedit burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "gedit aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "gedit paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "kate burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "kate aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "kate paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "qtcreator burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "qtcreator aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "qtcreator paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "firefox burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "firefox aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "firefox paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "writer burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "writer aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "writer paste: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "gnome-terminal burst: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "gnome-terminal aba: a series of 2, shorter than the 30 the proof needs (a pilot)",
+    "gnome-terminal paste: a series of 2, shorter than the 30 the proof needs (a pilot)"
+  ],
+  "unclean": [
+    "a process it spawned still runs: pid 487938 openbox"
+  ]
+}

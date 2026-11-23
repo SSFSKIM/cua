@@ -1,0 +1,2 @@
+development run, not a release gate (task 122, ruling 981 on m5-a959 bb4d7c1f, set smoke)
+[1121/010147.309155:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA

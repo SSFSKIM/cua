@@ -14,6 +14,7 @@ import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {replHostFor} from '../src/runtime/launch.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {surfacesFrom} from '../src/mcp/surface.mjs';
+import {isOlder, MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const HOME = '/home/u/.local/share/cua';
@@ -33,7 +34,9 @@ const CAPS_WORDS = mode => `capabilities, from cua-engine started for this check
 // `capabilities` answers the engine's capability read (a report, or an Error it throws); every read is recorded.
 async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'vendor', installed, capabilities = ({desktop}) => CAPS(desktop)} = {}) {
   const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', DISPLAY: ':9', ...env};
-  const engine = {defaultEngine, config: () => config, installed: () => (installed ?? read.executable) ? {path: read.path} : null};
+  // the installed engine's verified version (F5a) is what the inspection read: its version while the file is recognized
+  const engine = {defaultEngine, config: () => config, installed: () => (installed ?? read.executable) ? {path: read.path} : null,
+    installedVersion: () => (read.build === 'unknown' ? null : read.version)};
   let session;
   try { session = replHostFor({platform: 'linux', surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: HOME, resolveOwnNode: () => '/usr/bin/node', engine}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -175,9 +178,37 @@ test('cua\'s engine preferred but not in use: refused sessions fail, the default
   const fallback = await row({}, {read: NONE, defaultEngine: 'cua'});
   assert.equal(fallback.row.status, 'warn');
   assert.match(fallback.row.detail, /^cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper \(engine_not_installed\): no engine is installed/);
+  assert.match(fallback.row.detail, /cua install --engine/);
   const invalid = await row({CUA_NATIVE_ENGINE: 'sky'});
   assert.equal(invalid.row.status, 'fail');
   assert.match(invalid.row.detail, /^CUA_NATIVE_ENGINE must be vendor or cua; every Linux computer session is refused \(invalid_setting\)$/);
+});
+
+// #171 M5 (F5, F5a): the default keeps the vendor's engine for an installed one older than this cua needs, or one whose
+// install.json does not match its file, and the row says which, and that `cua install --engine` puts this cua's in place.
+// Nothing is started for its report. An explicit selection of that engine is refused at its first request, and fails here.
+test('the default\'s fallback for an engine too old, or one its record does not match, warns naming why and cua install --engine', async () => {
+  const PIN = {version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`, sha256: 'b'.repeat(64)};
+  // 0.3.0, 0.4.0 (the released plugin's pin) and 0.4.2 (the pin just below the minimum, 0.4.3)
+  for (const version of ['0.3.0', '0.4.0', '0.4.2']) {
+    assert.ok(isOlder(version, MIN_ENGINE_VERSION), version);
+    const older = await row({}, {read: facts({pinned: PIN, current: false, version, release: `linux-engine-v${version}`}), defaultEngine: 'cua'});
+    assert.equal(older.row.status, 'warn', version);
+    assert.equal(older.row.detail, `cua's engine is the default, but the installed cua-engine ${version} is older than ${MIN_ENGINE_VERSION}, which this cua needs, so Linux computer sessions keep the vendor's sky_linux helper `
+      + `until cua install --engine replaces it (engine_outdated): cua-engine ${version} from linux-engine-v${version} at ${PATH} (SHA-256 ${SHA}), which is not this cua's pinned ${MIN_ENGINE_VERSION}: cua install --engine replaces it`);
+    assert.deepEqual([older.report.selected, older.report.reason, older.report.service, older.report.preferred], ['vendor', 'engine_outdated', 'vendor', {engine: 'cua', reason: 'default'}], version);
+    assert.equal(older.started.length, 0, `${version}: nothing started`);
+  }
+  const unrecorded = await row({}, {read: facts({pinned: PIN, current: false, build: 'unknown', version: null, release: null}), defaultEngine: 'cua'});
+  assert.equal(unrecorded.row.status, 'warn');
+  assert.equal(unrecorded.row.detail, 'cua\'s engine is the default, but the installed engine\'s install.json does not match its file, so its version is unknown and Linux computer sessions keep the vendor\'s sky_linux helper '
+    + `until cua install --engine replaces it (engine_unrecorded): the file at ${PATH} (SHA-256 ${SHA}) is neither this cua's pinned engine nor a build cua recorded: cua install --engine replaces it`);
+  assert.deepEqual([unrecorded.report.selected, unrecorded.report.reason], ['vendor', 'engine_unrecorded']);
+  // the same engine named explicitly: selected, and refused by its report as its first request would be
+  const explicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({pinned: PIN, current: false, version: '0.3.0', release: 'linux-engine-v0.3.0'}), defaultEngine: 'cua',
+    capabilities: () => new Error(`cua-engine 0.3.0 is older than ${MIN_ENGINE_VERSION}, which this cua needs; run cua install --engine`)});
+  assert.equal(explicit.row.status, 'fail');
+  assert.equal(explicit.report.selected, 'cua');
 });
 
 test('without the computer surface, or with every connection refused, no engine applies', async () => {
@@ -219,10 +250,10 @@ test('the default capability read starts the engine as a session does, reads its
   await waitGone(engine.spawns()[0].pid);
   // An engine older than the service needs is refused before anything is spawned, with the service's sentence.
   engine.setVersion('cua-engine 0.3.0 (old)');
-  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.3\.0 is older than 0\.4\.0, which this cua needs; run cua install --engine$/});
+  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.3\.0 is older than 0\.4\.3, which this cua needs; run cua install --engine$/});
   assert.equal(engine.spawns().length, 1);
   // An engine that never answers is stopped at the deadline.
-  engine.setVersion('cua-engine 0.4.0 (fake0000)');
+  engine.setVersion('cua-engine 0.4.3 (fake0000)');
   engine.behave('export function answer() { return new Promise(() => {}); }');
   await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}, timeoutMs: 300}), {message: /^cua-engine did not answer capabilities within 0\.3 s$/});
   await waitGone(engine.spawns()[1].pid);

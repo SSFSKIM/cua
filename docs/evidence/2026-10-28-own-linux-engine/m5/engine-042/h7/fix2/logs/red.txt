@@ -1,0 +1,101 @@
+✔ the page's status lines parse into counts by source and each kind's last press (3.55731ms)
+✔ the page stamps its last dragend record with the press its dragstart followed, and the parser reads the page's own line (1.152295ms)
+✔ a drag's outcome: a source's start and the zone's drop, or a kind's effect on its own press, never another's (1.692359ms)
+✔ a drag's signals from the watch: the take, a late take after the release, Chrome's activation after it, the cursors (1.073926ms)
+✔ the accept read at the release follows the cursor the drag ends on: an accept a later change withdrew does not count (0.258937ms)
+✔ a change the records cannot order against the release makes the drag's reading indeterminate, never a negative (0.633971ms)
+✔ the least offset of the watch's wall clock to the server's, over the lines that carry a server time (0.345578ms)
+✔ the engine's probe after the release: a 1×1 window at the origin, read at or after the release stamp (0.30899ms)
+✔ the never-take rules read the deepest accessible at the start point (0.56461ms)
+✔ the never-take table counts each rule's false negatives, and those whose take came after the path, by load (1.17156ms)
+✔ the after-release table: Chrome's activation against the drop, for drags that took by the release (1.215583ms)
+✔ the accept table: false releases are accept-released drops that did not land, against the ceiling's (0.616888ms)
+✔ the late-take table: takes after the release, whether the drag still answered ok, and whether it landed (0.409909ms)
+✔ the cover table: survival by kind, covered part and cover, with the start role beside it (0.549082ms)
+✔ the block plan: blocks of ten, each cell's lanes interleaved and rotating, every drag counted once (0.772952ms)
+✔ a covered range's drag ends where its own path ends, and a plain range's at the default ends (96.453244ms)
+✔ the plan's cells: every drop path 40 px into the zone, the covers placed on the part they name, every spec capped by --trials (1.790132ms)
+✔ a handle lane's drag: the path as drag_handle steps on the screen, the end sent whatever came before, answered as the step that failed or the end (M4's T17 fix wave) (1.811131ms)
+✔ the second fix wave's cells: a desktop drag that leaves the window for the bare root, and a drop that only moves (M4's T17) (1.264324ms)
+✔ the third fix wave's cells: a release over a drop target that never answers, and one the pointer was moved from (M4's T17) (0.818517ms)
+✔ the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it (1.983364ms)
+✔ the freeze cell's browser: the run's profile and no child type, its title read as text, never another's (1.822293ms)
+✔ V5's motion-loss cells: the run's browser stopped from the drag's send, a plain drop and one whose path outlasts the stop (0.578517ms)
+✔ 0.4.1's failed settle, end to end (task 101's review): Electron's browser stopped across the end of a plain drop, so neither of the settle's pings is answered in time (0.348013ms)
+✔ the lost motion's bound and the guarded route: a sweep of stops past the hold's refresh, and the same stops on a drag the engine watches (0.508425ms)
+✔ 0.4.2's freeze sweep (task 121): the press-150 source stopped from 60 ms to ends bracketing a release at press + 450 and + 650 (2.840164ms)
+✔ the freeze cells wait for the browser's mark of the press, after the engine's identification (ruling 954); a stop past the thaw is skipped and says so (ruling 955) (0.425029ms)
+✔ ruling 956: the press mark is the browser's own or none; never seen, or seen past the thaw, the stop is skipped, never begun from 60 ms alone (51.136928ms)
+✔ the review of cf1ef10f, finding 2: the press mark is bound to the trial by its value, the press's server time; a queued earlier mark and a repeated value are never this trial's press (61.894839ms)
+✔ the review of cf1ef10f, finding 1: a stop whose timer wakes at or past the thaw sends no signal and is skipped, with why; the judge counts it unexercised (4.930349ms)
+✖ the re-review of 0e43238b, finding 1: the stop is scheduled on the monotonic clock: the wall clock stepping back 100 ms moves neither the press's deadline nor the stop (2.366856ms)
+✔ t14-late's plan is its three bands, each expecting band a minimum under its drags; the hold notice is the engine's word for word (2.133657ms)
+✔ a banded sitting passes on honest answers in every band, its late takes counted, not required (3.659001ms)
+✔ a band below its minimum is unexercised and fails, and one that never shows its outcome fails the same way (2.038408ms)
+✔ every banded answer is judged: a plain ok on a drag its page started that Chrome refused is a false ok; a notice on a drop that landed a false alarm, counted (1.591548ms)
+✔ the review of H6, blocker 2: a late take that landed before its cancel is no inside-band landing (1.053338ms)
+✔ the review of H6, blocker 3: a past-band answer needs the page read before and after, its drop counter unchanged (2.220439ms)
+✔ the review of H6, blocker 4: on a banded plan only a pending cause that accounts for the outcome excuses it (1.853981ms)
+✔ the re-review of 9a8f32a5: a plain ok with no take and its page unread is unjudged, and fails, in the edge band and in the past band (1.191247ms)
+✔ ruling 954: a row whose source ended unidentified is unexercised for its band, never its outcome, counted and shown (1.106398ms)
+✔ ruling 955: a row whose stop was skipped (the press marked too late for a stop before the thaw) is unexercised, counted and shown (0.94222ms)
+✔ the per-cell table's false ok column counts the banded plan's refused plain oks, as the total does (0.503196ms)
+✔ a plan without bands keeps T14's rules: an untaken plain ok there claims no drop (0.304902ms)
+✔ by default t14-late is judged by its own bands (0.633279ms)
+✔ t14-late is the same plan on both architectures: task 122's sweep landed arm64 10 of 10 at 600 once the race was closed (0.139011ms)
+✔ the review of cf1ef10f, finding 1: a stop needs positive evidence that it began before the thaw; a skip string's absence is none (1.292327ms)
+✔ the review of cf1ef10f, finding 3: a band counts the late takes of its exercised rows only; every late take is still judged and reported (1.557414ms)
+✖ the re-review of 0e43238b, finding 2: an explicit skip is decisive, and a stop needs a finite, nonnegative start, a continue after it, the start before the thaw (1.30453ms)
+ℹ tests 48
+ℹ suites 0
+ℹ pass 46
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 332.44806
+
+✖ failing tests:
+
+test at test/linux-engine-diff/drop-signals.test.mjs:643:1
+✖ the re-review of 0e43238b, finding 1: the stop is scheduled on the monotonic clock: the wall clock stepping back 100 ms moves neither the press's deadline nor the stop (2.366856ms)
+  AssertionError [ERR_ASSERTION]: no SIGSTOP: the press came past the thaw
+  + actual - expected
+  
+  + [
+  +   '7 SIGSTOP',
+  +   '7 SIGCONT'
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/drop-signals.test.mjs:666:12)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ '7 SIGSTOP', '7 SIGCONT' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/late-bands.test.mjs:239:1
+✖ the re-review of 0e43238b, finding 2: an explicit skip is decisive, and a stop needs a finite, nonnegative start, a continue after it, the start before the thaw (1.30453ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/late-bands.test.mjs:243:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,14 @@
+cells: earlier 5, later 5
+Chrome select: pinned took 30/30; newest took 30/30; cua took 30/30; cua:0ms took 27/30 -> 28/30; witness clean; verdict cua PASS, cua:0ms **FAIL**
+Chrome range: pinned took 30/30; newest took 30/30; cua took 30/30; cua:0ms took 30/30; witness clean; verdict cua PASS, cua:0ms PASS
+Chrome scroller: pinned took 30/30; newest took 30/30; cua took 30/30; cua:0ms took 4/30 -> 5/30; witness clean; verdict cua PASS, cua:0ms **FAIL**
+Chrome dnd: pinned took 30/30; newest took 30/30; cua took 30/30; cua:0ms took 30/30; witness **changed**; verdict cua declared speed gap (#358), cua:0ms declared speed gap (#358)
+Chrome canvas: pinned took 30/30; newest took 22/30 -> 23/30; cua took 30/30; cua:0ms took 1/30; witness clean; verdict cua PASS, cua:0ms **FAIL**
+the judges' verdict for cua: "PASS." (the same)
+incomplete or failed: [] (the same)
+declared speed gaps (cells): ["chrome dnd cua #358"] (the same)
+desktop, foreign windows: "neither acted on" (the same)
+cells where a cua lane missed a run: chrome select (cua:0ms); chrome scroller (cua:0ms); chrome canvas (cua:0ms). -> chrome select (cua:0ms); chrome scroller (cua:0ms); chrome canvas (cua:0ms).
+measured-only differences (cua:0ms and the newest vendor build, not judged): Chrome select: cua:0ms took 27/30 -> 28/30; Chrome scroller: cua:0ms took 4/30 -> 5/30; Chrome canvas: newest took 22/30 -> 23/30
+CROSS-CHECK: the same (every judged cell, verdict, witness, failure line and declared cell agrees)
+compare exit 0

@@ -5,14 +5,19 @@
 // matrix), `--family` (the families an experiment runs on, by name, families.mjs) and `--load` (every core busy
 // during the experiment); and #267's: a verdict run is a release gate on the attested candidate `--cua` names
 // (candidate.mjs), or `--dev`, a run on any build that is not one; and M4's T18: an experiment that joins the gate
-// (`--gate`) takes its candidate through the same preparation, and one run without it is labelled a development run.
+// (`--gate`) takes its candidate through the same preparation, and one run without it is labelled a development run; and
+// M5's T1: `--pinned`, either kind run as acceptance on the pinned release (candidate.mjs's pinned rule); and M5's T4
+// round 2: `--pilot`, a development run's smallest form with no top-up, `--pinned --pilot` one on the pinned release.
+
+import { DEFAULT_AUDIT_TRACE_MB, parseAuditTraceCap } from './audit-traces.mjs';
+import { PINNED_DEVELOPMENT, isCounted } from './candidate.mjs';
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
-      [--dev] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate]
+      [--dev | --pinned] [--pilot] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
+      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--audit-traces <MB>|off] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)] [--engine-stats (with --dev)] [--engine-sandbox] [--hold-canary relative|absolute]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate | --pinned] [--pilot] [--engine-stats (not with --gate or --pinned alone)]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
       [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
@@ -47,6 +52,7 @@ const VALUE_FLAGS = {
 const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
 export function parseArgs(argv) {
+  let pinned = false;
   const a = {
     mode: 'run',
     blocks: 3,
@@ -61,6 +67,8 @@ export function parseArgs(argv) {
     occlusion: 'covered',
     counts: true,
     audit: true,
+    auditTraces: DEFAULT_AUDIT_TRACE_MB,
+    holdCanary: 'absolute',
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -78,8 +86,17 @@ export function parseArgs(argv) {
     // an experiment that joins the gate: its candidate the release workflow's attested artifact of the checkout's commit,
     // checked as a verdict run's is (candidate.mjs); without it an experiment is a development run, and says so
     else if (flag === '--gate') a.gate = true;
+    // acceptance on the pinned release (#171 M5, T1): a verdict run's or an experiment's engine checked by candidate.mjs's
+    // pinned rule, and every artifact labelled so (`gate` 'pinned')
+    else if (flag === '--pinned') pinned = true;
+    // a pilot (#171 M5, T4 round 2; ruling 722): the step's smallest form, a development run only, that takes no top-up
+    // and reports a series it could not decide unjudged, never a pass; with --pinned, a development run on the pinned
+    // release (`gate` 'pinned-dev'), its engine taken by the pinned rule
+    else if (flag === '--pilot') a.pilot = true;
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
+    // the route audits' raw traces kept beside the results, compressed, up to a cap in MB a run, or none (audit-traces.mjs)
+    else if (flag === '--audit-traces') a.auditTraces = parseAuditTraceCap(need());
     // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
     else if (flag === '--no-grabs') a.grabs = false;
     // the dnd experiment on the page's short drop (40 px from the near source), every lane's window activated first
@@ -95,6 +112,19 @@ export function parseArgs(argv) {
     // a development verdict run's engine through an xtrace proxy in its timed samples, each series's trace kept (V5's
     // reproduction: what the engine sent, against what the page received)
     else if (flag === '--trace-engine') a.traceEngine = true;
+    // every cua lane's engine with --stats, its settle counter recorded (engine.mjs `recordEngines`; ruling 834): a
+    // development run's or a pilot's alone, since --stats is not inert
+    else if (flag === '--engine-stats') a.engineStats = true;
+    // every cua lane's engine inside cua's worker sandbox, as the service runs it (engine-sandbox.mjs; ruling 899's
+    // condition): the hold canary's and the identification's form
+    else if (flag === '--engine-sandbox') a.engineSandbox = true;
+    // the hold canary's criterion for the draggable cell (device.mjs `holdCanary`; ruling 930): `relative`, against the
+    // run's own plain control (x64's K1, K2 and V5), or `absolute`, the engine's own 20 ms (the default, arm64's)
+    else if (flag === '--hold-canary') {
+      const v = need();
+      if (!['relative', 'absolute'].includes(v)) throw new Error('--hold-canary takes relative or absolute');
+      a.holdCanary = v;
+    }
     // the stop runs' exit settle, 0 included
     else if (flag === '--exit-settle-ms') {
       const n = Number(need());
@@ -187,8 +217,21 @@ export function parseArgs(argv) {
   if (a.dndCold) a.coverMs ??= 0;
   if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: an experiment is a development run unless --gate');
   if (a.gate && a.mode !== 'experiment') throw new Error('--gate is the experiments\': a verdict run is a release gate unless --dev');
+  if (a.pilot && (a.gate || (a.mode === 'run' && !a.dev && !pinned))) throw new Error("--pilot is a development run's: give --dev or --pinned (a verdict run), or no --gate (an experiment)");
+  if (a.pilot && !['run', 'experiment'].includes(a.mode)) throw new Error("--pilot is a verdict run's or an experiment's");
+  if (pinned) {
+    if (a.gate || a.dev) throw new Error('--pinned is a rule of its own: acceptance on the pinned release, not with --gate or --dev');
+    if (!['run', 'experiment'].includes(a.mode)) throw new Error('--pinned is a verdict run\'s or an experiment\'s');
+    a.gate = a.pilot ? PINNED_DEVELOPMENT : 'pinned';
+  }
   // the proxy is on the timed path: a measurement, never a gate's
   if (a.traceEngine && !(a.mode === 'run' && a.dev)) throw new Error("--trace-engine is a development run's (--dev): its proxy is on the timed path");
+  // a counted run: a verdict run unless --dev or a pilot on the pinned release, an experiment with --gate or --pinned
+  const counted = a.mode === 'run' ? !a.dev && a.gate !== PINNED_DEVELOPMENT : isCounted(a.gate);
+  if (a.engineStats && (!['run', 'experiment'].includes(a.mode) || counted)) throw new Error("--engine-stats is a development run's or a pilot's: --stats adds reads to a paste and a line after every request, so a counted run never takes it");
+  // the vendor client starts its engine with no flags of ours, and cua's service or cua serve starts the settle's and
+  // the engine stop's: the opt-in would instrument none of the measured engines
+  if (a.engineStats && (a.via === 'vendor-js' || ['settle', 'engine-stop'].includes(a.experiment))) throw new Error(`--engine-stats cannot reach the measured engine ${a.via === 'vendor-js' ? 'through the vendor client (--via vendor-js)' : `of the ${a.experiment} experiment (cua's service or cua serve starts it)`}`);
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;

@@ -15,20 +15,28 @@ const vendorDefects = () => JSON.parse(readFileSync(new URL('../../test/repl-par
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const DECLARATION_KEYS = ['id', 'case', 'cells', 'vendorDefect', 'cua', 'reason'];
 // The expected file ({about, declarations}) -> the file, each declaration checked; throws naming the first invalid one.
-export function validateNativeLinuxExpected(file) {
+// A declaration holds for the vendor runtime release its vendor defect names, one architecture's (M5's T4): one
+// declaration a case for each release.
+export function validateNativeLinuxExpected(file, defects = vendorDefects()) {
   if (!plain(file) || Object.keys(file).some(k => !['about', 'declarations'].includes(k)) || !Array.isArray(file.declarations)) throw new Error('the Linux native expected file holds {about, declarations: [...]}');
-  const ids = new Set(), cases = new Set(), defects = vendorDefects();
+  const ids = new Set(), cases = new Set();
   for (const d of file.declarations) {
     const defect = defects.find(v => v.id === d?.vendorDefect && v.host === 'cua' && v.engine === 'vendor' && v.platform === 'linux' && v.case === d?.case);
     const ok = plain(d) && Object.keys(d).every(k => DECLARATION_KEYS.includes(k)) && typeof d.id === 'string' && d.id && !ids.has(d.id)
-      && DECLARED_CASES.includes(d.case) && !cases.has(d.case) && typeof d.reason === 'string' && d.reason.trim() && isDeepStrictEqual(d.cells, ['exercise'])
+      && DECLARED_CASES.includes(d.case) && defect && !cases.has(`${defect.runtimeRelease}|${d.case}`) && typeof d.reason === 'string' && d.reason.trim() && isDeepStrictEqual(d.cells, ['exercise'])
       && defect && plain(d.cua) && isDeepStrictEqual(Object.keys(d.cua).sort(), ['assertion', 'result']) && isDeepStrictEqual(d.cua.assertion, {ok: true})
       && plain(d.cua.result) && isDeepStrictEqual(Object.keys(d.cua.result).sort(), ['cell', 'content', 'isError'])
       && d.cua.result.cell === 'exercise' && d.cua.result.isError === false && Array.isArray(d.cua.result.content);
     if (!ok) throw new Error(`invalid engine declaration ${JSON.stringify(d)}: it names a unique id and declared case, its reason, the exercise cell, a vendor-engine defect on the same case and the exact passing cua assertion and exercise result`);
-    ids.add(d.id); cases.add(d.case);
+    ids.add(d.id); cases.add(`${defect.runtimeRelease}|${d.case}`);
   }
   return file;
+}
+// The declarations a diff of two runs applies (M5's T4): those whose vendor defect names the runs' vendor runtime release,
+// so each architecture's runs are held to its own declarations, never to another's. An architecture with none yet has its
+// vendor failures reported as differences: the diff fails closed until they are measured and declared.
+export function declarationsFor(file, runtimeRelease, defects = vendorDefects()) {
+  return file.declarations.filter(d => defects.find(v => v.id === d.vendorDefect)?.runtimeRelease === runtimeRelease);
 }
 export const NATIVE_LINUX_EXPECTED = validateNativeLinuxExpected(JSON.parse(readFileSync(NATIVE_LINUX_EXPECTED_FILE, 'utf8')));
 

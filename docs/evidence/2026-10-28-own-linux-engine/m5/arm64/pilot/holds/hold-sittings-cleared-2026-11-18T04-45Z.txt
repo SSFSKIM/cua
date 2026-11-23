@@ -1,0 +1,6 @@
+cleared by the controller (session linux171) on dc-linux171arm-996d; the design session's session had ended, and ruling 730(b) lets the controller clear a hold
+the hold: V1's :0 pilot sitting (development run) was stopped by wrap71 at t=11.741 s, on run-chrome-home-not-the-runs and run-chrome-profile-not-the-runs: the run's own Chrome had its HOME and profile under /tmp/cua171-run-QDzJHO, outside the sitting's TMPDIR
+cause, a harness defect: T4's second round named pilots m5-pinned-dev-<step>-pilot, which is too long for scenes.mjs scratchRoot to keep the scratch under run71's TMPDIR (task 51's rule, sminos 336), so the scratch fell back to /tmp. T5's counted names (pinned-V1) and task 87's old pilot names (m4-dev-V3-pilot) stay under the TMPDIR
+what reached the person: nothing. This VM's :0 is nobody's display; the flags concern where the run's own Chrome lived; the pointer was read 640,400 and restored there; tmproot was empty; no /tmp/cua171-run-* was left
+checked before clearing: no cua-engine or sky_linux process alive; /tmp/.X11-unix holds X0 only; no /tmp/cua171-run-*
+next: the :0 pilot reruns with only --run shortened (pdev-<step>), keeping the pilot's label; T4's arm64 part fixes the names and adds a check that refuses a :0 command whose scratch would leave the TMPDIR

@@ -18,6 +18,7 @@ import {fileURLToPath} from 'node:url';
 import {openSession, resultText} from '../accept/mcp-session.mjs';
 import {watchCaptureAlerts, enginePaths, engineDirectory} from '../../src/runtime/engine.mjs';
 import {BUNDLE_ID as ENGINE_BUNDLE_ID, EXECUTABLE} from '../../src/runtime/engine-bundle.mjs';
+import {launchProbe, runProbe} from '../native-matrix/live-device.mjs';
 import {readRows, writability, grantRows, revokeRows, restartTccd} from './tcc.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.platform !== 'darwin') {
@@ -45,7 +46,8 @@ function sh(cmd, args, {env = process.env, timeout = 120_000, input} = {}) {
   return {code: r.status, signal: r.signal, stdout: r.stdout ?? '', stderr: r.stderr ?? '', ms: Date.now() - started, ...(r.error ? {error: r.error.code ?? r.error.message} : {})};
 }
 const cuaEnv = (extra = {}) => ({...process.env, CUA_HOME, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...extra});
-const json = text => { try { return JSON.parse(text.trim().split('\n').filter(l => l.startsWith('{')).at(-1)); } catch { return null; } };
+// The command's JSON answer: its whole stdout (cua prints it indented), else its last line that parses.
+const json = text => { try { return JSON.parse(text); } catch {} for (const l of text.trim().split('\n').reverse()) { try { return JSON.parse(l); } catch {} } return null; };
 function cua(args, {env = {}, timeout = 15 * 60_000} = {}) {
   const r = sh(process.execPath, [CLI, ...args], {env: cuaEnv(env), timeout});
   return {code: r.code, ms: r.ms, json: json(r.stdout), stderrTail: r.stderr.trim().split('\n').slice(-6).join('\n')};
@@ -188,6 +190,48 @@ const ssh = (args, timeout = 300_000) => {
   return {code: r.code, ms: r.ms, out: json(r.stdout) ?? r.stdout.slice(0, 400), ...(r.code ? {stderr: r.stderr.slice(-400)} : {})};
 };
 
+// ---- (c) the probe modes the matrix starts, each its own LaunchServices instance of the bundle ----
+// scripts/native-matrix/live-device.mjs's own launch (`open -n -g --stdout … -a <bundle> --args --probe …`), one use
+// each: `focus` (its Accessibility reading and the focused app), `keystroke` into the TextEdit scene's window brought to
+// the front (did the text change: the focus probe's value hash before and after), `watch-activations` across two scene
+// activations (how many it saw).
+const textEditWindow = () => {
+  const r = record['step4-scenes']?.up?.textedit?.out;
+  const b = r?.window?.bounds;
+  return r?.pid && b ? {pid: r.pid, spec: [r.pid, b.x, b.y, b.width, b.height].map(Math.round).join(',')} : null;
+};
+function probeModes({keystroke = true} = {}) {
+  const out = {};
+  const probe = args => { try { return runProbe(PATHS.bundle, args); } catch (e) { return {error: err(e)}; } };
+  out.focus = probe(['focus']);
+  const w = textEditWindow();
+  if (keystroke && w) {
+    out.activateTextEdit = ssh(`activate textedit --run '${SCENE_RUN}'`);
+    const before = probe(['focus', '--window', w.spec]);
+    const bounds = w.spec.split(',').slice(1).join(',');
+    const keys = probe(['keystroke', '--user-pid', String(w.pid), '--user-bounds', bounds, 'h0keys']);
+    const after = probe(['focus', '--window', w.spec]);
+    out.keystroke = {result: keys, before: {named: before.named, valueHash: before.valueHash, accessibility: before.accessibility}, after: {named: after.named, valueHash: after.valueHash},
+      textChanged: before.valueHash && after.valueHash ? before.valueHash !== after.valueHash : null};
+  } else if (keystroke) out.keystroke = {skipped: 'no TextEdit scene window recorded'};
+  try {
+    const handle = launchProbe(PATHS.bundle, ['watch-activations']);
+    spawnSync('/bin/sleep', ['2']);
+    const activations = [ssh(`activate finder --run '${SCENE_RUN}'`).code, ssh(`activate textedit --run '${SCENE_RUN}'`).code];
+    spawnSync('/bin/sleep', ['2']);
+    if (handle.pid) { try { process.kill(handle.pid, 'SIGTERM'); } catch {} }
+    spawnSync('/bin/sleep', ['1']);
+    const lines = existsSync(handle.out) ? readFileSync(handle.out, 'utf8').trim().split('\n').filter(Boolean) : [];
+    out.watchActivations = {pid: handle.pid, activateCodes: activations, lines: lines.length, first: lines[0]?.slice(0, 120) ?? null,
+      activated: lines.filter(l => l.includes('"activated"')).map(l => { try { return JSON.parse(l).bundleId; } catch { return null; } })};
+  } catch (e) { out.watchActivations = {error: err(e)}; }
+  log(`probes: focus ax ${out.focus.accessibility ?? out.focus.error}, keystroke changed ${out.keystroke?.textChanged ?? out.keystroke?.skipped}, activations seen ${out.watchActivations.activated?.length ?? out.watchActivations.error}`);
+  return out;
+}
+
+// A vendor helper already running (from an earlier step, or anything else on the runner): listed before every vendor step.
+const skyProcesses = () => sh('/bin/ps', ['-axo', 'pid=,ppid=,command=']).stdout.split('\n').map(l => l.trim()).filter(l => /Codex Computer Use|SkyComputerUse|com\.openai\.sky|CUAService/i.test(l)).map(l => l.slice(0, 300));
+
 // ---- the run ----
 
 await step('context', async () => {
@@ -255,6 +299,9 @@ await step('step1-bundle-no-rows', async () => {
   return {launched, parent, harnessApproval: approval, doctor, ...observed, grantsAfter: after, stopped: stopEngine()};
 });
 
+// Part 1, (c): the probe modes as their own LaunchServices instances, no rows.
+await step('stepC-probes-no-rows', async () => probeModes());
+
 // Part 1, step 3: the child relay. The bundle's executable started by this job (the engine at the socket beside the
 // bundle, under the job's grants), then a cua serve session on cua's own host that finds it there.
 let child = null;
@@ -275,12 +322,13 @@ if (child && child.exitCode === null) { try { child.kill('SIGTERM'); } catch {} 
 
 // Part 1, step 2: the vendor's helper with no rows: a CUA_NATIVE_ENGINE=vendor session binding TextEdit.
 await step('step2-vendor-no-rows', async () => {
+  const idleBefore = skyProcesses();
   const doctor = doctorRows({CUA_NATIVE_ENGINE: 'vendor'});
   const observed = await sessionStep('s2', {CUA_NATIVE_ENGINE: 'vendor'}, [{label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA}]);
-  const helperProcs = sh('/bin/ps', ['-axo', 'pid=,ppid=,comm=']).stdout.split('\n').filter(l => /Sky|CUAService|computer-use/i.test(l)).map(l => l.trim());
-  return {doctor, ...observed, helperProcesses: helperProcs};
+  const helperProcs = skyProcesses();
+  return {idleBefore, doctor, ...observed, helperProcesses: helperProcs};
 });
-const vendorHelpers = () => sh('/bin/ps', ['-axo', 'pid=,comm=']).stdout.split('\n').map(l => l.trim()).filter(l => l.includes(CUA_HOME) && /\.app\//.test(l));
+const vendorHelpers = () => sh('/bin/ps', ['-axo', 'pid=,command=']).stdout.split('\n').map(l => l.trim()).filter(l => l.includes(CUA_HOME) && /\.app\//.test(l));
 
 // ---- Part 2: TCC rows (./tcc.mjs's guarded writer) ----
 
@@ -323,6 +371,11 @@ await step('step8-bundle-rows', async () => {
   out.relaunch = await relaunchLS();
   const approve = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
   out.approve = {code: approve.code, ms: approve.ms, json: json(approve.stdout), stderr: approve.stderr.trim().split('\n').slice(-10).join('\n')};
+  if (out.approve.code !== 0 && /engine_capture_confirmation/.test(out.approve.stderr)) {
+    // The confirmation is raised by a copy's first capture; a second approve shows whether it is raised again.
+    const again = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
+    out.approveAgain = {code: again.code, ms: again.ms, json: json(again.stdout), stderr: again.stderr.trim().split('\n').slice(-10).join('\n')};
+  }
   out.approvedJson = existsSync(PATHS.approved) ? JSON.parse(readFileSync(PATHS.approved, 'utf8')) : null;
   if (!out.approvedJson || out.approvedJson.harness) out.note = 'approve did not write approved.json; the harness approval from step 1 stands for the session';
   out.stoppedBeforeSession = stopEngine();
@@ -339,22 +392,28 @@ await step('step8-bundle-rows', async () => {
   out.stopped = stopEngine();
   return out;
 });
+// (c) with the engine's rows: each probe instance is the bundle, so the rows should reach it too.
+await step('stepC-probes-rows', async () => probeModes());
 
 // Step 9: the vendor's helper with rows for every app bundle in the installed runtime that is its helper.
 await step('step9-vendor-rows', async () => {
   const out = {};
   const apps = (record.setup?.runtimeApps ?? []).filter(a => /sky|CUAService|computer/i.test(a.bundleId));
   out.helpers = apps;
+  out.idleBefore = skyProcesses();
   out.rowsWritten = apps.flatMap(a => { try { return grantRows({client: a.bundleId, bundle: a.path, services: ENGINE_ALL}); } catch (e) { return [{client: a.bundleId, error: err(e)}]; } });
   await settle();
   // A helper left running from step 2 would keep its no-grant decision: stop only processes run from this run's home.
   out.stoppedHelpers = vendorHelpers().map(l => { const pid = Number(l.split(' ')[0]); try { process.kill(pid, 'SIGTERM'); return pid; } catch { return null; } });
   await sleep(2000);
+  out.idleAfterStop = skyProcesses();
   out.doctor = doctorRows({CUA_NATIVE_ENGINE: 'vendor'});
+  // Chrome for Testing by its path: the image preinstalls another copy in /Applications, and the vendor refuses the
+  // bundle id as ambiguous (run 45139175518).
   Object.assign(out, await sessionStep('s9', {CUA_NATIVE_ENGINE: 'vendor'}, [
     {label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA},
     {label: 'finder', bundle: SCENES.finder},
-    {label: 'chrome', bundle: SCENES.chrome},
+    {label: 'chrome', bundle: chromeApp ?? SCENES.chrome},
     {label: 'electron', bundle: SCENES.electron},
   ]));
   out.rows = readRows();
@@ -365,10 +424,19 @@ await step('step9-vendor-rows', async () => {
 // the engine's grants, doctor's engine row, one observation, and what `cua engine approve` says with nobody there.
 async function stage(name, {relaunch}) {
   const out = {};
-  if (relaunch) out.relaunch = await relaunchLS(); else { const g = engineGrants(); out.grants = g.running ? g : (await launchLS()).grants; }
+  if (relaunch) out.relaunch = await relaunchLS(); else {
+    await sleep(1000);
+    const g = engineGrants();
+    out.grantsLive = g.running ? g : (await launchLS()).grants;
+    // A row written while the engine runs: read live, then again after a tccd restart, the engine not relaunched.
+    out.tccdRestart = restartTccd();
+    await sleep(2000);
+    out.grantsLiveAfterTccdRestart = engineGrants();
+  }
   out.grantsBeforeObservation = engineGrants();
   Object.assign(out, await sessionStep(`s10-${name}`, {CUA_NATIVE_ENGINE: 'cua'}, [{label: 'textedit', bundle: SCENES.textedit}]));
   out.grantsAfterObservation = engineGrants();
+  out.focusProbe = (() => { try { const f = runProbe(PATHS.bundle, ['focus']); return {accessibility: f.accessibility, focusedApp: f.focusedApp?.bundleId ?? null}; } catch (e) { return {error: err(e)}; } })();
   return out;
 }
 await step('step10-onboarding', async () => {

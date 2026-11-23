@@ -169,6 +169,15 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   row order and the two-pass approve, a workflow per sitting). T10b′ is so named to keep it apart from the parked
   MacBook transport T10b. The hosted pilot runs after M4 merges.
 - 2026-11-23: M5 is ticket #506 (a child of #117); M4 is #505.
+- 2026-11-23, #420's kit ran (run 45161855631, all seven jobs green; fix 2ddec850c against main b1b154845, kit
+  `probe/420-qual` a22076e63): cua's side passes 20/20 on every fix cell, with 0 wrong successes, 0 privacy flags and
+  0 NO VERDICT. On Chrome for Testing 157 and both Electron 44 lanes, non-secret emoji text is exact through paste in
+  the plain and password fields, and a secret is refused before any key (`concealed_input_unavailable`, cause
+  `droppedCharacter`, field empty, no key, clipboard untouched). Safari, AppKit and Firefox are keyed and exact. Main
+  misses all 60 Chromium rows per lane, so the kit sees the defect. The vendor pair waits on T10's lane. The head has
+  moved since 2ddec850c (T8c changed Input.swift, service.mjs and the wrapper, though not the type route), so whether
+  the frozen head reruns the kit is T13's call. The workflow keeps the path `probe-414-qual.yml`, since a rename needs
+  a push without [skip ci].
 - 2026-11-23, the design session clears #420's kit: built on `probe/420-qual` from `probe/414-qual` b7aebd311,
   pushes carrying "[skip ci]", run on GitHub-hosted macOS runners only, one hosted macOS run in flight for the lane,
   watched at 120 s or more, no ci-gate, no TCC write beyond the kit's guard (ruling 1111). The cua side runs now on

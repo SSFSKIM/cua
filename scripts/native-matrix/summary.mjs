@@ -24,7 +24,8 @@
 //   ('unicode', ./unicode-run.mjs), rows of every full run: each judged against its own outcome as a background method
 //   row is (the cell's rule, not the vendor's result, is the reference; the vendor's is recorded beside it): a valid
 //   cua sample that failed blocks, none valid is no verdict; a declared Unicode row is the owner's to read, and a
-//   declaration of the expected file no full run needed is named for the owner.
+//   declaration of the expected file no full run needed is named for the owner. The pressKey row (r k, ruling 1119)
+//   also fails where the vendor's valid samples read otherwise and cua's read the expected text: the engines differ.
 // - Not judged (./unicode-plan.mjs NOT_JUDGED, ruling 1119: the per-context rows): rows that run and are reported but a
 //   ruling put out of the judged matrix. They are outside the manifest and every judgment (method, interference,
 //   declarations, the verdict), whatever they read and whether or not the run marked them `excluded`; the report lists
@@ -52,7 +53,7 @@ import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, SC
 import {MATRIX_CELLS} from './registry.mjs';
 import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN} from './run.mjs';
-import {CONDITIONS, NOT_JUDGED, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {CONDITIONS, NOT_JUDGED, PRESS_KEY, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 
 export const BEAT = 0.9;
 export const RUNS_PER_SIDE = 3;
@@ -296,6 +297,10 @@ export function judge(results, problems = []) {
   };
   const probe = byOwnOutcome(['concurrent', 'intervention']);
   const unicode = byOwnOutcome(['unicode']);
+  // pressKey's r k is composed by the active input method (ruling 1119): the vendor's lane composing it otherwise, a
+  // valid vendor sample not reading the expected text where cua's did, is cua acting differently, which fails the row
+  // and which no declaration covers (the expected file refuses one).
+  for (const u of unicode) if (u.id.endsWith(`/pressKey.${PRESS_KEY.id}`) && u.verdict === 'better') Object.assign(u, {verdict: 'worse', differs: true});
   const failedUnicode = new Set(rows.filter(r => r.section === 'unicode' && !r.invalid && r.ok !== true).map(r => `${r.id}\0${r.engine}`));
   const unneeded = full.length ? readDeclarations().filter(d => !failedUnicode.has(`${d.id}\0${d.engine}`)) : [];
 
@@ -327,7 +332,7 @@ export function judge(results, problems = []) {
     ...launch.filter(l => l.verdict === 'worse').map(l => `launch: ${l.id} did not launch on cua`),
     ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : []),
     ...interference.cua.failed.map(f => `not interfering: ${f.id} failed on cua`),
-    ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => `${r.section}: ${r.id} failed on cua`),
+    ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => (r.differs ? `${r.section}: ${r.id} composes otherwise on the vendor: the engines differ (ruling 1119)` : `${r.section}: ${r.id} failed on cua`)),
     ...others.filter(o => o.engine === 'cua' && o.verdict === 'fail').map(o => `${o.cell}: fail on cua`),
   ];
   const missing = [

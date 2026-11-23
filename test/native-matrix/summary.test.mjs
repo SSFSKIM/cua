@@ -271,14 +271,24 @@ test('the per-context rows are out of the verdict: absent from the manifest, nev
   assert.ok(text.indexOf('## Not judged') > text.indexOf('## Korean and Unicode'));
 });
 
-// #189, ruling 1119: a Korean row counts only with 2-Set engaged; without it the row has no verdict, never a pass.
-test('the Korean pressKey row with no valid cua sample is NO VERDICT, never counted', () => {
+// #189, ruling 1119: a Korean row counts only with 2-Set engaged; without it the row has no verdict, never a pass. If
+// the vendor's lane composes differently the row fails and cannot be declared.
+test('the Korean pressKey row: no valid cua sample is NO VERDICT, and the vendor composing otherwise fails it', () => {
   const KEYS = 'textedit/korean/pressKey.rk';
   const unengaged = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, invalid: 'the Korean source did not engage in textedit after its refocus'})}});
   assert.deepEqual([unengaged.verdict, unengaged.blocking], ['NO VERDICT', []]);
   assert.ok(unengaged.missing.includes(`unicode: ${KEYS} has no valid cua sample`), unengaged.missing.join('\n'));
   const composedOtherwise = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, outcome: {exact: false}})}});
   assert.ok(composedOtherwise.blocking.includes(`unicode: ${KEYS} failed on cua`));
+  // The vendor's lane composing otherwise (rk where cua composed 가) fails the row: the engines differ, which no
+  // declaration covers. Another Unicode row the vendor failed stays better for cua.
+  const vendorOtherwise = judged({vendor: {axMs: 50, resolved: 9, tweak: rows => set(KOREAN, {ok: false})(set(KEYS, {ok: false, outcome: {exact: false}})(rows))}, cua: {axMs: 40}});
+  assert.equal(vendorOtherwise.verdict, 'FAIL');
+  assert.ok(vendorOtherwise.blocking.includes(`unicode: ${KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), vendorOtherwise.blocking.join('\n'));
+  assert.equal(vendorOtherwise.unicode.find(u => u.id === KOREAN).verdict, 'better');
+  assert.ok(!vendorOtherwise.blocking.some(b => b.includes(KOREAN)));
+  const vendorUnengaged = judged({vendor: {axMs: 50, resolved: 9, tweak: set(KEYS, {ok: false, invalid: 'not engaged'})}, cua: {axMs: 40}});
+  assert.deepEqual(vendorUnengaged.blocking, [], 'an invalid vendor sample is no answer to differ from');
 });
 
 test('the hold is judged per run number: each run\'s vendor and cua results share one hold, one commit and one approved build; the run numbers may span holds', () => {

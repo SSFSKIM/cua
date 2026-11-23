@@ -76,7 +76,8 @@ jobs:
       - name: Record bubblewrap's user namespace before the remedy
         shell: bash
         run: |
-          set -uo pipefail
+          # Not -e: bubblewrap's refusal here is an outcome to record, not a failure of the step.
+          set +e -uo pipefail
           mkdir -p "$RUN"
           restrict="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo absent)"
           err="$(bwrap --ro-bind / / true 2>&1 >/dev/null)"; code=$?
@@ -90,7 +91,7 @@ jobs:
       - name: Run the venue pilot
         shell: bash
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           status=0
           scripts/accept/linux-runtime-env.sh "$RUN" -- node scripts/accept/linux-runtime-pilot.mjs --out "$RUN/artifact" --leg "${{ matrix.arch }}" || status=$?
           node -e '

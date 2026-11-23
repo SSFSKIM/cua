@@ -45,8 +45,11 @@ What stays, and why:
   No Swift changed, so `engineVersion` is untouched.
 - **The record**: hold 3's `route-ab` results (`docs/doperpowers/research/2026-10-18-own-native-engine/m2b/hold3/`),
   the design spec's Decision Log entries (2026-10-22, "hold 3's route A/B") and the M2b report. They are record, not
-  live descriptions. Today's `summary` reads hold 3's `matrix/` directory as before. The `route-ab` result files
-  beside it no longer validate, since their section is gone, but no judgment reads them.
+  live descriptions. Today's `summary` reads hold 3's `matrix/` directory as before. The four `route-ab` result
+  files beside it hold no rows (each attempt stopped at Finder's bind), so they still conform. A summary over all of
+  `hold3/` would list them as some other harness's cell, since `route-ab` is no longer a matrix cell. No judgment
+  reads them. (All 33 recorded results under `docs/doperpowers/research/` still conform, checked with
+  `readCellResults`.)
 
 ## Unit witnesses
 

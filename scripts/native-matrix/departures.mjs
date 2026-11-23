@@ -35,7 +35,7 @@
 // unconfirmed answer, that or `outcome.effect` true, the case's own check read its intended effect though the act
 // threw (an unconfirmed answer may have acted, but never otherwise than asked).
 import * as fs from 'node:fs';
-import {answerOf, kindOfName} from './answers.mjs';
+import {answerOf, conservativeEffect, kindOfName} from './answers.mjs';
 import {cellsOf} from './manifest.mjs';
 import {isAcceptanceRow, isPressKeyRow} from './unicode-plan.mjs';
 
@@ -104,7 +104,5 @@ export const vendorAnsweredOk = row => row.ok === true && row.expect !== 'refusa
 export function answeredAs(entry, row) {
   const said = answerOf(row);
   const answered = said.kind === entry.cua.answer && said.name === entry.cua.errorName && typeof said.sentence === 'string' && new RegExp(entry.cua.sentence).test(said.sentence);
-  const unchanged = row.outcome?.unchanged === true, intended = row.outcome?.effect === true;
-  const effect = entry.cua.answer === 'refused' ? unchanged && !intended : unchanged || intended;
-  return {answered, effect};
+  return {answered, effect: conservativeEffect(entry.cua.answer, row)};
 }

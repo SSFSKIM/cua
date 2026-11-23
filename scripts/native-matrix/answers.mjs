@@ -1,6 +1,6 @@
 // What a judged sample's act answered, and whether two failed samples failed the same way: read by the declared
-// departures (./departures.mjs, R3) and by the cell's verdict (./cell-verdict.mjs: ruling 1144's shared failures, and
-// two frontmost failures called equal only when they are the same failure).
+// departures (./departures.mjs, R3) and by the cell's verdict (./cell-verdict.mjs: ruling 1144's shared failures on the
+// fixed-string rows, and two frontmost failures called equal only when they are the same failure).
 //
 // The answer, from the row's outcome as its cell recorded it (./matrix-cells.mjs, ./probe-plan.mjs):
 //   kind   'ok' (the act threw nothing), 'refused' or 'unconfirmed' (the act threw an error whose recorded name is one of
@@ -37,15 +37,33 @@ export function sameAnswer(a, b) {
   return a.kind === b.kind && a.name === b.name && (a.kind !== 'error' || (a.sentence !== null && a.sentence === b.sentence));
 }
 
-// Whether two samples read the same effect: the same read-back (`outcome.hash`) where either records one; else the same
-// value of every boolean effect reading either records (the answer's keys apart). Nothing to compare is no proof.
-export function sameEffect(v, c, {readBack = false} = {}) {
+// Whether two samples of a fixed-string row read the same (ruling 1144): the same read-back (`outcome.hash`), and the
+// user's own value (`outcome.userKept`, the rows behind a user window) kept on both: a changed user value on either
+// side is never the same failure. No read-back recorded is no proof.
+export function sameReadBack(v, c) {
   const a = v?.outcome ?? {}, b = c?.outcome ?? {};
-  if (readBack || a.hash !== undefined || b.hash !== undefined) return typeof a.hash === 'string' && a.hash === b.hash;
-  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(k => !ANSWER_KEYS.has(k) && (typeof a[k] === 'boolean' || typeof b[k] === 'boolean'));
-  return keys.length > 0 && keys.every(k => a[k] === b[k]);
+  return typeof a.hash === 'string' && a.hash === b.hash && a.userKept !== false && b.userKept !== false;
 }
 
-// Whether two failed samples failed the same way (ruling 1144): the same answer and the same effect; `readBack` when the
-// row is judged by an absolute expected string, whose read-back must then be the same. -> boolean.
-export const sameFailure = (v, c, options) => sameAnswer(answerOf(v), answerOf(c)) && sameEffect(v, c, options);
+// Whether two samples of a frontmost method row read the same effect: every effect field the case's check recorded (its
+// outcome, the answer's keys apart) equal on both, numbers and names as well as booleans (Finder selecting no row is
+// not Finder selecting two). Nothing recorded is no proof.
+export function sameEffect(v, c) {
+  const effect = row => Object.fromEntries(Object.entries(row?.outcome ?? {}).filter(([k]) => !ANSWER_KEYS.has(k)));
+  const a = effect(v), b = effect(c);
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
+  return keys.length > 0 && keys.every(k => JSON.stringify(a[k]) === JSON.stringify(b[k]));
+}
+
+// Whether two failed samples failed the same way: the same answer, and the same read-back on a fixed-string row
+// (`readBack`, ruling 1144) or else the same recorded effect. -> boolean.
+export const sameFailure = (v, c, {readBack = false} = {}) => sameAnswer(answerOf(v), answerOf(c)) && (readBack ? sameReadBack(v, c) : sameEffect(v, c));
+
+// Whether a sample's recorded effect allows the conservative answer it gave, never the answer's name alone: refused, the
+// case's watched state read unchanged (`outcome.unchanged`) and not its intended effect; unconfirmed, either the state
+// unchanged or the intended effect (`outcome.effect`: the act may have acted, never otherwise than asked). The harness
+// records both (T10b′). -> boolean.
+export function conservativeEffect(kind, row) {
+  const unchanged = row?.outcome?.unchanged === true, intended = row?.outcome?.effect === true;
+  return kind === 'refused' ? unchanged && !intended : kind === 'unconfirmed' ? unchanged || intended : false;
+}

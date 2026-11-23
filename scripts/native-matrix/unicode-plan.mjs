@@ -43,9 +43,9 @@ export const PRESS_KEY = Object.freeze({id: 'rk', keys: 'r k', expected: Object.
 const pressKeyString = condition => Object.freeze({id: PRESS_KEY.id, keys: PRESS_KEY.keys, text: PRESS_KEY.expected[condition]});
 // Whether a Unicode row id is the pressKey row's, which no departure may name (ruling 1119).
 export const isPressKeyRow = id => typeof id === 'string' && id.endsWith(`/pressKey.${PRESS_KEY.id}`);
-// Whether a row is an acceptance item's own (its string `acceptance<N>`, Acceptance 4's text): absolute, it lands exactly
-// on cua whatever the vendor does (S L239), so neither a declared departure nor a shared limit satisfies it.
-export const isAcceptanceRow = id => typeof id === 'string' && /\.acceptance\d+$/.test(id);
+// Whether a Unicode row is the mid-switch's, judged by the prefix it measured (./unicode-run.mjs judgeMidSwitch), not
+// by an absolute expected string: ruling 1144's shared failures are not its.
+export const isMidSwitchRow = id => typeof id === 'string' && id.split('/')[1] === 'midSwitch';
 // The conditions whose rows run and are reported but are out of every verdict (./not-judged.mjs).
 export {NOT_JUDGED};
 // The mid-switch row's long keyed text, so the switch lands inside it.
@@ -62,6 +62,13 @@ export const UNICODE_PLAN = Object.freeze({fields: UNICODE_FIELDS, conditions: C
 
 // A row's id: `<field>/<condition>[@<user>]/<method>.<string>`.
 export const unicodeRowId = ({field, condition, user = null, method, string}) => `${field}/${condition}${user ? `@${user}` : ''}/${method}.${string.id}`;
+
+// The rows an acceptance item names, absolute: they land exactly on cua whatever the vendor does (S L239), so neither a
+// declared departure nor a shared limit satisfies them. Acceptance 4: typeText of its string into TextEdit's document,
+// under the Latin and the Korean source (the string's other rows, other fields and methods, are the matrix's own).
+const ACCEPTANCE_4 = UNICODE_STRINGS.find(s => s.id === 'acceptance4');
+export const ACCEPTANCE_ROWS = Object.freeze(['latin', 'korean'].map(condition => unicodeRowId({field: 'textedit', condition, method: 'typeText', string: ACCEPTANCE_4})));
+export const isAcceptanceRow = id => ACCEPTANCE_ROWS.includes(id);
 
 // A row's case (./matrix-cells.mjs caseCells): the field emptied and focused, one facade call sent under the key guard,
 // the field read back by hash.

@@ -329,3 +329,107 @@ test in `probe-plan.test.mjs` failed the same way until `fieldCheck` kept the ha
   boolean effect readings or a read-back. A case whose outcome records neither will fail whenever both engines fail.
 - **Shared-limit grouping is mechanical.** A group is a scene, a method and the answer both engines gave. Naming each
   cause for its ticket is the design session's job.
+
+## Round 2: the re-review's five fixes and its minor point
+
+This round answers the second review of T10a. Two rules from the first fix wave are narrowed: the same-failure rule for
+frontmost rows (finding 4) and the acceptance-row test (finding 6).
+
+1. **The timing triple.** A cell now qualifies on complete run pairs, not on each side's own count. A complete run pair
+   is a run where:
+   - the pair is eligible;
+   - both sides hold the same samples, as many as planned;
+   - every sample on both sides has a verdict.
+
+   A cell qualifies with three complete run pairs. The plan is one sample per run for every row except a scene's speed
+   ops, which plan the run's `meta.samples` (0 when the vendor's and cua's plans differ, so such a run never completes).
+
+   Official speed statistics and the beat come from the complete run pairs only. A partial run's readings feed
+   `partial` and the `provisional` beat, which the report shows and never counts. Finding uses the same complete runs.
+
+   Before this, three complete pairs plus a partial run reported a beat. A probe cell also qualified with three complete
+   runs a side but none in common. Both cases are now tests. The NO VERDICT table has a "complete pairs" column, and its
+   vendor and cua run counts are diagnostics.
+2. **Pair eligibility.** `pairProblems` now requires one device (`result.device`) and one OS (`meta.os`, the record's
+   `{name, version, build}`) on each run's vendor and cua results, beside the hold, the commit and the approved build. A
+   cross-device or cross-OS pair is not compared, and no departure finds its vendor ok there. Hold 3, 2a and 2b each
+   record one OS, so their pairs are unchanged.
+3. **The user's value, and conservative answers.**
+   - `answers.mjs` `sameReadBack` needs the same `outcome.hash`, and `outcome.userKept` not false on either side. A
+     changed user value on one side, or on both, is never a shared failure.
+   - The better case for a conservative answer now needs recorded evidence in cua's sample: refused needs
+     `outcome.unchanged` with no `effect`; unconfirmed needs `unchanged` or `effect`. It also needs the user's value
+     kept and the oracle holding. `conservativeEffect` is the one helper for this; the departures' `answeredAs` now
+     uses it too.
+   - Before this, an unconfirmed answer with another wrong read-back and `unchanged: false, effect: false` was better.
+     It now fails.
+4. **Where ruling 1144 applies.** Ruling 1144 now covers only the fixed-string rows: the Unicode rows judged by an
+   absolute expected string, plus the pressKey row.
+   - The mid-switch row (`isMidSwitchRow`) is judged in `own` mode, on its measured prefix: a cua failure fails, paired
+     or not.
+   - Frontmost method rows no longer produce shared limits. When both engines fail, the row is `equal` only with the
+     same answer and every effect field the case recorded equal (`sameEffect`: numbers and names as well as booleans,
+     the answer's keys apart). Finder selecting no rows against two is worse.
+   - cua refusing or answering unconfirmed where the vendor answered ok needs an R3 entry on a frontmost row, as before.
+     The undeclared better case exists only on fixed-string rows.
+5. **Shared-limit grouping.** Each shared observation is grouped by its own cause and priority, and its row's sample
+   count is aggregated within that group. One timeout plus two shared false oks on one row now report a P3 group with
+   one sample and a P2 group with two. The Unicode line of the three points no longer counts a shared row as a pass; it
+   reads "N of M rows pass on cua, K a shared limit".
+
+**The minor point.** `ACCEPTANCE_ROWS` names Acceptance 4's two rows explicitly: TextEdit typeText of its string under
+the Latin and the Korean source (`textedit/latin/typeText.acceptance4`, `textedit/korean/typeText.acceptance4`). The
+string's other rows (Chrome, Electron, paste, the composing and per-context conditions) are ordinary fixed-string rows.
+
+### What the old records judge as now (round 2)
+
+All three holds still judge FAIL. Against the first fix wave (28122c80b):
+
+| Hold | Change | Why |
+|---|---|---|
+| 3 | `unicode: chrome/midSwitch/typeText.long failed on cua` is back | The mid-switch row is judged on its own measured prefix: cua's run 2 failure fails it, unpaired or not. |
+| 3 | The notText shared limit is gone | `chrome/frontmost/selectText.notText` run 1: both refused alike, so the sample is `equal`. A frontmost row lists no shared limit. The row stays no verdict (cua's run 2 is unpaired). |
+| 2a | `unicode: chrome/midSwitch/typeText.long` and `electron/midSwitch/typeText.long failed on cua` are back | The mid-switch rule, as for hold 3. |
+| 2b | none | |
+
+### Tests (round 2)
+
+**RED,** before implementing:
+`node --test test/native-matrix/summary.test.mjs test/native-matrix/unicode-plan.test.mjs` gave `# pass 34`, `# fail 14`.
+
+- Six failures were the new tests:
+  - the partial run's readings and the planned samples;
+  - a probe with no common complete run;
+  - the cross-device and cross-OS pairs;
+  - the user's value and the conservative-answer evidence;
+  - the mid-switch and frontmost scope;
+  - the per-observation grouping and the Unicode count.
+- One was the explicit acceptance rows and `isMidSwitchRow`.
+- Seven were existing tests changed to the new rules: frontmost both-fail now reads `equal`, and the NO VERDICT table
+  has a complete-pairs column.
+- `answers.test.mjs` gained the `sameEffect`, `sameReadBack` and `conservativeEffect` cases.
+
+**GREEN:**
+
+- `node --test test/native-matrix/*.test.mjs`: `# tests 420`, `# pass 420`, `# fail 0`.
+- `node --test test/cursor-sitting/item-188.test.mjs test/cursor-sitting/item-187.test.mjs test/repl-parity/native-mac-run.test.mjs`:
+  `# tests 77`, `# pass 77`, `# fail 0`.
+
+### Decisions (round 2)
+
+- The pressKey row counts as a fixed-string row: its expected text is absolute per source (`rk`, `가`). It keeps ruling
+  1144's same failure, combined with 1119's rule that a vendor composing otherwise fails the row.
+- "Complete" is applied to every judged cell's qualification, not only speed's, because the review's probe case is a
+  qualification case. For one-sample rows, a complete pair is simply an eligible run with a verdict on both sides.
+- A frontmost row's effect equivalence compares every effect field the case's check recorded. Per-case equivalence
+  tables were not built: the recorded fields are already the case's own. The comparison errs strict: a count that
+  differs, such as Open-panel `elements`, makes the pair worse.
+- The conservative-answer evidence is the recorded `unchanged` or `effect` only. It is not inferred from the read-back
+  (an empty field), which keeps it the same contract the departures use.
+- If both sides changed the user's value, the failure is not shared either: cua changing it fails on its own.
+
+### Concerns (round 2)
+
+- The better case for a conservative answer on a fixed-string row needs `outcome.unchanged` or `outcome.effect` on
+  Unicode rows, beside the engine's error name. Neither is recorded today; both are T10b′'s to add.
+- A frontmost pair whose case records a volatile count, such as `elements`, will read worse whenever both engines fail.

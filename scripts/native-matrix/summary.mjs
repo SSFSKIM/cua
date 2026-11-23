@@ -11,26 +11,32 @@
 //   NO VERDICT: never a pass, never a fail, counted per cell by its cause.
 // - No valid pair, no verdict (ruling 1116): where the verdict rests on the vendor's answer, a cua sample with no vendor
 //   sample with a verdict from the same run has none. Only a run whose pair is one proof (pairableRuns: one vendor and
-//   one cua run, one hold, one commit, one approved build) is compared or lets a departure find its vendor ok; speed and
-//   finding compare the same eligible observations on both sides.
-// - Shared limits (ruling 1144): a cua sample that failed the same way as its paired vendor sample (the same answer and
-//   effect; for a Unicode row, judged by its absolute expected string, the same read-back) is equal and listed apart
-//   under "Shared limits (vendor has them too)", by cause; the vendor passing a sample whose cua pair failed fails the
-//   row; cua refusing or answering unconfirmed where the vendor gave a false ok is better. An acceptance row is
-//   absolute: no shared limit or departure satisfies it.
-// - A cell qualifies with three runs a side (RUNS_PER_SIDE) every sample of which has a verdict; one that does not has
-//   no verdict, and the manifest's cells that do not qualify are missing proof (the manifest is checked for validity,
-//   not only presence).
+//   one cua run, one hold, one commit, one approved build, one device, one OS) is compared or lets a departure find its
+//   vendor ok; speed and finding compare the same complete run pairs on both sides.
+// - Shared limits (ruling 1144, the fixed-string rows only: a Unicode row judged by its absolute expected string, and
+//   the pressKey row): a cua sample that failed the same way as its paired vendor sample (the same answer, the same
+//   read-back, the user's value kept on both) is equal and listed apart under "Shared limits (vendor has them too)",
+//   each observation by its own cause; the vendor passing a sample whose cua pair failed fails the row; cua refusing or
+//   answering unconfirmed where the vendor gave a false ok, its recorded effect allowing that answer, is better. An
+//   acceptance row is absolute: no shared limit or departure satisfies it. The mid-switch row is judged by the prefix
+//   it measured, as a background row is by its own outcome.
+// - A cell qualifies with three complete run pairs (RUNS_PER_SIDE): runs whose pair is one proof, both sides holding the
+//   planned samples, every one with a verdict. One that does not has no verdict, and the manifest's cells that do not
+//   qualify are missing proof (the manifest is checked for validity, not only presence). A partial run's samples are
+//   diagnostics.
 // - Method rows (section 'method', id `<target>/<regime>/<method>.<case>`). Frontmost: the vendor's outcome is the
 //   reference, sample for sample (the run number): cua is worse on a sample where the vendor passed and cua did not, or
-//   where both failed differently; better where cua passed and the vendor did not. Background: the fixture's ground truth is the reference. Differs is
+//   where both failed otherwise than the same answer with every effect field its case recorded alike; better where cua
+//   passed and the vendor did not; cua refusing where the vendor answered ok needs a declared departure. Background:
+//   the fixture's ground truth is the reference. Differs is
 //   judged on the row's own check (`ok`): cua answering ok with its effect verified where the vendor failed is better
 //   (S L225, "equal or better"); cua answering ok where the reference is a refusal fails its check.
 // - The declared departures (R3 as ruled 1108, ./departures.mjs): cua refused or answered unconfirmed where the vendor
 //   answered ok, the pair observed, each entry citing its Decision Log entry; listed under "What changes for a user".
 //   Everything else that differs fails; an entry of another kind is itself a failure; one no sample needed is named for
 //   the owner. A declaration carried on a full run's own row excuses nothing (the file is the one place).
-// - Speed rows (section 'speed', id `<scene>/<op>`, ok meaning measured): the in-cell medians and p95s, the beat being
+// - Speed rows (section 'speed', id `<scene>/<op>`, ok meaning measured): the in-cell medians and p95s over the complete
+//   run pairs (a partial run's readings shown as diagnostics only), the beat being
 //   cua's median at most 90% of the vendor's with its p95 not worse; a missed beat is the owner's fork at M5, not a failure.
 // - Finding rows (section 'finding', ok meaning measured): per scene the targets resolved (in every counted sample), the
 //   titled share and the ID count (medians); cua not lower on any measure and its resolved sum higher passes; not lower
@@ -41,7 +47,8 @@
 // - Launch rows (section 'launch'): the launch worked (`ok`) judged as a background method row is.
 // - The probe cells (sections 'concurrent' and 'intervention', ./probe-run.mjs): each judged against its own outcome as
 //   a background method row is. The Korean and Unicode matrix ('unicode', ./unicode-run.mjs): against its absolute
-//   expected string, a failure compared with its paired vendor sample (ruling 1144). The pressKey row
+//   expected string, a failure compared with its paired vendor sample (ruling 1144); the mid-switch row against its own
+//   measured prefix. The pressKey row
 //   (r k, ruling 1119) is judged on both engines' raw outcomes (./cell-verdict.mjs judgePressKey), and no departure may
 //   name it.
 // - Not judged (./not-judged.mjs, ruling 1119: the per-context rows, by section and condition): outside the manifest and
@@ -67,12 +74,12 @@ import {readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
 import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
-import {cellsOf, manifestOf} from './manifest.mjs';
+import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
 import {ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
-import {CONDITIONS, isAcceptanceRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
 export {manifestOf, SPEED_OPS} from './manifest.mjs';
@@ -126,21 +133,24 @@ const runsByNumber = full => {
 };
 
 // What keeps run `n`'s vendor and cua runs from being one pair: each engine's run there, one hold, one commit, one
-// approved engine build (the bundle every lane's probes run), each recorded (a non-empty string) on every run of the
-// pair, since values absent on both sides are not one shared value. -> [sentence].
+// approved engine build (the bundle every lane's probes run), one device and one OS, each recorded (a non-empty string,
+// the OS the record's {name, version, build}) on every run of the pair, since values absent on both sides are not one
+// shared value. -> [sentence].
 function pairProblems(n, list) {
   const out = [];
   const has = engine => list.some(({result}) => result.lanes[0]?.engine === engine);
   if (!has('cua')) out.push(`run ${n} has no cua full run: its samples cannot be compared with the vendor's`);
   if (!has('vendor')) out.push(`run ${n} has no vendor full run: its samples cannot be compared with cua's`);
-  const shared = (what, field, values) => {
-    if (values.some(v => typeof v !== 'string' || !v)) { out.push(`run ${n}: a run records no ${what} (${field}): its pair cannot be shown to share one`); return; }
+  const shared = (what, field, values, measured = 'in one hold') => {
+    if (values.some(v => !(typeof v === 'string' ? v : v !== null && typeof v === 'object' && Object.keys(v).length))) { out.push(`run ${n}: a run records no ${what} (${field}): its pair cannot be shown to share one`); return; }
     const seen = [...new Set(values.map(v => JSON.stringify(v)))];
-    if (seen.length > 1) out.push(`run ${n}'s vendor and cua runs name more than one ${what} (${seen.join(', ')}): a pair is measured in one hold`);
+    if (seen.length > 1) out.push(`run ${n}'s vendor and cua runs name more than one ${what} (${seen.join(', ')}): a pair is measured ${measured}`);
   };
   shared('hold', 'meta.sitting', list.map(({result}) => result.meta?.sitting));
   shared('commit', 'meta.commit', list.map(({result}) => result.meta?.commit));
   shared('approved engine build', 'meta.nativeEngine.approved', list.map(({result}) => result.meta?.nativeEngine?.approved?.build));
+  shared('device', 'device', list.map(({result}) => result.device), 'on one device');
+  shared('OS', 'meta.os', list.map(({result}) => result.meta?.os), 'on one OS');
   return out;
 }
 
@@ -242,7 +252,12 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // Only a run whose pair is one proof is compared, and only there may a departure find its vendor ok (finding 1).
   const eligible = pairableRuns(full);
   const pairable = run => eligible.has(run);
-  const options = section => id => ({departure: byRow.get(`${section} ${id}`) ?? null, required: RUNS_PER_SIDE, oracle: oracleJudges, pairable, acceptance: isAcceptanceRow(id)});
+  // Each cell's planned samples in a run: a scene's speed op the run's meta.samples (0 where the pair's plans differ),
+  // every other row one.
+  const runSamples = new Map(full.map(({result}) => [`${result.lanes[0]?.engine} ${result.meta?.run}`, result.meta?.samples]));
+  const sampled = run => { const v = runSamples.get(`vendor ${run}`); return Number.isSafeInteger(v) && v === runSamples.get(`cua ${run}`) ? v : 0; };
+  const plannedOf = (section, id) => (section === 'speed' && SPEED_OPS.includes(id.slice(id.indexOf('/') + 1)) ? sampled : () => 1);
+  const options = section => id => ({departure: byRow.get(`${section} ${id}`) ?? null, required: RUNS_PER_SIDE, oracle: oracleJudges, pairable, planned: plannedOf(section, id), acceptance: isAcceptanceRow(id)});
   const sides = list => [list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua')];
 
   // Methods.
@@ -257,13 +272,13 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const speed = [];
   for (const [id, list] of groupBy(rows.filter(r => r.section === 'speed'), r => r.id)) {
     const [scene, op] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)];
-    speed.push({id, section: 'speed', scene, op, ...judgeSpeed(...sides(list), {required: RUNS_PER_SIDE, pairable})});
+    speed.push({id, section: 'speed', scene, op, ...judgeSpeed(...sides(list), {required: RUNS_PER_SIDE, pairable, planned: plannedOf('speed', id)})});
   }
   speed.sort((a, b) => a.id.localeCompare(b.id));
 
   // Finding: each row's samples with a verdict, then per scene.
   const findingRows = [];
-  for (const [id, list] of groupBy(rows.filter(r => r.section === 'finding'), r => r.id)) findingRows.push({id, section: 'finding', ...findingSamples(...sides(list), {required: RUNS_PER_SIDE, pairable})});
+  for (const [id, list] of groupBy(rows.filter(r => r.section === 'finding'), r => r.id)) findingRows.push({id, section: 'finding', ...findingSamples(...sides(list), {required: RUNS_PER_SIDE, pairable, planned: plannedOf('finding', id)})});
   const finding = SCENE_IDS.map(scene => {
     const mine = findingRows.filter(f => f.id.startsWith(`${scene}/`));
     return {scene, vendor: findingMeasures(mine.flatMap(f => f.vendor)), cua: findingMeasures(mine.flatMap(f => f.cua)), qualifies: mine.every(f => f.account.qualifies)};
@@ -296,7 +311,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     const out = [];
     for (const [id, list] of groupBy(rows.filter(r => sections.includes(r.section)), r => r.id)) {
       const section = list[0].section;
-      const mode = section !== 'unicode' ? 'own' : isPressKeyRow(id) ? 'pressKey' : 'absolute';
+      const mode = section !== 'unicode' || isMidSwitchRow(id) ? 'own' : isPressKeyRow(id) ? 'pressKey' : 'absolute';
       out.push({id, section, ...judgeCell(mode, ...sides(list), options(section)(id))});
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
@@ -310,20 +325,24 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const applied = judgedCells.filter(c => c.declared > 0).map(c => ({...byRow.get(`${c.section} ${c.id}`), samples: c.declared}));
   // cua refusing or answering unconfirmed where the vendor gave a false ok (ruling 1144): better, listed beside them.
   const honest = judgedCells.filter(c => c.honest.length).map(c => ({section: c.section, id: c.id, cua: c.honest[0].cua, samples: c.honest.length}));
-  // The shared limits (ruling 1144), grouped by cause: the answer both gave, on one scene and method; each cause is a
-  // ticket for the design session to register (a shared false ok P2 or higher, an honest shared failure P3).
+  // The shared limits (ruling 1144): each observation by its own cause (the answer both gave, on one scene and method)
+  // and priority, then each cause's rows; each cause is a ticket for the design session to register (a shared false ok
+  // P2 or higher, an honest shared failure P3).
   const sharedGroups = new Map();
-  for (const c of judgedCells.filter(x => x.shared.length)) {
-    const {answer} = c.shared[0];
+  for (const c of judgedCells) for (const sample of c.shared) {
+    const {answer} = sample;
     const kind = answer.kind === 'ok' ? 'shared false ok' : 'honest failure';
     const [scene] = c.id.split('/');
-    const method = c.section === 'method' ? c.id.split('/')[2]?.split('.')[0] : c.id.split('/').pop().split('.')[0];
-    const said = answer.kind === 'ok' ? 'answers ok with other text or effect' : `answers ${answer.kind}${answer.name ? ` (${answer.name})` : ''}${answer.sentence ? `: "${answer.sentence}"` : ''}`;
+    const method = c.id.split('/').pop().split('.')[0];
+    const said = answer.kind === 'ok' ? 'answers ok with other text' : `answers ${answer.kind}${answer.name ? ` (${answer.name})` : ''}${answer.sentence ? `: "${answer.sentence}"` : ''}`;
     const cause = `${scene} ${method} ${said}`;
     const key = `${kind}\0${cause}`;
     if (!sharedGroups.has(key)) sharedGroups.set(key, {kind, priority: kind === 'shared false ok' ? 'P2 or higher' : 'P3', cause, rows: []});
-    const s0 = c.shared[0];
-    sharedGroups.get(key).rows.push({section: c.section, id: c.id, samples: c.shared.length, length: s0.length, expectedLength: s0.expectedLength});
+    const rows = sharedGroups.get(key).rows;
+    const row = rows.find(r => r.section === c.section && r.id === c.id);
+    const lengths = {length: sample.length, expectedLength: sample.expectedLength};
+    if (!row) rows.push({section: c.section, id: c.id, samples: 1, ...lengths});
+    else { row.samples += 1; if (row.length !== lengths.length) row.length = null; }
   }
   const shared = [...sharedGroups.values()];
   const unneeded = full.length ? [...byRow.values()].filter(e => !applied.some(a => a.section === e.section && a.id === e.id)) : [];
@@ -331,7 +350,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // Every judged cell of the manifest: its samples with and without a verdict, and whether it qualifies.
   const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? (c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed') : c.verdict, account: c.account}]));
   for (const f of findingRows) found.set(`${f.section} ${f.id}`, {verdict: f.account.qualifies ? 'measured' : 'no-verdict', account: f.account});
-  const empty = {vendor: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, cua: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, qualifies: false};
+  const empty = {vendor: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, cua: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, pairs: 0, pairRuns: [], qualifies: false};
   const cells = cellsOf().map(({section, id}) => {
     const c = found.get(`${section} ${id}`) ?? {verdict: 'no-verdict', account: empty};
     return {section, id, verdict: c.verdict, account: c.account, qualifies: c.account.qualifies};
@@ -374,10 +393,10 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const missing = [
     ...missingProof,
     ...unproven,
-    ...(unqualified.length ? [`${unqualified.length} cell(s) do not qualify: fewer than ${RUNS_PER_SIDE} runs with a verdict on a side (NO VERDICT by cell)`] : []),
+    ...(unqualified.length ? [`${unqualified.length} cell(s) do not qualify: fewer than ${RUNS_PER_SIDE} complete run pairs (NO VERDICT by cell)`] : []),
     ...(findingVerdict === 'no-verdict' ? ['finding elements: a scene has no measure on one engine, or a finding row does not qualify'] : []),
     ...(interference.cua.rows === 0 ? ['not interfering: no background row was judged on cua'] : []),
-    ...speed.filter(s => !s.vendor || !s.cua).map(s => `speed: ${s.id} has no measure on one engine`),
+    ...speed.filter(s => !s.partial.vendor || !s.partial.cua).map(s => `speed: ${s.id} has no measure on one engine`),
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
   ];
   const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
@@ -442,10 +461,12 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   const share = engine => (j.interference[engine].rows ? `${Math.round((j.interference[engine].ok / j.interference[engine].rows) * 1000) / 10}% (${j.interference[engine].ok}/${j.interference[engine].rows})` : 'no rows');
   out.push(`- **Not interfering**: cua ${share('cua')}, vendor ${share('vendor')}; cua route-4 actions outside accepted families: ${j.interference.cua.route4}; declared for the owner: ${j.interference.cua.declared.length}.`);
   out.push(`- **What changes for a user**: ${j.departures.length} declared departure(s) (R3).`);
-  const passing = list => list.filter(r => ['equal', 'better', 'declared', 'shared'].includes(r.verdict)).length;
+  // A shared limit is equal to the vendor, never a pass of the row's own check.
+  const passing = list => list.filter(r => ['equal', 'better', 'declared'].includes(r.verdict)).length;
   out.push(`- **Concurrent use and intervention**: ${passing(j.probe)} of ${j.probe.length} rows pass on cua (concurrent use and its sheet variant, intervention fires, the pre-action refusal).`);
   const notJudged = j.notJudged.length ? `; ${j.notJudged.length} ${[...new Set(j.notJudged.map(n => n.condition))].join(', ')} rows are not judged (below)` : '';
-  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${notJudged}.`);
+  const sharedRows = j.unicode.filter(r => r.verdict === 'shared').length;
+  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${sharedRows ? `, ${sharedRows} a shared limit` : ''}${notJudged}.`);
   const without = side => j.cells.reduce((n, c) => n + Object.values(c.account[side].noVerdict).reduce((a, b) => a + b, 0), 0);
   out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
@@ -476,7 +497,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push('');
 
   if (j.shared.length) {
-    out.push('## Shared limits (vendor has them too)', '', 'Rows where cua failed the same way as its own paired vendor sample, the same answer and the same read-back or effect (ruling 1144): equal, never a pass of the row\'s own check. Grouped by cause; each cause needs a ticket, which the design session registers: P2 or higher for a shared false ok, P3 for an honest shared failure.', '');
+    out.push('## Shared limits (vendor has them too)', '', 'Fixed-string rows where cua failed the same way as its own paired vendor sample, the same answer and the same read-back with the user\'s value kept (ruling 1144): equal, never a pass of the row\'s own check. Each observation grouped by its own cause; each cause needs a ticket, which the design session registers: P2 or higher for a shared false ok, P3 for an honest shared failure.', '');
     for (const g of j.shared) {
       out.push(`### ${g.kind} (${g.priority}): ${g.cause}`, '');
       for (const r of g.rows) out.push(`- ${r.id}: ${r.samples} sample(s)${Number.isInteger(r.length) && Number.isInteger(r.expectedLength) ? `, read back ${r.length} of ${r.expectedLength} characters on both` : ''}`);
@@ -497,12 +518,12 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push('## NO VERDICT by cell', '');
   const listed = j.cells.filter(c => !c.qualifies || Object.keys(c.account.vendor.noVerdict).length || Object.keys(c.account.cua.noVerdict).length);
   if (!j.runs.vendor && !j.runs.cua) out.push('No full run: no cell has a verdict.');
-  else if (!listed.length) out.push(`No cell has a NO VERDICT sample, and every cell qualifies (${RUNS_PER_SIDE} runs with a verdict on each side).`);
+  else if (!listed.length) out.push(`No cell has a NO VERDICT sample, and every cell qualifies (${RUNS_PER_SIDE} complete run pairs).`);
   else {
-    out.push(`Each judged cell with a sample without a verdict, or with fewer than ${RUNS_PER_SIDE} runs every sample of which has one on a side (the triple's requirement), which does not qualify and is missing proof. A sample without a verdict is never a pass and never a fail. Its causes: ${Object.entries(NO_VERDICT_CAUSES).map(([k, v]) => `${k}, ${v}`).join('; ')}. Runs are those every sample of which has a verdict, against the ${RUNS_PER_SIDE} required; by run, the samples with a verdict of the samples the run holds.`, '',
-      '| cell | verdict | vendor runs | cua runs | vendor by run | cua by run | vendor no verdict | cua no verdict | qualifies |', '|---|---|---|---|---|---|---|---|---|');
+    out.push(`Each judged cell with a sample without a verdict, or with fewer than ${RUNS_PER_SIDE} complete run pairs (the triple's requirement: runs whose pair is one proof, both sides holding the planned samples, every one with a verdict), which does not qualify and is missing proof. A sample without a verdict is never a pass and never a fail. Its causes: ${Object.entries(NO_VERDICT_CAUSES).map(([k, v]) => `${k}, ${v}`).join('; ')}. Vendor and cua runs are each side's runs every sample of which has a verdict (diagnostics); by run, the samples with a verdict of the samples the run holds.`, '',
+      '| cell | verdict | complete pairs | vendor runs | cua runs | vendor by run | cua by run | vendor no verdict | cua no verdict | qualifies |', '|---|---|---|---|---|---|---|---|---|---|');
     const byRun = side => Object.entries(side.byRun).map(([run, r]) => `r${run} ${r.verdicts}/${r.samples}`).join(', ') || '-';
-    for (const c of listed) out.push(`| ${c.section} ${c.id} | ${MARK[c.verdict] ?? c.verdict} | ${c.account.vendor.runs} of ${RUNS_PER_SIDE} | ${c.account.cua.runs} of ${RUNS_PER_SIDE} | ${byRun(c.account.vendor)} | ${byRun(c.account.cua)} | ${causesText(c.account.vendor.noVerdict)} | ${causesText(c.account.cua.noVerdict)} | ${c.qualifies ? 'yes' : 'no'} |`);
+    for (const c of listed) out.push(`| ${c.section} ${c.id} | ${MARK[c.verdict] ?? c.verdict} | ${c.account.pairs} of ${RUNS_PER_SIDE} | ${c.account.vendor.runs} | ${c.account.cua.runs} | ${byRun(c.account.vendor)} | ${byRun(c.account.cua)} | ${causesText(c.account.vendor.noVerdict)} | ${causesText(c.account.cua.noVerdict)} | ${c.qualifies ? 'yes' : 'no'} |`);
   }
   out.push('');
 

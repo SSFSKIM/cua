@@ -40,3 +40,14 @@ export const MAWS_INSTANCE_MARKER = 'maws:';
 export function launchBackendPaths(home, {clientHosts = null} = {}) {
   return [...new Set([...(clientHosts ?? []), ...backendPaths(home)])];
 }
+
+// -> the CUA_BROWSER_KEYS object for a launch (#493; read by src/browser-service/browsers.mjs): {<key>: <instance id>}
+// for the process's MAWS backends (`mawsKeys`, src/chrome/client-mode.mjs `keys()`; null without them) and every
+// profile bound on the cua route, so profiles_list's keys select a browser as its ids do. A registry that does not
+// parse contributes no keys, as it contributes no sockets above.
+export function launchBrowserKeys(home, {mawsKeys = null} = {}) {
+  let profiles = {};
+  try { ({profiles} = readRegistry(realHome(home))); } catch {}
+  const bound = Object.entries(profiles).flatMap(([key, {extensionInstanceId, route}]) => (extensionInstanceId && route === 'cua' ? [[key, extensionInstanceId]] : []));
+  return {...mawsKeys, ...Object.fromEntries(bound)};
+}

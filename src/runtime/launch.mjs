@@ -95,6 +95,9 @@
 //   CUA_BROWSER_DEFAULT_INSTANCE             with `browserBackends`: the instance the trusted browser wrapper rewrites
 //                                            an unqualified selection to (src/services/browser.mjs); the first MAWS
 //                                            backend's instance id, or the marker `maws:` when it has not said hello
+//   CUA_BROWSER_KEYS                         browser surface, when there are any: profiles_list's keys as browser ids
+//                                            (src/chrome/discovery.mjs launchBrowserKeys), JSON {<key>: <instance id>}:
+//                                            the MAWS backends' (`browserBackends.keys`) and the cua-route bound profiles'
 //   CUA_SECRETS_DIR                          with secrets on: the secret store directory (src/secrets/store.mjs), which
 //                                            the trusted services read a value from; untrusted cells see only the
 //                                            vendor's env allowlist (they can still read the directory: the sandbox
@@ -186,7 +189,7 @@ import {executableFile, installedLinuxEngine, linuxEnginePath, verifiedLinuxEngi
 import {MIN_ENGINE_VERSION, isOlder} from '../services/engine/linux/client.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
-import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
+import {launchBackendPaths, launchBrowserKeys, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
 import {assertTrustedServicesContained} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
@@ -252,7 +255,7 @@ const REPL_HOSTS = ['cua', 'vendor'];
 // vendor modes are not ported, and the launch never sets it.
 const CELL_ENV_ALLOWLIST = 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV';
 
-// `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
+// `browserBackends` ({hostPaths, defaultInstance, keys}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
 // CUA_BROWSER_BACKENDS configured any. `replHost` (replHostFor) is the connection's, resolved once at its open so every
 // launch of it (an idle relaunch too) runs what it resolved then; a caller that gives none, a single launch, has it
 // resolved here from `ambient` and `home`, the own host's Node through `resolveOwnNode` (replHostFor's). A `cua`
@@ -339,6 +342,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
       if (browserBackends.defaultInstance) env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID = browserBackends.defaultInstance;
       env.CUA_BROWSER_DEFAULT_INSTANCE = browserBackends.defaultInstance ?? MAWS_INSTANCE_MARKER;
     }
+    const keys = launchBrowserKeys(home, {mawsKeys: browserBackends?.keys ?? null});
+    if (Object.keys(keys).length) env.CUA_BROWSER_KEYS = JSON.stringify(keys);
   }
   if (secretsDir) {
     env[STORE_ENV.dir] = secretsDir;

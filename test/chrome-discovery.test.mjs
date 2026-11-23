@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {buildLaunch, BROWSER_SERVICE, SKY_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {backendDir, clientModeDir, socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
-import {backendPaths, launchBackendPaths, MAWS_INSTANCE_MARKER} from '../src/chrome/discovery.mjs';
+import {backendPaths, launchBackendPaths, launchBrowserKeys, MAWS_INSTANCE_MARKER} from '../src/chrome/discovery.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
@@ -129,4 +129,23 @@ test('a process without MAWS backends never lists another process\'s client-mode
   assert.equal(env.BROWSER_USE_BACKEND_PATHS, '');
   assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, undefined);
   assert.equal(env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, undefined);
+});
+
+// ---- profiles_list keys as browser ids (#493) -----------------------------------------------------------------------
+
+test('the launch hands the service profiles_list\'s keys: the MAWS backends\' and every cua-route binding\'s, none when there are none', t => {
+  const f = fixture(t);
+  assert.equal(browserLaunch(f).env.CUA_BROWSER_KEYS, undefined, 'no keys, no variable');
+  profiles(f.home, {
+    personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-personal', boundAt: 'x', route: 'cua'},
+    work: {chromeProfileDirectory: 'Profile 1', extensionInstanceId: 'inst-work', boundAt: 'x'},   // the removed ChatGPT route: no key
+    school: {chromeProfileDirectory: 'Profile 2'},                                                  // unbound: no key
+  });
+  assert.deepEqual(JSON.parse(browserLaunch(f).env.CUA_BROWSER_KEYS), {personal: 'inst-personal'});
+  const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-15.sock')];
+  const {env} = mawsLaunch(f, {hostPaths, defaultInstance: 'maws:app-1', keys: {maws: 'maws:app-1'}});
+  assert.deepEqual(JSON.parse(env.CUA_BROWSER_KEYS), {maws: 'maws:app-1', personal: 'inst-personal'});
+  assert.deepEqual(launchBrowserKeys(f.home, {mawsKeys: {maws: MAWS_INSTANCE_MARKER}}), {maws: 'maws:', personal: 'inst-personal'});
+  writeFileSync(join(f.home, 'profiles.json'), 'not json');
+  assert.deepEqual(launchBrowserKeys(f.home, {mawsKeys: {maws: 'maws:app-1'}}), {maws: 'maws:app-1'}, 'a damaged registry contributes no keys and fails nothing');
 });

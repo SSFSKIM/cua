@@ -114,7 +114,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       ...extra, runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
-      browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
+      browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance(), keys: browserBackends.keys()},
     });
     // The open checks the launch as it would be built now, so a misconfiguration fails the connection before its
     // handshake; nothing is spawned or created for it.

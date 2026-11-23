@@ -27,6 +27,34 @@ export function browserPreference(env) {
   return {extensionInstanceId, ...(Number.isSafeInteger(windowId) && windowId >= 0 ? {preferredWindowId: windowId} : {})};
 }
 
+// cua's addition (#493): the keys profiles_list names, as browser ids. CUA_BROWSER_KEYS is the launch's JSON object
+// {<key>: <extension instance id>} (src/runtime/launch.mjs): the MAWS backends' keys (maws, maws-2, …) and the
+// registered Chrome profiles bound on cua's extension. A key selects the listed extension browser carrying its
+// instance. `maws`, the first MAWS backend's key, falls back as the unqualified default does (src/services/browser.mjs):
+// with its instance unknown at launch (the value is then the marker `maws:`) or not listed, it is the first listed MAWS
+// instance, so cua.getBrowser() and cua.getBrowser({id: "maws"}) select the same browser. When two listed browsers carry
+// one instance (two hosts serving one profile or panel) the key selects the first listed: both are the same browser. An
+// id, a backend type or a family keeps its meaning: a key is tried only when none of those answers.
+export const BROWSER_KEYS_ENV = 'CUA_BROWSER_KEYS';
+export const MAWS_KEY = 'maws';
+const isMawsInstance = id => typeof id === 'string' && id.startsWith('maws:');
+export const browserKeys = env => (typeof env?.[BROWSER_KEYS_ENV] === 'string' && env[BROWSER_KEYS_ENV] !== '' ? JSON.parse(env[BROWSER_KEYS_ENV]) : {});
+const instanceOf = ({info}) => (info.type === 'extension' ? info.metadata?.extensionInstanceId : undefined);
+
+// The browser `key` selects among `browsers`, or undefined.
+function byKey(browsers, keys, key) {
+  if (!Object.hasOwn(keys, key)) return undefined;
+  return browsers.find(b => instanceOf(b) === keys[key]) ?? (key === MAWS_KEY ? browsers.find(b => isMawsInstance(instanceOf(b))) : undefined);
+}
+
+// The name the first-use documentation gives a browser: a MAWS backend is "MAWS in-app browser (<its key>)", every
+// other browser its own name.
+export function documentedName({name, metadata}, keys) {
+  const instance = metadata?.extensionInstanceId;
+  if (!isMawsInstance(instance)) return name;
+  return `MAWS in-app browser (${Object.keys(keys).find(key => keys[key] === instance) ?? MAWS_KEY})`;
+}
+
 // A browser as list_browsers answers it (A_).
 export function browserListing(id, info) {
   return {
@@ -137,12 +165,14 @@ export class BrowserContext {
     this.runtime = runtime;
     this.env = runtime.env ?? {};
     this.preference = browserPreference(this.env);
+    this.keys = browserKeys(this.env);
     this.turnEndedTracker = new TurnEndedTracker(runtime);
   }
 
   runtime;
   env;
   preference;
+  keys;
   turnEndedTracker;
   browsers = null;
   refreshPromise = null;
@@ -164,8 +194,11 @@ export class BrowserContext {
   list() { return this.getBrowsers(); }
 
   async get(id) {
-    const browser = (await this.getBrowsers()).find(b => answersTo(b, id));
-    if (browser == null) throw serviceError('browser_not_found', id);
+    const browsers = await this.getBrowsers();
+    const browser = browsers.find(b => answersTo(b, id)) ?? byKey(browsers, this.keys, id);
+    if (browser == null) {
+      throw serviceError('browser_not_found', id, {ids: browsers.map(b => b.id), keys: Object.keys(this.keys).filter(key => byKey(browsers, this.keys, key) != null)});
+    }
     return browser;
   }
 

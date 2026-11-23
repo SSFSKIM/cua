@@ -14,12 +14,13 @@
 // request meta.
 import {DOCUMENT_MANIFEST, DOCUMENTS} from './docs-content.mjs';
 import {CAPABILITY_INFO, unsupportedMembers} from './manifest.mjs';
+import {documentedName} from './browsers.mjs';
 
 const DOCUMENT_NAME = /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+$/u;   // Sz
 
 export class Documentation {
   // {apiManifest, disabledMemberIds: Set, serviceVersion, undocumentedApiMembers?, excludedDocumentation?, addendum?,
-  // documentManifest?, documents?}
+  // documentManifest?, documents?, browserKeys?} (browserKeys: the launch's profiles_list keys, browsers.mjs browserKeys)
   constructor(options) {
     this.options = {documentManifest: DOCUMENT_MANIFEST, documents: DOCUMENTS, ...options};
   }
@@ -43,7 +44,7 @@ export class Documentation {
     const guidance = selected.guidanceNames.filter(name => !excludedDocumentation?.includes(name)).map(name => this.readDocument(name));
     const header = [
       '# Selected Browser',
-      `- Name: ${browser.name}`,
+      `- Name: ${documentedName(browser, this.options.browserKeys ?? {})}`,
       `- Type: ${browser.type}`,
       `- ID: ${browser.id}`,
       `- Service: cua browser service ${this.options.serviceVersion}`,

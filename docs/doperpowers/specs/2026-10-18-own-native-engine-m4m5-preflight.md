@@ -262,6 +262,8 @@ witnesses for macOS 27, which the owner's Macs run.
 
 **#560 lands first.** The harness never runs on the owner's MacBook or on the mini before #560 (the venue record bound to the machine, IOPlatformUUID and kern.boottime) has merged: its hosted-only writes (TextEdit's preferences, removing saved state, window placement) each check `RUNNER_ENVIRONMENT` themselves, and #560 closes what remains of a record taken on a machine it was not written on. O1 does not start until then.
 
+**Finder's chrome.** A lane's Finder scenes toggle Finder's sidebar, status bar and path bar. Those are Finder-wide preferences, so on the MacBook the owner's own open Finder windows may redraw with them while the lane runs. The harness never closes or moves those windows. The teardown restores each preference and reads it back, and if a read-back misses, it names the key, the owner's value and the command that restores it (ruling 1181). The first MacBook lane reads one of the owner's Finder windows before and after it runs, and the owner is told this at O1.
+
 | | What | When | Minutes | What it proves that hosted cannot |
 |---|---|---|---|---|
 | **O0** | May a kit write TCC rows on a GitHub-hosted runner, never on a Mac of the owner's? | **Answered yes** (ruling 1111; Decision Log, 2026-11-23) | done | – |

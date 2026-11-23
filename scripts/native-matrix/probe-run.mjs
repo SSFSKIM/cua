@@ -1,7 +1,8 @@
 // The probe cells of a matrix run (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification system
 // part 5; the rules and cells in ./probe-plan.mjs): concurrent use on Finder and Chrome for Testing with TextEdit's
 // document as the user window, its sheet variant on TextEdit with the Electron fixture's field as the user window,
-// intervention fires and the pre-action refusal on TextEdit in front. Each is one row per run (section `concurrent` or
+// intervention fires and the pre-action refusal on TextEdit in front, and #212's save sheet there (a cell of its own,
+// outside the full matrix). Each is one row per run (section `concurrent` or
 // `intervention`, the run's number its sample), from up to PROBE_ATTEMPTS attempts: an attempt whose probe fell outside
 // the window that makes it valid is retried, aimed from its own times, and only the last is kept (its predecessors'
 // reasons in `outcome.retries`); the last one invalid leaves the row invalid.
@@ -14,9 +15,10 @@
 import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {
-  CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, NEW_DOCUMENT_CELL,
-  nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith, scheduledActCell, SHEET_FOLLOW_MS,
-  SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, USER_CHANGED,
+  CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, MAY_HAVE_TAKEN_EFFECT,
+  NEW_DOCUMENT_CELL, nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith,
+  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, scheduledActCell, SHEET_FOLLOW_MS,
+  SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, STOPPED_PART_WAY, USER_CHANGED,
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
 import {typeIntoList} from './plan.mjs';
@@ -30,6 +32,7 @@ export const PROBE_ROWS = Object.freeze({
   sheet: {section: 'concurrent', id: 'textedit/concurrent.sheet@electron', scene: 'textedit', user: 'electron', regime: 'background', method: 'pressKey', case: 'sheet'},
   fires: {section: 'intervention', id: 'textedit/intervention.fires', scene: 'textedit', regime: 'frontmost', method: 'typeText', case: 'fires'},
   preAction: {section: 'intervention', id: 'textedit/intervention.preAction', scene: 'textedit', regime: 'frontmost', method: 'typeText', case: 'preAction'},
+  saveSheet: {section: 'intervention', id: 'textedit/intervention.saveSheet', scene: 'textedit', regime: 'frontmost', method: 'setValue', case: 'saveSheet'},
 });
 // Every row a plan's probe cells write. -> [{section, id}].
 export const probeRowsOf = plan => [...(plan.concurrent ?? []).map(PROBE_ROWS.concurrent), ...(plan.sheet ? [PROBE_ROWS.sheet] : []),
@@ -41,6 +44,7 @@ export async function probeCells(ctx, plan) {
   if (plan.sheet) await sampled(ctx, PROBE_ROWS.sheet, a => sheetAttempt(ctx, a));
   if (plan.intervention?.includes('fires')) await sampled(ctx, PROBE_ROWS.fires, a => firesAttempt(ctx, a));
   if (plan.intervention?.includes('preAction')) await sampled(ctx, PROBE_ROWS.preAction, a => preActionAttempt(ctx, a));
+  if (plan.intervention?.includes('saveSheet')) await sampled(ctx, PROBE_ROWS.saveSheet, a => saveSheetAttempt(ctx, a));
 }
 
 // One sample from up to PROBE_ATTEMPTS attempts. An attempt answers {row, retry?, lead?, oracle?, key}: `retry` when its
@@ -323,4 +327,73 @@ async function preActionAttempt(ctx, {lead, id, key}) {
   const nextDelay = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? Math.max(0, delay + (receivedAt <= postedAt ? postedAt - receivedAt + PRE_ACTION_DELAY_MS : -(receivedAt - postedAt - PRE_ACTION_DELAY_MS))) : delay;
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextDelay});
   return span.end(row);
+}
+
+// ---- #212's save sheet -----------------------------------------------------------------------------------------------
+
+// TextEdit in front: its untitled document opened (super+n) and typed into, its Save sheet opened (super+s), each under
+// the key guard; then set_value on the sheet's name field at the cell's time, the probe's keystroke aimed into TextEdit's
+// front window just after the engine receives it. cua's answer must be a stop part-way (the user-changed sentence and
+// the engine's "stopped part-way") that says what may have taken effect, and the sheet must still be open after the
+// settle: nothing committed it. A refusal before the action (the post came before the receipt) or a set_value that
+// returned first says nothing about a stop part-way: invalid, retried aimed from the receipt it measured. The vendor's
+// lane never stops an action in flight: its row records its answer and the sheet, valid when the post fell inside the
+// call. Whatever happened, the debounce is waited out, the sheet cancelled (Escape) and the untitled document closed.
+async function saveSheetAttempt(ctx, {lead, id, key}) {
+  const scene = 'textedit', preMs = lead ?? SAVE_SHEET_PRE_MS;
+  const span = spanOf(ctx, key);
+  await quiet(ctx, scene);
+  const front = activate(ctx, scene);
+  if (!front?.ok) return span.end({invalid: `${scene} did not come to the front`});
+  const keys = async (code, names) => span.add(await sendKeys(ctx, code, names, {scene, front: read(ctx), kind: 'row', key}));
+  const unprepared = async invalid => { await closeSaveSheet(ctx, keys); return span.end({invalid}); };
+  const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
+  if (!opened?.ok || opened.value?.opened !== true) return unprepared(`the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`);
+  alertCheck(ctx, `before ${id} typing`);
+  const typed = await keys(SHEET_TYPE_CELL, ['typeText']);
+  alertCheck(ctx, `after ${id} typing`);
+  if (!typed?.ok || typed.value?.typed !== true) return unprepared(`the untitled document's text was not typed (${typed?.error ?? typed?.value?.reason ?? 'not sent'})`);
+  const sheet = await keys(SAVE_SHEET_OPEN_CELL, ['super+s']);
+  if (!sheet?.ok || sheet.value?.opened !== true) return unprepared(`the Save sheet did not open (${sheet?.error ?? sheet?.value?.reason ?? 'not sent'})`);
+  const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
+  if (!window) return unprepared(`${scene}'s window was not in front`);
+  alertCheck(ctx, `before ${id}`);
+  // A set_value posts no key, so it goes without the key guard, as the sheet variant's follow-up click does.
+  const probe = await withKeystroke(ctx, {window, scene}, async scheduled => span.add(await ctx.lane.js(saveSheetActCell({at: scheduled - preMs}))));
+  const act = probe.result;
+  alertCheck(ctx, `after ${id}`);
+  const check = act?.ok ? span.add(await ctx.lane.js(SAVE_SHEET_CHECK_CELL)) : null;
+  await closeSaveSheet(ctx, keys);
+  if (!act?.ok) return span.end({invalid: 'the act cell failed', ...(act?.error ? {error: act.error} : {})});
+  if (!check?.ok) return span.end({invalid: 'the sheet could not be read after the act', ...(check?.error ? {error: check.error} : {})});
+  const {value} = act, postedAt = probe.answer?.postedAt;
+  const receivedAt = ctx.engine === 'cua' ? act.engine?.receivedAt : value.callAt;
+  const stopped = refusedWith(value, USER_CHANGED) && value.message.includes(STOPPED_PART_WAY);
+  const effectsNamed = stopped && value.message.includes(MAY_HAVE_TAKEN_EFFECT);
+  const sheetOpen = check.value?.sheetOpen === true;
+  const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
+  const row = {ok: sheetOpen && (ctx.engine === 'cua' ? effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route,
+    outcome: {stopped, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, threw: value.threw,
+      errorName: value.errorName, message: value.message ?? null, leadMs: preMs, postAfterReceiptMs, late: value.late ?? null}};
+  const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (ctx.engine === 'cua' ? stopValidity(value, stopped) : postValidity(postedAt, intervalOf(ctx.engine, act)));
+  // The next call moved by the miss: the post aimed SAVE_SHEET_AIM_MS after the receipt.
+  const next = postAfterReceiptMs === null ? preMs : Math.min(PROBE_LEAD_MS - 1_000, Math.max(-1_000, preMs - (postAfterReceiptMs - SAVE_SHEET_AIM_MS)));
+  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: next});
+  return span.end(row);
+}
+// Whether cua's answer says the probe's event came during the action. -> null, or why the sample says nothing.
+function stopValidity(value, stopped) {
+  if (stopped) return null;
+  if (refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED)) return 'the probe posted before the request was received: refused before the action, not stopped part-way';
+  if (!value.threw) return 'set_value returned before the probe\'s event was seen';
+  return null;
+}
+// The Save sheet cancelled and the untitled document closed, once the probe's debounce is out, under TextEdit's own key
+// guard; the scene's document not in front again stops the run with what the cleanup saw.
+async function closeSaveSheet(ctx, keys) {
+  await quiet(ctx, 'textedit');
+  await keys(SAVE_SHEET_CANCEL_CELL, ['Escape']);
+  const closed = await keys(CLOSE_UNTITLED_CELL, ['super+w']);
+  if (closed?.ok && closed.value?.sceneInFront === true) return;
+  throw new Stop(`#212's save sheet's untitled document could not be closed: TextEdit's scene document is not in front (${cleanupSeen(closed)})`);
 }

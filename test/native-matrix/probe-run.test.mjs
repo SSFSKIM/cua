@@ -7,7 +7,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
-import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
+import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_SHEET_AIM_MS, SAVE_SHEET_PRE_MS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
@@ -262,4 +262,84 @@ test('a probe left pending is finished whatever the act did, and the run\'s keys
   assert.deepEqual(probeSteps(steps), ['probe keystroke', 'probe finish']);
   assert.ok(names(steps).includes('live recover'));
   assert.equal(sha256Hex('qz').length, 64);
+});
+
+// #212's save sheet (the gate's hosted cell): TextEdit in front, its dirty untitled document's Save sheet opened by
+// super+s, set_value on the sheet's name field at the cell's time with a probe keystroke aimed just after the engine
+// receives it. In the dry device the probe posts at its scheduled time: the act's `at` plus the lead.
+const SAVE_SHEET = 'textedit/intervention.saveSheet';
+const TEXTEDIT = '/System/Applications/TextEdit.app';
+const STOPPED = `${REFUSED}${USER_CHANGED}${TEXTEDIT}'. Re-query the latest state with \`get_app_state\` before sending more actions. The action was stopped part-way. What may have taken effect: the value written to the field. Nothing was undone.`;
+const REFUSED_FIRST = `${REFUSED}${STILL_INTERACTING}${TEXTEDIT}'. Wait 5 seconds and retry. Nothing was done: the action was refused before its first step.`;
+// The act answered `threw` (null: it returned), received `receipt` ms after its `at`.
+const saveAct = (c, {threw = STOPPED, receipt = 5, interruption = {phase: 'inFlight', effects: ['value']}} = {}) => acted(c, {threw, errorName: threw ? 'Error' : null, interval: null,
+  meta: {'cua/receivedAt': atOf(c) + receipt, ...(threw ? {'cua/interruption': interruption} : {})}});
+const saveCells = ({act = saveAct, check = {sheetOpen: true, nameWritten: true}} = {}) => c => (tagOf(c) === 'savesheet.act' ? act(c) : tagOf(c) === 'savesheet.check' ? check : null);
+
+test('#212\'s save sheet: super+n, the text typed and super+s under the key guard, set_value on the sheet\'s name field at the probe\'s time; a stop part-way naming what may have taken effect, the sheet still open, passes', async () => {
+  const calls = [];
+  const {code, result, steps} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls, cell: saveCells()});
+  assert.equal(code, 0, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  const row = rowOf(result, SAVE_SHEET);
+  assert.deepEqual([row.section, row.method, row.ok, row.invalid, row.attempts], ['intervention', 'setValue', true, undefined, 1]);
+  assert.deepEqual({stopped: row.outcome.stopped, effectsNamed: row.outcome.effectsNamed, sheetOpen: row.outcome.sheetOpen, interruption: row.outcome.interruption},
+    {stopped: true, effectsNamed: true, sheetOpen: true, interruption: {phase: 'inFlight', effects: ['value']}});
+  assert.deepEqual([row.outcome.leadMs, row.outcome.postAfterReceiptMs], [SAVE_SHEET_PRE_MS, SAVE_SHEET_PRE_MS - 5]);
+  const tags = calls.map(c => tagOf(c.code)).filter(Boolean);
+  assert.deepEqual(tags.filter(t => /^(sheet|savesheet)\./.test(t)), ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.act', 'savesheet.check', 'savesheet.cancel', 'sheet.cleanup']);
+  const open = calls.find(c => tagOf(c.code) === 'savesheet.open').code, act = calls.find(c => tagOf(c.code) === 'savesheet.act').code;
+  assert.match(open, /__app\.pressKey\("super\+s"\)/);
+  assert.match(open, /saveAsNameTextField/);
+  assert.ok(act.includes(`await __app.setValue(globalThis.__saveNameIndex, ${JSON.stringify(SAVE_NAME)});`), act);
+  assert.doesNotMatch(act, /pressKey|click\(/, 'the act holds the set_value alone, so its meta is its own');
+  assert.match(calls.find(c => tagOf(c.code) === 'savesheet.cancel').code, /__app\.pressKey\("Escape"\)/, 'the sheet is cancelled, never saved');
+  assert.deepEqual(probeSteps(steps), ['probe keystroke', 'probe finish']);
+  // The probe's debounce waited out and TextEdit observed before the sheet is cancelled.
+  const all = calls.map(c => tagOf(c.code) ?? (c.code.includes('return {observed: true}') ? 'requery' : null)).filter(Boolean);
+  assert.equal(all[all.indexOf('savesheet.cancel') - 1], 'requery');
+});
+
+test('#212\'s save sheet: the sheet gone after the act fails the row, whatever the answer; an answer that does not say what may have taken effect fails it too', async () => {
+  const closed = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({check: {sheetOpen: false, nameWritten: false}})});
+  const committed = rowOf(closed.result, SAVE_SHEET);
+  assert.deepEqual([committed.ok, committed.invalid, committed.outcome.sheetOpen], [false, undefined, false]);
+  assert.equal(closed.result.verdict, 'fail');
+  const bare = `${REFUSED}${USER_CHANGED}${TEXTEDIT}'. Re-query the latest state with \`get_app_state\` before sending more actions. The action was stopped part-way.`;
+  const unnamed = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: c => saveAct(c, {threw: bare})})});
+  const row = rowOf(unnamed.result, SAVE_SHEET);
+  assert.deepEqual([row.ok, row.invalid, row.outcome.stopped, row.outcome.effectsNamed], [false, undefined, true, false]);
+});
+
+test('#212\'s save sheet: a refusal before the action, or a set_value that returned before the probe\'s event, is retried aimed from the receipt; three such is no verdict', async () => {
+  const acts = [];
+  // The first post 5 ms before its receipt (refused before the action), the next aimed SAVE_SHEET_AIM_MS after it.
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({act: c => {
+      acts.push(c);
+      return acts.length === 1 ? saveAct(c, {threw: REFUSED_FIRST, receipt: SAVE_SHEET_PRE_MS + 5, interruption: {phase: 'beforeAction', effects: []}}) : saveAct(c);
+    }})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.deepEqual([acts.length, row.attempts, row.ok], [2, 2, true]);
+  assert.match(row.outcome.retries[0], /refused before the action/);
+  assert.equal(row.outcome.leadMs, SAVE_SHEET_PRE_MS + 5 + SAVE_SHEET_AIM_MS, 'the call moved earlier by the miss');
+  // Never stopped: set_value returned every time.
+  const quick = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: c => saveAct(c, {threw: null})})});
+  const late = rowOf(quick.result, SAVE_SHEET);
+  assert.deepEqual([late.attempts, late.ok], [PROBE_ATTEMPTS, false]);
+  assert.match(late.invalid, /returned before the probe's event was seen/);
+  assert.equal(quick.result.verdict, 'no-verdict');
+});
+
+test('#212\'s save sheet on the vendor\'s lane: its set_value is never stopped, so the row records its answer and the sheet, valid when the post fell inside the call', async () => {
+  const {result} = await runWith({engine: 'vendor', plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({act: c => ({...saveAct(c, {threw: null}), _meta: {}})})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.deepEqual([row.engine, row.ok, row.invalid, row.outcome.stopped, row.outcome.sheetOpen], ['vendor', true, undefined, false, true]);
+});
+
+test('#212\'s save sheet is its own registered cell, not a row of the full matrix', () => {
+  assert.deepEqual(planOf('intervention-save-sheet').intervention, ['saveSheet']);
+  assert.ok(!planOf('matrix').intervention.includes('saveSheet'));
+  assert.throws(() => planOf('intervention-save-sheet', {scene: 'finder'}), /nothing to run/);
 });

@@ -18,8 +18,9 @@
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
 //     --user, e.g. `cell non-interference --scene textedit --user finder`, `cell korean --scene textedit`, the probe
-//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`), or one implemented on
-//     another harness (M2a's residue on the live harness; `settle`, the native-mac suite's lane).
+//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`, and #212's
+//     `intervention-save-sheet`, which the full matrix does not run), or one implemented on another harness (M2a's
+//     residue on the live harness; `settle`, the native-mac suite's lane).
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three
 //     complete attested runs per side, each run number's vendor and cua runs of one hold, one commit and one approved

@@ -232,6 +232,53 @@ for (const end = Date.now() + 5000; !inFront(ax) && Date.now() < end;) ax = awai
 const front = ax === "" ? "none" : inFront(ax) ? "scene" : __sheet(ax) ? "sheet" : panel(ax) ? "panel" : __untitled(ax) ? "untitled" : "other";
 return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 
+// #212's save sheet (its gate's hosted cell, the M5 pre-flight §6): the sheet variant's dirty untitled document (its
+// new-document and typing cells) given its Save sheet by super+s, then set_value on the sheet's name field (ID
+// saveAsNameTextField, the field #212's report names) at the cell's time, a probe keystroke aimed just after the engine
+// receives the request. The save sheet is told from the keep-or-delete sheet by its missing Delete button. Its name
+// field's index is kept across cells (`__saveNameIndex`), so the act's call holds the set_value alone and its meta is
+// its own. The check reads the sheet again after a settle: still open is the proof that nothing committed it (the probe
+// types two letters, no Return). The cancel is Escape on the sheet; the untitled document then closes as the sheet
+// variant's does (CLOSE_UNTITLED_CELL). The ids come from #212's report and the keep-or-delete cells, not yet read on a
+// runner's Save sheet: the pilot's first run reads them.
+export const SAVE_NAME = 'cua-212-intended';
+// The first attempt's call this long before the post (the call reaches the engine a few ms after it is made); later
+// attempts aim the post SAVE_SHEET_AIM_MS after the measured receipt.
+export const SAVE_SHEET_PRE_MS = 10, SAVE_SHEET_AIM_MS = 5;
+// How long after the act the sheet is read again, for a commit that lands late.
+export const SAVE_SHEET_SETTLE_MS = 2_000;
+// The engine's clauses (Intervention.swift `Interruption`): a stop part-way, and the list of what may have taken effect.
+export const STOPPED_PART_WAY = 'The action was stopped part-way.';
+export const MAY_HAVE_TAKEN_EFFECT = 'may have taken effect';
+const saveSheet = `const __saveSheet = ax => /ID: saveAsNameTextField\\b/.test(ax) && !/ID: DontSaveButton\\b/.test(ax);
+const __nameField = ax => { const m = /^[~+-]?\\t*(\\d+) [^\\n]*ID: saveAsNameTextField\\b/m.exec(ax); return m ? Number(m[1]) : null; };`;
+export const SAVE_SHEET_OPEN_CELL = cell(`${prelude('textedit')}
+// cua-matrix-cell: savesheet.open
+${saveSheet}
+let ax = await observe();
+if (windowTitleOf(ax) !== globalThis.__sheetDoc) return {opened: false, reason: "the untitled document is not TextEdit's front window"};
+await __app.pressKey("super+s");
+for (const end = Date.now() + 5000; !__saveSheet(ax) && Date.now() < end;) ax = await observe();
+globalThis.__saveNameIndex = __saveSheet(ax) ? __nameField(ax) : null;
+return {opened: globalThis.__saveNameIndex !== null, ...(globalThis.__saveNameIndex === null ? {reason: __saveSheet(ax) ? "the sheet's name field has no index" : "no Save sheet came up"} : {})};`);
+export const saveSheetActCell = ({at}) => scheduledActCell('textedit', {at, act: `await __app.setValue(globalThis.__saveNameIndex, ${j(SAVE_NAME)});`, tag: 'savesheet.act'});
+// -> {sheetOpen, nameWritten} (whether the field reads the name set_value wrote; the probe's letters may follow it).
+export const SAVE_SHEET_CHECK_CELL = cell(`${prelude('textedit')}
+// cua-matrix-cell: savesheet.check
+${saveSheet}
+await new Promise(done => setTimeout(done, ${SAVE_SHEET_SETTLE_MS}));
+const ax = await observe();
+const __index = __saveSheet(ax) ? __nameField(ax) : null;
+return {sheetOpen: __saveSheet(ax), nameWritten: __index !== null && plain(valueOfIndex(ax, __index) ?? "").startsWith(${j(SAVE_NAME)})};`);
+// Escape on the Save sheet, then the sheet awaited gone. -> {cancelled}.
+export const SAVE_SHEET_CANCEL_CELL = cell(`${prelude('textedit')}
+// cua-matrix-cell: savesheet.cancel
+${saveSheet}
+let ax = await observe();
+if (__saveSheet(ax)) await __app.pressKey("Escape");
+for (const end = Date.now() + 5000; __saveSheet(ax) && Date.now() < end;) ax = await observe();
+return {cancelled: !__saveSheet(ax)};`);
+
 // Intervention fires: after the refusal, the last typed character's landing on the document. -> {landed}.
 export const endsWithCell = (scene, text) => cell(`${prelude(scene)}
 // cua-matrix-cell: intervention.landed

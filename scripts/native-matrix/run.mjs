@@ -116,6 +116,8 @@ function narrowed(kind, {scene, user}) {
     case 'concurrent-use-sheet': return {...EMPTY_PLAN, sheet: (!scene || scene === CONCURRENT_USE_SHEET.driven) && (!user || user === CONCURRENT_USE_SHEET.user)};
     case 'intervention-fires': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['fires'] : []};
     case 'pre-action-refusal': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['preAction'] : []};
+    // #212's save sheet: its gate's own cell, not a row of the full matrix.
+    case 'intervention-save-sheet': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['saveSheet'] : []};
     // The Korean and Unicode matrix narrows to one field.
     case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
     default: throw new Error(`no plan ${kind}`);

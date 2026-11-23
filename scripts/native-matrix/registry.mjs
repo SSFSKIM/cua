@@ -32,6 +32,7 @@ export const MATRIX_CELLS = Object.freeze({
   'concurrent-use-sheet': {section: 'concurrent', plan: 'concurrent-use-sheet', describe: 'the concurrent-use cell with TextEdit opening its keep-or-delete sheet, the Electron fixture\'s field the user window'},
   'intervention-fires': {section: 'intervention', plan: 'intervention-fires', describe: 'a probe keystroke into TextEdit during its typeText: userIntervened, the next action refused until a get_app_state'},
   'pre-action-refusal': {section: 'intervention', plan: 'pre-action-refusal', describe: 'a probe keystroke into TextEdit just before its typeText: refused with the still-interacting sentence, nothing posted'},
+  'intervention-save-sheet': {section: 'intervention', plan: 'intervention-save-sheet', describe: '#212: a probe keystroke into TextEdit during set_value on its Save sheet\'s name field: stopped part-way, what may have taken effect named, the sheet not committed'},
   korean: {section: 'unicode', plan: 'korean', describe: 'the Korean and Unicode matrix (part 6): typeText and paste of each string under each source and condition (--scene narrows to a field)'},
 });
 

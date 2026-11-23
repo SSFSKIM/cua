@@ -80,7 +80,7 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
 // -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick, paste, elementClick}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
   ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation'], ['activationGuardMs', 'cua/activationGuardMs'],
-  ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick']].map(([key, name]) => [key, meta?.[name] ?? null]));
+  ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick'], ['interruption', 'cua/interruption']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine

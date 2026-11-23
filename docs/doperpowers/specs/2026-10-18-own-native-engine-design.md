@@ -8119,6 +8119,18 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   the vendor's engine until the owner approved; beside-builds leave it one `cua engine approve` away while it keeps
   serving.
   Date/Author: 2026-11-23, M4 re-cut controller, on the design session's ruling 1118.
+- Decision (T1's fix wave, building ruling 1118): the pending slot is `<engine directory>/pending/cua Engine.app`, and
+  every build goes there, the first one included (approve then promotes it into the empty approved path). A pending
+  build is the slot's bundle; `pending.json` without one is not a pending build. A successful approve removes the slot
+  and `pending.json`; a slot whose build the approved path already holds is discarded. `buildEngine` returns
+  `pending` and no longer stops anything (`stopped` is gone), so a running or busy engine does not block a build. On a
+  failed or aborted approve the promoted engine is stopped as far as it can be and the previous bundle goes back
+  whatever that stop answers. Doctor's engine row names the pending build without changing its status. The client's
+  remedies: a running engine whose build differs from the approved bundle's is `cua engine stop` (the next request
+  launches the approved bundle); an API-version mismatch is `cua install --engine`, then `cua engine approve`.
+  Consequence for the hosted kits: after a build the bundle is in the slot until approve runs, so T4's gate and H0's
+  step 1 read `bundlePath` from the build's answer or run approve first.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1, fix wave 1).
 - Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
   its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
   (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the

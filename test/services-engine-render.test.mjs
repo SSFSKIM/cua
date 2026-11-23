@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, ANOTHER_SPACE_REMEDY, placementLine} from '../src/services/engine/render.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
+import {shot as recorded} from './native-goldens/goldens.mjs';
 
 const win = (children = []) => [node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W', actions: ['AXRaise']}), ...children];
 const button = (token, depth, title, fields = {}) => node(token, depth, 'AXButton', {roleDescription: 'button', title, actions: ['AXPress'], ...fields});
@@ -449,4 +450,19 @@ test('#405: a plain field and its selected text print as before', () => {
     {focused: 'f', selectedText: 'b'});
   assert.equal(render(shot, advanceNumbering(null, shot)).split('\n').slice(1).join('\n'),
     `0 standard window W, Secondary Actions: Raise\n\t1 text field (settable) abc\n\nSelected text: \`\`\`\nb\n\`\`\`\n\n${NOTE}`);
+});
+
+// #527: with no key window Electron names no focused element and the engine names the window's web area instead
+// (native/engine Skyshot.swift `observedFocus`); the trailer prints it as the vendor does (M5 pilot B, run 45226949355:
+// `The focused UI element is 3 HTML content cua Electron fixture, URL: file:///…/index.html`), its tree line untabbed,
+// URL included. With a key window the recorded focus, the text entry area, is kept.
+test('a focused web area\'s trailer is its tree line: index, role, title and URL', () => {
+  const keyed = recorded('electron', 'skyshot.json');
+  const webArea = keyed.nodes.find(each => each.role === 'AXWebArea').token;
+  const trailerOf = shot => render(shot, advanceNumbering(null, shot)).split('\n\nThe focused UI element is ')[1];
+  const unkeyed = {...keyed, focused: webArea};
+  const row = render(unkeyed, advanceNumbering(null, unkeyed)).split('\n').find(line => /^\t*3 /.test(line)).trimStart();
+  assert.match(row, /^3 \S.* cua Electron fixture, URL: file:\/\/\/\S+\/index\.html$/);
+  assert.equal(trailerOf(unkeyed), row);
+  assert.match(trailerOf(keyed), /^5 \S.* \(settable\) Fixture text$/);
 });

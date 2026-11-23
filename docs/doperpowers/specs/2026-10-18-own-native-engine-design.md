@@ -89,7 +89,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-11-23) T2 — The permission flow (2865f597, 16a27627, review fixes fda61df9, bcef401d; reviewed clean after three rounds).
   - [ ] T3 — `accept-native`.
   - [x] (2026-11-23) T4 — The hosted gate builds the bundle (94f405ee, ceb45873, review fix 6237d0e2; reviewed clean after two rounds; the hosted run on the pull request is still owed).
-  - [ ] T5 — The window-frame probe and PR #199.
+  - [x] (2026-11-23) T5 — The window-frame probe and PR #199 (df48af00, 532d3db9, review fixes 28a0506b, f22b7ace, 908dbc6c; reviewed clean after four rounds; #199 superseded; live proof in M5's pilot).
   - [ ] T6 — Docs.
   - [x] (2026-11-23) T7 — Records: M4's entries, report and evidence; hold 10's evidence (dd9e3729, 357cff86, c4971d18, 7cd333f8, de0feaeb; all 47 and 103 files in after the owner-content check and the design session's ruling on the account path; reviewed clean).
 
@@ -8270,6 +8270,20 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   it fails on main's tree, where 34 tracked files outside T3's paths carry the account home path. Main's later
   `mcp-session.mjs` (`detached`) is kept beside M4's `drainStreams`.
   Date/Author: 2026-11-23, M4 re-cut controller (T3).
+- Decision (T5's fix waves; the harness fails closed): Finder activation and the guarded keys after it read the front
+  window the same way, passing over the approved engine's windows only (`engineFreeFrontmost`), so cua's cursor panel
+  never blocks a teardown key and any other process's window still does. A probe launch is settled only by the
+  journal: its pid and start time, its own final line, or a row a person writes. A launch the five-second scan could
+  not identify and that has not answered is journalled `unidentified` and stays pending, an empty process table is not
+  evidence, and a launch still pending at the bound makes settlement and recovery not-ok with the manual step.
+  `recover` waits for launches before its owned-process snapshot, as `settleProbes` does. Recovery tests a record's
+  presence with `lstat`, as `begin` does, and keeps an unusable record (null, bad JSON, wrong shape, a directory, a
+  dangling link, a Finder baseline without its three preference keys), answering not-ok with the path to fix by hand.
+  The probe's oversized AX list (over 128) reports `limit-exceeded` with its count. Not built: fencing new setup
+  launches at a run's admission, since goldens relaunches probes per scene after each settle; fail-closed settlement
+  covers the false success. The harness keeps strict equality on the pin's read-back (M4's contract: the probe
+  converges within a point, the harness checks the exact frame its lanes pair on).
+  Date/Author: 2026-11-23, M4 re-cut controller (T5, fix waves 1 to 3).
 - Decision (T2, the permission flow; ports M4.3 and c44e3074 onto main's engine): `permissionsPending` (−10014) names
   its permission in `meta.permission` (`accessibility`, `screenRecording`) and its sentence gives the by-hand steps
   (System Settings → Privacy & Security → the pane, "+", ⌘⇧G and the approved bundle's path) for "cua Engine"; the

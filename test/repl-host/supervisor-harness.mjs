@@ -8,7 +8,7 @@ import {spawn, execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {delimiter, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {quote} from '../../scripts/browser-parity/topology.mjs';
@@ -72,9 +72,10 @@ export const SCOPED = cwd => ({type: 'managed', file_system: {type: 'restricted'
 // 'seatbelt' (default: CUA_REPL_SANDBOX_EXEC, the macOS route) or 'helper' (CUA_REPL_SANDBOX_HELPER and its pinned
 // SHA-256, the Linux route), each with a deny list of <root>/denied. `services` ({name: module source}) are fixture trusted
 // services, written as <root>/trusted/<name>.mjs (the one trusted code path) and registered with rpc enabled.
+// `trustedPaths`: more trusted code paths beside it (a checkout directory whose modules a fixture service imports).
 // `capabilities` are the client's in initialize; `onServerRequest(msg)` answers the requests the host sends the client
 // (elicitations), returning the reply's {result} or {error}, or nothing to leave it unanswered.
-export async function startHost(t, {node, env = {}, sandbox = 'double', launcher = 'seatbelt', denyLifeline = null, initialize = true, services = null, capabilities = {}, onServerRequest = () => undefined} = {}) {
+export async function startHost(t, {node, env = {}, sandbox = 'double', launcher = 'seatbelt', denyLifeline = null, initialize = true, services = null, trustedPaths = [], capabilities = {}, onServerRequest = () => undefined} = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-host-')));
   const cwd = join(root, 'run');
   const codexHome = join(root, 'codex');
@@ -85,7 +86,7 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', launcher
   if (services) {
     for (const [name, source] of Object.entries(services)) writeFileSync(join(trusted, `${name}.mjs`), source);
     Object.assign(serviceEnv, {CUA_REPL_TRUSTED_SERVICES: JSON.stringify(Object.fromEntries(Object.keys(services).map(name => [name, join(trusted, `${name}.mjs`)]))),
-      CUA_REPL_TRUSTED_CODE_PATHS: trusted, CUA_REPL_TRUSTED_RPC_ENABLED: '1'});
+      CUA_REPL_TRUSTED_CODE_PATHS: [trusted, ...trustedPaths].join(delimiter), CUA_REPL_TRUSTED_RPC_ENABLED: '1'});
   }
   const denied = join(root, 'denied');
   const double = sandbox ? sandboxDouble(root, {refuse: sandbox === 'refusing', denyLifeline, exec: launcher === 'seatbelt'}) : null;

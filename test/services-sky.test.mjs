@@ -662,16 +662,62 @@ function timedHarness({answer = () => ({ok: true}), platform = 'darwin', ticks =
 test('cua/serviceMs is the wrapper\'s time around the delegated handleRpc, rounded to the microsecond, on every macOS call', async () => {
   const {service, metas} = timedHarness();
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: []}), {ok: true});
-  assert.deepEqual(metas, [{'cua/serviceMs': 12.346}]);
+  assert.deepEqual(metas, [{'cua/serviceMs': 12.346, 'cua/errorName': null}]);
 });
 
 test('cua/serviceMs rides on a failure too, set before the error propagates, and on a substituted request', async () => {
   const failing = timedHarness({answer: () => { throw new EngineError('activationFailed', 'refused'); }});
   await rejection(failing.service.handleRpc({type: 'execute', method: 'click', args: [{app: 'a', element_index: 1}]}));
-  assert.deepEqual(failing.metas, [{'cua/serviceMs': 12.346}]);
+  assert.deepEqual(failing.metas, [{'cua/serviceMs': 12.346, 'cua/errorName': 'activationFailed'}]);
   const substituted = timedHarness({ticks: [5, 6]});
   await substituted.service.handleRpc(typeText(REF('WORK_PASSWORD')));
-  assert.deepEqual(substituted.metas, [{'cua/serviceMs': 1}]);
+  assert.deepEqual(substituted.metas, [{'cua/serviceMs': 1, 'cua/errorName': null}]);
+});
+
+// cua/errorName (T10b′, the M5 wave-1 record): the engine's own name for a call's error, which the REPL's boundary drops
+// from the rejection (the trusted worker passes its message alone), published as the call's result meta before the
+// rejection leaves the service; null on every other call, so a name never outlives its call; the rejection and the
+// result themselves the service's, unchanged.
+test('cua/errorName: an engine error\'s own name is published with the rejection, which is rethrown as it was', async () => {
+  const thrown = new EngineError('backgroundClickRefused', 'Computer Use server error -10005: refused');
+  const {service, metas} = timedHarness({answer: () => { throw thrown; }});
+  assert.equal(await rejection(service.handleRpc({type: 'execute', method: 'click', args: [{app: 'a', element_index: 1}]})), thrown, 'the same error object');
+  assert.deepEqual(metas.map(m => m['cua/errorName']), ['backgroundClickRefused']);
+  // The vendor's own names (a ServerErrorCode's) and cua's engine-only ones alike; never a name outside the set, nor
+  // anything that is not an engine error.
+  const nameOf = async error => {
+    const h = timedHarness({answer: () => { throw error; }});
+    await rejection(h.service.handleRpc({type: 'execute', method: 'click', args: [{app: 'a', element_index: 1}]}));
+    return h.metas[0]['cua/errorName'];
+  };
+  assert.equal(await nameOf(new EngineError('userIntervened', 'x')), 'userIntervened');
+  assert.equal(await nameOf(new EngineError('jsonRPCError', 'x')), 'jsonRPCError');
+  assert.equal(await nameOf(new EngineError('typeUnconfirmed', 'x')), 'typeUnconfirmed');
+  assert.equal(await nameOf(new EngineError('madeUpName', 'x')), null, 'a name outside the engines\' set');
+  assert.equal(await nameOf(new EngineError('sk-live-0123456789', 'x')), null);
+  assert.equal(await nameOf(Object.assign(new Error('x'), {errorName: 'typeUnconfirmed'})), null, 'not an engine error');
+  assert.equal(await nameOf(Object.assign(new Error('transport'), {name: 'SkyComputerUseTransportError'})), null);
+  assert.equal(await nameOf('a thrown string'), null);
+});
+
+test('cua/errorName is reset per call: a success or an unclassified failure after a refusal publishes null', async () => {
+  let next = [];
+  const metas = [];
+  const vendor = {handleRpc: async () => { const step = next.shift(); if (step instanceof Error) throw step; return step; }};
+  const service = createSkyService({loadVendor: async () => vendor, secrets: {read: async label => VALUES[label]}, platform: 'darwin',
+    now: () => 0, setResponseMeta: meta => metas.push(meta['cua/errorName'])});
+  const click = {type: 'execute', method: 'click', args: [{app: 'a', element_index: 1}]};
+  next = [new EngineError('clickUnconfirmed', 'x'), {ok: true}, new EngineError('backgroundClickRefused', 'x'), new Error('unclassified')];
+  await rejection(service.handleRpc(click));
+  assert.deepEqual(await service.handleRpc(click), {ok: true}, 'the result unchanged');
+  await rejection(service.handleRpc(click));
+  await rejection(service.handleRpc(click));
+  assert.deepEqual(metas, ['clickUnconfirmed', null, 'backgroundClickRefused', null]);
+  // A concealed request's failure is the wrapper's own diagnostic, which names its kind in its message: no engine name.
+  next = [new EngineError('typeUnconfirmed', 'x', {startedAt: 1})];
+  const concealed = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+  assert.notEqual(concealed.name, 'SkyComputerUseError');
+  assert.equal(metas.at(-1), null);
 });
 
 test('Linux results carry no cua/serviceMs: the separation is the macOS comparisons\'', async () => {

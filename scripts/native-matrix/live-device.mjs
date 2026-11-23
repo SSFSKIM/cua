@@ -799,13 +799,16 @@ const launchLine = (run, open) => [
 ].join('; ');
 
 // The barrier before anything restores or switches the input source from a later command: a probe this run journaled
-// that still runs (its pid with the start time the journal holds), or a launch never identified while a probe of the
-// bundle other than the watcher runs. The journal is the run directory's, so the barrier holds across commands, as the
-// recovery's does. -> why nothing may act behind it, or null.
+// that still runs (its pid with the start time the journal holds), a launch with no outcome in the journal (pending or
+// `unidentified`: LaunchServices may still start its probe, so an empty process table is no evidence, as settleProbes
+// holds), or a launch over unidentified while a probe of the bundle other than the watcher runs. The journal is the run
+// directory's, so the barrier holds across commands, as the recovery's does. -> why nothing may act behind it, or null.
 export function probeBarrier(run, io) {
   const plan = ownedNow(run, io), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
   const running = plan.stop.filter(e => e.kind === 'probe' && e.pid !== watchPid);
   if (running.length) return `the probe ${running.map(e => e.label).join(', ')} is still running`;
+  const launches = pendingLaunches(io.journal());
+  if (launches.length) return launchLine(run, launches);
   if (!plan.unresolvedProbes) return null;
   const {bundle, uid} = io.identity();
   const live = io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle) && !/ --probe watch-activations\b/.test(p.command));

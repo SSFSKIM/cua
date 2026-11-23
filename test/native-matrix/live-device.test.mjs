@@ -1258,6 +1258,38 @@ test('probeBarrier: a probe the run journaled that still runs, or a launch never
   assert.equal(probeBarrier(run, io({journal: unresolved, rows: [watcher]})), null, 'the watcher alone holds nothing');
 });
 
+// A launch journaled pending or `unidentified` with no outcome row may still start its probe (LaunchServices holds the
+// request), so an empty process table is no evidence: the restore guard holds, naming the manual step, as settleProbes does.
+test('probeBarrier: a launch with no outcome in the journal holds every restore even with no probe in the process table', () => {
+  const run = scratch();
+  const io = journal => ({journal: () => journal, processes: () => [], identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})});
+  for (const pending of [
+    [{kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}],
+    [{kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}, {kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}],
+  ]) {
+    const why = probeBarrier(run, io(pending));
+    assert.match(why ?? '', /input-source#c.*no outcome in the journal/);
+    assert.ok(why.includes(join(run, 'live-journal.tsv')), 'names the journal to resolve it in');
+  }
+  const settled = [{kind: 'probe', pid: null, start: null, label: 'input-source#c', pending: true}, {kind: 'probe', pid: null, start: null, label: 'input-source#c'}];
+  assert.equal(probeBarrier(run, io(settled)), null, 'a launch over unidentified (its `-` row) holds nothing once no probe runs');
+});
+
+test('restoreInputSource behind a launch with no outcome in the journal restores nothing and keeps the owner\'s saved source', async () => {
+  const run = scratch();
+  const saved = join(run, 'input-source.json');
+  fs.writeFileSync(saved, JSON.stringify({source: {id: 'com.apple.keylayout.ABC'}, perContext: null}));
+  const probes = [];
+  const journal = [{kind: 'probe', pid: null, start: null, label: 'input-source#d', pending: true}];
+  const io = {savedInputSource: saved, probe: args => { probes.push(args); return {id: 'com.apple.keylayout.ABC'}; }, readPerContext: () => null, writePerContext: () => assert.fail('nothing is written'),
+    probeStuck: () => probeBarrier(run, {journal: () => journal, processes: () => [], identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})})};
+  const out = await restoreInputSource({io});
+  assert.equal(out.sourceRestored, false);
+  assert.match(out.skipped, /not restored: .*input-source#d/);
+  assert.deepEqual(probes, [], 'no probe selects a source behind it');
+  assert.ok(fs.existsSync(saved), 'the owner\'s saved source is kept');
+});
+
 // The agent cursor on screen (#235's spec, "The harness"): its panel is a new layer-0 window of the engine's, which the
 // alert watch leaves out with the engine's pids, as the matrix's alert check does, and which the composition guard's
 // front reading skips, as the keystroke probe's own gate does.

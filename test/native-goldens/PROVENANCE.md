@@ -86,7 +86,7 @@ The TextEdit goldens were recorded on the mini's document, `cua-scene.rtf` as `s
 `textEditDocument()` writes it with no view size (the recording's checkout above writes the same bytes). On a
 GitHub-hosted runner the venue (ruling 1169, `scripts/hosted-sittings/venue.mjs` `TEXTEDIT_DOCUMENT_VIEW`) inserts
 TextEdit's own view size, `\vieww9600\viewh15840` (480 x 792 points), after the font table and changes nothing else,
-so its window opens left of replayd's alerts. The text and its attribute runs are the mini's: AppKit's `textutil`
+so that its window is meant to open left of replayd's alerts (each run's read-back says where it did). The text and its attribute runs are the mini's: AppKit's `textutil`
 renders both files to the same text and the same HTML (`test/repl-parity/scenes-mac.test.mjs`). Both files, by sha256
 (`venue.mjs` `textEditDocumentPlan`, which every hosted venue record carries, and `test/hosted-sittings/venue.test.mjs`
 holds this table to it):

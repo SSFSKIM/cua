@@ -1,11 +1,14 @@
 // Two value-free Accessibility reads for #187's re-slot (./item-187.mjs) and #259's cell (./item-188.mjs), outside
 // either engine. Run as a binary compiled into the harness cache:
-//   ax-state window <pid> <x,y,w,h>
+//   ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>]
 //       Whether the app and its window at those bounds (global top-left points, the window list's; within 2 pt) hold
 //       the key: {"trusted", "ok", "failed", "frontmost", "found", "focused", "main", "focusedWindow", "mainWindow",
-//       "windows"}: the app's AXFrontmost, the matched window's AXFocused (key) and AXMain, whether the app's
+//       "windows", "sheet"?}: the app's AXFrontmost, the matched window's AXFocused (key) and AXMain, whether the app's
 //       AXFocusedWindow and AXMainWindow are that window ("run"), another ("other") or none ("none"), and the count of
 //       its AXWindows. `ok` is false, and `failed` names the reads, when a read the answer rests on did not succeed.
+//       With sheet bounds, `sheet` says whether the matched window has a child of role AXSheet at them (within 2 pt):
+//       the proof that a window-list window Accessibility lists no window for is that window's sheet (null when the
+//       window was not matched or its children could not be read, `failed` then naming "sheet").
 //   ax-state text <pid> <offset>...
 //       The geometry of the app's focused text element: {"trusted", "ok", "failed", "role", "frame", "characters",
 //       "selected", "bounds"}: its role, frame, character count, selected range, and for each offset the frame of the
@@ -25,7 +28,7 @@ func emit(_ object: [String: Any]) {
 }
 let args = CommandLine.arguments
 guard args.count >= 3, ["window", "text", "actions"].contains(args[1]), let pid = Int32(args[2]) else {
-  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role>\n".utf8))
+  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>] | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role>\n".utf8))
   exit(64)
 }
 guard AXIsProcessTrusted() else { emit(["trusted": false]); exit(0) }
@@ -63,21 +66,25 @@ func flag(_ e: AXUIElement, _ attribute: String, _ name: String) -> Bool? {
   return value
 }
 
+/// Bounds `x,y,w,h` as a rectangle, nil when they do not parse.
+func rect(_ text: String) -> CGRect? {
+  let parts = text.split(separator: ",").compactMap { Double($0) }
+  return parts.count == 4 ? CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3]) : nil
+}
+/// Whether an element's frame is `want`, within 2 pt.
+func at(_ e: AXUIElement, _ want: CGRect) -> Bool {
+  guard let f = frame(e) else { return false }
+  let near = { (a: CGFloat, b: CGFloat) in abs(a - b) <= 2 }
+  return near(f.minX, want.minX) && near(f.minY, want.minY) && near(f.width, want.width) && near(f.height, want.height)
+}
 /// The app's windows and the one at `bounds` (global top-left points, within 2 pt); a failed list read is named in
 /// `failed`. Nil when the bounds do not parse.
 func runWindow(_ bounds: String) -> (windows: [AXUIElement], run: AXUIElement?)? {
-  let parts = bounds.split(separator: ",").compactMap { Double($0) }
-  guard parts.count == 4 else { return nil }
-  let want = CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
+  guard let want = rect(bounds) else { return nil }
   let list = read(app, kAXWindowsAttribute)
   let windows = (list.value as? [AXUIElement]) ?? []
   if list.status != .success { failed.append("windows") }
-  let near = { (a: CGFloat, b: CGFloat) in abs(a - b) <= 2 }
-  let run = windows.first { w in
-    guard let f = frame(w) else { return false }
-    return near(f.minX, want.minX) && near(f.minY, want.minY) && near(f.width, want.width) && near(f.height, want.height)
-  }
-  return (windows, run)
+  return (windows, windows.first { at($0, want) })
 }
 
 if args[1] == "actions" {
@@ -110,8 +117,10 @@ if args[1] == "actions" {
 }
 
 if args[1] == "window" {
-  guard args.count == 4 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
+  guard args.count == 4 || args.count == 5 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
   guard let (windows, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  let sheetBounds = args.count == 5 ? rect(args[4]) : nil
+  if args.count == 5 && sheetBounds == nil { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
   let frontmost = flag(app, kAXFrontmostAttribute, "frontmost")
   var answer: [String: Any] = ["trusted": true, "windows": windows.count, "found": run != nil]
   answer["frontmost"] = frontmost ?? NSNull()
@@ -128,6 +137,16 @@ if args[1] == "window" {
     if r.status == .noValue || (r.status == .success && element(r.value) == nil) { answer[key] = "none" }
     else if r.status == .success, let w = element(r.value) { answer[key] = run.map { CFEqual($0, w) } == true ? "run" : "other" }
     else { answer[key] = NSNull(); failed.append(key) }
+  }
+  // The sheet asked about: an AXSheet child of the matched window at its bounds.
+  if let sheetBounds {
+    let children = run.map { read($0, kAXChildrenAttribute) }
+    if let children, children.status == .success, let list = children.value as? [AXUIElement] {
+      answer["sheet"] = list.contains { read($0, kAXRoleAttribute).value as? String == kAXSheetRole && at($0, sheetBounds) }
+    } else {
+      answer["sheet"] = NSNull()
+      if run != nil { failed.append("sheet") }
+    }
   }
   answer["ok"] = failed.isEmpty && run != nil
   answer["failed"] = failed

@@ -2,6 +2,7 @@
 // harness checkout, the run's install and engine, the system-database rows for the vendor's helper and cua's engine
 // before either launches, the relaunch and two-pass approve, then the runner's record the harnesses attest. Every
 // command, row and approve is a spy here; nothing runs.
+import {dirname} from 'node:path';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {hostedSetup} from '../../scripts/hosted-sittings/setup.mjs';
@@ -57,8 +58,11 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     screen: () => { calls.push({kind: 'screen'}); return screen(); },
     stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; },
     write: (path, record) => calls.push({kind: 'write', path, record}),
-    exists: path => savedStates.includes(path),
-    remove: path => calls.push({kind: 'remove', path}),
+    savedStateFs: {lstat: path => {
+      const dir = path === dirname(SAVED_STATE), present = dir || savedStates.includes(path);
+      if (!present) throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'});
+      return {isDirectory: () => true, isSymbolicLink: () => false};
+    }, unlink: path => calls.push({kind: 'unlink', path}), removeTree: path => calls.push({kind: 'remove', path})},
     log: () => {},
   };
   return {calls, deps};

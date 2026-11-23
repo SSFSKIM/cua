@@ -87,20 +87,25 @@ export const runnerKey = r => `${r.image.name} ${r.image.version}, run ${r.run.i
 // The attestation line a summary prints and compares (null off a hosted runner).
 export const runnerText = r => (r ? `GitHub-hosted ${runnerKey(r)}; the run's install ${r.install.release} at ${r.install.home}; its engine build ${String(r.engine.build).slice(0, 12)} (cua ${r.engine.engineVersion})` : null);
 
+// The venue a device's record names, only when the record attests a GitHub-hosted runner (runnerProblems: none, the
+// record setup writes on one): any other file at the record's path (a hand-made one, a copy on the mini) leaves every
+// scene and the TextEdit document as the mini's. -> the venue, or null.
+const attestedVenue = record => (runnerProblems(record).length === 0 ? record.venue ?? null : null);
 // The scene frames a device's record names (its venue's, ruling 1169): {scene: {x, y, width, height}} for each well-formed
-// frame, or null off a hosted runner (no record, or one with no venue), where every scene keeps its own frame.
+// frame, or null off a hosted runner (no record, an unattested one, or one with no venue), where every scene keeps its
+// own frame.
 const isFrame = f => Boolean(f) && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(f[k])) && f.width > 0 && f.height > 0;
 export function venueFramesOf(record) {
-  const frames = record?.venue?.frames;
+  const frames = attestedVenue(record)?.frames;
   if (!frames || typeof frames !== 'object') return null;
   return Object.fromEntries(Object.entries(frames).filter(([, f]) => isFrame(f)).map(([scene, {x, y, width, height}]) => [scene, {x, y, width, height}]));
 }
 // The view size the venue gives TextEdit's scene document (./venue.mjs TEXTEDIT_DOCUMENT_VIEW), which the device's
-// `up textedit` writes into the run's RTF: {width, height} in whole positive points, or null (no venue, or none
-// declared), where the document keeps the mini's bytes.
+// `up textedit` writes into the run's RTF: {width, height} in whole positive points, or null (no venue, an unattested
+// record, or none declared), where the document keeps the mini's bytes.
 const isPoints = n => Number.isSafeInteger(n) && n > 0;
 export function venueTextEditViewOf(record) {
-  const view = record?.venue?.textEditDocument?.view;
+  const view = attestedVenue(record)?.textEditDocument?.view;
   return isPoints(view?.width) && isPoints(view?.height) ? {width: view.width, height: view.height} : null;
 }
 

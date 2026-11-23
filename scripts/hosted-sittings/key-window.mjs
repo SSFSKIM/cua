@@ -8,7 +8,9 @@
 // The window a cell acts in is its process's frontmost window (a document ⌘N opened, say), or for a scene shown by a
 // process the run did not launch (Finder) the run's recorded window. A sheet is a window of its own in the window list
 // but a part of its parent in Accessibility: when Accessibility lists no window at the frontmost one's bounds and a
-// window of the process behind it holds those bounds, that window is the one read, its sheet kept (`sheet`).
+// window of the process behind it holds those bounds, that window is read, and only when Accessibility shows an AXSheet
+// child of it at the front window's bounds (ax-state's `sheet`) is it the one the reading stands for, its sheet kept
+// (`sheet`). A window merely lying inside another proves nothing: without the AXSheet the reading is not taken.
 //
 // The reader needs the Accessibility grant of the process that runs it: the owner's terminal on the mini; on a
 // GitHub-hosted runner the image grants it to /bin/bash, whose children inherit it (#282's evidence), which setup
@@ -41,26 +43,32 @@ function unreadReason(answer, error) {
   if (answer.ok !== true) return `a read failed: ${(answer.failed ?? []).join(', ') || 'unnamed'}`;
   return null;
 }
-const ask = (axState, at) => {
-  try { return {answer: axState(at.pid, rectArg(at.bounds)), error: null}; } catch (error) { return {answer: null, error: String(error?.message ?? error).split('\n')[0].slice(0, 200)}; }
+const ask = (axState, at, sheet = null) => {
+  try { return {answer: sheet ? axState(at.pid, rectArg(at.bounds), rectArg(sheet)) : axState(at.pid, rectArg(at.bounds)), error: null}; }
+  catch (error) { return {answer: null, error: String(error?.message ?? error).split('\n')[0].slice(0, 200)}; }
 };
+export const NOT_A_SHEET = 'Accessibility lists no window at the scene window\'s bounds, and shows it as no sheet of the window behind it';
 
-// The reading for one target ({scene, pid, number?}); `axState(pid, 'x,y,w,h')` the compiled ax-state.swift's answer.
+// The reading for one target ({scene, pid, number?}); `axState(pid, 'x,y,w,h'[, 'sheet x,y,w,h'])` the compiled
+// ax-state.swift's answer.
 // -> {scene, number, trusted (null when the reader failed), ok, found, failed, frontmost, focusedWindow, mainWindow,
 // sheet?, reason?}, or {scene, number: null, trusted: null, ok: false, reason} when no window is on screen.
 export function ownKeyWindow(windows, target, axState) {
   let at = sceneWindowOf(windows, target);
   if (!at) return {scene: target.scene, number: null, trusted: null, ok: false, reason: 'the scene window is not on screen'};
-  let {answer, error} = ask(axState, at), sheet = null;
+  let {answer, error} = ask(axState, at), sheet = null, notSheet = false;
   if (!error && answer?.trusted === true && answer.found === false) {
     const parent = windowsOf(windows, at.pid).find(w => w.number !== at.number && within(at.bounds, w.bounds));
     if (parent) {
-      sheet = at.number;
-      at = {pid: at.pid, number: parent.number ?? null, bounds: parent.bounds};
-      ({answer, error} = ask(axState, at));
+      const behind = {pid: at.pid, number: parent.number ?? null, bounds: parent.bounds};
+      const asked = ask(axState, behind, at.bounds);
+      // Its parent only when Accessibility shows the front window as an AXSheet of it; else the reading is not taken.
+      if (!asked.error && asked.answer?.trusted === true && asked.answer.sheet === true) { sheet = at.number; at = behind; ({answer, error} = asked); }
+      else if (asked.error || asked.answer?.trusted !== true) ({answer, error} = asked);
+      else notSheet = true;
     }
   }
-  const reason = unreadReason(answer, error);
+  const reason = notSheet ? NOT_A_SHEET : unreadReason(answer, error);
   return {scene: target.scene, number: at.number, trusted: error ? null : answer?.trusted === true, ok: reason === null,
     found: typeof answer?.found === 'boolean' ? answer.found : null, failed: Array.isArray(answer?.failed) ? answer.failed : [],
     frontmost: typeof answer?.frontmost === 'boolean' ? answer.frontmost : null, focusedWindow: sideOf(answer?.focusedWindow), mainWindow: sideOf(answer?.mainWindow),

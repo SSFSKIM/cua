@@ -18,6 +18,7 @@ import {
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, enginePids, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
+import {runnerRecord} from '../../scripts/hosted-sittings/runner.mjs';
 import {FINDER_RECORD_SCHEMA, markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {PAGE_CONTROLS, PAGE_HTML, POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
@@ -917,7 +918,11 @@ test('up on a hosted runner launches each scene at the venue\'s frame and record
 });
 // The default io reads the venue from the device's own runner record (../hosted-sittings/runner.mjs), under $HOME, with
 // nothing injected: a real `up` on a runner and on the mini (no record) alike.
-test('the default io reads the venue from the runner record under $HOME; with none, each scene keeps its own frame', async () => {
+// A record that attests a GitHub-hosted runner, as setup writes it (../../scripts/hosted-sittings/runner.mjs runnerRecord).
+const attestedRecord = venue => runnerRecord({RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'macos26', ImageVersion: '1', GITHUB_RUN_ID: '1', GITHUB_RUN_ATTEMPT: '1'},
+  {install: {home: '/Users/runner/Library/Application Support/cua', release: 'r1'}, engine: {bundle: '/e/cua Engine.app', build: 'b', engineVersion: '0.3.0'},
+    vm: {id: 'v', platformUuid: 'u', bootedAt: '2026-11-23T00:00:00.000Z'}, venue});
+test('the default io reads the venue from the runner record under $HOME, only one attesting a hosted runner; with none, each scene keeps its own frame and TextEdit the mini\'s bytes', async () => {
   const home = fs.mkdtempSync(join(tmpdir(), 'scenes-home-')), saved = process.env.HOME;
   process.env.HOME = home;
   try {
@@ -928,9 +933,16 @@ test('the default io reads the venue from the runner record under $HOME; with no
       assert.equal(io.venueTextEditView(), null, 'no runner record: the mini\'s document');
       assert.deepEqual((await upScene('electron', {run, io})).launchFrame, {frame: SCENES.electron.placement, from: 'scene'});
     });
-    const electron = {x: 102, y: 100, width: 720, height: 560};
+    const electron = {x: 102, y: 100, width: 720, height: 560}, venue = {frames: {electron}, textEditDocument: {view: {width: 480, height: 792}}};
     fs.mkdirSync(join(home, '.local/share/cua-hosted'), {recursive: true});
-    fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify({venue: {frames: {electron}, textEditDocument: {view: {width: 480, height: 792}}}}));
+    // Unattested (a hand-made record, say on the mini): no venue, the mini's document byte for byte.
+    fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify({venue}));
+    await withRun(async run => {
+      const io = Object.assign(defaultIo(), fakeDevice());
+      assert.deepEqual([io.venueFrames(), io.venueTextEditView()], [null, null]);
+      assert.equal(fs.readFileSync((await upScene('textedit', {run, io})).document, 'utf8'), textEditDocument().rtf);
+    });
+    fs.writeFileSync(join(home, '.local/share/cua-hosted/runner.json'), JSON.stringify(attestedRecord(venue)));
     await withRun(async run => {
       const io = Object.assign(defaultIo(), fakeDevice());
       assert.deepEqual(io.venueFrames(), {electron});

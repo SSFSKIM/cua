@@ -4,7 +4,9 @@
 // check that both sides of a pair stood on one frame.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {
   HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, PERSISTENCE_KEY, TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, clearTextEditSavedState, frameAsymmetry, hostedFrames, readBackRows,
@@ -22,6 +24,7 @@ const ALERTS = [{number: 31, layer: 8, bounds: rect(830, 188, 260, 348)}, {numbe
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
 const HOME = '/Users/runner';
 const sha256 = text => createHash('sha256').update(text).digest('hex');
+const lstatOrNull = path => { try { return lstatSync(path); } catch { return null; } };
 
 test('the mini\'s frames are the scenes\' own; the hosted sizes are the ruling\'s: Chrome 800x760, the fixture unchanged, Finder 800x520', () => {
   assert.deepEqual(MINI_FRAMES, {chrome: SCENES.chrome.placement, electron: SCENES.electron.placement, finder: FINDER_FRAME});
@@ -167,21 +170,54 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
 // protection's dialog): the container's restoration rests on ApplePersistenceIgnoreState, through defaults.
 test('TextEdit\'s saved application state removed on a hosted runner only, each path recorded: existed, removed, or why not', () => {
   assert.deepEqual(textEditSavedStates(HOME), [`${HOME}/Library/Saved Application State/com.apple.TextEdit.savedState`]);
-  const touched = [];
-  clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: path => { touched.push(path); return true; }, remove: path => touched.push(path)});
-  assert.ok(touched.length && touched.every(path => !path.includes('/Library/Containers/')), 'no file call under the containers');
-  const removed = [];
-  const remove = path => { removed.push(path); };
+  const touched = [], fake = {lstat: path => { touched.push(path); return {isDirectory: () => true, isSymbolicLink: () => false}; }, unlink: path => touched.push(path), removeTree: path => touched.push(path)};
   for (const [env, platform] of [[{}, 'darwin'], [HOSTED, 'linux']]) {
-    assert.throws(() => clearTextEditSavedState(HOME, {env, platform, exists: () => true, remove}), /refused/);
+    assert.throws(() => clearTextEditSavedState(HOME, {env, platform, fs: fake}), /refused/);
   }
-  assert.deepEqual(removed, []);
+  assert.deepEqual(touched, [], 'nothing read or removed off a runner');
   const [plain] = textEditSavedStates(HOME);
-  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => true, remove}), [{path: plain, existed: true, removed: true}]);
-  assert.deepEqual(removed, [plain]);
-  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => false, remove: () => assert.fail('nothing to remove')}), [{path: plain, existed: false, removed: false}]);
-  const denied = clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => true, remove: () => { throw new Error('EPERM: operation not permitted'); }});
+  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', fs: fake}), [{path: plain, existed: true, removed: true}]);
+  assert.ok(touched.every(path => !path.includes('/Library/Containers/')), 'no file call under the containers');
+  // Only ENOENT is absence; any other error is recorded as one, and a refused removal keeps its error.
+  const failing = code => ({...fake, lstat: path => (path === plain ? (() => { throw Object.assign(new Error(`${code}: no`), {code}); })() : fake.lstat(path))});
+  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', fs: failing('ENOENT')}), [{path: plain, existed: false, removed: false}]);
+  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', fs: failing('EACCES')}), [{path: plain, existed: null, removed: false, error: 'EACCES: no'}]);
+  const denied = clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', fs: {...fake, removeTree: () => { throw new Error('EPERM: operation not permitted'); }}});
   assert.deepEqual(denied.map(d => [d.existed, d.removed, d.error]), [[true, false, 'EPERM: operation not permitted']]);
+});
+
+// No link is followed (the review): a link at the state's path could lead into the container. On a real file system
+// under a scratch home: a link into a fake container's saved state is unlinked and its target kept; a dangling link is
+// unlinked; a folder that is itself a link is not followed; a real folder is removed.
+test('the saved-state cleanup never follows a link: the link removed, never its target; a linked folder left alone', () => {
+  const home = mkdtempSync(join(tmpdir(), 'venue-home-'));
+  try {
+    const states = join(home, 'Library', 'Saved Application State'), [plain] = textEditSavedStates(home);
+    const target = join(home, 'Library', 'Containers', 'com.apple.TextEdit', 'Data', 'Library', 'Saved Application State', 'com.apple.TextEdit.savedState');
+    mkdirSync(target, {recursive: true});
+    writeFileSync(join(target, 'windows.plist'), 'x');
+    mkdirSync(states, {recursive: true});
+    const run = () => clearTextEditSavedState(home, {env: HOSTED, platform: 'darwin'});
+    symlinkSync(target, plain);
+    assert.deepEqual(run(), [{path: plain, existed: true, removed: true, link: true}]);
+    assert.ok(existsSync(join(target, 'windows.plist')), 'the container\'s state is untouched');
+    assert.equal(existsSync(plain) || lstatOrNull(plain) !== null, false);
+    symlinkSync(join(home, 'nowhere'), plain);
+    assert.deepEqual(run(), [{path: plain, existed: true, removed: true, link: true}]);
+    assert.equal(lstatOrNull(plain), null, 'the dangling link itself is gone');
+    mkdirSync(plain);
+    writeFileSync(join(plain, 'windows.plist'), 'x');
+    assert.deepEqual(run(), [{path: plain, existed: true, removed: true}]);
+    assert.equal(existsSync(plain), false);
+    rmSync(states, {recursive: true});
+    symlinkSync(dirname(target), states);
+    assert.deepEqual(run(), [{path: plain, existed: null, removed: false, error: 'its folder is a link: not followed'}]);
+    assert.ok(existsSync(join(target, 'windows.plist')));
+    rmSync(states);
+    assert.deepEqual(run(), [{path: plain, existed: false, removed: false}]);
+  } finally {
+    rmSync(home, {recursive: true, force: true});
+  }
 });
 
 test('the venue record declares each frame that differs from the mini\'s: the frame, the alerts read fresh as the reason, the cells grounded on it', () => {
@@ -206,7 +242,7 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
   assert.ok(finder.cells.includes('finder/frontmost/click.row') && finder.cells.includes('finder/frontmost/scroll.down'));
   const textedit = venue.differences.find(d => d.scene === 'textedit');
   assert.deepEqual([textedit.mini, textedit.hosted], [{WidthInChars: 75, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)', [PERSISTENCE_KEY]: 'NO (AppKit\'s default: windows restored)'},
-    {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO', [PERSISTENCE_KEY]: 'YES', 'saved application state': 'removed after the warm-ups'}]);
+    {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO', [PERSISTENCE_KEY]: 'YES', 'saved application state': 'to be removed after the warm-ups, outside the container (venue.textEdit.savedState says what was)'}]);
   assert.match(textedit.reason, /pilot A's re-run, run 45277221729/);
   assert.match(textedit.reason, /read back from TextEdit's container/);
   assert.match(textedit.reason, /242,107 603x505/);

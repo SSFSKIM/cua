@@ -54,7 +54,7 @@
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {BUNDLE_NAME} from '../../src/runtime/engine-bundle.mjs';
 import {stopEngine as stopApprovedEngine} from '../../src/runtime/engine.mjs';
@@ -116,13 +116,13 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
 // engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
-// exists, remove(path) (a directory tree), vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
+// exists, savedStateFs (./venue.mjs clearTextEditSavedState's fs; node:fs's by default), vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
 // switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), stopEngine()
 // (src/runtime/engine.mjs stopEngine), write(path, record), log}.
 // -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, venue, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
-  runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync, remove = path => rmSync(path, {recursive: true, force: true}),
+  runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync, savedStateFs = undefined,
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
   approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}), switchMode = () => switchDisplayMode({env, platform}),
   screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
@@ -210,9 +210,9 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       const missed = written.writes.filter(w => !w.matched);
       const unread = v => (v === null ? 'unread' : JSON.stringify(v));
       failIf(missed.length, missed.map(w => `${w.key} not read back from TextEdit's container (${unread(w.container.readBack)}; the domain read ${unread(w.readBack)})`).join('; '));
-      written.savedState = clearTextEditSavedState(home, {env, platform, exists, remove});
+      written.savedState = clearTextEditSavedState(home, {env, platform, ...(savedStateFs ? {fs: savedStateFs} : {})});
       const through = written.writes.filter(w => w.container.written !== undefined).length;
-      const removed = written.savedState.filter(s => s.removed).map(s => s.path), kept = written.savedState.filter(s => s.existed && !s.removed);
+      const removed = written.savedState.filter(s => s.removed).map(s => s.path), kept = written.savedState.filter(s => s.existed !== false && !s.removed);
       return `${written.domain}: ${written.writes.map(w => `${w.key} ${w.value.trim()}`).join(', ')}; each read back from TextEdit's container${through ? ` (${through} written through it)` : ''}; `
         + `saved application state removed: ${removed.length ? removed.join(', ') : 'none there'}${kept.length ? `; NOT removed: ${kept.map(s => `${s.path} (${s.error})`).join(', ')}` : ''}`;
     }],

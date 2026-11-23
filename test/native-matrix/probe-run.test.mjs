@@ -583,11 +583,14 @@ function twoWindows(calls) {
     return [...(sheet ? [SHEET] : []), ...(untitled ? [UNTITLED] : []), DOC];
   };
   const asked = [];
-  const io = {state: () => ({scenes: {textedit: {pid: 600, window: {number: 4}}}}), windows: world, axState: (pid, bounds) => {
-    const listed = world().filter(w => w !== SHEET), at = listed.find(w => [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(',') === bounds);
+  const wire = b => [b.x, b.y, b.width, b.height].join(',');
+  // Accessibility as TextEdit shows it: the sheet no window of its own, an AXSheet child of the untitled document.
+  const io = {state: () => ({scenes: {textedit: {pid: 600, window: {number: 4}}}}), windows: world, axState: (pid, bounds, sheetAt) => {
+    const listed = world().filter(w => w !== SHEET), at = listed.find(w => wire(w.bounds) === bounds);
     asked.push({bounds, found: Boolean(at)});
     const front = listed[0] === at ? 'run' : 'other';
-    return {trusted: true, ok: Boolean(at), found: Boolean(at), failed: [], frontmost: false, focusedWindow: at ? front : 'other', mainWindow: at ? front : 'other'};
+    return {trusted: true, ok: Boolean(at), found: Boolean(at), failed: [], frontmost: false, focusedWindow: at ? front : 'other', mainWindow: at ? front : 'other',
+      ...(sheetAt === undefined ? {} : {sheet: at === UNTITLED && world().includes(SHEET) && sheetAt === wire(SHEET.bounds)})};
   }};
   return {asked, ops: {matrix: (base, a) => {
     const out = base(a);

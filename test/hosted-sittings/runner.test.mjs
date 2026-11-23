@@ -99,17 +99,22 @@ test('the venue: kept in the record, handed out as its own block, its frames rea
   assert.deepEqual(hostedRunOf(record(), ENV), {hosted: true, runner: record()}, 'a record with no venue gives none');
   assert.deepEqual(venueFramesOf(withVenue), venue.frames);
   // A frame that is not one is dropped (that scene keeps its own); no record, or one with no venue, is no venue.
-  assert.deepEqual(venueFramesOf({venue: {frames: {chrome: {x: 1, y: 2, width: 0, height: 600}, electron: {x: 'a'}, finder: venue.frames.finder}}}), {finder: venue.frames.finder});
+  assert.deepEqual(venueFramesOf({...record(), venue: {frames: {chrome: {x: 1, y: 2, width: 0, height: 600}, electron: {x: 'a'}, finder: venue.frames.finder}}}), {finder: venue.frames.finder});
   for (const none of [null, {error: 'not JSON'}, record()]) assert.equal(venueFramesOf(none), null);
+  // A record that does not attest a GitHub-hosted runner names no venue, whatever it holds: the mini's frames stay.
+  for (const unattested of [{venue}, {...withVenue, kind: 'self-hosted'}, {...withVenue, run: {id: 'x', attempt: '1'}}]) assert.equal(venueFramesOf(unattested), null);
 });
 
 // The TextEdit scene document's view size the venue declares (ruling 1169; ./venue.mjs TEXTEDIT_DOCUMENT_VIEW), which
 // the device's `up textedit` writes into the run's RTF: whole positive points, or none (the mini's document).
 test('the venue\'s TextEdit document view: whole positive points read by the device; anything else, or no venue, is none', () => {
   const view = {width: 480, height: 792};
-  assert.deepEqual(venueTextEditViewOf({venue: {frames: {}, textEditDocument: {view, sha256: {}}}}), view);
+  assert.deepEqual(venueTextEditViewOf({...record(), venue: {frames: {}, textEditDocument: {view, sha256: {}}}}), view);
   for (const bad of [{width: 0, height: 792}, {width: 480.5, height: 792}, {width: 480}, {width: '480', height: 792}, null]) {
-    assert.equal(venueTextEditViewOf({venue: {textEditDocument: {view: bad}}}), null, JSON.stringify(bad));
+    assert.equal(venueTextEditViewOf({...record(), venue: {textEditDocument: {view: bad}}}), null, JSON.stringify(bad));
   }
-  for (const none of [null, {error: 'not JSON'}, record(), {venue: {frames: {}}}]) assert.equal(venueTextEditViewOf(none), null);
+  for (const none of [null, {error: 'not JSON'}, record(), {...record(), venue: {frames: {}}}]) assert.equal(venueTextEditViewOf(none), null);
+  // Unattested (no hosted attestation, as a hand-made record on the mini): none, so the mini's bytes are written.
+  assert.equal(venueTextEditViewOf({venue: {frames: {}, textEditDocument: {view}}}), null);
+  assert.equal(venueTextEditViewOf({...record(), kind: 'self-hosted', venue: {textEditDocument: {view}}}), null);
 });

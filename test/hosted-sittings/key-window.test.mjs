@@ -24,14 +24,26 @@ test('a second document in front (⌘N): the reading is against it, never the re
   assert.deepEqual(r, {scene: 'textedit', number: 9, trusted: true, ok: true, found: true, failed: [], frontmost: true, focusedWindow: 'run', mainWindow: 'run'});
 });
 
-test('a sheet in front counts as the window it lies on: Accessibility lists no window at its bounds, so its parent is read', () => {
+const unmatched = answer({ok: false, found: false, focused: null, main: null, focusedWindow: 'other', mainWindow: 'other'});
+test('a sheet in front counts as the window it lies on: Accessibility lists no window at its bounds, and shows it as an AXSheet of the window behind', () => {
   const asked = [];
-  const r = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600}, (pid, bounds) => {
-    asked.push(bounds);
-    return bounds === '323,149,480,300' ? answer({ok: false, found: false, focused: null, main: null, focusedWindow: 'other', mainWindow: 'other'}) : answer();
+  const r = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600}, (pid, bounds, sheet) => {
+    asked.push([bounds, sheet]);
+    return bounds === '323,149,480,300' ? unmatched : answer({sheet: sheet === '323,149,480,300'});
   });
-  assert.deepEqual(asked, ['323,149,480,300', '262,127,603,505']);
+  assert.deepEqual(asked, [['323,149,480,300', undefined], ['262,127,603,505', '323,149,480,300']]);
   assert.deepEqual([r.number, r.ok, r.focusedWindow, r.sheet], [9, true, 'run', 11]);
+});
+
+// The review's case: a front window Accessibility does not list, lying inside another of the process's windows, is not
+// thereby a sheet of it. Without Accessibility's AXSheet at its bounds the window behind is never certified: unread.
+test('a front window inside another that Accessibility shows as no sheet of it: the window behind is never read as the scene window', () => {
+  const FRONT = win(12, rect(110, 120, 600, 400)), UNDER = win(106, rect(102, 100, 720, 560));
+  for (const sheet of [false, undefined]) {
+    const r = ownKeyWindow([FRONT, UNDER], {scene: 'electron', pid: 600}, (pid, bounds) => (bounds === '110,120,600,400' ? unmatched : answer({...(sheet === undefined ? {} : {sheet})})));
+    assert.deepEqual([r.number, r.ok, 'sheet' in r], [12, false, false], String(sheet));
+    assert.match(r.reason, /no sheet of the window behind it/);
+  }
 });
 
 test('a reading not taken keeps why: an untrusted reader, a reader that failed, a window Accessibility does not list, a read that failed, none on screen', () => {

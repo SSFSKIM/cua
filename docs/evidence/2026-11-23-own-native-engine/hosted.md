@@ -1617,6 +1617,9 @@ table. The mini's document is byte for byte what it was.
   (the matrix's `textedit`, native-mac's `textedit/…`) as `view 480x792` and the new and scratch documents as
   `WidthInChars 60`.
 
+The device takes the view size, like the venue's frames, only from a runner record that attests a GitHub-hosted
+runner (`runnerProblems` empty): any other file at the record's path leaves the mini's frames and bytes.
+
 Not proven: that TextEdit sizes the opened window from the view size. AppKit's reader taking it is shown here, and the
 window is TextEdit's to make. The next B and C runs must read the scene window about 505 wide and about 877 high, its
 right edge left of 822, the same on both sides, with textedit/action sent.
@@ -1646,8 +1649,9 @@ The `textedit defaults` step now does three more things, hosted only:
   window over the scenes, and nobody may answer it.
 - After the writes, it removes TextEdit's saved application state outside its container,
   `~/Library/Saved Application State/com.apple.TextEdit.savedState`, recorded as removed, absent, or not removed with
-  the error (`venue.textEdit.savedState`). A refused removal does not fail the step. The container's own saved state
-  is left alone. Restoration off there rests on `ApplePersistenceIgnoreState YES`, read back from the container
+  the error (`venue.textEdit.savedState`). No link is followed: its folder must be a folder of its own, and a link at
+  the state's path is unlinked, never its target. Only ENOENT counts as absent; any other error is recorded. A refused
+  removal does not fail the step. The container's own saved state is left alone. Restoration off there rests on `ApplePersistenceIgnoreState YES`, read back from the container
   domain.
 
 The step's detail and sitting.md's venue line say which keys were written through and whether the state was removed.
@@ -1766,7 +1770,9 @@ window. That is not the same as being frontmost: a background cell still runs in
   cleanups act in. For Finder, whose process also shows the owner's windows, it is the run's recorded window. A sheet
   is a window of its own in the window list but part of its parent in Accessibility. When Accessibility lists no
   window at the frontmost one's bounds, and a window of the process behind it holds those bounds, that window is read
-  and the sheet is kept in the reading (`sheet`). A, C and D all read this way (`ownKeyWindow`). Review round 1 found
+  and the sheet is kept in the reading (`sheet`), but only when Accessibility shows an AXSheet child of it at the front
+  window's bounds (`ax-state window <pid> <bounds> <sheet bounds>` answers `sheet`). A window merely lying inside
+  another proves nothing, and without that proof the reading is not taken (review of the pilot fixes). A, C and D all read this way (`ownKeyWindow`). Review round 1 found
   that C had read the recorded window, which would have refused every key cell after ⌘N. B did too, through
   `guard-device.mjs`, whose target names the recorded window for the guard. On pilot B's vendor side (run
   45274556933) that reading said "the scene window is not on screen" while the fixture's one window stood at 102,100

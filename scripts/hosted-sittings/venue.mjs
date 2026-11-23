@@ -31,8 +31,8 @@
 // symmetry rule: a pair whose sides stood on different frames is NO VERDICT, naming them (./checks.mjs `record`).
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
+import {lstatSync, rmSync, unlinkSync} from 'node:fs';
+import {dirname, join} from 'node:path';
 import {FINDER_FRAME} from '../repl-parity/scenes-mac-finder.mjs';
 import {SCENES, TEXTEDIT_LAYOUTS, textEditDocument, textEditViewWords} from '../repl-parity/scenes-mac.mjs';
 import {framedCells} from '../native-matrix/plan.mjs';
@@ -141,14 +141,29 @@ export function writeTextEditDefaults(writes, {env = process.env, platform = pro
 // touched (no file call under ~/Library/Containers: see above); restoration off there rests on ApplePersistenceIgnoreState
 // YES, read back from the container domain. -> [path].
 export const textEditSavedStates = home => [join(home, 'Library', 'Saved Application State', `${TEXTEDIT_DOMAIN}.savedState`)];
-// Each removed, only on a GitHub-hosted runner, after the warm-ups' TextEdit ended and before any run launches one.
-// -> [{path, existed, removed, error?}]. A removal refused is recorded, not thrown: the persistence key read back from
-// the container keeps restoration off on its own.
-export function clearTextEditSavedState(home, {env = process.env, platform = process.platform, exists = existsSync, remove = path => rmSync(path, {recursive: true, force: true})} = {}) {
+// Each removed, only on a GitHub-hosted runner, after the warm-ups' TextEdit ended and before any run launches one. No
+// link is followed, since one could lead into the container: the folder holding the state must be a folder of its own
+// (lstat; a link there is recorded, nothing removed), and the state itself is lstat'ed: a link is unlinked, never its
+// target; a folder or file removed (rmSync, which unlinks the links inside rather than following them). Only ENOENT is
+// absence; any other error is recorded as one. -> [{path, existed (null when unknown), removed, link?, error?}]. A
+// removal refused is recorded, not thrown: the persistence key read back from the container keeps restoration off on
+// its own. fs: {lstat, unlink, removeTree}, node:fs's by default.
+const errorText = error => String(error?.message ?? error).split('\n')[0];
+const SAVED_STATE_FS = {lstat: lstatSync, unlink: unlinkSync, removeTree: path => rmSync(path, {recursive: true})};
+export function clearTextEditSavedState(home, {env = process.env, platform = process.platform, fs = SAVED_STATE_FS} = {}) {
   assertGithubHosted(env, platform, 'TextEdit\'s saved application state');
+  const look = path => { try { return {stat: fs.lstat(path)}; } catch (error) { return error?.code === 'ENOENT' ? {stat: null} : {error: errorText(error)}; } };
   return textEditSavedStates(home).map(path => {
-    if (!exists(path)) return {path, existed: false, removed: false};
-    try { remove(path); return {path, existed: true, removed: true}; } catch (error) { return {path, existed: true, removed: false, error: String(error?.message ?? error).split('\n')[0]}; }
+    const folder = look(dirname(path));
+    if (folder.error) return {path, existed: null, removed: false, error: `its folder could not be read: ${folder.error}`};
+    if (folder.stat === null) return {path, existed: false, removed: false};
+    if (!folder.stat.isDirectory()) return {path, existed: null, removed: false, error: `its folder is ${folder.stat.isSymbolicLink() ? 'a link' : 'not a folder'}: not followed`};
+    const state = look(path);
+    if (state.error) return {path, existed: null, removed: false, error: state.error};
+    if (state.stat === null) return {path, existed: false, removed: false};
+    const link = state.stat.isSymbolicLink();
+    try { (link ? fs.unlink : fs.removeTree)(path); return {path, existed: true, removed: true, ...(link ? {link} : {})}; }
+    catch (error) { return {path, existed: true, removed: false, ...(link ? {link} : {}), error: errorText(error)}; }
   });
 }
 
@@ -216,7 +231,7 @@ export function venueRecord({alerts, displays, placed, textEdit}) {
     differences.push({scene, mini, hosted, reason: why(scene), grounding: GROUNDING[scene], cells: cellsOf(scene)});
   }
   differences.push({scene: 'textedit', mini: {WidthInChars: TEXTEDIT_DEFAULT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'YES (AppKit\'s default)', [PERSISTENCE_KEY]: 'NO (AppKit\'s default: windows restored)'},
-    hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO', [PERSISTENCE_KEY]: 'YES', 'saved application state': 'removed after the warm-ups'},
+    hosted: {WidthInChars: TEXTEDIT_WIDTH_IN_CHARS, [UNTITLED_AT_LAUNCH_KEY]: 'NO', [PERSISTENCE_KEY]: 'YES', 'saved application state': 'to be removed after the warm-ups, outside the container (venue.textEdit.savedState says what was)'},
     reason: `${fresh === null ? 'the alert windows were unread after the mode switch' : `the capture alerts read fresh after the mode switch: ${alertsText(fresh)}`}; at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session); vv-1's launch window again stood at 241,87 586x488 with that key in force and its new document took 603x505, the default width, though the domain read WidthInChars 60 back (pilot A's re-run, run 45277221729): a window the warm-ups' saved state restored, and a domain write the sandboxed TextEdit does not read, so restoration is off, the saved state is removed and every key is read back from TextEdit's container`,
     grounding: GROUNDING.textedit, cells: cellsOf('textedit')});
   const document = textEditDocumentPlan(), hashes = side => Object.fromEntries(Object.entries(document.sha256).map(([layout, h]) => [`sha256 ${layout}`, h[side]]));
@@ -237,7 +252,7 @@ const textEditWriteText = w => {
   if (!w.matched) return `${w.key} NOT read back from the container (${w.container.readBack ?? 'unread'}; the domain read ${w.readBack ?? 'unread'})`;
   return `${w.key} read back${w.container.written !== undefined ? ' (written through the container: the domain\'s write did not reach it)' : ''}`;
 };
-const savedStateText = s => (s.removed ? `removed ${s.path}` : s.existed ? `NOT removed ${s.path} (${s.error ?? 'unknown'})` : `none at ${s.path}`);
+const savedStateText = s => (s.removed ? `removed ${s.link ? 'the link ' : ''}${s.path}` : s.existed === false ? `none at ${s.path}` : `NOT removed ${s.path} (${s.error ?? 'unknown'})`);
 // sitting.md's section: the venue's differences, one row each, with the cells resting on them. -> markdown.
 export function renderVenue(venue) {
   const head = ['## The venue (ruling 1169)', ''];

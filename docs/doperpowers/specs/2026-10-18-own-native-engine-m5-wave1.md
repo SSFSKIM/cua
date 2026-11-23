@@ -39,7 +39,8 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   witnessed.
 - [x] T8a — reviewed clean 2026-11-23 (8198c50a3..5d59bd440, fixes 7e948e006..7d71f26e2 and f7ab700d4). Unit
   witnesses green; every runner witness waits on T10's harness or the `probe/420-qual` kit (specified, not built).
-- [ ] T8b
+- [x] T8b — reviewed clean 2026-11-23 (99a2e812b..213b3da02, fixes fb19298b8, 1e3670839, a0bb24116). The Korean and
+  per-context rows' runner witnesses wait on T10's pilot.
 - [ ] T8c
 - [ ] T8d
 - [ ] T10
@@ -165,7 +166,11 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   out of the manifest and every verdict by their condition (so hold 3's unmarked rows are excluded too), runs mark them
   `excluded`, and the summary has a "Not judged" section listing the plan's 54 per-context rows with the cause. Whether
   2-Set's layout engages after refocus on a runner is T10's question; if it never does, the Korean rows stay NO
-  VERDICT.
+  VERDICT. After review: the exclusion rule lives in `scripts/native-matrix/not-judged.mjs` (`NOT_JUDGED`,
+  `exclusionOf`) and decides by section and condition only, so an `excluded` mark on any other row is invalid proof;
+  pressKey is judged on raw outcomes with declarations ignored (a declaration on loaded pressKey evidence is missing
+  proof); only the per-context preference write is recoverable (`PerContextWriteFailed`, its rows excluded with the
+  cause), and every lane-integrity error stops the lane; a not-judged row no lane recorded reads "not recorded".
 - 2026-11-23, T8a's review (7e948e006..7d71f26e2): ruling 1128's refusal is `concealedInputUnavailable` with a
   value-free meta word `concealedRefusal: inputSource | droppedCharacter`, which the service does not forward into
   the model-visible `cua/*` meta; the wrapper picks its fixed sentence by cause, an absent cause getting the

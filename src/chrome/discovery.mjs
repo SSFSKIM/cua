@@ -14,7 +14,7 @@ import {readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {realHome} from '../runtime/layout.mjs';
 import {RESERVED_KEY, readRegistry} from '../profiles/registry.mjs';
-import {backendDir, socketNameFor, socketPathFor} from './extension.mjs';
+import {backendDir, isMawsInstance, socketNameFor, socketPathFor} from './extension.mjs';
 
 // -> the absolute socket paths, sorted.
 export function backendPaths(home) {
@@ -53,4 +53,13 @@ export function currentBrowserKeys(home, {mawsKeys = null} = {}) {
   const bound = Object.entries(profiles).flatMap(([key, {extensionInstanceId, route}]) =>
     (extensionInstanceId && route === 'cua' && !(mawsKeys && RESERVED_KEY.test(key)) ? [[key, extensionInstanceId]] : []));
   return {...Object.fromEntries(bound), ...mawsKeys};
+}
+
+// -> the keys of `keys` whose Chrome host socket is not among `launchPaths` (the launch's BROWSER_USE_BACKEND_PATHS,
+// ':'-separated): a profile bound after the runtime launched, whose browser its service cannot dial (the list is fixed
+// at launch). MAWS backends' keys are their process's client-mode hosts, always listed.
+export function keysBeyondLaunch(home, keys, launchPaths) {
+  const listed = new Set(launchPaths.split(':').filter(Boolean));
+  const root = realHome(home);
+  return Object.keys(keys).filter(key => !isMawsInstance(keys[key]) && !listed.has(socketPathFor(root, socketNameFor(keys[key]))));
 }

@@ -74,9 +74,11 @@ import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs
 import {realHome} from '../runtime/layout.mjs';
 import {approvalMemory} from './approval-memory.mjs';
 
-// The request metadata that carries profiles_list's keys to the browser service (src/browser-service/browsers.mjs
-// BROWSER_KEYS_META; not imported, so this process loads none of the service; a test keeps the two equal).
+// The request metadata that carries profiles_list's keys to the browser service, and the keys whose browser the
+// running runtime cannot reach (src/browser-service/browsers.mjs; not imported, so this process loads none of the
+// service; a test keeps them equal).
 export const BROWSER_KEYS_META = 'cua/browserKeys';
+export const BROWSER_KEYS_UNREACHED_META = 'cua/browserKeysUnreached';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
@@ -106,7 +108,7 @@ export function createServer({
   hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null, feedbackDir}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
-  cursorContext = null, engine = null, browserKeys = null,
+  cursorContext = null, engine = null,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -140,15 +142,13 @@ export function createServer({
   const respond = (id, result) => write({jsonrpc: '2.0', id, result});
   const respondError = (id, code, message) => write({jsonrpc: '2.0', id, error: {code, message}});
 
-  // The turn metadata and the sandbox state, over whatever `_meta` the client sent; with the browser surface, the
-  // profiles_list keys the browser service selects by (`cua/browserKeys`, read now: src/browser-service/browsers.mjs),
-  // never the client's.
+  // The turn metadata and the sandbox state, over whatever `_meta` the client sent, less the browser keys' metadata,
+  // which only the connection puts on a call as it reaches the runtime (src/mcp/connection.mjs).
   const turnMeta = (taskId, callId, clientMeta) => {
-    const {[BROWSER_KEYS_META]: _, ...kept} = clientMeta ?? {};
+    const {[BROWSER_KEYS_META]: _, [BROWSER_KEYS_UNREACHED_META]: __, ...kept} = clientMeta ?? {};
     return withSandbox({
       ...kept, callId, threadId: sessionId, sessionId,
       'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: clientModel ?? 'mcp-client'},
-      ...(browserKeys ? {[BROWSER_KEYS_META]: browserKeys()} : {}),
     }, sandboxState);
   };
 

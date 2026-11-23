@@ -50,7 +50,8 @@ const SENTENCES = {
   // A profile registered under a backend type or family (`selectorKey`, its instance) is pointed to its instance id.
   browser_not_found: (id, available) => `Browser is not available: ${id}${available?.ids === undefined ? ''
     : `. Browser ids: ${quotedList(available.ids)}; profiles_list keys: ${quotedList(available.keys ?? [])}.`}${available?.selectorKey === undefined ? ''
-    : ` ${JSON.stringify(id)} names a browser type or family, not the profile registered under it: select that profile with cua.getBrowser({extensionInstanceId: ${JSON.stringify(available.selectorKey)}}).`}`,
+    : ` ${JSON.stringify(id)} names a browser type or family, not the profile registered under it: select that profile with cua.getBrowser({extensionInstanceId: ${JSON.stringify(available.selectorKey)}}).`}${available?.unreached !== true ? ''
+    : ` The profile keyed ${JSON.stringify(id)} was bound after this runtime launched, and this runtime cannot reach its browser: a new session can.`}`,
   dialog_open: type => `A ${type} JavaScript dialog is active in this tab. Use \`tab.getJsDialog()\` to get it and dismiss it first.`,
   timeout: () => DEADLINE_EXCEEDED,
   tab_detached: () => 'Debugger unattached',

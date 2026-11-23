@@ -1749,7 +1749,8 @@ else the first listed MAWS backend (a `cua serve` that started while MAWS was do
 while MAWS is away it fails with the vendor's own "Browser is not available" instead of landing in a Chrome profile;
 `cua.getBrowser({extensionInstanceId})` with a Chrome profile's id still drives that profile. A `profiles_list` key
 works wherever a browser id goes (`cua.createBrowserTab("maws", url)`, `cua.getBrowser({id: "personal"})`), as the
-registry and the MAWS backends stand at that call; a browser type or family (`iab`, `chrome`, `extension`) is never a
+registry and the MAWS backends stand at that call (a profile bound after the runtime launched is reachable from a new
+session, and its miss says so); a browser type or family (`iab`, `chrome`, `extension`) is never a
 key, and with MAWS backends configured neither is `maws` or `maws-<n>` for a Chrome profile. A miss names the ids and
 keys that would have worked. The first-use documentation names the backend "MAWS in-app browser (maws)". It has no visibility capability:
 `createBrowserTab`'s `visible` option is ignored there on cua's own REPL host, with a line in the result saying so,

@@ -2,7 +2,7 @@
 // for a MAWS backend.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {BROWSER_KEYS_META, BrowserContext, documentedName} from '../../src/browser-service/browsers.mjs';
@@ -100,4 +100,18 @@ test('the Selected Browser block names a MAWS backend "MAWS in-app browser (<key
   assert.deepEqual((await read('maws:app-1', '1')).split('\n').slice(0, 5), ['# Selected Browser', '- Name: MAWS in-app browser (maws)', '- Type: extension', '- ID: 1', '- Service: cua browser service 0.1.0']);
   assert.equal((await read('maws:app-2', '2')).split('\n')[1], '- Name: MAWS in-app browser (maws-2)');
   assert.equal((await read('chrome-personal', '3')).split('\n')[1], '- Name: cua');
+});
+
+test('a key bound after the runtime launched: the miss says this runtime cannot reach it and a new session can', async t => {
+  const {keysBeyondLaunch} = await import('../../src/chrome/discovery.mjs');
+  const {socketNameFor, socketPathFor} = await import('../../src/chrome/extension.mjs');
+  const home = mkdtempSync(join(tmpdir(), 'cua-keys-'));
+  t.after(() => rmSync(home, {recursive: true, force: true}));
+  const keys = {maws: 'maws:app-1', personal: 'inst-personal', late: 'inst-late'};
+  const launched = [join(home, 'chrome', 'm', 'aaaaaaaaaaaa-1.sock'), socketPathFor(realpathSync(home), socketNameFor('inst-personal'))].join(':');
+  assert.deepEqual(keysBeyondLaunch(home, keys, launched), ['late'], 'MAWS keys are always listed; only a socket the launch lacks is beyond it');
+  const context = contextOver([extension('1', 'maws:app-1')]);
+  Object.defineProperty(context.runtime, 'requestMeta', {get: () => ({[BROWSER_KEYS_META]: keys, 'cua/browserKeysUnreached': ['late']})});
+  await assert.rejects(context.get('late'), {message: 'Browser is not available: late. Browser ids: "1"; profiles_list keys: "maws". The profile keyed "late" was bound after this runtime launched, and this runtime cannot reach its browser: a new session can.'});
+  await assert.rejects(context.get('personal'), {message: 'Browser is not available: personal. Browser ids: "1"; profiles_list keys: "maws".'}, 'a key the launch could reach misses as before');
 });

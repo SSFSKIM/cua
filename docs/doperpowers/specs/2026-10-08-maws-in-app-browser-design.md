@@ -1052,8 +1052,9 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   2026-11-22 failed at their first browser call: `createBrowserTab(id, url, {visible: true})` threw `Capability is not
   available: visibility`, `createBrowserTab("iab" | "maws", …)` answered `Browser is not available`, and the Selected
   Browser block named the backend "cua". Four changes:
-  (1) profiles_list's keys are browser ids. The proxy puts the keys on every call it relays, read when the call is
-  made (request metadata `cua/browserKeys`, never the client's; `src/mcp/server.mjs`, `src/chrome/discovery.mjs`
+  (1) profiles_list's keys are browser ids. The connection puts the keys on every call as it reaches the runtime
+  (request metadata `cua/browserKeys`, never the client's: `src/mcp/connection.mjs` through `src/mcp/lazy-runtime.mjs`
+  `outgoing`, so a first call held by the launch is stamped after the MAWS hellos; `src/chrome/discovery.mjs`
   currentBrowserKeys): {key: instance} for the MAWS backends (`maws`, `maws-2`, … once each said hello; `maws` before
   its hello is the marker `maws:`) and every profile bound on the cua route. So a key rebound, or a MAWS backend that
   connects, while the runtime lives selects what profiles_list names at that moment, never a stale binding; per-call
@@ -1067,7 +1068,11 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   profile or panel) the first listed, since both are the same browser. `maws` falls back as the unqualified default
   does (its instance unknown or not listed: the first listed MAWS instance), so `getBrowser()` and
   `getBrowser({id: "maws"})` always agree, and never reach Chrome. A miss keeps the vendor's sentence and appends the
-  listed ids and the keys that select a browser now, never a colliding one.
+  listed ids and the keys that select a browser now, never a colliding one. The browser service dials only the
+  sockets its launch listed (and its sandbox admits no other), so a profile bound after the launch is not reachable
+  from that runtime: rather than widen what the trusted worker dials mid-run, the connection also names such keys
+  (`cua/browserKeysUnreached`, keysBeyondLaunch) and their miss says this runtime cannot reach the browser and a new
+  session can.
   (2) `visible` on a browser without the `visibility` capability is ignored, and the result says so after the tab's
   state (`src/cua-api/browser-api.mjs`); with the capability it is set as before. MAWS gets no visibility capability:
   raising its Browser panel would move the person's windows.

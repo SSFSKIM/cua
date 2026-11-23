@@ -47,7 +47,7 @@
 // (src/mcp/target.mjs). `cursor` is a remote client's checked context (src/mcp/http.mjs), whose fields come first.
 import {rmSync} from 'node:fs';
 import {join} from 'node:path';
-import {createServer, settingsFrom} from './server.mjs';
+import {BROWSER_KEYS_META, BROWSER_KEYS_UNREACHED_META, createServer, settingsFrom} from './server.mjs';
 import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
@@ -59,7 +59,7 @@ import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
-import {currentBrowserKeys} from '../chrome/discovery.mjs';
+import {currentBrowserKeys, keysBeyondLaunch} from '../chrome/discovery.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
 import {resolveCursorContext} from '../runtime/cursor-identity.mjs';
 
@@ -142,7 +142,17 @@ export async function openConnection({home, env = process.env, sessionId, input,
         diagnostics(`the stopped runtime's working directory could not be removed (${error.code ?? error.message}); the next launch reuses it and the connection's close retries removal`);
       }
     };
-    const upstream = lazyRuntime({start, stopped, diagnostics,
+    // profiles_list's keys as browser ids (#493), read as each call reaches the runtime: a first call held by the launch
+    // is stamped after the MAWS backends' hellos. With them, the keys whose socket the runtime was not launched with
+    // (a profile bound since), which its browser service cannot dial.
+    const stamp = msg => {
+      const meta = msg.params?._meta;
+      if (!serverSettings.surfaces.includes('browser') || msg.method !== 'tools/call' || meta === null || typeof meta !== 'object') return msg;
+      const keys = currentBrowserKeys(home, {mawsKeys: browserBackends?.keys() ?? null});
+      const unreached = keysBeyondLaunch(home, keys, launch?.env.BROWSER_USE_BACKEND_PATHS ?? '');
+      return {...msg, params: {...msg.params, _meta: {...meta, [BROWSER_KEYS_META]: keys, ...(unreached.length ? {[BROWSER_KEYS_UNREACHED_META]: unreached} : {})}}};
+    };
+    const upstream = lazyRuntime({start, stopped, diagnostics, outgoing: stamp,
       records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(','),
         host: hostIdentity({host: replHost.host, release: runtime.release})})});
     // `track` (createServer's): the live check counts as use of the runtime for the idle stop.
@@ -156,8 +166,6 @@ export async function openConnection({home, env = process.env, sessionId, input,
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
       sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), nativeEngine: planned.nativeEngine,
-      // profiles_list's keys as browser ids, read at each call (#493).
-      browserKeys: serverSettings.surfaces.includes('browser') ? () => currentBrowserKeys(home, {mawsKeys: browserBackends?.keys() ?? null}) : null,
       // The engine every launch of this connection drives, for the js rules (src/mcp/surface.mjs jsRulesFor).
       engine: replHost.engine?.engine ?? null,
       cursorContext: cursorContext ? () => cursorContext : null,

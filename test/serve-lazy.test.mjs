@@ -258,11 +258,12 @@ test('with a MAWS backend the handshake does not wait for its hello; profiles_li
   for (let i = 0; i < 200 && !ports.length; i++) await tick(10);
   assert.equal(ports.length, 1, 'the backend socket was dialled at once');
   const profiles = server.call('profiles_list');
-  const js = server.call('js', {code: 'hello'});
+  const js = server.call('js', {code: 'browser-keys'});
   await tick(300);
   assert.equal(server.launches.length, 0, 'the launch waits for the hello');
   ports[0].port.peer.notify('hello', ports[0].ext.hello());
-  await js;
+  const keyed = JSON.parse((await js).result.content[0].text);
+  assert.deepEqual(keyed.browserKeys, {maws: instanceId}, 'the call held by the launch is stamped as it reaches the runtime, after the hello (#493)');
   assert.deepEqual((await profiles).result.structuredContent.profiles, [{key: 'maws', ready: true, extensionInstanceId: instanceId}], 'a listing requested before the hello reports its ready instance');
   assert.equal(server.launches.length, 1);
   assert.equal(server.launches[0].env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, instanceId);
@@ -783,4 +784,31 @@ test('a macOS computer session attests its engine on js results; CUA_NATIVE_ENGI
   await assert.rejects(serve({home, env: {...process.env, HOME: user.dir, CUA_SHIM_SURFACES: 'computer', CUA_NATIVE_ENGINE: 'cua'}, input, output: new PassThrough(),
     prepareLaunch: launch => { launches.push(launch); return launch; }, diagnostics: () => {}}), {code: 'engine_not_installed', message: /cua install --engine/});
   assert.equal(launches.length, 0);
+});
+
+test('lazyRuntime finishes a message as it leaves for the runtime: a held one when the launch releases it (#493)', async () => {
+  let stage = 'before the launch';
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const runtime = fakeUpstream();
+  const upstream = lazyRuntime({start: async () => { await gate; stage = 'after the hellos'; return runtime; }, records: {read: () => RECORD, write: () => {}},
+    outgoing: msg => (msg.method === 'tools/call' ? {...msg, params: {...msg.params, _meta: {...msg.params._meta, stage}}} : msg)});
+  const h = harness({upstream});
+  await h.client.request('initialize', INIT).response;
+  const held = h.client.call('js', {code: 'held'});
+  await tick(20);
+  release();
+  runtime.reply(await runtime.nextRequest('initialize'), RECORD.initialize);
+  const first = await runtime.nextCall('js');
+  assert.equal(first.params._meta.stage, 'after the hellos', 'stamped at release, not when it was held');
+  runtime.text(first, 'held');
+  await held.response;
+  stage = 'running';
+  const next = h.client.call('js', {code: 'next'});
+  const second = await runtime.nextCall('js', {after: runtime.sent.indexOf(first) + 1});
+  assert.equal(second.params._meta.stage, 'running');
+  runtime.text(second, 'next');
+  await next.response;
+  h.client.eof();
+  await h.server.closed;
 });

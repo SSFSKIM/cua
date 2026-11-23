@@ -40,6 +40,9 @@ export function browserPreference(env) {
 // its meaning, and a backend type or family is never a key even when nothing answers to it: a profile registered under
 // such a name is selected by its extensionInstanceId, which a miss names.
 export const BROWSER_KEYS_META = 'cua/browserKeys';
+// The keys whose browser this runtime cannot reach (a profile bound after it launched: src/chrome/discovery.mjs
+// keysBeyondLaunch), which a miss says.
+export const BROWSER_KEYS_UNREACHED_META = 'cua/browserKeysUnreached';
 export const MAWS_KEY = 'maws';
 const isMawsInstance = id => typeof id === 'string' && id.startsWith('maws:');
 const isSelector = key => BACKEND_TYPES.includes(key) || FAMILIES.includes(key);
@@ -204,6 +207,11 @@ export class BrowserContext {
 
   // The keys of the call being served (see browserKeys).
   keys() { return browserKeys(this.runtime.requestMeta); }
+  // Whether `key` names a profile this runtime cannot reach.
+  unreached(key) {
+    const listed = this.runtime.requestMeta?.[BROWSER_KEYS_UNREACHED_META];
+    return Array.isArray(listed) && listed.includes(key);
+  }
 
   async get(id) {
     const browsers = await this.getBrowsers();
@@ -211,7 +219,7 @@ export class BrowserContext {
     const browser = browsers.find(b => answersTo(b, id)) ?? byKey(browsers, keys, id);
     if (browser == null) {
       throw serviceError('browser_not_found', id, {ids: browsers.map(b => b.id), keys: Object.keys(keys).filter(key => byKey(browsers, keys, key) != null),
-        selectorKey: isSelector(id) && Object.hasOwn(keys, id) ? keys[id] : undefined});
+        selectorKey: isSelector(id) && Object.hasOwn(keys, id) ? keys[id] : undefined, unreached: !isSelector(id) && this.unreached(id)});
     }
     return browser;
   }

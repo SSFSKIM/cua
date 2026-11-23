@@ -15,6 +15,7 @@ struct DecodedLabels {
   let value: CFTypeRef?
   let unread: Set<StalePointLabelPart>
   let null: Set<StalePointLabelPart>
+  let nonText: Set<StalePointLabelPart>
 }
 
 func decodedLabels(role: String, title: String?, description: String?, value: String?, null: Set<StalePointLabelPart> = [],
@@ -29,5 +30,6 @@ func decodedLabels(role: String, title: String?, description: String?, value: St
   }
   let data = ElementData(values: read.values, unreadable: read.unreadable, absent: read.absent, null: read.null)
   let labels = screenshotLabelsUnknown(role: role, data)
-  return DecodedLabels(title: data.title, description: data.description, value: data.value, unread: labels.unread, null: labels.null)
+  return DecodedLabels(title: data.title, description: data.description, value: data.value, unread: labels.unread, null: labels.null,
+                       nonText: labels.nonText)
 }

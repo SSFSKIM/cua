@@ -75,6 +75,7 @@ final class OverlayClickTests: XCTestCase {
                                 value: screenshotLabelValue(role: node.role, labels.value), editableAncestor: nil, labelsUnread: labels.unread,
                                 frame: node.frame!, shown: node.frame, depth: depth, subtreeRecorded: true)
     record.labelsNull = labels.null
+    record.labelsNonText = labels.nonText
     record.ancestor = ancestor
     record.parentFramed = ancestor != nil
     record.actionable = stalePointInteractiveRoles.contains(node.role) || node.press
@@ -646,7 +647,8 @@ final class OverlayClickTests: XCTestCase {
     }
     let recordedRow = scene(nonTextThen: true, nonTextNow: false)
     let node = recordedRow.nodes.first { $0.element === recordedRow.row }!
-    XCTAssertEqual(node.label(.title), .unreadable, "the record keeps the numeric title unread")
+    XCTAssertEqual(node.label(.title), .nonText, "the record keeps the numeric title unknown")
+    XCTAssertTrue(node.labelsUnread.contains(.title), "unread")
     XCTAssertNil(node.title, "its text is never invented")
     XCTAssertEqual(node.labelsNull, [], "and it is no null")
     XCTAssertEqual(refusal(decide(recordedRow, answered: .some(recordedRow.row.parent))), .labelChanged, "numeric then, absent now")

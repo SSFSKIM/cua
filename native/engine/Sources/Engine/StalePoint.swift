@@ -131,11 +131,15 @@ struct ScreenshotNode<Element> {
   /// #500 (ruling 1131): of `labelsUnread`, the parts whose slot held kCFNull, which a comparison passes over where the
   /// other side's is null too (`label(_:)`, "like with like").
   var labelsNull: Set<StalePointLabelPart> = []
+  /// #519 (ruling 1146): of `labelsUnread`, the parts whose slot held a value that is no text (`label(_:)`'s `.nonText`).
+  var labelsNonText: Set<StalePointLabelPart> = []
 
-  /// #500 (ruling 1131): a label part as the observation read it: null (its slot held kCFNull), unreadable (its read
-  /// failed), else its text (nil when absent). An AXStaticText's value only; no other role's value is its label.
+  /// #500 (ruling 1131): a label part as the observation read it: null (its slot held kCFNull), no text (#519: a value
+  /// of another type), unreadable (its read failed, or its value was withheld), else its text (nil when absent). An
+  /// AXStaticText's value only; no other role's value is its label.
   func label(_ part: StalePointLabelPart) -> StalePointLabelRead {
     if labelsNull.contains(part) { return .null }
+    if labelsNonText.contains(part) { return .nonText }
     if labelsUnread.contains(part) { return .unreadable }
     return .text(part == .title ? title : part == .description ? description : value)
   }
@@ -194,6 +198,7 @@ struct ScreenshotNodeRead<Element> {
   /// (#500) those whose slot held kCFNull, also in `labelsNull`; and (#519) those whose slot held a value that is no text.
   var labelsUnread: Set<StalePointLabelPart> = []
   var labelsNull: Set<StalePointLabelPart> = []
+  var labelsNonText: Set<StalePointLabelPart> = []
 }
 
 /// The attributes a node's label (#298's `stalePointLabel`) is taken from, in priority order: the title, the
@@ -210,10 +215,16 @@ enum StalePointLabelPart: CaseIterable, Hashable {
 }
 
 /// One label attribute read now (the review of 7f6eb3dc..b2f00ad5, P2 2): its text, nil when the element lacks it (an
-/// absent attribute), or unreadable (any other error, or #519 a value that is no text), which the label must not fall past.
-/// #500 (rulings 1083, 1131): null, a read that answered kCFNull, is unknown too, but a comparison whose other side is
-/// null at the same part passes to the next one, like with like (`stalePointLabelPair`).
-enum StalePointLabelRead: Equatable { case text(String?), unreadable, null }
+/// absent attribute), or unreadable (any other error), which the label must not fall past. #500 (rulings 1083, 1131):
+/// null, a read that answered kCFNull, is unknown too, but a comparison whose other side is null at the same part passes
+/// to the next one, like with like (`stalePointLabelPair`). #519 (ruling 1146): `nonText`, a value that is no text, is
+/// unknown on any side and never like with like; it carries no text, so a rule looking for the first part that carries
+/// text passes it as it passes an absent one (`stalePointLabelCarried`), but it never counts as agreeing.
+enum StalePointLabelRead: Equatable { case text(String?), unreadable, null, nonText }
+
+/// #519: a label part as a rule looking for the first part that carries text reads it: a value that is no text carries
+/// none, as on main; every other read as it is.
+func stalePointLabelCarried(_ read: StalePointLabelRead) -> StalePointLabelRead { read == .nonText ? .text(nil) : read }
 
 /// #500 (ruling 1131): one label part compared between two sides: `next` when both are null (like with like: an
 /// element whose title is always null is compared by its description), `unknown` when either failed or only one is
@@ -234,10 +245,11 @@ func stalePointLabelPair(_ a: StalePointLabelRead, _ b: StalePointLabelRead) -> 
 /// never known absent (the review of cdb36ad3..7574c058, P2): its text is not kept, only that it is unknown. #519 (ruling
 /// 1146): so is a slot that held a value that is no text (`ElementData.nonText`); never null either, so no comparison
 /// passes over it, even where the other side's is no text as well.
-func screenshotLabelsUnknown(role: String, _ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
+func screenshotLabelsUnknown(role: String, _ data: ElementData)
+  -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>, nonText: Set<StalePointLabelPart>) {
   let withheld: Set<String> = data.valueUnread ? [kAXValueAttribute] : []
   return (screenshotLabelsUnread(role: role, data.unreadable.union(data.null).union(withheld).union(data.nonText)),
-          screenshotLabelsUnread(role: role, data.null))
+          screenshotLabelsUnread(role: role, data.null), screenshotLabelsUnread(role: role, data.nonText.subtracting(withheld)))
 }
 
 /// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the
@@ -248,14 +260,14 @@ func screenshotLabelsUnread(role: String, _ unreadable: Set<String>) -> Set<Stal
 
 /// A label attribute's single read now (`copyAttribute`'s value and error) as `StalePointLabelRead`: a string or an
 /// attributed string's text; nothing for kAXErrorNoValue, kAXErrorAttributeUnsupported or a success with no value;
-/// null for kCFNull (#500); unreadable for any other error and (#519, ruling 1146) a value that is no text, as the
-/// record keeps one (`screenshotLabelsUnknown`).
+/// null for kCFNull (#500); no text (#519, ruling 1146) for a value of another type, as the record keeps one
+/// (`screenshotLabelsUnknown`); unreadable for any other error.
 func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
   switch error {
   case .success:
     guard let value else { return .text(nil) }
     if CFGetTypeID(value) == CFNullGetTypeID() { return .null }
-    return labelText(value).map { .text($0) } ?? .unreadable
+    return labelText(value).map { .text($0) } ?? .nonText
   case .noValue, .attributeUnsupported: return .text(nil)
   default: return .unreadable
   }
@@ -408,7 +420,7 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
                        : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
                        : read.actionsRead ? false : nil,
                      regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove,
-                     pressRecorded: read.actions.contains("AXPress"), labelsNull: read.labelsNull)
+                     pressRecorded: read.actions.contains("AXPress"), labelsNull: read.labelsNull, labelsNonText: read.labelsNonText)
     }
     let parentFramed = read.parent.map { framedReads.contains($0) } ?? false
     guard let frame = own else {
@@ -770,17 +782,28 @@ let relabelUncomparedRoles: Set<String> = ["AXWindow", "AXWebArea"]
 let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
 
 /// #298's rule `relabelled` (the design session's ruling 31a62775), on a node found by its own handle whose frame still
-/// holds the point: the label it reads now when that label's words differ from the recorded label's, both labels
-/// non-empty, the node not one of the uncompared (`relabelUncomparedRoles`, `relabelUncomparedSubroles`); else nil. It
-/// reads the title, then the description only when the title is empty or absent, then (for an AXStaticText) the value
-/// only when both are, each cut as the record's was. A label never falls past an attribute whose read failed, at the
-/// observation (`ScreenshotNode.labelsUnread`) or now (`StalePointReads.readLabel`): the label is then unknown, and the
-/// rule keeps the point (the review of 7f6eb3dc..b2f00ad5, P2 2: a button "Save" described "Save changes", its title
-/// read failing on one side, would otherwise compare its description with its title). #500 (ruling 1131): an attribute
-/// null on both sides is passed over, like with like, so an element whose title is always null is judged by its
-/// description; null on one side only is unknown, as a failed read is, the counterpart of each part a label is taken
-/// from included (the review of 435420cc..17930e20, P2); with every part passed over there is no label, and it keeps.
-func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
+/// holds the point: the refusal, with the label it reads now, when that label's words differ from the recorded label's,
+/// both labels non-empty, the node not one of the uncompared (`relabelUncomparedRoles`, `relabelUncomparedSubroles`);
+/// else nil. It reads the title, then the description only when the title is empty or absent, then (for an
+/// AXStaticText) the value only when both are, each cut as the record's was. A label never falls past an attribute whose
+/// read failed, at the observation (`ScreenshotNode.labelsUnread`) or now (`StalePointReads.readLabel`) (the review of
+/// 7f6eb3dc..b2f00ad5, P2 2: a button "Save" described "Save changes", its title read failing on one side, would
+/// otherwise compare its description with its title). #500 (ruling 1131): an attribute null on both sides is passed
+/// over, like with like; null on one side only is unknown, as a failed read is, the counterpart of each part a label is
+/// taken from included (the review of 435420cc..17930e20, P2). #519 (ruling 1146): a value that is no text carries no
+/// text, so the label passes it as main did (`stalePointLabelCarried`), but it is never known on either side.
+/// #519 (ruling 1147), where a part is unknown (failed, null on one side, withheld or no text) or no part is known at
+/// all (every one null on both sides): an unknown part never hides a later one known on both sides, so any part read as
+/// text on both sides whose words differ refuses; and the point is kept only when some part read on both sides agrees
+/// (the same words, both non-empty). Otherwise the label is unread, and it refuses, never keeping vacuously: two parts
+/// absent on both sides say nothing of the part that carried the label.
+/// A label read whole keeps main's rule.
+struct StalePointRelabel: Equatable {
+  /// The label read now, nil when none could be read (#519, ruling 1147).
+  let now: String?
+}
+
+func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> StalePointRelabel? {
   guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
   let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
   let element = node.element
@@ -791,44 +814,70 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
     live[part] = read
     return read
   }
-  var was: String?
-  var wasPart = StalePointLabelPart.title
-  for part in parts {
-    let recorded = node.label(part)
-    if recorded == .null {
-      guard readNow(part) == .null else { return nil }
-      continue
+  func refuse(_ now: String?) -> StalePointRelabel? {
+    // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
+    if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
+    return StalePointRelabel(now: now)
+  }
+  /// Main's label: the first part carrying text on each side, compared by its words; nil where it reaches an unknown part
+  /// or finds no label.
+  func carriedLabelNow() -> String? {
+    func then(_ part: StalePointLabelPart) -> StalePointLabelRead { stalePointLabelCarried(node.label(part)) }
+    func now(_ part: StalePointLabelPart) -> StalePointLabelRead { stalePointLabelCarried(readNow(part)) }
+    var was: String?
+    var wasPart = StalePointLabelPart.title
+    for part in parts {
+      let recorded = then(part)
+      if recorded == .null {
+        guard now(part) == .null else { return nil }
+        continue
+      }
+      guard case .text(let text) = recorded else { return nil }
+      if let text = nonEmpty(text) {
+        (was, wasPart) = (text, part)
+        break
+      }
     }
-    guard case .text(let text) = recorded else { return nil }
-    if let text = nonEmpty(text) {
-      (was, wasPart) = (text, part)
-      break
+    guard let was else { return nil }
+    var label: String?
+    var labelPart: StalePointLabelPart?
+    for part in parts {
+      let read = now(part)
+      if read == .null {
+        guard then(part) == .null else { return nil }
+        continue
+      }
+      guard case .text(let text) = read else { return nil }
+      if let text = nonEmpty(text.map(bounded)) {
+        (label, labelPart) = (text, part)
+        break
+      }
+    }
+    guard let label, let labelPart else { return nil }
+    // The review of 435420cc..17930e20 (P2): the two sides' labels may come from different parts (a title only one side
+    // has); each part used is checked against its counterpart on the other side, and a counterpart null there alone is
+    // unread (ruling 1131), so the label is unknown.
+    if wasPart != labelPart, now(wasPart) == .null || then(labelPart) == .null { return nil }
+    return stalePointLabelWords(was) != stalePointLabelWords(label) ? label : nil
+  }
+  if let now = carriedLabelNow() { return refuse(now) }
+  let pairs = parts.map { stalePointLabelPair(node.label($0), readNow($0)) }
+  let read = pairs.contains { if case .texts = $0 { return true } else { return false } }
+  if read, !pairs.contains(.unknown) { return nil }  // read whole: main's rule has judged it
+  var agreed = false
+  var shown: String?
+  for pair in pairs {
+    guard case let .texts(x, y) = pair else { continue }
+    let then = nonEmpty(x), now = nonEmpty(y.map(bounded))
+    shown = shown ?? now
+    switch (then, now) {
+    case let (then?, now?):
+      guard stalePointLabelWords(then) == stalePointLabelWords(now) else { return refuse(now) }
+      agreed = true
+    default: continue  // none on either side, or on one: no evidence the label is the same
     }
   }
-  guard let was else { return nil }
-  var now: String?
-  var nowPart: StalePointLabelPart?
-  for part in parts {
-    let read = readNow(part)
-    if read == .null {
-      guard node.label(part) == .null else { return nil }
-      continue
-    }
-    guard case .text(let text) = read else { return nil }
-    if let text = nonEmpty(text.map(bounded)) {
-      (now, nowPart) = (text, part)
-      break
-    }
-  }
-  guard let now, let nowPart else { return nil }
-  // The review of 435420cc..17930e20 (P2): the two sides' labels may come from different parts (a title only one side
-  // has); each part used is checked against its counterpart on the other side, and a counterpart null there alone is
-  // unread (ruling 1131), so the label is unknown and the point kept.
-  if wasPart != nowPart, readNow(wasPart) == .null || node.label(nowPart) == .null { return nil }
-  guard stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
-  // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
-  if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
-  return now
+  return agreed ? nil : refuse(shown)
 }
 
 /// The roles of an editable text region for #298's edited-text exemption: a text area or a text field, and a
@@ -1400,21 +1449,41 @@ func firstActing<Element>(from start: Element, _ reads: StalePointReads<Element>
 /// #443: whether the control a node lies in now is confirmed another than its recorded one: a label that reads otherwise,
 /// or a frame read now more than 2 pt off the recorded control's (a recorded control without a frame, or a frame unread
 /// now, says nothing). The label is compared as `stalePointLabelsAgree` does, title first, then description, but an
-/// attribute unread on either side, then or now, ends the comparison with no difference, and the next is compared only
+/// attribute unread on either side, then or now, ends that comparison with no difference, and the next is compared only
 /// where both sides are known to lack it (the re-review of f394677e, item 3), or (#500, ruling 1131) both read null, like
-/// with like; null on one side only is unread. The role is not compared: a control re-created in place may change it
-/// (`rolechange`).
+/// with like; null on one side only is unread; a value that is no text (#519, ruling 1146) carries none, as on main.
+/// #519 (ruling 1147), where a part is unknown or no part is known at all: a part read as text on both sides that differs
+/// is another control past any unknown one, and a label with no part read on both sides that agrees (the same non-empty
+/// text) is no evidence of the same control, so it differs too. The role is not compared: a control
+/// re-created in place may change it (`rolechange`).
 func controlDiffers<Element>(_ now: Element, from recorded: ScreenshotNode<Element>, windowShift: CGVector,
                              _ reads: StalePointReads<Element>) -> Bool {
-  for part in [StalePointLabelPart.title, .description] {
-    let then = recorded.label(part)
+  let parts: [StalePointLabelPart] = [.title, .description]
+  let live = parts.map { reads.readLabel(now, $0) }
+  for (part, read) in zip(parts, live) {
+    let then = stalePointLabelCarried(recorded.label(part))
     if case .unreadable = then { break }
-    let pair = stalePointLabelPair(then, reads.readLabel(now, part))
+    let pair = stalePointLabelPair(then, stalePointLabelCarried(read))
     if pair == .next { continue }
-    guard case let .texts(recordedText, live) = pair else { break }
-    let old = nonEmpty(recordedText), fresh = nonEmpty(live.map(bounded))
+    guard case let .texts(recordedText, liveText) = pair else { break }
+    let old = nonEmpty(recordedText), fresh = nonEmpty(liveText.map(bounded))
     if let old, let fresh { if old != fresh { return true } else { break } }
     if old != nil || fresh != nil { break }
+  }
+  let pairs = zip(parts, live).map { stalePointLabelPair(recorded.label($0), $1) }
+  let read = pairs.contains { if case .texts = $0 { return true } else { return false } }
+  if !read || pairs.contains(.unknown) {
+    var agreed = false
+    for pair in pairs {
+      guard case let .texts(x, y) = pair else { continue }
+      switch (nonEmpty(x), nonEmpty(y.map(bounded))) {
+      case let (old?, fresh?):
+        guard old == fresh else { return true }
+        agreed = true
+      default: continue
+      }
+    }
+    if !agreed { return true }
   }
   guard !recorded.frame.isNull, let live = reads.frame(now) else { return false }
   return frameDistance(live, recorded.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)) > stalePointFrameTolerance
@@ -1504,7 +1573,7 @@ func underlyingRefusal<Element>(_ target: ScreenshotNode<Element>, at point: CGP
   -> (refusal: StalePointReason?, identity: StalePointIdentity?, labelNow: String?) {
   if let frame = reads.frame(target.element) {
     guard holdsPoint(frame, point) else { return (.frameMoved, .handle, nil) }
-    if let now = relabelledLabel(target, reads) { return (.relabelled, .handle, now) }
+    if let relabel = relabelledLabel(target, reads) { return (.relabelled, .handle, relabel.now) }
     return (nil, .handle, nil)
   }
   if let hit, reads.same(hit, target.element) || isInside(hit, target.element, reads) { return (nil, .handle, nil) }
@@ -1578,9 +1647,9 @@ private func recordedNodeVerdict<Element>(at point: CGPoint, windowShift: CGVect
   if let currentFrame, !holdsPoint(currentFrame, point) { return finished(judged(.frameMoved)) }
   // #298's rule `relabelled`: the node on its own handle, its frame read now holding the point, relabelled in place. A
   // node the record holds incompletely is judged too (the design session's 2db3ba75), before its interior is kept.
-  if nodeFrame != nil, let now = relabelledLabel(node, reads) {
+  if nodeFrame != nil, let relabel = relabelledLabel(node, reads) {
     var refused = judged(.relabelled)
-    refused.labelNow = now
+    refused.labelNow = relabel.now
     return refused
   }
   // #316's rule G: a node the screenshot showed in a web area is judged only by a hit in that same web area, its nearest
@@ -2113,10 +2182,11 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
                                   afterActivation: Bool = false) -> EngineError {
   let there = now.map { "; \($0) is there now" } ?? ""
   let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
-  // #298: the element is still there, its own handle, but reads another label.
-  if reason == .relabelled, let label {
+  // #298: the element is still there, its own handle, but reads another label, or (#519) none that can be read.
+  if reason == .relabelled {
+    let reads = label.map { "now reads \"\(stalePointShownLabel($0))\"" } ?? "no longer has a label that can be read"
     return EngineError(name: "screenChangedSinceScreenshot",
-      "The screen changed since the screenshot: the \(was) it showed at this point now reads \"\(stalePointShownLabel(label))\". \(sent) Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+      "The screen changed since the screenshot: the \(was) it showed at this point \(reads). \(sent) Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
   }
   // #330's rule dL: the recorded element is still there, under something the page added; dismissing that is a way on too.
   if reason == .newElementOverPoint {

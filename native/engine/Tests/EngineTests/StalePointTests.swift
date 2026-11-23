@@ -127,7 +127,7 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
                                     children: children, actionsRead: !node.actionsUnread, roleRead: !node.roleUnread,
                                     childrenRead: !node.childrenUnread, subrole: node.subrole,
                                     value: screenshotLabelValue(role: node.role, labels.value),
-                                    labelsUnread: labels.unread, labelsNull: labels.null))
+                                    labelsUnread: labels.unread, labelsNull: labels.null, labelsNonText: labels.nonText))
     // The width rule's visible subset, where the element offers one (#431's review: it may hold elements AXChildren
     // does not, and lack some it does).
     for child in node.visibleChildren ?? children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
@@ -2904,10 +2904,11 @@ final class UnreadableLabelTests: XCTestCase {
     return stalePointVerdict(at: point, nodes: nodes, hit: button, reads: reads).reason
   }
 
-  /// The title read fails at the click: the description is not compared with the recorded title.
+  /// The title read fails at the click: the description is not compared with the recorded title. #519 (ruling 1147): the
+  /// description, read on both sides, is compared with itself past the unread title, so its change refuses.
   func testATitleUnreadableNowDoesNotRefuse() {
     XCTAssertEqual(judged(now: [.title]), .sameElement)
-    XCTAssertEqual(judged(now: [.title], change: { $0.description = "Delete" }), .sameElement)
+    XCTAssertEqual(judged(now: [.title], change: { $0.description = "Delete" }), .relabelled)
     // A title absent now (not failed) is no label, and the description is: it refuses, as before.
     XCTAssertEqual(judged(change: { $0.title = nil }), .relabelled)
   }
@@ -2921,11 +2922,13 @@ final class UnreadableLabelTests: XCTestCase {
   }
 
   /// Only a higher-priority attribute counts: a description or a value unreadable behind a title that reads changes
-  /// nothing, and the title relabelled refuses.
+  /// nothing, and the title relabelled refuses. #519 (ruling 1147): where the part that carried the label is unread, and
+  /// no other part read on both sides agrees, the label is unread and refuses; an unread part never hides a later one
+  /// that changed.
   func testALowerPriorityUnreadableAttributeChangesNothing() {
     XCTAssertEqual(judged(atRecord: [.description], now: [.description], change: { $0.title = "Delete" }), .relabelled)
-    XCTAssertEqual(judged(now: [.description], title: nil, change: { $0.description = "Delete" }), .sameElement,
-                   "the description, now the label, unreadable")
+    XCTAssertEqual(judged(now: [.description], title: nil, change: { $0.description = "Delete" }), .relabelled,
+                   "the description, now the label, unreadable: nothing read on both sides agrees")
     // A text's value, below an empty title and description.
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
     let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), value: "Save")
@@ -2933,9 +2936,13 @@ final class UnreadableLabelTests: XCTestCase {
     let nodes = recorded(window)
     text.value = "Delete"
     text.unreadable = [.value]
-    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .relabelled, "the value, the label, unread")
     text.unreadable = [.description]
-    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .relabelled,
+                   "the description unread never hides the value that changed")
+    text.value = "Save"
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement, "past it, the value agrees")
+    text.value = "Delete"
     text.unreadable = []
     XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .relabelled)
   }
@@ -2954,7 +2961,7 @@ final class UnreadableLabelTests: XCTestCase {
     XCTAssertEqual(stalePointLabelRead("Save" as CFString, .success), .text("Save"))
     XCTAssertEqual(stalePointLabelRead(nil, .noValue), .text(nil))
     XCTAssertEqual(stalePointLabelRead(nil, .attributeUnsupported), .text(nil))
-    XCTAssertEqual(stalePointLabelRead(3 as CFNumber, .success), .unreadable, "#519: a value that is no text is unknown, not absent")
+    XCTAssertEqual(stalePointLabelRead(3 as CFNumber, .success), .nonText, "#519: a value that is no text is unknown, not absent")
     XCTAssertEqual(stalePointLabelRead(nil, .cannotComplete), .unreadable)
     XCTAssertEqual(screenshotLabelsUnread(role: "AXButton", ["AXTitle", "AXValue", "AXHelp"]), [.title])
     XCTAssertEqual(screenshotLabelsUnread(role: "AXStaticText", ["AXDescription", "AXValue"]), [.description, .value])
@@ -3026,32 +3033,34 @@ final class NullLabelSlotTests: XCTestCase {
 
   /// #298's `relabelled`: a title null at the observation and now is passed over, so the button is judged by its
   /// description, and Open to Delete there still refuses. A title null on one side only is unread, and keeps the point
-  /// (main compared the description with the title read now, or the title with the description, and refused).
+  /// while the description agrees (main compared the description with the title read now, or the title with the
+  /// description, and refused); #519 (ruling 1147): a description read on both sides that changed refuses past it.
   func testRelabelledComparesLikeWithLike() {
     XCTAssertEqual(judged(then: [.title], now: [.title], title: nil, description: "Open"), .sameElement)
     XCTAssertEqual(judged(then: [.title], now: [.title], title: nil, description: "Open", change: { $0.description = "Delete" }), .relabelled,
                    "always-null title: the description decides")
     XCTAssertEqual(judged(then: [.title], now: [], title: "Save", description: "Save changes"), .sameElement, "null then, a title now")
     XCTAssertEqual(judged(then: [], now: [.title], title: "Save", description: "Save changes"), .sameElement, "a title then, null now")
-    XCTAssertEqual(judged(then: [.title], now: [], title: nil, description: "Open", change: { $0.description = "Delete" }), .sameElement,
-                   "null then, absent now: unread, kept as a failed read is")
+    XCTAssertEqual(judged(then: [.title], now: [], title: nil, description: "Open", change: { $0.description = "Delete" }), .relabelled,
+                   "#519 (ruling 1147): null then, absent now is unread, but the description read on both sides changed")
   }
 
   /// The review of 435420cc..17930e20 (P2): the two sides' labels taken from different parts check each part's
   /// counterpart. Recorded title absent and description "Edit", a title "Delete" now over a description null now: that
-  /// description is unread, so the label is unknown and the point kept; and the mirror, a title "Edit" then over a
-  /// description null then, the title absent now and the description "Delete". Every part read, the title gained still
-  /// refuses; every part null on both sides is no label, and keeps. The same for #433's candidate (`underlyingRefusal`).
+  /// description is unread, so the label is unknown; and the mirror, a title "Edit" then over a description null then, the
+  /// title absent now and the description "Delete". #519 (ruling 1147): with no part read on both sides that agrees, the
+  /// label is unread and refuses (#500 kept both, and every part null on both sides). Every part read, the title gained
+  /// still refuses. The same for #433's candidate (`underlyingRefusal`).
   func testRelabelledChecksTheCounterpartOfEachPartUsed() {
     let gained: (Node) -> Void = { $0.title = "Delete" }
     let swapped: (Node) -> Void = { button in (button.title, button.description) = (nil, "Delete") }
-    XCTAssertEqual(judged(then: [], now: [.description], title: nil, description: "Edit", change: gained), .sameElement,
-                   "the live counterpart of the recorded description is null")
-    XCTAssertEqual(judged(then: [.description], now: [], title: "Edit", description: nil, change: swapped), .sameElement,
-                   "the recorded counterpart of the live description is null")
+    XCTAssertEqual(judged(then: [], now: [.description], title: nil, description: "Edit", change: gained), .relabelled,
+                   "the live counterpart of the recorded description is null: nothing read on both sides agrees")
+    XCTAssertEqual(judged(then: [.description], now: [], title: "Edit", description: nil, change: swapped), .relabelled,
+                   "the recorded counterpart of the live description is null: nothing read on both sides agrees")
     XCTAssertEqual(judged(then: [], now: [], title: nil, description: "Edit", change: gained), .relabelled, "every part read")
-    XCTAssertEqual(judged(then: [.title, .description], now: [.title, .description], title: nil, description: nil), .sameElement,
-                   "every part null on both sides: no label")
+    XCTAssertEqual(judged(then: [.title, .description], now: [.title, .description], title: nil, description: nil), .relabelled,
+                   "every part null on both sides: no label known, never kept vacuously")
     func candidate(then: Set<StalePointLabelPart>, now: Set<StalePointLabelPart>, title: String?, description: String?,
                    change: (Node) -> Void) -> StalePointReason? {
       let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
@@ -3065,14 +3074,16 @@ final class NullLabelSlotTests: XCTestCase {
       return underlyingRefusal(target, at: point, windowShift: .zero, hit: button, nodes: nodes, frameless: [], recorded: { _ in nil },
                                reads).refusal
     }
-    XCTAssertNil(candidate(then: [], now: [.description], title: nil, description: "Edit", change: gained), "#433: live counterpart null")
-    XCTAssertNil(candidate(then: [.description], now: [], title: "Edit", description: nil, change: swapped), "#433: recorded counterpart null")
+    XCTAssertEqual(candidate(then: [], now: [.description], title: nil, description: "Edit", change: gained), .relabelled,
+                   "#433: live counterpart null")
+    XCTAssertEqual(candidate(then: [.description], now: [], title: "Edit", description: nil, change: swapped), .relabelled,
+                   "#433: recorded counterpart null")
     XCTAssertEqual(candidate(then: [], now: [], title: nil, description: "Edit", change: gained), .relabelled, "#433: every part read")
   }
 
   /// #443's `controlDiffers`: a title null on both sides is passed over and the description compared; null on one side
-  /// only ends the label comparison, so only the frame is checked; every part null on both sides compares no label, and
-  /// only the frame is checked.
+  /// only is unread, and (#519, ruling 1147) never hides the description read on both sides; every part null on both
+  /// sides is no label known, so the control is not known to be the same.
   func testControlDiffersComparesLikeWithLike() {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
     let control = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), description: "Archive")
@@ -3087,7 +3098,8 @@ final class NullLabelSlotTests: XCTestCase {
     XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "both null, the same description, in place")
     now.description = "Delete"
     now.null = []
-    XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "null then, absent now: unread, the frame in place")
+    XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads),
+                  "#519 (ruling 1147): null then, absent now is unread, but the description read on both sides differs")
     now.frame = CGRect(x: 20, y: 140, width: 200, height: 30)
     XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "the frame is still checked")
     control.null = [.title, .description]
@@ -3095,7 +3107,8 @@ final class NullLabelSlotTests: XCTestCase {
     now.null = [.title, .description]
     XCTAssertTrue(controlDiffers(now, from: blank, windowShift: .zero, reads), "all null: the moved frame")
     now.frame = control.frame
-    XCTAssertFalse(controlDiffers(now, from: blank, windowShift: .zero, reads), "all null: no label compared, the frame in place")
+    XCTAssertTrue(controlDiffers(now, from: blank, windowShift: .zero, reads),
+                  "#519 (ruling 1147): all null, no label known: no evidence of the same control, the frame in place or not")
   }
 }
 
@@ -3114,7 +3127,7 @@ final class NonTextLabelSlotTests: XCTestCase {
     XCTAssertEqual(read.unreadable, [], "the read did not fail")
     XCTAssertEqual(read.null, [])
     XCTAssertEqual(read.absent, [])
-    XCTAssertEqual(stalePointLabelRead(nonTextLabelSlot, .success), .unreadable, "a single read answering no text")
+    XCTAssertEqual(stalePointLabelRead(nonTextLabelSlot, .success), .nonText, "a single read answering no text")
     XCTAssertEqual(stalePointLabelRead("Save" as CFString, .success), .text("Save"))
     XCTAssertEqual(stalePointLabelRead(nil, .noValue), .text(nil), "absent")
     let labels = decodedLabels(role: "AXStaticText", title: nil, description: "Save", value: nil, nonText: [.title, .value])
@@ -3122,6 +3135,7 @@ final class NonTextLabelSlotTests: XCTestCase {
     XCTAssertEqual(labels.description, "Save")
     XCTAssertEqual(labels.unread, [.title, .value])
     XCTAssertEqual(labels.null, [], "no null")
+    XCTAssertEqual(labels.nonText, [.title, .value])
     XCTAssertEqual(decodedLabels(role: "AXButton", title: "Save", description: nil, value: nil, nonText: [.value]).unread, [],
                    "no other role's value is its label")
     let tree = FakeTree()
@@ -3134,7 +3148,7 @@ final class NonTextLabelSlotTests: XCTestCase {
     XCTAssertNil(node?.title)
     XCTAssertEqual(node?.labelsUnread, [.title])
     XCTAssertEqual(node?.labelsNull, [])
-    XCTAssertEqual(screenshotNodes(recording.screenshotReads).first { tree.id($0.element) == 1 }?.label(.title), .unreadable)
+    XCTAssertEqual(screenshotNodes(recording.screenshotReads).first { tree.id($0.element) == 1 }?.label(.title), .nonText)
     XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 2 }?.labelsUnread, [], "a title read is known")
     XCTAssertTrue(recording.nodes.first { ($0["frame"] as? [String: Double])?["y"] == 20 }?["title"] is NSNull,
                   "the model's node is unchanged: no title")
@@ -3153,20 +3167,49 @@ final class NonTextLabelSlotTests: XCTestCase {
     return stalePointVerdict(at: point, nodes: nodes, hit: button, reads: reads).reason
   }
 
-  /// #298's `relabelled` never falls past a numeric title to the description: unread on either side, or both, the label
-  /// is unknown and the point kept (main compared the descriptions past two nils and refused). Every part read, the
-  /// description's change still refuses.
-  func testRelabelledNeverFallsPastANonTextTitle() {
+  /// #298's `relabelled` (ruling 1147): an unknown title never hides the description read on both sides, so the
+  /// description's change refuses whether the title is numeric then, now or on both sides (main read the numeric title as
+  /// none and refused; the head before this fix kept, a press main refused), failed on one side, or null on one side
+  /// (main kept those two). A numeric title over the same description keeps; a numeric title then and a title now over the
+  /// same description refuses as main did (the first part carrying text). The label unknown in every part (unread or null
+  /// on both sides) refuses, never keeping vacuously.
+  func testRelabelledComparesPastAnUnknownTitle() {
     let changed: (Node) -> Void = { $0.description = "Delete" }
-    XCTAssertEqual(judged(then: [.title], now: [], title: nil, description: "Open", change: changed), .sameElement, "numeric then, absent now")
-    XCTAssertEqual(judged(then: [], now: [.title], title: nil, description: "Open", change: changed), .sameElement, "absent then, numeric now")
-    XCTAssertEqual(judged(then: [.title], now: [.title], title: nil, description: "Open", change: changed), .sameElement, "numeric on both")
+    XCTAssertEqual(judged(then: [.title], now: [], title: nil, description: "Open", change: changed), .relabelled, "numeric then, absent now")
+    XCTAssertEqual(judged(then: [], now: [.title], title: nil, description: "Open", change: changed), .relabelled, "absent then, numeric now")
+    XCTAssertEqual(judged(then: [.title], now: [.title], title: nil, description: "Open", change: changed), .relabelled, "numeric on both")
+    XCTAssertEqual(judged(then: [.title], now: [.title], title: nil, description: "Open"), .sameElement, "numeric on both, the same description")
+    XCTAssertEqual(judged(then: [.title], now: [], title: nil, description: "Open", change: { $0.title = "Delete" }), .relabelled,
+                   "numeric then, a title now: main's first part carrying text")
     XCTAssertEqual(judged(then: [], now: [], title: nil, description: "Open", change: changed), .relabelled, "every part read")
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let button = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), description: "Open")
+    window.add(button)
+    func verdict(failedThen: Bool = false, failedNow: Bool = false, nullThen: Set<StalePointLabelPart> = [],
+                 nullNow: Set<StalePointLabelPart> = [], description: String = "Delete", unreadThen: Set<StalePointLabelPart> = []) -> StalePointReason {
+      (button.description, button.null, button.unreadable) = ("Open", nullThen, unreadThen.union(failedThen ? [.title] : []))
+      let nodes = recorded(window)
+      (button.description, button.null, button.unreadable) = (description, nullNow, failedNow ? [.title] : [])
+      return stalePointVerdict(at: point, nodes: nodes, hit: button, reads: reads).reason
+    }
+    XCTAssertEqual(verdict(failedThen: true), .relabelled, "a title failed then, the description changed")
+    XCTAssertEqual(verdict(failedNow: true), .relabelled, "a title failed now, the description changed")
+    XCTAssertEqual(verdict(failedThen: true, description: "Open"), .sameElement, "a title failed then, the same description")
+    XCTAssertEqual(verdict(nullThen: [.title]), .relabelled, "a title null then only, the description changed")
+    XCTAssertEqual(verdict(nullNow: [.title]), .relabelled, "a title null now only, the description changed")
+    XCTAssertEqual(verdict(nullThen: [.title, .description], nullNow: [.title, .description], description: "Open"), .relabelled,
+                   "every part null on both sides: nothing known agrees")
+    XCTAssertEqual(verdict(description: "Open", unreadThen: [.title, .description]), .relabelled, "every part unread then")
+    XCTAssertEqual(verdict(nullThen: [.title], nullNow: [.title], description: "Open"), .sameElement,
+                   "a title null on both sides passes to the description, which agrees")
+    XCTAssertTrue(screenChangedSinceScreenshot(was: "button", reason: .relabelled, now: nil, label: nil).message
+      .contains("the button it showed at this point no longer has a label that can be read"), "the sentence for a label unread")
   }
 
-  /// #443's `controlDiffers`: a numeric title then and absent now ends the label comparison (main compared the
-  /// descriptions past two nils and found the control another), so only the frame is checked.
-  func testControlDiffersStopsAtANonTextTitle() {
+  /// #443's `controlDiffers` (ruling 1147): a numeric title then and absent now reads as none, as on main, so the
+  /// changed description is another control; a numeric title on both sides never hides the description, which agrees or
+  /// differs; and a label with no part read on both sides is no evidence of the same control, whatever its frame.
+  func testControlDiffersComparesPastANonTextTitle() {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
     let control = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), description: "Archive")
     window.add(control)
@@ -3174,11 +3217,16 @@ final class NonTextLabelSlotTests: XCTestCase {
     guard let record = recorded(window).first(where: { $0.element === control }) else { return XCTFail("recorded") }
     let now = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), description: "Delete")
     window.add(now)
-    XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric then, absent now: unread, the frame in place")
+    XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric then, absent now: the descriptions differ")
     now.nonText = [.title]
-    XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric on both: unread")
+    XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric on both: the descriptions differ")
+    now.description = "Archive"
+    XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric on both, the same description, in place")
     now.frame = CGRect(x: 20, y: 140, width: 200, height: 30)
     XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "the frame is still checked")
+    now.frame = control.frame
+    now.unreadable = [.description]
+    XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "no part read on both sides: no evidence")
   }
 }
 
@@ -4670,10 +4718,12 @@ final class OverlayTargetTests: XCTestCase {
   }
 
   /// Item 3: A re-created in place as an AXButton around the decoration, its title unread at the observation (or now) and
-  /// its description another: the title, unknown, ends the label comparison with no difference, so main's verdict; the
-  /// same control 3 pt off A's frame still refuses on the frame.
+  /// its description another. #519 (ruling 1147) reverses item 3's keep: the unknown title no longer ends the label
+  /// comparison, so the description read on both sides, another, makes the control another (`controlGone`) in place as
+  /// well as 3 pt off A's frame. With the same description it keeps main's verdict.
   func testAnUnreadTitleEndsTheLabelComparison() {
-    for (recordedUnread, shift) in [(true, 0.0), (false, 0.0), (false, 3.0)] {
+    for (recordedUnread, shift, now) in [(true, 0.0, "Open button"), (false, 0.0, "Open button"), (false, 3.0, "Open button"),
+                                          (true, 0.0, "Open link"), (false, 0.0, "Open link")] {
       let page = Page(twin: "Next", bare: true)
       page.a.title = nil
       page.a.description = "Open link"
@@ -4681,7 +4731,7 @@ final class OverlayTargetTests: XCTestCase {
       let icon = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
       page.a.add(icon)
       let judgedNow = judged(page, at: CGPoint(x: 150, y: 112)) { page in
-        let button = Node("AXButton", CGRect(x: 20, y: 100 + shift, width: 200, height: 30), description: "Open button")
+        let button = Node("AXButton", CGRect(x: 20, y: 100 + shift, width: 200, height: 30), description: now)
         if !recordedUnread { button.unreadable = [.title] }
         page.list.children.insert(button, at: 0)
         button.parent = page.list
@@ -4690,7 +4740,7 @@ final class OverlayTargetTests: XCTestCase {
         page.a.destroy()
         return button
       }
-      XCTAssertEqual(judgedNow.reason, shift == 0 ? .hitAboveNode : .controlGone, "recorded unread \(recordedUnread), shift \(shift)")
+      XCTAssertEqual(judgedNow.reason, now == "Open link" ? .hitAboveNode : .controlGone, "recorded unread \(recordedUnread), shift \(shift), \(now)")
     }
   }
 

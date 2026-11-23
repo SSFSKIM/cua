@@ -292,6 +292,31 @@ test('cua\'s engine-only error names are admitted value-free; concealedInputUnav
     assert.ok(error.message.length <= 400, `${error.message.length} chars`);
     assertValueFree(error);
   }
+  // Ruling 1128: the sentence names the cause the engine found (its meta's concealedRefusal), never the input source
+  // when that is not the cause. An engine without the field (before ruling 1128) refused type_text only for the source.
+  const typeRefusal = async meta => rejection(harness({answer: () => { throw new EngineError('concealedInputUnavailable', `cannot key ${value}`, meta); }})
+    .service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+  const dropped = await typeRefusal({...NOTHING_POSTED, concealedRefusal: 'droppedCharacter'});
+  assert.equal(dropped.code, 'concealed_input_unavailable');
+  assert.match(dropped.message, /^cua: type_text with secret "WORK_PASSWORD" was refused and nothing was entered: /);
+  assert.match(dropped.message, /holds a character this app drops when typed, such as an emoji/);
+  assert.match(dropped.message, /never types a secret partly/);
+  assert.match(dropped.message, /setValue/);
+  assert.doesNotMatch(dropped.message, /input source/, 'the source is not the cause');
+  assertValueFree(dropped);
+  for (const meta of [{...NOTHING_POSTED, concealedRefusal: 'inputSource'}, NOTHING_POSTED, null]) {
+    const source = await typeRefusal(meta);
+    assert.match(source.message, /active input source cannot type it reliably/, JSON.stringify(meta));
+    assert.doesNotMatch(source.message, /drops when typed/);
+  }
+  const other = await typeRefusal({...NOTHING_POSTED, concealedRefusal: 'somethingNew'});
+  assert.match(other.message, /nothing was entered/);
+  assert.match(other.message, /setValue/);
+  assert.doesNotMatch(other.message, /input source|drops when typed|somethingNew/, 'an unknown cause blames nothing');
+  assertValueFree(other);
+  const pasted = await rejection(harness({answer: () => { throw new EngineError('concealedInputUnavailable', 'x', {...NOTHING_POSTED, concealedRefusal: 'droppedCharacter'}); }})
+    .service.handleRpc(paste(REF('WORK_PASSWORD'))));
+  assert.match(pasted.message, /a secret is never pasted/, 'a concealed paste keeps its own sentence');
   // A name the wrapper does not admit is still withheld.
   const unknown = await rejection(harness({answer: () => { throw new EngineError('somethingNew', value); }}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
   assert.match(unknown.message, /\(failed\)/);

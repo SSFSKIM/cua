@@ -89,6 +89,9 @@ struct InputMeta {
   /// A type_text's UTF-16 units entered, on its result and on an error that stopped it; never for a concealed request,
   /// whose count would tell a secret's length.
   var entered: Int?
+  /// Why a concealed type_text was refused before anything was posted (`ConcealedRefusal`, ruling 1128), so the wrapper
+  /// names the cause found; a cause only, never a character, a position or a length.
+  var concealedRefusal: ConcealedRefusal?
   /// The per-app route-4 override named once route 3's guard has failed three actions in a row for the app.
   var routeAdvice: String?
   /// Route 4 only: whether the user's key window is the one it was before the foreground assist (ForegroundAssist).
@@ -184,6 +187,7 @@ struct InputMeta {
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
+    if let concealedRefusal { wire["concealedRefusal"] = concealedRefusal.rawValue }
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
@@ -831,12 +835,9 @@ extension Engine {
       let source = currentInputSource()
       // macOS may hold a source per app; the session's reading then says nothing about a background app.
       let perContextUnknown = perContextInputEnabled() && frontmostPid() != pid
-      // #420: Chromium and Electron drop a character outside the BMP from a key event; such a text is pasted there.
-      let keysDropText = keyedTextDropsCharacters(text, chromiumFamily: webAccessibility.isChromiumFamily(app.appPath))
-      switch textRoute(keyboardLayout: source.keyboardLayout, perContextUnknown: perContextUnknown, concealed: concealed, spikeKeyed: spikeKeyed,
-                       keysDropText: keysDropText) {
-      case .refusedConcealed:
-        throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
+      // A concealed request is refused here, before any event and any pasteboard write (ruling 1128 included).
+      switch try typedTextRoute(text, concealed: concealed, source: source, perContextUnknown: perContextUnknown,
+                                chromiumFamily: webAccessibility.isChromiumFamily(app.appPath), spikeKeyed: spikeKeyed, meta: &meta) {
       case .paste:
         // #361: read back as the keyed route is, over the same live reads, its snapshot taken after the paste's activation.
         let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),

@@ -926,19 +926,56 @@ func activationClickDecision(_ activationPoint: CGPoint?, windowFrame: CGRect?, 
 enum TextRoute: Equatable {
   case keyed             // keyed through the layout by route 2′
   case paste             // the paste route (M2a's)
-  case refusedConcealed  // a concealed request that cannot be keyed reliably: nothing is entered
+  case refusedConcealed(ConcealedRefusal)  // a concealed request that cannot be keyed whole: nothing is entered
+}
+
+/// Why a concealed type_text is refused, on the wire as the meta's `concealedRefusal`, so the wrapper renders the cause
+/// actually found (ruling 1128): the input source's reading cannot be trusted, or the app drops a character of it.
+enum ConcealedRefusal: String, Equatable {
+  case inputSource
+  case droppedCharacter
 }
 
 /// Keyed only under a keyboard-layout source whose reading is reliable (the per-context preference off, or the driven
 /// app frontmost), and only when the keys would not drop part of the text in the app (`keysDropText`,
-/// `keyedTextDropsCharacters`); otherwise the paste route, which a concealed request never takes: a secret the keys
-/// would drop is keyed still, and the read-back answers the loss. The spike's `spikeKeyed` keys regardless, except a
-/// concealed request, which never keys under a reading it cannot trust.
+/// `keyedTextDropsCharacters`); otherwise the paste route, which a concealed request never takes. A concealed text the
+/// keys would drop part of is refused for that cause, whatever the reading (ruling 1128: never typed partly, never
+/// pasted; no source would type it); one under a reading it cannot trust, for the source. The spike's `spikeKeyed`
+/// keys regardless, except a concealed request.
 func textRoute(keyboardLayout: Bool, perContextUnknown: Bool, concealed: Bool, spikeKeyed: Bool, keysDropText: Bool = false) -> TextRoute {
   let reliable = keyboardLayout && !perContextUnknown
-  if concealed { return reliable ? .keyed : .refusedConcealed }
+  if concealed {
+    if keysDropText { return .refusedConcealed(.droppedCharacter) }
+    return reliable ? .keyed : .refusedConcealed(.inputSource)
+  }
   return (reliable && !keysDropText) || spikeKeyed ? .keyed : .paste
 }
+
+/// How a type_text that is not refused delivers its text.
+enum TypedTextDelivery: Equatable { case keyed, paste }
+
+/// type_text's route for its text (the spec's Design, "Text"): keyed or pasted, or a concealed request refused before
+/// anything is posted or written to the pasteboard, its cause in the meta (`concealedRefusal`).
+func typedTextRoute(_ text: String, concealed: Bool, source: InputSourceInfo, perContextUnknown: Bool, chromiumFamily: Bool,
+                    spikeKeyed: Bool, meta: inout InputMeta) throws -> TypedTextDelivery {
+  // #420: Chromium and Electron drop a character outside the BMP from a key event; such a text is pasted there.
+  let keysDropText = keyedTextDropsCharacters(text, chromiumFamily: chromiumFamily)
+  switch textRoute(keyboardLayout: source.keyboardLayout, perContextUnknown: perContextUnknown, concealed: concealed,
+                   spikeKeyed: spikeKeyed, keysDropText: keysDropText) {
+  case .keyed: return .keyed
+  case .paste: return .paste
+  case .refusedConcealed(let cause):
+    meta.concealedRefusal = cause
+    switch cause {
+    case .inputSource: throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
+    case .droppedCharacter: throw concealedCharacterDropped
+    }
+  }
+}
+
+/// Ruling 1128's refusal: the cause and the remedy, never a character, its position or the text's length.
+let concealedCharacterDropped = EngineError(name: "concealedInputUnavailable",
+  "Nothing was entered: the secret holds a character this app drops when typed, such as an emoji, and cua will not type it partly or paste it. Use set_value on a settable element instead.")
 
 /// Whether the keyed route would drop part of `text` in the app (#420): a Chromium or Electron app (`chromiumFamily`)
 /// dropped a character outside the Basic Multilingual Plane, an emoji's UTF-16 surrogate pair, from the Unicode-string

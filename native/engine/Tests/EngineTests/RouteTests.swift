@@ -1766,8 +1766,8 @@ final class KeyRouteTests: XCTestCase {
   }
 
   /// #420: Chromium and Electron drop a character outside the BMP from a Unicode-string key event, so a text holding
-  /// one takes the paste route in their apps, under a reliable Latin reading too; BMP text, other apps and a concealed
-  /// request (never pasted) keep their route, and the spike's override still keys.
+  /// one takes the paste route in their apps, under a reliable Latin reading too; BMP text and other apps keep their
+  /// route, and the spike's override still keys. A concealed one is refused (ruling 1128, below).
   func testATextTheKeysWouldDropTakesThePasteRoute() {
     XCTAssertTrue(keyedTextDropsCharacters("😀 이모지", chromiumFamily: true))
     XCTAssertTrue(keyedTextDropsCharacters("a𝐀b", chromiumFamily: true), "any scalar above U+FFFF, not only an emoji")
@@ -1777,17 +1777,86 @@ final class KeyRouteTests: XCTestCase {
 
     XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: false, spikeKeyed: false, keysDropText: true), .paste)
     XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: false, spikeKeyed: false, keysDropText: true), .paste)
-    XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: true, spikeKeyed: false, keysDropText: true), .keyed,
-                   "a secret is never pasted: the read-back answers the dropped character")
     XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: false, spikeKeyed: true, keysDropText: true), .keyed,
                    "probe (e)'s override")
   }
 
+  /// Ruling 1128: a concealed text the keys would drop part of is refused for that cause, whatever the reading and the
+  /// spike's override (a secret is never pasted, and never typed partly); the dropped character is the cause named
+  /// even under an unreliable reading, since no input source would type it.
+  func testAConcealedTextTheKeysWouldDropIsRefusedForThatCause() {
+    for keyboardLayout in [false, true] {
+      for perContextUnknown in [false, true] {
+        for spikeKeyed in [false, true] {
+          XCTAssertEqual(textRoute(keyboardLayout: keyboardLayout, perContextUnknown: perContextUnknown, concealed: true, spikeKeyed: spikeKeyed,
+                                   keysDropText: true), .refusedConcealed(.droppedCharacter),
+                         "layout \(keyboardLayout), per-context unknown \(perContextUnknown), spikeKeyed \(spikeKeyed)")
+        }
+      }
+    }
+  }
+
+  private func inputMeta() -> InputMeta {
+    InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+  }
+
+  /// Ruling 1128 through type_text's routing (`typedTextRoute`), by the app's Info.plist: a secret holding a character
+  /// above U+FFFF is refused in Chrome and in an Electron app before anything is posted (the meta's interval null, so
+  /// the wrapper knows nothing was entered), its cause in the meta and a sentence with the cause and the remedy and no
+  /// part of the secret; a BMP secret there is keyed; the same secret in Safari or an AppKit app is keyed as before.
+  func testASecretTheAppWouldDropIsRefusedBeforeAnythingIsPostedInChromeAndElectron() throws {
+    let latin = InputSourceInfo(id: "com.apple.keylayout.ABC", name: "ABC", keyboardLayout: true, asciiCapable: true)
+    let secret = "pw-😀-Zq7"
+    let apps: [(String, [String: Any], Bool)] = [
+      ("Chrome", ["NSPrincipalClass": "BrowserCrApplication"], true), ("Electron", ["NSPrincipalClass": "AtomApplication"], true),
+      ("Safari", ["NSPrincipalClass": "NSApplication"], false), ("AppKit", [:], false),
+    ]
+    for (name, info, drops) in apps {
+      var meta = inputMeta()
+      let route = { try typedTextRoute(secret, concealed: true, source: latin, perContextUnknown: false,
+                                       chromiumFamily: chromiumFamily(info: info), spikeKeyed: false, meta: &meta) }
+      guard drops else {
+        XCTAssertEqual(try route(), .keyed, name)
+        continue
+      }
+      XCTAssertThrowsError(try route(), name) { error in
+        let refusal = error as? EngineError
+        XCTAssertEqual(refusal?.errorName, "concealedInputUnavailable", name)
+        let message = refusal?.message ?? ""
+        XCTAssertTrue(message.hasPrefix("Nothing was entered"), message)
+        XCTAssertTrue(message.contains("drops when typed") && message.contains("emoji") && message.contains("set_value"), message)
+        XCTAssertFalse(message.contains("input source"), "the input source is not the cause")
+        for part in ["pw", "😀", "Zq7", "9", "position"] { XCTAssertFalse(message.contains(part), "\(name): \(part)") }
+      }
+      XCTAssertNil(meta.startedAt, "\(name): nothing posted")
+      XCTAssertNil(meta.endedAt, name)
+      XCTAssertNil(meta.entered, name)
+      XCTAssertEqual(meta.wire["concealedRefusal"] as? String, "droppedCharacter", name)
+
+      var bmp = inputMeta()
+      XCTAssertEqual(try typedTextRoute("pw-한글-Zq7", concealed: true, source: latin, perContextUnknown: false,
+                                        chromiumFamily: true, spikeKeyed: false, meta: &bmp), .keyed, "\(name): a BMP secret is typed")
+      XCTAssertNil(bmp.wire["concealedRefusal"])
+    }
+  }
+
   func testConcealedTextFailsClosedWheneverTheReadingIsUnreliableEvenForASpikeCell() {
     XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: true, spikeKeyed: false), .keyed)
-    XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: true, spikeKeyed: false), .refusedConcealed)
-    XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: true, concealed: true, spikeKeyed: false), .refusedConcealed)
-    XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: true, spikeKeyed: true), .refusedConcealed)
+    XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: true, spikeKeyed: false), .refusedConcealed(.inputSource))
+    XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: true, concealed: true, spikeKeyed: false), .refusedConcealed(.inputSource))
+    XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: true, spikeKeyed: true), .refusedConcealed(.inputSource))
+  }
+
+  /// The input-source refusal carries its cause too, so the wrapper names the source only when it is the cause.
+  func testTheInputSourceRefusalNamesItsCauseInTheMeta() {
+    let korean = InputSourceInfo(id: "com.apple.inputmethod.Korean.2SetKorean", name: "2-Set Korean", keyboardLayout: false, asciiCapable: false)
+    var meta = inputMeta()
+    XCTAssertThrowsError(try typedTextRoute("secret", concealed: true, source: korean, perContextUnknown: false, chromiumFamily: false,
+                                            spikeKeyed: false, meta: &meta)) { error in
+      XCTAssertTrue((error as? EngineError)?.message.contains("com.apple.inputmethod.Korean.2SetKorean") == true)
+    }
+    XCTAssertEqual(meta.wire["concealedRefusal"] as? String, "inputSource")
+    XCTAssertNil(meta.startedAt)
   }
 
   func testTheConcealedRefusalNamesItsReasonAndTheAlternativeAndNeverTheValue() {

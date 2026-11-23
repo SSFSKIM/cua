@@ -118,13 +118,24 @@ export function userIntervened(what, label, kind, unentered, mayShow = false) {
 
 // cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is
 // never pasted, so a concealed paste is refused whatever the input source, and a concealed type_text is keyed only under
-// an input source whose reading the engine trusts. A fixed sentence per method, not the engine's, as every diagnostic
-// after the value was read is.
+// an input source whose reading the engine trusts and only when the app takes every character of it (ruling 1128: a
+// Chromium or Electron app drops a character above U+FFFF, so such a secret is refused rather than typed partly). A
+// fixed sentence per method and cause, not the engine's, as every diagnostic after the value was read is. The cause is
+// the engine's meta `concealedRefusal`; an engine without it (before ruling 1128) refused a type_text only for the input
+// source, and a cause this wrapper does not know names none, so a refusal never blames the source when it is not the cause.
+const CONCEALED_SET_VALUE = 'Use setValue on a settable field, which needs no keystrokes or clipboard';
 const CONCEALED_REASON = {
   paste: 'a secret is never pasted. Use typeText, which keys it, or setValue on a settable field, which needs no keystrokes or clipboard',
-  type_text: 'a secret is never pasted, and the active input source cannot type it reliably (a non-Latin source, or the app\'s own source while it is in the background). Use setValue on a settable field, which needs no keystrokes or clipboard, or switch to a Latin input source',
+  inputSource: `a secret is never pasted, and the active input source cannot type it reliably (a non-Latin source, or the app's own source while it is in the background). ${CONCEALED_SET_VALUE}, or switch to a Latin input source`,
+  droppedCharacter: `it holds a character this app drops when typed, such as an emoji, and cua never types a secret partly or pastes it. ${CONCEALED_SET_VALUE}`,
+  unknown: `cua's engine cannot type it whole here, and a secret is never pasted. ${CONCEALED_SET_VALUE}`,
 };
-export const concealedInputUnavailable = (what, label) => new SecretInputError('concealed_input_unavailable', `${what} with secret "${label}" was refused and ${NOTHING_ENTERED}: ${CONCEALED_REASON[what] ?? CONCEALED_REASON.type_text}`);
+const concealedReason = (what, cause) => {
+  if (what === 'paste') return CONCEALED_REASON.paste;
+  if (cause === undefined || cause === null || cause === 'inputSource') return CONCEALED_REASON.inputSource;
+  return cause === 'droppedCharacter' ? CONCEALED_REASON.droppedCharacter : CONCEALED_REASON.unknown;
+};
+export const concealedInputUnavailable = (what, label, cause = null) => new SecretInputError('concealed_input_unavailable', `${what} with secret "${label}" was refused and ${NOTHING_ENTERED}: ${concealedReason(what, cause)}`);
 
 // The store reader and the launch's reason there is none, as the trusted worker's environment configures them. With a
 // project directory too, a key is read from the project's store first and from the global one when the project has none.

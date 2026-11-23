@@ -19,7 +19,8 @@
 // The stored value is read from the connection's secret store (src/secrets/store.mjs, the directory the launcher
 // names) and placed in a copy of the request handed to the vendor. On macOS that copy also carries `concealed: true`,
 // which tells cua's engine the text is a secret: it is never pasted, and is keyed only under an input source the engine
-// reads reliably, else refused before anything is entered (concealedInputUnavailable); the vendor's service reads only
+// reads reliably and into an app that takes every character of it (ruling 1128), else refused before anything is entered
+// (concealedInputUnavailable, its cause in the meta's concealedRefusal); the vendor's service reads only
 // the fields it names and ignores the mark. sky_linux gets exactly its pinned shape. Everything else is delegated
 // untouched: other methods, other fields, text that merely contains a marker, and arbitrary JavaScript, which is never
 // scanned.
@@ -239,8 +240,9 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       return await service.handleRpc({type: 'execute', method, args: [{...input, [field]: value, ...(rule.conceal ? {concealed: true} : {})}]});
     } catch (error) {
       const kind = vendorFailureKind(error);
-      // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste.
-      if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
+      // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste. Its
+      // meta names the cause (ruling 1128), a fixed word that only picks the sentence.
+      if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label, error?.meta?.concealedRefusal);
       // cua's engine says nothing was posted (its input meta's startedAt null), whatever the error's name.
       const unentered = error?.name === 'SkyComputerUseError' && Boolean(error.meta) && error.meta.startedAt === null;
       // #414: cua's engine typed into a password field that stopped being one, which may now show the secret.

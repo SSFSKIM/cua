@@ -206,9 +206,6 @@ export async function fixtureKeyCell({session, step, keys, code, stepMs, frontmo
     refuse: guard ? () => (refused = fixtureRefusal(guard, {step, captures, observations})) : undefined});
   return refused ? {sent: false, refused, mark: recordRefusal(observations, step, refused)} : out;
 }
-// What accept-native's report carries of the fixture's guard, for the hosted check and the sitting's record
-// (scripts/hosted-sittings/checks.mjs `acceptance`): the stop and the counts, and the key cells sent with their key
-// reading not taken; nothing when there are none.
 // STEP.front from the hand-back (./fixture-app.mjs restoreFront's {previous, before, after, restored}) and the front read
 // before the run. The capture alert in front after the hand-back, or before the run (never handed back to), is a system
 // prompt's, which rulings 1136 and 1141 make no verdict: BLOCKED naming it, whatever the guard refused. Any other front
@@ -221,6 +218,9 @@ export function frontStep(front, frontBefore) {
     : ['BLOCKED', 'the frontmost application before the run could not be read, so there is nothing to hand back to'];
 }
 
+// What accept-native's report carries of the fixture's guard, for the hosted check and the sitting's record
+// (scripts/hosted-sittings/checks.mjs `acceptance`): the stop and the counts, and the key cells guarded with their key
+// reading not taken; nothing when there are none.
 export const fixtureGuardRecord = observations => ({
   ...(observations?.alertGuardStop ? {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts ?? null} : {}),
   ...(observations?.keyUnread ? {keyUnread: observations.keyUnread} : {}),

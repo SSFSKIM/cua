@@ -15,8 +15,12 @@ import {replHostFor} from '../src/runtime/launch.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {surfacesFrom} from '../src/mcp/surface.mjs';
 import {isOlder, MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
+import {ownInstaller} from '../src/runtime/manifest.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
+// Every remedy names this cua's own installer by its absolute path (#171 M6a, ruling 1110).
+const ENGINE_INSTALL = `\`${ownInstaller().command} --engine\``;
+const re = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const HOME = '/home/u/.local/share/cua';
 const PATH = `${HOME}/engine/linux/cua-engine`;
 const SHA = 'a'.repeat(64);
@@ -30,15 +34,17 @@ const CAPS = (desktop = 'shared', over = {}) => ({backend: 'x11', tree: 'at_spi'
 const CAPS_WORDS = mode => `capabilities, from cua-engine started for this check and stopped: backend x11, tree at_spi, input.background true, input.desktop true, `
   + `capture.window retained, capture.desktop true, text.paste verified, text.literal true, desktop ${mode}, version 0.3.0, build b1d0`;
 
-// The row for `env` on Linux, with the selection computed as doctor computes it (replHostFor with the same inputs).
-// `capabilities` answers the engine's capability read (a report, or an Error it throws); every read is recorded.
-async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'vendor', installed, capabilities = ({desktop}) => CAPS(desktop)} = {}) {
+// The row for `env` on Linux, with the selection computed as doctor computes it (replHostFor with the same inputs), or
+// the refusal `refusal` ({code, message, hint?}), as a session's selection refuses it (launch.mjs linuxEngineFor, #171
+// M6a's §3.3). `capabilities` answers the engine's capability read (a report, or an Error it throws); every read is
+// recorded.
+async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'vendor', installed, capabilities = ({desktop}) => CAPS(desktop), refusal} = {}) {
   const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', DISPLAY: ':9', ...env};
   // the installed engine's verified version (F5a) is what the inspection read: its version while the file is recognized
   const engine = {defaultEngine, config: () => config, installed: () => (installed ?? read.executable) ? {path: read.path} : null,
     installedVersion: () => (read.build === 'unknown' ? null : read.version)};
-  let session;
-  try { session = replHostFor({platform: 'linux', surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: HOME, resolveOwnNode: () => '/usr/bin/node', engine}); } catch (error) {
+  let session = refusal;
+  if (!session) try { session = replHostFor({platform: 'linux', surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: HOME, resolveOwnNode: () => '/usr/bin/node', engine}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     session = {code: error.code, message: error.message};
   }
@@ -120,17 +126,19 @@ test('what doctor does not start: a file it does not recognize, an invalid devic
   assert.match(vendor.row.detail, /the vendor's sky_linux helper behind the vendor's service/);
 });
 
-test('an engine that is not this cua\'s pinned one is flagged: a local build or an older release warns, an unknown file fails', async () => {
+test('an engine that is not this cua\'s pinned one is flagged: a local build or a release behind or ahead of the pin warns, an unknown file fails, each naming the installer', async () => {
   const local = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({build: 'local', version: '0.2.0', release: null, sha256: 'b'.repeat(64), current: false})});
   assert.equal(local.row.status, 'warn');
-  assert.match(local.row.detail, /a local build of cua-engine 0\.2\.0 at .*\(cua engine build\), SHA-256 b{64}, not the pinned engine \(0\.1\.0; cua install --engine puts it back\)/);
+  assert.match(local.row.detail, new RegExp(`a local build of cua-engine 0\\.2\\.0 at .*\\(cua engine build\\), SHA-256 b{64}, not the pinned engine \\(0\\.1\\.0; ${re(ENGINE_INSTALL)} puts it back\\)`));
   assert.equal(local.report.installed.build, 'local');
-  const older = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({version: '0.0.9', release: 'linux-engine-v0.0.9', sha256: 'c'.repeat(64), current: false})});
-  assert.equal(older.row.status, 'warn');
-  assert.match(older.row.detail, /cua-engine 0\.0\.9 from linux-engine-v0\.0\.9 at .*, which is not this cua's pinned 0\.1\.0: cua install --engine replaces it/);
+  for (const version of ['0.0.9', '0.2.0']) {
+    const other = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({version, release: `linux-engine-v${version}`, sha256: 'c'.repeat(64), current: false})});
+    assert.equal(other.row.status, 'warn', version);
+    assert.match(other.row.detail, new RegExp(`cua-engine ${re(version)} from linux-engine-v${re(version)} at .*, which is not this cua's pinned 0\\.1\\.0: ${re(ENGINE_INSTALL)} replaces it`), version);
+  }
   const unknown = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({build: 'unknown', version: null, release: null, sha256: 'd'.repeat(64), current: false})});
   assert.equal(unknown.row.status, 'fail');
-  assert.match(unknown.row.detail, /the file at .* \(SHA-256 d{64}\) is neither this cua's pinned engine nor a build cua recorded: cua install --engine replaces it/);
+  assert.match(unknown.row.detail, new RegExp(`the file at .* \\(SHA-256 d{64}\\) is neither this cua's pinned engine nor a build cua recorded: ${re(ENGINE_INSTALL)} replaces it`));
   // Before the first release there is no pin to compare with: said, and a warning.
   const unpinned = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({build: 'local', version: '0.1.0', release: null, pinned: null, current: false})});
   assert.equal(unpinned.row.status, 'warn');
@@ -163,52 +171,55 @@ test('the vendor engine preferred: skip, saying how to select cua\'s and what th
   const {row: check, report, reads} = await row({}, {read: NONE});
   assert.equal(check.status, 'skip');
   assert.equal(check.detail, 'cua\'s engine is not selected: the default engine is the vendor\'s, so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service. '
-    + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects cua's own: no engine is installed in this cua home (${PATH}): cua install --engine installs the pinned cua-engine 0.1.0 (linux-engine-v0.1.0)`);
+    + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects cua's own: no engine is installed in this cua home (${PATH}): ${ENGINE_INSTALL} installs the pinned cua-engine 0.1.0 (linux-engine-v0.1.0)`);
   assert.equal(reads.length, 1);
   assert.deepEqual([report.selected, report.preferred, report.runs, report.installed.exists], ['vendor', {engine: 'vendor', reason: 'default'}, null, false]);
   const unpinned = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: {...NONE, pinned: null}});
   assert.match(unpinned.row.detail, /^cua's engine is not selected: CUA_NATIVE_ENGINE=vendor, .*no engine is installed in this cua home \(.*\), and this cua pins none yet \(runtime\/engine\/linux-engine\.json comes with the engine's first release\): cua engine build installs a local build$/);
 });
 
-test('cua\'s engine preferred but not in use: refused sessions fail, the default\'s fallback warns', async () => {
+// #171 M6a (the pre-flight's §3.3, §4.5, F3): the selection refuses the vendor's engine when its tree is absent, and
+// the row fails with the refusal's sentence and the installer that places the tree.
+test('the vendor engine selected and its tree absent: fail, with the refusal and the installer', async () => {
+  const message = 'CUA_NATIVE_ENGINE=vendor selects the vendor\'s engine, and its release 26.928.40906-linux-x64 is not installed in /home/u/.local/share/cua';
+  const hint = `run \`${ownInstaller().command}\` (or \`${ownInstaller().command} --archive <ChatGPT deb>\` with the pinned archive)`;
+  const {row: check, report} = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, refusal: {code: 'engine_not_installed', message, hint}});
+  assert.equal(check.status, 'fail');
+  assert.equal(check.detail, `cua's engine is not selected: CUA_NATIVE_ENGINE=vendor, and sessions here are refused (engine_not_installed; see repl.host): ${message}; ${hint}`);
+  assert.deepEqual([report.selected, report.refused.code, report.preferred], [null, 'engine_not_installed', {engine: 'vendor', reason: 'explicit'}]);
+  // A refusal with no hint of its own still names the installer.
+  const bare = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, refusal: {code: 'engine_not_installed', message}});
+  assert.ok(bare.row.detail.includes(`\`${ownInstaller().command}\``), bare.row.detail);
+  // A refusal of every session for another reason is repl.host's to fail; the engine row only says so.
+  const other = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, refusal: {code: 'runtime_not_installed', message: 'cua\'s Linux runtime is not installed'}});
+  assert.equal(other.row.status, 'skip');
+});
+
+// #171 M6a (the pre-flight's §3.3, F3): cua's engine preferred, by the default too, either runs or is refused at the
+// open; the row fails with the refusal, naming the installer. M5's fallback to the vendor's engine is gone.
+test('cua\'s engine preferred but refused, explicitly or by the default: fail, naming why and the installer', async () => {
   const refused = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: NONE});
   assert.equal(refused.row.status, 'fail');
   assert.match(refused.row.detail, /^cua's engine is preferred \(CUA_NATIVE_ENGINE=cua\), but sessions here are refused \(engine_not_installed; see repl\.host\): no engine is installed in this cua home/);
+  assert.ok(refused.row.detail.includes(ENGINE_INSTALL), refused.row.detail);
   assert.deepEqual([refused.report.selected, refused.report.refused.code], [null, 'engine_not_installed']);
-  const fallback = await row({}, {read: NONE, defaultEngine: 'cua'});
-  assert.equal(fallback.row.status, 'warn');
-  assert.match(fallback.row.detail, /^cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper \(engine_not_installed\): no engine is installed/);
-  assert.match(fallback.row.detail, /cua install --engine/);
+  const PIN = {version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`, sha256: 'b'.repeat(64)};
+  for (const [code, read, held] of [
+    ['engine_not_installed', NONE, `no engine is installed in this cua home (${PATH}): ${ENGINE_INSTALL} installs the pinned cua-engine 0.1.0 (linux-engine-v0.1.0)`],
+    ['engine_outdated', facts({pinned: PIN, current: false, version: '0.4.2', release: 'linux-engine-v0.4.2'}),
+      `cua-engine 0.4.2 from linux-engine-v0.4.2 at ${PATH} (SHA-256 ${SHA}), which is not this cua's pinned ${MIN_ENGINE_VERSION}: ${ENGINE_INSTALL} replaces it`],
+    ['engine_unrecorded', facts({pinned: PIN, current: false, build: 'unknown', version: null, release: null}),
+      `the file at ${PATH} (SHA-256 ${SHA}) is neither this cua's pinned engine nor a build cua recorded: ${ENGINE_INSTALL} replaces it`],
+  ]) {
+    const check = await row({}, {read, defaultEngine: 'cua', refusal: {code, message: 'the selection\'s sentence'}});
+    assert.equal(check.row.status, 'fail', code);
+    assert.equal(check.row.detail, `cua's engine is preferred (the default engine), but sessions here are refused (${code}; see repl.host): ${held}`, code);
+    assert.equal(check.started.length, 0, `${code}: nothing started`);
+  }
+  assert.ok(isOlder('0.4.2', MIN_ENGINE_VERSION));
   const invalid = await row({CUA_NATIVE_ENGINE: 'sky'});
   assert.equal(invalid.row.status, 'fail');
   assert.match(invalid.row.detail, /^CUA_NATIVE_ENGINE must be vendor or cua; every Linux computer session is refused \(invalid_setting\)$/);
-});
-
-// #171 M5 (F5, F5a): the default keeps the vendor's engine for an installed one older than this cua needs, or one whose
-// install.json does not match its file, and the row says which, and that `cua install --engine` puts this cua's in place.
-// Nothing is started for its report. An explicit selection of that engine is refused at its first request, and fails here.
-test('the default\'s fallback for an engine too old, or one its record does not match, warns naming why and cua install --engine', async () => {
-  const PIN = {version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`, sha256: 'b'.repeat(64)};
-  // 0.3.0, 0.4.0 (the released plugin's pin) and 0.4.2 (the pin just below the minimum, 0.4.3)
-  for (const version of ['0.3.0', '0.4.0', '0.4.2']) {
-    assert.ok(isOlder(version, MIN_ENGINE_VERSION), version);
-    const older = await row({}, {read: facts({pinned: PIN, current: false, version, release: `linux-engine-v${version}`}), defaultEngine: 'cua'});
-    assert.equal(older.row.status, 'warn', version);
-    assert.equal(older.row.detail, `cua's engine is the default, but the installed cua-engine ${version} is older than ${MIN_ENGINE_VERSION}, which this cua needs, so Linux computer sessions keep the vendor's sky_linux helper `
-      + `until cua install --engine replaces it (engine_outdated): cua-engine ${version} from linux-engine-v${version} at ${PATH} (SHA-256 ${SHA}), which is not this cua's pinned ${MIN_ENGINE_VERSION}: cua install --engine replaces it`);
-    assert.deepEqual([older.report.selected, older.report.reason, older.report.service, older.report.preferred], ['vendor', 'engine_outdated', 'vendor', {engine: 'cua', reason: 'default'}], version);
-    assert.equal(older.started.length, 0, `${version}: nothing started`);
-  }
-  const unrecorded = await row({}, {read: facts({pinned: PIN, current: false, build: 'unknown', version: null, release: null}), defaultEngine: 'cua'});
-  assert.equal(unrecorded.row.status, 'warn');
-  assert.equal(unrecorded.row.detail, 'cua\'s engine is the default, but the installed engine\'s install.json does not match its file, so its version is unknown and Linux computer sessions keep the vendor\'s sky_linux helper '
-    + `until cua install --engine replaces it (engine_unrecorded): the file at ${PATH} (SHA-256 ${SHA}) is neither this cua's pinned engine nor a build cua recorded: cua install --engine replaces it`);
-  assert.deepEqual([unrecorded.report.selected, unrecorded.report.reason], ['vendor', 'engine_unrecorded']);
-  // the same engine named explicitly: selected, and refused by its report as its first request would be
-  const explicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({pinned: PIN, current: false, version: '0.3.0', release: 'linux-engine-v0.3.0'}), defaultEngine: 'cua',
-    capabilities: () => new Error(`cua-engine 0.3.0 is older than ${MIN_ENGINE_VERSION}, which this cua needs; run cua install --engine`)});
-  assert.equal(explicit.row.status, 'fail');
-  assert.equal(explicit.report.selected, 'cua');
 });
 
 test('without the computer surface, or with every connection refused, no engine applies', async () => {

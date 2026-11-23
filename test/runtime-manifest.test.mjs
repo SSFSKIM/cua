@@ -423,10 +423,13 @@ test('vendorLinuxRuntime: an absent tree is release_not_installed; one present b
   for (const [name, plant] of Object.entries(damaged)) {
     const home = linuxHome(t);
     plant(home);
+    // A runtimes/ that is a file is what blocks the tree: its remedy names that file, not a path beneath it (#171 M6a T4).
+    const blocking = name.startsWith('runtimes/') ? join(home, 'runtimes') : contextOf(home).root;
     assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), err => {
       assert.equal(err.code, 'release_damaged', `${name}: ${err.code} ${err.message}`);
       assert.deepEqual(err.context, contextOf(home), name);
-      assert.equal(err.hint, `stop any \`cua serve\` using it, remove ${contextOf(home).root}, then ${installHint('linux')}`, name);
+      assert.equal(err.hint, `stop any \`cua serve\` using it, remove ${blocking}, then ${installHint('linux')}`, name);
+      if (blocking !== contextOf(home).root) assert.match(err.message, new RegExp(`: ${blocking.replaceAll('/', '\\/')} is not a directory, so no release can be installed under it$`), name);
       return true;
     }, name);
   }

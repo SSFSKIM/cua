@@ -304,17 +304,24 @@ function locateOwnLinuxRuntime({home, release: named, host}) {
 // refusal carries `context: {release, home, root}` for the caller's own sentence, and tells the two states apart:
 // nothing at the tree's path is `release_not_installed`; anything else that is not a whole tree (a file or a link
 // there, a path that cannot be stat-ed, an install record that is not the pin's, a layout file missing) is
-// `release_damaged`, which is never repaired in place.
+// `release_damaged`, which is never repaired in place; its remedy names what to remove, which for a runtimes/ (or a
+// home) that is a file is that file, not a release path beneath it that cannot exist.
 export function vendorLinuxRuntime({home, pins = loadPins(), host = hostTarget()}) {
   if (host.platform !== 'linux') fail('unsupported_platform', `the vendor's Linux tree is for a Linux host; this host is ${host.platform}-${host.arch}`);
   const real = realHome(home);
   const pin = selectPin(pins, host);
   const root = join(homeLayout(real).runtimes, pin.release);
   const context = {release: pin.release, home: real, root};
-  const damaged = (why, cause) => fail('release_damaged', `the vendor's release ${pin.release} in ${real} is damaged: ${why}`, {hint: recoveryHint(root, 'linux'), cause, context});
+  const damaged = (why, cause, blocking = root) => fail('release_damaged', `the vendor's release ${pin.release} in ${real} is damaged: ${why}`, {hint: recoveryHint(blocking, 'linux'), cause, context});
   let stat;
   try { stat = lstatSync(root); } catch (error) {
     if (error.code === 'ENOENT') fail('release_not_installed', `the vendor's release ${pin.release} is not installed in ${real}`, {hint: installHint('linux'), context});
+    // A file where a directory on the way should be blocks every release under it: the remedy names that file.
+    if (error.code === 'ENOTDIR') {
+      const {runtimes} = homeLayout(real);
+      const blocking = isRealDirectory(real) ? runtimes : real;
+      damaged(`${blocking} is not a directory, so no release can be installed under it`, error, blocking);
+    }
     damaged(`${root} cannot be read (${error.code ?? error.message})`, error);
   }
   if (!stat.isDirectory()) damaged(`${root} is ${stat.isSymbolicLink() ? 'a link' : 'not a directory'}`);

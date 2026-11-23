@@ -49,9 +49,12 @@
 // cua serve then refuses a confined vendor-host launch (sandbox_unavailable). Linux: the pinned helper
 // (src/sandbox/linux.mjs) present at $CUA_HOME/sandbox/<tag>/ with the pinned SHA-256; `fail` names a missing or
 // tampered helper, which every confined launch refuses (sandbox_unavailable).
-// On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
-// not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
-// sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted).
+// On Linux the runtime rows describe cua's own runtime, which every Linux session resolves (#171 M6a;
+// src/runtime/doctor-linux-runtime.mjs: platform, runtime.installed, runtime.modules, runtime.node), and the vendor's
+// tree is one row beside them, runtime.vendor, trusted by its archive hash (no codesign runs) and kept for
+// CUA_NATIVE_ENGINE=vendor; the darwin helper.live and helper.permissions rows give way to display, accessibility.bus
+// and sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted). The sandbox
+// row protects cua's module trees ($CUA_HOME/modules) there, which are no trusted code.
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
@@ -82,7 +85,8 @@ import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
-import {loadPins, selectPin, locateRuntime, recoveryHint, vendorLinuxRuntime} from './manifest.mjs';
+import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint} from './manifest.mjs';
+import {linuxRuntimeChecks} from './doctor-linux-runtime.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
@@ -105,13 +109,15 @@ const result = (name, status, detail) => ({name, status, detail});
 
 const executableFile = path => { try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; } };
 // sandbox.launcher on Linux: the pinned helper for this home and architecture, verified (`verifyHelper`, injectable).
+// A failure names this cua's own installer, as every Linux runtime row does (#171 M6a, ruling 1110).
 function helperCheck({home, arch, linuxHelper}) {
   try {
     const helper = linuxHelper({home: realHome(home), arch});
     return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: the pinned helper ${helper.path} (SHA-256 ${helper.sha256}); no Codex CLI is launched`);
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return result('sandbox.launcher', 'fail', `${error.message}${error.hint ? `; ${error.hint}` : ''}`);
+    return result('sandbox.launcher', 'fail', `${error.message}; run \`${ownInstaller().command}\` to place the pinned helper (one there that is not the pinned helper is never `
+      + 'replaced in place: stop any `cua serve` using it and remove its directory first), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly');
   }
 }
 
@@ -123,32 +129,36 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper, linuxRuntime}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
-  let pin;
-  try {
-    pin = selectPin(pins, host);
-    checks.push(result('platform', 'pass', `${host.platform}-${host.arch} has pinned release ${pin.release}`));
-  } catch (error) {
-    if (!(error instanceof CuaError)) throw error;
-    checks.push(result('platform', 'fail', error.message));
-    return {ok: false, checks};
+  let pin, runtime;
+  if (host.platform === 'linux') {
+    // cua's own runtime and the vendor's tree beside it (#171 M6a; src/runtime/doctor-linux-runtime.mjs).
+    const own = linuxRuntimeChecks({home, env, host, pins, ...(linuxRuntime ? {linuxRuntime} : {})});
+    checks.push(...own.rows);
+    if (own.stop) return {ok: false, checks};
+    runtime = own.runtime;
+  } else {
+    try {
+      pin = selectPin(pins, host);
+      checks.push(result('platform', 'pass', `${host.platform}-${host.arch} has pinned release ${pin.release}`));
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      checks.push(result('platform', 'fail', error.message));
+      return {ok: false, checks};
+    }
+    try {
+      runtime = locateRuntime({home, pins, host});
+      checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      checks.push(result('runtime.installed', 'fail', error.hint ? `${error.message}; ${error.hint}` : error.message));
+    }
   }
 
-  let runtime;
-  try {
-    // On Linux these rows describe the vendor's tree, which resolution no longer answers there (#171 M6a T2): until
-    // T4 gives Linux the own runtime's rows (the pre-flight's §4.5), they find it by its pin.
-    runtime = host.platform === 'linux' ? vendorLinuxRuntime({home, pins, host}) : locateRuntime({home, pins, host});
-    checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
-  } catch (error) {
-    if (!(error instanceof CuaError)) throw error;
-    checks.push(result('runtime.installed', 'fail', error.hint ? `${error.message}; ${error.hint}` : error.message));
-  }
-
-  if (runtime) {
+  if (runtime && host.platform !== 'linux') {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
     checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root, manifest.platform)}`));
@@ -199,7 +209,8 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(...await inspectAgent({home, env, host}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
-  if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
+  // On Linux also the record's parts (linuxRuntimeChecks shapes it).
+  if (runtime) report.runtime = host.platform === 'linux' ? runtime : {release: runtime.release, root: runtime.root, paths: runtime.paths};
   if (engineRow.report) report.engine = engineRow.report;
   return report;
 }
@@ -241,13 +252,13 @@ function engineWords({engine, reason, app}) {
 }
 
 // The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?, engine?} or, refused, {code,
-// message}. `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
+// message, hint?}. `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
 function replHostSelection(home, env, platform, surfaces, resolveOwnNode, engine) {
   try {
     return replHostFor({platform, surfaces, ambient: env, home, resolveOwnNode, engine});
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return {code: error.code, message: error.message};
+    return {code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {})};
   }
 }
 
@@ -328,9 +339,11 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const workerNetwork = ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)';
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read and write nowhere, so profile labels, screenshots and other features that need scratch space fail; '
     + (computer ? `cells have no network${workerNetwork}` : 'neither has the network'));
+  // On Linux the module tree is not trusted code (nothing trusted imports from it) but cua's module trees are protected
+  // all the same, as a launch protects them (#171 M6a).
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS],
-      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, engines: linux ? [owned.engine] : [],
+    protectedPaths: protectedPaths({trustedCodePaths: [linux ? null : runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS],
+      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, engines: linux ? [owned.engine] : [], modules: linux ? owned.modules : undefined,
       applications: linux ? xdgApplicationRoots({HOME: env.HOME, XDG_DATA_DIRS: env.XDG_DATA_DIRS}) : [],
       denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
     writeRoots: scopedWriteRoots({cwd: session, cwdLabel: 'a connection\'s run directory, $CUA_HOME/run/<session>'}),

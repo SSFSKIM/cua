@@ -36,11 +36,13 @@
 // `capabilities` first), with the session's display and bus, and stops it once it has answered; it starts nothing
 // while cua's engine is not what sessions run, no file it does not recognize, and nothing without a display, since the
 // engine starts only on one (the report is then unread, and the display row says why). `pass` for the pinned engine
-// with every capability; `warn` for a local build, an older release, CUA_LINUX_ENGINE_BIN, the default's fallback (no
-// engine installed, or, #171 M5's F5, one older than this cua needs or whose record does not match it: the row says
-// which, and that `cua install --engine` replaces it), an unread report for want of a display, or a capability the
-// backend lacks; `fail` for refused sessions, an unknown or unexecutable file, an invalid device mode, or an engine
-// whose report fails as a session's start would; `skip` while the vendor's engine is preferred.
+// with every capability; `warn` for a local build, a recorded release behind or ahead of the pin, CUA_LINUX_ENGINE_BIN,
+// an unread report for want of a display, or a capability the backend lacks; `fail` for sessions refused while cua's
+// engine is preferred, by the default too (since #171 M6a's F3 no other engine stands in: none installed, one older
+// than this cua needs or whose record does not match it), a vendor selection refused because the vendor's tree is not
+// installed, an unknown or unexecutable file, an invalid device mode, or an engine whose report fails as a session's
+// start would; else `skip` while the vendor's engine is preferred. Every remedy names this cua's own installer by its
+// absolute path, `node <this cua>/bin/cua.mjs install --engine` (ruling 1110).
 import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
@@ -50,7 +52,7 @@ import {readEngineSettings} from './engine-sign.mjs';
 import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
-import {MIN_ENGINE_VERSION} from '../services/engine/linux/client.mjs';
+import {ownInstaller} from './manifest.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -120,7 +122,7 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
     return {row: result('engine', 'fail', `${error.message}; every ${linux ? 'Linux' : 'macOS'} computer session is refused (${error.code})`),
       report: linux ? {...linuxReport({refused, preferred: null}), reason: error.code} : {...notApplicable(error.code), refused}};
   }
-  const refused = session.code ? {code: session.code, message: session.message} : null;
+  const refused = session.code ? {code: session.code, message: session.message, ...(session.hint ? {hint: session.hint} : {})} : null;
   const selection = {selected: refused ? null : session.engine?.engine ?? null, reason: refused ? refused.code : session.engine?.reason ?? null, refused,
     preferred: {engine: preferred.engine, reason: preferred.reason}};
   if (linux) return linuxRow(selection, {env, config, session, facts: inspectLinux({home, arch}), readCapabilities});
@@ -185,26 +187,23 @@ function linuxReport({selected = null, reason = null, refused = null, preferred 
 }
 
 const PIN_NOTE = 'runtime/engine/linux-engine.json comes with the engine\'s first release';
+// The remedy every Linux engine sentence names: this cua's own installer by its absolute path, with --engine (#171 M6a,
+// ruling 1110; manifest.mjs ownInstaller).
+const engineInstall = () => `\`${ownInstaller().command} --engine\``;
 // What the cua home holds, judged against this cua's pin: `say(status, text)` records a verdict where it is short of the
 // pinned engine.
 function linuxHeld(facts, say) {
   const {path, pinned} = facts;
+  const install = engineInstall();
   const pinWords = facts.pinProblem ? `this cua's pin cannot be read (${facts.pinProblem})` : `this cua pins none yet (${PIN_NOTE})`;
-  if (!facts.exists) return pinned ? `no engine is installed in this cua home (${path}): cua install --engine installs the pinned cua-engine ${pinned.version} (${pinned.release})`
+  if (!facts.exists) return pinned ? `no engine is installed in this cua home (${path}): ${install} installs the pinned cua-engine ${pinned.version} (${pinned.release})`
     : `no engine is installed in this cua home (${path}), and ${pinWords}: cua engine build installs a local build`;
   const words = facts.build === 'pinned' && facts.current ? `the pinned cua-engine ${facts.version} (${facts.release}) at ${path}, SHA-256 ${facts.sha256}`
-    : facts.build === 'pinned' ? say('warn', `cua-engine ${facts.version} from ${facts.release} at ${path} (SHA-256 ${facts.sha256}), ${pinned ? `which is not this cua's pinned ${pinned.version}: cua install --engine replaces it` : `and ${pinWords}`}`)
-    : facts.build === 'local' ? say('warn', `a local build of cua-engine ${facts.version} at ${path} (cua engine build), SHA-256 ${facts.sha256}, not the pinned engine (${pinned ? `${pinned.version}; cua install --engine puts it back` : 'this cua pins none yet'})`)
-    : say('fail', `the file at ${path} (SHA-256 ${facts.sha256}) is neither this cua's pinned engine nor a build cua recorded: cua install --engine replaces it`);
-  return facts.executable ? words : `${words}; ${say('fail', 'it is not executable, so no session runs it: cua install --engine places it again')}`;
+    : facts.build === 'pinned' ? say('warn', `cua-engine ${facts.version} from ${facts.release} at ${path} (SHA-256 ${facts.sha256}), ${pinned ? `which is not this cua's pinned ${pinned.version}: ${install} replaces it` : `and ${pinWords}`}`)
+    : facts.build === 'local' ? say('warn', `a local build of cua-engine ${facts.version} at ${path} (cua engine build), SHA-256 ${facts.sha256}, not the pinned engine (${pinned ? `${pinned.version}; ${install} puts it back` : 'this cua pins none yet'})`)
+    : say('fail', `the file at ${path} (SHA-256 ${facts.sha256}) is neither this cua's pinned engine nor a build cua recorded: ${install} replaces it`);
+  return facts.executable ? words : `${words}; ${say('fail', `it is not executable, so no session runs it: ${install} places it again`)}`;
 }
-
-// Why the default keeps the vendor's engine though one of cua's is installed (launch.mjs nativeEngineFor; #171 M5, F5
-// and F5a), from what the inspection read.
-const DEFAULT_FALLBACK = {
-  engine_outdated: facts => `the installed cua-engine ${facts.version} is older than ${MIN_ENGINE_VERSION}, which this cua needs, so`,
-  engine_unrecorded: () => 'the installed engine\'s install.json does not match its file, so its version is unknown and',
-};
 
 const DESKTOP_WORDS = {
   explicit: mode => `CUA_DESKTOP_MODE=${mode}`,
@@ -218,17 +217,20 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
   const held = linuxHeld(facts, say);
   const source = SOURCE_WORDS[selection.preferred.reason];
   const report = linuxReport({...selection, facts});
+  const {refused} = selection;
   if (selection.preferred.engine === 'vendor') {
     const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : source('vendor');
-    const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service';
+    // The vendor's engine refused at the open: its tree is not installed (launch.mjs linuxEngineFor, #171 M6a).
+    if (refused?.code === 'engine_not_installed')
+      return {row: result('engine', 'fail', `cua's engine is not selected: ${why}, and sessions here are refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint ?? ownInstaller().hint}`), report};
+    const serves = refused ? `; sessions here are refused (${refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service';
     return {row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own: ${held}`), report};
   }
-  if (selection.refused) return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${selection.refused.code}; see repl.host): ${held}`), report};
-  if (selection.selected !== 'cua') {
-    const fallback = DEFAULT_FALLBACK[selection.reason];
-    return {row: result('engine', 'warn', fallback ? `cua's engine is the default, but ${fallback(facts)} Linux computer sessions keep the vendor's sky_linux helper until cua install --engine replaces it (${selection.reason}): ${held}`
-      : `cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper (${selection.reason}): ${held}`), report};
-  }
+  // cua's engine preferred, by the default too, runs or is refused at the open (#171 M6a, F3): no other engine stands
+  // in for it.
+  if (refused || selection.selected !== 'cua')
+    return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here ${refused ? 'are refused' : 'run another engine'} (${refused?.code ?? selection.reason}; see repl.host): ${held}`), report};
+
   const bin = session.engine.bin;
   const runs = bin.source === 'override'
     ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)

@@ -4,10 +4,10 @@ import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {exclusionOf} from './not-judged.mjs';
 import {CASES, caseId, methodTimingId, SCENE_OF} from './plan.mjs';
 import {probeRowsOf} from './probe-run.mjs';
-import {FULL_PLAN} from './run.mjs';
+import {FULL_PLAN, SPEED_OPS} from './run.mjs';
 import {unicodeRowsOf} from './unicode-plan.mjs';
 
-export const SPEED_OPS = Object.freeze(['getAXState', 'getScreenshot', 'listApps']);
+export {SPEED_OPS};
 
 // The method cases of both regimes, the speed ops of every scene (`samples` each) and every frontmost case's timing,
 // the finding rows of every scene (its

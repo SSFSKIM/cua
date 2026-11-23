@@ -1,0 +1,101 @@
+{
+ "summary": {
+  "profiles": "SKIP",
+  "service": "SKIP",
+  "firstUse": "SKIP",
+  "mawsKey": "SKIP",
+  "chromeKey": "SKIP",
+  "keyMiss": "SKIP",
+  "literalVendor": "PASS",
+  "createTab": "SKIP",
+  "locator": "SKIP",
+  "viewport": "SKIP",
+  "popup": "SKIP",
+  "download": "SKIP",
+  "alert": "SKIP",
+  "confirm": "SKIP",
+  "chooser": "SKIP",
+  "cleanup": "SKIP",
+  "isolation": "SKIP"
+ },
+ "status": "PASS",
+ "backends": [
+  "/Users/new/Library/Application Support/MAWS/mawsd/cua/59453718007e9149.sock"
+ ],
+ "other": null,
+ "chromeKey": null,
+ "only": [
+  "literalVendor"
+ ],
+ "details": {
+  "profiles": "not selected",
+  "service": "not selected",
+  "firstUse": "not selected",
+  "mawsKey": "not selected",
+  "chromeKey": "not selected",
+  "keyMiss": "not selected",
+  "literalVendor": {
+   "host": "vendor",
+   "surfaces": "computer,browser",
+   "calls": {
+    "select": {
+     "ok": true,
+     "name": "- Name: MAWS in-app browser (maws)",
+     "instance": "maws:a4207cea-fed7-4ef7-9402-ede5a0e8940c"
+    },
+    "visible": {
+     "ok": true,
+     "expected": "throws \"Capability is not available: visibility\" (#496, the vendor host's declared limit)",
+     "error": "Capability is not available: visibility"
+    },
+    "open": {
+     "ok": true,
+     "tabId": "1",
+     "markerMatches": true,
+     "closed": true
+    },
+    "mawsKey": {
+     "ok": true,
+     "tabId": "2",
+     "markerMatches": true,
+     "sameBrowser": true,
+     "closed": true
+    },
+    "iabMiss": {
+     "ok": true,
+     "selected": false,
+     "error": "Browser is not available: iab. Browser ids: \"1\", \"2\"; profiles_list keys: \"maws\", \"personal\"."
+    }
+   },
+   "endTask": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "dda30c8d-2b5f-471e-94cd-f67b59b873e7"
+   }
+  },
+  "createTab": "not selected",
+  "locator": "not selected",
+  "viewport": "not selected",
+  "popup": "not selected",
+  "download": "not selected",
+  "alert": "not selected",
+  "confirm": "not selected",
+  "chooser": "not selected",
+  "cleanup": "not selected",
+  "isolation": "not selected",
+  "serve": {
+   "code": 0,
+   "signal": null
+  },
+  "serveLiteral": {
+   "code": 0,
+   "signal": null
+  }
+ },
+ "elicitations": [],
+ "pageRequests": {
+  "total": 2,
+  "served": 2,
+  "refused": 0
+ }
+}

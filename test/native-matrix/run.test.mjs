@@ -97,10 +97,12 @@ test('an activation inside a row fails that row\'s oracle only; one inside a har
 });
 
 test('an activation the run cannot place makes the run incomplete, never clean', async () => {
-  // 1.5 s after a row's check ends: past the margin, before the next step reads its clock.
+  // Half a second before the next row's prepare: past the margin of the row's last read (its front/key read after the
+  // check, which the row's window covers), before the next step reads its clock.
   const check = cellsOf('textedit', 'click', 'control').check;
   const calls = [];
-  const r = await runWith({calls, ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.example.other', at: calls.find(c => c.code.includes(check)).at[1] + 1_500}]}))});
+  const next = () => calls[calls.findIndex(c => c.code.includes(check)) + 1];
+  const r = await runWith({calls, ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.example.other', at: next().at[0] - 500}]}))});
   assert.equal(r.result.complete, false);
   assert.ok(r.result.problems.some(p => /fell in no step/.test(p)));
   assert.equal(r.result.meta.activations.unaccounted.length, 1);
@@ -140,6 +142,13 @@ test('the watcher not running at the end: its coverage of the run is not proven'
   assert.equal(r.result.complete, false);
   assert.ok(r.result.problems.some(p => /not running at the end/.test(p)));
   assert.ok(r.result.rows.filter(row => row.section === 'method').every(row => row.invalid));
+});
+
+test('a hosted run asks every alert check to hold replayd\'s capture alert; a run off a runner never does', async () => {
+  const checksOf = r => matrixSteps(r.steps, 'alerts').filter(a => a[1] === 'check');
+  const hosted = checksOf(await runWith({env: {RUNNER_ENVIRONMENT: 'github-hosted'}}));
+  assert.ok(hosted.length > 0 && hosted.every(a => a.join(' ').includes('--hosted yes')));
+  assert.ok(checksOf(await runWith()).every(a => !a.includes('--hosted')));
 });
 
 test('a paste or typeText act is sent only between two alert checks; an alert before it stops the run with nothing sent', async () => {
@@ -345,4 +354,16 @@ test('the finding rows record Finder\'s list range; a list that did not start at
     ? {invalid: 'Finder\'s list did not start at its first rows', showing: {from: 125, to: 146, of: 205}} : null)});
   assert.deepEqual(stuck.result.rows.filter(r => r.section === 'finding').map(r => [r.id, r.invalid, r.showing]),
     [['finder/lines', 'Finder\'s list did not start at its first rows', {from: 125, to: 146, of: 205}]]);
+});
+
+test('the matrix retains bind and refusal guard snapshots in row-indexed evidence', async () => {
+  const windowOrder = {runWindowFound: true, windows: [{ownerName: 'Claude'}, {ownerPid: 736, ownerName: 'Finder', layer: 0, number: 7, bounds: {x: 80, y: 80, width: 920, height: 520}}]};
+  const {result} = await runWith({ops: {matrix: (base, a) => {
+    const out = base(a);
+    if (a[0] === 'step' && a[1] === 'activate' && a[2] === 'finder') return {...out, answer: {...out.answer, ok: false, reason: 'obscured', windowOrder}};
+    return out;
+  }}});
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.meta.activationGuards.map(g => ({scene: g.scene, beforeRow: g.beforeRow, ok: g.ok, windowOrder: g.windowOrder})),
+    [{scene: 'finder', beforeRow: 0, ok: false, windowOrder}]);
 });

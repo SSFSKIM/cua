@@ -17,6 +17,7 @@ import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-ho
 import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
 import {serve, settingsFrom} from '../src/mcp/server.mjs';
 import {handshakeRecords, lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
+import {browserKeysStamp} from '../src/mcp/connection.mjs';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
@@ -209,7 +210,7 @@ test('a MAWS session\'s notes, js hint and js rules name the in-app browser; a p
   assert.match(maws.notes, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\)\./);
   assert.ok(maws.notes.length <= 2048, `${maws.notes.length} characters`);
   assert.match(maws.hint, /this session's MAWS in-app browser/);
-  assert.match(maws.rules, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\), the pane the user watches; use it for any page, and it needs no profiles_list call\. Use a Chrome profile only when the user names one/);
+  assert.match(maws.rules, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\); its tabs show in the session's Browser panel, which the user watches\. Use it for any page; it needs no profiles_list call\. Where a browser id goes, "maws" or another profiles_list key works too; there is no "iab" browser, and visible does not apply: leave it out\. Use a Chrome profile only when the user names one/);
   for (const text of Object.values(plain)) assert.doesNotMatch(text, /In MAWS|in-app browser/);
 });
 
@@ -258,11 +259,12 @@ test('with a MAWS backend the handshake does not wait for its hello; profiles_li
   for (let i = 0; i < 200 && !ports.length; i++) await tick(10);
   assert.equal(ports.length, 1, 'the backend socket was dialled at once');
   const profiles = server.call('profiles_list');
-  const js = server.call('js', {code: 'hello'});
+  const js = server.call('js', {code: 'browser-keys'});
   await tick(300);
   assert.equal(server.launches.length, 0, 'the launch waits for the hello');
   ports[0].port.peer.notify('hello', ports[0].ext.hello());
-  await js;
+  const keyed = JSON.parse((await js).result.content[0].text);
+  assert.deepEqual(keyed.browserKeys, {maws: instanceId}, 'the call held by the launch is stamped as it reaches the runtime, after the hello (#493)');
   assert.deepEqual((await profiles).result.structuredContent.profiles, [{key: 'maws', ready: true, extensionInstanceId: instanceId}], 'a listing requested before the hello reports its ready instance');
   assert.equal(server.launches.length, 1);
   assert.equal(server.launches[0].env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, instanceId);
@@ -783,4 +785,59 @@ test('a macOS computer session attests its engine on js results; CUA_NATIVE_ENGI
   await assert.rejects(serve({home, env: {...process.env, HOME: user.dir, CUA_SHIM_SURFACES: 'computer', CUA_NATIVE_ENGINE: 'cua'}, input, output: new PassThrough(),
     prepareLaunch: launch => { launches.push(launch); return launch; }, diagnostics: () => {}}), {code: 'engine_not_installed', message: /cua install --engine/});
   assert.equal(launches.length, 0);
+});
+
+test('lazyRuntime finishes a message as it leaves for the runtime: a held one when the launch releases it (#493)', async () => {
+  let stage = 'before the launch';
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const runtime = fakeUpstream();
+  const upstream = lazyRuntime({start: async () => { await gate; stage = 'after the hellos'; return runtime; }, records: {read: () => RECORD, write: () => {}},
+    outgoing: msg => (msg.method === 'tools/call' ? {...msg, params: {...msg.params, _meta: {...msg.params._meta, stage}}} : msg)});
+  const h = harness({upstream});
+  await h.client.request('initialize', INIT).response;
+  const held = h.client.call('js', {code: 'held'});
+  await tick(20);
+  release();
+  runtime.reply(await runtime.nextRequest('initialize'), RECORD.initialize);
+  const first = await runtime.nextCall('js');
+  assert.equal(first.params._meta.stage, 'after the hellos', 'stamped at release, not when it was held');
+  runtime.text(first, 'held');
+  await held.response;
+  stage = 'running';
+  const next = h.client.call('js', {code: 'next'});
+  const second = await runtime.nextCall('js', {after: runtime.sent.indexOf(first) + 1});
+  assert.equal(second.params._meta.stage, 'running');
+  runtime.text(second, 'next');
+  await next.response;
+  h.client.eof();
+  await h.server.closed;
+});
+
+test('a held call is delivered with its keys when the unreached-keys lookup throws; only that hint is left out (#493)', async t => {
+  const dir = scratch();
+  t.after(dir.cleanup);
+  writeFileSync(join(dir.dir, 'file'), '');
+  const home = join(dir.dir, 'file', 'home');   // resolving it throws ENOTDIR, as a home gone unresolvable mid-launch would
+  const diagnostics = [];
+  const stamp = browserKeysStamp({home, mawsKeys: () => ({maws: 'maws:app-1'}), launchPaths: () => '', diagnostics: line => diagnostics.push(line)});
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const runtime = fakeUpstream();
+  const upstream = lazyRuntime({start: async () => { await gate; return runtime; }, records: {read: () => RECORD, write: () => {}}, outgoing: stamp});
+  const h = harness({upstream});
+  await h.client.request('initialize', INIT).response;
+  const held = h.client.call('js', {code: 'held'});
+  await tick(20);
+  release();
+  runtime.reply(await runtime.nextRequest('initialize'), RECORD.initialize);
+  const call = await runtime.nextCall('js');
+  assert.deepEqual(call.params.arguments, {code: 'held'});
+  assert.deepEqual(call.params._meta['cua/browserKeys'], {maws: 'maws:app-1'});
+  assert.equal(Object.hasOwn(call.params._meta, 'cua/browserKeysUnreached'), false);
+  assert.match(diagnostics.join('\n'), /could not be told \(ENOTDIR\)/);
+  runtime.text(call, 'held');
+  assert.equal(textOf(await held.response), 'held');
+  h.client.eof();
+  await h.server.closed;
 });

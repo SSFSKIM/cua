@@ -90,6 +90,19 @@ export function nextPreMs({callAt, interval, postedAt, scheduled, preMs = 0}) {
   return Math.min(PROBE_LEAD_MS - 1_000, Math.max(0, aim));
 }
 
+// The keystroke probe's answer when its first gate found the named window not in front (KeystrokeProbe.swift): nothing
+// was sent.
+export const KEYSTROKE_GATE_CLOSED = 'the front window is not the named one; nothing was sent';
+// Why a keystroke probe's gate held its keys back, as KeystrokeProbe.swift answers it: the named window not the front
+// one at the first gate, nothing sent (`error`, KEYSTROKE_GATE_CLOSED), or at a gate between its keys after some were
+// posted (`aborted`). A gate is the probe working as built, so its answer is a reading of the front, never a fault of the
+// probe. -> {at: 'first' | 'during', reason} or null.
+export function keystrokeGate(answer) {
+  if (answer?.aborted === true) return {at: 'during', reason: 'the named window left the front between the probe\'s keys: they stopped part-way'};
+  if (answer?.error === KEYSTROKE_GATE_CLOSED) return {at: 'first', reason: 'the named window was not the front one when the probe\'s keys were due: nothing was sent'};
+  return null;
+}
+
 // What a probe's answer says about its post or switch. -> null when it acted, else why the sample says nothing.
 export function probeProblem(answer) {
   if (!answer || typeof answer !== 'object') return 'the probe printed no answer';

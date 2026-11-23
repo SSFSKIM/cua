@@ -102,6 +102,7 @@ import {DEFAULT_PLAN, hostProblem, readRuns, renderMarkdown, summarize} from './
 import {compare, compareLanes, compareSameHost, LANE_MODES, renderComparison} from './native-baseline/compare.mjs';
 import {assertEngineOptions, attestEngine, checkApprovedEngine, engineProblem, launchFailureOf} from './native-baseline/engine.mjs';
 import {mergeObservations} from './repl-parity/engine-answered.mjs';
+import {hostedRunOf} from './hosted-sittings/runner.mjs';
 
 // Cold connections cycle through this plan; each is labelled by the record it found.
 const COLD_PLAN = ['miss', 'hit', 'miss', 'hit', 'hit'];
@@ -182,7 +183,7 @@ export async function run(options) {
   return code;
 }
 
-async function runPrepared({device, out, host, engine, approvedEngine, engineBin, node, experiment, prepared, pinnedEngine = null, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, activateMs, io, log = console.log}) {
+async function runPrepared({device, out, host, engine, approvedEngine, approvedRuntime, engineBin, node, experiment, prepared, pinnedEngine = null, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, activateMs, io, log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertOwnNode(host, node);
@@ -222,6 +223,9 @@ async function runPrepared({device, out, host, engine, approvedEngine, engineBin
     const {approved, checkoutBuild} = checkApprovedEngine(pre.engine, approvedEngine);
     nativeEngine = {requested: engine, approved, checkoutBuild, attested: [], unattested: 0};
   }
+  // On a GitHub-hosted runner (T10b′, ./hosted-sittings/runner.mjs): the device's own record of this job's run, whose
+  // install must be the approved runtime and engine the run was given. Off a runner, neither.
+  const hostedRun = pre.platform === 'darwin' ? hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, ...(approvedEngine ? {approvedEngine} : {}), ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}) : {hosted: false, runner: null};
   // A Linux computer run (#171): the executable its engine must run from in the run's home (the preflight's), and the
   // engine processes seen below the run's serves (ctx.observeEngines), judged when the run ends (engine.mjs).
   if (pre.platform === 'linux' && surface === 'computer') {
@@ -242,7 +246,8 @@ async function runPrepared({device, out, host, engine, approvedEngine, engineBin
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false,
     ...(nativeEngine ? {nativeEngine, engineStop: {start: prepared.engineStop}} : {}),
     ...(pinnedEngine ? {pinnedEngine} : {})};
-  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
+  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display,
+    hosted: hostedRun.hosted, runner: hostedRun.runner});
   adapter.start(meta, pre);
   log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}${nativeEngine?.approved ? `, engine ${engine} (approved build ${nativeEngine.approved.build.slice(0, 12)})` : nativeEngine ? `, engine ${engine} (${nativeEngine.expected})` : ''}, ${surface} surface`);
   const ops = io.device ? io.device(adapter, {pre, display}) : adapter.device(remote, {pre, display});

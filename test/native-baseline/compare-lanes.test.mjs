@@ -110,6 +110,16 @@ test('A holds every other attested field equal: a host, a build, a commit or an 
   assert.ok(launch.problems.some(p => /sandbox differs .*launcher cua-compat.*launcher cua,.*comparison A permits only engine and service/.test(p)), launch.problems.join('\n'));
 });
 
+test('on a hosted runner both lanes of a comparison are one job\'s: another run is no verdict', t => {
+  const runner = id => m => { m.hosted = true; m.runner = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
+    install: {home: '/Users/runner/Library/Application Support/cua', release: m.runtime.release}, engine: {bundle: BUNDLE, build: BUILD, engineVersion: '0.2.0'}}; };
+  const same = judge(t, 'engines', triple(VV, {edit: runner('7')}), triple(VC, {edit: runner('7')}));
+  assert.ok(!same.problems.some(p => /hosted runner/.test(p)), same.problems.join('\n'));
+  const other = judge(t, 'engines', triple(VV, {edit: runner('7')}), triple(VC, {edit: runner('8')}));
+  assert.equal(other.verdict, 'NO VERDICT');
+  assert.ok(other.problems.some(p => /hosted runner differs \(baseline GitHub-hosted macos26 20261117\.0516\.1, run 7 attempt 1, VM vm-1;.*candidate .*run 8 attempt 1, VM vm-1;.*\); comparison A permits only engine and service to differ/.test(p)), other.problems.join('\n'));
+});
+
 test('B on the real triple: only the host and the sandbox differ; another engine build is no verdict', t => {
   const result = judge(t, 'hosts', triple(VC), triple(CC));
   assert.deepEqual(result.problems, []);

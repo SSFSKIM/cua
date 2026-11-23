@@ -10,7 +10,8 @@
 // working directory are appended to $CODEX_HOME/fake-upstream.jsonl for the test to inspect. A js call with code
 // "approve" writes the session approval file node_repl writes for an accepted app approval. A Chrome backend listing
 // cell (src/profiles/inventory.mjs) is answered with $CODEX_HOME/fake-backends.json as its listing when that file
-// exists (otherwise it is echoed like any cell, which the listing reads as a failure). A js call with code "relay" connects
+// exists (otherwise it is echoed like any cell, which the listing reads as a failure). A js call with code
+// "browser-keys" echoes the call's `cua/browserKeys` metadata as `browserKeys` (#493). A js call with code "relay" connects
 // to the first of BROWSER_USE_BACKEND_PATHS as the vendor browser service does and answers {relay: 'replied', info} with
 // its getInfo, or {relay: 'closed'} when the host closes the connection first (a refused peer). When
 // $CODEX_HOME/fake-attestation.json ({code, from, attestation}) exists, the `from`-th js call with exactly that code, and
@@ -101,6 +102,7 @@ createInterface({input: process.stdin}).on('line', line => {
       const backends = process.env.CODEX_HOME && join(process.env.CODEX_HOME, 'fake-backends.json');
       if (name === 'js' && String(args.code).includes('"CUABACKENDS "') && backends && existsSync(backends)) return reply(text(`CUABACKENDS ${readFileSync(backends, 'utf8').trim()}`));
       if (name === 'js' && args.code === 'relay') return relayGetInfo().then(outcome => reply(text(outcome)));
+      if (name === 'js' && args.code === 'browser-keys') return reply(text({code: args.code, browserKeys: _meta?.['cua/browserKeys'] ?? null}));
       if (name === 'js') return reply({...text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}), ...attestationFor(args.code)});
       if (name === 'js_reset') return reply(text('js kernel reset'));
       if (name === 'turn_ended') return reply(text('{}'));

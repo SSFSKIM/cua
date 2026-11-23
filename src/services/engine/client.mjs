@@ -8,10 +8,24 @@
 // reconnects for up to 5 s, retrying every 100 ms. A connection that opened gets its own full second for the ping,
 // whatever is left of the window (the vendor's waits min(1000 ms, the remainder)): a ping cut short by a slow open
 // would launch over a healthy engine. The ping speaks `cua-engine-1`, and the answer's engineVersion and
-// build must equal the bundle's (its Info.plist): a mismatch fails at once with a diagnostic naming
-// `cua install --engine`, never retried, launched over or shut down, since a service never replaces an engine it did not
-// launch (another checkout's session may be using it). An engine that never answers fails with a diagnostic pointing at
-// the unified log, where the engine records why it stopped (an invalid peerPolicy setting stops it before it listens).
+// build must equal the bundle's (its Info.plist): a mismatch fails at once with a diagnostic naming the remedy
+// (`cua engine stop` for an engine started from another build; `cua install --engine`, then `cua engine approve`, for
+// another release's), never retried, launched over or shut down, since a service never replaces an engine it did not
+// launch (another checkout's session may be using it); only an engine that passed this check may be relaunched for a
+// grant (below). An engine that never answers fails with a diagnostic pointing at the unified log, where the engine
+// records why it stopped (an invalid peerPolicy setting stops it before it listens).
+//
+// Permission recovery (the spec's Design, "Install, signing and permissions"; the Decision Log's M4 contracts refresh):
+// macOS applies a Screen Recording grant only to a relaunched process, so a screenshot-bearing observation that fails
+// permissionsPending with `meta.permission` "screenRecording" arms one relaunch, made on the next such observation and
+// never on the failure itself, so the owner reads the grant's steps first. That observation sends `shutdown` on its
+// checked connection (the engine refuses `busy` while another client is connected: the engine is left running and the
+// observation fails with the original sentence and marker), waits for the engine to close the socket, launches the
+// bundle through the relay and observes once on the fresh engine; grants are never polled, since a running process may
+// not see its own new grant. The recovery is tied to the failing engine's pid, read with `status` before a connection's
+// first screenshot: an engine with another pid (the owner's Quit & Reopen, another session's restart) already is the
+// relaunch, while a reconnect or a launch request that reaches the same pid is not. Accessibility's permissionsPending,
+// an input's or a text-only observation's, arms nothing: that grant applies to the running engine.
 //
 // Requests are chained, one in flight at a time, each with its deadline (120 s by default) sent as
 // deadlineUnixMilliseconds, computed when its frame is written, not when it is queued. The engine enforces the deadline
@@ -38,8 +52,8 @@
 // once endTask is answered, or after at most a second (`endTaskWaitMs`), or on an error: the relay closes fully, and
 // the engine stops reading a connection whose answer it could not write, so closing before endTask was read could
 // lose it (the review of d2568c76..96c6f093). An older engine answers methodNotFound, which nothing reads. So
-// end_task frees the engine for other clients (its `status` stops counting the connection, and `cua engine build`
-// and `approve` proceed) within that second. The engine reads the hide before the close, so the cursor fades and its
+// end_task frees the engine for other clients (its `status` stops counting the connection, and `cua engine approve`
+// and `stop` proceed) within that second. The engine reads the hide before the close, so the cursor fades and its
 // panel goes once the fade is over, and an after-action watch still running finishes on the engine's side. Nothing is
 // connected or launched for it, and a connect or request of the ended task still pending never reaches the engine
 // (the client's generation).
@@ -57,6 +71,8 @@ const FIRST_CONNECT_MS = 250;
 const LAUNCH_WAIT_MS = 5_000;
 const RETRY_MS = 100;
 const PING_MS = 1_000;
+// The bound on a permission relaunch's shutdown answer, and then on the engine's closing the socket.
+const SHUTDOWN_WAIT_MS = 10_000;
 // The bound on a cursor request's answer (bookkeeping on the engine's side, answered at once); past it the request is
 // abandoned, never the connection.
 const CURSOR_MS = 5_000;
@@ -133,6 +149,7 @@ class Connection {
     this.pending = new Map();
     this.nextId = 1;
     this.closed = false;
+    this.pid = null;  // the engine's process, read with status before this connection's first screenshot
     this.decoder = new FrameDecoder();
     pipe.on('data', chunk => {
       try {
@@ -145,7 +162,11 @@ class Connection {
       }
     });
     pipe.on('error', error => this.close(new SkyComputerUseTransportError(`cua engine connection failed: ${error?.message ?? error}`, {cause: error})));
-    pipe.on('close', () => this.close(new SkyComputerUseTransportError('cua engine connection closed before response')));
+    // Resolves when the peer closes, not on our own close(): a permission relaunch waits for the engine to have gone.
+    this.peerClosed = new Promise(resolve => pipe.on('close', () => {
+      this.close(new SkyComputerUseTransportError('cua engine connection closed before response'));
+      resolve();
+    }));
   }
 
   // Writes one request; its answer, or a transport error when none comes within `waitMs`. A request no answer came to
@@ -215,11 +236,13 @@ function within(promise, ms, message) {
 // refused before anything is connected to or launched, since the bundle may have changed since the selection read it.
 export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath), minimumVersion = MIN_ENGINE_VERSION,
   firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS, cursor = null, cursorWaitMs = CURSOR_MS, endTaskWaitMs = END_TASK_MS,
-  desktop = null, log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
+  shutdownWaitMs = SHUTDOWN_WAIT_MS, desktop = null, log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
   let connection = null;
   let identity = null;
   let connecting = null;
   let tail = Promise.resolve();
+  // The Screen Recording failure a relaunch is owed for: {error, pid} of the engine that answered it, or null.
+  let permissionsPending = null;
   // The task's generation: `release` (end_task) starts a new one, and a connect or a queued request of an older one
   // neither publishes a connection nor writes a frame (#237's review: a connect in flight at end_task would otherwise
   // publish a live connection and send the ended task's request after end_task returned).
@@ -231,12 +254,17 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return nodeRepl.withSuspendedTimeout(fn);
   }
 
+  const anotherRelease = `the engine answering ${socketPath} is from another release and is left running. Install this release's engine with cua install --engine, which builds it beside the approved one, then put it in place with cua engine approve (the owner at the console)`;
+  // The engine's own refusal of this client's API version (its ping's incompatibleClientVersion), with the same remedy.
+  const refusedClient = error => new SkyComputerUseError({code: error.code, errorName: error.errorName, meta: error.meta,
+    reason: `${error.message.replace(/^Computer Use server error -?\d+: /, '')} ${anotherRelease[0].toUpperCase()}${anotherRelease.slice(1)}`});
+
   function check(answer, want) {
     if (answer?.serverApiVersion !== CLIENT_API_VERSION) {
-      throw new Mismatch(`cua engine API version mismatch: client=${CLIENT_API_VERSION} server=${String(answer?.serverApiVersion)}; the engine answering ${socketPath} is from another release and is left running. Install this release's engine with cua install --engine`);
+      throw new Mismatch(`cua engine API version mismatch: client=${CLIENT_API_VERSION} server=${String(answer?.serverApiVersion)}; ${anotherRelease}`);
     }
     if (answer.engineVersion !== want.engineVersion || answer.build !== want.build) {
-      throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Install this build with cua install --engine, which stops the old engine once nothing uses it`);
+      throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Once no session uses it, stop it with cua engine stop: the next session launches the bundle at ${appPath}`);
     }
     // `variant`: a non-shipping build's name (#187's control build, `control-no-inert-click`), absent for a release.
     return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build,
@@ -269,7 +297,8 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
           return checked;
         } catch (error) {
           candidate.close();
-          if (error instanceof Mismatch || error instanceof Released || (error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion')) throw error;
+          if (error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion') throw refusedClient(error);
+          if (error instanceof Mismatch || error instanceof Released) throw error;
           last = error;
         }
       }
@@ -287,6 +316,11 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     if (belowMinimum(want.engineVersion, minimumVersion))
       throw new Mismatch(`cua engine too old: ${appPath} is version ${want.engineVersion}, older than ${minimumVersion}, the oldest this cua drives; nothing was launched. Approve a newer build with cua engine approve (the owner at the console) if one is pending, else build one with cua install --engine, then cua engine approve`);
     try { return await attempt(firstConnectMs, want, born); } catch (error) { if (!(error instanceof NotYet)) throw error; }
+    return launch(want, born);
+  }
+
+  // Launches the bundle through the relay and connects to what answers, as `want` must.
+  async function launch(want, born) {
     releasedSince(born);
     try { await nodeRepl.launchServices.openApplication({applicationPath: appPath}); } catch (cause) {
       throw new SkyComputerUseTransportError(`cua engine launch request failed for ${appPath}: ${String(cause?.message ?? cause).slice(0, 300)}`, {cause});
@@ -319,18 +353,74 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return connecting.promise;
   }
 
-  // One request at a time, in call order: -> {result, engineMs}, engineMs the round trip on the socket. `params` may be
-  // a function, called just before the frame is written (execute's deadline is computed then).
-  function call(method, params, {waitMs = DEFAULT_DEADLINE_MS + deadlineGraceMs, suspend = true} = {}) {
+  // The live connection, its engine's pid read once before its first screenshot, so an exit right after a permission
+  // failure cannot lose which process failed. A pending recovery owed by another pid is spent: that engine already
+  // restarted. A pid that is reused keeps the recovery pending, which costs one relaunch and never skips one. The
+  // connection is the one the status went to, and an end_task while it was read cancels the request (`Released`).
+  async function screenshotConnection(born) {
+    releasedSince(born);
+    const target = connection;
+    if (target.pid === null) {
+      const status = await target.call('status', {}, PING_MS);
+      releasedSince(born);
+      if (!Number.isSafeInteger(status?.pid) || status.pid <= 0) {
+        throw new SkyComputerUseTransportError('cua engine status named no valid process id, so its screenshot permission recovery cannot be followed');
+      }
+      target.pid = status.pid;
+    }
+    if (permissionsPending && permissionsPending.pid !== target.pid) permissionsPending = null;
+    return target;
+  }
+
+  // The owed relaunch (see the header): shutdown on `target`, the checked connection, the engine's close awaited, then a
+  // launch, none of it for a task that ended meanwhile: end_task leaves the pipe open until endTask is answered, so the
+  // generation is checked before each frame or launch.
+  async function relaunchForPermissions(target, born) {
+    releasedSince(born);
+    try { await target.call('shutdown', {}, shutdownWaitMs); } catch (error) {
+      if (error instanceof SkyComputerUseError && error.errorName === 'busy') throw permissionsPending.error;
+      throw error;
+    }
+    releasedSince(born);
+    await within(target.peerClosed, shutdownWaitMs, 'cua engine did not close after shutdown; its permission relaunch is still pending');
+    if (connection === target) connection = null;
+    await launch(identity, born);
+  }
+
+  // One request at a time, in call order, a permission relaunch included: -> {result, engineMs}, engineMs the round trip
+  // on the socket. `params` may be a function, called just before the frame is written (execute's deadline is computed
+  // then, after any relaunch, which so spends none of it). Only a `screenshot` request takes part in permission recovery.
+  function call(method, params, {waitMs = DEFAULT_DEADLINE_MS + deadlineGraceMs, suspend = true, screenshot = false} = {}) {
     const born = epoch;
     const run = async () => {
       releasedSince(born);  // queued behind a request when end_task came: never sent, never reconnected for
       await connect();
       releasedSince(born);
+      let live = connection;
+      // After every await below, the generation is checked before anything is written: end_task may have come between
+      // the awaited step's own check and this request's resuming.
+      if (screenshot) {
+        live = await screenshotConnection(born);
+        releasedSince(born);
+        if (permissionsPending) {
+          await relaunchForPermissions(live, born);
+          live = await screenshotConnection(born);
+          releasedSince(born);
+          // What answered after the launch is the process that failed: no replacement is confirmed, so nothing is
+          // observed on it, and the relaunch stays owed.
+          if (permissionsPending) throw permissionsPending.error;
+        }
+      }
       const body = typeof params === 'function' ? params() : params;
       const started = performance.now();
-      const result = await connection.call(method, body, waitMs);
-      return {result, engineMs: performance.now() - started};
+      try {
+        const result = await live.call(method, body, waitMs);
+        return {result, engineMs: performance.now() - started};
+      } catch (error) {
+        if (screenshot && error instanceof SkyComputerUseError && error.errorName === 'permissionsPending'
+          && error.meta?.permission === 'screenRecording') permissionsPending = {error, pid: live.pid};
+        throw error;
+      }
     };
     const queued = () => (suspend ? suspended(run) : run());
     const result = tail.then(queued, queued);
@@ -345,7 +435,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     // `execute {method, args, deadlineUnixMilliseconds, lineage?}` -> {result, engineMs}.
     execute(method, args, {deadlineMs = DEFAULT_DEADLINE_MS, lineage, suspend = true} = {}) {
       const params = () => ({method, args, deadlineUnixMilliseconds: Date.now() + deadlineMs, ...(lineage ? {lineage} : {})});
-      return call('execute', params, {waitMs: deadlineMs + deadlineGraceMs, suspend});
+      return call('execute', params, {waitMs: deadlineMs + deadlineGraceMs, suspend, screenshot: method === 'get_app_state' && args?.includeScreenshot === true});
     },
     // The engine's `status` answer (its identity, grants and other connections).
     async status() {

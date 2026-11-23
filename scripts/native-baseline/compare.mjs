@@ -45,7 +45,7 @@ export const TOLERANCE = {ratio: 0.1, floorMs: 500};
 export const latencyLimit = median => median + Math.max(TOLERANCE.ratio * median, TOLERANCE.floorMs);
 const NOT_JUDGED = /^(ssh|approval|guard|setup)\./;
 const NET_OF_SSH = new Set(['cold.miss.initialize', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.total']);
-const COMPARABLE = {device: 'device', engine: 'native engine', approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', os: 'OS', display: 'display', service: 'native service', sandbox: 'sandbox', plan: 'sample plan'};
+const COMPARABLE = {device: 'device', engine: 'native engine', approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', runner: 'hosted runner', os: 'OS', display: 'display', service: 'native service', sandbox: 'sandbox', plan: 'sample plan'};
 const RUNS = 3;
 // A row that is part of another's cost: macOS's bind retry (macos.mjs: the vendor's first getApp of a TextEdit it launches
 // can hit timeoutReached, and the retry binds). Each side's bind.getApp is judged as the first attempt plus the retry,
@@ -402,7 +402,7 @@ function linuxEngineSpeed(o, baseline, candidate, topUp = null, declared = []) {
 }
 // The attested fields a lane comparison holds equal unless its mode permits them to differ, in report order.
 const LANE_FIELDS = {device: 'device', commit: 'commit', host: 'REPL host', engine: 'engine', service: 'native service', sandbox: 'sandbox',
-  approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', os: 'OS', display: 'display', plan: 'sample plan'};
+  approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', runner: 'hosted runner', os: 'OS', display: 'display', plan: 'sample plan'};
 // One run's value of a lane field: attestation()'s, but the sandbox also carries the launch witness (launcher, TMPDIR).
 function laneValue(meta, key) {
   const a = attestation(meta);

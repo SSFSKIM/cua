@@ -597,6 +597,32 @@ test('response meta merges across a cell\'s rpcs and its after-code hooks, as th
   assert.deepEqual(Object.keys(meta), ['first', 'replaced', 'second', 'third']);
 });
 
+// cua/errorName through the host (T10b′): the real trusted wrapper (src/services/sky.mjs) over a vendor double, behind a
+// real supervisor, kernel and worker. The cell still catches a plain Error carrying the message alone; the engine's name
+// for it reaches the result's meta, and the next call's success clears it.
+test('the sky wrapper\'s cua/errorName reaches the result beside the plain rejection, and a later success in the same or the next cell resets it', own, async t => {
+  const src = fileURLToPath(new URL('../../src/', import.meta.url));
+  const sky = pathToFileURL(join(src, 'services/sky.mjs')).href;
+  const host = await startHost(t, {node, trustedPaths: [src], services: {sky: `import {createSkyService} from ${JSON.stringify(sky)};
+    const vendor = {handleRpc: async request => {
+      if (request.method !== 'refuse') return {served: request.method};
+      const error = new Error('Computer Use server error -10005: refused'); error.name = 'SkyComputerUseError'; error.errorName = 'backgroundClickRefused'; error.code = -10005;
+      throw error;
+    }};
+    const service = createSkyService({loadVendor: async () => vendor, secrets: {read: async () => { throw new Error('no secrets here'); }}, platform: 'darwin'});
+    export const handleRpc = request => service.handleRpc(request);`}});
+  const call = method => `await nodeRepl.rpc('sky', {type: 'execute', method: '${method}', args: []})`;
+  const refused = await host.js(`try { ${call('refuse')}; } catch (e) { nodeRepl.write(JSON.stringify({name: e.name, message: e.message, errorName: e.errorName ?? null})); }`);
+  assert.deepEqual(parsed(refused), {name: 'Error', message: 'Computer Use server error -10005: refused', errorName: null}, 'the rejection crosses as before');
+  assert.equal(refused._meta['cua/errorName'], 'backgroundClickRefused');
+  assert.equal(typeof refused._meta['cua/serviceMs'], 'number');
+  const cleared = await host.js(`try { ${call('refuse')}; } catch {} nodeRepl.write(JSON.stringify(${call('click')}));`);
+  assert.deepEqual(parsed(cleared), {served: 'click'});
+  assert.equal(cleared._meta['cua/errorName'], null, 'the cell\'s last call succeeded');
+  const next = await host.js(`nodeRepl.write(JSON.stringify(${call('click')}));`);
+  assert.equal(next._meta['cua/errorName'], null);
+});
+
 // A ready worker whose trusted code blocks its event loop: the host bounds what it waits for from it by the deadlines
 // the worker reported for its handlers plus a margin, then stops it, so turn ends, cells and the EOF drain all finish.
 // The after-code hook is registered disarmed, so the registering cell's own hooks finish; the cell that arms it is

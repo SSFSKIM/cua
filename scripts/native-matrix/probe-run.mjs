@@ -26,8 +26,8 @@ import {
 import {requeryCell} from './matrix-cells.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
-import {activate, activated, activationOf, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, push, quiet, read, readKey, sendKeys, skippedReadings, Stop, userFront,
-  waitQuiet} from './steps.mjs';
+import {activate, activated, activationOf, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys, skippedReadings, Stop,
+  userFront, waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
 const USER_HASH = sha256Hex(PROBE_TEXT);
@@ -103,9 +103,9 @@ const detectionOff = act => (act?.engine?.intervention === 'off' ? 'intervention
 // reading}, {skipped} (its activation did not take front and key) or {invalid}.
 async function userField(ctx, span, user) {
   const front = activate(ctx, user);
+  const skipped = notActivated(ctx, user);
+  if (skipped) return {skipped: {frontKey: skipped}};
   if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
-  const app = SCENES[user].bundleId;
-  if (!activated(ctx, app)) return {skipped: {frontKey: skippedReadings(ctx, [app], app)}};
   const prepared = span.add(await ctx.lane.js(emptyFieldCell(user)));
   const problem = failed(prepared, 'the user window\'s preparation') ?? (prepared.value?.ready ? null : `the user window's field was not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
@@ -288,9 +288,9 @@ const cleanupSeen = r => (!r ? 'not sent' : !r.ok ? `the cell failed: ${String(r
 // activation did not take front and key) or {invalid}.
 async function drivenInFront(ctx, span, scene) {
   const front = activate(ctx, scene);
+  const app = SCENES[scene].bundleId, skipped = notActivated(ctx, scene);
+  if (skipped) return {skipped: {frontKey: skipped}};
   if (!front?.ok) return {invalid: `${scene} did not come to the front`};
-  const app = SCENES[scene].bundleId;
-  if (!activated(ctx, app)) return {skipped: {frontKey: skippedReadings(ctx, [app], app)}};
   const prepared = span.add(await ctx.lane.js(emptyFieldCell(scene)));
   const problem = failed(prepared, 'the preparation') ?? (prepared.value?.ready ? null : `not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
@@ -396,9 +396,9 @@ async function saveSheetAttempt(ctx, {lead, id, key}) {
   const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const front = activate(ctx, scene);
+  const app = SCENES[scene].bundleId, skipped = notActivated(ctx, scene);
+  if (skipped) return span.end({frontKey: skipped});
   if (!front?.ok) return span.end({invalid: `${scene} did not come to the front`});
-  const app = SCENES[scene].bundleId;
-  if (!activated(ctx, app)) return span.end({frontKey: skippedReadings(ctx, [app], app)});
   const keys = async (code, names) => span.add(await sendKeys(ctx, code, names, {scene, front: read(ctx), kind: 'row', key}));
   const cleanup = () => closeSaveSheet(ctx, keys);
   const unprepared = invalid => span.end({invalid}, {cleanup});

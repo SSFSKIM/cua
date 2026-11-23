@@ -84,11 +84,18 @@ test('a failed engine step fails cua install --engine with the runtime\'s remedy
   assert.match(raw.stderr, /cua's Linux engine was not installed: EIO: EIO: i\/o error \[linux_engine_install_failed\]/);
 });
 
-test('--engine is a Linux flag of cua install: elsewhere a usage error; no engine step runs off Linux', async () => {
-  const {deps} = installDeps({installEngine: async () => assert.fail('no engine step')});
-  const elsewhere = await cli(['install', '--no-node', '--engine'], {...deps, platform: 'darwin'});
+// --engine means the same on both platforms (#117 M4): cua's engine is required. On macOS it is the macOS engine's step
+// (test/runtime-engine-install.test.mjs), never the Linux engine's; elsewhere the flag is a usage error.
+test('--engine on macOS runs the macOS engine step, never the Linux one; off macOS and Linux it is a usage error', async () => {
+  const {deps} = installDeps({installEngine: async () => assert.fail('no Linux engine step')});
+  const mac = [];
+  const darwin = await cli(['install', '--no-node', '--engine', '--json'], {...deps, platform: 'darwin', env: {HOME: '/fixture/user'},
+    installMacosEngine: async options => { mac.push(options.explicit); return {skipped: 'not_selected'}; }});
+  assert.equal(darwin.status, 0, darwin.stderr);
+  assert.deepEqual(mac, [true]);
+  const elsewhere = await cli(['install', '--no-node', '--engine'], {...deps, platform: 'win32'});
   assert.equal(elsewhere.status, 2);
-  assert.match(elsewhere.stderr, /--engine on Linux only/);
+  assert.match(elsewhere.stderr, /--engine on macOS and Linux only/);
 });
 
 test('cua engine status and build on Linux report the engine against the pin; approve and stop stay macOS\'s', async () => {

@@ -1,0 +1,15 @@
+development run, not a release gate (task 148, linux-engine 0.4.4 pinned at H9: chrome t132-handle-long, e044 / off, alternating, load 2)
+[1123/033634.912831:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/033757.523704:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/033841.615490:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/033925.821567:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/034048.217961:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/034209.844958:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/034253.541590:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/034337.610370:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)

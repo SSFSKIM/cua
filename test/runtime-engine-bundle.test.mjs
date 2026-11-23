@@ -2,11 +2,12 @@
 // design.md, Design "The engine"): `build` is a stable hash of the native/engine/ source tree plus the assembler, and the
 // bundle is an LSUIElement app with the engine's id whose Info.plist carries the version and build. The last case runs
 // buildEngine end to end with real codesign, ad hoc, on a throwaway bundle in a temp directory standing in for the
-// approved location (swift is faked with a copy of a system binary): no identity, no keychain, nothing launched.
+// approved location (swift is faked with a copy of a system binary): no identity, no keychain, nothing launched. The
+// build lands in the pending slot (design ruling 1118); the test moves it into place as approve would, then rebuilds.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {ASSEMBLER, BUNDLE_ID, assembleBundle, engineBuild, engineVersion, infoPlist} from '../src/runtime/engine-bundle.mjs';
@@ -77,7 +78,8 @@ test('buildEngine with --sign adhoc and real codesign: a strictly verifying hard
   };
   const result = await buildEngine({identity: 'adhoc', dir, sourceRoot: source, env: {HOME: work.dir}, run});
   assert.deepEqual(result.signature, {kind: 'adhoc', identityMatches: null});
-  const bundle = join(dir, 'cua Engine.app');
+  const bundle = join(dir, 'pending', 'cua Engine.app');
+  assert.equal(result.bundlePath, bundle, 'built in the pending slot beside the approved path (design ruling 1118)');
   assert.equal(spawnSync('/usr/bin/codesign', ['--verify', '--strict', bundle]).status, 0);
   const details = spawnSync('/usr/bin/codesign', ['-dv', bundle], {encoding: 'utf8'});
   assert.match(details.stderr, /flags=0x\w+\([^)]*\bruntime\b/);
@@ -91,10 +93,13 @@ test('buildEngine with --sign adhoc and real codesign: a strictly verifying hard
   assert.match(notABundle.reason, /codesign exited 1: .*bundle format unrecognized/);
 
   const status = await engineStatus({dir, env: {HOME: work.dir}});
-  assert.equal(status.build, result.build);
+  assert.equal(status.exists, false, 'nothing at the approved path yet');
+  assert.equal(status.pending.build, result.build);
   assert.equal(status.running, false);
   assert.equal(status.approved, false);
   assert.equal(installedEngine({dir}), null, 'pending until approved');
+  // What cua engine approve's promote does, without launching anything: the pending bundle into the approved path.
+  renameSync(bundle, join(dir, 'cua Engine.app'));
   writeFileSync(join(dir, 'approved.json'), JSON.stringify({build: result.build, identity: 'adhoc', approvedAt: 'now'}));
   assert.equal(installedEngine({dir}).build, result.build);
   const again = await buildEngine({identity: 'adhoc', dir, sourceRoot: source, env: {HOME: work.dir}, run});

@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, failureOf, finderCheck, firstLineBold,
   bundlePids, compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, minimizeButton, minimizedVerdict,
-  RECOVERY_BOUNDS, parseJournal, parseProcessTable, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
+  RECOVERY_BOUNDS, parseJournal, parseProcessTable, pendingLaunches, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 
@@ -273,6 +273,24 @@ test('alertWatch: system-alert processes are read by name; anything else new abo
   }
 });
 
+test('alertWatch on a hosted run: replayd\'s capture alert (UserNotificationCenter, one a copy) is held, not an abort; anything else still stops the run', () => {
+  const w = (number, ownerPid, extra = {}) => ({number, ownerPid, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, name: null, ...extra});
+  const unc = (number, extra = {}) => w(number, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, ...extra});
+  const before = [w(1, 10), w(3, 600)], runPids = [600];
+  const held = alertWatch(before, [...before, unc(6)], {runPids, hosted: true});
+  assert.equal(held.abort, false, 'rulings 1136/1141: alert up, scene activated first; its samples are NO VERDICT, the run goes on');
+  assert.deepEqual(held.export, {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: 'com.apple.UserNotificationCenter', layer: 8}]}});
+  assert.equal(alertWatch(before, [...before, unc(6), unc(7)], {runPids, hosted: true}).abort, false, 'one alert for each copy: cua\'s engine and the vendor\'s helper');
+  const three = alertWatch(before, [...before, unc(6), unc(7), unc(8)], {runPids, hosted: true});
+  assert.equal(three.abort, true, 'more than the two copies\' alerts is not the known alert');
+  assert.equal(three.export.alerts.length, 3);
+  for (const [why, extra] of [['a pasteboard title', [unc(9, {name: 'Allow “cua Engine” to paste from Mail?'})]],
+    ['another alert process', [w(10, 13, {ownerName: 'SecurityAgent', ownerBundleId: 'com.apple.SecurityAgent'})]],
+    ['an unknown new window', [w(11, 14, {layer: 3})]]])
+    assert.equal(alertWatch(before, [...before, ...extra], {runPids, hosted: true}).abort, true, why);
+  assert.equal(alertWatch(before, [...before, unc(6)], {runPids}).abort, true, 'off a hosted run every alert process stops the run, as before');
+});
+
 test('compositionGuard: HID keys only while the scene\'s TextEdit is the front app, its scene window the front window and TextEdit\'s key window', () => {
   const record = {pid: 600, window: {number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}};
   const ok = {frontmost: {pid: 600, bundleId: 'com.apple.TextEdit'}, topWindow: {ownerPid: 600, number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: 600, height: 800}}, record};
@@ -381,10 +399,15 @@ test('parseProcessTable and parseJournal: ps\'s lstart and the journal\'s rows r
   assert.deepEqual(table, [
     {pid: 100, ppid: 1, uid: 501, start: 'Tue Oct 21 10:00:00 2026', command: 'node scripts/native-matrix/live-device.mjs paste --run /r'},
     {pid: 101, ppid: 100, uid: 501, start: 'Wed Oct 1 09:05:07 2026', command: '/usr/bin/swift x.swift'}]);
-  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\nprobe\tpending\t-\tinput-source#a1\n'), [
+  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\nprobe\tpending\t-\tinput-source#a1\n'
+), [
     {kind: 'cli', pid: 100, start: 'Tue Oct 21 10:00:00 2026', label: 'live-device.mjs paste'},
     {kind: 'probe', pid: null, start: null, label: 'keystroke'},
-    {kind: 'probe', pid: null, start: null, label: 'input-source#a1'}]);
+    {kind: 'probe', pid: null, start: null, label: 'input-source#a1', pending: true}]);
+  // Pending until a later row of its label gives its outcome, a pid or `-`; nothing else resolves it.
+  assert.deepEqual(pendingLaunches(parseJournal('probe\tpending\t-\ta#1\nprobe\tpending\t-\tb#2\nprobe\t-\t-\ta#1\nprobe\tpending\t-\tc#3\nprobe\t900\tT\tc#3\n'
+    + 'probe\tpending\t-\td#4\nprobe\tunidentified\t-\td#4\nprobe\tpending\t-\te#5\nprobe\tunidentified\t-\te#5\nprobe\t-\t-\te#5\n')), ['b#2', 'd#4'],
+    'an identification that timed out is still pending, until its final line or a person writes `-`');
 });
 
 test('recoveryPlan: only journaled pids whose start time still matches are stopped; an in-flight scene up is awaited; anything else is listed, untouched', () => {
@@ -436,7 +459,8 @@ test('recoveryPlan: only journaled pids whose start time still matches are stopp
 test('the recovery\'s bound covers its waits and every put-back step with the stop after it', () => {
   const b = RECOVERY_BOUNDS;
   assert.equal(putBackBoundMs(b), 8 * (b.stepMs + 2 * b.stepKillMs + 2 * b.killMs));
-  assert.equal(recoverBoundMs(b), 4 * b.killMs + b.sceneUpWaitMs + b.probeWaitMs + putBackBoundMs(b));
+  // Two probe waits: the pending launches established, then any unidentified probe of the bundle out.
+  assert.equal(recoverBoundMs(b), 4 * b.killMs + b.sceneUpWaitMs + 2 * b.probeWaitMs + putBackBoundMs(b));
 });
 
 // The approved engine's processes (#235: its agent cursor's panels are windows of the resident engine), by their command

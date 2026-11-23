@@ -34,6 +34,7 @@ export class BrowserServiceError extends Error {
 export const DEADLINE_EXCEEDED = 'CDP operation exceeded its deadline before command dispatch';
 
 const ALLOWED_PROTOCOLS = Object.freeze(['http:', 'https:']);
+const quotedList = items => (items.length === 0 ? 'none' : items.map(item => JSON.stringify(item)).join(', '));
 const ALWAYS_ALLOWED = new Set(['about:blank']);
 const CANNOT_VISIT = 'Browser use cannot visit the requested page.';
 
@@ -45,7 +46,12 @@ const SENTENCES = {
   unsupported_protocol: () => `${CANNOT_VISIT} The requested URL protocol is not allowed. Allowed protocols: ${ALLOWED_PROTOCOLS.map(p => `"${p}"`).join(', ')}.`,
   tab_not_found: (tabId, tabs = []) => `Tab not found: ${tabId}. Existing tabs: ${tabs.length
     ? tabs.map(t => `${t.id}|${t.title ?? '<no title>'}|${t.url ?? '<no url>'}`).join(', ') : 'none'}`,
-  browser_not_found: id => `Browser is not available: ${id}`,
+  // cua's addition (#493): a selection's miss names what would have been found, the vendor's sentence first.
+  // A profile registered under a backend type or family (`selectorKey`, its instance) is pointed to its instance id.
+  browser_not_found: (id, available) => `Browser is not available: ${id}${available?.ids === undefined ? ''
+    : `. Browser ids: ${quotedList(available.ids)}; profiles_list keys: ${quotedList(available.keys ?? [])}.`}${available?.selectorKey === undefined ? ''
+    : ` ${JSON.stringify(id)} names a browser type or family, not the profile registered under it: select that profile with cua.getBrowser({extensionInstanceId: ${JSON.stringify(available.selectorKey)}}).`}${available?.unreached !== true ? ''
+    : ` The profile keyed ${JSON.stringify(id)} was bound after this runtime launched, and this runtime cannot reach its browser: a new session can.`}`,
   dialog_open: type => `A ${type} JavaScript dialog is active in this tab. Use \`tab.getJsDialog()\` to get it and dismiss it first.`,
   timeout: () => DEADLINE_EXCEEDED,
   tab_detached: () => 'Debugger unattached',

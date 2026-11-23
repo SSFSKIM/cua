@@ -1,0 +1,22 @@
+== head cd03a47bde2a484e1c3ecbf07cc97aada720fda7, 2026-11-23T10:09:54Z, x86_64; pin x64 eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca
+-rwxr-xr-x 1 new new 2245504 Nov 23 01:05 /Users/new/.local/share/cua-171/m5/home-x64-044/engine/linux/cua-engine
+sha256 eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca
+sha256 equals the pin
+cua-engine 0.4.4 (23f342178d94)
+/Users/new/.local/share/cua-171/m5/home-x64-044/engine/linux/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=cae68eb6c08bd633411c51e3449d21fed1d195e7, stripped
+{
+  "schema": 1,
+  "build": "pinned",
+  "version": "0.4.4",
+  "release": "linux-engine-v0.4.4",
+  "sha256": "eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca",
+  "source": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.4/cua-engine-0.4.4-linux-x64",
+  "installedAt": "2026-11-23T09:05:50.046Z"
+}
+
+26.928.40906-linux-x64
+--- gate.mjs check --pinned
+acceptance on the pinned release: /Users/new/.local/share/cua-171/m5/home-x64-044/engine/linux/cua-engine
+candidate: sha256 eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.4 (23f342178d94); the pin's x64 asset of linux-engine-v0.4.4; native/linux-engine as at 23f342178d94f81fc37a95124e818f8238b36ef0, the checkout at cd03a47bde2a484e1c3ecbf07cc97aada720fda7; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/45138098451/attempts/1, built from 23f342178d94f81fc37a95124e818f8238b36ef0 (refs/heads/engine-044) on a github-hosted runner; .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/45135771944/attempts/1, built from 23f342178d94f81fc37a95124e818f8238b36ef0 (refs/heads/engine-044) on a github-hosted runner
+{"gate":"pinned","sha256":"eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca","target":"x86_64-unknown-linux-musl","linkage":"static-pie","version":"cua-engine 0.4.4 (23f342178d94)","commit":"cd03a47bde2a484e1c3ecbf07cc97aada720fda7","clean":true,"attestation":{"verified":true,"signer_workflow":"SSFSKIM/cua/.github/workflows/linux-engine.yml","attestations":[{"subjects":[{"name":"cua-engine-0.4.4-linux-x64","sha256":"eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca"},{"name":"cua-engine-0.4.4-linux-arm64","sha256":"f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e"}],"predicate":"https://slsa.dev/provenance/v1","source_commit":"23f342178d94f81fc37a95124e818f8238b36ef0","source_ref":"refs/heads/engine-044","signer":"https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/engine-044","run":"https://github.com/SSFSKIM/cua/actions/runs/45138098451/attempts/1","runner":"github-hosted"},{"subjects":[{"name":"cua-engine-0.4.4-linux-x64","sha256":"eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca"},{"name":"cua-engine-0.4.4-linux-arm64","sha256":"f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e"}],"predicate":"https://slsa.dev/provenance/v1","source_commit":"23f342178d94f81fc37a95124e818f8238b36ef0","source_ref":"refs/heads/engine-044","signer":"https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/engine-044","run":"https://github.com/SSFSKIM/cua/actions/runs/45135771944/attempts/1","runner":"github-hosted"}]},"pin":{"arch":"x64","version":"0.4.4","release":"linux-engine-v0.4.4","sha256":"eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca"},"installed":{"path":"/Users/new/.local/share/cua-171/m5/home-x64-044/engine/linux/install.json","build":"pinned","release":"linux-engine-v0.4.4","version":"0.4.4","installedAt":"2026-11-23T09:05:50.046Z"},"engine_tree":{"path":"native/linux-engine","commit":"23f342178d94f81fc37a95124e818f8238b36ef0","equal":true}}
+check exit 0

@@ -5,11 +5,12 @@
 // order read around every background cell (#485); and Acceptance 3's keystroke witness in TextEdit's background click.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {AX_FULL} from '../../scripts/native-baseline/cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
-import {args, cellsOf, matrixSteps, runWith} from './run-doubles.mjs';
+import {args, cellsOf, matrixSteps, runWith, stopWith} from './run-doubles.mjs';
 
 const TEXTEDIT = SCENES.textedit.bundleId, FINDER = SCENES.finder.bundleId, ELECTRON = SCENES.electron.bundleId, ALERT = 'com.apple.UserNotificationCenter';
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
@@ -34,6 +35,29 @@ test('a hosted run: every judged row carries its front/key readings and the acti
   assert.equal((await runWith()).result.meta.hosted, false);
 });
 
+// T10b′ part 2: the device's own record of the job's run is the run's hosted attestation (meta.runner), the run's install
+// its approved runtime and engine; a record of another run, or a controller off the runner, leaves the run incomplete.
+const RECORD = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
+  install: {home: '/H', release: '26.0-dry'}, engine: {bundle: '/A/cua Engine.app', build: 'b', engineVersion: '0.2.0'}};
+const attesting = record => ({preflight: (base, a) => ({...base(a), runner: record})});
+test('a hosted run records the runner the device attests; another run\'s record or a controller off the runner stops it', async () => {
+  const env = {...HOSTED, GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '1'};
+  const {result} = await runWith({env, ops: attesting(RECORD)});
+  assert.equal(result.complete, true, result.problems.join('; '));
+  assert.equal(result.meta.hosted, true);
+  assert.deepEqual(result.meta.runner, RECORD);
+  // Without the device's record the hosted run is unattested (the judge's missing proof), still hosted.
+  assert.deepEqual([(await runWith({env})).result.meta.runner, (await runWith({env})).result.meta.hosted], [null, true]);
+  const stale = (await runWith({env, ops: attesting({...RECORD, run: {id: '6', attempt: '1'}})})).result;
+  assert.equal(stale.complete, false);
+  assert.ok(stale.problems.some(p => /names run 6 attempt 1, not this job's run 7 attempt 1/.test(p)), stale.problems.join('; '));
+  const off = (await runWith({ops: attesting(RECORD)})).result;
+  assert.equal(off.complete, false);
+  assert.ok(off.problems.some(p => /this controller is not on one/.test(p)), off.problems.join('; '));
+  const install = (await runWith({env, ops: attesting({...RECORD, install: {home: '/other', release: 'r'}})})).result;
+  assert.ok(install.problems.some(p => /--approved-runtime \/H is not the run's install \(\/other\)/.test(p)), install.problems.join('; '));
+});
+
 test('an activate step that did not take key (the alert kept it): the act is skipped, its readings say why, no verdict and no fail', async () => {
   const calls = [];
   const {result} = await runWith({env: HOSTED, calls, ops: steer((a, answer) => {
@@ -49,6 +73,60 @@ test('an activate step that did not take key (the alert kept it): the act is ski
   }
   assert.ok(!calls.some(c => c.code.includes(cellsOf('textedit', 'scroll', 'down').act)), 'no act was sent');
   assert.deepEqual(validateCellResult(result), []);
+});
+
+test('a scene command that could not bring its app to the front: every sample it was for is recorded skipped from the check, none vanishes and none is invalid', async () => {
+  // Every activation of `scene` after the one before its bind (a run whose setup cannot bind stops).
+  const refuse = scene => { let seen = 0; return steer((a, answer) => (a[0] === 'step' && a[1] === 'activate' && a[2] === scene && seen++ > 0
+    ? {...answer, answer: {scene, ok: false, reason: 'the run\'s process 7 is not frontmost within 5000 ms'}, frontKey: {front: FINDER, key: ALERT}} : answer)); };
+  const matrix = (await runWith({env: HOSTED, plan: planOf('matrix', {scene: 'textedit', user: 'finder'}), ops: refuse('textedit')})).result;
+  const skippedOf = section => matrix.rows.filter(r => r.section === section && r.scene === 'textedit' && r.frontKey?.after === null);
+  const method = matrix.rows.filter(r => r.id.startsWith('textedit/frontmost/'));
+  assert.ok(method.length > 10 && method.every(r => r.ok === false && r.invalid === undefined && r.frontKey.activate.front === false), 'the method cases');
+  for (const row of method) assert.equal(sampleCause({...row, hosted: true}).category, 'activation');
+  assert.equal(skippedOf('speed').length, 6, 'three ops, two samples each');
+  assert.ok(skippedOf('finding').some(r => r.id === 'textedit/lines'));
+  assert.ok(matrix.rows.some(r => r.id === 'textedit/method.click.control' && r.frontKey?.after === null), 'the cases\' timings too');
+  assert.deepEqual(validateCellResult(matrix), []);
+  // A measures-only cell records its samples too.
+  const speed = (await runWith({env: HOSTED, plan: planOf('speed', {scene: 'textedit'}), ops: refuse('textedit')})).result;
+  assert.equal(speed.rows.filter(r => r.section === 'speed' && r.frontKey?.activate.front === false).length, 6);
+  // The background regime's user window too.
+  const background = (await runWith({env: HOSTED, ops: refuse('finder')})).result;
+  assert.ok(background.rows.filter(r => r.section === 'method').every(r => r.invalid === undefined && r.frontKey?.activate.app === FINDER && r.frontKey.after === null));
+  // Finder in front and key but its run window not on top: the setup's own failure, invalid as before.
+  let finderSeen = 0;
+  const wrongWindow = steer((a, answer) => (a[0] === 'step' && a[1] === 'activate' && a[2] === 'finder' && finderSeen++ > 0
+    ? {...answer, answer: {scene: 'finder', ok: false, reason: 'the run\'s Finder is frontmost but its top window is not the run\'s window'}} : answer));
+  const finder = (await runWith({env: HOSTED, plan: planOf('method', {scene: 'finder'}), ops: wrongWindow})).result;
+  assert.ok(finder.rows.filter(r => r.id.startsWith('finder/frontmost/')).every(r => /did not come to the front/.test(r.invalid ?? '')));
+});
+
+test('a case whose re-activation after its prepare did not take: its timing is skipped with it, the case\'s readings its own', async () => {
+  const calls = [];
+  const prepare = cellsOf('textedit', 'click', 'control').prepare;
+  let armed = false, alertSeen = null;
+  const {result} = await runWith({env: HOSTED, calls, plan: planOf('matrix', {scene: 'textedit'}), ops: {...steer((a, answer) => {
+    // After click.control's prepare the alert is front and key, and the activation that follows does not take it back.
+    if (a[0] === 'read' && a.includes('--with') && calls.at(-1)?.code.includes(prepare)) {
+      armed = true;
+      if (alertSeen === null) alertSeen = answer.at[1];
+      return {...answer, frontKey: {front: ALERT, key: ALERT}};
+    }
+    if (armed && a[0] === 'step' && a[1] === 'activate') { armed = false; return {...answer, frontKey: {front: ALERT, key: ALERT}}; }
+    return answer;
+  }),
+  // The watcher saw the alert come up during the before-read that prompted the re-activation (its end, past the
+  // prepare's margin): the row's, so the run stays complete and the sample is NO VERDICT (ruling 1141).
+  ...stopWith(() => ({activations: [{kind: 'activated', bundleId: ALERT, at: alertSeen}]}))}});
+  const row = result.rows.find(r => r.id === 'textedit/frontmost/click.control' && r.sample === 1);
+  assert.deepEqual([row.ok, row.invalid, row.frontKey.activate.front, row.frontKey.after], [false, undefined, false, null]);
+  const timing = result.rows.filter(r => r.section === 'speed' && r.id === 'textedit/method.click.control');
+  assert.equal(timing.length, 1, 'the timing row is there, once');
+  assert.deepEqual([timing[0].ok, timing[0].frontKey], [false, row.frontKey]);
+  assert.equal(sampleCause({...timing[0], hosted: true}).category, 'activation');
+  assert.equal(result.complete, true, JSON.stringify(result.problems));
+  assert.deepEqual(result.meta.activations.unaccounted, []);
 });
 
 test('the frontmost regime: a scene that is not front and key before its act is activated again, and the row reads the new check', async () => {
@@ -131,13 +209,35 @@ test('Acceptance 3: after TextEdit\'s background click, a probe keystroke into F
     const failed = (await runWith({cell: witness({check})})).result.rows.find(r => r.id === row.id);
     assert.deepEqual([failed.ok, failed.invalid], [false, undefined], JSON.stringify(check));
   }
-  // The probe refused to post because Finder's window was not in front: the witness failed (the front was taken).
-  const aborted = await runWith({cell: witness(), ops: steer((a, answer) => (a[0] === 'probe' && a[1] === 'finish' ? {...answer, answer: {answer: {aborted: true}}} : answer))});
-  assert.deepEqual(aborted.result.rows.find(r => r.id === row.id).outcome.keystroke, {posted: false, finderSelected: true, documentUnchanged: true});
-  assert.equal(aborted.result.rows.find(r => r.id === row.id).ok, false);
-  // A probe that could not post at all says nothing: the row is invalid.
-  const broken = await runWith({cell: witness(), ops: steer((a, answer) => (a[0] === 'probe' && a[1] === 'finish' ? {...answer, answer: {answer: {error: 'no Accessibility grant'}}} : answer))});
-  assert.match(broken.result.rows.find(r => r.id === row.id).invalid, /keystroke witness/);
+  // The probe's gate held its keys because Finder's window was not in front: the witness failed (the front was taken),
+  // the gate's reason recorded and the row judged, its interference too. Both of KeystrokeProbe.swift's answers: at its
+  // first gate (status 4, nothing sent) and between its keys (status 4, `aborted` after the first were posted).
+  const answering = probe => ({cell: witness(), ops: steer((a, answer) => (a[0] === 'probe' && a[1] === 'finish' ? {...answer, answer: {answer: probe}} : answer))});
+  const firstGate = {error: 'the front window is not the named one; nothing was sent'};
+  const midPost = {pid: 4242, layout: 'com.apple.keylayout.ABC', mode: 'layout', presses: [{keyCode: 1, flags: 0, unicode: 's'}], postedAt: 1_700_000_000_000, aborted: true, units: 14};
+  for (const [probe, at] of [[firstGate, 'first'], [midPost, 'during']]) {
+    const failed = (await runWith(answering(probe))).result.rows.find(r => r.id === row.id);
+    assert.deepEqual([failed.ok, failed.invalid], [false, undefined], at);
+    assert.deepEqual({...failed.outcome.keystroke, gate: failed.outcome.keystroke.gate.at}, {posted: false, gate: at, finderSelected: true, documentUnchanged: true});
+    assert.match(failed.outcome.keystroke.gate.reason, /named window/);
+    assert.equal(typeof failed.interference?.ok, 'boolean', 'judged by the oracle');
+  }
+  // The gate held the keys and the read-back after it failed: the gate's failure stands, the read-back recorded as
+  // unavailable, the row judged; without a gate, the same failed read-back leaves the row invalid.
+  const failingCheck = witness({check: {cellError: 'Finder did not answer'}});
+  const gated = (await runWith({...answering(firstGate), cell: failingCheck})).result.rows.find(r => r.id === row.id);
+  assert.deepEqual([gated.ok, gated.invalid], [false, undefined]);
+  assert.deepEqual({...gated.outcome.keystroke, gate: gated.outcome.keystroke.gate.at, readBack: gated.outcome.keystroke.readBack.unavailable},
+    {posted: false, gate: 'first', finderSelected: null, documentUnchanged: null, readBack: true});
+  assert.match(gated.outcome.keystroke.readBack.error, /Finder did not answer/);
+  assert.equal(typeof gated.interference?.ok, 'boolean', 'judged by the oracle');
+  const ungated = (await runWith({cell: failingCheck})).result.rows.find(r => r.id === row.id);
+  assert.match(ungated.invalid, /read-back failed/);
+  // A probe that failed as a probe (no layout, an event it could not make, no answer) says nothing: the row is invalid.
+  for (const probe of [{error: 'Unable to get the current keyboard layout.'}, {error: 'a key event could not be created'}, null]) {
+    const broken = (await runWith(answering(probe))).result.rows.find(r => r.id === row.id);
+    assert.match(broken.invalid, /keystroke witness/, JSON.stringify(probe));
+  }
 });
 
 test('the launch row reads front and key, the activate check and the window order, the launched app the target', async () => {
@@ -156,6 +256,41 @@ test('the speed and finding rows carry the readings around their series, and the
   const timing = result.rows.find(r => r.section === 'speed' && r.id === 'textedit/method.click.control');
   assert.deepEqual(timing.frontKey, result.rows.find(r => r.id === 'textedit/frontmost/click.control').frontKey);
   assert.ok(result.rows.filter(judged).every(r => r.frontKey), result.rows.filter(r => judged(r) && !r.frontKey).map(r => `${r.section} ${r.id}`).join(', '));
+});
+
+test('each speed sample reads front and key at its own call\'s boundaries, sharing one only with the call next to it', async () => {
+  // Every front/key reading is a new one (its key numbered), so the rows show which reading each boundary used.
+  let n = 0;
+  const {result} = await runWith({env: HOSTED, plan: planOf('speed', {scene: 'textedit'}), ops: steer((a, answer) => (a[0] === 'read' && a.includes('--with') ? {...answer, frontKey: {front: TEXTEDIT, key: `reading-${++n}`}} : answer))});
+  const series = op => result.rows.filter(r => r.section === 'speed' && r.id === `textedit/${op}`);
+  const [ax, shot, apps] = ['getAXState', 'getScreenshot', 'listApps'].map(series);
+  for (const list of [ax, shot, apps]) {
+    assert.equal(list.length, 2);
+    assert.notDeepEqual(list[0].frontKey.before, list[0].frontKey.after, 'each sample is read after its call');
+    assert.deepEqual(list[1].frontKey.before, list[0].frontKey.after, 'the next call\'s before is the boundary they share');
+    assert.notDeepEqual(list[1].frontKey.after, list[0].frontKey.after);
+  }
+  assert.deepEqual(shot[0].frontKey.before, ax[1].frontKey.after, 'nothing runs between the two series');
+  assert.notDeepEqual(apps[0].frontKey.before, shot[1].frontKey.after, 'the scratch guard ran between them: read afresh');
+});
+
+test('an activation the front/key read after a measured call or a row saw is that call\'s or row\'s, never unaccounted', async () => {
+  const at = (calls, code, index = 0) => calls.filter(c => c.code.includes(code))[index].at;
+  // A speed sample's after-read: between the first getAXState sample's end and the second's start, past the calls'
+  // margin. The sample's measure window runs to that read's end.
+  const speedCalls = [];
+  const speed = (await runWith({env: HOSTED, calls: speedCalls, plan: planOf('speed', {scene: 'textedit'}),
+    ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: ALERT, at: at(speedCalls, AX_FULL, 1)[0] - 1_500}]}))})).result;
+  assert.equal(speed.complete, true, JSON.stringify(speed.problems));
+  assert.deepEqual(speed.meta.activations.unaccounted, []);
+  assert.deepEqual(speed.meta.activations.accounted.map(a => [a.kind, a.key]), [['measure', 'textedit/getAXState']]);
+  // A case row's read after its check: the row's window runs to that read's end, so the activation is the row's.
+  const check = cellsOf('textedit', 'click', 'control').check;
+  const rowCalls = [];
+  const row = (await runWith({calls: rowCalls, ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: ALERT, at: at(rowCalls, check)[1] + 1_500}]}))})).result;
+  assert.equal(row.complete, true, JSON.stringify(row.problems));
+  assert.deepEqual(row.meta.activations.unaccounted, []);
+  assert.equal(row.rows.find(r => r.id === 'textedit/background/click.control@finder').interference.activations, 1);
 });
 
 test('the probe cells and the Unicode rows of a full plan carry their readings too', async () => {

@@ -9,7 +9,7 @@ import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {ACCEPTANCE_3, caseId, focusVerdict, isAcceptance3, methodTimingId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {probeProblem, WITNESS_FILES, WITNESS_LEAD_MS, WITNESS_PREPARE_CELL, witnessCheckCell} from './probe-plan.mjs';
+import {keystrokeGate, probeProblem, WITNESS_FILES, WITNESS_LEAD_MS, WITNESS_PREPARE_CELL, witnessCheckCell} from './probe-plan.mjs';
 
 // The acts that may paste (type_text's paste route included): each sent only between two alert checks.
 export const PASTING = Object.freeze(['paste', 'typeText']);
@@ -40,6 +40,10 @@ export function step(ctx, args) {
   if (args[0] === 'activate') {
     const app = SCENES[args[1]].bundleId, seen = keyReading({frontKey});
     ctx.activated = {app, front: seen.front === app, key: seen.key === app, seen};
+    if (answer?.windowOrder) {
+      (ctx.meta.activationGuards ??= []).push({scene: args[1], beforeRow: ctx.rows.length, at, ok: answer.ok,
+        ...(answer.reason ? {reason: answer.reason} : {}), windowOrder: answer.windowOrder, ...(answer.framePin ? {framePin: answer.framePin} : {})});
+    }
   }
   return answer;
 }
@@ -59,8 +63,10 @@ export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 
 
 // The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
 // the run untouched; only its sanitized export is kept. The engine under test's own windows (its roots) are not alerts.
+// On a hosted run replayd's capture alert is held, not a stop (./live-checks.mjs alertWatch `hosted`; rulings 1136, 1141):
+// a sample with it front or key is NO VERDICT by its front/key readings (./front-key.mjs).
 export function alertCheck(ctx, when) {
-  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...engineRoots(ctx)]);
+  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...engineRoots(ctx), ...(ctx.meta.hosted === true ? ['--hosted', 'yes'] : [])]);
   if (check?.abort !== false) {
     ctx.meta.alert = {when, ...(check?.export ?? {})};
     throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);
@@ -109,6 +115,9 @@ export const appsOf = (target, user = null) => [...new Set([...targetsOf(target)
 // A reading's front and key applications, bundle ids (null when unread).
 export const keyReading = r => ({front: r?.frontKey?.front ?? null, key: r?.frontKey?.key ?? null});
 export const readKey = ctx => keyReading(read(ctx, null, {frontKey: true}));
+// The same with the read's device-clock window (`at`, null when the device gave none), for a step whose window must
+// cover the reads beside its call. -> {reading: {front, key}, at}.
+export const readKeyAt = ctx => { const r = read(ctx, null, {frontKey: true}); return {reading: keyReading(r), at: r?.at ?? null}; };
 // The activate step in force for a cell whose activated app is `app`: the last activation's own check when it was that
 // app's, else a check that did not take (nothing activated it since). -> {app, front, key}.
 export const activationOf = (ctx, app) => (ctx.activated?.app === app ? {app, front: ctx.activated.front, key: ctx.activated.key} : {app, front: false, key: false});
@@ -116,6 +125,15 @@ export const activated = (ctx, app) => { const a = activationOf(ctx, app); retur
 // The readings of a cell whose act was skipped because its activation did not take: what the check read after the
 // activate step, nothing after (./front-key.mjs: `after` null, the cause stays `activation`).
 export const skippedReadings = (ctx, apps, app) => ({apps, activate: activationOf(ctx, app), before: ctx.activated?.app === app ? ctx.activated.seen : {front: null, key: null}, after: null});
+// An activate step of `scene` whose check did not show its app front and key (whatever the scenes command answered:
+// its process never came to the front within its bound, or an alert kept the key): the readings the cells it was for
+// carry instead of an act (ruling 1141: NO VERDICT, never invalid). A command that answered not ok while the check shows
+// the app front and key (Finder in front with another of its windows above the run's, say) is the setup's own failure:
+// null, the caller's invalid. -> the skipped readings for `apps`, or null.
+export const notActivated = (ctx, scene, apps = [SCENES[scene].bundleId]) => {
+  const app = SCENES[scene].bundleId;
+  return activated(ctx, app) ? null : skippedReadings(ctx, apps, app);
+};
 // The engine's own name for the error an act threw (its result meta's `cua/errorName`, ./lane.mjs engineMetaOf), else
 // the name the cell caught (the REPL's plain Error on either engine, or none).
 export const errorNameOf = (act, caught = act?.value?.errorName ?? null) => act?.engine?.errorName ?? caught;
@@ -211,16 +229,24 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     row.focusReadBy = verdict.by;
     if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
   }
-  const before = regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target);
-  if (!activated(ctx, app)) return done({frontKey: {...skippedReadings(ctx, apps, app), before: keyReading(before)}});
+  // The row's window runs through the final before-read, so what it saw (an alert that prompted a re-activation) is
+  // the row's even when the act is then skipped; a harness step's own app keeps its precedence (./oracle.mjs).
+  const before = span(regime === 'background' ? await userFront(ctx, user, userWindow, {rekey: userValue === null}) : drivenFront(ctx, target));
+  if (!activated(ctx, app)) {
+    // The skipped act's timing is skipped with it, the case's readings its own, so no planned sample goes missing.
+    const skipped = done({frontKey: {...skippedReadings(ctx, apps, app), before: keyReading(before)}});
+    if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey: skipped.frontKey});
+    return skipped;
+  }
   if (regime === 'background') {
     if (!before.inFront) return done({invalid: 'the user window was not in front before the action'});
     if (before.watcher !== true) return done({invalid: 'the activation watcher was not running before the action'});
   }
   const readings = {apps, activate: activationOf(ctx, app), before: keyReading(before)};
-  // The reading after the act's check (and the witness), taken once: every row from here on carries it.
+  // The reading after the act's check (and the witness), taken once: every row from here on carries it, and the row's
+  // window runs to its end, so an activation it saw is the row's (the reads before the act are inside the window too).
   let late = null;
-  const after = options => (late ??= read(ctx, null, {frontKey: true, ...options}));
+  const after = options => (late ??= span(read(ctx, null, {frontKey: true, ...options})));
   const finish = extra => done({frontKey: {...readings, after: keyReading(after())}, ...extra});
   if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
   const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
@@ -242,7 +268,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const kept = userValue === null ? null : oracleAfter?.focus?.named === true && oracleAfter.focus.valueHash === userValue;
   const outcome = {...(check.value?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept}), ...(witness ? {keystroke: witness.keystroke} : {})};
   if (Object.hasOwn(outcome, 'errorName')) outcome.errorName = errorNameOf(act, outcome.errorName);
-  const witnessed = !witness || Object.values(witness.keystroke).every(v => v === true);
+  const witnessed = !witness || (witness.keystroke.posted && witness.keystroke.finderSelected && witness.keystroke.documentUnchanged);
   const pushed = finish({ok: check.value?.ok === true && kept !== false && witnessed, outcome});
   ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
     ? {before: before.reading, after: oracleAfter.reading, focus: oracleAfter.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
@@ -254,10 +280,13 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
 
 // Acceptance 3's keystroke witness (S L238; ./probe-plan.mjs WITNESS_PREPARE_CELL), after TextEdit's background click
 // and its check, with the user window (the run's Finder window) in front: a keystroke probe gated on that window types a
-// run-owned file's name, which Finder's list must select, while TextEdit's document keeps its value. A probe that would
-// not post because the window was no longer in front is the witness failing (the front was taken); one that could not
-// post at all says nothing. The probe's keys are a user's to Finder: the run waits the debounce out before it drives
-// Finder again (quiet). -> {keystroke: {posted, finderSelected, documentUnchanged}} | {invalid}.
+// run-owned file's name, which Finder's list must select, while TextEdit's document keeps its value. A probe whose gate
+// held its keys because Finder's window was no longer in front, at its first gate or between its keys
+// (./probe-plan.mjs keystrokeGate), is the witness failing, the front taken: `posted` false and the gate's reason
+// recorded, the read-back still taken, and the row judged (its interference too). Only a fault of the probe itself
+// (no answer, a key event it could not make) says nothing: invalid. The probe's keys are a user's to Finder: the run
+// waits the debounce out before it drives Finder again (quiet).
+// -> {keystroke: {posted, gate?: {at, reason}, finderSelected, documentUnchanged}} | {invalid}.
 async function keystrokeWitness(ctx, span, userWindow) {
   const chosen = span(await ctx.lane.js(WITNESS_PREPARE_CELL));
   const file = chosen.ok ? chosen.value?.target : null;
@@ -265,9 +294,16 @@ async function keystrokeWitness(ctx, span, userWindow) {
   device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', file, '--lead', String(WITNESS_LEAD_MS)]);
   const finished = device(ctx, ['probe', 'finish']);
   ctx.posted[ACCEPTANCE_3.user] = ctx.now();
-  const problem = probeProblem(finished?.answer);
-  if (problem && finished?.answer?.aborted !== true) return {invalid: `the keystroke witness's probe did not post: ${problem}`};
+  const gate = keystrokeGate(finished?.answer);
+  const problem = gate ? null : probeProblem(finished?.answer);
+  if (problem) return {invalid: `the keystroke witness's probe failed: ${problem}`};
   const checked = span(await ctx.lane.js(witnessCheckCell(file)));
-  if (!checked.ok) return {invalid: `the keystroke witness's read-back failed (${String(checked.error ?? '').slice(0, 160)})`};
-  return {keystroke: {posted: problem === null, finderSelected: checked.value?.finderSelected === true, documentUnchanged: checked.value?.documentUnchanged === true}};
+  if (!checked.ok) {
+    const error = String(checked.error ?? '').slice(0, 160);
+    // A proven gate already failed the witness (the front was taken): the read-back is missing, not the verdict, so the
+    // row stays judged, its interference too. Without a gate, a missing read-back says nothing.
+    if (gate) return {keystroke: {posted: false, gate, finderSelected: null, documentUnchanged: null, readBack: {unavailable: true, error}}};
+    return {invalid: `the keystroke witness's read-back failed (${error})`};
+  }
+  return {keystroke: {posted: gate === null, ...(gate ? {gate} : {}), finderSelected: checked.value?.finderSelected === true, documentUnchanged: checked.value?.documentUnchanged === true}};
 }

@@ -29,7 +29,9 @@ export async function runWith({engine = 'cua', plan = planOf('background', {scen
       const answer = await request(method, params);
       if (method !== 'tools/call') return answer;
       const value = cell ? cell(params.arguments.code) : null;
-      const text = value ? `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}` : answer.content[0].text;
+      // `{cellError}` is a cell that threw (the envelope's `ok: false`); any other answer is the cell's value.
+      const envelope = value?.cellError ? {ok: false, error: value.cellError, inCellMs: 1} : {ok: true, value, inCellMs: 1};
+      const text = value ? `CUA_NATIVE_BASELINE ${JSON.stringify(envelope)}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}` : answer.content[0].text;
       calls.push({code: params.arguments.code, at: JSON.parse(text.split('\n').find(l => l.startsWith(AT_MARKER)).slice(AT_MARKER.length))});
       return {...answer, content: [{type: 'text', text}], _meta: {...answer._meta, ...(value?._meta ?? {})}};
     };
@@ -38,7 +40,7 @@ export async function runWith({engine = 'cua', plan = planOf('background', {scen
   const out = fs.mkdtempSync(join(tmpdir(), 'matrix-run-'));
   try {
     const code = await runMatrix({device: 'mini', host: engine, engine, approvedRuntime: '/H', approvedEngine: BUNDLE, out, runs, samples: 2, plan, cell: cellName, sitting,
-      ...(runNumber === undefined ? {} : {runNumber})}, {ops, connect: steered, controllerCheckout: () => checkout, log: () => {}, sleep: async ms => { slept.push(ms); }, env});
+      ...(runNumber === undefined ? {} : {runNumber})}, {ops, connect: steered, controllerCheckout: () => checkout, log: () => {}, sleep: async ms => { slept.push(ms); }, env, vmIdentity: () => ({platformUuid: 'P', bootedAt: 'B'})});
     const file = join(out, `run-${runNumber ?? 1}`, 'result.json');
     const results = Object.fromEntries(fs.readdirSync(out).map(d => [d, JSON.parse(fs.readFileSync(join(out, d, 'result.json'), 'utf8'))]));
     // The run directory's other files (the exports beside its result).

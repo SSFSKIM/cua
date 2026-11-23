@@ -76,8 +76,11 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
     return row;
   });
   return cellResult({cell: 'matrix', device, started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows, run),
-    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared'} : {}), ...meta}});
+    meta: {run, samples, sitting: 's1', commit: 'c', os: OS, planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...(hosted ? {hosted: true, desktopMode: 'shared', runner: HOSTED_RUNNER} : {}), ...meta}});
 }
+// The record a hosted run's device attests (T10b′ part 2): one job's run for every hosted fixture.
+const HOSTED_RUNNER = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
+  install: {home: '/H', release: 'r'}, engine: {bundle: '/A/cua Engine.app', build: 'a'.repeat(64), engineVersion: '0.2.0'}};
 const set = (id, patch) => rows => rows.map(r => (r.id === id ? {...r, ...patch} : r));
 const OS = Object.freeze({name: 'macOS', version: '26.0', build: '25A354'});
 // Three full runs per side unless given; `extra` results written beside them; `departures` the declared-departures
@@ -110,6 +113,12 @@ test('the verdict: a worse method, a launch that failed, a lower finding measure
   assert.equal(judged().findingVerdict, 'parity');
   const interfering = judged({vendor: {resolved: 9}, cua: {tweak: set(BACK, {interference: {ok: false, frontmost: false, topWindow: true, activations: 1, route4: false}})}});
   assert.ok(interfering.blocking.includes(`not interfering: ${BACK} failed on cua`));
+  // #485: a row the window order failed keeps that reading in its failure, and the summary names the reason.
+  for (const [after, reason] of [[true, /a target window left above the user window/], [null, /window order after the action proved nothing/]]) {
+    const raised = judged({vendor: {resolved: 9}, cua: {tweak: set(BACK, {interference: {ok: false, frontmost: true, topWindow: true, activations: 0, route4: false, windowOrder: {before: false, after}}})}});
+    assert.deepEqual(raised.interference.cua.failed.find(f => f.id === BACK).windowOrder, {before: false, after});
+    assert.match(renderSummary(raised), reason);
+  }
   const slow = judged({vendor: {axMs: 40, resolved: 9}, cua: {axMs: 39}});
   assert.equal(slow.verdict, 'OWNER');
   assert.ok(slow.owner.some(o => /missed the 10% beat/.test(o)));
@@ -718,6 +727,26 @@ test('a pair from two devices or two OS versions is not compared: no comparative
     assert.ok(!j.blocking.includes(`method: ${CLICK} is worse on cua`), JSON.stringify(cuaRun2));
     assert.deepEqual(j.methods.find(x => x.id === CLICK).account.cua.noVerdict, {unpaired: 1});
   }
+});
+
+// T10b′ part 2: on a GitHub-hosted runner the device alias names every runner alike, so a pair is one job's run: each
+// hosted run records the runner the device attested (meta.runner), and both runs of a pair name one.
+test('a hosted pair is one job\'s run: a run with no runner record, or a pair from two runs, is not compared', () => {
+  const RUNNER = id => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
+    install: {home: '/H', release: 'r'}, engine: {bundle: '/A/cua Engine.app', build: 'b', engineVersion: '0.2.0'}});
+  const hosted = id => ({hosted: true, runner: RUNNER(id)});
+  const same = judgeEach({vendor: () => ({resolved: 9, axMs: 50, meta: hosted('7')}), cua: () => ({axMs: 40, meta: hosted('7')})});
+  assert.ok(!same.missing.some(p => /hosted runner/.test(p)), same.missing.join('\n'));
+  const other = judgeEach({vendor: () => ({resolved: 9, axMs: 50, meta: hosted('7')}), cua: n => ({axMs: 40, meta: hosted(n === 2 ? '8' : '7')})});
+  assert.ok(other.missing.some(p => /^run 2's vendor and cua runs name more than one hosted runner \(.*run 7 attempt 1.*run 8 attempt 1.*\): a pair is measured in one job's run/.test(p)), other.missing.join('\n'));
+  assert.ok(other.missing.some(p => /^the full runs name more than one hosted runner/.test(p)), other.missing.join('\n'));
+  // One dispatch's sittings share the run and its attempt but each is its own VM: two VMs never pair.
+  const twoVms = judgeEach({vendor: () => ({resolved: 9, axMs: 50, meta: hosted('7')}), cua: n => ({axMs: 40, meta: n === 2 ? {hosted: true, runner: {...RUNNER('7'), vm: {id: 'vm-2', platformUuid: 'Q', bootedAt: 'B'}}} : hosted('7')})});
+  assert.ok(twoVms.missing.some(p => /^run 2's vendor and cua runs name more than one hosted runner \(.*run 7 attempt 1, VM vm-1.*run 7 attempt 1, VM vm-2.*\)/.test(p)), twoVms.missing.join('\n'));
+  const none = judgeEach({vendor: () => ({resolved: 9, axMs: 50, meta: {hosted: true}}), cua: () => ({axMs: 40, meta: {hosted: true}})});
+  assert.ok(none.missing.some(p => p.startsWith('run 1: a run records no hosted runner (meta.runner)')), none.missing.join('\n'));
+  // Off a runner nothing changes: no run records one, and none is asked for.
+  assert.ok(!judgeEach({vendor: () => ({resolved: 9, axMs: 50}), cua: () => ({axMs: 40})}).missing.some(p => /hosted runner/.test(p)));
 });
 
 const COMPOSING = 'textedit/composing@electron/typeText.hangul';

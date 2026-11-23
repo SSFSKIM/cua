@@ -54,6 +54,7 @@ import {quote} from '../browser-parity/topology.mjs';
 import {AX_FULL, LIST_APPS, SCRATCH_GUARD, SCREENSHOT} from '../native-baseline/cells.mjs';
 import {assertEngineOptions, checkApprovedEngine, engineProblem} from '../native-baseline/engine.mjs';
 import {HOSTS} from '../native-baseline/remote.mjs';
+import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs';
 import {checkVendorPreflight} from './goldens.mjs';
@@ -61,9 +62,10 @@ import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
-import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {CASES, caseId, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {activate, activated, activationOf, caseRow, device, focusOf, js, keyReading, mark, PASTING, push, read, readKey, sendKeys, skippedReadings, step, Stop, TEXTEDIT} from './steps.mjs';
+import {activate, activated, activationOf, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
+  TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
@@ -172,6 +174,7 @@ async function runOnce(options, io) {
       sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null},
     elicitations: [], keySkipped: [],
     // Where the run ran (./front-key.mjs): on a GitHub-hosted runner every judged sample needs its front/key readings.
+    // The controller's environment until the preflight, then with the device's own record (meta.runner, hostedRunOf).
     // The serve the lane starts runs with a cleared environment (../native-baseline/remote.mjs), so cua's launcher
     // takes its default desktop mode, the shared one.
     hosted: (io.env ?? process.env).RUNNER_ENVIRONMENT === 'github-hosted', desktopMode: 'shared'};
@@ -248,6 +251,9 @@ async function runOnce(options, io) {
     meta.nativeEngine = {requested: engine, approved, checkoutBuild, attested: [], unattested: 0};
     meta.runtime = {release: pre.release};
     Object.assign(meta, {commit: pre.commit, hardware: pre.hardware ?? null, os: pre.os ?? null, display: pre.display ?? null});
+    // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs): meta.hosted
+    // from both sides, meta.runner the run's attestation, its install the approved runtime and engine this run serves.
+    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine, ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}));
 
     const scenes = scenesOf(plan);
     meta.fixtures = {
@@ -441,28 +447,49 @@ function finishWatch(ctx) {
 // ---- the regimes --------------------------------------------------------------------------------------------------------
 
 // Every case of a target left invalid for one reason (its precondition could not be set up).
-const invalidCases = (ctx, target, regime, reason, user = null) => {
+const invalidCases = (ctx, target, regime, reason, user = null) => caseRows(ctx, target, regime, {invalid: reason}, user);
+// Every case of a target pushed with `extra` (its invalid reason, or the readings of an activation that did not take).
+const caseRows = (ctx, target, regime, extra, user = null) => {
   for (const c of CASES[target]) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
-    method: c.method, case: c.case, expect: c.expect, ...(user ? {user} : {}), invalid: reason});
+    method: c.method, case: c.case, expect: c.expect, ...(user ? {user} : {}), ...extra});
 };
+// Every sample a frontmost target planned, skipped because its activation did not take front and key (./steps.mjs
+// notActivated): its cases and their timings, and the scene's speed and finding rows, each carrying the activate step's
+// own check, so no planned sample vanishes and none is invalid (ruling 1141).
+function skippedTarget(ctx, target, plan, frontKey) {
+  const scene = SCENE_OF[target], measured = {...frontKey, apps: [SCENES[scene].bundleId]};
+  if (!plan.onlyMeasures) caseRows(ctx, target, 'frontmost', {frontKey});
+  if (plan.speed && !plan.onlyMeasures) for (const c of CASES[target]) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey});
+  if (target === 'openPanel') return;
+  if (plan.speed) for (const op of SPEED_OPS) for (let i = 1; i <= ctx.samples; i++)
+    push(ctx, {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene, frontKey: measured});
+  if (plan.finding) for (const id of [...SCENES[scene].targets.map(t => `target.${t.id}`), 'lines', 'ids'])
+    push(ctx, {section: 'finding', id: `${scene}/${id}`, engine: ctx.engine, sample: ctx.n, ok: false, scene, frontKey: measured});
+}
 
-// The Open panel opened from the run's document (⌘O, under the key guard with TextEdit's process in front).
-async function openPanel(ctx) {
+// The Open panel opened from the run's document (⌘O, under the key guard with TextEdit's process in front). -> null,
+// {skipped: readings} when TextEdit's activation did not take front and key (`apps` the cells' own), or {problem}.
+async function openPanel(ctx, apps) {
   const front = activate(ctx, 'textedit');
-  if (!front?.ok) return `TextEdit did not come to the front (${front?.reason ?? 'no answer'})`;
+  const skipped = notActivated(ctx, 'textedit', apps);
+  if (skipped) return {skipped};
+  if (!front?.ok) return {problem: `TextEdit did not come to the front (${front?.reason ?? 'no answer'})`};
   const opened = await sendKeys(ctx, OPEN_PANEL, ['super+o'], {scene: 'textedit', front: read(ctx)});
-  if (opened === null) return 'the key guard did not send ⌘O';
-  if (!opened.ok || !opened.value?.opened) return `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`;
+  if (opened === null) return {problem: 'the key guard did not send ⌘O'};
+  if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
   return null;
 }
 
 async function frontmostTarget(ctx, target, plan) {
   const scene = SCENE_OF[target];
   if (target === 'openPanel') {
-    const problem = await openPanel(ctx);
-    if (problem) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', problem); return; }
+    const failed = await openPanel(ctx, appsOf(target));
+    if (failed?.skipped) return skippedTarget(ctx, target, plan, failed.skipped);
+    if (failed) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', failed.problem); return; }
   } else {
     const front = activate(ctx, scene);
+    const skipped = notActivated(ctx, scene, appsOf(target));
+    if (skipped) return skippedTarget(ctx, target, plan, skipped);
     if (!front?.ok) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', `the scene did not come to the front (${front?.reason ?? 'no answer'})`); return; }
     if (plan.speed) await speedCells(ctx, scene);
     if (plan.finding) await findingRows(ctx, scene);
@@ -478,8 +505,9 @@ async function closePanel(ctx) {
 
 async function backgroundPairing(ctx, {driven, user}) {
   if (driven === 'openPanel') {
-    const problem = await openPanel(ctx);
-    if (problem) return invalidCases(ctx, driven, 'background', problem, user);
+    const failed = await openPanel(ctx, appsOf(driven, user));
+    if (failed?.skipped) return caseRows(ctx, driven, 'background', {frontKey: failed.skipped}, user);
+    if (failed) return invalidCases(ctx, driven, 'background', failed.problem, user);
   }
   try {
     if (driven === 'windowless') {
@@ -488,9 +516,11 @@ async function backgroundPairing(ctx, {driven, user}) {
       if (!Number.isSafeInteger(up?.answer?.pid)) return invalidCases(ctx, driven, 'background', 'the windowless app did not come up', user);
     }
     const front = activate(ctx, user);
-    const r0 = front?.ok ? read(ctx) : null;
+    const skipped = notActivated(ctx, user, appsOf(driven, user));
+    const r0 = front?.ok && !skipped ? read(ctx) : null;
     const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
-    if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
+    if (skipped) caseRows(ctx, driven, 'background', {frontKey: skipped}, user);
+    else if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
     else for (const c of CASES[driven]) await caseRow(ctx, driven, 'background', c, {user, userWindow});
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
@@ -498,48 +528,66 @@ async function backgroundPairing(ctx, {driven, user}) {
   if (driven === 'openPanel') await closePanel(ctx);
 }
 
+// The speed ops, each the baseline's own cell (./manifest.mjs SPEED_OPS names them).
+const SPEED_CELLS = Object.freeze([['getAXState', AX_FULL], ['getScreenshot', SCREENSHOT], ['listApps', LIST_APPS]]);
+export const SPEED_OPS = Object.freeze(SPEED_CELLS.map(([op]) => op));
+
 // The speed cells of one scene: the baseline's own observation cells on the scene's app, --samples each, the
 // screenshot series bracketed by the scene-in-front guard as the baseline brackets it.
 async function speedCells(ctx, scene) {
   const selected = await js(ctx, 'measure', `select:${scene}`, selectCell(scene));
   const reason = !selected.ok ? `the selection failed: ${selected.error}` : !selected.value?.inFront ? 'the scene window was not the app\'s front window' : null;
-  let before = reason ? null : readKey(ctx);
-  for (const [op, code] of [['getAXState', AX_FULL], ['getScreenshot', SCREENSHOT], ['listApps', LIST_APPS]]) {
+  // Each sample's front/key readings at its own call's boundaries: the reading after one call is the next call's before,
+  // nothing running between them; after the screenshot series' scratch guard (a cell of its own) the next reads afresh.
+  // The sample's measure window runs from its before-read to its after-read (measured), so an activation those reads
+  // saw (an alert's, say) is the measurement's, as it would be during the call.
+  let boundary = null;
+  for (const [op, code] of SPEED_CELLS) {
     const series = [];
     for (let i = 1; i <= ctx.samples; i++) {
       const row = {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene};
       if (reason) { push(ctx, {...row, invalid: reason}); continue; }
       await ctx.checkpoint();
-      const r = await js(ctx, 'measure', `${scene}/${op}`, code);
+      const before = boundary ?? readKeyAt(ctx);
+      const r = await measured(ctx, `${scene}/${op}`, code, before, () => (boundary = readKeyAt(ctx)));
       series.push(push(ctx, {...row, ok: r.ok && !r.value?.invalid, inCellMs: r.inCellMs, wallMs: r.wallMs, ...(r.value?.invalid ? {invalid: r.value.invalid} : {}),
-        ...(r.ok ? {} : {error: r.error})}));
+        ...(r.ok ? {} : {error: r.error}), frontKey: measuredReadings(ctx, scene, before.reading, boundary.reading)}));
     }
     if (op === 'getScreenshot' && !reason) {
       const guard = await js(ctx, 'measure', `${scene}/scratch-guard`, SCRATCH_GUARD);
+      boundary = null;
       if (!guard.ok || !guard.value?.scratchInFront) for (const row of series) row.invalid ??= 'the scene window left the front during the series';
     }
-    if (reason) continue;
-    const frontKey = seriesReadings(ctx, scene, before);
-    for (const row of series) row.frontKey = frontKey;
-    before = frontKey.after;
   }
 }
 
-// The front/key readings of a measured series (the speed cells', the finding cell's; ./front-key.mjs): the scene's own
-// activate step, the reading before the series' first call (`before`) and one after its last, read now.
-function seriesReadings(ctx, scene, before) {
+// A measured call (a speed sample, the finding cell) with its front/key reads, one measure window from the before-read's
+// start (`before`, ./steps.mjs readKeyAt) to the after-read's end (`readAfter`, run once the call returned): only the
+// reads beside the call widen it, never anything else the run does. -> the call's result.
+async function measured(ctx, key, code, before, readAfter) {
+  const r = await ctx.lane.js(code);
+  const after = readAfter();
+  const from = before.at?.[0] ?? r.at?.[0], to = after.at?.[1] ?? r.at?.[1];
+  mark(ctx, 'measure', key, [from, to]);
+  return r;
+}
+
+// The front/key readings of a measured call (a speed sample's, the finding cell's; ./front-key.mjs): the scene's own
+// activate step and the readings at the call's two boundaries.
+function measuredReadings(ctx, scene, before, after) {
   const app = SCENES[scene].bundleId;
-  return {apps: [app], activate: activationOf(ctx, app), before, after: readKey(ctx)};
+  return {apps: [app], activate: activationOf(ctx, app), before, after};
 }
 
 // The finding-elements cell of one scene: one row per target, the line measures and the ID count.
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
-  const before = readKey(ctx);
-  const r = await js(ctx, 'measure', `${scene}/finding`, findingCell(scene));
+  const before = readKeyAt(ctx);
+  let after = null;
+  const r = await measured(ctx, `${scene}/finding`, findingCell(scene), before, () => (after = readKeyAt(ctx)));
   // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
   const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {}),
-    frontKey: seriesReadings(ctx, scene, before)};
+    frontKey: measuredReadings(ctx, scene, before.reading, after.reading)};
   if (!r.ok || r.value?.invalid) {
     push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
     return;
@@ -561,6 +609,8 @@ async function launchRow(ctx, {scene, user}) {
   const row = {section: 'launch', id: `${scene}/background/launch@${user}`, engine: ctx.engine, sample: ctx.n, ok: false, scene, user, regime: 'background', method: 'getApp', case: 'launch'};
   const app = ctx.records[scene]?.app;
   const front = activate(ctx, user);
+  const skipped = notActivated(ctx, user, [SCENES[scene].bundleId, SCENES[user].bundleId]);
+  if (skipped) return push(ctx, {...row, frontKey: skipped});
   if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
   if (scene === 'electron') exportElectronMode(ctx);
   const down = step(ctx, ['down', scene]);
@@ -578,13 +628,18 @@ async function launchRow(ctx, {scene, user}) {
     if (!Number.isSafeInteger(intent?.at)) return push(ctx, {...row, invalid: 'the launch\'s intent could not be journaled: nothing was sent'});
     const record = () => ctx.ops.matrix(['launched', 'record', scene, '--run', ctx.run, '--since', String(intent.at)]);
     const act = await ctx.lane.js(launchCell(scene, app)).finally(() => { recorded = record(); });
+    // The row's window runs from its front/key read before the launch to the one after its check: what those reads saw
+    // is the row's.
     [from, to] = act.at ?? [null, null];
+    from = before.at?.[0] ?? from;
     if (!act.ok) return push(ctx, {...row, invalid: 'the launch cell failed', error: act.error});
     Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(act.value.error ? {error: act.value.error} : {})});
     const after = read(ctx, focusOf(userWindow), {windowOrder: true});
     const check = await ctx.lane.js(launchCheckCell(scene, app));
     to = check.at?.[1] ?? to;
-    row.frontKey = {...readings, after: readKey(ctx)};
+    const late = readKeyAt(ctx);
+    to = late.at?.[1] ?? to;
+    row.frontKey = {...readings, after: late.reading};
     const outcome = {...(check.value?.outcome ?? {}), threw: act.value.threw, launched: recorded?.recorded === true};
     Object.assign(row, {ok: check.ok && check.value?.ok === true && !act.value.threw && recorded?.recorded === true, outcome, ...(check.ok ? {} : {error: check.error})});
     if (after.watcher !== true) return push(ctx, {...row, ok: false, invalid: 'the activation watcher was not running after the launch'});

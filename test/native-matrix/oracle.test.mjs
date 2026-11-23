@@ -115,6 +115,11 @@ test('the window order: the target\'s window above the person\'s fails the row; 
   assert.equal(targetAbove([alert, target, user], ['com.apple.TextEdit'], {pid: 7, number: 3}), true);
   assert.equal(targetAbove(null, ['com.apple.TextEdit'], {pid: 7, number: 3}), null, 'unread: no verdict of its own');
   assert.equal(targetAbove([target], ['com.apple.TextEdit'], {pid: 7, number: 3}), true, 'the person\'s window gone, any target window is above it');
+  // An order without the person's window, or with it not known by its number, proves no target stayed below it.
+  assert.equal(targetAbove([alert], ['com.apple.TextEdit'], {pid: 7, number: 3}), null, 'neither window read');
+  assert.equal(targetAbove([], ['com.apple.TextEdit'], {pid: 7, number: 3}), null);
+  assert.equal(targetAbove([user, target], ['com.apple.TextEdit'], {pid: 7, number: null}), null, 'the person\'s window not known');
+  assert.equal(targetAbove([target, user], ['com.apple.TextEdit'], {pid: 7, number: null}), null);
   const held = judgeInterference({...same, order: order([alert, user, target], [alert, user, target])});
   assert.equal(held.ok, true);
   assert.deepEqual(held.windowOrder, {before: false, after: false});
@@ -124,8 +129,10 @@ test('the window order: the target\'s window above the person\'s fails the row; 
   // An out-of-process target (TextEdit's Open panel) is found by its service's bundle id.
   const panel = {owned: false, bundleId: 'com.apple.appkit.xpc.openAndSavePanelService', layer: 0};
   assert.equal(judgeInterference({...same, targets: ['com.apple.TextEdit', panel.bundleId], order: order([user, panel], [panel, user])}).ok, false);
-  // Unread after the act: the row fails, as a front it could not read would.
+  // Unread after the act: the row fails, as a front it could not read would; so does an order that proves nothing.
   assert.equal(judgeInterference({...same, order: order([user, target], null)}).ok, false);
+  const empty = judgeInterference({...same, order: order([user, target], [])});
+  assert.deepEqual([empty.ok, empty.windowOrder], [false, {before: false, after: null}]);
   // No order given (a record from before the oracle read it): judged as before, the field absent.
   assert.equal('windowOrder' in judgeInterference(same), false);
 });

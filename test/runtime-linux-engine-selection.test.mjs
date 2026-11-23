@@ -96,9 +96,9 @@ test('a default cua engine: cua\'s when the installed one is at least MIN_ENGINE
   assert.deepEqual(byDefault(), cua('default'), 'newer');
   recordedIn(home, '0.3.0');
   assert.deepEqual(byDefault(), {engine: 'vendor', reason: 'engine_outdated', status: 'warn'}, 'older');
-  // the releases below the minimum (0.4.3): 0.4.0, which the released plugin pins, and 0.4.1 and 0.4.2, the pins
-  // between; each is what a home that installed it holds after the update
-  for (const version of ['0.4.0', '0.4.1', '0.4.2']) {
+  // the releases below the minimum (0.4.4): 0.4.0 to 0.4.2, the earlier pins, and 0.4.3, which the released plugin
+  // pins; each is what a home that installed it holds after the update
+  for (const version of ['0.4.0', '0.4.1', '0.4.2', '0.4.3']) {
     assert.ok(isOlder(version, MIN_ENGINE_VERSION), `the minimum is past ${version}`);
     recordedIn(home, version);
     assert.deepEqual(byDefault(), {engine: 'vendor', reason: 'engine_outdated', status: 'warn'}, version);

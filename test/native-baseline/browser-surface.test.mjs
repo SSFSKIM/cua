@@ -58,7 +58,7 @@ function fakeDevice({textEditRunning = false, launch = () => LAUNCH} = {}) {
     };
   };
   const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning})};
-  return {state, pre, io: {remote, controllerLoad: () => 'controller load', device: () => device, connect}};
+  return {state, pre, io: {remote, controllerLoad: () => 'controller load', device: () => device, connect, env: {}}};
 }
 
 function outDir(t) {

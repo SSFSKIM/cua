@@ -1,0 +1,9 @@
+4a090228 task 147: development plans t132-floor-q and t132-handle-long (task 132's add-plans.py; VM-local, never pushed)
+cd03a47b #171 task 145: merge harness-487 at 4e0ba0a9 (task 142: t17-fix3's settle check, t487-named, drag_pacing)
+ scripts/linux-engine-diff/drop-signals.mjs | 4 ++++
+ 1 file changed, 4 insertions(+)
+status (untracked symlinks expected): ?? node_modules ?? scripts/linux-engine-diff/xprobe/target 
+#!/bin/sh
+# task 147: the pinned 0.4.4 engine with --drag-dnd-release-sync off (0.4.2's handle end; a development control lane, never released)
+exec /Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine --drag-dnd-release-sync off "$@"
+f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e  /Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine

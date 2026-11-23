@@ -8,10 +8,15 @@ const binderIds=new Set(binder.map(s=>s.id));
 // The binder lane's first cell carries one document per facade its banner builds, in order. Its Sky double answers
 // target 'mac' (fixtures/binder-service.mjs), so a facade with the computer surface is a macOS computer surface and
 // its document shows the paragraph; the run's recorded surfaces are the host's (browser), not the facades'.
-const binderAgentCursor=BINDER_FACADES.map(({options})=>options.computer!==false);
+// A facade without the browser surface has no `agent` to look the paragraph's detail up, so it carries it whole (#503).
+const binderAgentCursor=BINDER_FACADES.map(({options})=>options.computer===false?false:options.browser===false?true:'lookups');
 // A row's lane shows cua's agent cursor paragraph (Table 3 addition, 2026-10-30) when it is a macOS computer lane: on
-// macOS cua's host serves the computer surface only with cua's own engine.
-export const agentCursorLane=(run,row)=>run.meta.platform==='darwin'&&(run.meta.caseConfigurations?.[row.case]?.surfaces??run.meta.surfaces??[]).includes('computer');
+// macOS cua's host serves the computer surface only with cua's own engine: 'lookups' with the browser surface, whose
+// `agent` looks its detail up (#503), else true, the paragraph whole.
+export const agentCursorLane=(run,row)=>{
+ const surfaces=run.meta.caseConfigurations?.[row.case]?.surfaces??run.meta.surfaces??[];
+ return run.meta.platform==='darwin'&&surfaces.includes('computer')&&(surfaces.includes('browser')?'lookups':true);
+};
 export function documentComparisonRun(run){
  return {...run,rows:run.rows.map(row=>{
   const options={host:run.meta.host,agentCursor:agentCursorLane(run,row)};

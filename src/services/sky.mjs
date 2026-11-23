@@ -56,6 +56,7 @@ import {statSync} from 'node:fs';
 import {isAbsolute, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
+import {errorNameOf} from './engine/error-names.mjs';
 import {createLinuxPolicy} from './engine/policy.mjs';
 import {readInterruption} from './engine/interruption.mjs';
 import {
@@ -181,7 +182,8 @@ function launchAppId(request) {
 // names the XDG data directories it is found in. On Linux the approvals are asked through `nodeRepl` (the trusted
 // worker's: createElicitation, requestMeta).
 // On macOS every request's time through handleRpc, success or failure, is set as `cua/serviceMs` through
-// `setResponseMeta` (the trusted worker's nodeRepl.setResponseMeta, on either host) read with `now`.
+// `setResponseMeta` (the trusted worker's nodeRepl.setResponseMeta, on either host) read with `now`, and beside it
+// `cua/errorName`: the engine's name for the error the request threw (./engine/error-names.mjs), else null.
 export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform, env = process.env,
   nodeRepl = globalThis.nodeRepl, openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target),
   now = () => performance.now(), setResponseMeta = meta => globalThis.nodeRepl?.setResponseMeta?.(meta)}) {
@@ -209,13 +211,22 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
   // cua/serviceMs (the native engine spec's Design, "Result meta"): everything below the wrapper, the service's policy
   // and approval and the engine together, so a single-call row separates the host's transport from it, on the vendor's
   // engine and on cua's alike. Response meta merges by key per execution, so a multi-call cell keeps its last call's.
+  // cua/errorName: the engine's own name for the error the call threw, set before the rejection leaves the service, since
+  // the trusted worker passes on a rejection's message alone (on either host) and the cell catches a plain Error. Every
+  // call sets it, null when the call succeeded or its error is not an engine error of a known name (the wrapper's own
+  // diagnostics among them), so a name never outlives its call. The rejection itself, and every result, is the service's
+  // unchanged.
   async function handleRpc(request) {
     if (platform !== 'darwin') return delegate(request);
     const started = now();
+    let errorName = null;
     try {
       return await delegate(request);
+    } catch (error) {
+      errorName = errorNameOf(error);
+      throw error;
     } finally {
-      setResponseMeta({'cua/serviceMs': Math.round((now() - started) * 1000) / 1000});
+      setResponseMeta({'cua/serviceMs': Math.round((now() - started) * 1000) / 1000, 'cua/errorName': errorName});
     }
   }
 

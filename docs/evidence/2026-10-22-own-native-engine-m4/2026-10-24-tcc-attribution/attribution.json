@@ -1,0 +1,310 @@
+{
+  "scope": "read-only unified log show; only TCC/target-engine/Accessibility filters within the two named UTC windows; no new probes or GUI",
+  "rawLogsPublic": false,
+  "limitations": [
+    "Function/client dictionary fields may be redacted; omitted messages are not negative proof.",
+    "AX query attribution does not identify the displayed alert or when it was enqueued.",
+    "preflight=yes can accompany the code path checking trust before requesting asynchronous UI; it does not prove no UI request.",
+    "authValue numbers retained as observed, not a new TCC authorization contract."
+  ],
+  "windows": [
+    {
+      "name": "budget",
+      "start": "2026-10-24T10:40:00Z",
+      "end": "2026-10-24T10:55:00Z",
+      "lifecycle": [
+        {
+          "at": "2026-10-24 10:43:15.155974+0000",
+          "pid": 52405,
+          "event": "started",
+          "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+        },
+        {
+          "at": "2026-10-24 10:45:01.908549+0000",
+          "pid": 55385,
+          "event": "started",
+          "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+        }
+      ],
+      "accessibilityQueries": [
+        {
+          "at": "2026-10-24 10:43:15.194018+0000",
+          "pid": 52405,
+          "msgID": "52405.3",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 1,
+          "authReason": 5,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 10:43:15.196898+0000"
+        },
+        {
+          "at": "2026-10-24 10:43:15.197387+0000",
+          "pid": 52405,
+          "msgID": "52405.4",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 1,
+          "authReason": 5,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 10:43:15.199750+0000"
+        },
+        {
+          "at": "2026-10-24 10:43:59.260279+0000",
+          "pid": 52405,
+          "msgID": "52405.7",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 10:43:59.270585+0000"
+        },
+        {
+          "at": "2026-10-24 10:43:59.272811+0000",
+          "pid": 52405,
+          "msgID": "52405.8",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 52405
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 10:43:59.278056+0000"
+        },
+        {
+          "at": "2026-10-24 10:45:01.939841+0000",
+          "pid": 55385,
+          "msgID": "55385.3",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 55385
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 55385
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 10:45:01.942471+0000"
+        },
+        {
+          "at": "2026-10-24 10:45:01.957100+0000",
+          "pid": 55385,
+          "msgID": "55385.6",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 55385
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 10:45:01.959101+0000"
+        }
+      ],
+      "genericLaunchDisclosureCalls": [
+        {
+          "at": "2026-10-24 10:43:15.150045+0000",
+          "pid": 52405,
+          "function": "TCCAccessLaunchDisclosurePromptIfNeeded",
+          "msgID": "52405.2",
+          "displayedPromptEstablished": false
+        },
+        {
+          "at": "2026-10-24 10:45:01.904801+0000",
+          "pid": 55385,
+          "function": "TCCAccessLaunchDisclosurePromptIfNeeded",
+          "msgID": "55385.2",
+          "displayedPromptEstablished": false
+        }
+      ]
+    },
+    {
+      "name": "d0c",
+      "start": "2026-10-24T09:31:00Z",
+      "end": "2026-10-24T09:47:00Z",
+      "lifecycle": [
+        {
+          "at": "2026-10-24 09:34:20.840587+0000",
+          "pid": 19033,
+          "event": "started",
+          "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+        },
+        {
+          "at": "2026-10-24 09:38:29.394574+0000",
+          "pid": 26404,
+          "event": "started",
+          "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+        }
+      ],
+      "accessibilityQueries": [
+        {
+          "at": "2026-10-24 09:34:20.901906+0000",
+          "pid": 19033,
+          "msgID": "19033.3",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 1,
+          "authReason": 5,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 09:34:20.905424+0000"
+        },
+        {
+          "at": "2026-10-24 09:34:20.905925+0000",
+          "pid": 19033,
+          "msgID": "19033.4",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 1,
+          "authReason": 5,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 09:34:20.908686+0000"
+        },
+        {
+          "at": "2026-10-24 09:37:16.503381+0000",
+          "pid": 19033,
+          "msgID": "19033.7",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 09:37:16.514256+0000"
+        },
+        {
+          "at": "2026-10-24 09:37:16.516781+0000",
+          "pid": 19033,
+          "msgID": "19033.8",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 19033
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 09:37:16.522227+0000"
+        },
+        {
+          "at": "2026-10-24 09:38:29.425178+0000",
+          "pid": 26404,
+          "msgID": "26404.3",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "accessing": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 26404
+          },
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 26404
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 09:38:29.428132+0000"
+        },
+        {
+          "at": "2026-10-24 09:38:29.443899+0000",
+          "pid": 26404,
+          "msgID": "26404.6",
+          "service": "kTCCServiceAccessibility",
+          "preflight": "yes",
+          "requesting": {
+            "identifier": "io.github.ssfskim.cua.engine",
+            "pid": 26404
+          },
+          "allRecordedPathsAreApprovedExecutable": true,
+          "authValue": 2,
+          "authReason": 4,
+          "authVersion": 1,
+          "resultAt": "2026-10-24 09:38:29.446205+0000"
+        }
+      ],
+      "genericLaunchDisclosureCalls": [
+        {
+          "at": "2026-10-24 09:34:20.835334+0000",
+          "pid": 19033,
+          "function": "TCCAccessLaunchDisclosurePromptIfNeeded",
+          "msgID": "19033.2",
+          "displayedPromptEstablished": false
+        },
+        {
+          "at": "2026-10-24 09:38:29.390073+0000",
+          "pid": 26404,
+          "function": "TCCAccessLaunchDisclosurePromptIfNeeded",
+          "msgID": "26404.2",
+          "displayedPromptEstablished": false
+        }
+      ]
+    }
+  ]
+}

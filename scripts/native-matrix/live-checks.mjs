@@ -97,20 +97,31 @@ const alertProcessOf = w => {
 // may leave the device (`export`) is sanitized: an alert process's bundle id and layer; for a title match only the
 // keyword; for anything else only its layer, counted. `readable` names the alert processes whose text the engine may
 // read; no other owner is ever observed.
-// -> {abort, export: {alerts, keywords, unknown: {count, windows}}, readable: [{bundleId}]}.
-export function alertWatch(before, now, {runPids}) {
+// `hosted` (a run on a GitHub-hosted runner, rulings 1136 and 1141): replayd's capture alert stays up there, carried by
+// UserNotificationCenter, one for each copy that captured (cua's engine and the vendor's helper, H0), and nothing may
+// dismiss it; up to CAPTURE_ALERTS such windows with no pasteboard title are that known alert, reported as `held` and
+// no abort, so the run goes on "alert up, scene activated first" and a sample with it front or key is NO VERDICT
+// (./front-key.mjs). Any other alert, a pasteboard title, a new window or a third UserNotificationCenter window still
+// aborts, and an unread window list still stops the run (the device's check throws).
+// -> {abort, export: {alerts, keywords, unknown: {count, windows}, held?: {count, windows}}, readable: [{bundleId}]}.
+const CAPTURE_ALERT_PROCESS = 'com.apple.UserNotificationCenter';
+const CAPTURE_ALERTS = 2;
+export function alertWatch(before, now, {runPids, hosted = false}) {
   const known = new Set((before ?? []).map(w => w.number));
-  const alerts = [], keywords = [], unknown = [];
+  const alerts = [], keywords = [], unknown = [], held = [];
   for (const w of now ?? []) {
     if (runPids.includes(w.ownerPid)) continue;
     const bundleId = alertProcessOf(w);
     const keyword = ALERT_KEYWORDS.find(k => String(w.name ?? '').toLowerCase().includes(k));
-    if (bundleId) alerts.push({bundleId, layer: w.layer, isAlertProcess: true});
+    if (hosted && bundleId === CAPTURE_ALERT_PROCESS && !keyword) held.push({bundleId, layer: w.layer});
+    else if (bundleId) alerts.push({bundleId, layer: w.layer, isAlertProcess: true});
     else if (keyword) keywords.push({keyword, layer: w.layer, isAlertProcess: false});
     else if (!known.has(w.number) && w.layer >= 0 && w.layer < ALERT_LAYER_BELOW) unknown.push({layer: w.layer, isAlertProcess: false});
   }
+  if (held.length > CAPTURE_ALERTS) alerts.push(...held.splice(0).map(a => ({...a, isAlertProcess: true})));
   const readable = [...new Set(alerts.map(a => a.bundleId))].map(bundleId => ({bundleId}));
-  return {abort: alerts.length + keywords.length + unknown.length > 0, export: {alerts, keywords, unknown: {count: unknown.length, windows: unknown}}, readable};
+  return {abort: alerts.length + keywords.length + unknown.length > 0,
+    export: {alerts, keywords, unknown: {count: unknown.length, windows: unknown}, ...(hosted ? {held: {count: held.length, windows: held}} : {})}, readable};
 }
 
 // ---- The HID composition row (MAWS P4-B2, a measurement) -----------------------------------------------------------
@@ -396,11 +407,18 @@ export function finderCheck(baseline, now, {runWindow}) {
 // The run's journal (in its run directory): one row per device process the run started, `kind\tpid\tstart\tlabel`,
 // where start is ps's lstart (C locale): the device CLIs and the vendor serve (each journaled by the remote shell that
 // execs it, live.mjs journaledScript), each probe the CLIs launch and each put-back step's process (live-device.mjs).
-// A probe launch is journaled `pending` before its open, then its pid, or `-` when it could not be resolved.
+// A probe launch is journaled `pending` before its open, then its pid; or `-` once it is over unidentified (its final line
+// read, or a person's resolution); or `unidentified` when, by the identification deadline, neither its process nor its
+// final line was found: LaunchServices may still start it, so that row is still pending.
 export const JOURNAL_FILE = 'live-journal.tsv';
 const startOf = text => String(text).trim().split(/\s+/).join(' ');
 export const parseJournal = text => String(text).split('\n').map(line => line.split('\t')).filter(f => f.length === 4 && ['cli', 'probe'].includes(f[0]))
-  .map(([kind, pid, start, label]) => ({kind, pid: pid === '-' || pid === 'pending' ? null : Number(pid), start: start === '-' ? null : startOf(start), label}));
+  .map(([kind, pid, start, label]) => (pid === 'pending' || pid === 'unidentified' ? {kind, pid: null, start: null, label, pending: true}
+    : {kind, pid: pid === '-' ? null : Number(pid), start: start === '-' ? null : startOf(start), label}));
+// The probe launches journaled pending with no outcome row since (a later row of their label, its pid or `-`): the only
+// evidence that a launch is over is the journal's own. -> [label].
+export const pendingLaunches = journal => [...new Set(journal.filter(e => e.kind === 'probe' && e.pending
+  && !journal.some(other => other.kind === 'probe' && other.label === e.label && !other.pending)).map(e => e.label))];
 // `ps -axo pid=,ppid=,uid=,lstart=,command=` under the C locale. -> [{pid, ppid, uid, start, command}].
 export const parseProcessTable = text => String(text).split('\n')
   .map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line)).filter(Boolean)
@@ -455,4 +473,4 @@ export function recoveryPlan(journal, table, {self, ancestors = [], uid, checkou
 export const RECOVERY_BOUNDS = Object.freeze({killMs: 3_000, sceneUpWaitMs: 120_000, probeWaitMs: 65_000, stepMs: 120_000, stepKillMs: 3_000});
 const PUTBACK_STEPS = 8;
 export const putBackBoundMs = (b = RECOVERY_BOUNDS) => PUTBACK_STEPS * (b.stepMs + 2 * b.stepKillMs + 2 * b.killMs);
-export const recoverBoundMs = (b = RECOVERY_BOUNDS) => 4 * b.killMs + b.sceneUpWaitMs + b.probeWaitMs + putBackBoundMs(b);
+export const recoverBoundMs = (b = RECOVERY_BOUNDS) => 4 * b.killMs + b.sceneUpWaitMs + 2 * b.probeWaitMs + putBackBoundMs(b);

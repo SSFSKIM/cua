@@ -476,9 +476,10 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // vendor host. cua's engine needs an approved engine on this Mac (`installed`, asked only here and once:
 // installedEngine reads the bundle's signature with codesign) and carries it as `app` {bundlePath, engineVersion,
 // build}; without one an explicit setting, or CUA_REPL_HOST=cua, is refused (engine_not_installed, naming `cua install
-// --engine`), while the default keeps the vendor engine (reason `engine_not_installed`, status `warn`) until M6, so a
-// plugin update never breaks a session before the engine is installed. Status is `pass` otherwise. `env.HOME` locates
-// engine.json and the approved engine, as `cua engine` places them.
+// --engine`, which builds it pending, then `cua engine approve` with the owner at the console), while the default keeps
+// the vendor engine (reason `engine_not_installed`, status `warn`) until M6, so a plugin update never breaks a session
+// before the engine is installed. Status is `pass` otherwise. `env.HOME` locates engine.json and the approved engine, as
+// `cua engine` places them.
 //
 // On Linux (`platform` linux; #171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Selection) the same
 // setting, precedence, reasons and refusals select between the vendor's sky_linux and cua's own engine, which is
@@ -494,7 +495,7 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // version, and the service refuses an older one at the first request, naming `cua install --engine`.
 //
 // On macOS the same rule binds the approved engine (#117 M5, R4), at selection: it must be at least `minimumVersion`
-// (MIN_ENGINE_VERSION, the oldest cua's macOS service drives, src/services/engine/client.mjs; the parameter is a seam
+// (MIN_MACOS_ENGINE_VERSION, the oldest cua's macOS service drives, src/services/engine/client.mjs; the parameter is a seam
 // for tests), by the bundle's engineVersion, and a version this cua cannot read counts as older. An older one refuses an
 // explicit setting, or CUA_REPL_HOST=cua (engine_outdated), and keeps the default on the vendor engine (reason
 // `engine_outdated`, status `warn`, carrying `outdated`, the approved engine's {bundlePath, engineVersion, build},
@@ -517,7 +518,7 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
   if (!app) {
     if (setting.reason !== 'default' || requestedHost === 'cua') {
       const bundle = enginePaths(engineDirectory(env.HOME || homedir())).bundle;
-      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and no approved engine is installed on this Mac (${bundle}, approved by \`cua engine approve\`): install it with \`cua install --engine\` (or \`cua engine build\`, then \`cua engine approve\` with the owner at the console), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
+      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and no approved engine is installed on this Mac (${bundle}, approved by \`cua engine approve\`): install it with \`cua install --engine\`, which builds it pending approval, then approve it with \`cua engine approve\` with the owner at the console; or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
     }
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
   }

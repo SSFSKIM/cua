@@ -208,7 +208,7 @@ const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Sup
 // (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
 async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
   helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs, serviceMs,
-  textEditProcess = () => TEXTEDIT_PROCESS, terminate, textEditBeforeBind = false} = {}) {
+  textEditProcess = () => TEXTEDIT_PROCESS, terminate, textEditBeforeBind = false, runner, env = {}} = {}) {
   const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, serviceMs, terminated: [], binds: 0};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
@@ -232,7 +232,8 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
   const pre = {ownNode,arch:'arm64',hostname:'mini',cpu:{model:'Apple',count:10},uptime:'device before',platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
     handshakeRecord: host === 'cua' ? `${home}/state/handshake/${release}/cua@0.1.0/computer@2025-06-18.json` : `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
     hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 17179869184}, os: {name: 'macOS', version: '27.0', build: '26A428'},
-    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}, engine: facts};
+    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}, engine: facts,
+    ...(runner === undefined ? {} : {runner: runner(home)})};
   const remote = script => {
     state.scripts.push(script);
     if (script === 'uptime') return 'device after';
@@ -255,7 +256,7 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
   let code, refusal = null;
   try {
     code = await run({device: 'mini', out, host, engine, approvedEngine: ENGINE_BUNDLE, approvedRuntime: home, activateMs, ...plan,
-      io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
+      io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state), env, vmIdentity: () => ({platformUuid: 'P', bootedAt: 'B'})}});
   } catch (error) { refusal = error; }
   const meta = existsSync(join(out, 'meta.json')) ? metaOf(out) : null, rows = existsSync(join(out, 'results.jsonl')) ? results(out) : [];
   return {code, refusal, meta, rows, app, state, frontmosts, home, activations: () => activations};
@@ -286,6 +287,23 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
 // #162: a super+w or super+q (and the task's super+n and typing) is sent only while TextEdit, which the run launched, is
 // the frontmost application. Otherwise the key is not sent, the skip is recorded with the frontmost app's bundle id,
 // and the run fails with no further input.
+// T10b′: on a GitHub-hosted runner the device's own record of the run is its attestation (meta.runner), and the run's
+// install is the approved runtime and engine; the device and the controller must agree on the run.
+const HOSTED_ENV = {RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_RUN_ID: '45144483807', GITHUB_RUN_ATTEMPT: '1'};
+const hostedRecord = (id = '45144483807') => home => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
+  install: {home, release: '26.928.40906-darwin-arm64'}, engine: {bundle: ENGINE_BUNDLE, build: BUILD, engineVersion: '0.2.0'}});
+test('a hosted run records the runner the device attests; a stale record or a controller off the runner refuses', async t => {
+  const hosted = await macRun(t, {runner: hostedRecord(), env: HOSTED_ENV});
+  assert.equal(hosted.refusal, null);
+  assert.equal(hosted.meta.hosted, true);
+  assert.deepEqual(hosted.meta.runner.run, {id: '45144483807', attempt: '1'});
+  const off = await macRun(t, {env: {}});
+  assert.equal(off.meta.hosted, false);
+  assert.equal(off.meta.runner, null);
+  assert.match(String((await macRun(t, {runner: hostedRecord('1'), env: HOSTED_ENV})).refusal), /names run 1 attempt 1, not this job's run 45144483807 attempt 1/);
+  assert.match(String((await macRun(t, {runner: hostedRecord(), env: {}})).refusal), /this controller is not on one/);
+});
+
 test('a macOS run whose target is not frontmost sends no key, records key_skipped_not_frontmost and fails', async t => {
   let reads = 0;
   // TextEdit is frontmost for the first task's new document and typing, then Chrome is before its close.

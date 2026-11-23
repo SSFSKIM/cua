@@ -43,6 +43,8 @@ test('a macOS computer serve and its preflight name the requested native engine;
   assert.match(script, /approvedEngineFacts/);
   assert.ok(script.includes(JSON.stringify(bundle).replace(/'/g, "'\\''")));
   assert.doesNotMatch(preflightScript({host: 'cua', display: ':0', surface: 'browser'}), /approvedEngineFacts\(\{/, 'a browser-surface run reads no engine');
+  // The hosted runner's attestation (T10b′): every macOS preflight reads the device's own record of its run.
+  assert.match(script, /runner: await .*scripts\/hosted-sittings\/runner\.mjs.*readRunnerRecord\(\)/);
 });
 
 test('the handshake script touches only a native handshake record of the selected host (vendor or cua)', () => {

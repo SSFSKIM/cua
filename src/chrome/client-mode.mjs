@@ -41,6 +41,7 @@ import {isAbsolute, join} from 'node:path';
 import {fail} from '../runtime/errors.mjs';
 import {runHost} from './host.mjs';
 import {clientModeDir, isMawsInstance, socketNameFor} from './extension.mjs';
+import {MAWS_INSTANCE_MARKER} from './discovery.mjs';
 import {authorizePeer, loadPeerAddon, peerAddonPath, rootOf, socketFd} from './peer.mjs';
 
 export const BACKENDS_ENV = 'CUA_BROWSER_BACKENDS';
@@ -151,6 +152,9 @@ export function startClientBackends({home, paths, pid = process.pid, retryMs = C
     entries: () => backends.map(b => b.entry()),
     // The first configured backend's instance id, once it has said hello (kept while it is away), else null.
     defaultInstance: () => backends[0]?.instanceId ?? null,
+    // profiles_list's keys as browser ids (#493): each backend's key and instance id, once it has said hello; `maws`
+    // before its hello is the marker `maws:`, which selects the first listed MAWS instance, as the default does.
+    keys: () => Object.fromEntries(backends.flatMap((b, index) => (b.instanceId ? [[b.key, b.instanceId]] : index === 0 ? [[b.key, MAWS_INSTANCE_MARKER]] : []))),
     close: () => Promise.all(backends.map(b => b.close())).then(() => {}),
   };
 }

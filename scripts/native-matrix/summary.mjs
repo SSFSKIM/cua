@@ -11,7 +11,8 @@
 //   NO VERDICT: never a pass, never a fail, counted per cell by its cause.
 // - No valid pair, no verdict (ruling 1116): where the verdict rests on the vendor's answer, a cua sample with no vendor
 //   sample with a verdict from the same run has none. Only a run whose pair is one proof (pairableRuns: one vendor and
-//   one cua run, one hold, one commit, one approved build, one device, one OS) is compared or lets a departure find its
+//   one cua run, one hold, one commit, one approved build, one device, one OS, and on a hosted runner one job's run) is
+//   compared or lets a departure find its
 //   vendor ok; speed and finding compare the same complete run pairs on both sides.
 // - Shared limits (ruling 1144, the fixed-string rows only: a Unicode row judged by its absolute expected string, and
 //   the pressKey row): a cua sample that failed the same way as its paired vendor sample (the same answer, the same
@@ -80,6 +81,7 @@ import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
 export {manifestOf, SPEED_OPS} from './manifest.mjs';
@@ -135,7 +137,8 @@ const runsByNumber = full => {
 // What keeps run `n`'s vendor and cua runs from being one pair: each engine's run there, one hold, one commit, one
 // approved engine build (the bundle every lane's probes run), one device and one OS, each recorded on every run of the
 // pair (a non-empty string; the OS a whole record, ./cell-result.mjs isOsRecord, compared field by field), since values
-// absent on both sides are not one shared value. -> [sentence].
+// absent on both sides are not one shared value; and when either run is hosted, one job's run (the runner each run's
+// device attested). -> [sentence].
 // An OS record by its fields, in one order. -> string.
 const osKey = os => JSON.stringify([os.name, os.version, os.build]);
 function pairProblems(n, list) {
@@ -154,8 +157,14 @@ function pairProblems(n, list) {
   shared('device', 'device', list.map(({result}) => result.device), {measured: 'on one device'});
   shared('OS', 'meta.os {name, version, build}', list.map(({result}) => result.meta?.os),
     {measured: 'on one OS', valid: isOsRecord, key: osKey});
+  // On a GitHub-hosted runner the device alias names every runner alike: the pair is one job's run, by the runner each
+  // run's device attested (meta.runner, ../hosted-sittings/runner.mjs).
+  if (list.some(({result}) => result.meta?.hosted === true))
+    shared('hosted runner', 'meta.runner', list.map(({result}) => hostedRunnerKey(result.meta)), {measured: 'in one job\'s run'});
   return out;
 }
+// The run a hosted result's runner names, or null when it records none that is whole.
+const hostedRunnerKey = meta => (meta?.runner && !runnerProblems(meta.runner).length ? runnerKey(meta.runner) : null);
 
 // The run numbers whose pair is one proof: exactly one vendor and one cua full run, with no pair problem. Only these
 // runs' vendor samples answer for cua's (./cell-verdict.mjs `pairable`). -> Set.
@@ -174,6 +183,7 @@ export function proofProblems(full) {
   };
   one('device', full.map(({result}) => result.device));
   one('OS', full.map(({result}) => (isOsRecord(result.meta?.os) ? osKey(result.meta.os) : result.meta?.os)));
+  if (full.some(({result}) => result.meta?.hosted === true)) one('hosted runner', full.map(({result}) => hostedRunnerKey(result.meta)));
   for (const [n, list] of runsByNumber(full)) missing.push(...pairProblems(n, list));
   for (const engine of ['vendor', 'cua']) {
     const mine = full.filter(({result}) => result.lanes[0]?.engine === engine);
@@ -306,7 +316,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     return [engine, {rows: list.length, ok: list.filter(r => r.interference.ok).length, route4: list.filter(r => r.interference.route4 && declared(r)?.kind !== 'route4-accepted').length,
       declared: list.filter(r => !r.interference.ok && declared(r)).map(r => ({id: r.id, ...declared(r)})),
       failed: list.filter(r => !r.interference.ok && !declared(r)).map(r => ({id: r.id, frontmost: r.interference.frontmost, topWindow: r.interference.topWindow, focus: r.interference.focus ?? null,
-        activations: r.interference.activations, route4: r.interference.route4}))}];
+        activations: r.interference.activations, route4: r.interference.route4, ...(r.interference.windowOrder ? {windowOrder: r.interference.windowOrder} : {})}))}];
   }));
 
   // The launch path, the probe cells and the Unicode matrix, each against its own outcome; the pressKey row by its rule.
@@ -437,6 +447,12 @@ export function methodTable(methods) {
 }
 
 // The device mode and venue line (R3: the matrix runs in the shared device mode, the default, and the report says so).
+// Why a row's window order failed it (./oracle.mjs judgeInterference: `after` must be false), or nothing when it held.
+function windowOrderReason(order) {
+  if (!order || order.after === false) return null;
+  return order.after === true ? 'a target window left above the user window' : 'the window order after the action proved nothing (unread, or without the user window)';
+}
+
 function desktopLine(d) {
   const parts = [];
   if (d.recorded.length) parts.push(`${d.recorded.map(([m]) => m).join(', ')}${d.recorded.every(([m]) => m === SHARED_MODE) ? ' (the default)' : ''}, recorded by ${d.unrecorded ? `${d.full - d.unrecorded} full run(s)` : 'every full run'}`);
@@ -494,7 +510,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push('## Not interfering', '', 'The background, launch, concurrent-use and behind-a-user-window Unicode rows with a verdict, by the oracle (the front app, the top window, the focus, activations, the route).', '');
   for (const engine of ['cua', 'vendor']) {
     const i = j.interference[engine];
-    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
+    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', windowOrderReason(f.windowOrder), f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
   }
   out.push('');
 

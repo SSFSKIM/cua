@@ -10,7 +10,8 @@ import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {TEXT_FIELDS} from '../../scripts/native-matrix/plan.mjs';
 import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS,
-  SAVE_PANEL_CONTROLS, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell} from '../../scripts/native-matrix/probe-plan.mjs';
+  SAVE_PANEL_CONTROLS, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell,
+  KEYSTROKE_GATE_CLOSED, keystrokeGate} from '../../scripts/native-matrix/probe-plan.mjs';
 import {rowIndexOfName, valueOfIndex, indexOfId} from '../../scripts/native-matrix/matrix-text.mjs';
 import {advanceNumbering, NOTE, render} from '../../src/services/engine/render.mjs';
 import {node as axNode, skyshot as axSkyshot} from '../native-goldens/builder.mjs';
@@ -288,4 +289,13 @@ test('the keystroke witness types a file the selection must move to, and reads F
   assert.deepEqual(await runWitness(check, {finder: finderSelecting(WITNESS_FILES[0], WITNESS_FILES[1])}), {finderSelected: false, documentUnchanged: true}, 'the file alone');
   assert.deepEqual(await runWitness(check, {finder: finderSelecting(WITNESS_FILES[0]), document: 'cua scene document scene-file-007'}), {finderSelected: true, documentUnchanged: false},
     'the keys reached the document');
+});
+
+test('a keystroke probe\'s gate, as KeystrokeProbe.swift answers it: at its first gate or between its keys; anything else is no gate', () => {
+  const swift = readFileSync(fileURLToPath(new URL('../../native/engine/Sources/Engine/KeystrokeProbe.swift', import.meta.url)), 'utf8');
+  assert.ok(swift.includes(`["error": "${KEYSTROKE_GATE_CLOSED}"]`), 'the first gate\'s answer, word for word');
+  assert.match(swift, /"aborted": true/);
+  assert.equal(keystrokeGate({error: KEYSTROKE_GATE_CLOSED}).at, 'first');
+  assert.equal(keystrokeGate({postedAt: 1, aborted: true, units: 3}).at, 'during');
+  for (const answer of [{postedAt: 1, units: 3}, {error: 'a key event could not be created'}, null, undefined]) assert.equal(keystrokeGate(answer), null, JSON.stringify(answer));
 });

@@ -24,9 +24,12 @@
 //     result's engine attestation (`_meta['cua/nativeEngine']`): the first result before any scene, then each one, so a
 //     run is stopped the moment another engine or build answers. Never the selection alone.
 //   - Per scene, its app frontmost for every cell (the driven-app-frontmost regime of the baseline and the goldens): up
-//     and its setup steps; bind; prime; cua's settled read of the fixed state (goldens-device.mjs observe); the fixed
-//     text; cua's strict read (verify); the action's texts; verify again; the texts copied off the device; teardown and
-//     down. A text whose state cua's read refused is removed on the device unread: the fixed text is taken again (three
+//     and its setup steps; its windows placed clear of replayd's alerts from a fresh reading (rulings 1154, 1160, 1164:
+//     ../hosted-sittings/alert-guard.mjs placeWindows, meta.scenes[id].placement); bind; prime; cua's settled read of
+//     the fixed state (goldens-device.mjs observe); the fixed text; cua's strict read (verify); the action's texts, its
+//     click sent only when a fresh reading shows no alert over the scene's windows and none holding front or key (else
+//     NO VERDICT `alert` or `unread`, the scene ended, meta.alertGuardStop for the hosted check; never retried), its
+//     row carrying #528's diagnostics; verify again; the texts copied off the device; teardown and down. A text whose state cua's read refused is removed on the device unread: the fixed text is taken again (three
 //     attempts), the action's end the scene. A lane cell that fails is the lane's outcome, recorded for the diff.
 //   - Always ends with every scene down, the lane closed, the approved home given back with the engine stopped
 //     (prepare.mjs cleanupRun), and the owner's front app back in front. A scene's down is tried even when its teardown
@@ -49,6 +52,7 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseline/engine.mjs';
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
+import {countGuards, guardCause, guardMark, placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {hostedRunOf} from '../hosted-sittings/runner.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
 import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval, settleRecordingProbes} from '../native-matrix/goldens.mjs';
@@ -80,8 +84,10 @@ const describeProblems = problems => problems.map(p => `${p.code}: ${p.message}`
 // preflight and the serve of the lane's own host and engine.
 export function nativeMacOps(device, {exec} = {}) {
   const base = deviceOps(device, exec ? {exec} : {});
-  const {ssh} = checkoutCli(device, exec ? {exec} : {});
+  const {ssh, cli} = checkoutCli(device, exec ? {exec} : {});
   return {...base,
+    // The shared alert guard's device side (../hosted-sittings/guard-device.mjs): a fresh reading, a window placed.
+    guard: args => cli('scripts/hosted-sittings/guard-device.mjs', args),
     preflight: (prepared, {host, engine, approvedEngine}) => lastJson(ssh(preflightScript({host, engine, approvedEngine, prepared, surface: 'computer'}))),
     serveSpec: ({pre, prepared, host, engine, approvedEngine}) => nativeMacCommand({device, host, engine, approvedEngine, pre, prepared}),
   };
@@ -179,6 +185,7 @@ export async function runNativeMac(options, io) {
     await client.request('tools/list');
     ctx.js = async (code, timeoutMs = CELL_MS) => {
       const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
+      ctx.lastMeta = result?._meta ?? null;
       attestEngine(meta.engineAttestation, result);
       meta.hostAttestation ??= hostAttestationOf(serverInfo, result);
       // The engine first (ruling 1149): a cua lane fallen back to the vendor's engine runs on the vendor's host too,
@@ -285,11 +292,12 @@ async function runScene(ctx, id) {
     return answer;
   };
   const record = bringUp(ctx, id);
+  await placeScene(ctx, id, record);
   activate(ctx, id);
-  const lane = async (cell, code, timeoutMs) => {
+  const lane = async (cell, code, timeoutMs, extra = {}) => {
     ctx.checkpoint();
     const answer = await ctx.js(code, timeoutMs);
-    if (!answer.ok) { emit({scene: id, cell, ok: false, error: answer.error}); account.outcome = `${cell} failed on the lane`; }
+    if (!answer.ok) { emit({scene: id, cell, ok: false, error: answer.error, ...extra}); account.outcome = `${cell} failed on the lane`; }
     return answer;
   };
   if (!(await lane('bind', BIND(id, record.app), BIND_MS)).ok) return;
@@ -314,9 +322,12 @@ async function runScene(ctx, id) {
   if (!kept) throw new SceneProblem(`the fixed state did not hold in ${FIXED_ATTEMPTS} attempts (${last}); nothing of it was kept`);
   emit({scene: id, cell: 'fixed', ok: true, ...kept});
 
-  activate(ctx, id);
-  const action = await lane('action', ACTION(id, scene.window.title, scene.action));
+  const activated = activate(ctx, id);
+  // The click under the alert guard, read fresh right before it; the same reading is #528's front and key before it.
+  const before = actionGuard(ctx, id, record, activated);
+  const action = await lane('action', ACTION(id, scene.window.title, scene.action), undefined, {diagnostics: actionDiagnostics(before, ctx.lastMeta, null)});
   if (!action.ok) return;
+  const diagnostics = actionDiagnostics(before, ctx.lastMeta, action.value);
   const files = filesOf(ctx, action.value, TEXT_KINDS.action);
   const after = read('verify', 'action');
   if (after.problems.length) {
@@ -324,7 +335,7 @@ async function runScene(ctx, id) {
     throw new SceneProblem(`the state after the action is not the scene's (${describeProblems(after.problems)}); its texts were removed unread`);
   }
   const texts = Object.fromEntries(files.map(file => [file.kind, keep(ctx, id, file)]));
-  emit({scene: id, cell: 'action', ok: true, index: action.value.index, texts});
+  emit({scene: id, cell: 'action', ok: true, index: action.value.index, texts, diagnostics});
   const keptText = kind => fs.readFileSync(join(ctx.dir, texts[kind].file), 'utf8');
   emit({scene: id, cell: 'settle', ok: true, settled: isSettled(keptText('diff'), keptText('later'))});
 }
@@ -369,9 +380,70 @@ function takeDown(ctx, id) {
   } catch (error) { account.failures.push(error.message); }
   account.down = !ctx.up.has(id);
 }
+// The scene's app brought to the front (scenes-mac.mjs activate). -> its answer, which the action's diagnostics keep.
 function activate(ctx, id) {
   const front = ctx.ops.scenes(['activate', id, '--run', ctx.run]);
   if (!front.ok) throw new SceneProblem(`the scene did not come to the front (${front.reason ?? 'no answer'})`);
+  return front;
+}
+
+// ---- the alert guard (rulings 1154, 1160, 1164; ../hosted-sittings/alert-guard.mjs) -------------------------------------
+
+// The scene's windows as the guard's target: every window of a process the run launched, Finder's one recorded window.
+const guardTarget = (id, record) => [id, record.pid, record.window?.number, ...(SCENES[id].process === 'run' ? [] : ['only'])].filter(v => v !== undefined && v !== null).join(':');
+// The device's fresh reading (../hosted-sittings/guard-device.mjs read), or null when it could not be read: unread.
+function guardRead(ctx, id, record, {key = false} = {}) {
+  try { return ctx.ops.guard(['read', '--target', guardTarget(id, record), ...(key ? ['--key'] : [])]) ?? null; } catch { return null; }
+}
+// The scene's windows placed clear of the alerts once it is up and set up, from a fresh reading, by the shared rule
+// (placeWindows), alike on both lanes: kept in the scene's account (`placement`: from, to and the read-back per window).
+// Nothing is placed again during the scene.
+async function placeScene(ctx, id, record) {
+  ctx.checkpoint();
+  ctx.meta.scenes[id].placement = await placeWindows(guardRead(ctx, id, record)?.bounds ?? null, {move: ({scene, number, frame}) => {
+    try { return ctx.ops.guard(['place', ...(scene === 'openPanel' ? ['--panel'] : ['--pid', String(record.pid)]), '--window', String(number), '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')]); }
+    catch (error) { return {error: error.message}; }
+  }});
+}
+// Before the action's click: the scene's windows clear of every alert, the alert holding neither front nor key, the
+// screen read. A refusal sends nothing: the action's row carries its cause (NO VERDICT `alert` or `unread`), the lane's
+// meta keeps it per cell (alertGuards, alertGuardCounts) and its first (alertGuardStop, which the hosted record check
+// reads as NO VERDICT), and the scene ends there. Nothing is retried. -> {reading, activate}, the click's surroundings.
+function actionGuard(ctx, id, record, activated) {
+  const reading = guardRead(ctx, id, record, {key: true});
+  const before = {reading, activate: activationFacts(activated)};
+  const cause = guardCause(reading?.bounds ?? null, {front: reading?.front ?? null, key: reading?.key ?? null}, {scenes: [id]});
+  if (!cause) return before;
+  const {meta} = ctx, cell = `${id}/action`;
+  (meta.alertGuards ??= []).push({cell, cause: cause.category, detail: cause.detail});
+  meta.alertGuardCounts = countGuards(meta.alertGuards);
+  meta.alertGuardStop ??= {cause: cause.category, detail: cause.detail, at: cell};
+  ctx.emit({scene: id, cell: 'action', ok: false, ...guardMark(cause), diagnostics: actionDiagnostics(before, null, null)});
+  meta.scenes[id].outcome = 'action refused by the alert guard';
+  throw new SceneProblem(`the action was not sent: ${cause.detail} (the alert guard, ruling 1154)`);
+}
+// scenes-mac.mjs activate's answer, value-free: whether it took, the front's bundle id, Finder's raise and its window's
+// place, the reason; never another process's pid or name.
+const activationFacts = answer => (answer ? {ok: answer.ok === true, front: answer.frontmost?.bundleId ?? null, ...(answer.raised ? {raised: true} : {}),
+  ...(answer.topWindow ? {topWindow: {number: answer.topWindow.number ?? null, bounds: answer.topWindow.bounds ?? null}} : {}),
+  ...(answer.windowOrder ? {runWindowFound: answer.windowOrder.runWindowFound === true, windowsAbove: Math.max(0, (answer.windowOrder.windows?.length ?? 1) - 1)} : {}),
+  ...(answer.reason ? {reason: answer.reason} : {})} : null);
+// The result meta keys #528 reads of a click (src/services/engine/service.mjs: numbers, roles and routes only, never a
+// value): cua's route and the engine's account of the click, as they stand at the cell's end. Every key the answer
+// carried is listed, the vendor's included.
+const ROUTE_META = Object.freeze(['cua/inputRoute', 'cua/elementClick', 'cua/coordinateClick', 'cua/activationClick', 'cua/activationClickKind', 'cua/activationJoin',
+  'cua/pointUnconfirmed', 'cua/delivery', 'cua/observation', 'cua/engineMs', 'cua/nativeEngine']);
+// #528's diagnostics on the action's row, never judged (no verdict reads them): before the click, the front and key
+// applications and the key window (whether it is the scene's, and its bounds when it is) and the activate step's
+// answer; the click's route as the answer's _meta carries it (`meta`: every key, and ROUTE_META's values) and what the
+// click returned to the cell (its type and keys); the focused element right after the click as the diff named it (its
+// index, never its text). Inside one cell the observations after the click reset its per-call keys (service.mjs
+// PER_CALL), so a null route here is that reset, not a missing route.
+function actionDiagnostics(before, meta, value) {
+  const r = before?.reading;
+  return {before: {front: r?.front ?? null, key: r?.key ?? null, keyWindow: r?.keyWindow ?? null, activate: before?.activate ?? null},
+    meta: meta && typeof meta === 'object' ? {keys: Object.keys(meta).sort(), route: Object.fromEntries(ROUTE_META.filter(k => k in meta).map(k => [k, meta[k]]))} : null,
+    click: value?.click ?? null, focusAfterClick: value?.focusAfterClick ?? null};
 }
 
 // The files a lane cell names, exactly `kinds` in that order; anything else is removed on the device unread.

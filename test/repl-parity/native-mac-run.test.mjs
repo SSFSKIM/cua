@@ -16,6 +16,7 @@ import {laneAttestationProblem, nativeMacOps, runNativeMac} from '../../scripts/
 import {diffNativeMac, loadNativeMacRun, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
 import {ACTION, FIXED, PRIME, laneFileName} from './scenarios/native-mac.mjs';
 import {laneTexts, sha} from './native-mac-fixtures.mjs';
+import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
 
 const scratches = [];
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -31,7 +32,7 @@ const ATTEST = {vendor: {engine: 'vendor', version: '1.0.744', build: RELEASE}, 
 // The device: the scenes' CLI, cua's side reads (goldens-device.mjs), preparation, the lane's preflight, the files.
 // `teardown(scene, n)` and `down(scene, n)` (the n-th call for the scene) answer a failure: a message the teardown steps
 // throw, or the down's answer.
-function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321, bundleId: 'com.apple.Terminal'}, teardown = () => null, down = () => null} = {}) {
+function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321, bundleId: 'com.apple.Terminal'}, teardown = () => null, down = () => null, guard = clearGuard} = {}) {
   const calls = [], files = new Map(), taken = [], discarded = [];
   let pid = 100;
   const ops = {
@@ -71,9 +72,22 @@ function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321,
     take: path => { taken.push(path); const text = files.get(path); files.delete(path); return text; },
     discard: path => { discarded.push(path); files.delete(path); },
     serveSpec: lane => { calls.push(['serve', lane.host, lane.engine]); return {command: 'ssh', args: ['mini', 'serve']}; },
+    guard(args) {
+      calls.push(['guard', ...args]);
+      if (args[0] === 'place') { const f = args.at(-1).split(',').map(Number); return {requested: null, readBack: {x: f[0], y: f[1], width: f[2], height: f[3]}, matched: true, exitStatus: 0, pid: 1}; }
+      const target = args[2].split(':');
+      return guard({scene: target[0], pid: Number(target[1]), number: Number(target[2]), key: args.includes('--key')}, calls.filter(c => c[0] === 'guard' && c[1] === 'read').length);
+    },
   };
   return {ops, calls, files, taken, discarded};
 }
+// The shared alert guard's device reading (scripts/hosted-sittings/guard-device.mjs read): the scene's window clear of
+// the one alert by default, its app front and key.
+const rect = (x, y, width, height) => ({x, y, width, height});
+const ALERT = rect(382, 118, 260, 348);
+const guardWith = bounds => ({scene, number, key}) => ({bounds: {alerts: [{number: 90, layer: 8, bounds: ALERT}], windows: [{scene, number, recorded: true, bounds}], displays: [rect(0, 0, 1920, 1080)]},
+  front: SCENES[scene].bundleId, key: key ? SCENES[scene].bundleId : null, ...(key ? {keyWindow: {owned: true, bounds}} : {}), at: [1, 2]});
+const clearGuard = guardWith(rect(700, 60, 600, 500));
 
 // The lane's MCP connection: each cell answered by its tag, the texts written into the device's files; every result
 // carries `attest` (the lane's engine by default; a function of the cell count to change it mid-run).
@@ -499,6 +513,78 @@ test('ACTION clicks the scene\'s target, keeps the diff right after and the obse
     assert.match(refused.error, /not of the scene window/);
     assert.deepEqual(fs.readdirSync(temp), []);
   });
+});
+
+// #528's diagnostics, inside the cell: what the click returned and the focused element the diff right after it names,
+// value-free (the index, never the line).
+test('ACTION reports what the click returned and the focused element right after it, by index only', async () => {
+  await withTemp(async () => {
+    const texts = laneTexts('vendor').electron;
+    const untrailed = texts.diff.replace(/\nThe focused UI element is[^\n]*/g, '');
+    const diff = `${untrailed}\nThe focused UI element is 25 text Pressed 1 time`;
+    const answers = [texts.before, diff, texts.later];
+    globalThis.__apps = {electron: {getAXState: async () => answers.shift(), click: async () => undefined}};
+    const action = await runCell(ACTION('electron', 'cua Electron fixture', SCENES.electron.action, {settleMs: 1}));
+    assert.equal(action.ok, true, action.error);
+    assert.deepEqual(action.value.click, {returned: 'undefined', keys: []});
+    assert.deepEqual(action.value.focusAfterClick, {named: true, index: 25});
+    assert.ok(!JSON.stringify({click: action.value.click, focus: action.value.focusAfterClick}).includes('Pressed'), 'no text of the element');
+    for (const f of action.value.files) fs.rmSync(f.path);
+    answers.push(texts.before, untrailed, texts.later);
+    globalThis.__apps.electron.click = async () => ({route: 'ax', ok: true});
+    const other = await runCell(ACTION('electron', 'cua Electron fixture', SCENES.electron.action, {settleMs: 1}));
+    assert.deepEqual([other.value.click, other.value.focusAfterClick], [{returned: 'object', keys: ['ok', 'route']}, {named: false, index: null}]);
+    for (const f of other.value.files) fs.rmSync(f.path);
+  });
+});
+
+// ---- the alert guard (rulings 1154, 1160, 1164; scripts/hosted-sittings/alert-guard.mjs) --------------------------------
+
+const results = out => fs.readFileSync(join(out, 'results.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+const recordCheck = (meta, engine) => CHECKS.record({record: 'meta.json', engine}, {exit: 1, readJson: () => meta});
+
+test('sitting B: under an overlapping alert a scene\'s action is refused on both lanes: no click sent, NO VERDICT alert to the hosted check', async () => {
+  // The Chrome scene's window lies under the alert; every other scene's is clear.
+  const under = rect(80, 60, 1000, 760);
+  const guard = (target, n) => (target.scene === 'chrome' ? guardWith(under) : clearGuard)(target, n);
+  const lanes = [];
+  for (const engine of ['vendor', 'cua']) {
+    const lane = await runLane({engine, device: fakeDevice({guard})});
+    lanes.push(lane);
+    assert.equal(lane.meta.complete, false);
+    assert.ok(!lane.lane.cells.includes('action chrome'), 'the click was never sent');
+    assert.ok(lane.lane.cells.includes('action textedit') && lane.lane.cells.includes('action electron'), 'the scenes clear of it ran');
+    const refused = results(lane.out).find(row => row.scene === 'chrome' && row.cell === 'action');
+    assert.deepEqual([refused.ok, refused.alertGuard.cause], [false, 'alert']);
+    assert.match(refused.alertGuard.detail, /alert window 90 \(382,118 260x348\) overlaps the chrome window 7/);
+    assert.deepEqual(lane.meta.alertGuardStop, {cause: 'alert', detail: refused.alertGuard.detail, at: 'chrome/action'});
+    assert.deepEqual(lane.meta.alertGuardCounts, {'chrome/action': {alert: 1, unread: 0}});
+    assert.deepEqual(recordCheck(lane.meta, engine)[0], 'NO VERDICT');
+    // The placement tried first, from its own fresh reading: Chrome's window moved clear and read back.
+    const placed = lane.meta.scenes.chrome.placement.windows[0];
+    assert.deepEqual([placed.from, placed.moved, placed.matched], [under, true, true]);
+    assert.ok(lane.device.calls.some(c => c[0] === 'guard' && c[1] === 'place' && c.includes('--pid')));
+  }
+  assert.deepEqual(lanes[0].meta.scenes.chrome.placement, lanes[1].meta.scenes.chrome.placement, 'the same placement on both lanes');
+  assert.deepEqual(lanes[0].meta.alertGuards, lanes[1].meta.alertGuards, 'the same refusal on both lanes');
+});
+
+test('sitting B: an unread screen refuses the click NO VERDICT unread; a clear one places nothing and records #528\'s readings on the action row', async () => {
+  const unread = await runLane({engine: 'cua', device: fakeDevice({guard: () => null})});
+  assert.equal(unread.meta.alertGuardStop.cause, 'unread');
+  assert.equal(recordCheck(unread.meta, 'cua')[0], 'NO VERDICT');
+  assert.deepEqual(unread.meta.scenes.textedit.placement, {unread: true});
+  const clear = await runLane({engine: 'cua'});
+  assert.equal(clear.code, 0, clear.meta.error ?? clear.meta.problems.join('; '));
+  assert.ok(!clear.device.calls.some(c => c[0] === 'guard' && c[1] === 'place'), 'nothing to move');
+  assert.deepEqual(clear.meta.scenes.finder.placement.windows.map(w => w.moved), [false]);
+  // Finder's target is its one recorded window; every other scene's, its process's windows.
+  const targets = clear.device.calls.filter(c => c[0] === 'guard' && c[1] === 'read').map(c => c[3]);
+  assert.ok(targets.includes('finder:101:7:only') && targets.includes('textedit:100:7'), targets.join(' '));
+  const action = results(clear.out).find(row => row.scene === 'electron' && row.cell === 'action');
+  assert.deepEqual(action.diagnostics.before, {front: SCENES.electron.bundleId, key: SCENES.electron.bundleId, keyWindow: {owned: true, bounds: rect(700, 60, 600, 500)}, activate: {ok: true, front: null}});
+  assert.ok(action.diagnostics.meta.keys.includes('cua/nativeEngine'));
+  assert.deepEqual(action.diagnostics.meta.route['cua/nativeEngine'], ATTEST.cua);
 });
 
 test('native-mac holds per-scene and final restoration behind probe settlement after setup or controller abort', async () => {

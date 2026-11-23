@@ -901,3 +901,35 @@ GREEN:
    helpers, now applied to every candidate.
 
 The focused suites (hosted-sittings, native-matrix, accept*, native-baseline, repl-parity, browser-parity, sandbox-probe) pass 2259/2259. I made no hosted run, GUI action, TCC write or push.
+
+## The O0 fence scanner, after wave 4's review
+
+An independent review of wave 4 found that the fence scanner in `tcc.mjs` was not CommonMark-aware in two ways:
+
+- It accepted a closer at any indent, including an indented line that is literal content inside a top-level fence.
+- It did not recognise a fence that opens on a list marker. It could then take that fence's closer for an opener and
+  hide the Decision Log after it.
+
+This commit does not write a full parser. `fenceScan` places only fences it can place without doubt: those that open
+at column 0 and close with the same character, at least as long, indented at most three spaces, with nothing after the
+marker. It refuses a document as "the pinned spec's fences are ambiguous (…, line N)" when it finds any of these:
+
+- a closer indented four or more;
+- a fence opening on a list marker;
+- any other indented fence marker outside a fence, which would belong to a list item or be indented code;
+- a fence that is never closed.
+
+The zero-store-call table gains three cases:
+
+- an indented closer inside a top-level fence;
+- a list-marker fence before the Decision Log;
+- a list item's fence whose closer looks like an opener.
+
+The `~~~` example moves to column 0, so it still tests a placed fence.
+
+- RED (`node --test test/hosted-sittings/tcc.test.mjs`): pass 18, fail 3. The three new cases reached the store.
+- GREEN: 21/21, and `test/hosted-sittings/*` 71/71.
+
+The real spec at `db775127` passes; I checked a byte-identical copy of `git show` at that commit. It has four fence
+lines (307, 386, 392, 634), all at column 0, balanced, and all before `## Decision Log` (line 780). Its Decision Log
+holds no fence.

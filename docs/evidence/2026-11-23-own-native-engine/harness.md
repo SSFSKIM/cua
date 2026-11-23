@@ -583,3 +583,22 @@ The review of the first round found six gaps and two minor points. Each fix's te
   the table).
 - The focused suites, GREEN: the same command as above gave `# tests 2254  # pass 2253  # fail 0  # skipped 1`, the
   skip being the existing hosted-only one.
+
+The re-review closed those six and found one more path and two minors. Each test failed first.
+
+- **#216's other requests** (`test/probe-approval-cycles.test.mjs`, "another request is the call's in flight"). A request
+  the client was asked during a bind or `js_reset` that a stop left unmeasured still failed the run: an unmeasured vendor
+  bind was NO VERDICT alone and FAIL with one other request. Now each request counts on the call in flight (the bind's
+  record, the end_task's or js_reset's step; between calls, the connection). One during an unmeasured call is named
+  beside it ("N other requests during it, not judged"). One during attested work, or between calls, still fails. RED:
+  `bindRecord(…).other` was `undefined`, where `0` was expected.
+- **Minor: an identity the run does not name** (`test/repl-parity/native-mac-diff.test.mjs`, u8 to u10). `attestationGap`
+  compared an absent checkout build, approved version or runtime release with an attestation that also lacked it, and
+  `undefined === undefined` proved the lane. Now the run must name each one as a non-empty string before its
+  attestations are compared. RED: `Missing expected exception` for u8.
+- **Minor: wrong engine before missing** (`classifyAttestedRecord`; `test/probe-lib-engine.test.mjs` and
+  `test/hosted-sittings/checks.test.mjs`). Affirmative wrong-engine evidence (state 1, then any other mismatch) now
+  outranks results left unattested or nameless, on either side. An incomplete vendor-side record with one cua answer
+  and one unattested result is NO VERDICT on the wrong engine, not the incomplete record's FAIL. RED: `'mismatched' !==
+  'missing'` and `'FAIL' !== 'NO VERDICT'`.
+- The focused suites, GREEN: `# tests 2255  # pass 2254  # fail 0  # skipped 1`.

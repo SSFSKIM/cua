@@ -61,6 +61,10 @@ struct ElementData {
   /// #500 (ruling 1131): the attributes whose slot held kCFNull (`AttributeRead.null`): each decodes as none, and the
   /// stale-point record keeps the label's apart from a failed read and from an absence (`ScreenshotNode.labelsNull`).
   var null: Set<String> = []
+  /// #519 (ruling 1146): the label attributes (`StalePointLabelPart`) whose slot held a value that is no text (a CFNumber
+  /// AXTitle): each decodes as none, but the stale-point record keeps it unread, never absent (`screenshotLabelsUnknown`).
+  /// No text is made of the value. Not a failed read, so `unreadable` and #405's classification are untouched.
+  var nonText: Set<String> = []
   /// #390: read by a source that does not read AXValue (`ElementSource.readsValue` false), so `value` says nothing of the
   /// element's value; an identity made from it leaves the value out of its match. #405: so is a password field's.
   var valueUnread = false
@@ -115,6 +119,7 @@ struct ElementData {
     children = elementList(values["AXChildren"])
     childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
     childrenLeaf = values["AXChildren"] == nil && absent.contains("AXChildren")
+    nonText = Set(StalePointLabelPart.allCases.map(\.attribute).filter { name in values[name].map { stringValue($0) == nil } ?? false })
   }
 }
 

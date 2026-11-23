@@ -62,8 +62,8 @@ struct ScreenshotNode<Element> {
   /// role (`stalePointEditableTextRoles`). #298's edited-text exemption (ruling 1ea561bc:553) checks at the click that
   /// the text's AXEditableAncestor, read then, names it. Nil otherwise.
   let editableAncestor: Element?
-  /// Its label's attributes whose read failed at the observation, or whose slot held kCFNull (#500), so the label read
-  /// then is unknown past them (#298).
+  /// Its label's attributes whose read failed at the observation, or whose slot held kCFNull (#500) or a value that is no
+  /// text (#519), so the label read then is unknown past them (#298).
   let labelsUnread: Set<StalePointLabelPart>
   /// Its AX frame at the observation, in global screen points (top-left origin), as coordinate clicks are posted.
   let frame: CGRect
@@ -190,7 +190,7 @@ struct ScreenshotNodeRead<Element> {
   var subrole: String? = nil
   var value: String? = nil
   /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence;
-  /// and (#500) those whose slot held kCFNull, also in `labelsNull`.
+  /// (#500) those whose slot held kCFNull, also in `labelsNull`; and (#519) those whose slot held a value that is no text.
   var labelsUnread: Set<StalePointLabelPart> = []
   var labelsNull: Set<StalePointLabelPart> = []
 }
@@ -209,7 +209,7 @@ enum StalePointLabelPart: CaseIterable, Hashable {
 }
 
 /// One label attribute read now (the review of 7f6eb3dc..b2f00ad5, P2 2): its text, nil when the element lacks it (an
-/// absent attribute, or a value that is no text), or unreadable (any other error), which the label must not fall past.
+/// absent attribute), or unreadable (any other error, or #519 a value that is no text), which the label must not fall past.
 /// #500 (rulings 1083, 1131): null, a read that answered kCFNull, is unknown too, but a comparison whose other side is
 /// null at the same part passes to the next one, like with like (`stalePointLabelPair`).
 enum StalePointLabelRead: Equatable { case text(String?), unreadable, null }
@@ -228,9 +228,11 @@ func stalePointLabelPair(_ a: StalePointLabelRead, _ b: StalePointLabelRead) -> 
 }
 
 /// The label attributes the record keeps as unknown and, of them, those whose slot held kCFNull (#500), from the walk's
-/// data (`ElementData.unreadable`, `ElementData.null`; `screenshotLabelsUnread`).
+/// data (`ElementData.unreadable`, `ElementData.null`; `screenshotLabelsUnread`). #519 (ruling 1146): a slot that held a
+/// value that is no text (`ElementData.nonText`) is unknown too, never absent; and never null, so no comparison passes
+/// over it, even where the other side's is no text as well.
 func screenshotLabelsUnknown(role: String, _ data: ElementData) -> (unread: Set<StalePointLabelPart>, null: Set<StalePointLabelPart>) {
-  (screenshotLabelsUnread(role: role, data.unreadable.union(data.null)), screenshotLabelsUnread(role: role, data.null))
+  (screenshotLabelsUnread(role: role, data.unreadable.union(data.null).union(data.nonText)), screenshotLabelsUnread(role: role, data.null))
 }
 
 /// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the
@@ -240,13 +242,15 @@ func screenshotLabelsUnread(role: String, _ unreadable: Set<String>) -> Set<Stal
 }
 
 /// A label attribute's single read now (`copyAttribute`'s value and error) as `StalePointLabelRead`: a string or an
-/// attributed string's text; nothing for kAXErrorNoValue, kAXErrorAttributeUnsupported or a value that is no text;
-/// null for kCFNull (#500); unreadable for any other error.
+/// attributed string's text; nothing for kAXErrorNoValue, kAXErrorAttributeUnsupported or a success with no value;
+/// null for kCFNull (#500); unreadable for any other error and (#519, ruling 1146) a value that is no text, as the
+/// record keeps one (`screenshotLabelsUnknown`).
 func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
   switch error {
   case .success:
-    if let value, CFGetTypeID(value) == CFNullGetTypeID() { return .null }
-    return .text(value.flatMap(labelText))
+    guard let value else { return .text(nil) }
+    if CFGetTypeID(value) == CFNullGetTypeID() { return .null }
+    return labelText(value).map { .text($0) } ?? .unreadable
   case .noValue, .attributeUnsupported: return .text(nil)
   default: return .unreadable
   }

@@ -27,6 +27,8 @@ private final class Node {
   var unreadable: Set<StalePointLabelPart> = []
   /// #500: label attributes whose read answers kCFNull, in the walk's batched read (its slot) and in a single read now.
   var null: Set<StalePointLabelPart> = []
+  /// #519: label attributes whose slot holds a value that is no text (`nonTextLabelSlot`), then and now.
+  var nonText: Set<StalePointLabelPart> = []
   /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
   var roleUnread = false
   var actionsUnread = false
@@ -81,15 +83,17 @@ private var reads: StalePointReads<Node> {
   StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frameUnread ? nil : $0.frame },
                                           parent: { $0.parentUnread ? nil : $0.parent },
                                           children: { $0.childrenUnreadNow ? nil : $0.children },
-                                          // A failed or null read answers none, as the live seam's `attribute` does.
-                                          title: { $0.unreadable.union($0.null).contains(.title) ? nil : $0.title },
-                                          description: { $0.unreadable.union($0.null).contains(.description) ? nil : $0.description },
-                                          value: { $0.unreadable.union($0.null).contains(.value) ? nil : $0.value },
+                                          // A failed, null or non-text read answers none, as the live seam's `attribute` does.
+                                          title: { $0.unreadable.union($0.null).union($0.nonText).contains(.title) ? nil : $0.title },
+                                          description: { $0.unreadable.union($0.null).union($0.nonText).contains(.description) ? nil : $0.description },
+                                          value: { $0.unreadable.union($0.null).union($0.nonText).contains(.value) ? nil : $0.value },
                                           editableAncestor: { $0.editableAncestor }, actions: { $0.frame == nil || $0.actionsUnread ? nil : $0.actions },
                                           label: { node, part in
                                             if node.unreadable.contains(part) { return .unreadable }
                                             // #500: a single read answering kCFNull, classified as the live seam's is.
                                             if node.null.contains(part) { return stalePointLabelRead(kCFNull, .success) }
+                                            // #519: a single read answering a value that is no text, as the live seam's is.
+                                            if node.nonText.contains(part) { return stalePointLabelRead(nonTextLabelSlot, .success) }
                                             switch part {
                                             case .title: return .text(node.title)
                                             case .description: return .text(node.description)
@@ -115,7 +119,7 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
     let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
     // The label's slots decoded as the walk decodes a batched read (#500: a null slot at decode time).
     let labels = decodedLabels(role: node.role, title: node.title, description: node.description, value: node.value, null: node.null,
-                               failed: node.unreadable)
+                               failed: node.unreadable, nonText: node.nonText)
     // A failed AXRole read decodes as AXUnknown (ElementData).
     reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.roleUnread ? "AXUnknown" : node.role,
                                     title: labels.title, description: labels.description,
@@ -2950,7 +2954,7 @@ final class UnreadableLabelTests: XCTestCase {
     XCTAssertEqual(stalePointLabelRead("Save" as CFString, .success), .text("Save"))
     XCTAssertEqual(stalePointLabelRead(nil, .noValue), .text(nil))
     XCTAssertEqual(stalePointLabelRead(nil, .attributeUnsupported), .text(nil))
-    XCTAssertEqual(stalePointLabelRead(3 as CFNumber, .success), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(3 as CFNumber, .success), .unreadable, "#519: a value that is no text is unknown, not absent")
     XCTAssertEqual(stalePointLabelRead(nil, .cannotComplete), .unreadable)
     XCTAssertEqual(screenshotLabelsUnread(role: "AXButton", ["AXTitle", "AXValue", "AXHelp"]), [.title])
     XCTAssertEqual(screenshotLabelsUnread(role: "AXStaticText", ["AXDescription", "AXValue"]), [.description, .value])
@@ -3092,6 +3096,89 @@ final class NullLabelSlotTests: XCTestCase {
     XCTAssertTrue(controlDiffers(now, from: blank, windowShift: .zero, reads), "all null: the moved frame")
     now.frame = control.frame
     XCTAssertFalse(controlDiffers(now, from: blank, windowShift: .zero, reads), "all null: no label compared, the frame in place")
+  }
+}
+
+/// #519 (ruling 1146): a label slot holding a value that is no text (a CFNumber AXTitle) is neither the label's text nor
+/// its absence: the record keeps it unread (`labelsUnread`, never `labelsNull`), its text never invented, and a single
+/// read now answering one is unreadable too. Unlike a null, it is never like with like: a value no text is unread on both
+/// sides. Every slot here enters at decode time (`decodedLabels`, the fake source's `extra`).
+final class NonTextLabelSlotTests: XCTestCase {
+  private let point = CGPoint(x: 60, y: 120)
+
+  /// The decoder keeps the value as it came and puts the name in no failure set; the record folds it into `labelsUnread`
+  /// alone (an AXStaticText's value too, no other role's), and the walk's node still says no title.
+  func testANonTextSlotIsRecordedUnread() {
+    var read = AttributeRead()
+    read.decode(kAXTitleAttribute, nonTextLabelSlot)
+    XCTAssertEqual(read.unreadable, [], "the read did not fail")
+    XCTAssertEqual(read.null, [])
+    XCTAssertEqual(read.absent, [])
+    XCTAssertEqual(stalePointLabelRead(nonTextLabelSlot, .success), .unreadable, "a single read answering no text")
+    XCTAssertEqual(stalePointLabelRead("Save" as CFString, .success), .text("Save"))
+    XCTAssertEqual(stalePointLabelRead(nil, .noValue), .text(nil), "absent")
+    let labels = decodedLabels(role: "AXStaticText", title: nil, description: "Save", value: nil, nonText: [.title, .value])
+    XCTAssertNil(labels.title, "its text is never invented")
+    XCTAssertEqual(labels.description, "Save")
+    XCTAssertEqual(labels.unread, [.title, .value])
+    XCTAssertEqual(labels.null, [], "no null")
+    XCTAssertEqual(decodedLabels(role: "AXButton", title: "Save", description: nil, value: nil, nonText: [.value]).unread, [],
+                   "no other role's value is its label")
+    let tree = FakeTree()
+    tree.children = [0: [1, 2]]
+    tree.frames = [0: CGRect(x: 0, y: 0, width: 600, height: 400), 1: CGRect(x: 20, y: 20, width: 100, height: 30),
+                   2: CGRect(x: 20, y: 60, width: 100, height: 30)]
+    tree.extra[1] = [kAXTitleAttribute: nonTextLabelSlot]
+    let recording = walk(tree, Lineage(), recordsScreenshot: true)
+    let node = recording.screenshotReads.first { tree.id($0.element) == 1 }
+    XCTAssertNil(node?.title)
+    XCTAssertEqual(node?.labelsUnread, [.title])
+    XCTAssertEqual(node?.labelsNull, [])
+    XCTAssertEqual(screenshotNodes(recording.screenshotReads).first { tree.id($0.element) == 1 }?.label(.title), .unreadable)
+    XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 2 }?.labelsUnread, [], "a title read is known")
+    XCTAssertTrue(recording.nodes.first { ($0["frame"] as? [String: Double])?["y"] == 20 }?["title"] is NSNull,
+                  "the model's node is unchanged: no title")
+  }
+
+  /// A button recorded with `then` non-text, read now with `now` non-text, after `change`.
+  private func judged(then: Set<StalePointLabelPart>, now: Set<StalePointLabelPart>, title: String?, description: String?,
+                      change: (Node) -> Void = { _ in }) -> StalePointReason {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let button = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), title: title, description: description)
+    window.add(button)
+    button.nonText = then
+    let nodes = recorded(window)
+    button.nonText = now
+    change(button)
+    return stalePointVerdict(at: point, nodes: nodes, hit: button, reads: reads).reason
+  }
+
+  /// #298's `relabelled` never falls past a numeric title to the description: unread on either side, or both, the label
+  /// is unknown and the point kept (main compared the descriptions past two nils and refused). Every part read, the
+  /// description's change still refuses.
+  func testRelabelledNeverFallsPastANonTextTitle() {
+    let changed: (Node) -> Void = { $0.description = "Delete" }
+    XCTAssertEqual(judged(then: [.title], now: [], title: nil, description: "Open", change: changed), .sameElement, "numeric then, absent now")
+    XCTAssertEqual(judged(then: [], now: [.title], title: nil, description: "Open", change: changed), .sameElement, "absent then, numeric now")
+    XCTAssertEqual(judged(then: [.title], now: [.title], title: nil, description: "Open", change: changed), .sameElement, "numeric on both")
+    XCTAssertEqual(judged(then: [], now: [], title: nil, description: "Open", change: changed), .relabelled, "every part read")
+  }
+
+  /// #443's `controlDiffers`: a numeric title then and absent now ends the label comparison (main compared the
+  /// descriptions past two nils and found the control another), so only the frame is checked.
+  func testControlDiffersStopsAtANonTextTitle() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let control = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), description: "Archive")
+    window.add(control)
+    control.nonText = [.title]
+    guard let record = recorded(window).first(where: { $0.element === control }) else { return XCTFail("recorded") }
+    let now = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), description: "Delete")
+    window.add(now)
+    XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric then, absent now: unread, the frame in place")
+    now.nonText = [.title]
+    XCTAssertFalse(controlDiffers(now, from: record, windowShift: .zero, reads), "numeric on both: unread")
+    now.frame = CGRect(x: 20, y: 140, width: 200, height: 30)
+    XCTAssertTrue(controlDiffers(now, from: record, windowShift: .zero, reads), "the frame is still checked")
   }
 }
 
@@ -3582,6 +3669,26 @@ final class RecreatedIdentityTests: XCTestCase {
     let both = judgedNull(true)
     XCTAssertFalse(both.refused, "both null: compared by the description, no twin (\(both.reason))")
     XCTAssertEqual(both.identity, .recreated)
+  }
+
+  /// #519 (ruling 1146): A's title numeric at the observation (decoded so) is unread, so B's absent title does not rule
+  /// B out as a twin: refused (main took the two nils for the same absent title and the differing descriptions for no
+  /// twin). Numeric on both sides is unread on both, never like with like: a twin too.
+  func testANonTextTitleNeverRulesATwinOut() {
+    func judgedNonText(_ bNonText: Bool) -> StalePointVerdict<Node> {
+      let thread = Thread()
+      thread.a.description = "first"
+      thread.b.description = "second"
+      thread.a.nonText = [.title]
+      if bNonText { thread.b.nonText = [.title] } else { thread.b.title = nil }
+      return judged(thread, at: atLink) { thread in
+        let again = thread.rerenderA().link
+        again.description = "first"
+        return again
+      }
+    }
+    XCTAssertEqual(judgedNonText(false).reason, .nodeGone, "numeric on one side: a twin")
+    XCTAssertEqual(judgedNonText(true).reason, .nodeGone, "numeric on both: a twin")
   }
 
   /// Finding 6: an element whose role failed to read at the observation (recorded as AXUnknown) may be of the node's

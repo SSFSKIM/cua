@@ -238,9 +238,40 @@ func frontWindowNumber(of pid: pid_t) -> CGWindowID? {
 }
 
 /// Thrown, with nothing posted, for a pointer holder its hold refuses (#282, `PointerHold.refusedWithoutActivationPointClick`):
-/// the activation it would meet clicks no activation point. Never reaches the wire: its caller answers the refusal, or
-/// takes the element route instead (`deliverPointer`).
-struct PointerRefused: Error {}
+/// the activation it would meet clicks no activation point; and by the delivery guard for a shared pointer with no
+/// activation standing while another app is in front (#538, `keyFocusOnly`, the readings it refused on). Never reaches
+/// the wire: its caller answers the refusal, or takes the element route instead (`deliverPointer`).
+struct PointerRefused: Error {
+  var keyFocusOnly: PointerRefusalRecord? = nil
+}
+
+/// #538 (ruling 1173): a shared pointer refused, nothing posted, because no activation stands for it (the app believed it
+/// had focus when the activation was decided: key focus without the front, or the front since lost) while another app is
+/// in front, where its own mouse down could raise the target's window over the person's with nothing to put it back. The
+/// readings are the ones it refused on, read just before the events would have gone: the frontmost app and the process
+/// holding window-server key focus. The meta's `pointerRefusal`.
+struct PointerRefusalRecord: Equatable {
+  let frontmostPid: pid_t
+  let keyFocusPid: pid_t?
+  /// Key focus is the target's serving process or the app: the state S, as against a front lost since the decision.
+  let keyFocusIsTarget: Bool
+
+  var wire: [String: Any] {
+    ["reason": "keyFocusOnly", "frontmostPid": Int(frontmostPid), "keyFocusPid": keyFocusPid.map { Int($0) } ?? NSNull(),
+     "keyFocusIsTarget": keyFocusIsTarget]
+  }
+}
+
+/// #538's refusal (`PointerRefusalRecord`): what was read, that nothing was sent, and what reaches the app without a
+/// pointer. Never a remedy that has the model raise the app (the design session's ruling 80a11b9a).
+func keyFocusOnlyRefused(_ app: String, noun: String, _ record: PointerRefusalRecord) -> EngineError {
+  guard record.keyFocusIsTarget else {
+    return EngineError(name: "backgroundClickRefused",
+      "Another app came in front of \(app) just before the \(noun), so nothing was sent. Observe \(app) with get_app_state and try again.")
+  }
+  return EngineError(name: "backgroundClickRefused",
+    "Another app is in front of \(app) while \(app) holds keyboard focus, so nothing was sent: a \(noun) sent now could bring \(app)'s window over the person's. Act on \(app) through its elements' own actions (performSecondaryAction, setValue) or keys (typeText, pressKey), or ask the person to bring \(app) to the front.")
+}
 
 /// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
 func activationFailed(_ detail: String) -> EngineError {
@@ -611,7 +642,8 @@ final class FakeActivation {
   /// the user's and is left alone. Once it returns, the after-action watch (`AfterActionWatch`) runs on to the repair
   /// window's end under the same rules, on `watches` (the connection's), so a raise after the guard settled is repaired
   /// too, as a flash a later result reports; the action does not wait for it. Nil, with `post` run alone, when no fake
-  /// activation stands or the user's app is not another app in front: nothing to guard. An action whose events go on
+  /// activation stands (for a pointer, only when no other app is in front: #538 below) or the user's app is not another
+  /// app in front: nothing to guard. An action whose events go on
   /// after `post` (the paste route's later lines and Returns) passes its `repairWindow`: the watch then runs while the
   /// action does and until the repair window after its last event, not after `post`'s.
   ///
@@ -626,14 +658,30 @@ final class FakeActivation {
   /// open is its own action's alone, cap and least wait included, so an action of another connection sharing the
   /// activation before that action's events (a paste joining a pointer's, or the other way round) takes a hold of its
   /// own under its own classification, never the pending one (#321's review).
+  ///
+  /// #538 (ruling 1173): a pointer (`pointer`, shared mode's: dedicated mode never comes here) with no activation standing,
+  /// its own or a joined entry's that exited early because the app believed it had focus, reads the front once more,
+  /// with route 3's identity (`frontmostIsTarget`), as the last step before its events: this path makes no lookup of its
+  /// own, so nothing lies between the read and the events. Another app in front throws `PointerRefused` with the
+  /// readings (`PointerRefusalRecord`) and posts nothing; no app frontmost, or the target's, posts alone as before. Every
+  /// other delivery (an activation standing, the paste route's keys) is unchanged.
   func deliver(window: CGWindowID? = nil, watches: AfterActionWatches? = nil, repairWindow: RepairWindow? = nil, pointer: Bool = false,
-               ranBy action: FakeActivation?, _ post: () -> Void) -> DeliveryGuardOutcome? {
+               ranBy action: FakeActivation?, _ post: () -> Void) throws -> DeliveryGuardOutcome? {
     let system = system
     let hold: OpenHold
     if action === self, let open = takeOpenHold() {
       hold = open
     } else {
-      guard activated, let user = system.frontmost(), !frontmostIsTarget(user, pid: pid, appPid: appPid) else {
+      guard activated else {
+        if pointer, let front = system.frontmost(), !frontmostIsTarget(front, pid: pid, appPid: appPid) {
+          let key = system.keyFocus()
+          throw PointerRefused(keyFocusOnly: PointerRefusalRecord(frontmostPid: front, keyFocusPid: key,
+                                                                  keyFocusIsTarget: key.map { $0 == pid || $0 == appPid } ?? false))
+        }
+        post()
+        return nil
+      }
+      guard let user = system.frontmost(), !frontmostIsTarget(user, pid: pid, appPid: appPid) else {
         post()
         return nil
       }

@@ -95,6 +95,9 @@ struct InputMeta {
   var keyWindowRestored: Bool?
   /// Route 3's pointer actions: what the delivery guard after the action's events saw and did (#200); nil when none ran.
   var delivery: DeliveryGuardOutcome?
+  /// #538: a shared pointer refused before its events, no activation standing and another app in front, with the
+  /// readings (`PointerRefusalRecord`), on the refusal and on the element route that carried it instead.
+  var pointerRefusal: PointerRefusalRecord?
   /// The paste route's value-free diagnostics of its last line (#187, Paste.swift `PasteDiagnostics`); nil off it.
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
@@ -187,6 +190,7 @@ struct InputMeta {
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
+    if let pointerRefusal { wire["pointerRefusal"] = pointerRefusal.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
     if let fieldFocus {
@@ -320,6 +324,11 @@ struct PointerTarget {
 /// is posted, activated, withdrawn or pressed, #282's element route included (the design session's ruling 1ea561bc
 /// ca82a6f4); a kept point's element route checks again what it presses (StalePoint.swift `StalePointGate`).
 ///
+/// #538 (ruling 1173): in shared mode, a pointer with no activation standing (the app believed it had focus: key focus
+/// with another app frontmost, or a front lost since) is refused by the delivery guard's front read just before its
+/// events when another app is in front, nothing posted, and answers as #282's refusal does: by `pointer.elementRoute`
+/// when it has one, else as `keyFocusOnlyRefused`; the meta's `pointerRefusal` carries the readings either way.
+///
 /// #359: `pointerPosted` runs once the action's own events are posted (ClickOrdering.swift: the window in which an
 /// accessibility action on the process's text waits for them to land); never on #282's element route, which posts none.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
@@ -383,13 +392,27 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     }
     // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
     if let standing, shared {
-      meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
+      meta.delivery = try standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
     } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too
     try foreground.run(send)
-  } else { try send() }
+  } else {
+    do {
+      try send()
+    } catch let refused as PointerRefused {
+      // #538: refused by the delivery guard, nothing posted. The lease of an activation that never ran is given back
+      // first, so the element route starts from what #282's refusal before the activation leaves.
+      guard let record = refused.keyFocusOnly else { throw refused }
+      meta.pointerRefusal = record
+      _ = release?()
+      release = nil
+      guard let elementRoute = pointer.elementRoute else { throw keyFocusOnlyRefused(pointer.app, noun: pointer.noun, record) }
+      try elementRoute(&meta)
+      return
+    }
+  }
   if consumedArm, pointer.view != .acceptsFirstMouse { throw clickUnconfirmed(pointer.app, noun: pointer.noun) }
 }
 

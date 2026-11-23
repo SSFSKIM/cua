@@ -1280,7 +1280,7 @@ final class ClickDeliveryTests: XCTestCase {
     held.targetAbove = false
     let standing = activation(held, at: insidePoint)
     try standing.activate()
-    _ = standing.deliver(window: 41, pointer: true, ranBy: nil) {}
+    _ = try standing.deliver(window: 41, pointer: true, ranBy: nil) {}
     XCTAssertEqual(held.scheduledBy, [.holdRelease, .holdRelease, .holdRelease])
   }
 

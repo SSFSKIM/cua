@@ -576,6 +576,9 @@ struct StalePointVerdict<Element> {
   var routeControl: Element?
   /// #481 (ruling 1109): which recorded control `routeControl` is, the meta's `stalePoint.routeControl`.
   var routeControlSource: StalePointRouteControl?
+  /// #481 (ruling 1123): the record `routeControl` qualified against (its handle, its recorded label), which the route's
+  /// gate checks again after a wait or a focus hold (`StalePointGate.check`, `routeQualification`).
+  var routeRecord: ScreenshotNode<Element>?
   var refused: Bool { reason.refuses }
 }
 
@@ -1208,8 +1211,8 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
   func keptRouting(_ kept: StalePointVerdict<Element>) -> StalePointVerdict<Element> {
     guard verdict.hitCorrection == .changed else { return kept }
     var routed = kept
-    if let (pressed, source) = correctedRouteControl(control, hit: hit, node: node, kept, reads) {
-      (routed.routeControl, routed.routeControlSource) = (pressed, source)
+    if let qualified = correctedRouteControl(control, hit: hit, node: node, kept, reads) {
+      (routed.routeControl, routed.routeControlSource, routed.routeRecord) = (qualified.control, qualified.source, qualified.record)
     }
     return routed
   }
@@ -1232,27 +1235,78 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
   return refused
 }
 
-/// #481 (ruling 1106): the recorded control the element route presses by its handle from #442's corrected hit, or nil
-/// for main's route from the action's own first hit. Only the recorded control the verdict vouches for at the point, all
-/// of these holding:
+/// #481 (rulings 1106, 1123): the recorded control the element route presses by its handle from #442's corrected hit,
+/// or nil for main's route from the action's own first hit. Only the recorded control the verdict vouches for at the
+/// point, all of these holding:
 /// - the corrected hit's acting control (`control`, `firstActing`) is, by handle, #433's control beneath the inert layer
-///   that #433's test kept (handle, label, frame under the pointer; a named candidate that failed it is not), or else
-///   the node's own recorded control (`ScreenshotNode.control`) passing the same test (`underlyingRefusal`);
+///   that #433's test kept (`beneath`), or the node's own recorded control (`ScreenshotNode.control`, `node`);
+/// - that control qualifies now, by its own label-checked test on the corrected hit itself (`routeQualification`): never
+///   #433's keep from before the wait, nor `underlyingRefusal`'s frame-unread pass, which reads no label (ruling 1123:
+///   a link relabelled "Open" to "Delete" during the 80 ms wait is not pressed);
 /// - the corrected hit lies inside the node's recorded web area (#316's `liesIn`), so browser chrome the re-hit reaches
 ///   in the same window never counts;
 /// - its role is one the element route presses (`webAreaPressableRoles`), so no walk from the hit is needed.
 /// A control the record lacks (a new wrapper, a front control the walk cut) can never qualify, nor one inside a node the
 /// record holds incompletely.
 func correctedRouteControl<Element>(_ control: Element, hit: Element, node: ScreenshotNode<Element>, _ kept: StalePointVerdict<Element>,
-                                    _ reads: StalePointReads<Element>) -> (control: Element, source: StalePointRouteControl)? {
+                                    _ reads: StalePointReads<Element>)
+  -> (control: Element, source: StalePointRouteControl, record: ScreenshotNode<Element>)? {
   guard let point = kept.point, let area = node.webArea, liesIn(hit, area, reads).inside,
         let role = reads.role(control), webAreaPressableRoles.contains(role) else { return nil }
-  if kept.underlyingIdentity == .handle, let beneath = kept.underlying, reads.same(beneath.element, control) { return (control, .beneath) }
-  guard let own = node.control, reads.same(own, control),
-        let recorded = kept.nodes.first(where: { reads.same($0.element, own) }) else { return nil }
-  let judged = underlyingRefusal(recorded, at: point, windowShift: kept.windowShift, hit: hit, nodes: kept.nodes, frameless: kept.frameless,
-                                 recorded: kept.recorded, reads)
-  return judged.refusal == nil && judged.identity == .handle ? (control, .node) : nil
+  let candidate: (record: ScreenshotNode<Element>, source: StalePointRouteControl)
+  if kept.underlyingIdentity == .handle, let beneath = kept.underlying, reads.same(beneath.element, control) {
+    candidate = (beneath, .beneath)
+  } else if let own = node.control, reads.same(own, control), let recorded = kept.nodes.first(where: { reads.same($0.element, own) }) {
+    candidate = (recorded, .node)
+  } else {
+    return nil
+  }
+  guard routeQualification(candidate.record, at: point, hit: hit, reads) == nil else { return nil }
+  return (control, candidate.source, candidate.record)
+}
+
+/// #481 (ruling 1123): why the recorded control the route would press no longer qualifies, or nil when it does: its own
+/// handle, its frame read now holding `point` (or, that frame unread, the hit inside it and its handle not gone), and its
+/// label read now and confirmed unchanged (`routeLabelConfirmed`). Applied to the corrected hit at the decision and, on
+/// the route's gate, after any wait or focus hold (`StalePointGate.check`), with whatever hit is fresh then.
+func routeQualification<Element>(_ record: ScreenshotNode<Element>, at point: CGPoint, hit: Element?,
+                                 _ reads: StalePointReads<Element>) -> (reason: StalePointReason, labelNow: String?)? {
+  let element = record.element
+  if let frame = reads.frame(element) {
+    guard holdsPoint(frame, point) else { return (.frameMoved, nil) }
+  } else {
+    guard reads.gone?(element) != true, let hit, reads.same(hit, element) || isInside(hit, element, reads) else { return (.nodeGone, nil) }
+  }
+  guard routeLabelConfirmed(record, reads) else { return (.relabelled, relabelledLabel(record, reads)) }
+  return nil
+}
+
+/// #481 (ruling 1123): whether the control's label, read now, is confirmed the recorded one: the first non-empty of its
+/// title, then description (then an AXStaticText's value), read the way #298's `relabelledLabel` reads it, with the same
+/// words; both sides empty is the same label. A read that fails, then or now, confirms nothing.
+func routeLabelConfirmed<Element>(_ record: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> Bool {
+  let parts: [StalePointLabelPart] = record.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
+  var was: String?
+  for part in parts {
+    if record.labelsUnread.contains(part) { return false }
+    if let text = nonEmpty(part == .title ? record.title : part == .description ? record.description : record.value) {
+      was = text
+      break
+    }
+  }
+  var now: String?
+  for part in parts {
+    guard case .text(let text) = reads.readLabel(record.element, part) else { return false }
+    if let text = nonEmpty(text.map(bounded)) {
+      now = text
+      break
+    }
+  }
+  switch (was, now) {
+  case (nil, nil): return true
+  case let (was?, now?): return stalePointLabelWords(was) == stalePointLabelWords(now)
+  default: return false
+  }
 }
 
 /// #481 (ruling 1109): the source of the control the route pressed from the corrected hit: #433's control beneath the
@@ -2012,7 +2066,16 @@ struct StalePointGate<Element> {
              reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
     let started = now()
     let rechecked = waited ? recheck() : nil
-    let verdict = stalePointPressVerdict(pressed, rechecked?.verdict ?? first, reads: reads)
+    var verdict = stalePointPressVerdict(pressed, rechecked?.verdict ?? first, reads: reads)
+    // #481 (ruling 1123): the control the route presses from #442's corrected hit qualifies again after a wait or a
+    // focus hold, on its own label-checked test, whatever the fresh check's correction: main's broader press verdict
+    // would take a relabelled ancestor of a child (`hitAboveNode`).
+    if let rechecked, !verdict.refused, let record = first.routeRecord, let control = first.routeControl, reads.same(control, pressed),
+       let point = first.point, let failed = routeQualification(record, at: point, hit: rechecked.verdict.hit, reads) {
+      verdict = StalePointVerdict(reason: failed.reason, node: record, identity: .handle, current: pressed, point: point,
+                                  windowShift: first.windowShift, nodes: first.nodes, frameless: first.frameless)
+      verdict.labelNow = failed.labelNow
+    }
     costs.ms += now() - started
     if let rechecked {
       if let again = rechecked.windowsMs { costs.windowsMs = (costs.windowsMs ?? 0) + again }

@@ -5468,3 +5468,73 @@ extension OtherControlOnTopTests {
     }
   }
 }
+
+/// #481's fix wave (ruling 1123): the review of b1b15484..8351fb49 found three wrong presses, each a link relabelled "Open"
+/// to "Delete" during the 80 ms wait or a hold. The route's control qualifies by its own label-checked test on the
+/// corrected hit, and again on the route's gate after a wait or a focus hold; each shape answers as main (no press).
+extension OtherControlOnTopTests {
+  /// P1a: A, #433's control beneath, kept before the wait with its label "Open", relabelled "Delete" during it; the
+  /// corrected hit names A, whose own named-candidate check fails. Not pressed: main's route.
+  func testAControlBeneathRelabelledDuringTheWaitIsNotPressed() {
+    let page = Page()
+    let (verdict, _, _) = judged(page, at: atLink, corrected: { page in
+      page.a.title = "Delete"
+      return page.a
+    }) { $0.veil }
+    XCTAssertFalse(verdict.refused, "\(verdict.reason)")
+    XCTAssertEqual(verdict.hitCorrection, .changed)
+    XCTAssertNil(verdict.routeControl)
+    XCTAssertNil(verdict.routeControlSource)
+  }
+
+  /// P1b: the node's own recorded control A, relabelled "Delete" during the wait with its frame unreadable now; the
+  /// corrected hit lies in it. `underlyingRefusal`'s frame-unread pass reads no label; the route's test does: not pressed.
+  /// So with A's title unreadable now (unknown, never confirmed), and A's label unchanged it qualifies.
+  func testTheNodesOwnControlRelabelledWithItsFrameUnreadIsNotPressed() {
+    for (name, change) in [("relabelled", { (a: Node) in a.title = "Delete" }), ("title unreadable", { (a: Node) in a.unreadable = [.title] }),
+                           ("unchanged", { (_: Node) in })] as [(String, (Node) -> Void)] {
+      let page = Page(veiled: false)
+      let (verdict, _, _) = judged(page, at: atText, corrected: { page in
+        change(page.a)
+        page.a.frameUnread = true
+        return page.aText
+      }) { $0.list }
+      XCTAssertEqual(verdict.reason, .nonInteractiveHit, name)
+      XCTAssertEqual(verdict.hitCorrection, .changed, name)
+      if name == "unchanged" {
+        XCTAssertTrue(verdict.routeControl === page.a, name)
+        XCTAssertEqual(verdict.routeControlSource, .node, name)
+      } else {
+        XCTAssertNil(verdict.routeControl, name)
+      }
+    }
+  }
+
+  /// P1c: the route's control A qualified at the decision, then relabelled "Delete" during the route's wait or focus
+  /// hold. The gate's fresh check takes the node A's text with the hit on A (`hitAboveNode`), which main's press verdict
+  /// accepts; the route's own test refuses before anything is pressed. Unchanged, the gate keeps.
+  func testTheRoutesControlRelabelledBeforeThePressIsRefused() {
+    for relabelled in [true, false] {
+      let page = Page(veiled: false)
+      let (nodes, frameless, members) = walkRecord(page.window)
+      let first = stalePointVerdict(at: atText, nodes: nodes, frameless: frameless, recorded: members, hit: page.list,
+                                    correctedHit: { WindowHit(element: page.aText, place: .observedWindow(inPopover: false)) }, reads: reads)
+      XCTAssertTrue(first.routeControl === page.a)
+      let gate = StalePointGate(first: first, firstMs: 0) { [self] in
+        StalePointRecheck(stalePointVerdict(at: atText, nodes: nodes, frameless: frameless, recorded: members, hit: page.a, reads: reads))
+      }
+      if relabelled { page.a.title = "Delete" }
+      XCTAssertEqual(stalePointPressVerdict(page.a, stalePointVerdict(at: atText, nodes: nodes, frameless: frameless, recorded: members,
+                                                                      hit: page.a, reads: reads), reads: reads).reason, .hitAboveNode,
+                     "main's press verdict on the fresh check")
+      let checked = gate.check(page.a, waited: true, now: { 0 }, reads: reads)
+      if relabelled {
+        XCTAssertEqual(checked.record.reason, .relabelled)
+        XCTAssertEqual(checked.refusal?.errorName, "screenChangedSinceScreenshot")
+        XCTAssertTrue(checked.refusal?.message.contains("now reads \"Delete\"") == true, checked.refusal?.message ?? "nil")
+      } else {
+        XCTAssertNil(checked.refusal)
+      }
+    }
+  }
+}

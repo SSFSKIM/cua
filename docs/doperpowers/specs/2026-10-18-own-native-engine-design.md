@@ -8160,6 +8160,41 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   failures.
   Date/Author: 2026-11-23, cursor235's builder for #481.
 
+- Decision (#481, ruling 1123, the review of b1b15484..8351fb49 by reviewer-high aa790282, 2026-11-23; amends the
+  entries above, StalePoint.swift `correctedRouteControl`, `routeQualification`, `routeLabelConfirmed` and
+  `StalePointGate.check`): **the route's control qualifies only by its own label-checked test, on the corrected hit and
+  again at the route's gate after a wait or a focus hold.** The review found three wrong presses, each a link relabelled
+  "Open" to "Delete" during the 80 ms wait or a hold:
+  - `beneath` reused #433's keep from before the wait, though the corrected hit's own named-candidate check had failed
+    on the new label;
+  - `node` went through `underlyingRefusal`, whose frame-unread pass reads no label;
+  - after the route's wait or focus hold, main's broader press verdict took the relabelled ancestor of the checked child
+    (`hitAboveNode`).
+
+  Now either source qualifies only through `routeQualification` on the corrected hit itself. It requires:
+  - its own handle;
+  - its frame read now holding the point, or, with that frame unread, the hit inside it and its handle not gone;
+  - its label read now and confirmed the recorded one (`routeLabelConfirmed`: a read that fails confirms nothing).
+
+  `#433`'s keep for ordinary clicks is untouched. The verdict carries the record it qualified against (`routeRecord`),
+  and the gate tests it again on the fresh check after a wait or hold, whatever that check's correction. A failure
+  refuses before dispatch with that reason (`relabelled` naming the new label, `frameMoved`, `nodeGone`). Main's
+  consumers keep the original verdict.
+
+  Out of this wave, to a ticket and the PR's limits:
+  - searching `kept.frameless` for the node's control;
+  - building the route when the first hit is nil.
+
+  Proven offline (`OtherControlOnTopTests`, 3 new tests), each shape answering as main:
+  - the control beneath relabelled during the wait;
+  - the node's own control relabelled with its frame unread, or its title unreadable (and qualifying unchanged);
+  - the gate refusing the relabelled ancestor main's press verdict accepts as `hitAboveNode` (and keeping it unchanged).
+
+  On 8351fb49's StalePoint.swift all three fail (7 assertions). Four mutations each fail one of them: `beneath`
+  without the qualification, the frame-unread path skipping the label, a failed label read confirming, and the gate not
+  requalifying. 1668 swift tests, 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #481.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

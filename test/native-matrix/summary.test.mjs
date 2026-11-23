@@ -258,17 +258,58 @@ test('the per-context rows are out of the verdict: absent from the manifest, nev
   assert.ok(!j.unicode.some(u => u.id.includes('/perContext')), 'not among the judged Unicode rows');
   assert.equal(j.interference.cua.rows, j.interference.vendor.rows, 'not among the interference rows');
   assert.deepEqual(j.notJudged.map(n => n.id), [...planned].sort());
-  assert.deepEqual(j.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext,
+  assert.deepEqual(j.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: true,
     vendor: {ok: 0, valid: 0, invalid: 3}, cua: {ok: 0, valid: 3, invalid: 0}});
-  // Not run at all: still listed, with nothing counted.
+  // Recorded by neither lane: still listed, labelled not recorded (not invalid), with nothing counted.
   const none = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40}});
   assert.equal(none.verdict, 'PASS');
-  assert.deepEqual(none.notJudged.find(n => n.id === PER_CONTEXT).cua, {ok: 0, valid: 0, invalid: 0});
+  assert.deepEqual(none.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: false,
+    vendor: {ok: 0, valid: 0, invalid: 0}, cua: {ok: 0, valid: 0, invalid: 0}});
+  assert.ok(renderSummary(none).includes(`| ${PER_CONTEXT} | not recorded | not recorded |`));
   const text = renderSummary(j);
   for (const part of ['## Not judged', `### perContext\n\n${NOT_JUDGED.perContext}`, `| ${PER_CONTEXT} | 0/3 | 0/0 (+3 invalid) |`,
     '**Korean and Unicode**: 171 of 171 rows pass on cua; 54 perContext rows are not judged (below).'])
     assert.ok(text.includes(part), part);
   assert.ok(text.indexOf('## Not judged') > text.indexOf('## Korean and Unicode'));
+});
+
+// The review's regression: only ruling 1119's per-context rows are out of the verdict, by section and condition. An
+// `excluded` mark on a mandatory row takes nothing out.
+test('an excluded mark on any row but a per-context one takes nothing out: the reader refuses the result, and the judge judges the row as it read', () => {
+  const KEYS = 'textedit/korean/pressKey.rk';
+  const marked = rows => rows.map(r => (r.id === KEYS ? {...r, ok: false, excluded: 'not judged, says the run'} : r));
+  const runs = [];
+  for (let n = 1; n <= 3; n++) for (const [engine, extra] of [['vendor', {axMs: 50, resolved: 9}], ['cua', {axMs: 40}]]) runs.push({path: `${engine}/run-${n}`, result: fullRun(engine, n, {...extra, tweak: marked})});
+  // Past the reader (in memory): the row is judged as it read, and the marks are named.
+  const j = judge(runs);
+  assert.equal(j.verdict, 'FAIL');
+  assert.ok(j.blocking.includes(`unicode: ${KEYS} failed on cua`), j.blocking.join('\n'));
+  assert.ok(j.missing.some(m => /^6 row\(s\) of the full runs are marked excluded, which only ruling 1119's per-context rows may be/.test(m)), j.missing.join('\n'));
+  assert.ok(!j.notJudged.some(n => n.id === KEYS));
+  // Through the reader: none of the six results conforms, so they are missing proof, never a pass.
+  const dir = fs.mkdtempSync(join(tmpdir(), 'matrix-summary-marked-'));
+  try {
+    for (const {path, result} of runs) { fs.mkdirSync(join(dir, path), {recursive: true}); fs.writeFileSync(join(dir, path, 'result.json'), JSON.stringify(result)); }
+    const {results, problems} = readResults([dir]);
+    assert.equal(results.length, 0);
+    assert.equal(problems.filter(p => /excluded marks a row no ruling puts out of the judged matrix/.test(p)).length, 6, problems.join('\n'));
+    assert.notEqual(judge(results, problems).verdict, 'PASS');
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+// #189, ruling 1119: pressKey is judged on raw outcomes; a declaration carried on its evidence excuses nothing.
+test('a pressKey row is judged on its raw outcomes: a declaration on its evidence is missing proof, and a wrong vendor sample fails it even with no valid cua sample', () => {
+  const KEYS = 'textedit/korean/pressKey.rk', declared = {kind: 'composition', cause: 'composes otherwise'};
+  const vendorDeclared = judged({vendor: {axMs: 50, resolved: 9, tweak: set(KEYS, {ok: false, declared})}, cua: {axMs: 40}});
+  assert.equal(vendorDeclared.verdict, 'FAIL');
+  assert.ok(vendorDeclared.blocking.includes(`unicode: ${KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), vendorDeclared.blocking.join('\n'));
+  assert.ok(vendorDeclared.missing.includes(`unicode: ${KEYS} on vendor (sample 1) carries a declaration, which no pressKey row may (ruling 1119): its raw outcome is judged`), vendorDeclared.missing.join('\n'));
+  assert.ok(!vendorDeclared.owner.some(o => o.includes(KEYS)), 'never the owner\'s to read');
+  const cuaDeclared = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, declared})}});
+  assert.ok(cuaDeclared.blocking.includes(`unicode: ${KEYS} failed on cua`), cuaDeclared.blocking.join('\n'));
+  const cuaInvalid = judged({vendor: {axMs: 50, resolved: 9, tweak: set(KEYS, {ok: false})}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, invalid: 'not engaged'})}});
+  assert.equal(cuaInvalid.verdict, 'FAIL');
+  assert.ok(cuaInvalid.blocking.includes(`unicode: ${KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), cuaInvalid.blocking.join('\n'));
 });
 
 // #189, ruling 1119: a Korean row counts only with 2-Set engaged; without it the row has no verdict, never a pass. If

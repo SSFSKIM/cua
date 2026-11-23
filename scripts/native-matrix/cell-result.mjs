@@ -44,8 +44,9 @@
 //   invalid    optional, a reason: the sample says nothing (its target was not in front, its probe post fell outside
 //              the action's interval); never a pass and never a fail, kept out of every verdict and statistic
 //   excluded   optional, a cause: the row ran and is reported as measured, but a ruling put it out of the judged
-//              matrix (ruling 1119's per-context rows, ./unicode-plan.mjs NOT_JUDGED); like an invalid row it counts in
-//              no verdict, and the summary lists it as not judged with its cause
+//              matrix. Only ruling 1119's per-context rows are (./not-judged.mjs, by section and condition), and they
+//              count in no verdict whether marked or not; the mark on any other row makes the result not conform, and
+//              never takes that row out of a verdict. The summary lists the not-judged rows with their cause
 //   scene, user, regime ('frontmost' | 'background'), method, case   optional, what the row drove
 //   inCellMs, wallMs   optional numbers: performance.now() around the facade call inside the cell; the harness's time
 //   inputRoute optional: the `cua/inputRoute` the action reported (1, "2'", 2, 3, 4, "paste"), null when none came
@@ -60,6 +61,7 @@
 // Anything else a row carries is kept and ignored by the summary.
 import * as fs from 'node:fs';
 import {join} from 'node:path';
+import {exclusionOf} from './not-judged.mjs';
 
 export const CELL_RESULT_SCHEMA = 'native-matrix-cell-1';
 export const RESULT_FILE = 'result.json';
@@ -76,14 +78,14 @@ const bounded = text => String(text).slice(0, ERROR_CHARS);
 
 // The cell's verdict from its rows: refused before anything ran; no-verdict without a valid row or when the cell did
 // not complete (its evidence is missing: a cell with missing samples is NO VERDICT, which blocks); fail on any valid
-// row that is neither ok nor declared (a declared row is not ok and says why); else pass. An excluded row counts for
-// nothing, as an invalid one does.
+// row that is neither ok nor declared (a declared row is not ok and says why); else pass. A not-judged row
+// (./not-judged.mjs) counts for nothing, as an invalid one does.
 export const counts = row => row.ok === true || row.declared !== undefined;
 // The row's oracle reading held, or the oracle declared why not (an owner-accepted route 4, a self-activating family).
 const interferenceHolds = row => row.interference === undefined || row.interference.ok === true || row.interference.declared !== undefined;
 export function verdictOf({refused = false, complete, rows, judgesInterference = false}) {
   if (refused) return 'refused';
-  const valid = rows.filter(row => !row.invalid && !row.excluded);
+  const valid = rows.filter(row => !row.invalid && !exclusionOf(row));
   if (!valid.length || !complete) return 'no-verdict';
   return valid.every(row => counts(row) && (!judgesInterference || interferenceHolds(row))) ? 'pass' : 'fail';
 }
@@ -109,6 +111,7 @@ export function rowProblems(row, at = 'row') {
   if (typeof row.ok !== 'boolean') out.push(`${at}.ok is not a boolean`);
   if (row.invalid !== undefined && !isString(row.invalid)) out.push(`${at}.invalid is not a reason`);
   if (row.excluded !== undefined && !isString(row.excluded)) out.push(`${at}.excluded is not a reason`);
+  else if (row.excluded !== undefined && !exclusionOf(row)) out.push(`${at}.excluded marks a row no ruling puts out of the judged matrix (only ruling 1119's per-context rows are)`);
   if (row.regime !== undefined && !REGIMES.includes(row.regime)) out.push(`${at}.regime is not frontmost or background`);
   for (const key of ['inCellMs', 'wallMs']) if (row[key] !== undefined && !Number.isFinite(row[key])) out.push(`${at}.${key} is not a number`);
   if (row.inputRoute !== undefined && row.inputRoute !== null && !INPUT_ROUTES.includes(row.inputRoute)) out.push(`${at}.inputRoute is not one of 1, "2'", 2, 3, 4, "paste" or null`);

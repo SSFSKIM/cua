@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
+import {Stop} from '../../scripts/native-matrix/steps.mjs';
 import {KOREAN_2SET, MID_SWITCH, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {HANGUL_LAYOUT, judgeMidSwitch} from '../../scripts/native-matrix/unicode-run.mjs';
 import {matrixSteps, runWith} from './run-doubles.mjs';
@@ -259,4 +260,31 @@ test('the per-context rows still run and carry ruling 1119\'s cause; failed or h
   const failed = await runWith({plan: only, cellName: 'korean', ops: contextHeld, cell: unequal});
   assert.ok(failed.result.rows.every(r => r.ok === false && !r.invalid && r.excluded === NOT_JUDGED.perContext));
   assert.equal(failed.result.verdict, 'no-verdict', 'excluded rows alone are no verdict, never a fail');
+});
+
+// The review's finding: the per-context condition's own setup failing is that condition's, not the run's; a run-wide
+// stop stays fail-closed, and the rows already run still carry the cause.
+test('a per-context setup that throws fails that condition alone, its rows invalid and excluded; a Stop is never caught, and the rows before it keep the cause', async () => {
+  const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['latin', 'perContext']}};
+  const perContextOn = a => a[0] === 'source' && a[1] === 'per-context' && a.includes('on');
+  const writeFails = {matrix: (base, a) => { if (perContextOn(a)) throw new Error('defaults write failed'); return base(a); }};
+  const {code, steps, result} = await runWith({plan, cellName: 'korean', ops: writeFails});
+  const perContext = result.rows.filter(r => r.condition === 'perContext');
+  assert.equal(perContext.length, 18);
+  assert.ok(perContext.every(r => r.invalid === 'the per-context setup failed: defaults write failed' && r.excluded === NOT_JUDGED.perContext), JSON.stringify(perContext[0]));
+  assert.ok(result.rows.filter(r => r.condition === 'latin').every(r => r.ok === true && !r.invalid));
+  assert.deepEqual([code, result.complete, result.verdict], [0, true, 'pass'], JSON.stringify(result.problems));
+  assert.equal(sources(steps).at(-1), 'restore', 'the owner\'s source and preference restored after');
+  assert.ok(result.meta.unicode.readings.some(r => r.when === 'perContext:chrome@textedit' && r.setupError === 'defaults write failed'));
+  // Chrome's per-context rows run; Electron's setup meets a run-wide stop, which propagates.
+  let ons = 0;
+  const stops = {matrix: (base, a) => {
+    if (perContextOn(a) && ++ons === 2) throw new Stop('interrupted by SIGINT');
+    return contextHeld.matrix(base, a);
+  }};
+  const stopped = await runWith({plan: {...planOf('korean'), unicode: {fields: ['chrome', 'electron'], conditions: ['perContext']}}, cellName: 'korean', ops: stops});
+  assert.equal(stopped.result.complete, false);
+  assert.ok(stopped.result.problems.some(p => /stopped: interrupted by SIGINT/.test(p)), JSON.stringify(stopped.result.problems));
+  const ran = stopped.result.rows.filter(r => r.condition === 'perContext');
+  assert.ok(ran.length === 18 && ran.every(r => r.id.startsWith('chrome/') &&r.excluded === NOT_JUDGED.perContext), JSON.stringify(ran.map(r => [r.id, r.excluded])).slice(0, 300));
 });

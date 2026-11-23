@@ -38,6 +38,16 @@ test('an excluded row is reported and counts for nothing: never a pass, never a 
   assert.equal(verdictOf({complete: true, rows: [row(), excluded({ok: true, interference: {ok: false}})], judgesInterference: true}), 'pass');
   assert.deepEqual(validateCellResult(base({rows: [row(), excluded({ok: false})]})), []);
   assert.ok(rowProblems(excluded({excluded: ''})).some(p => /excluded is not a reason/.test(p)));
+  // A per-context row counts for nothing whether or not its run marked it (ruling 1119 decides by section and condition).
+  assert.equal(verdictOf({complete: true, rows: [row(), row({id: 'chrome/perContext@textedit/paste.hangul', section: 'unicode', ok: false})]}), 'pass');
+});
+
+test('an excluded mark on any row but a per-context one does not conform and takes nothing out of the verdict', () => {
+  const keys = row({section: 'unicode', id: 'textedit/korean/pressKey.rk', ok: false, excluded: 'not judged, says the run'});
+  assert.equal(verdictOf({complete: true, rows: [row(), keys]}), 'fail');
+  assert.ok(rowProblems(keys).some(p => /excluded marks a row no ruling puts out of the judged matrix/.test(p)));
+  assert.ok(rowProblems(row({excluded: 'x'})).some(p => /excluded marks a row no ruling puts out of the judged matrix/.test(p)), 'a method row');
+  assert.ok(validateCellResult(base({rows: [row(), keys]})).length > 0);
 });
 
 test('a built result conforms, carries its verdict and bounds its sentences', () => {

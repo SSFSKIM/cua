@@ -17,8 +17,9 @@
 import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
-import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys} from './steps.mjs';
-import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, NOT_JUDGED, readDeclarations, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
+import {exclusionOf} from './not-judged.mjs';
+import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop} from './steps.mjs';
+import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, readDeclarations, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
 // A reading that follows an action asynchronously (a web view's value after a key, an app's input source after its
@@ -30,25 +31,29 @@ export async function unicodeSection(ctx, plan) {
   const rows = unicodeRowsOf(plan);
   const first = ctx.rows.length;
   ctx.meta.unicode = {readings: []};
-  for (const condition of CONDITIONS) {
-    const mine = rows.filter(r => r.condition === condition);
-    if (!mine.length) continue;
-    const source = ['korean', 'composing'].includes(condition) ? KOREAN_2SET : ABC;
-    const unset = condition !== 'perContext' && ctx.perContextOff !== true
-      ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
-    for (const field of plan.fields) {
-      const ofField = mine.filter(r => r.field === field);
-      if (!ofField.length) continue;
-      await ctx.checkpoint();
-      if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
-      if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
-      else if (condition === 'midSwitch') await midSwitchRow(ctx, ofField[0]);
-      else if (condition === 'composing') await composingRows(ctx, field, ofField);
-      else await perContextRows(ctx, field, ofField);
+  try {
+    for (const condition of CONDITIONS) {
+      const mine = rows.filter(r => r.condition === condition);
+      if (!mine.length) continue;
+      const source = ['korean', 'composing'].includes(condition) ? KOREAN_2SET : ABC;
+      const unset = condition !== 'perContext' && ctx.perContextOff !== true
+        ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
+      for (const field of plan.fields) {
+        const ofField = mine.filter(r => r.field === field);
+        if (!ofField.length) continue;
+        await ctx.checkpoint();
+        if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
+        if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
+        else if (condition === 'midSwitch') await midSwitchRow(ctx, ofField[0]);
+        else if (condition === 'composing') await composingRows(ctx, field, ofField);
+        else await perContextRows(ctx, field, ofField);
+      }
     }
+  } finally {
+    // A condition ruled out of the judged matrix still runs; its rows are reported with the cause (ruling 1119), also
+    // when the section stopped part-way.
+    for (const row of ctx.rows.slice(first)) { const cause = exclusionOf(row); if (cause) row.excluded = cause; }
   }
-  // A condition ruled out of the judged matrix still runs; its rows are reported with the cause (ruling 1119).
-  for (const row of ctx.rows.slice(first)) if (row.section === 'unicode' && Object.hasOwn(NOT_JUDGED, row.condition)) row.excluded = NOT_JUDGED[row.condition];
   const {unused} = applyDeclarations(ctx.rows.slice(first), readDeclarations());
   ctx.meta.unicode.unusedDeclarations = unused.map(({id, engine}) => ({id, engine}));
 }
@@ -174,20 +179,32 @@ async function composingRows(ctx, field, rows) {
 // the user window in front under the Latin source; the rows behind it; then the driven scene brought back to the front,
 // where its context must still read Korean. Without those readings the rows say nothing: invalid. Held or not, the rows
 // are out of every verdict (ruling 1119, #185; unicodeSection marks them `excluded`): they run and report what they read.
+// A setup step that throws (the preference's write, a device read) fails this condition alone: its rows are invalid
+// with the error, and the run goes on, since the input sections' restore puts the preference back and verifies it, and
+// an unconfirmed restore still leaves the run incomplete. A run-wide stop (Stop: an interrupt, the owner at the Mac)
+// is never caught here.
 async function perContextRows(ctx, field, rows) {
   const {user} = rows[0];
-  await quiet(ctx, field);
-  await quiet(ctx, user);
-  const on = device(ctx, ['source', 'per-context', '--value', 'on'])?.perContext === true;
-  const front = activate(ctx, field);
-  const driven = front?.ok ? await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field)) : null;
-  const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : 'the driven field was not prepared';
-  const korean = engaged === null;
-  const userFront = activate(ctx, user);
-  const latin = userFront?.ok === true && useSource(ctx, ABC, `perContext@${user}`);
-  const userWindow = latin ? userWindowOf(read(ctx).reading, ctx.records[user].pid) : null;
-  const before = !on ? 'the per-context preference did not read on' : !korean ? `the driven scene's Korean source was not established while it was in front: ${engaged}`
-    : !latin ? 'the Latin source was not selected with the user window in front' : !userWindow ? `the user window (${user}) was not in front` : null;
+  let on = false, korean = false, latin = false, userWindow = null, before = null;
+  try {
+    await quiet(ctx, field);
+    await quiet(ctx, user);
+    on = device(ctx, ['source', 'per-context', '--value', 'on'])?.perContext === true;
+    const front = activate(ctx, field);
+    const driven = front?.ok ? await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field)) : null;
+    const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : 'the driven field was not prepared';
+    korean = engaged === null;
+    const userFront = activate(ctx, user);
+    latin = userFront?.ok === true && useSource(ctx, ABC, `perContext@${user}`);
+    userWindow = latin ? userWindowOf(read(ctx).reading, ctx.records[user].pid) : null;
+    before = !on ? 'the per-context preference did not read on' : !korean ? `the driven scene's Korean source was not established while it was in front: ${engaged}`
+      : !latin ? 'the Latin source was not selected with the user window in front' : !userWindow ? `the user window (${user}) was not in front` : null;
+  } catch (error) {
+    if (error instanceof Stop) throw error;
+    const message = String(error?.message ?? error).slice(0, 200);
+    ctx.meta.unicode.readings.push({when: `perContext:${field}@${user}`, setupError: message});
+    before = `the per-context setup failed: ${message}`;
+  }
   if (before) { for (const r of rows) invalidRow(ctx, r, before); return; }
   const done = [];
   for (const r of rows) done.push(await caseRow(ctx, field, 'background', unicodeCase(r), {...options(r), user, userWindow}));

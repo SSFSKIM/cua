@@ -22,6 +22,7 @@
 // is itself named (applyDeclarations' `unused`).
 import * as fs from 'node:fs';
 import {ABC, KOREAN_2SET} from './live-checks.mjs';
+import {exclusionOf, NOT_JUDGED} from './not-judged.mjs';
 import {emptyField, fieldCheck} from './probe-plan.mjs';
 import {TYPED} from './plan.mjs';
 
@@ -41,10 +42,10 @@ export const UNICODE_METHODS = Object.freeze(['typeText', 'paste']);
 // keeps its exact-text contract: its rows expect the string sent under either source.
 export const PRESS_KEY = Object.freeze({id: 'rk', keys: 'r k', expected: Object.freeze({latin: 'rk', korean: '가'})});
 const pressKeyString = condition => Object.freeze({id: PRESS_KEY.id, keys: PRESS_KEY.keys, text: PRESS_KEY.expected[condition]});
-// The conditions whose rows run and are reported but are out of every verdict, each with its cause.
-export const NOT_JUDGED = Object.freeze({
-  perContext: 'out of M5\'s judged matrix (ruling 1119, #185): a stored per-context preference does not show live behaviour, and establishing it would mean focusing each window, which non-interference forbids',
-});
+// Whether a Unicode row id is the pressKey row's, which no declaration covers (ruling 1119).
+export const isPressKeyRow = id => typeof id === 'string' && id.endsWith(`/pressKey.${PRESS_KEY.id}`);
+// The conditions whose rows run and are reported but are out of every verdict (./not-judged.mjs).
+export {NOT_JUDGED};
 // The mid-switch row's long keyed text, so the switch lands inside it.
 export const MID_SWITCH = Object.freeze({id: 'long', text: Array.from({length: 24}, () => TYPED).join(' ')});
 // The engine's inputSourceChanged sentence (native/engine/Sources/Engine/Input.swift checkInputSource). The cell sees a
@@ -96,7 +97,7 @@ export function parseDeclarations(json) {
     if (!(typeof d?.id === 'string' && ['vendor', 'cua'].includes(d.engine) && typeof d.kind === 'string' && d.kind && typeof d.cause === 'string' && d.cause)) {
       throw new Error(`${EXPECTED_FILE.pathname}: a declaration needs an id, an engine, a kind and a cause (${JSON.stringify(d).slice(0, 120)})`);
     }
-    if (d.id.endsWith(`/pressKey.${PRESS_KEY.id}`)) {
+    if (isPressKeyRow(d.id)) {
       throw new Error(`${EXPECTED_FILE.pathname}: ${d.id} cannot be declared: r k composes as the active input method composes it, and a row that composes otherwise fails (ruling 1119)`);
     }
     const key = `${d.id}\0${d.engine}`;
@@ -112,7 +113,7 @@ export const readDeclarations = (file = EXPECTED_FILE) => parseDeclarations(JSON
 export function applyDeclarations(rows, declarations) {
   const used = new Set();
   for (const row of rows) {
-    if (row.section !== 'unicode' || row.invalid || row.excluded || row.ok) continue;
+    if (row.section !== 'unicode' || row.invalid || exclusionOf(row) || row.ok) continue;
     const d = declarations.find(x => x.id === row.id && x.engine === row.engine);
     if (!d) continue;
     row.declared = {kind: d.kind, cause: d.cause};

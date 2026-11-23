@@ -25,11 +25,13 @@
 //   row is (the cell's rule, not the vendor's result, is the reference; the vendor's is recorded beside it): a valid
 //   cua sample that failed blocks, none valid is no verdict; a declared Unicode row is the owner's to read, and a
 //   declaration of the expected file no full run needed is named for the owner. The pressKey row (r k, ruling 1119)
-//   also fails where the vendor's valid samples read otherwise and cua's read the expected text: the engines differ.
-// - Not judged (./unicode-plan.mjs NOT_JUDGED, ruling 1119: the per-context rows): rows that run and are reported but a
-//   ruling put out of the judged matrix. They are outside the manifest and every judgment (method, interference,
-//   declarations, the verdict), whatever they read and whether or not the run marked them `excluded`; the report lists
-//   each of the plan's with its cause and what both engines read, under "Not judged".
+//   is judged on both engines' raw outcomes (judgePressKey): a valid vendor sample that read otherwise fails it too,
+//   the engines differing, and a declaration carried on its evidence is missing proof, never an excuse.
+// - Not judged (./not-judged.mjs, ruling 1119: the per-context rows, by section and condition): rows that run and are
+//   reported but a ruling put out of the judged matrix. They are outside the manifest and every judgment (method,
+//   interference, declarations, the verdict), whatever they read and whether or not the run marked them `excluded`; an
+//   `excluded` mark on any other row takes nothing out (the reader refuses the result; the judge names it). The report
+//   lists each of the plan's with its cause and what both engines read, or that no lane recorded it, under "Not judged".
 // - Any other cell (the settle cell, M2a's residue): each cell's verdict per engine as its rows give it
 //   (./cell-result.mjs verdictOf), listed.
 //
@@ -53,7 +55,8 @@ import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, SC
 import {MATRIX_CELLS} from './registry.mjs';
 import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN} from './run.mjs';
-import {CONDITIONS, NOT_JUDGED, PRESS_KEY, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
+import {CONDITIONS, isPressKeyRow, NOT_JUDGED, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 
 export const BEAT = 0.9;
 export const RUNS_PER_SIDE = 3;
@@ -92,18 +95,30 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
   return out;
 }
 
-// The cause that keeps a row out of every judgment, or null: the run's `excluded` mark, else its Unicode condition's
-// (NOT_JUDGED), so a row recorded before the ruling is kept out too.
-const conditionOf = id => id.split('/')[1]?.split('@')[0] ?? null;
-const exclusionOf = row => row.excluded ?? (row.section === 'unicode' && Object.hasOwn(NOT_JUDGED, conditionOf(row.id)) ? NOT_JUDGED[conditionOf(row.id)] : null);
 const sampleCounts = rows => { const valid = rows.filter(r => !r.invalid); return {ok: valid.filter(r => r.ok === true).length, valid: valid.length, invalid: rows.length - valid.length}; };
-// Every not-judged row of the plan, and any other row a run marked excluded, with its cause and what each engine read.
-// -> [{id, condition, cause, vendor: {ok, valid, invalid}, cua: {…}}], by id.
+// Every not-judged row of the plan and any other not-judged row a run recorded (./not-judged.mjs: by section and
+// condition, never by a row's own mark), with its cause and what each engine read; `recorded` is false for a row of the
+// plan no lane recorded. -> [{id, condition, cause, recorded, vendor: {ok, valid, invalid}, cua: {…}}], by id.
 function notJudgedOf(excluded, plan = FULL_PLAN) {
   const planned = unicodeRowsOf(plan.unicode).filter(r => Object.hasOwn(NOT_JUDGED, r.condition)).map(r => ({id: r.id, condition: r.condition, cause: NOT_JUDGED[r.condition]}));
-  const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, {id: r.id, condition: conditionOf(r.id), cause: exclusionOf(r)}])).values()];
-  return [...planned, ...others].map(entry => ({...entry, ...Object.fromEntries(['vendor', 'cua'].map(engine => [engine, sampleCounts(excluded.filter(r => r.id === entry.id && r.engine === engine))]))}))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, {id: r.id, condition: unicodeConditionOf(r.id), cause: exclusionOf(r)}])).values()];
+  return [...planned, ...others].map(entry => {
+    const mine = excluded.filter(r => r.id === entry.id);
+    return {...entry, recorded: mine.length > 0, ...Object.fromEntries(['vendor', 'cua'].map(engine => [engine, sampleCounts(mine.filter(r => r.engine === engine))]))};
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// pressKey's r k (ruling 1119): composed by the active input method, so judged on the raw outcomes of both engines,
+// never on a declaration. A valid cua sample that did not read the expected text fails the row; a valid vendor sample
+// that did not, the engines composing differently, fails it too, whatever cua's samples were; otherwise no valid cua
+// sample is no verdict. -> judgeMethod's shape, with `differs` when the vendor's lane composed otherwise.
+export function judgePressKey(vendorRows, cuaRows) {
+  const raw = rows => rows.map(({declared, ...rest}) => rest);
+  const judged = judgeMethod('background', raw(vendorRows), raw(cuaRows));
+  const valid = rows => rows.filter(r => !r.invalid);
+  if (valid(cuaRows).some(r => r.ok !== true)) return {...judged, verdict: 'worse'};
+  if (valid(vendorRows).some(r => r.ok !== true)) return {...judged, verdict: 'worse', differs: true};
+  return judged.verdict === 'better' ? {...judged, verdict: 'equal'} : judged;
 }
 
 // What a full run's own metadata must say before its manifest can be built. -> [sentence].
@@ -230,6 +245,13 @@ export function judge(results, problems = []) {
   const runs = {vendor: 0, cua: 0};
   for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
   const missingProof = [...problems, ...proofProblems(full)];
+  // Marks the rules do not allow, on results that reached the judge without the reader's check: an `excluded` mark on a
+  // row no ruling puts out (the row is judged as it read), a declaration on pressKey evidence (judged on its raw outcome).
+  const misMarked = all.filter(r => r.excluded !== undefined && !exclusionOf(r)).length;
+  if (misMarked) missingProof.push(`${misMarked} row(s) of the full runs are marked excluded, which only ruling 1119's per-context rows may be: they are judged as they read`);
+  for (const r of all.filter(x => x.section === 'unicode' && isPressKeyRow(x.id) && x.declared !== undefined)) {
+    missingProof.push(`unicode: ${r.id} on ${r.engine} (sample ${r.sample ?? 1}) carries a declaration, which no pressKey row may (ruling 1119): its raw outcome is judged`);
+  }
   for (const {result, path} of results) {
     if (!result.complete && !narrowed.some(n => n.path === path)) missingProof.push(`${path}: ${result.cell} is ${result.verdict === 'refused' ? 'refused' : 'incomplete'}${result.problems.length ? ` (${result.problems.join('; ')})` : ''}`);
   }
@@ -287,20 +309,17 @@ export function judge(results, problems = []) {
   }
   launch.sort((a, b) => a.id.localeCompare(b.id));
 
-  // The probe cells and the Unicode matrix, each row against its own outcome.
+  // The probe cells and the Unicode matrix, each row against its own outcome; the pressKey row by judgePressKey.
   const byOwnOutcome = sections => {
     const out = [];
     for (const [id, list] of groupBy(rows.filter(r => sections.includes(r.section)), r => r.id)) {
-      out.push({id, section: list[0].section, ...judgeMethod('background', list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
+      const judgeRow = list[0].section === 'unicode' && isPressKeyRow(id) ? judgePressKey : (v, c) => judgeMethod('background', v, c);
+      out.push({id, section: list[0].section, ...judgeRow(list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
   };
   const probe = byOwnOutcome(['concurrent', 'intervention']);
   const unicode = byOwnOutcome(['unicode']);
-  // pressKey's r k is composed by the active input method (ruling 1119): the vendor's lane composing it otherwise, a
-  // valid vendor sample not reading the expected text where cua's did, is cua acting differently, which fails the row
-  // and which no declaration covers (the expected file refuses one).
-  for (const u of unicode) if (u.id.endsWith(`/pressKey.${PRESS_KEY.id}`) && u.verdict === 'better') Object.assign(u, {verdict: 'worse', differs: true});
   const failedUnicode = new Set(rows.filter(r => r.section === 'unicode' && !r.invalid && r.ok !== true).map(r => `${r.id}\0${r.engine}`));
   const unneeded = full.length ? readDeclarations().filter(d => !failedUnicode.has(`${d.id}\0${d.engine}`)) : [];
 
@@ -319,7 +338,7 @@ export function judge(results, problems = []) {
   const speedMisses = speed.filter(s => s.beat === false);
   const speedUnmeasured = speed.filter(s => s.beat === null);
   // Rows not ok with a declared cause (./cell-result.mjs counts): never silent, each the owner's to read.
-  const declaredRows = rows.filter(r => !r.invalid && r.ok !== true && r.declared);
+  const declaredRows = rows.filter(r => !r.invalid && r.ok !== true && r.declared && !(r.section === 'unicode' && isPressKeyRow(r.id)));
   const owner = [
     ...declaredRows.map(r => `declared: ${r.section} ${r.id} on ${r.engine}: ${r.declared.kind}: ${r.declared.cause}`),
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
@@ -443,10 +462,11 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     }
   }
   if (j.notJudged.length) {
-    out.push('## Not judged', '', 'Rows that ran and are reported, which a ruling put out of the judged matrix: they count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s.', '');
+    out.push('## Not judged', '', 'The plan\'s rows a ruling put out of the judged matrix: they run and are reported, and count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s; "not recorded" where that lane has no sample of the row, which is distinct from an invalid sample.', '');
+    const recorded = c => (c.valid + c.invalid ? counts(c) : 'not recorded');
     for (const [condition, list] of groupBy(j.notJudged, n => n.condition)) {
       out.push(`### ${condition}`, '', list[0].cause, '', '| row | cua ok | vendor ok |', '|---|---|---|');
-      for (const n of list) out.push(`| ${n.id} | ${counts(n.cua)} | ${counts(n.vendor)} |`);
+      for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);
       out.push('');
     }
   }

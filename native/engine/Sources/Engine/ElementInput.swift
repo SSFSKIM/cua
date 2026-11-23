@@ -312,6 +312,24 @@ extension Engine {
     }
   }
 
+  /// #258's plain click on a web page's text field in the frontmost app (ElementClickCarrier `frontmostField`, ruling
+  /// 1171): refused as a synthesized click is when its window is minimized or nothing of it shows, then posted at its
+  /// clickable point to its serving process by `deliverFrontmostFieldClick`, the front read again just before the events.
+  func frontmostFieldClick(_ pointing: ElementPointing, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
+                           meta: inout InputMeta) throws -> FrontmostFieldDelivery {
+    try refuseMinimizedWindow(minimized: pointing.window.map(isMinimized) ?? false, app: app.displayName)
+    guard let point = pointing.point, !pointing.relation.covered else {
+      throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
+    }
+    meta.pointUnconfirmed = pointing.relation.unconfirmed
+    let owner = pointing.owner
+    let connection = context.connection.id
+    return try deliverFrontmostFieldClick(ClickTarget(point: point, windowFrame: pointing.windowFrame, windowID: pointing.windowID, pid: owner),
+                                          appPid: appPid, frontmost: frontmostPid, beforePosting: guarding.checkInFlight,
+                                          announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
+                                          pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) }, post: gatedPost, meta: &meta)
+  }
+
   /// A synthesized click on an element at its clickable point: refused as not visible when nothing of it shows, its
   /// frame cannot be read now, or the hit-test there answers something unrelated to it (something covers it), reported
   /// `pointUnconfirmed` when the hit-test answers nothing or only a container; route 3's activation for the element's

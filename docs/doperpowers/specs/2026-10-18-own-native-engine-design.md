@@ -8698,11 +8698,12 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - (P3) The StalePoint line of the consumer list above is corrected: only `valueOpen` changes, and no refusal text.
   - 1741 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
   Date/Author: 2026-11-23, cursor235's builder for #525.
-- Decision (#258, rulings 1159 and 1170, 2026-11-23, `fix/258-text-click-caret` from f2e179b4; amends the route table's
-  route 1 and the clicks' ladder; 1170 narrows the first cut, 31bc458d, and replaces 1167's WebKit exclusion, which it
-  subsumes): **in the frontmost app, an element click on a web page's text field whose point hits the field itself is
-  synthesized at that point, as the vendor's is; behind another app, and for every other element, the click keeps
-  main's route.** The reference is the vendor's click, read from the binary (`R/F-helper-logic.md` §18). For a plain
+- Decision (#258, rulings 1159, 1170 and 1171, 2026-11-23, `fix/258-text-click-caret` from f2e179b4; amends the route
+  table's route 1 and the clicks' ladder; 1170 narrows the first cut, 31bc458d, and replaces 1167's WebKit exclusion,
+  which it subsumes; 1171 adds the recheck before the events and the plain carrier, after the re-review of ad20332f):
+  **in the frontmost app, an element click on a web page's text field whose point hits the field itself is posted as a
+  plain click at that point, as the vendor's click is, provided the app is still frontmost just before the events;
+  behind another app, and for every other element, the click keeps main's route.** The reference is the vendor's click, read from the binary (`R/F-helper-logic.md` §18). For a plain
   left click on an element advertising AXPick or AXPress it posts a real click at the element frame's midpoint when the
   element is inside a web view (the element or an ancestor is an AXWebArea) and the hit-test there, rooted at the
   application, answers the element or a descendant; outside every web view it always takes the action. F §5.1 had read
@@ -8735,6 +8736,20 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     (Electron's), the activation click and then the field's own mouse down and up are posted under the delivery guard
     (`BackgroundPointerTests.testAWebAreaClickAfterAnActivationPointClickIsPosted`). Neither path is taken now by an
     element click on a background field hitting itself; both remain for a hit on a strict descendant, as on main.
+  - The carrier and the recheck (ruling 1171, the re-review of ad20332f). ad20332f checked the front only at planning,
+    then sent the field through `synthesizedClick`. (P1) If another app came forward before the events, route 3 still
+    posted, unguarded when the target kept key focus (the activation's early exit), and under a route-4 override
+    `ForegroundAssist` brought the target back over the app the person had switched to. (P2) A helper-served field
+    (serving process ≠ the app) passed the gate on the app's front, but `FakeActivation(pid: owner)` asked whether the
+    helper believes it has focus, so it ran an activation instead of a plain click. Now the plan's carrier
+    (`elementClickRoutes`' `ElementClickCarrier.frontmostField`) bypasses `synthesizedClick`, its activation and the
+    route-4 assist: `deliverFrontmostFieldClick` posts one plain left click (route 2′, no ⌘) to the field's serving
+    process at its clickable point, after the in-flight check and a second `frontmostIsTarget` read with the gate's
+    identity, immediately before the events. When that read fails, nothing is posted, no route is recorded, and main's
+    action (AXPick, else AXPress, through #313's route as on main) carries the click; the record's reason is then
+    `webTextEntryFrontmostLost`, so runs can count it. The key-focus early exit of `activate()` and `deliver()` for
+    other synthesized clicks is unchanged (a separate ticket). A person who switches apps after the recheck, between it
+    and the two events posted back to back, is not covered; nothing narrower than the events themselves could be.
   - One read of the ancestry: the gate and #313's route (`textEntryClickRoute`) both ask whether the field is in a web
     page; `elementClickRoutes` decides both from one lazy read, so a native field in the frontmost app walks its
     parents once, not twice, and a background field walks only where main did (#313's WebKit check).
@@ -8744,13 +8759,24 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     point lands on a strict descendant is still synthesized (the vendor presses it); the point stays the midpoint of the
     element's visible part (the vendor's is the frame's midpoint, when visible: the same for a field wholly on screen);
     the vendor's Atlas bundle clause is not taken.
-  - The proof: `WebTextFieldClickTests`, 12 tests: the five text-entry roles in a frontmost page synthesized on a hit of
-    themselves (route 4 under the override too, and on Chromium, Gecko and WebKit), delivered as one plain click at the
-    field's center with no activation, guard or delivery record, whoever holds key focus; the P1 split (another app
+  - The proof: `WebTextFieldClickTests`, 17 tests: the five text-entry roles in a frontmost page synthesized on a hit of
+    themselves (route 4 under the override too, and on Chromium, Gecko and WebKit); the carrier (the plain click with
+    main's action as its fallback, under the route-4 override too, the spike's forced route as before); plan to
+    delivery over a seam whose frontmost app changes between them: kept, one plain click at the field's center, route
+    2′, no activation, guard or delivery record, whoever holds key focus; lost under route 3 with the target holding key
+    focus, and lost under the route-4 override, nothing posted, nothing activated, no route, main's action and #313
+    route next; a helper-served field in the frontmost app getting the plain click at the helper; the in-flight check
+    before the recheck; the P1 split (another app
     frontmost, the target holding key focus) keeping AXPress on every engine; background Chromium, Electron, a Chrome
     datalist combo box, Gecko and WebKit keeping main's plan, #313 route and walk count; a native field reading its
     ancestry once; native fields and fourteen other roles keeping their action and reading nothing; the front read
-    before the web area; `elementInsideWebArea` over the Electron tree; the record's `webTextEntry`. Red runs: on
+    before the web area; `elementInsideWebArea` over the Electron tree; the record's `webTextEntry` and
+    `webTextEntryFrontmostLost`. Red runs for 1171: on ad20332f the file does not compile (no `ElementClickRoutes`,
+    `FrontmostFieldDelivery` or `deliverFrontmostFieldClick`); three scenes as a scratch test over ad20332f's plan and
+    delivery fail: route 3 with the front lost and key focus kept posts the down and up (2 events, no hold), the
+    route-4 override re-activates the target and posts, and the helper-served field gets subtype 1 and an activation
+    before its click; with the recheck removed from the fix, the three plan-to-delivery tests that need it fail. Red
+    runs for 1170: on
     f2e179b4 and on 31bc458d the file does not compile (no `frontmost` seam, no `elementClickRoutes`); the P1 scene as a
     scratch test against 31bc458d fails (the field's mouse down and up posted, no hold, no delivery record) and passes
     on the fix; with the gate's frontmost term removed (31bc458d's rule), 3 of the 12 fail (the P1 split, the

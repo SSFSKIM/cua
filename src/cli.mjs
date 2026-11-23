@@ -14,6 +14,7 @@ import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLefto
 import {installNode} from './runtime/node-install.mjs';
 import {approveEngine, buildEngine, candidateRunningText, engineStatus, holdersText, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
 import {signWaitMs} from './runtime/engine-sign.mjs';
+import {buildFailureFix} from './runtime/engine-build-failure.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
@@ -284,9 +285,11 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
       if (!(error instanceof CuaError)) throw error;
       throw new CuaError(error.code, `cua's engine was not installed: ${error.message}`, {hint: error.hint ? `${remedy}; ${error.hint}` : remedy, cause: error});
     }
-    if (macosEngine.status === 'warn') macosEngine.hint = macosEngine.hint ? `${remedy}; ${macosEngine.hint}` : remedy;
+    if (macosEngine.status === 'warn') macosEngine.hint = macosEngine.cause ? failedBuildRemedy(macosEngine, result.release)
+      : macosEngine.hint ? `${remedy}; ${macosEngine.hint}` : remedy;
     if (!values.json) print(macosEngine.skipped
       ? 'cua\'s engine is not selected, so install left it alone: cua install --engine builds it (CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects it)'
+      : macosEngine.cause ? failedBuildText(macosEngine)
       : macosEngine.status === 'warn' ? `cua's engine was not installed: ${macosEngine.message} (${macosEngine.code}); ${macosEngine.hint}`
         : `${engineBuildText(macosEngine)}${afterBuildText(macosEngine)}`);
   }
@@ -868,6 +871,20 @@ const signatureText = ({kind, identityMatches, reason}) => (kind === null ? 'uns
   : `signed with ${kind === 'adhoc' ? 'ad hoc' : identityMatches === null ? 'an identity (none is configured)'
     : identityMatches ? 'the configured identity' : 'an identity that is not the configured one'}`);
 // A build's outcome, as engine build and install say it.
+// A build that failed under the selection, without --engine (design ruling 1148): the install stands, and its warning
+// names the cause, the engine sessions keep until a build is approved, and the remedy, on one line; a compile error's
+// detail follows it.
+function failedBuildRemedy(warning, release) {
+  const fix = buildFailureFix(warning);
+  const using = warning.serves.engine === 'cua' ? 'to use the new build' : 'to use cua\'s engine';
+  return `${using}, ${fix ? `${fix}, then ` : ''}run \`cua install --engine\`, then \`cua engine approve\` with the owner at the console; ${release} is installed and active`;
+}
+function failedBuildText(warning) {
+  const keeps = warning.serves.engine === 'cua' ? `the approved build ${shortBuild(warning.serves.build)} until a newer build is approved` : 'the vendor engine until a build is approved';
+  const detail = warning.message.split('\n').slice(1).join('\n');
+  return `cua's engine was not built: ${warning.cause} (${warning.code}); sessions keep ${keeps}; ${warning.hint}${detail ? `\n${detail}` : ''}`;
+}
+
 const engineBuildText = built => (built.changed ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, ${signatureText(built.signature)}`
   : `cua's engine ${shortBuild(built.build)} at ${built.bundlePath} is already this build, ${signatureText(built.signature)}`);
 // What follows a build: pending beside the approved engine (design ruling 1118), or at the approved path.

@@ -75,4 +75,11 @@ test('accountEngine reads engine.json and the approved engine from the account\'
   assert.deepEqual(accountEngine(account).config(), {engine: 'cua'});
   assert.equal(accountEngine(account).installed(), null);
   assert.equal(select(accountEngine(account)).code, 'engine_not_installed');
+  // What a fallback's engine notice names (ruling 1148) is read from the account's engine directory too.
+  const engineDir = join(account, 'Library', 'Application Support', 'cua', 'engine');
+  mkdirSync(engineDir, {recursive: true});
+  writeFileSync(join(engineDir, 'build-failed.json'), JSON.stringify({code: 'engine_identity_missing', cause: 'no signing identity is configured', failedAt: '2026-11-23T00:00:00.000Z'}));
+  assert.equal(accountEngine(account).buildFailure().cause, 'no signing identity is configured');
+  assert.equal(accountEngine(store).buildFailure(), null);
+  assert.equal(accountEngine(account).pending(), null);
 });

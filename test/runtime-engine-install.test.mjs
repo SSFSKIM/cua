@@ -98,15 +98,50 @@ test('a failed build under the selection is reported and the install succeeds; w
       const refusal = explicit ? answer.error : answer.engine;
       assert.equal(refusal.code, error.code ?? 'engine_install_failed');
       assert.match(refusal.message, /no signing identity|compiler unavailable/);
-      assert.match(refusal.hint, /fixture is installed and active; for the engine, run cua install --engine again/);
       if (error.hint) assert.match(refusal.hint, /set signingIdentity/);
-      if (explicit) assert.match(refusal.message, /^cua's engine was not installed: /);
-      else assert.equal(answer.engine.status, 'warn');
+      if (explicit) {
+        assert.match(refusal.hint, /fixture is installed and active; for the engine, run cua install --engine again/);
+        assert.match(refusal.message, /^cua's engine was not installed: /);
+      } else {
+        assert.equal(answer.engine.status, 'warn');
+        assert.equal(answer.engine.cause, error.code ? 'no signing identity is configured' : 'engine_install_failed: error: compiler unavailable');
+        assert.deepEqual(answer.engine.serves, {engine: 'vendor'});
+        assert.match(refusal.hint, /run `cua install --engine`, then `cua engine approve` with the owner at the console; fixture is installed and active$/);
+      }
     }
   }
-  const text = await invoke(fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, build: async () => { throw new CuaError('engine_busy', 'the engine (pid 7) has 2 other connections open'); }}).deps);
-  assert.equal(text.status, 0);
-  assert.match(text.stdout, /^cua's engine was not installed: the engine \(pid 7\) has 2 other connections open \(engine_busy\); .*cua install --engine again/m);
+});
+
+// Design ruling 1148: a failed build under the selection (no --engine) is the install's warning, never its failure: it
+// names the cause, says which engine sessions keep until a build is approved, and gives the remedy.
+test('the install warning on a failed build names the cause, the engine sessions keep, and the remedy; the install succeeds', async t => {
+  const REMEDY = 'run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  for (const [error, cause, fix] of [
+    [new CuaError('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built', {hint: 'install Xcode (or its command line tools: xcode-select --install), then run cua engine build again'}),
+      'Xcode is not installed (no swift)', 'install Xcode or its command line tools (xcode-select --install), then '],
+    [new CuaError('engine_identity_missing', 'no signing identity for cua\'s engine: neither CUA_SIGNING_IDENTITY nor signingIdentity in /x/.config/cua/engine.json names one', {hint: 'set "signingIdentity" in ~/.config/cua/engine.json'}),
+      'no signing identity is configured', 'set "signingIdentity" in ~/.config/cua/engine.json, then '],
+    [new CuaError('engine_build_failed', 'swift build failed (exit 1):\n/src/Foo.swift:1:1: error: cannot find type \'Bar\' in scope', {hint: 'the approved bundle is unchanged'}),
+      'compile error (swift build exit 1): cannot find type \'Bar\' in scope', ''],
+  ]) {
+    const r = await invoke(fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, build: async () => { throw error; }}).deps);
+    assert.equal(r.status, 0, r.stderr);
+    const [line, ...rest] = r.stdout.split('\n').filter(text => text.startsWith('cua\'s engine') || text.startsWith('/src'));
+    assert.equal(line, `cua's engine was not built: ${cause} (${error.code}); sessions keep the vendor engine until a build is approved; to use cua's engine, ${fix}${REMEDY}; fixture is installed and active`);
+    if (cause.startsWith('compile error')) assert.deepEqual(rest, ['/src/Foo.swift:1:1: error: cannot find type \'Bar\' in scope'], 'the compiler\'s detail follows the line');
+  }
+  // A previously approved build still serves (ruling 1118): the warning says so.
+  const approved = fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, installed: () => ({bundlePath: '/e/cua Engine.app', engineVersion: '0.3.0', build: 'b'.repeat(64)}),
+    build: async () => { throw new CuaError('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built'); }});
+  const json = await invoke(approved.deps, ['--json']);
+  assert.equal(json.status, 0);
+  assert.deepEqual(JSON.parse(json.stdout).engine.serves, {engine: 'cua', build: 'b'.repeat(64)});
+  const text = await invoke(approved.deps);
+  assert.match(text.stdout, /^cua's engine was not built: Xcode is not installed \(no swift\) \(engine_build_failed\); sessions keep the approved build bbbbbbbbbbbb until a newer build is approved; to use the new build, install Xcode/m);
+  // One below the service's minimum does not serve: sessions keep the vendor engine.
+  const old = fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, installed: () => ({bundlePath: '/e/cua Engine.app', engineVersion: '0.1.0', build: 'b'.repeat(64)}),
+    build: async () => { throw new CuaError('engine_identity_missing', 'none'); }});
+  assert.deepEqual(JSON.parse((await invoke(old.deps, ['--json'])).stdout).engine.serves, {engine: 'vendor'});
 });
 
 test('a setting that cannot be read is the engine step\'s failure, reported without --engine', async t => {

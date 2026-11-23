@@ -44,6 +44,10 @@
 // - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
 //   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
 //   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).
+// - With `engineNotice` (one line: why a macOS computer session keeps the vendor engine while cua's is the default,
+//   and what to run; src/runtime/engine-notice.mjs, design ruling 1148), the connection's first js/js_reset result gets
+//   it as a text item after the runtime's own content and as `_meta['cua/engineNotice']`, the same string; later
+//   results do not. A JSON-RPC error is no result, so the notice waits for the next one.
 // - The idle stop (issue #107): with an upstream that can stop its runtime (src/mcp/lazy-runtime.mjs) and
 //   `runtimeIdleMs` > 0, a running runtime is stopped once no tool call of this machine's (js, js_reset, end_task,
 //   profiles_list's live check) has run for that long: the timer arms when the last such call completes (or the
@@ -81,6 +85,8 @@ import {approvalConnectionId, approvalMemory} from './approval-memory.mjs';
 // service; a test keeps them equal).
 export const BROWSER_KEYS_META = 'cua/browserKeys';
 export const BROWSER_KEYS_UNREACHED_META = 'cua/browserKeysUnreached';
+// Why this connection's macOS computer session keeps the vendor engine, and what to run (src/runtime/engine-notice.mjs).
+export const ENGINE_NOTICE_META = 'cua/engineNotice';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
@@ -110,7 +116,7 @@ export function createServer({
   hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null, feedbackDir}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
-  cursorContext = null, engine = null, replHost = null,
+  cursorContext = null, engine = null, replHost = null, engineNotice = null,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -206,6 +212,7 @@ export function createServer({
   let cancelIdle = null;
   let idleStop = null;          // the stop under way: settles (never rejects) when it is over
   let restarted = false;        // the next runtime reply to js/js_reset carries the restart notice
+  let noticePending = engineNotice;   // the first runtime reply to js/js_reset carries the engine notice
   let idleLeftover = false;     // an idle stop's teardown was unconfirmed
   const waiting = new Map();    // client ID key -> a call held until the idle stop is over
 
@@ -271,7 +278,11 @@ export function createServer({
       restarted = false;
       // The engine attestation (#117): the launch's, unless the service set its own (cua's engine, from its ping).
       const engine = nativeEngine && !Object.hasOwn(result._meta ?? {}, 'cua/nativeEngine') ? {'cua/nativeEngine': nativeEngine} : {};
-      respond(msg.id, {...result, _meta: {...(result._meta ?? {}), ...engine, 'cua/taskId': taskId}});
+      // The engine notice (ruling 1148), once: after the runtime's own content, so its items keep their places.
+      const notice = noticePending ? {[ENGINE_NOTICE_META]: noticePending} : {};
+      if (noticePending) result.content = [...(result.content ?? []), {type: 'text', text: noticePending}];
+      noticePending = null;
+      respond(msg.id, {...result, _meta: {...(result._meta ?? {}), ...engine, ...notice, 'cua/taskId': taskId}});
     }, error => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);
       if (error.code !== 'cancelled') respond(msg.id, rejectionResult(error));

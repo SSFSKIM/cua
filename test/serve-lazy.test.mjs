@@ -94,12 +94,15 @@ test('the first connection launches at its handshake and records it; a later one
 
   const first = await warm.call('js', {code: 'hello'});
   assert.equal(warm.launches.length, 1);
-  assert.equal(JSON.parse(textOf(first)).code, 'hello', 'the first js answers as it always did');
+  // The runtime's answer is the first item; on macOS this scratch HOME has no approved cua engine, so the first result
+  // also ends with the engine notice (ruling 1148), which later results do not carry.
+  assert.equal(JSON.parse(first.result.content[0].text).code, 'hello', 'the first js answers as it always did');
+  if (process.platform === 'darwin') assert.match(first.result.content.at(-1).text, /^cua: this session keeps the vendor engine: no approved cua engine/);
   const received = runtimeLog(home).filter(e => e.received).map(e => e.received);
   assert.deepEqual(received[0].params, INIT, 'the runtime is opened with the client\'s own initialize params');
   assert.deepEqual(received.map(m => m.method), ['initialize', 'notifications/initialized', 'tools/call'], 'one handshake, then the call; the client\'s initialized is not repeated');
   const second = await warm.call('js', {code: 'again'});
-  assert.equal(JSON.parse(textOf(second)).code, 'again');
+  assert.equal(JSON.parse(textOf(second)).code, 'again', 'one text item: no notice after the first result');
   assert.equal((await warm.call('end_task')).result.structuredContent.status, 'ended');
   assert.deepEqual((await warm.request('tools/list')).result, coldTools.result, 'the tool list stays the recorded one');
   assert.equal(warm.launches.length, 1, 'the runtime stays for the connection');

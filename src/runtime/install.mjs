@@ -59,6 +59,8 @@ import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sa
 import {ENGINE_BINARY, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEnginePin, placeLinuxEngine, readEngineRecord, refuseUnpinned, writeEngineRecord} from './linux-engine.mjs';
 import {buildEngine, engineDirectory, installedEngine} from './engine.mjs';
 import {signWaitMs} from './engine-sign.mjs';
+import {buildFailureCause} from './engine-build-failure.mjs';
+import {belowMinimum} from '../services/engine/client.mjs';
 import {nativeEngineSetting} from './launch.mjs';
 
 // What unpacking a deb runs, and the package each comes from.
@@ -376,11 +378,22 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
 // (CI only); `signWait` is --sign-wait, else CUA_SIGN_WAIT_MS, as engine build reads it. `selection` reaches the
 // setting's read (`config`, `defaultEngine`); `build`, `installed` (the approved engine, read from the files and the
 // signature only) and `engine` (the engine module's own deps) are test seams.
-// -> {skipped: 'not_selected'} | {status: 'warn', code, message, hint?} | {status: 'pass', ...buildEngine's answer,
-// approved: whether this build is the approved engine}.
+// A warning (design ruling 1148) carries the failure's short `cause` (engine-build-failure.mjs, as `cua doctor` and a
+// session's first js result give it) and `serves`, the engine sessions keep until a build is approved: the approved
+// one when it is at least the service's minimum, else the vendor's.
+// -> {skipped: 'not_selected'} | {status: 'warn', code, message, hint?, cause, serves: {engine: 'vendor'} | {engine: 'cua',
+// build}} | {status: 'pass', ...buildEngine's answer, approved: whether this build is the approved engine}.
 export async function installMacosEngine({explicit = false, sign, signWait, env = process.env, selection = {}, build = buildEngine, installed = installedEngine,
   engine = {}, log = () => {}} = {}) {
-  const reported = error => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {})});
+  const serves = dir => {
+    let app = null;
+    try { app = installed({dir, runSync: engine.runSync}); } catch { app = null; }
+    return app && !belowMinimum(app.engineVersion) ? {engine: 'cua', build: app.build} : {engine: 'vendor'};
+  };
+  // A failed build (`dir`, the engine directory it built in) says its cause and what serves; a setting that cannot be
+  // read, which refuses sessions as it refuses the build, says only itself.
+  const reported = (error, dir) => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {}),
+    ...(dir ? {cause: buildFailureCause(error, {home: env.HOME || homedir()}), serves: serves(dir)} : {})});
   if (!explicit) {
     let setting;
     try { setting = nativeEngineSetting({env, ...selection}); } catch (error) { return reported(classified(error, 'invalid_setting')); }
@@ -394,7 +407,7 @@ export async function installMacosEngine({explicit = false, sign, signWait, env 
   } catch (error) {
     const failed = classified(error, 'engine_install_failed');
     if (explicit) throw failed;
-    return reported(failed);
+    return reported(failed, dir);
   }
   return {status: 'pass', ...built, approved: !built.pending && installed({dir, runSync: engine.runSync})?.build === built.build};
 }

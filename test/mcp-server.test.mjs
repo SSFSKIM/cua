@@ -456,6 +456,42 @@ test('js and js_reset results carry the connection\'s engine attestation; the se
   assert.equal(Object.hasOwn((await call.response).result._meta, 'cua/nativeEngine'), false);
 });
 
+// Design ruling 1148: a connection whose macOS computer session keeps the vendor engine for want of an approved cua
+// engine says so once, on its first js result: the same line as a text item after the runtime's own content and as
+// `cua/engineNotice`. Later results do not carry it; the runtime's answer and the engine attestation stand as they were.
+test('the engine notice rides the first work result only, after the runtime\'s own content, text and _meta alike', async () => {
+  const notice = 'cua: this session keeps the vendor engine: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  const launched = {engine: 'vendor', version: '26.924.1001281', build: '26.928.40906-darwin-arm64'};
+  const h = harness({server: {nativeEngine: launched, engineNotice: notice}});
+  await initialized(h);
+  // A JSON-RPC error is no result: the notice waits for the next one.
+  const failed = h.client.call('js', {code: 'e'});
+  h.upstream.replyError(await h.upstream.nextCall('js'), {code: -32603, message: 'boom'});
+  assert.equal((await failed.response).error.message, 'boom');
+  let after = h.upstream.sent.length;
+  const first = h.client.call('js', {code: 'a'});
+  h.upstream.reply(await h.upstream.nextCall('js', {after}), {content: [{type: 'text', text: 'API docs'}, {type: 'text', text: 'a'}], isError: false, _meta: {'codex/toolSurface': 'x'}});
+  const firstResult = (await first.response).result;
+  assert.deepEqual(firstResult.content, [{type: 'text', text: 'API docs'}, {type: 'text', text: 'a'}, {type: 'text', text: notice}]);
+  assert.equal(firstResult._meta['cua/engineNotice'], notice);
+  assert.deepEqual(firstResult._meta['cua/nativeEngine'], launched);
+  assert.equal(firstResult._meta['codex/toolSurface'], 'x');
+  after = h.upstream.sent.length;
+  const second = h.client.call('js', {code: 'b'});
+  h.upstream.reply(await h.upstream.nextCall('js', {after}), {content: [{type: 'text', text: 'b'}], isError: false});
+  const secondResult = (await second.response).result;
+  assert.deepEqual(secondResult.content, [{type: 'text', text: 'b'}]);
+  assert.equal(Object.hasOwn(secondResult._meta, 'cua/engineNotice'), false);
+  // Without one, nothing is added.
+  const none = harness({server: {nativeEngine: launched}});
+  await initialized(none);
+  const call = none.client.call('js', {code: 'c'});
+  none.upstream.reply(await none.upstream.nextCall('js'), {content: [{type: 'text', text: 'c'}], isError: false});
+  const plain = (await call.response).result;
+  assert.deepEqual(plain.content, [{type: 'text', text: 'c'}]);
+  assert.equal(Object.hasOwn(plain._meta, 'cua/engineNotice'), false);
+});
+
 test('the browser keys\' metadata is never the client\'s: the server drops it, and the connection stamps it as the call reaches the runtime (#493)', async () => {
   const {BROWSER_KEYS_META, BROWSER_KEYS_UNREACHED_META} = await import('../src/mcp/server.mjs');
   const service = await import('../src/browser-service/browsers.mjs');

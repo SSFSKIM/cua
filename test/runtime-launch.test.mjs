@@ -1331,9 +1331,10 @@ test('doctor\'s repl.host row follows the engine selection: host and reason, the
   // R4: an approved engine below the minimum, the remedy by ruling 1118's cases.
   const outdated = await row({}, {defaultEngine: 'cua', installed: 'outdated'});
   assert.equal(outdated.status, 'warn');
-  assert.match(outdated.detail, /^vendor host \(engine_outdated\): the default engine is cua's, but the approved engine on this Mac is version 0\.1\.0, older than 0\.2\.0, the oldest this cua drives, so this session keeps the vendor host and engine until a newer one is approved: build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console; native engine vendor \(engine_outdated\)/);
+  // Ruling 1148: the session's own line (engine-notice.mjs), as its first js result carries it.
+  assert.match(outdated.detail, /^vendor host \(engine_outdated\): this session keeps the vendor engine: the approved cua engine is version 0\.1\.0, older than 0\.2\.0, the oldest this cua drives; build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console; native engine vendor \(engine_outdated\)/);
   const outdatedPending = await row({}, {defaultEngine: 'cua', installed: 'outdated', pending: PENDING});
-  assert.match(outdatedPending.detail, /until a newer one is approved: a newer build \(dddddddddddd, version 0\.2\.0\) is pending beside it: approve it with `cua engine approve` with the owner at the console; native engine/);
+  assert.match(outdatedPending.detail, /the oldest this cua drives; a newer build \(dddddddddddd, version 0\.2\.0\) is pending beside it: approve it with `cua engine approve` with the owner at the console; native engine/);
   const outdatedExplicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: 'outdated'});
   assert.equal(outdatedExplicit.status, 'fail');
   assert.ok(outdatedExplicit.detail.startsWith('refused (engine_outdated): CUA_NATIVE_ENGINE=cua selects cua\'s own engine, and the approved engine on this Mac'), outdatedExplicit.detail);

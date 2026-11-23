@@ -16,6 +16,11 @@
 // profile is bound, checks it against the live backends with one bounded listing launch (inventory.mjs, no tab counts);
 // the connection's close waits for such a listing.
 //
+// A macOS computer session the default keeps on the vendor engine for want of a usable approved cua engine (the flip's
+// first-run state, design ruling 1148) says why and what to run, once, on its first js result (createServer's
+// `engineNotice`, src/runtime/engine-notice.mjs); with no runtime either, the open's refusal carries the same reason and
+// remedy (withEngineFallback, below).
+//
 // Before `closed` settles, everything the connection created is released: the session's app-approval file the runtime
 // wrote, and its run entries. `closed` resolves (never rejects) {code, reason, completion, teardown, listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed or a release step
 // failed), and `listingLeftover`
@@ -52,7 +57,9 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, createLaunchDirs, removeLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, nativeEngineFor, removeLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {engineFallbackFor, sessionNotice} from '../runtime/engine-notice.mjs';
+import {CuaError} from '../runtime/errors.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
@@ -83,13 +90,34 @@ import {resolveCursorContext} from '../runtime/cursor-identity.mjs';
 
 const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
 
+// A macOS computer open with no vendor runtime (ruling 1148, state 2): where the default would have kept the vendor
+// engine for want of an approved cua engine, the refusal carries that reason and its remedy beside the runtime's own.
+// An explicit selection (CUA_NATIVE_ENGINE, engine.json, CUA_REPL_HOST=cua), whose own refusal names its remedy, another
+// platform or surface, and an approved engine, keep the runtime's refusal as it is.
+const NO_RUNTIME = new Set(['runtime_not_installed', 'release_not_installed']);
+function withEngineFallback(error, {host, surfaces, env, engine}) {
+  if (!NO_RUNTIME.has(error?.code) || host.platform !== 'darwin' || !surfaces.includes('computer')) return error;
+  let fallback;
+  try {
+    const requestedHost = env.CUA_REPL_HOST === undefined || env.CUA_REPL_HOST === '' ? null : env.CUA_REPL_HOST;
+    const selection = nativeEngineFor({env, requestedHost, ...engine});
+    fallback = selection.reason === 'engine_not_installed' || selection.reason === 'engine_outdated' ? engineFallbackFor({selection, env, engine}) : null;
+  } catch { return error; }
+  if (!fallback) return error;
+  return new CuaError(error.code, `${error.message}, and cua's engine cannot serve macOS computer sessions instead: ${fallback.why}`,
+    {hint: error.hint ? `${error.hint}; ${fallback.remedy}` : fallback.remedy, cause: error});
+}
+
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
   listBackends, onWithdrawn, probeUserns, verifyHelper, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode, engine,
   cursor = null, resolveCursor = resolveCursorContext}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
-  const runtime = resolveRuntime({home, host});
+  let runtime;
+  try { runtime = resolveRuntime({home, host}); } catch (error) {
+    throw withEngineFallback(error, {host, surfaces: serverSettings.surfaces, env, engine});
+  }
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
   listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns, verifyHelper, resolveOwnNode});
   const claim = claimRunSession(home, sessionId);
@@ -129,6 +157,9 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
     // so a Node installed meanwhile takes effect on the next connection.
     const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode, engine});
+    // Why a macOS computer session keeps the vendor engine while cua's is the default (ruling 1148), for the first js
+    // result: read once, at the open, as the selection is.
+    const fallback = runtime.manifest.platform === 'darwin' ? engineFallbackFor({selection: replHost.engine, env, engine}) : null;
     const launchFor = (extra = {}) => buildLaunch({
       ...extra, runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
@@ -182,6 +213,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       // The REPL host every launch runs, which decides whether approval answers carry their provenance (#216).
       replHost: replHost.host,
       cursorContext: cursorContext ? () => cursorContext : null,
+      engineNotice: fallback ? sessionNotice(fallback) : null,
       ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {
     await release();

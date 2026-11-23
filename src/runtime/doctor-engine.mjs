@@ -55,6 +55,7 @@ import {CuaError} from './errors.mjs';
 import {BUNDLE_ID, engineBuild} from './engine-bundle.mjs';
 import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, shortBuild} from './engine.mjs';
 import {outdatedRemedy, pendingEngine, pendingMeetsMinimum} from './engine-minimum.mjs';
+import {engineFallbackFor, fallbackLine} from './engine-notice.mjs';
 import {readEngineSettings} from './engine-sign.mjs';
 import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
 import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION} from '../services/engine/client.mjs';
@@ -145,8 +146,10 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
   if (preferred.engine === 'vendor') return vendorRow(selection, records({env}), builds);
   const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
   const settings = settingsOf(config);
-  return selection.selected === 'cua' ? installedRow(selection, facts, settings, deviceMode({env, config}), builds)
-    : notInUseRow(selection, facts, settings, builds);
+  if (selection.selected === 'cua') return installedRow(selection, facts, settings, deviceMode({env, config}), builds);
+  // The default's fallback says why and what to run in the words a session's first js result uses (ruling 1148).
+  const fallback = selection.refused ? null : engineFallbackFor({selection: session.engine, env, engine: {...engine, pending: () => builds.pending, minimumVersion: builds.minimum}});
+  return notInUseRow(selection, facts, settings, builds, fallback);
 }
 
 // The device mode sessions here run cua's engine in (launch.mjs desktopModeFor; Linux since #171, macOS since #282) ->
@@ -323,8 +326,10 @@ const real = path => { try { return realpathSync(path); } catch { return path; }
 const ownsSocket = facts => facts.approved === true && real(facts.status.bundlePath) === real(facts.bundlePath) && facts.status.build === facts.build;
 
 // cua's engine preferred, and sessions do not drive it: refused, or kept on the vendor's engine by the default's
-// fallback (no approved engine, or no Node 24 for cua's own host). Nothing is launched (inspectEngine's mayLaunch).
-function notInUseRow(selection, facts, settings, builds) {
+// fallback (no approved engine, or no Node 24 for cua's own host). Nothing is launched (inspectEngine's mayLaunch). A
+// fallback for want of a usable approved engine (`fallback`, engine-notice.mjs) opens the row with the session's line
+// (ruling 1148), its reason and remedy, then the bundle's state.
+function notInUseRow(selection, facts, settings, builds, fallback) {
   const source = SOURCE_WORDS[selection.preferred.reason]('cua');
   const code = selection.refused?.code ?? selection.reason;
   const notInstalled = code === 'engine_not_installed';
@@ -335,19 +340,25 @@ function notInUseRow(selection, facts, settings, builds) {
     : code === 'own_host_node_unavailable' || code === 'repl_host_node' ? `cua's own host finds no Node 24 or later (see repl.host)` : `repl.host refuses it (see repl.host)`;
   const parts = [facts.approved === true
     ? `the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)}) is installed, and doctor does not launch it while no session would use it`
-    : installState(facts)];
-  // Below the minimum the remedy speaks for the pending build and the source; otherwise the builds are named as in use.
-  if (outdated) parts.push(outdatedRemedy(builds.pending, builds.minimum));
-  else if (facts.approved === true) parts.push(...buildWords(facts.build, builds, (_, text) => text));
+    : installState(facts, builds)];
+  // Below the minimum the remedy speaks for the pending build and the source (the fallback's line says it first);
+  // otherwise the builds are named as in use.
+  if (outdated && !fallback) parts.push(outdatedRemedy(builds.pending, builds.minimum));
+  else if (!outdated && facts.approved === true) parts.push(...buildWords(facts.build, builds, (_, text) => text));
   if (settings.problem) parts.push(settings.problem);
-  return {row: result('engine', selection.refused || settings.problem ? 'fail' : 'warn', `cua's engine is preferred (${source}), but ${cause}, ${consequence}: ${parts.join('; ')}`),
+  const status = selection.refused || settings.problem ? 'fail' : 'warn';
+  if (fallback) return {row: result('engine', status, `${fallbackLine('macOS computer sessions keep', fallback)} (${code}). cua's engine is preferred (${source}): ${parts.join('; ')}`),
+    report: factsReport(selection, facts, settings)};
+  return {row: result('engine', status, `cua's engine is preferred (${source}), but ${cause}, ${consequence}: ${parts.join('; ')}`),
     report: factsReport(selection, facts, settings)};
 }
 
 // Why the bundle at the approved location is not the approved engine, and what to run. A build pending beside it is
-// what approve takes first.
-function installState(facts) {
+// what approve takes first, unless it is older than the minimum (`builds`), when approving it would not be used.
+function installState(facts, builds) {
   const at = facts.bundlePath;
+  if (facts.pending && builds.pending?.bundlePath && !pendingMeetsMinimum(builds.pending, builds.minimum))
+    return `${facts.exists ? `the bundle at ${at} is not approved` : `no bundle at ${at}`}, and build ${shortBuild(builds.pending.build)} is pending beside it (${builds.pending.bundlePath}), but its version ${builds.pending.engineVersion} is older than ${builds.minimum}, the oldest this cua drives, so approving it would not be used: ${outdatedRemedy(builds.pending, builds.minimum)}`;
   if (facts.pending) return `${facts.exists ? `the bundle at ${at} is not approved` : `no bundle at ${at}`}, and build ${shortBuild(facts.pending.build)} is pending beside it (${facts.pending.bundlePath}): cua engine approve, with the owner at the console, puts it in place and approves it`;
   if (!facts.exists) return `no bundle at ${at}: build it with cua install --engine, then approve it with cua engine approve (the owner at the console)`;
   if (facts.approved === null) return `the signature of the bundle at ${at} could not be read (${facts.signature?.reason ?? 'unknown'}), so it is not taken as approved; codesign may be waiting behind a prompt at the console`;

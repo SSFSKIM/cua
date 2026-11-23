@@ -42,11 +42,11 @@ const WITHOUT_NODE = () => { throw Object.assign(new CuaError('repl_host_node', 
 // default (the vendor's unless a case says otherwise; null for the shipped one).
 const FIXTURE_MINIMUM = '0.2.0';
 async function row(env = {}, {read = facts(), installed = true, config = {}, defaultEngine = 'vendor', platform = 'darwin', records, node = true, pending = null, sourceBuild = BUILD,
-  minimumVersion = FIXTURE_MINIMUM} = {}) {
+  minimumVersion = FIXTURE_MINIMUM, buildFailure = null} = {}) {
   const inspections = [];
   const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', ...env};
   const engine = {...(defaultEngine ? {defaultEngine} : {}), config: () => config, installed: () => (installed === true ? APP : installed || null), pending: () => pending, sourceBuild: () => sourceBuild,
-    ...(minimumVersion ? {minimumVersion} : {})};
+    buildFailure: () => buildFailure, ...(minimumVersion ? {minimumVersion} : {})};
   let session;
   try { session = replHostFor({platform, surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: '/nonexistent-home', resolveOwnNode: node ? WITH_NODE : WITHOUT_NODE, engine}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -252,14 +252,32 @@ test('cua\'s engine preferred with no approved engine: refused sessions fail the
     assert.match(refused.row.detail, /^cua's engine is preferred \(CUA_NATIVE_ENGINE=cua\), but no approved engine is installed, so every macOS computer session is refused \(engine_not_installed\): /);
     assert.match(refused.row.detail, words);
   }
-  const fallback = await row({}, {installed: false, defaultEngine: 'cua', read: cases[1][0]});
+  const fallback = await row({}, {installed: false, defaultEngine: 'cua', read: cases[1][0], pending: {build: OTHER_BUILD, engineVersion: '0.4.1', bundlePath: PENDING, builtAt: 'then'}});
   assert.equal(fallback.row.status, 'warn');
   assert.equal(fallback.report.selected, 'vendor', 'the engine sessions use');
   assert.deepEqual(fallback.report.preferred, {engine: 'cua', reason: 'default'});
   assert.equal(fallback.report.reason, 'engine_not_installed');
   assert.equal(fallback.report.refused, null);
   assert.equal(fallback.mayLaunch, false);
-  assert.match(fallback.row.detail, /^cua's engine is preferred \(the default engine\), but no approved engine is installed, so macOS computer sessions keep the vendor host and engine \(engine_not_installed\): /);
+  // Ruling 1148: the default's fallback opens with the one line a session's first js result carries.
+  assert.ok(fallback.row.detail.startsWith('macOS computer sessions keep the vendor engine: no approved cua engine (build cccccccccccc built, awaiting approve); to use it, run `cua engine approve` with the owner at the console (engine_not_installed). '
+    + 'cua\'s engine is preferred (the default engine): the bundle at '), fallback.row.detail);
+  const notBuilt = await row({}, {installed: false, defaultEngine: 'cua', read: cases[0][0]});
+  assert.ok(notBuilt.row.detail.startsWith('macOS computer sessions keep the vendor engine: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console (engine_not_installed). '), notBuilt.row.detail);
+  const failed = await row({}, {installed: false, defaultEngine: 'cua', read: cases[0][0], buildFailure: {code: 'engine_build_failed', cause: 'Xcode is not installed (no swift)', failedAt: null}});
+  assert.equal(failed.row.status, 'warn');
+  assert.ok(failed.row.detail.startsWith('macOS computer sessions keep the vendor engine: no approved cua engine (build failed: Xcode is not installed (no swift)); fix that, then run `cua install --engine`, then `cua engine approve` with the owner at the console (engine_not_installed). '), failed.row.detail);
+  // A build pending below the minimum with no approved engine: approving it would not be used, so the row and its
+  // detail send the owner to a newer build first, never to the approve alone.
+  const belowMinimum = facts({exists: false, engineVersion: null, build: null, signature: {kind: null, identityMatches: null}, approved: false, approvedBuild: null,
+    pending: {build: OTHER_BUILD, builtAt: 'then', bundlePath: PENDING}, running: false, status: null});
+  const stalePending = await row({}, {installed: false, defaultEngine: 'cua', read: belowMinimum, pending: {build: OTHER_BUILD, engineVersion: '0.1.0', bundlePath: PENDING, builtAt: 'then'}});
+  assert.equal(stalePending.row.status, 'warn');
+  assert.ok(stalePending.row.detail.startsWith('macOS computer sessions keep the vendor engine: no approved cua engine (build cccccccccccc pending is version 0.1.0, older than 0.2.0, the oldest this cua drives); '
+    + 'to use cua\'s engine, build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console (engine_not_installed). '), stalePending.row.detail);
+  assert.ok(stalePending.row.detail.endsWith(`no bundle at ${BUNDLE}, and build cccccccccccc is pending beside it (${PENDING}), but its version 0.1.0 is older than 0.2.0, the oldest this cua drives, so approving it would not be used: `
+    + 'build it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console'), stalePending.row.detail);
+  assert.doesNotMatch(stalePending.row.detail, /puts it in place and approves it/);
   // A bundle at the approved location that is not cua's engine is never launched, and fails the row.
   const foreign = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({bundleId: 'io.github.ssfskim.cua.fixture-engine', running: false, status: null})});
   assert.equal(foreign.row.status, 'fail');
@@ -282,14 +300,14 @@ test('an approved engine below the minimum: the default\'s fallback warns and an
   assert.deepEqual([fallback.report.selected, fallback.report.reason, fallback.report.refused], ['vendor', 'engine_outdated', null]);
   assert.deepEqual(fallback.report.preferred, {engine: 'cua', reason: 'default'});
   assert.equal(fallback.mayLaunch, false, 'no session would use it');
-  assert.equal(fallback.row.detail, `cua's engine is preferred (the default engine), but the approved engine is version 0.1.0, older than 0.2.0, the oldest this cua drives, so macOS computer sessions keep the vendor host and engine (engine_outdated): `
-    + `the approved cua Engine.app at ${BUNDLE} (version 0.1.0, build aaaaaaaaaaaa) is installed, and doctor does not launch it while no session would use it; ${BUILD_ALONE}`);
+  assert.equal(fallback.row.detail, `macOS computer sessions keep the vendor engine: the approved cua engine is version 0.1.0, older than 0.2.0, the oldest this cua drives; ${BUILD_ALONE} (engine_outdated). `
+    + `cua's engine is preferred (the default engine): the approved cua Engine.app at ${BUNDLE} (version 0.1.0, build aaaaaaaaaaaa) is installed, and doctor does not launch it while no session would use it`);
   const pending = await row({}, {defaultEngine: 'cua', installed: OLD, pending: pendingBuild(), read: oldFacts()});
   assert.equal(pending.row.status, 'warn');
-  assert.ok(pending.row.detail.endsWith('; a newer build (cccccccccccc, version 0.4.1) is pending beside it: approve it with `cua engine approve` with the owner at the console'), pending.row.detail);
+  assert.ok(pending.row.detail.startsWith('macOS computer sessions keep the vendor engine: the approved cua engine is version 0.1.0, older than 0.2.0, the oldest this cua drives; a newer build (cccccccccccc, version 0.4.1) is pending beside it: approve it with `cua engine approve` with the owner at the console (engine_outdated). '), pending.row.detail);
   // A pending build itself below the minimum is no upgrade.
   const stale = await row({}, {defaultEngine: 'cua', installed: OLD, pending: pendingBuild({engineVersion: '0.1.5'}), read: oldFacts()});
-  assert.ok(stale.row.detail.endsWith(BUILD_ALONE), stale.row.detail);
+  assert.ok(stale.row.detail.includes(`; ${BUILD_ALONE} (engine_outdated). `), stale.row.detail);
   const explicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: OLD, read: oldFacts()});
   assert.equal(explicit.row.status, 'fail');
   assert.deepEqual([explicit.report.selected, explicit.report.reason, explicit.report.refused.code], [null, 'engine_outdated', 'engine_outdated']);
@@ -300,8 +318,7 @@ test('an approved engine below the minimum: the default\'s fallback warns and an
   // a build before T9 (0.1.0) keeps the vendor's after the update, warned with both steps; one at 0.2.0 is driven.
   const shipped = await row({}, {defaultEngine: null, installed: OLD, minimumVersion: null, read: oldFacts()});
   assert.deepEqual([shipped.report.selected, shipped.report.reason, shipped.row.status], ['vendor', 'engine_outdated', 'warn'], shipped.row.detail);
-  assert.ok(shipped.row.detail.startsWith('cua\'s engine is preferred (the default engine), but the approved engine is version 0.1.0, older than 0.2.0'), shipped.row.detail);
-  assert.ok(shipped.row.detail.endsWith(BUILD_ALONE), shipped.row.detail);
+  assert.ok(shipped.row.detail.startsWith(`macOS computer sessions keep the vendor engine: the approved cua engine is version 0.1.0, older than 0.2.0, the oldest this cua drives; ${BUILD_ALONE} (engine_outdated). `), shipped.row.detail);
   const current = await row({}, {defaultEngine: null, installed: {...OLD, engineVersion: '0.2.0'}, minimumVersion: null, read: facts({engineVersion: '0.2.0'})});
   assert.deepEqual([current.report.selected, current.report.reason], ['cua', 'default'], current.row.detail);
 });
@@ -492,4 +509,29 @@ test('cua doctor\'s default engine read finds nothing under an empty HOME and la
   assert.equal(report.engine.exists, false);
   assert.equal(report.engine.launched, null);
   assert.match(check.detail, /no bundle at /);
+});
+
+// Design ruling 1148: with cua's engine the default and no approved engine (the first-run state), doctor's repl.host and
+// engine rows each say so in the one line a session's first js result carries, reading the engine directory under HOME:
+// here a failed build's record (engine-build-failure.mjs).
+test('the default with no approved engine: repl.host and the engine row give the session\'s reason and remedy, a recorded failure\'s cause among them', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const run = () => inspectRuntime({home: s.dir, env: {HOME: s.dir, CUA_SHIM_SURFACES: 'computer'}, host: {platform: 'darwin', arch: 'arm64'},
+    inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [], inspectChrome: async () => [],
+    verifySignatures: async () => [], resolveOwnNode: () => '/usr/local/bin/node'});
+  const rows = async () => { const report = await run(); return Object.fromEntries(report.checks.filter(c => ['repl.host', 'engine'].includes(c.name)).map(c => [c.name, c])); };
+  const REMEDY = 'to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  let {'repl.host': host, engine} = await rows();
+  assert.equal(host.status, 'warn');
+  assert.ok(host.detail.startsWith(`vendor host (engine_not_installed): this session keeps the vendor engine: no approved cua engine (not built); ${REMEDY}; native engine vendor (engine_not_installed)`), host.detail);
+  assert.equal(engine.status, 'warn');
+  assert.ok(engine.detail.startsWith(`macOS computer sessions keep the vendor engine: no approved cua engine (not built); ${REMEDY} (engine_not_installed). `), engine.detail);
+  const dir = join(s.dir, 'Library', 'Application Support', 'cua', 'engine');
+  mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, 'build-failed.json'), JSON.stringify({code: 'engine_identity_missing', cause: 'no signing identity is configured', failedAt: '2026-11-23T00:00:00.000Z'}));
+  ({'repl.host': host, engine} = await rows());
+  const failed = 'no approved cua engine (build failed: no signing identity is configured); fix that, then run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  assert.ok(host.detail.startsWith(`vendor host (engine_not_installed): this session keeps the vendor engine: ${failed}`), host.detail);
+  assert.ok(engine.detail.startsWith(`macOS computer sessions keep the vendor engine: ${failed} (engine_not_installed). `), engine.detail);
 });

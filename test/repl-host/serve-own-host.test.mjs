@@ -71,7 +71,8 @@ test('an explicitly selected own host answers a real connection: handshake, cell
   assert.equal(typeof first._meta['cua/taskId'], 'string');
   const doc = name => readFileSync(new URL(`../../docs/cua-api/${name}`, import.meta.url), 'utf8');
   assert.equal(first.content[0].text, `${doc('core.md')}\n${doc('confirmations.md')}`, 'the bootstrap\'s first-call document leads the first cell');
-  assert.deepEqual(JSON.parse(first.content[1].text), ['callId', 'sessionId', 'threadId', 'x-codex-turn-metadata'], 'the proxy\'s turn metadata, without its sandbox state');
+  assert.deepEqual(JSON.parse(first.content[1].text), ['callId', 'cua/browserKeys', 'sessionId', 'threadId', 'x-codex-turn-metadata'],
+    'the proxy\'s turn metadata, without its sandbox state, and (browser surface) the profiles_list keys the browser service selects by (#493)');
   assert.equal((await call('js', {code: 'nodeRepl.write(kept+1)'})).content[0].text, '42');
   assert.deepEqual(JSON.parse((await call('js', {code: 'nodeRepl.write(JSON.stringify([Object.keys(cua).sort(), typeof agent.browsers.list, await cua.listBrowsers({emit: false})]))'})).content[0].text),
     [['browsers', 'createBrowserTab', 'getBrowser', 'getState', 'getTab', 'initialize', 'listBrowsers', 'listTabs', 'rewriteDocumentation'], 'function', []],

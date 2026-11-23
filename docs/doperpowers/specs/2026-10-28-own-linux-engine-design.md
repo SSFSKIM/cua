@@ -2755,7 +2755,7 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **The whole-branch review's engine findings** go to 0.4.4 as tickets (1091, 1092): #487 (P2, fail-open: an Electron settle on the named window's rest in dedicated mode, on the owner page's list) and #488 (P3, fail-closed: a handle end's settle skipped when the take was already seen).
 
 
-- Decision (2026-11-23, after M5: linux-engine 0.4.4; the design session's rulings 1099, 1102, 1113–1115, 1140, 1142, 1146): 0.4.4 fixes #487 and #488 and the handle tail's first-visit pointer read, and is pinned with `MIN_ENGINE_VERSION` 0.4.4.
+- Decision (2026-11-23, after M5: linux-engine 0.4.4; the design session's rulings 1099, 1102, 1113–1115, 1140, 1142, 1143, 1145, 1146): 0.4.4 fixes #487 and #488 and the handle tail's first-visit pointer read, and is pinned with `MIN_ENGINE_VERSION` 0.4.4.
   - **Why now (1099).** #487 fails open, and since 0.29.0 it ships in the default engine. 0.4.4 runs ahead of M6a's build, which waits for its release.
   - **The engine (task 140; tag 23f34217, release run 45138098451).**
     - #487: an Electron drop's settle rests at its press source's family's rest (`settle_rest`), both where the floor gives it back and between the two pings, while the motion keeps the named window's pacing.
@@ -2766,12 +2766,23 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
       - #487's first test checked only the family lookup. Its replacement runs the real `drag_along` through a `DropCursorWatch` seam and fails when either call site is reverted.
       - The second round kept a handle's settle record when its release read no cursor.
       - Chrome's drag path is unchanged from ba5b0438. The floor branch is still `at + steps_floor`, and `settle_rest` applies only to Electron's settle.
-  - **#487's own case did not arise live (1113, 1114).** A drag named to a GTK 4 window whose path starts on Electron's page beside it never began Electron's drag and drop: 0 of 10 on 0.4.3 and the candidate (task 142's pilot), and 0 of 30 on arm64 0.4.4 at twice the load (task 147) on arm64 0.4.4 at twice the load. The dedicated foreground route activates the named window, and Electron requested activation at the press. On the desktop route the settle already rested at the press source's family (pointer.rs L1137–1142 and engine.rs L801–808 at ba5b0438). The fix rests on its seam test. Those drags answered a plain ok with nothing dragged, on both engines: #497 (P2), outside 0.4.4.
-  - **The reach's settle-rest check (1102 (b), task 142).** t17-fix3's judge holds every drop to the engine's own per-request count of entered settles (`settle_count`). One entered needs a settle record with `rest_ms` 30. None entered, with a settle field, or more than one, is a contradiction. A missing count, an unreadable version line, a missing or other family label, and disagreeing copies each fail. Below 0.4.4 the check doesn't apply. Two review rounds closed the ways a missing record could pass. Rejudging 186 stored m4/m5 runs moved no verdict.
+  - **#487's own case, live (1102 (a); 1113, 1114 withdrawn; 1143, 1145).** The case is a drag named to a GTK 4 window whose path starts on Electron's page beside it.
+    - The first runs exercised nothing: 0 of 10 in task 142's pilot and 0 of 30 on arm64. Rulings 1113 and 1114 read that as Electron declining a press on the foreground route.
+    - The branch review found the real cause. The harness aimed the press from xdotool's origin, which counts Openbox's decoration twice, so it landed 22 px above the source. Fix wave 3 aims from xwininfo's client origin and proves each press inside the source (`aim`). 1113 and 1114's premise is withdrawn.
+    - The gate (task 147, arm64 at twice the load, ×100 each): 0.4.4 exercised 100 of 100, landed 100, with 0 false oks, 0 stale drops and `rest_ms` 30 on all. The 0.4.3 control was also 100 landed with 0 false oks, so the fault did not show in 100 on this setup.
+    - So 0.4.4 is clean on the exercised case (95% upper bound about 3%). The fix's effect rests on its seam test, and the live set doesn't demonstrate it against 0.4.3.
+    - On the desktop route the settle already rested at the press source's family (pointer.rs L1137–1142, engine.rs L801–808 at ba5b0438).
+    - #497 stays open, reworded and P3 (1145): a press that genuinely lands outside the named window, on another application, is untested.
+  - **The reach's settle-rest check (1102 (b); task 142, fix waves 1–3).**
+    - t17-fix3's judge holds every drop to the engine's own count of entered settles, read from the stats lines of the drop's own requests by request id (`settle_count`).
+    - One settle entered needs a settle record with `rest_ms` 30, on the operation's own `drop_cursor`.
+    - These each fail: a count of none with a settle field, or more than one; a missing count or a lost line; endpoints that disagree with `entered`; an unreadable version line, or one that contradicts the recorded candidate; a missing or other family label; disagreeing copies; and a lane or cell with no settle observed.
+    - Below 0.4.4 the check doesn't apply.
+    - Three review rounds, the last the whole-branch review, closed the ways a missing record could pass. Rejudging 216 stored runs (m4, m5, H8, task 132, H9) moved none.
   - **The pin and H9 (task 145; 1115).** `runtime/engine/linux-engine.json` pins v0.4.4 against run 45138098451. `MIN_ENGINE_VERSION` is 0.4.4, and a 0.4.3 engine is refused before anything is sent (#487). harness-487 is merged. H9 = cd03a47b, ci-gate GREEN 8/8. A 0.4.3 home runs the vendor's engine, with doctor's warning, until `cua install --engine` (M5's F5).
   - **The reach at H9 (1102; tasks 147 and 148).**
     - x64: H1, H2, L4a PASS, each with 560 of 560 settled Electron rows at 30 ms. L4d PASS. Chrome `drag_handle` long-left ×100 at twice the load gave 0 false oks and 0 stale drops (the tail ran on all 100, +16.8 ms p50).
-    - arm64: H1, H2, L4a PASS (1680 of 1680 at 30 ms). **L4d FAIL**: t14-floor `left` #28 answered ok with no drop, 1 of 30. Chrome `drag_handle` long-left ×100 at twice the load gave 0 false oks and 0 stale drops (+22.1 ms p50). `t487-named` ×30 exercised none (1113).
+    - arm64: H1, H2, L4a PASS (1680 of 1680 at 30 ms). **L4d FAIL**: t14-floor `left` #28 answered ok with no drop, 1 of 30. Chrome `drag_handle` long-left ×100 at twice the load gave 0 false oks and 0 stale drops (+22.1 ms p50).
   - **L4d's fail is #512 (1140, 1146).** It is a residual of 0.4.3's Chrome in-floor tail, which 0.4.4 doesn't touch and which is already on main.
     - Under load the path's own steps overran the keepalive end (floor_until 326 ms) by 12.7 ms. The release went up on schedule at take + 350.1, 11.4 ms after the last step. Chrome kept its in-zone accept, and its activation 1.7 ms later confirmed a drop the page didn't take.
     - Observed on arm64 (1/30); not observed on x64 (0/30). The fix is required on both arches.

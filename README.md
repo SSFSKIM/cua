@@ -145,15 +145,16 @@ claude mcp add --scope user cua -- node /absolute/path/to/cua/bin/cua.mjs serve
 Settings (below) go in the server's environment, e.g. `claude mcp add ... -e CUA_SHIM_SECRETS=off -- ...`. For a
 client on another machine, see Remote control.
 
-### cua's own macOS engine (opt-in)
+### cua's own macOS engine
 
-On macOS the computer surface still runs OpenAI's engine by default. cua's own engine, `cua Engine.app`, built from
-`native/engine/` (#117, `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`), is selected with
-`CUA_NATIVE_ENGINE=cua` in the server's environment or `"engine": "cua"` in `~/.config/cua/engine.json`
-(Configuration); the default moves to it in a later release of #117. A session that selects it runs on cua's own REPL
-host (Node 24, Use) and needs an engine approved on this Mac; one that does not select it is unaffected by everything
-below. The steps, in order: a signing identity once per Mac, a build, an approval with the owner at the console. The
-step list for a new Mac is `docs/onboarding-new-mac.md`, step 7.
+On macOS the computer surface runs cua's own engine by default: `cua Engine.app`, built from `native/engine/` (#117,
+`docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`). A session on it runs on cua's own REPL host (Node 24,
+Use) and needs an engine approved on this Mac at the version this cua drives (0.2.0) or later; until one is, the
+default keeps OpenAI's engine with a warning in `cua doctor` (Use, Native engine). `CUA_NATIVE_ENGINE=vendor` in the
+server's environment, or `"engine": "vendor"` in `~/.config/cua/engine.json` (Configuration), keeps OpenAI's engine
+as the rollback, and a session on it is unaffected by everything below. The steps, in order: a signing identity once
+per Mac, a build, an approval with the owner at the console. The step list for a new Mac is
+`docs/onboarding-new-mac.md`, step 7.
 
 **One engine per Mac.** It lives at a fixed place that no `CUA_HOME` moves:
 `~/Library/Application Support/cua/engine/cua Engine.app`, the approved engine, which every session and harness on the
@@ -204,9 +205,10 @@ stops waiting for it fails with `engine_sign_prompt_waiting`.
 node bin/cua.mjs install --engine     # or: node bin/cua.mjs engine build
 ```
 
-`cua install` builds the engine, last, after the runtime and Node, when `CUA_NATIVE_ENGINE` or `engine.json` selects it,
-or with `--engine` whatever selects; `--engine` makes the build required (without it a failed build is reported and the
-rest of the install stands) and does not change the selection. Install never approves: it sends no grant request,
+`cua install` builds the engine, last, after the runtime and Node, when it is selected (`CUA_NATIVE_ENGINE`, else
+`engine.json`, else the default, cua's engine), or with `--engine` whatever selects; `--engine` makes the build
+required (without it a failed build, such as one with no signing identity yet, is reported and the rest of the install
+stands) and does not change the selection. Install never approves: it sends no grant request,
 launches nothing and captures nothing, so an ordinary or CI install raises no permission dialog. The build goes into the
 pending slot ("a new build is pending; cua engine approve to use it"); one that is already the approved build changes
 nothing. `cua engine build` does the same on its own. `--engine-sign adhoc` (`cua engine build --sign adhoc`) signs ad
@@ -255,13 +257,10 @@ answer any alert at the console, then run `cua engine approve` again from a term
 grant). Accessibility takes effect at once. Observing an app needs Screen Recording as a screenshot does: there is no
 text-only observation without it. macOS applies a Screen Recording grant only to a relaunched process, so after it is
 granted the next observation or screenshot relaunches the engine, when no other session holds it, and retries once;
-until then they fail with the sentence, which says a relaunch is pending. That recovery and `cua/permission` arrive
-with the 0.2.0 engine: an older approved engine (0.1.0, which keeps serving while a 0.2.0 build waits pending) fails
-Screen Recording without naming the permission, so nothing relaunches it. On a Mac still serving one, after granting,
-approve the pending update (`cua engine approve`), or run `cua engine stop` once it is idle so the next session
-launches the engine afresh. A selection of cua's engine with none
-approved is refused before launch (`engine_not_installed`, naming `cua install --engine` and then `cua engine
-approve`); a pending build is not an approved one.
+until then they fail with the sentence, which says a relaunch is pending. That recovery and `cua/permission` came with
+the 0.2.0 engine, the oldest this cua drives. An explicit selection of cua's engine with none approved is refused
+before launch (`engine_not_installed`, naming `cua install --engine` and then `cua engine approve`), and the default
+keeps the vendor's engine with a warning instead (Use, Native engine); a pending build is not an approved one.
 
 **Typing.** `typeText` keys its text under a Latin keyboard layout whose reading is reliable (macOS's "Automatically
 switch to a document's input source" off, or the app frontmost), sending characters the layout cannot key (emoji, CJK)

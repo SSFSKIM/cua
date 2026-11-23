@@ -35,7 +35,9 @@ node bin/cua.mjs doctor
 Requirements: Apple silicon, Node 22 or newer. `install` refuses an archive whose hash, layout or code signatures
 differ from the pinned record, and never modifies vendor files. Doctor's `runtime.*` and `sandbox` rows should PASS;
 `helper.live` and `helper.permissions` stay BLOCKED until a native call, and the `engine` row warns until step 7 (no
-approved engine yet, so computer sessions keep the vendor's).
+approved engine yet, so computer sessions keep the vendor's). `install` also tries to build cua's engine, the default
+(step 7); until step 7's Xcode and signing identity are in place it reports that build as not installed, with the
+reason, and the rest of the install stands.
 
 ### 2. Secrets (only if secret substitution will be used)
 
@@ -94,30 +96,13 @@ open the cua extension's popup if it still has no backend.
 
 ### 7. cua's engine and macOS permissions for the native surface
 
-The `computer` surface runs cua's own engine by default (#117), `cua Engine.app` at
-`~/Library/Application Support/cua/engine/`, once one is built and approved on this Mac:
-
-```sh
-node bin/cua.mjs install --engine     # builds the engine from native/engine/, pending approval (Xcode and a signing identity: README)
-node bin/cua.mjs engine approve       # at the console: puts the pending build in place; macOS asks for its permissions
-node bin/cua.mjs doctor               # the engine row: selected cua (default), the three permissions true
-```
-
-macOS attributes Accessibility, Screen & System Audio Recording and Input Monitoring to **cua Engine**, not to the
-terminal, and a person allows them once in System Settings. Until an engine at the version this cua drives is approved
-(an older one, or none, makes doctor's `engine` row warn and names these two commands), computer sessions keep the
-vendor's engine: the first native call then starts the pinned helper through LaunchServices, which shows its own
-"Enable ChatGPT Computer Use" window before macOS asks for Accessibility and Screen Recording on the helper's behalf.
-`CUA_NATIVE_ENGINE=vendor`, or `"engine": "vendor"` in `~/.config/cua/engine.json`, keeps a session or the Mac on the
-vendor's engine (the rollback). Over SSH these prompts cannot be shown, so steps 4 and 7 happen at the console. A browser-only machine still needs
-the runtime to start for the listing launch, but the Chrome acceptance ran without granting the native permissions
-first.
-
-That is the vendor engine, still the default. **cua's own engine** (`cua Engine.app`, #117) is an opt-in until a later
-release of #117 switches the default; the README's "cua's own macOS engine (opt-in)" (under Install) explains each
-step. It has one place per Mac, `~/Library/Application Support/cua/engine/cua Engine.app`, which no `CUA_HOME` moves.
-Every step marked *owner* is done by the owner at this Mac's console; automation never enters a password, answers a
-system alert or touches System Settings.
+The `computer` surface runs cua's own engine by default (#117), `cua Engine.app`, once one at the version this cua
+drives is built and approved on this Mac; the README's "cua's own macOS engine" (under Install) explains each step. It
+has one place per Mac, `~/Library/Application Support/cua/engine/cua Engine.app`, which no `CUA_HOME` moves. macOS
+attributes its Accessibility, Screen & System Audio Recording and Input Monitoring to **cua Engine**, not to the
+terminal. Every step marked *owner* is done by the owner at this Mac's console; automation never enters a password,
+answers a system alert or touches System Settings. Over SSH the prompts cannot be shown, so steps 4 and 7 happen at
+the console.
 
 1. *Owner, once per Mac.* Install Xcode (its Swift toolchain builds the engine). Create an Apple Development
    certificate in Xcode's Accounts settings, or import the owner's certificate with its private key into the login
@@ -175,7 +160,7 @@ system alert or touches System Settings.
 5. Check it:
 
    ```sh
-   CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor
+   node bin/cua.mjs doctor          # the engine row: cua's engine selected (the default)
    node bin/cua.mjs engine status
    ```
 
@@ -183,13 +168,22 @@ system alert or touches System Settings.
    configured identity (never the identity itself) and the three grants: it fails without Accessibility or Screen
    Recording, and warns without Input Monitoring. In a session, a missing grant fails the request with
    `permissionsPending`, whose sentence gives the same steps; after Screen Recording is granted, the next observation
-   relaunches the engine, when no other session uses it, and retries once. That recovery arrives with the 0.2.0
-   engine: a Mac still serving an older approved engine (0.1.0, kept serving while 0.2.0 waits pending) is not
-   relaunched for it, so after granting, approve the pending update, or run `cua engine stop` once it is idle.
+   relaunches the engine, when no other session uses it, and retries once.
 
 A later update that changes the engine is built the same way (`cua install --engine`, or `cua engine build`) and is
-pending until `cua engine approve` puts it in place; the approved engine serves until then. Under the same identity
-the grants carry over, so that approval normally needs no one at the Mac.
+pending until `cua engine approve` puts it in place; the approved engine serves until then, as long as it is at least
+the version this cua drives. Under the same identity the grants carry over, so that approval normally needs no one at
+the Mac.
+
+**Until an engine is approved, and as the rollback,** computer sessions run the vendor's engine. With no approved
+engine, or one older than this cua drives (0.2.0), the default keeps the vendor's engine and doctor's `engine` row
+warns, naming `cua engine approve` for a pending build that meets the minimum, else `cua install --engine` then
+`cua engine approve`. `CUA_NATIVE_ENGINE=vendor` for a session, or `"engine": "vendor"` in `~/.config/cua/engine.json`
+for the Mac, keeps the vendor's engine until #117's M6 retires it. On the vendor engine the first native call starts
+the pinned helper through LaunchServices; it shows its own "Enable ChatGPT Computer Use" window and then macOS asks for
+Accessibility and Screen Recording, attributed to the helper, which a person allows once in System Settings. A
+browser-only machine still needs the runtime to start for the listing launch, but the Chrome acceptance ran without
+granting the native permissions first.
 
 ### 8. Wire it into Claude Code
 
@@ -198,11 +192,12 @@ claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -- node ~/
 claude mcp list
 ```
 
-That keeps the default, the vendor engine. With cua's own engine approved (step 7), select it either for this server,
-by adding `-e CUA_NATIVE_ENGINE=cua` before `--` in the command above, or for every session of the account, with
-`"engine": "cua"` in `~/.config/cua/engine.json`; the variable wins over the file. Configuring `signingIdentity`, or
-`CUA_NATIVE_ENGINE=cua` on the doctor command, selects nothing for `serve`. A selection of cua's engine with no
-approved engine is refused, naming `cua install --engine` and `cua engine approve`.
+That keeps the default, cua's own engine where one is approved (step 7), else the vendor engine with a warning. To
+keep the vendor engine (the rollback), add `-e CUA_NATIVE_ENGINE=vendor` before `--` in the command above for this
+server, or set `"engine": "vendor"` in `~/.config/cua/engine.json` for every session of the account; the variable wins
+over the file. Configuring `signingIdentity` selects nothing for `serve`. An explicit selection of cua's engine
+(`CUA_NATIVE_ENGINE=cua` or `"engine": "cua"`) with no approved engine this cua drives is refused, naming `cua install
+--engine` and `cua engine approve`.
 
 `~/.claude.json` is per machine; run this on each. Two hand-made parts of `~/.claude/settings.json` also have to be
 copied: the `mcp__cua_repl__*` permission entries, and the `Elicitation` hook matched to `cua_repl` that runs

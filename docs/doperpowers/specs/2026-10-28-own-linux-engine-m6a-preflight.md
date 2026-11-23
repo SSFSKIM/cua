@@ -331,10 +331,13 @@ installed on its own, and the exit status follows the lane the home asks for (F4
   requested when the home's effective engine setting names it (`nativeEngineSetting`, launch.mjs L570: the
   environment, else `engine.json`, else the default, cua's) or a flag does (`--engine`; `--archive` or `--release` for
   the vendor tree). A lane nobody requested that fails is said in one line and in `--json`, and the command succeeds.
-- **The last lines say what now opens:** browser-only sessions, computer sessions on cua's engine, computer sessions
-  on the vendor's.
-- `--json` on Linux: `{ok, release: <derived>, changed, modules, sandboxHelper, node, engine, vendor: {release, root,
-  changed, source} | {failed}, sessions: {browser, cua, vendor}}`.
+- **The last line says what now opens,** resolved as `cua serve` would resolve it: browser-only sessions, computer
+  sessions on the engine the setting selects, and the other engine's under its override (T4).
+- `--json` on Linux (as T4 built it, `src/runtime/linux-install.mjs`): `{ok, release: <derived>, changed, modules,
+  sandboxHelper, node, pointer: {previous, current, changed}, engine, vendor: {release, root, changed, source} |
+  {failed}, sessions: {browser, computer, engine, alternate: {engine, override, opens} | null, why}, codexLeftovers?,
+  error?}`, where `sessions.engine` is the engine the setting selects and `why` holds the refusal of each session that
+  does not open.
 - macOS: `cua install` is unchanged, by test.
 
 | What fails | Effective setting | Exit | What opens afterwards |

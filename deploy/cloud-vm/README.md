@@ -1,10 +1,11 @@
 # A cloud VM as a cua device
 
 One cloud-init template that turns a fresh Ubuntu 24.04 VM into a machine a cloud agent drives with cua: its own X11
-desktop, Google Chrome with cua's own extension, cua and the pinned runtime installed, and the agent for remote control
-when a relay is given. Nobody signs in to anything: cua's own extension and host need no account
-(`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`). It does by script what Phase F and issue #58 did by hand (the README's "Linux" section;
-`docs/evidence/2026-10-06-linux-acceptance.md`, `docs/evidence/2026-10-06-linux-agent-and-x64.md`). The live proof is
+desktop, Google Chrome with cua's own extension, cua and its own Linux runtime installed, and the agent for remote
+control when a relay is given. Nobody signs in to anything: cua's own extension and host need no account
+(`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`). It does by script what Phase F and issue #58 did
+by hand (the README's "Linux" section; `docs/evidence/2026-10-06-linux-acceptance.md`,
+`docs/evidence/2026-10-06-linux-agent-and-x64.md`). The live proof is
 `docs/evidence/2026-10-07-cloud-vm-provisioning.md`.
 
 | File | What it is |
@@ -17,9 +18,10 @@ when a relay is given. Nobody signs in to anything: cua's own extension and host
 ## Create one on Hetzner
 
 ```sh
-deploy/cloud-vm/create-hetzner.sh --name cua-vm                         # cx23 (x64) in nbg1, downloads the pinned deb on the VM
+deploy/cloud-vm/create-hetzner.sh --name cua-vm                         # cx23 (x64) in nbg1; no deb needed
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --arch arm64            # cax11
-deploy/cloud-vm/create-hetzner.sh --name cua-vm --deb ~/cua-mirror/chatgpt_26.928.40906_amd64.deb   # upload your mirror copy
+deploy/cloud-vm/create-hetzner.sh --name cua-vm --deb pin               # also require OpenAI's deb, for the vendor engine
+deploy/cloud-vm/create-hetzner.sh --name cua-vm --deb ~/cua-mirror/chatgpt_26.928.40906_amd64.deb   # the same, from your copy
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --relay wss://<relay>/ws # also enrol it and run the agent
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --extension store        # cua's extension from the Chrome Web Store
 git bundle create /tmp/cua.bundle my-branch                              # an unpushed branch: upload it as a bundle
@@ -66,21 +68,29 @@ as Hetzner's 32 KiB).
   sandbox, the Linux default for every surface since 0.15.0, works for the computer and browser surfaces and for
   `cua profiles list` and `bind` (README, "Linux").
 - **cua.** Node 22 (NodeSource, unless Node 22.14+ or 23.7+ is already on `PATH`), a checkout of `--ref` at `/opt/cua`
-  owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua`, cua's Chrome
-  host registered (`cua chrome register`), and the profile `me` registered for `Default` and bound. The same
-  `cua install` places cua's own Linux engine, the pinned `cua-engine` for the VM's architecture, at
-  `~/.local/share/cua/engine/linux/cua-engine`, its SHA-256 checked against `runtime/engine/linux-engine.json`; the
-  computer surface runs on it with `CUA_NATIVE_ENGINE=cua` or `"engine": "cua"`, and on the vendor engine from the
-  installed runtime otherwise (the main README, "Linux"). The user's `~/.config/cua/engine.json` gets
+  owned by the user, `npm ci`, `cua` on `PATH`, cua's own Linux runtime installed in `~/.local/share/cua` (its module
+  tree, the pinned Node 24, the sandbox helper and the engine: the main README, "Linux", cua's own Linux runtime), cua's
+  Chrome host registered (`cua chrome register`), and the profile `me` registered for `Default` and bound. The engine
+  is the pinned `cua-engine` for the VM's architecture, at `~/.local/share/cua/engine/linux/cua-engine`, its SHA-256
+  checked against `runtime/engine/linux-engine.json`, and the computer surface runs on it by default. A failed install
+  of cua's own runtime fails the provisioning (exit 1, which cloud-init reports), with the install's error and remedy
+  in the checklist. The user's `~/.config/cua/engine.json` gets
   `"desktop": "dedicated"`, beside any keys it already has: the desktop belongs to the agent, so cua's engine may bring
   a window forward for an application that ignores background input instead of refusing it. A mode already set there
   is kept. The extension starts cua's host as soon as the registration is there,
   so the bind needs no one; if it fails (Chrome not up yet), the checklist keeps it.
-- **The deb.** By default the VM downloads the pin's official URL (about 450 MB); `--deb <https URL>` downloads a
-  mirror instead; `--deb <file>` makes `create-hetzner.sh` copy your copy to the VM's `/var/cache/cua/upload.deb`
-  while cloud-init runs, and the VM waits for it (with `render.sh` alone, copy it there yourself; a failed copy is
-  marked `upload.deb.failed`, which ends the wait). Either way the bytes are checked against the VM checkout's pin
-  before `cua install --archive` checks them again; the file stays in `/var/cache/cua` under the pin's name.
+- **The deb.** OpenAI's Linux package is needed only for `CUA_NATIVE_ENGINE=vendor`. With `--deb none`, the default,
+  the VM fetches and waits for nothing: its `cua install` still tries the pin's official URL for the vendor's tree
+  (about 450 MB), and a failure there leaves a working device. The other values ask for the vendor's tree, and the VM
+  first installs and registers cua's own runtime as under `none` (`cua install`, `cua chrome register`, the profile).
+  Only then does it get the deb: `--deb pin` from the pin's official URL (not again when that first `cua install`
+  already placed the tree from there), `--deb <https URL>` from a mirror, and `--deb <file>` from your copy, which
+  `create-hetzner.sh` copies to the VM's `/var/cache/cua/upload.deb` while cloud-init runs, and the VM waits for it
+  (with `render.sh` alone, copy it there yourself; a failed copy is marked `upload.deb.failed`, which ends the wait).
+  The bytes are checked against the VM checkout's pin before `cua install --archive` checks them again, where the
+  tree is then required; the file stays in `/var/cache/cua` under the pin's name. A deb the VM cannot get, or an
+  install with it that fails, stops the provisioning there with the device working (exit 0), the checklist saying
+  why.
 - **Remote control** (with `--relay`): `cua remote enroll --relay … --json` into `/root/cua-enrollment.json` (0600, the
   only place the client credential is written), then `cua agent install` (the systemd user unit). A re-run with
   another relay URL moves the enrolment without rotating it.
@@ -112,16 +122,17 @@ a relay it is empty when the bind succeeded; with one:
    --devices` (the file replaces the whole table), and give the client its credential (`/secret <clientSecretKey>`,
    then the `devicesAddCommand`, both in `/root/cua-enrollment.json`).
 
-Doctor reads `ok: true` with `secrets.store` blocked (no secret has been stored on the VM; cua's file store works on Linux, `cua secrets set KEY` at the VM's
-terminal). Every other row passes, `chrome.hosts.live` included, and the `agent.*` rows read `skip` without a relay or
-`pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
+Doctor reads `ok: true` with `secrets.store` blocked (no secret has been stored on the VM; cua's file store works on
+Linux, `cua secrets set KEY` at the VM's terminal). Every other row passes, `chrome.hosts.live` included, but
+`runtime.vendor` reads `skip` where OpenAI's package was not placed, and the `agent.*` rows read `skip` without a relay
+or `pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
 -passwd <one-time password>`, then open `vnc://localhost:5901` (or use the provider's web console).
 
 ## Re-running and upgrading
 
 `ssh root@<vm> /usr/local/sbin/cua-provision.sh` repeats every step: packages and Chrome are installed only when
 missing, files are rewritten only when different (lightdm restarts only then), the checkout moves to the `CUA_REF` in
-`/etc/cua-provision.conf` and runs `npm ci` when it moved, `cua install` is a no-op for an installed release, and a
+`/etc/cua-provision.conf` and runs `npm ci` when it moved, `cua install` is a no-op for parts already installed, and a
 registered profile or an existing enrolment is kept (a changed relay URL moves it and refreshes the relay fields of
 `/root/cua-enrollment.json`). Edit the conf to change the ref or the relay. With a relay, a re-run restarts the agent
 unit (`cua agent install` always does), which ends any remote session open at that moment. On a VM provisioned by an earlier
@@ -130,3 +141,8 @@ only cua's extension, so Chrome uninstalls the other, cua's host registers and t
 involved. `cua chrome register` then prints, and doctor's `chrome.route` row names until they are done, the steps that
 remove what the earlier registration left in cua's home and Chrome's native-messaging directory. Root's SSH keys are copied
 to the user only while the user has none, and everything under the user's home is written as the user.
+
+A VM provisioned before cua's own Linux runtime (#171 M6a) needs this re-run once its `CUA_REF` reaches that release:
+until the checkout's `cua install` has run, every session there is refused (`runtime_not_installed`; the main README,
+"Updating on Linux"). Its `/usr/local/sbin/cua-provision.sh` is still the earlier script, which takes the deb from
+`/var/cache/cua` first, as it always did, then runs the same install.

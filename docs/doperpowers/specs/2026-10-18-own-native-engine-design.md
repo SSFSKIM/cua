@@ -8917,6 +8917,14 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     compare raw values on both engines); the other line readers (`elementLines`, `indexOfPart`, `indexOfId`,
     `scenes-mac-text.mjs`, `live-checks.mjs` `vendorTextAreaIndex`, the diff renderer) read one line per element, which
     the escape guarantees for cua's text. The recorded TextEdit goldens' `cua.txt` are re-pinned.
+  - Ruling 1176 accepts the cause, the join and the escaping, continuation indent rejected, and adds the model's side:
+    a value copied back from the tree would write a literal backslash-n. The first-call document says so in one
+    sentence, in `agent-cursor.md`'s paragraph on replacing a field's text and at the end of the
+    `macos/accessibility-tree` lookup, so the macOS core carries it with or without the lookups (the surface inventory's
+    "Table 3 amendment (2026-11-23, #526, ruling 1176)"; `test/cua-api/core-documentation.test.mjs`). Linux's tree text
+    is the vendor's own and escapes `\r`, `\n` and `\t` likewise, unmentioned in `core.md` and `linux-engine.md`; the
+    same pitfall exists there and is left to its own decision. The selected-text fence and the residues are their own
+    tickets.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

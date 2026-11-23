@@ -8,9 +8,11 @@
 //                (proof is missing) or OWNER (the owner's calls remain); none printed is a runtime error
 //   report       a report-writing step (C's summary): its `report` file written; its exit is the verdict the judge step
 //                gives
-//   observation  #212's observation-only cell: a sample of `observe` that recorded the observation (the Save panel's
-//                structure) or ran through passes; samples with no verdict (./native-matrix/front-key.mjs: activation,
-//                unread, alert) and none observed is NO VERDICT; anything else is a driver failure
+//   observation  #212's observation-only cell: every run it asked for (`records`) recorded complete, and a sample of
+//                `observe` among them holding the observation (the Save panel's structure, panelObserved) passes;
+//                samples with no verdict (./native-matrix/front-key.mjs: activation, unread, alert) and none observed is
+//                NO VERDICT; a run missing or incomplete is a runtime error whatever it observed (its observations stay in
+//                its record, uncertified), and anything else is a driver failure
 //   selection    sitting E's lane: the expected exit, with the judge's own report (`report`, removed before the step,
 //                so it is this run's) of `lane` holding an observation of every home (macos-selection.mjs HOMES),
 //                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
@@ -29,6 +31,9 @@ const PRE_FLIP = Object.freeze({selected: 'vendor', reason: 'default', host: 've
 const expectedHome = (kind, flipped) => (!flipped ? PRE_FLIP : HOMES[kind].expect === 'cua' ? {selected: 'cua', reason: 'default', host: 'cua', hostReason: 'cua_engine'}
   : {selected: 'vendor', reason: HOMES[kind].expect, host: 'vendor', hostReason: HOMES[kind].expect});
 const selectionWords = s => `the ${s.selected} engine (${s.reason}) on the ${s.host} host (${s.hostReason})`;
+// #212's observation: the Save panel's structure as the destination cell read it (probe-plan.mjs savePanelStructure,
+// before or after the Go To dialog), at least one element line of it.
+const panelObserved = observed => [observed?.before, observed?.after].some(s => s?.count > 0 && Array.isArray(s.lines) && s.lines.length > 0);
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 export const CHECKS = Object.freeze({
@@ -47,14 +52,18 @@ export const CHECKS = Object.freeze({
   report: (step, {exit, exists}) => (exists(step.report) ? ['PASS', exit === 0 ? null : `written; exit ${exit} is its verdict, which the judge step gives`]
     : ['FAIL', `runtime error: no report at ${step.report} (exit ${exit})`]),
   observation(step, {exit, readJson}) {
-    const record = readJson(step.record);
-    if (!record) return noRecord(step.record, exit);
-    const hosted = record.meta?.hosted === true;
-    const rows = (record.rows ?? []).filter(row => row.id === step.observe);
-    if (!rows.length) return ['FAIL', `driver failure: no ${step.observe} sample recorded${record.complete === true ? '' : ` (${firstProblem(record)})`}`];
-    const seen = rows.filter(row => row.outcome?.observed || (!row.invalid && row.frontKey && !sampleCause({...row, hosted})));
-    if (seen.length) return ['PASS', `observed in ${seen.length} of ${rows.length} samples`];
-    const causes = rows.map(row => sampleCause({...row, hosted}));
+    const runs = step.records.map(path => ({path, record: readJson(path)}));
+    const rows = runs.flatMap(({record}) => (record?.rows ?? []).filter(row => row.id === step.observe).map(row => ({...row, hosted: record.meta?.hosted === true})));
+    const seen = rows.filter(row => panelObserved(row.outcome?.observed)).length;
+    const kept = seen ? `; ${seen} panel observation${seen > 1 ? 's' : ''} kept in the records` : '';
+    const missing = runs.find(run => !run.record);
+    if (missing) return ['FAIL', `runtime error: no record at ${missing.path} (exit ${exit})${kept}`];
+    const incomplete = runs.find(run => run.record.complete !== true);
+    if (incomplete) return ['FAIL', `runtime error: ${incomplete.path} is incomplete (${firstProblem(incomplete.record)})${kept}`];
+    const empty = runs.find(run => !(run.record.rows ?? []).some(row => row.id === step.observe));
+    if (empty) return ['FAIL', `driver failure: no ${step.observe} sample recorded in ${empty.path}`];
+    if (seen) return ['PASS', `the Save panel's structure observed in ${seen} of ${rows.length} samples over ${runs.length} run${runs.length > 1 ? 's' : ''}`];
+    const causes = rows.map(row => sampleCause(row));
     if (causes.every(c => c && NO_VERDICT_CAUSES.has(c.category))) {
       const counts = Object.entries(causes.reduce((n, c) => ({...n, [c.category]: (n[c.category] ?? 0) + 1}), {}));
       return ['NO VERDICT', `no sample observed: ${counts.map(([category, n]) => `${category} ${n}`).join(', ')}`];

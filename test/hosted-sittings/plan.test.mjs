@@ -69,17 +69,21 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
   const sheet = full.steps.filter(s => s.id.startsWith('save-sheet-'));
   assert.deepEqual(sheet.map(s => [s.argv[2], s.argv[3], argOf(s, '--engine'), argOf(s, '--out')]),
     [['cell', 'intervention-save-sheet', 'vendor', '/w/out/save-sheet/vendor'], ['cell', 'intervention-save-sheet', 'cua', '/w/out/save-sheet/cua']]);
+  // Each lane's cell asks for its runs, and its check reads every one of their records.
+  assert.deepEqual(sheet.map(s => [argOf(s, '--runs'), s.records]), [['3', [1, 2, 3].map(n => `/w/out/save-sheet/vendor/run-${n}/result.json`)], ['3', [1, 2, 3].map(n => `/w/out/save-sheet/cua/run-${n}/result.json`)]]);
   assert.deepEqual(full.steps.filter(s => s.kind === 'verdict').map(s => s.argv.slice(2)),
     [['summary', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/summary.md'], ['compare', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/comparison.md']]);
   assert.deepEqual(full.counts, ['/w/out/vendor', '/w/out/cua', '/w/out/save-sheet']);
   assert.equal(full.pilotReads, false);
-  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.report ?? null, s.observe ?? null, s.pilotNoVerdict ?? false]), [
+  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.records?.[0] ?? s.report ?? null, s.observe ?? null, s.pilotNoVerdict ?? false]), [
     ['record', '/w/out/cua/run-2/result.json', null, false],
     ['observation', '/w/out/save-sheet/vendor/run-1/result.json', 'textedit/intervention.saveSheet', false],
     ['report', '/w/out/summary.md', null, false],
     ['verdict', null, null, true]]);
   const pilot = plan('c', {pilot: true});
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1'], 'the pilot: one run pair');
+  assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('save-sheet-')).map(s => [argOf(s, '--runs'), s.records]),
+    [['1', ['/w/out/save-sheet/vendor/run-1/result.json']], ['1', ['/w/out/save-sheet/cua/run-1/result.json']]], 'the pilot\'s cell: exactly one run a lane, and that run\'s record checked');
   assert.equal(pilot.steps[0].id, 'focus-timing', 'the pilot times the focus probe before anything else runs');
   assert.deepEqual(pilot.steps[0].argv, ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', CTX.approvedEngine, '--out', '/w/out/focus-timing.json']);
   assert.equal(pilot.pilotReads, true);

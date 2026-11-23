@@ -26,20 +26,35 @@ test('a judge is read by the verdict it printed: missing proof is NO VERDICT, th
   assert.deepEqual(check('verdict', {}, 1, {}, 'Error: no results'), ['FAIL', 'runtime error: no verdict printed (exit 1)']);
 });
 
-test('#212\'s observation-only cell: the observation recorded passes, NO VERDICT samples stay NO VERDICT, anything else is a driver failure', () => {
-  const step = {record: '/o/save-sheet/cua/run-1/result.json', observe: 'textedit/intervention.saveSheet'};
+test('#212\'s observation-only cell: every run asked for recorded complete, and the Save panel\'s structure observed, passes; NO VERDICT samples stay NO VERDICT; anything else fails', () => {
+  const records = ['/o/save-sheet/cua/run-1/result.json', '/o/save-sheet/cua/run-2/result.json'];
+  const step = {records, observe: 'textedit/intervention.saveSheet'};
   const row = extra => ({section: 'intervention', id: step.observe, engine: 'cua', sample: 1, ok: false, ...extra});
-  const result = rows => ({[step.record]: {complete: true, meta: {hosted: true}, rows}});
-  const observed = row({invalid: 'the Save sheet\'s destination was not set', outcome: {observed: {count: 2, lines: []}}});
-  assert.deepEqual(check('observation', step, 1, result([observed, row({invalid: 'x'})])), ['PASS', 'observed in 1 of 2 samples']);
+  const result = (rows, extra = {}) => ({complete: true, meta: {hosted: true}, rows, ...extra});
+  const both = (one, two = one) => ({[records[0]]: one, [records[1]]: two});
+  const structure = count => ({trailer: 'focused', count, lines: Array.from({length: count}, (_, index) => ({index, depth: 0, parent: null, id: null, head: 'AXSheet', focused: false}))});
+  const invalid = 'the Save sheet\'s destination was not set to the run\'s folder (observation only)';
+  const observed = row({invalid, outcome: {observed: {before: structure(3), after: structure(4)}}});
+  assert.deepEqual(check('observation', step, 1, both(result([observed, row({invalid: 'x'})]), result([row({invalid: 'x'})]))),
+    ['PASS', 'the Save panel\'s structure observed in 1 of 3 samples over 2 runs']);
+  // An observation with no panel structure, or a row that ran through without one, is not the observation.
+  const blank = row({invalid, outcome: {observed: {before: structure(0), after: structure(0)}}});
+  assert.deepEqual(check('observation', step, 1, both(result([blank]))), ['FAIL', `driver failure: no observation recorded (${invalid})`]);
+  const through = row({frontKey: {apps: ['com.apple.TextEdit'], activate: {app: 'com.apple.TextEdit', front: true, key: true}, before: {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'}, after: {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'}}, outcome: {sheetOpen: true}});
+  assert.equal(check('observation', step, 0, both(result([through])))[0], 'FAIL');
+  // A run that did not complete is never a pass; what it observed stays in its record, and the reason says so.
+  assert.deepEqual(check('observation', step, 1, both(result([observed]), result([observed], {complete: false, error: 'the run stopped'}))),
+    ['FAIL', `runtime error: ${records[1]} is incomplete (the run stopped); 2 panel observations kept in the records`]);
+  assert.deepEqual(check('observation', step, 1, {[records[0]]: result([observed])}),
+    ['FAIL', `runtime error: no record at ${records[1]} (exit 1); 1 panel observation kept in the records`]);
+  assert.deepEqual(check('observation', step, 1, both(result([observed]), result([]))), ['FAIL', `driver failure: no ${step.observe} sample recorded in ${records[1]}`]);
   const skipped = row({frontKey: {apps: ['com.apple.TextEdit'], activate: {app: 'com.apple.TextEdit', front: false, key: false}, before: {front: 'com.apple.UserNotificationCenter', key: 'com.apple.UserNotificationCenter'}, after: null}});
-  const [status, reason] = check('observation', step, 1, result([skipped, skipped]));
+  const [status, reason] = check('observation', step, 1, both(result([skipped, skipped]), result([skipped])));
   assert.equal(status, 'NO VERDICT');
-  assert.match(reason, /no sample observed: activation 2/);
-  assert.deepEqual(check('observation', step, 1, result([row({invalid: 'the untitled document did not open (not sent)'})])),
+  assert.match(reason, /no sample observed: activation 3/);
+  assert.deepEqual(check('observation', step, 1, both(result([row({invalid: 'the untitled document did not open (not sent)'})]))),
     ['FAIL', 'driver failure: no observation recorded (the untitled document did not open (not sent))']);
-  assert.deepEqual(check('observation', step, 1, result([])), ['FAIL', 'driver failure: no textedit/intervention.saveSheet sample recorded']);
-  assert.deepEqual(check('observation', step, 1), ['FAIL', 'runtime error: no record at /o/save-sheet/cua/run-1/result.json (exit 1)']);
+  assert.deepEqual(check('observation', step, 1), ['FAIL', `runtime error: no record at ${records[0]} (exit 1)`]);
 });
 
 // Sitting E's homes (scripts/accept/macos-selection.mjs HOMES) as each ref selects them: before the flip the vendor's

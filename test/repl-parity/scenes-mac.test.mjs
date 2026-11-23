@@ -814,6 +814,34 @@ test('setup: Finder in front, list view, nothing selected, the owner\'s visible 
   }
   for (const id of ['textedit', 'chrome', 'electron']) assert.deepEqual(setupSteps(id, {pid: 5, bundleId: SCENES[id].bundleId}), [], `${id} comes up in its fixed state`);
 });
+// Ruling 1169: on a GitHub-hosted runner the device's runner record names the venue setup chose clear of the alerts;
+// every scene brought up there is launched at its frame (Chrome's switches, the fixture's bounds, Finder's pin), with no
+// Accessibility write but Finder's existing probe. Off a runner (no record) each scene keeps its own frame.
+test('up on a hosted runner launches each scene at the venue\'s frame and records it; off a runner each keeps its own', async () => {
+  const venue = {chrome: {x: 22, y: 60, width: 800, height: 600}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
+  await withRun(async run => {
+    const io = Object.assign(fakeDevice(), {venueFrames: () => venue});
+    const chrome = await upScene('chrome', {run, io});
+    const chromeLaunch = io.calls[0][1];
+    assert.ok(chromeLaunch.args.includes('--window-position=22,60') && chromeLaunch.args.includes('--window-size=800,600'), JSON.stringify(chromeLaunch.args));
+    assert.deepEqual(chromeLaunch.args, chromeArgs({userDataDir: chrome.userDataDir, url: chrome.page.url, placement: venue.chrome}));
+    assert.deepEqual(chrome.launchFrame, {frame: venue.chrome, from: 'venue'});
+    const electron = await upScene('electron', {run, io});
+    assert.deepEqual(io.calls.at(-1)[1].args, electronArgs({userDataDir: join(run, 'electron-user-data'), placement: venue.electron}));
+    assert.ok(io.calls.at(-1)[1].args.includes('--cua-fixture-bounds=102,100,720,560'));
+    assert.deepEqual(electron.launchFrame, {frame: venue.electron, from: 'venue'});
+    const finder = await upScene('finder', {run, io});
+    assert.deepEqual(finder.setup.at(-1), {finderFrame: venue.finder});
+    assert.deepEqual(finder.setup, setupSteps('finder', finder, {finderFrame: venue.finder}));
+  });
+  await withRun(async run => {
+    const io = Object.assign(fakeDevice(), {venueFrames: () => null});
+    const chrome = await upScene('chrome', {run, io});
+    assert.ok(io.calls.at(-1)[1].args.includes('--window-size=1000,760'));
+    assert.deepEqual(chrome.launchFrame, {frame: SCENES.chrome.placement, from: 'scene'});
+    assert.deepEqual((await upScene('finder', {run, io})).setup.at(-1), {finderFrame: {x: 80, y: 80, width: 920, height: 520}});
+  });
+});
 test('teardown: Finder in front, each part brought back by observation to the owner\'s saved visible state, then the run\'s window closed', () => {
   const record = {pid: 736, bundleId: FINDER, window: {number: 901}};
   const guard = {pid: 736, bundleId: FINDER, window: 901};

@@ -37,6 +37,17 @@ test('ruling 1149: every step that reads a run\'s record names the engine its si
   assert.equal(plan('d').steps.find(s => s.id === 'approval-cycles').check, 'verdict');
 });
 
+// Ruling 1169: both sides of every pair a judge compares stood on one frame, so each run's record names its pair's
+// (./checks.mjs `record`): in A each lane's run i the run i of the lane before it (vc after vv, cc after vc, and so
+// comparison C's vv and cc through vc), in B the cua lane the vendor lane, in C each cua run the vendor run of its number.
+test('ruling 1169: each run after the first side names its pair\'s record, so the record check holds both sides to one frame', () => {
+  const pairs = (s, pilot = false) => plan(s, {pilot}).steps.filter(step => step.check === 'record').map(step => [step.record, step.pair ?? null]);
+  assert.deepEqual(pairs('a', true), [['/w/out/vv/run-1/meta.json', null], ['/w/out/vc/run-1/meta.json', '/w/out/vv/run-1/meta.json'], ['/w/out/cc/run-1/meta.json', '/w/out/vc/run-1/meta.json']]);
+  assert.deepEqual(pairs('a').filter(([record]) => record.includes('run-3')).map(([, pair]) => pair), [null, '/w/out/vv/run-3/meta.json', '/w/out/vc/run-3/meta.json']);
+  assert.deepEqual(pairs('b'), [['/w/out/vendor/meta.json', null], ['/w/out/cua/meta.json', '/w/out/vendor/meta.json']]);
+  assert.deepEqual(pairs('c').filter(([record]) => record.includes('run-2')), [['/w/out/vendor/run-2/result.json', null], ['/w/out/cua/run-2/result.json', '/w/out/vendor/run-2/result.json']]);
+});
+
 test('A: three runs of each lane, alternating vendor on vendor, cua on vendor, cua on cua, over the loopback device and the run\'s install; then comparisons A, B and C', () => {
   const full = plan('a');
   const runs = full.steps.filter(s => s.kind === 'run');

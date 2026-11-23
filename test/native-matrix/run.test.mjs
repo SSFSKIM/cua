@@ -11,6 +11,7 @@ import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {CASES} from '../../scripts/native-matrix/plan.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {cleanupMatrix, FULL_PLAN, PASTING, planOf} from '../../scripts/native-matrix/run.mjs';
+import {runnerRecord} from '../../scripts/hosted-sittings/runner.mjs';
 
 import {args, BUNDLE, cellsOf, matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
@@ -153,6 +154,24 @@ test('a hosted run asks every alert check to hold replayd\'s capture alert; a ru
   const hosted = checksOf(await runWith({env: {RUNNER_ENVIRONMENT: 'github-hosted'}}));
   assert.ok(hosted.length > 0 && hosted.every(a => a.join(' ').includes('--hosted yes')));
   assert.ok(checksOf(await runWith()).every(a => !a.includes('--hosted')));
+});
+
+// Ruling 1169: on a hosted runner the device's runner record carries the venue setup chose; the run keeps it as
+// meta.venue, and every case whose points stand on its window's size is grounded on the venue's frame: Chrome's drag on
+// the hosted 800x600, never the mini's 1000x760.
+test('a hosted run keeps the device\'s venue and grounds Chrome\'s drag on its frame; off a runner the mini\'s layout', async () => {
+  const env = {RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'macos26', ImageVersion: '1', GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '1'};
+  const venue = {frames: {chrome: {x: 22, y: 60, width: 800, height: 600}}, differences: []};
+  const runner = runnerRecord(env, {install: {home: '/H', release: 'r'}, engine: {bundle: BUNDLE, build: 'b', engineVersion: '0.5.0'}, vm: {id: 'v', platformUuid: 'P', bootedAt: 'B'}, venue});
+  const plan = {id: 'test', frontmost: ['chrome'], speed: false, finding: false, background: [], launch: []};
+  const hosted = await runWith({plan, env, ops: {preflight: (base, a) => ({...base(a), runner})}});
+  assert.deepEqual(hosted.result.meta.venue, venue);
+  assert.equal(hosted.result.meta.runner.venue, undefined, 'the attestation keeps the run\'s identity; the venue is its own block');
+  const prepares = r => r.calls.map(c => c.code).filter(code => code.includes('const layout = {"window":'));
+  assert.ok(prepares(hosted).length > 0 && prepares(hosted).every(code => code.includes('const layout = {"window":[800,600],"from":[24,192],"to":[200,237]}')));
+  const mini = await runWith({plan});
+  assert.equal(mini.result.meta.venue, undefined);
+  assert.ok(prepares(mini).length > 0 && prepares(mini).every(code => code.includes('const layout = {"window":[1000,760],"from":[24,192],"to":[200,237]}')));
 });
 
 test('a paste or typeText act is sent only between two alert checks; an alert before it stops the run with nothing sent', async () => {

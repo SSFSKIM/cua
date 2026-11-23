@@ -23,12 +23,17 @@
 //                       UserNotificationCenter or System Settings window) is recorded and fails the setup, never
 //                       answered; a read-back that is not 1920x1080 fails it; alerts that moved with the display are
 //                       recorded. Kept in `modeSwitch`
-//   placement           the alert windows read fresh after the switch (ruling 1154), and where each scene window the
-//                       matrix places would go to clear them, the same size (./alert-guard.mjs clearFrame):
-//                       Chrome's and the Electron fixture's launch frames, Finder's pinned frame; TextEdit places its own,
-//                       so each run reads it at up. Kept in `placement`; each run of C places its windows by the same rule
-//                       from its own fresh reading (../native-matrix/run.mjs placeScenes), its meta recording where. A
-//                       screen not read is recorded and the setup goes on
+//   placement           the alert windows read fresh after the switch (ruling 1154), and the venue (ruling 1169,
+//                       ./venue.mjs): each scene window's hosted frame, the hosted size at the mini's origin moved clear
+//                       of them by the shared clearFrame: Chrome for Testing's and the Electron fixture's launch frames,
+//                       Finder's pinned frame, the Open panel's saved frame. Kept in `placement` and `venue`, and in the
+//                       runner's record, so every scene the device brings up on this runner is launched there, both
+//                       sides alike. A screen not read is recorded, the frames stay unplaced and the setup goes on
+//   textedit defaults   TextEdit's own preferences on this throwaway runner (./venue.mjs writeTextEditDefaults): its
+//                       width in characters, which sizes its windows (TextEdit places none: its origin stays AppKit's
+//                       cascade, which each run reads back), and the Open panel's saved frame and size; each read back,
+//                       and one that does not read back as written fails the setup. After the warm-ups' TextEdit ended,
+//                       before any run launches one. Kept in `venue.textEdit`
 //   engine stop         `cua engine stop` on the engine the approve and its warm-up left running, so every sitting
 //                       starts from a known engine state and no stray engine feeds a measured run or reads as a user of the approved home
 //                       (pilot A, run 45218179501); whether it was running and that it stopped are kept (`engineStop`)
@@ -48,10 +53,9 @@ import {engineToApprove, hostedApprove} from './approve.mjs';
 import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 import {DEVICE} from './plan.mjs';
 import {warmUp as warmUpCopy} from './warm-up.mjs';
-import {clearFrame, isAlertWindow} from './alert-guard.mjs';
-import {switchDisplayMode} from './display-mode.mjs';
-import {SCENES} from '../repl-parity/scenes-mac.mjs';
-import {FINDER_FRAME} from '../repl-parity/scenes-mac-finder.mjs';
+import {isAlertWindow} from './alert-guard.mjs';
+import {TARGET_MODE, switchDisplayMode} from './display-mode.mjs';
+import {TEXTEDIT_WIDTH_IN_CHARS, hostedFrames, textEditWrites, venueRecord, writeTextEditDefaults} from './venue.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
@@ -67,20 +71,20 @@ function warmUpDetail({capture, captureAlerts, frontAfter, wait}) {
   return `${made}, ${lines}, ${frontName(frontAfter)} in front after it; ${left}`;
 }
 
-// The frames the matrix gives the scene windows it places (../repl-parity/scenes-mac.mjs), and TextEdit's, which it does not.
-const PLANNED_FRAMES = Object.freeze({chrome: SCENES.chrome.placement, electron: SCENES.electron.placement, finder: FINDER_FRAME, textedit: null});
-const TEXTEDIT_PLACED = 'placed by TextEdit at up: each run reads its window and moves it clear there';
+const TEXTEDIT_PLACED = `sized by its own preferences (WidthInChars ${TEXTEDIT_WIDTH_IN_CHARS}, the textedit defaults step); its origin is AppKit's, read back by each run`;
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
-// The placement step's record from one screen read ({windows, displays}): the alert windows' bounds, the displays, and for
-// each scene its planned frame and where it would go. -> {alerts, displays, scenes: {id: {planned, frame, moved, reason?}}}.
+const rectText = r => `${r.x},${r.y} ${r.width}x${r.height}`;
+// The placement step's record from one screen read ({windows, displays}, or null unread): the alert windows read fresh,
+// the displays, each scene's hosted frame (./venue.mjs hostedFrames) and the venue those frames make (venueRecord).
+// -> {placement: {alerts, displays, scenes: {id: {base, frame, moved, reason?}}} | {unread: true}, venue}.
 export function plannedPlacement(screen) {
-  const alerts = screen.windows.filter(isAlertWindow).map(w => w.bounds), displays = screen.displays ?? null;
-  const scenes = Object.fromEntries(Object.entries(PLANNED_FRAMES).map(([id, planned]) => {
-    if (!planned) return [id, {planned: null, moved: false, reason: TEXTEDIT_PLACED}];
-    const {frame, moved, reason} = clearFrame(planned, alerts, displays ?? []);
-    return [id, {planned, frame, moved, ...(reason ? {reason} : {})}];
-  }));
-  return {alerts, displays, scenes};
+  if (!Array.isArray(screen?.windows)) {
+    return {placement: {unread: true}, venue: venueRecord({alerts: null, displays: null, placed: hostedFrames(null, null), textEdit: null})};
+  }
+  const alerts = screen.windows.filter(isAlertWindow).map(w => ({number: w.number ?? null, bounds: w.bounds})), displays = screen.displays ?? null;
+  const placed = hostedFrames(alerts, displays ?? []);
+  return {placement: {alerts: alerts.map(a => a.bounds), displays, scenes: {...placed.scenes, textedit: {base: null, moved: false, reason: TEXTEDIT_PLACED}}},
+    venue: venueRecord({alerts, displays, placed, textEdit: null})};
 }
 
 class StepFailed extends Error {}
@@ -92,7 +96,7 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // exists, vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
 // switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), stopEngine()
 // (src/runtime/engine.mjs stopEngine), write(path, record), log}.
-// -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
+// -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, venue, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
   runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync,
@@ -101,7 +105,7 @@ export async function hostedSetup({env = process.env, platform = process.platfor
   screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
   log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the hosted setup');
-  const report = {ok: false, steps: [], approve: null, warmUps: [], modeSwitch: null, placement: null, engineStop: null, record: null, approved: null};
+  const report = {ok: false, steps: [], approve: null, warmUps: [], modeSwitch: null, placement: null, venue: null, engineStop: null, record: null, approved: null};
   const run = (command, args, extra = {}) => {
     const result = exec(command, args, {env, ...extra});
     failIf(result.status !== 0, `${[command, ...args].join(' ')}: exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''}`);
@@ -167,12 +171,22 @@ export async function hostedSetup({env = process.env, platform = process.platfor
     ['placement', () => {
       let read = null;
       try { read = screen(); } catch { read = null; }
-      if (!Array.isArray(read?.windows)) { report.placement = {unread: true}; return 'the window list was unread: nothing planned; each run reads its own'; }
-      report.placement = plannedPlacement(read);
-      const moved = Object.entries(report.placement.scenes).filter(([, p]) => p.moved).map(([id]) => id);
-      const stuck = Object.entries(report.placement.scenes).filter(([, p]) => p.planned && !p.moved && p.reason).map(([id]) => id);
+      ({placement: report.placement, venue: report.venue} = plannedPlacement(read));
+      if (report.placement.unread) return 'the window list was unread: the hosted sizes at the mini\'s origins, unplaced; the guard refuses what an alert overlaps';
       const n = report.placement.alerts.length;
-      return `${n} alert window${n === 1 ? '' : 's'}; ${moved.length ? `${moved.join(', ')} planned clear of ${n === 1 ? 'it' : 'them'}` : 'no planned window under one'}${stuck.length ? `; no clear frame for ${stuck.join(', ')}` : ''}`;
+      const frames = Object.entries(report.venue.frames).map(([id, frame]) => {
+        const p = report.placement.scenes[id];
+        return `${id} ${rectText(frame)}${p.moved ? ' (moved)' : p.reason ? ' (no clear frame: kept)' : ''}`;
+      });
+      return `${n} alert window${n === 1 ? '' : 's'}; hosted frames: ${frames.join(', ')}`;
+    }],
+    ['textedit defaults', () => {
+      const display = report.venue.display ?? report.modeSwitch?.readBack?.bounds ?? {x: 0, y: 0, ...TARGET_MODE};
+      const written = writeTextEditDefaults(textEditWrites(report.venue.frames.openPanel, display), {env, platform, exec});
+      report.venue.textEdit = written;
+      const missed = written.writes.filter(w => !w.matched);
+      failIf(missed.length, missed.map(w => `${w.key} not read back as written (${w.readBack === null ? 'unread' : JSON.stringify(w.readBack)})`).join('; '));
+      return `${written.domain}: ${written.writes.map(w => `${w.key} ${w.value.trim()}`).join(', ')}; each read back`;
     }],
     ['engine stop', async () => {
       const stopped = await stopEngine();
@@ -183,7 +197,7 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       const engine = realpath(join(home, ENGINE_DIRECTORY_IN_HOME, BUNDLE_NAME));
       const machine = vmOf();
       failIf(!machine, 'this VM could not be read (its platform UUID and boot time): the record would attest no machine');
-      report.record = runnerRecord(env, {install: {home: realpath(cuaHome), release: runtime.release}, engine: {bundle: engine, ...identityOf(engine)}, vm: {id: newId(), ...machine}});
+      report.record = runnerRecord(env, {install: {home: realpath(cuaHome), release: runtime.release}, engine: {bundle: engine, ...identityOf(engine)}, vm: {id: newId(), ...machine}, venue: report.venue});
       write(runnerRecordPath(home), report.record);
       report.approved = {runtime: report.record.install.home, engine};
       return runnerRecordPath(home);

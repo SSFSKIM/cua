@@ -67,13 +67,16 @@ export function runnerProblems(record) {
 
 // The record of this job, from its own environment, its VM ({id, platformUuid, bootedAt}: the setup's own id and
 // vmIdentity's reading) and the run's install (CUA_HOME, its runtime release) and approved engine (the bundle, its build
-// and version). -> record; throws on a field it cannot fill.
-export function runnerRecord(env, {install, engine, vm, now = Date.now}) {
+// and version), and the venue setup chose (./venue.mjs venueRecord, ruling 1169): the frames the scenes are launched at
+// on this runner, which the device's scenes read from here (venueFramesOf) and every lane keeps as meta.venue.
+// -> record; throws on a field it cannot fill.
+export function runnerRecord(env, {install, engine, vm, venue = null, now = Date.now}) {
   if (env.RUNNER_ENVIRONMENT !== 'github-hosted') throw new Error('a hosted-runner record is written only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted)');
   const record = {kind: 'github-hosted', image: {name: env.ImageOS ?? null, version: env.ImageVersion ?? null}, run: {id: env.GITHUB_RUN_ID ?? null, attempt: env.GITHUB_RUN_ATTEMPT ?? null},
     vm: {id: vm?.id ?? null, platformUuid: vm?.platformUuid ?? null, bootedAt: vm?.bootedAt ?? null},
     install: {home: install?.home ?? null, release: install?.release ?? null},
-    engine: {bundle: engine?.bundle ?? null, build: engine?.build ?? null, engineVersion: engine?.engineVersion ?? null}, writtenAt: new Date(now()).toISOString()};
+    engine: {bundle: engine?.bundle ?? null, build: engine?.build ?? null, engineVersion: engine?.engineVersion ?? null}, writtenAt: new Date(now()).toISOString(),
+    ...(venue ? {venue} : {})};
   const problems = runnerProblems(record);
   if (problems.length) throw new Error(`the hosted-runner record cannot be written: ${problems.join('; ')}`);
   return record;
@@ -84,12 +87,22 @@ export const runnerKey = r => `${r.image.name} ${r.image.version}, run ${r.run.i
 // The attestation line a summary prints and compares (null off a hosted runner).
 export const runnerText = r => (r ? `GitHub-hosted ${runnerKey(r)}; the run's install ${r.install.release} at ${r.install.home}; its engine build ${String(r.engine.build).slice(0, 12)} (cua ${r.engine.engineVersion})` : null);
 
+// The scene frames a device's record names (its venue's, ruling 1169): {scene: {x, y, width, height}} for each well-formed
+// frame, or null off a hosted runner (no record, or one with no venue), where every scene keeps its own frame.
+const isFrame = f => Boolean(f) && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(f[k])) && f.width > 0 && f.height > 0;
+export function venueFramesOf(record) {
+  const frames = record?.venue?.frames;
+  if (!frames || typeof frames !== 'object') return null;
+  return Object.fromEntries(Object.entries(frames).filter(([, f]) => isFrame(f)).map(([scene, {x, y, width, height}]) => [scene, {x, y, width, height}]));
+}
+
 // meta.hosted and meta.runner, from the device's record (preflight's `runner`, null when it has none) and the
 // controller's environment; with the approved paths the harness was given, those must be the run's own install.
 // A controller on a GitHub-hosted runner drives the runner itself (no remote device is reachable from one), so its run
 // is hosted whatever the device says: with no record it is hosted and unattested (runner null), which the judges report
 // as missing proof, never as a run off a runner. `controllerVm`: this controller's own VM (vmIdentity), which must be
-// the record's. -> {hosted, runner}; throws when the device attests a run and the controller is not on a runner, the
+// the record's. The record's venue is handed out as its own block (meta.venue), apart from the attestation.
+// -> {hosted, runner, venue?}; throws when the device attests a run and the controller is not on a runner, the
 // record is not one, it names another job's run or another VM, or the approved paths are not its.
 export function hostedRunOf(record, env = process.env, {approvedRuntime, approvedEngine, controllerVm = vmIdentity} = {}) {
   const controller = env?.RUNNER_ENVIRONMENT === 'github-hosted';
@@ -106,5 +119,6 @@ export function hostedRunOf(record, env = process.env, {approvedRuntime, approve
     throw new Error(`the device's record was written on another VM (${record.vm.platformUuid}, booted ${record.vm.bootedAt}), not this controller's (${here.platformUuid}, booted ${here.bootedAt})`);
   if (approvedRuntime !== undefined && approvedRuntime !== record.install.home) throw new Error(`--approved-runtime ${approvedRuntime} is not the run's install (${record.install.home})`);
   if (approvedEngine !== undefined && approvedEngine !== record.engine.bundle) throw new Error(`--approved-engine ${approvedEngine} is not the run's engine (${record.engine.bundle})`);
-  return {hosted: true, runner: record};
+  const {venue, ...runner} = record;
+  return {hosted: true, runner, ...(venue ? {venue} : {})};
 }

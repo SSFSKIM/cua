@@ -5,10 +5,11 @@
 // attests (./runner.mjs). `pilot` is the pilot's smallest form of each sitting (one run a lane; the sittings that are
 // already one pass run whole).
 //
-// A step: {id, label, kind, argv, check?, record?, engine?, report?, observe?, lane?, pilotNoVerdict?, env?, needs?, expect?,
-// keep?, missing?, pending?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default, `expect` for
-// an expect step), with the files it reads: `record` (a run's, whose attestations must be `engine`'s, the side the run
-// pins: ruling 1149), `report` (removed before the step runs). Kinds, as ./run.mjs
+// A step: {id, label, kind, argv, check?, record?, pair?, engine?, report?, observe?, lane?, pilotNoVerdict?, env?, needs?,
+// expect?, keep?, missing?, pending?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default,
+// `expect` for an expect step), with the files it reads: `record` (a run's, whose attestations must be `engine`'s, the side
+// the run pins: ruling 1149), `pair` (the other side's record of the same run, which must have stood on the same frames:
+// ruling 1169), `report` (removed before the step runs). Kinds, as ./run.mjs
 // schedules them:
 //   run       a measurement or a witness
 //   verdict   a judge or its report (compare, summary, diff); `pilotNoVerdict`: in the pilot its NO VERDICT is expected
@@ -48,8 +49,13 @@ const LANES = {vv: ['vendor', 'vendor'], vc: ['vendor', 'cua'], cc: ['cua', 'cua
 // stopped run's own status is the sitting's.
 function sittingA(ctx) {
   const runs = ctx.pilot ? 1 : 3, exp = `hosted-${ctx.runId}-a`, steps = [];
+  // Each lane's run i is paired with the run i of the lane before it (vc with vv, cc with vc): every comparison's two
+  // lanes are then held to one frame, C's vv and cc through vc.
+  const lanes = Object.keys(LANES);
   for (let i = 1; i <= runs; i++) for (const [lane, [host, engine]] of Object.entries(LANES)) {
+    const before = lanes[lanes.indexOf(lane) - 1];
     steps.push({id: `${lane}-${i}`, label: `native-baseline ${host} host, ${engine} engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${lane}/run-${i}/meta.json`, engine,
+      ...(before ? {pair: `${ctx.out}/${before}/run-${i}/meta.json`} : {}),
       ...(steps.length ? {needs: [steps.at(-1).id]} : {}),
       argv: ['node', 'scripts/native-baseline.mjs', 'run', '--device', DEVICE, '--experiment', exp, '--host', host, '--engine', engine, ...approvedArgs(ctx), '--out', `${ctx.out}/${lane}/run-${i}`]});
   }
@@ -66,6 +72,7 @@ function sittingB(ctx) {
   const parity = (...args) => ['node', 'scripts/repl-parity.mjs', ...args];
   // Each lane is read by its meta.json, its attestations included (its exit is 0 only when that record is complete).
   const lane = engine => ({id: engine, label: `native-mac, ${engine} host and engine`, kind: 'run', needs: ['prepare'], check: 'record', record: `${ctx.out}/${engine}/meta.json`, engine,
+    ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/meta.json`} : {}),
     argv: parity('run', '--device', DEVICE, ...approvedArgs(ctx), '--suite', 'native-mac', '--host', engine, '--engine', engine, '--out', `${ctx.out}/${engine}`)});
   return [
     {id: 'prepare', label: 'repl-parity prepare on the run\'s install', kind: 'run', argv: parity('prepare', '--device', DEVICE, '--commit', ctx.commit, ...approvedArgs(ctx))},
@@ -83,7 +90,8 @@ function sittingC(ctx) {
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
     argv: ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', ctx.approvedEngine, '--out', `${ctx.out}/focus-timing.json`]});
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
-    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine, argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
+    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine,
+      ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/run-${i}/result.json`} : {}), argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
   }
   // #212's cell asks for its runs (one in the pilot), and its check reads every one of their records.
   for (const engine of ['vendor', 'cua']) steps.push({id: `save-sheet-${engine}`, label: `#212's save-sheet cell (observation-only) on ${engine}`, kind: 'run',

@@ -27,7 +27,7 @@
 //             watched state must be unchanged.
 // The scenes' methods with no meaningful target are listed in NOT_APPLICABLE with the reason, so the method table says
 // so on both engines rather than leaving the cell out.
-import {SCENES, textEditDocument} from '../repl-parity/scenes-mac.mjs';
+import {BACKGROUND_PAIRINGS, SCENES, textEditDocument} from '../repl-parity/scenes-mac.mjs';
 
 export const METHODS = Object.freeze(['getAXState', 'listApps', 'click', 'drag', 'paste', 'performSecondaryAction', 'pressKey', 'scroll', 'selectText', 'setValue', 'typeText']);
 // The facade's names against the engine's (the summary prints the engine's, the spec's 11).
@@ -287,7 +287,7 @@ return {ready: true};`,
 const after = scrollBarValueBeside(ax, ${TEXT_AREA});
 return {ok: after !== null && after > __m.before, outcome: {moved: after !== null && after > __m.before}};`})),
   // Fractions of the document window's screenshot, inside its text view whatever TextEdit's window size.
-  dragSelect({find: TEXT_AREA, layout: {window: null, from: [0.2, 0.45], to: [0.7, 0.62]}}),
+  {...dragSelect({find: TEXT_AREA, layout: {window: null, from: [0.2, 0.45], to: [0.7, 0.62]}}), framed: 'window fractions'},
   refusal({method: 'selectText', kase: 'notText', find: 'indexOfPart(ax, "Description", "bold")', act: 'await __app.selectText(__m.index, "bold");',
     watch: `[selectedTextOf(ax), valueOfIndex(ax, ${TEXT_AREA})]`, sentence: REFUSALS.notText}),
   refusal({method: 'setValue', kase: 'notSettable', find: 'indexOfPart(ax, "Description", "text color")', act: 'await __app.setValue(__m.index, "x");',
@@ -337,14 +337,15 @@ return {ok: only, outcome: {rowFound: row !== null, selected: selected.length, o
 const finder = [
   tree(`ax => { const list = ${LIST}; return {ok: list !== null, outcome: {list: list !== null}}; }`),
   listApps('finder'),
-  {method: 'click', case: 'row', expect: 'outcome', prepare: rowPrepare(FILE(5)),
+  // The row cases need their rows in the list's visible subset, which the window's height decides (hold 2b): `framed`.
+  {method: 'click', case: 'row', expect: 'outcome', prepare: rowPrepare(FILE(5)), framed: 'visible rows',
     act: 'if (__m.cell === null) throw new Error("the row has no cell beside its name"); await __app.click(__m.cell);', check: selectedRow(FILE(5))},
-  {method: 'pressKey', case: 'down', expect: 'outcome', keys: ['Down'], prepare: rowPrepare(FILE(6), {from: FILE(5)}), act: 'await __app.pressKey("Down");', check: selectedRow(FILE(6))},
+  {method: 'pressKey', case: 'down', expect: 'outcome', keys: ['Down'], prepare: rowPrepare(FILE(6), {from: FILE(5)}), act: 'await __app.pressKey("Down");', check: selectedRow(FILE(6)), framed: 'visible rows'},
   // Type-select on the run's list (never the toolbar's search field, which would list the owner's files).
-  {method: 'typeText', case: 'typeSelect', expect: 'outcome', keys: ['typeText'], prepare: rowPrepare(FILE(12)), act: `await __app.typeText(${j(FILE(12))});`, check: selectedRow(FILE(12))},
+  {method: 'typeText', case: 'typeSelect', expect: 'outcome', keys: ['typeText'], prepare: rowPrepare(FILE(12)), act: `await __app.typeText(${j(FILE(12))});`, check: selectedRow(FILE(12)), framed: 'visible rows'},
   refusal({method: 'selectText', kase: 'notText', find: `rowIndexOfName(ax, ${j(FILE(1))})`, act: 'await __app.selectText(__m.index, "scene");',
     watch: 'selectedIndexesOf(ax)', sentence: REFUSALS.notText}),
-  ...['scroll', 'performSecondaryAction'].map(method => ({method, case: 'down', expect: 'outcome',
+  ...['scroll', 'performSecondaryAction'].map(method => ({method, case: 'down', expect: 'outcome', framed: 'visible rows',
     prepare: `${observed}
 let now = ax, list = ${LIST};
 if (list === null) return {ready: false, reason: "the list is not in the text"};
@@ -378,6 +379,16 @@ __m.index = index; __m.seen = fieldReading(now, index); return {ready: true};`,
   check: `const ax = await observe();
 return {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(ax) === "matrix", selection: selectionEvidence(ax, ${named(name)}, __m.seen)}};`,
 });
+// Chrome's drag, in window points. The page has no stylesheet (fixtures/scene-page.mjs: style-src 'none'), so the user
+// agent's default layout puts the notes field (rows 8, cols 60) at the content area's top left, below Chrome's toolbar,
+// whose height does not follow the window's: the field's lines stand at the same window points in any window wide enough
+// for the field and tall enough to show it, the mini's 1000x760 and the hosted runner's 800x600 alike (ruling 1169). Only
+// the window's size, which turns window points into the screenshot's pixels (and whose shape the prepare checks), follows
+// the frame, so the layout is grounded on the frame the run launched Chrome at (groundCase), never the mini's scaled. The
+// prepare's harness click at each end still proves the points land in the field before anything is dragged.
+export const CHROME_DRAG_POINTS = Object.freeze({from: Object.freeze([24, 192]), to: Object.freeze([200, 237])});
+export const chromeDragLayout = ({width, height}) => ({window: [width, height], ...CHROME_DRAG_POINTS});
+const chromeDrag = frame => ({...dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: chromeDragLayout(frame)}), framed: 'window points', ground: chromeDrag});
 const chrome = [
   tree(`ax => { const page = ${named('Scene notes')} !== null && ${named('Apply')} !== null; return {ok: page, outcome: {page}}; }`),
   listApps('chrome'),
@@ -422,8 +433,8 @@ return __m.index === null ? {ready: false, reason: "the button is not in the tex
 const status = ${statusText(named('Scene status'), '/Applied: /')};
 const applied = typeof status === "string" && status.endsWith("Applied: " + __m.name);
 return {ok: applied, outcome: {applied}};`},
-  // The page in its 1000 x 760 window: the notes field's second to fifth lines, below the toolbar, heading and margins.
-  dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: {window: [1000, 760], from: [24, 192], to: [200, 237]}}),
+  // The notes field's second to fifth lines, below the toolbar, heading and margins, grounded on the scene's frame.
+  chromeDrag(SCENES.chrome.placement),
   refusal({method: 'setValue', kase: 'notSettable', find: named('Apply'), act: 'await __app.setValue(__m.index, "x");', watch: `[valueOfIndex(ax, ${named('Scene name')}), focusedIndexOf(ax)]`,
     sentence: REFUSALS.notSettable}),
   // The checkbox's selected text range reads settable in Chromium, so both engines refuse at the search, not the
@@ -499,7 +510,7 @@ return {ok: moved, outcome: {moved}};`},
   selectMatrix('text', 'Fixture text'),
   {method: 'paste', case: 'replace', expect: 'outcome', keys: ['paste'],
     prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j('golf')})}\nreturn {ready: true};`, act: `await __app.paste(${j(PASTED)});`, check: replaced(named('Fixture text'), PASTED)},
-  dragSelect({find: named('Fixture text'), value: FIELD_VALUE, layout: ELECTRON_FIELD_LAYOUT}),
+  {...dragSelect({find: named('Fixture text'), value: FIELD_VALUE, layout: ELECTRON_FIELD_LAYOUT}), framed: 'window points'},
   refusal({method: 'setValue', kase: 'notSettable', find: named('Fixture button'), act: 'await __app.setValue(__m.index, "x");', watch: `[${pressed}, valueOfIndex(ax, ${named('Fixture text')})]`,
     sentence: REFUSALS.notSettable}),
   // #258 and #259 (T8e): a click into the field judged by where its caret is after it, read on the device (`caret`,
@@ -508,7 +519,7 @@ return {ok: moved, outcome: {moved}};`},
   // question and not these gates'.
   {method: 'click', case: 'selection', expect: 'outcome', regimes: ['frontmost'], caret: CARET.selection,
     prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j(CARET_WORD)})}\nreturn {ready: true};`, act: 'await __app.click(__m.index);', check: valueKept},
-  {method: 'click', case: 'point', expect: 'outcome', regimes: ['frontmost'], caret: CARET.point, prepare: caretAtEnd, act: 'await __app.click(__m.point);', check: valueKept},
+  {method: 'click', case: 'point', expect: 'outcome', regimes: ['frontmost'], caret: CARET.point, prepare: caretAtEnd, act: 'await __app.click(__m.point);', check: valueKept, framed: 'window points'},
 ];
 
 // ---- The windowless app (the "app with no window" refusal) ------------------------------------------------------------
@@ -526,6 +537,22 @@ return {ok: refusedAs(${j(REFUSALS.noWindow)}) && unbound, outcome: {refused: __
 export const CASES = Object.freeze({textedit, finder, chrome, electron, openPanel, windowless});
 // A target's cases in one regime: every case but those that name other regimes (`regimes`, the caret cases').
 export const casesOf = (target, regime) => CASES[target].filter(c => !c.regimes || c.regimes.includes(regime));
+// A case as the run sends it, grounded on the frame its scene's window was launched at (ruling 1169): `frames` the venue's
+// (meta.venue.frames, ../hosted-sittings/venue.mjs; null off a hosted runner). A case whose points stand on its window's
+// size (`ground`, Chrome's drag) is rebuilt on that frame; every other case, and every case off a hosted runner, is
+// sent as the plan wrote it, on the mini's frame.
+export const groundCase = (target, c, frames) => {
+  const frame = frames?.[SCENE_OF[target]];
+  return c.ground && frame ? c.ground(frame) : c;
+};
+// The cells whose layout rests on the scene's window frame (`framed`: window points, window fractions or the rows its
+// height shows), in both regimes, each background case under every user window it is driven behind: what the venue
+// declares for a frame that differs from the mini's. -> [{id, framed}].
+export function framedCells(scene) {
+  const framed = regime => casesOf(scene, regime).filter(c => c.framed);
+  return [...framed('frontmost').map(c => ({id: caseId(scene, 'frontmost', c), framed: c.framed})),
+    ...BACKGROUND_PAIRINGS.filter(p => p.driven === scene).flatMap(({user}) => framed('background').map(c => ({id: caseId(scene, 'background', c, user), framed: c.framed})))];
+}
 // The state an act on each target may change, as an expression over an observation `ax`: read once the prepare is ready
 // and again after an act that threw, so the row records whether the target stayed as prepared (`outcome.unchanged`, the
 // reading the judge's conservative-answer rule needs, ./answers.mjs conservativeEffect; ./matrix-cells.mjs caseCells).

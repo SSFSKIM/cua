@@ -47,6 +47,7 @@ import {runOnboarding} from './hosted-sittings/onboarding.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
 import {readScreenAtEnd} from './hosted-sittings/display-mode.mjs';
 import {textEditGuard} from './hosted-sittings/textedit-guard.mjs';
+import {renderVenue} from './hosted-sittings/venue.mjs';
 
 const REPO = resolve(dirname(new URL(import.meta.url).pathname), '..');
 class Usage extends Error {}
@@ -104,7 +105,11 @@ async function runCommand(sitting, values) {
   const screenAtEnd = readScreenAtEnd();
   parts.push('## The screen at the end', '', `${screenAtEnd.alerts ? `${screenAtEnd.alerts.length} alert window${screenAtEnd.alerts.length === 1 ? '' : 's'}` : 'the window list unread'}; `
     + `the display ${screenAtEnd.mode ? `${screenAtEnd.mode.width}x${screenAtEnd.mode.height} (mode ${screenAtEnd.mode.modeId})` : 'unread'}${screenAtEnd.modeHeld === false ? ', NOT the mode setup set' : ''}.`, '');
-  writeJson(join(out, 'sitting.json'), {...report, screenAtEnd});
+  // The venue (ruling 1169): every scene frame on this runner that differs from the mini's, why, and the cells resting on it,
+  // as setup wrote it into the runner's record (the same block each lane's meta keeps).
+  const venue = readRunnerRecord(homedir())?.venue ?? null;
+  parts.push(renderVenue(venue));
+  writeJson(join(out, 'sitting.json'), {...report, screenAtEnd, venue});
   writeFileSync(join(out, 'sitting.md'), parts.join('\n'));
   process.stdout.write(parts.join('\n'));
   return report.exit;
@@ -130,8 +135,10 @@ async function textedit(action, values) {
       spawnSync('sleep', ['2']);
       let placement;
       try { placement = await textEditGuard().place(); } catch (error) { placement = {error: error.message}; }
+      // The venue its frames were read against (ruling 1169): TextEdit sized by its own preferences, setup's.
+      const venue = readRunnerRecord(homedir())?.venue ?? null;
       process.stdout.write(json({placement}));
-      if (values.record) writeJson(values.record, {placement});
+      if (values.record) writeJson(values.record, {placement, venue});
       return 0;
     }
     spawnSync('sleep', ['1']);

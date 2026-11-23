@@ -11,7 +11,7 @@ import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
-import {ACCEPTANCE_3, caseId, focusVerdict, isAcceptance3, methodTimingId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {ACCEPTANCE_3, caseId, focusVerdict, groundCase, isAcceptance3, methodTimingId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {keystrokeGate, probeProblem, WITNESS_FILES, WITNESS_LEAD_MS, WITNESS_PREPARE_CELL, witnessCheckCell} from './probe-plan.mjs';
 
 // The acts that may paste (type_text's paste route included): each sent only between two alert checks.
@@ -298,7 +298,8 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const key = `row:${ctx.rows.length}`;
   const row = {section, id: id ?? caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene, target, regime, method: c.method, case: c.case, expect: c.expect,
     ...(user ? {user} : {}), ...extra};
-  const cells = caseCells(target, c);
+  // Grounded on the frame the run launched its scene at: on a hosted runner the venue's (ruling 1169), else the mini's.
+  const cells = caseCells(target, groundCase(target, c, ctx.meta.venue?.frames ?? null));
   const apps = appsOf(target, user), app = SCENES[regime === 'background' ? user : scene].bundleId;
   let from = null, to = null;
   const span = r => { from ??= r?.at?.[0] ?? null; to = r?.at?.[1] ?? to; return r; };

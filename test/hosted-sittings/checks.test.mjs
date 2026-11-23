@@ -47,6 +47,25 @@ test('record: a matrix run the alert guard stopped is NO VERDICT, by its meta\'s
   assert.equal(check('record', step, 1, {[step.record]: unread})[0], 'NO VERDICT');
 });
 
+// Ruling 1169: both sides of a pair stand on one frame in every run. A run's record names its pair's (`pair`); a pair
+// whose sides launched at, or read back, different frames is NO VERDICT naming the cause, never a pass.
+test('record: a pair whose sides stood on different frames is NO VERDICT naming them; one frame passes, a pair not yet recorded changes nothing', () => {
+  const frame = (x, width = 800) => ({x, y: 60, width, height: 600});
+  const matrix = chrome => ({complete: true, meta: {venue: {frames: {chrome: frame(22)}}, placement: {alerts: [], scenes: {chrome: {from: chrome, moved: false}}}}});
+  const step = {record: '/o/c/cua/run-1/result.json', pair: '/o/c/vendor/run-1/result.json'};
+  assert.deepEqual(check('record', step, 0, {[step.record]: matrix(frame(22)), [step.pair]: matrix(frame(22))}), ['PASS', null]);
+  const [status, reason] = check('record', step, 0, {[step.record]: matrix(frame(30)), [step.pair]: matrix(frame(22))});
+  assert.equal(status, 'NO VERDICT');
+  assert.equal(reason, 'venue: /o/c/cua/run-1/result.json and its pair /o/c/vendor/run-1/result.json did not stand on one frame (chrome: 30,60 800x600 on this side, 22,60 800x600 on its pair)');
+  assert.deepEqual(check('record', step, 0, {[step.record]: matrix(frame(22))}), ['PASS', null], 'no pair record: nothing to compare');
+  // The baseline's TextEdit, each window it read back after a step.
+  const baseline = width => ({complete: true, placement: [{at: 'setup.newDocument', alerts: [], windows: [{scene: 'textedit', number: 7, from: {x: 256, y: 107, width, height: 505}, moved: false}]}]});
+  const a = {record: '/o/cc/run-1/meta.json', pair: '/o/vc/run-1/meta.json'};
+  assert.equal(check('record', a, 0, {[a.record]: baseline(503), [a.pair]: baseline(520)})[0], 'NO VERDICT');
+  // An incomplete run keeps its own reading: a runtime error is never hidden behind the frames.
+  assert.equal(check('record', step, 1, {[step.record]: {...matrix(frame(30)), complete: false, problems: ['lane lost']}, [step.pair]: matrix(frame(22))})[0], 'FAIL');
+});
+
 // Ruling 1149: a run whose side answered on another engine measured nothing of that side. Above all the cua side that
 // attested the vendor's (state 1): NO VERDICT, its cause named, whatever the record says of itself.
 test('ruling 1149: a run of the cua side that attests the vendor engine is NO VERDICT naming state 1, in each record\'s shape; never a pass', () => {

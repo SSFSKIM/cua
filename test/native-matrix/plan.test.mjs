@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
-import {CASES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, focusVerdict, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, CHROME_DRAG_POINTS, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, chromeDragLayout, focusVerdict, framedCells, groundCase, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
 import {NO_SUCH_ACTION, caseCells, findingCell, panelCell, selectCell} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {focusedIndexOf, selectedTextOf} from '../../scripts/native-matrix/matrix-text.mjs';
 import {NOTE} from '../../src/services/engine/render.mjs';
@@ -242,6 +242,60 @@ test('the caret click must collapse a selection it did not make; the drag must s
   const squashed = electronField();
   squashed.app.getScreenshot = async () => jpeg(1440, 512);
   assert.match((await runCase('electron', 'electron', squashed.app, 'drag', 'select')).prepare.value.reason, /shape/);
+});
+
+// The Chrome page's notes field (index 22 in the vendor's golden), focused, its value set by setValue; a click by point
+// leaves the focus where it is, as a click inside the field does.
+function chromeField() {
+  const lines = golden('chrome', 'vendor.txt').split('\n\nThe focused UI element')[0].split('\n');
+  const state = {value: ''};
+  const app = fakeApp('', {setValue: (_, index, v) => { if (index === 22) state.value = v; }});
+  Object.defineProperty(app, 'ax', {get: () => withTrailer(lines.map(line => (/^\t+22 /.test(line) && state.value ? `${line}, Value: ${state.value}` : line)).join('\n'),
+    {focused: lines.find(l => /^\t+22 /.test(l)).trim()}), set: () => {}});
+  return app;
+}
+const jpegOf = (w, h) => Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, h >> 8, h & 255, w >> 8, w & 255, 0, 0, 0, 0, 0, 0]);
+const dragPoints = async (c, shot) => {
+  const app = chromeField();
+  app.getScreenshot = async () => shot;
+  const prepare = await run(caseCells('chrome', c).prepare, {apps: {chrome: app}});
+  delete globalThis.__m;
+  return {ready: prepare.value?.ready, points: app.calls.filter(x => x[0] === 'click').map(x => x[1])};
+};
+
+// Ruling 1169: on a hosted runner Chrome's window is the venue's 800x600, not the mini's 1000x760. The page has no
+// stylesheet, so the notes field stands at the same window points in either window; only the window's size, which turns
+// window points into the screenshot's pixels, follows the frame. The layout is re-grounded on the frame the run
+// launched Chrome at (the venue's), never scaled from the mini's.
+test('ruling 1169: Chrome\'s drag is grounded on the frame the run launched its window at', async () => {
+  const drag = casesOf('chrome', 'drag', 'select');
+  assert.equal(groundCase('chrome', drag, null), drag, 'off a hosted runner: the mini\'s layout');
+  assert.equal(groundCase('chrome', drag, {}), drag, 'a venue that names no Chrome frame changes nothing');
+  assert.deepEqual(chromeDragLayout({x: 22, y: 60, width: 800, height: 600}), {window: [800, 600], ...CHROME_DRAG_POINTS});
+  const hosted = groundCase('chrome', drag, {chrome: {x: 22, y: 60, width: 800, height: 600}});
+  assert.notEqual(hosted, drag);
+  assert.deepEqual([hosted.method, hosted.case, hosted.expect, hosted.framed], ['drag', 'select', 'outcome', 'window points']);
+  // The hosted display is 1x: an 800x600 window's screenshot is 800x600, so the field's window points are its pixels.
+  assert.deepEqual(await dragPoints(hosted, jpegOf(800, 600)), {ready: true, points: [CHROME_DRAG_POINTS.to, CHROME_DRAG_POINTS.from]});
+  // The mini's layout on the mini's 2x 1000x760 window: the same window points, doubled.
+  assert.deepEqual(await dragPoints(drag, jpegOf(2000, 1520)), {ready: true, points: [[400, 474], [48, 384]]});
+  // What re-grounding replaces: the mini's layout on the hosted shot passes its shape check (0.75 against 0.76) and
+  // would have scaled the points by 0.8, off the field's lines.
+  assert.deepEqual((await dragPoints(drag, jpegOf(800, 600))).points, [[160, 190], [19, 154]]);
+  // The other targets' cases are not grounded on a frame of the venue: the fixture keeps its size (its layout is the
+  // mini's), TextEdit's drag is in fractions of its window, Finder's cases address rows.
+  const frames = {chrome: {x: 22, y: 60, width: 800, height: 600}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
+  for (const target of ['textedit', 'finder', 'electron', 'openPanel']) for (const c of CASES[target]) assert.equal(groundCase(target, c, frames), c, `${target} ${c.method}.${c.case}`);
+});
+
+test('the cells grounded on a scene\'s frame are named from the plan, in both regimes', () => {
+  assert.deepEqual(framedCells('chrome'), [{id: 'chrome/frontmost/drag.select', framed: 'window points'}, {id: 'chrome/background/drag.select@textedit', framed: 'window points'}]);
+  assert.deepEqual(framedCells('electron').map(c => c.id), ['electron/frontmost/drag.select', 'electron/frontmost/click.point', 'electron/background/drag.select@finder']);
+  assert.deepEqual(framedCells('textedit').map(c => [c.id, c.framed]), [['textedit/frontmost/drag.select', 'window fractions'], ['textedit/background/drag.select@finder', 'window fractions'],
+    ['textedit/background/drag.select@chrome', 'window fractions']]);
+  assert.ok(framedCells('finder').every(c => c.framed === 'visible rows'));
+  assert.deepEqual(framedCells('finder').filter(c => !c.id.includes('@')).map(c => c.id),
+    ['finder/frontmost/click.row', 'finder/frontmost/pressKey.down', 'finder/frontmost/typeText.typeSelect', 'finder/frontmost/scroll.down', 'finder/frontmost/performSecondaryAction.down']);
 });
 
 test('a refused case passes only on the vendor\'s sentence with nothing changed', async () => {

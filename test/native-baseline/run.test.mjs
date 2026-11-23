@@ -314,6 +314,12 @@ test('a hosted run records the runner the device attests; a stale record or a co
   assert.equal(off.meta.runner, null);
   assert.match(String((await macRun(t, {runner: hostedRecord('1'), env: HOSTED_ENV})).refusal), /names run 1 attempt 1, not this job's run 45144483807 attempt 1/);
   assert.match(String((await macRun(t, {runner: hostedRecord(), env: {}})).refusal), /this controller is not on one/);
+  // Ruling 1169: the venue setup chose rides in the record and the run keeps it as meta.venue, apart from the attestation.
+  const venue = {frames: {openPanel: {x: 80, y: 80, width: 720, height: 440}}, differences: []};
+  const placed = await macRun(t, {runner: home => ({...hostedRecord()(home), venue}), env: HOSTED_ENV});
+  assert.deepEqual(placed.meta.venue, venue);
+  assert.equal(placed.meta.runner.venue, undefined);
+  assert.equal(hosted.meta.venue, undefined, 'a record with no venue gives none');
 });
 
 test('a macOS run whose target is not frontmost sends no key, records key_skipped_not_frontmost and fails', async t => {

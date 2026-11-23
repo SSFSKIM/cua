@@ -6,6 +6,11 @@ import {readFileSync} from 'node:fs';import {isDeepStrictEqual} from 'node:util'
 import {provisionalCellsFor,recordedCells} from './pending-cells.mjs';
 export const vendorDefects=JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json',import.meta.url),'utf8'));
 const engineScoped=d=>d.engine!==undefined;
+// The release a declaration is matched against: a vendor engine's defect against the vendor release the run's vendor
+// engine ran from (#171 M6a: the run's own runtime is cua's, so the preparation records that release apart, as
+// vendorRelease; a run from before M6a served the vendor's runtime itself), any other against the run's runtime.
+// ./native-linux.mjs vendorReleaseOf reads it the same way.
+const runReleaseFor=(d,meta)=>engineScoped(d)?meta.vendorRelease??meta.runtimeRelease:meta.runtimeRelease;
 const validScope=d=>engineScoped(d)?d.host==='cua'&&d.engine==='vendor'&&d.platform==='linux'&&d.observation===undefined:d.host==='vendor'&&Boolean(d.observation);
 // A vendor engine's declared outcome may admit more than one exact content (#171 M5, T4's arm64 round: arm64's typeText
 // ends gedit answering either of two error texts), `result.contents` in place of `result.content`, and may mask the
@@ -25,7 +30,7 @@ if(!Array.isArray(vendorDefects)||new Set(vendorDefects.map(d=>d.id)).size!==ven
 export function declaredVendorDefect(meta,row,rows){
  if(Object.hasOwn(row,'cell')||row.assertion?.ok!==false)return null;
  return vendorDefects.find(d=>{
-  if(meta.host!==d.host||engineScoped(d)&&meta.engine!==d.engine||meta.platform!==d.platform||meta.runtimeRelease!==d.runtimeRelease||row.case!==d.case||!isDeepStrictEqual(row.assertion,d.assertion)||(row.vendorDefect&&row.vendorDefect!==d.id))return false;
+  if(meta.host!==d.host||engineScoped(d)&&meta.engine!==d.engine||meta.platform!==d.platform||runReleaseFor(d,meta)!==d.runtimeRelease||row.case!==d.case||!isDeepStrictEqual(row.assertion,d.assertion)||(row.vendorDefect&&row.vendorDefect!==d.id))return false;
   const observation=rows.find(r=>r.case===d.case&&r.cell==='boundary'),result=rows.find(r=>r.case===d.case&&r.cell===d.result.cell);
   if(!engineScoped(d)&&!(observation?.ok===true&&isDeepStrictEqual(observation.value,d.observation)))return false;
   return result?.ok===true&&result.isError===d.result.isError&&Array.isArray(result.content)&&admitted(d).some(content=>isDeepStrictEqual(masked(d,result.content),content));

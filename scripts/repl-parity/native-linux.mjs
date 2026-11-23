@@ -32,6 +32,12 @@ export function validateNativeLinuxExpected(file, defects = vendorDefects()) {
   }
   return file;
 }
+// The vendor release a Linux run's vendor engine runs from: since #171 M6a the run's runtime is cua's own (runtimeRelease,
+// the derived cua-linux-… release) and the preparation records the vendor release its checkout pins (vendorRelease); a
+// run recorded before M6a served the vendor's runtime, so its runtimeRelease is that release. An M6a run whose vendor
+// release went unrecorded falls to its own runtime's name, which no defect or declaration names: it fails closed.
+// ./vendor-defects.mjs reads a run's vendor release the same way.
+export const vendorReleaseOf = meta => meta.vendorRelease ?? meta.runtimeRelease;
 // The declarations a diff of two runs applies (M5's T4): those whose vendor defect names the runs' vendor runtime release,
 // so each architecture's runs are held to its own declarations, never to another's. An architecture with none yet has its
 // vendor failures reported as differences: the diff fails closed until they are measured and declared.
@@ -56,5 +62,6 @@ export function checkEnginePair(a, b, {declarations = []} = {}) {
   if (a.device !== b.device) throw new Error(`the runs are on two devices (${a.device}, ${b.device})`);
   if (a.commit !== b.commit) throw new Error(`the runs were prepared at two commits (${a.commit}, ${b.commit}): one sitting is one preparation`);
   if (a.harnessCommit !== b.harnessCommit) throw new Error('the runs\' cells came from two controller commits: the same cells run on both engines');
-  if (a.runtimeRelease !== b.runtimeRelease) throw new Error(`the runs served two vendor runtimes (${a.runtimeRelease}, ${b.runtimeRelease})`);
+  if (vendorReleaseOf(a) !== vendorReleaseOf(b)) throw new Error(`the runs served two vendor runtimes (${vendorReleaseOf(a)}, ${vendorReleaseOf(b)})`);
+  if (a.runtimeRelease !== b.runtimeRelease) throw new Error(`the runs served two runtimes (${a.runtimeRelease}, ${b.runtimeRelease})`);
 }

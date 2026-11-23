@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {assessAssertions, vendorDefects} from '../../scripts/repl-parity/vendor-defects.mjs';
 import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
-import {NATIVE_LINUX_EXPECTED, checkEnginePair, declarationsFor, validateNativeLinuxExpected} from '../../scripts/repl-parity/native-linux.mjs';
+import {NATIVE_LINUX_EXPECTED, checkEnginePair, declarationsFor, validateNativeLinuxExpected, vendorReleaseOf} from '../../scripts/repl-parity/native-linux.mjs';
 import scenarios from './scenarios/native.mjs';
 
 const TYPE = 'native/app/typetext', PASTE = 'native/app/paste', KEY = 'native/app/presskey';
@@ -157,4 +157,36 @@ test("an x64 pair still passes on its declarations; an arm64 pair with x64's out
   assert.equal(own.ok, false);
   assert.deepEqual([...new Set(own.differences.filter(d => d.kind === 'overdeclared').map(d => d.case))].sort(), [PASTE, TYPE]);
   assert.ok(own.differences.some(d => d.kind === 'assertion' && d.case === TYPE));
+});
+
+// #171 M6a: a Linux run's runtime is cua's own (runtimeRelease, the derived cua-linux-… release), and the vendor's
+// engine runs from the vendor release this checkout pins (vendorRelease, the preparation's). The vendor engine's defects
+// and the declarations are of that vendor release; a run recorded before M6a, whose runtimeRelease was the vendor's,
+// is read as before. A run whose vendor release is not the defect's fails closed.
+const OWN = 'cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-m0123456789ab';
+const m6a = (engine, vendorRelease = RELEASE) => {const run = lane(engine); Object.assign(run.meta, {runtimeRelease: OWN, vendorRelease}); return run;};
+
+test('an M6a pair is held to the declarations of its vendor release, not of its own runtime', () => {
+  assert.equal(vendorReleaseOf(m6a('vendor').meta), RELEASE);
+  assert.equal(vendorReleaseOf(lane('vendor').meta), RELEASE, 'a run from before M6a: its runtime was the vendor\'s');
+  assert.equal(vendorReleaseOf({runtimeRelease: OWN, vendorRelease: null}), OWN, 'a vendor release left unrecorded matches no defect');
+  const vendor = m6a('vendor'), assessed = assessAssertions(vendor.meta, vendor.rows);
+  assert.deepEqual(assessed.unexpectedFailures, []);
+  assert.deepEqual(assessed.vendorDefects.map(d => d.case), [TYPE, PASTE]);
+  const declarations = declarationsFor(NATIVE_LINUX_EXPECTED, vendorReleaseOf(vendor.meta));
+  assert.deepEqual(declarations, X64_DECLARATIONS);
+  const result = compareParityRuns(vendor, m6a('cua'), {engineDeclarations: declarations});
+  assert.equal(result.ok, true, JSON.stringify(result.differences));
+  // fails closed: another vendor release, none recorded, or the own runtime taken for the vendor's
+  for (const run of [m6a('vendor', ARM64), m6a('vendor', null), (r => {delete r.meta.vendorRelease; return r;})(m6a('vendor'))])
+    assert.ok(assessAssertions(run.meta, run.rows).unexpectedFailures.some(r => r.case === TYPE), JSON.stringify(run.meta.vendorRelease));
+  assert.deepEqual(declarationsFor(NATIVE_LINUX_EXPECTED, OWN), []);
+});
+
+test('checkEnginePair: an M6a pair serves one own runtime and one vendor release', () => {
+  const [v, c] = [m6a('vendor').meta, m6a('cua').meta];
+  assert.doesNotThrow(() => checkEnginePair(v, c, {}));
+  assert.throws(() => checkEnginePair(v, {...c, vendorRelease: ARM64}, {}), /two vendor runtimes/);
+  assert.throws(() => checkEnginePair(v, {...c, runtimeRelease: 'cua-linux-x64-other'}, {}), /two runtimes \(/);
+  assert.throws(() => checkEnginePair(v, lane('cua').meta, {}), /two runtimes \(/, 'an M6a run is never paired with one from before it');
 });

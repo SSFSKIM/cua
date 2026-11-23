@@ -27,7 +27,7 @@ import {fixtureProcess} from './browser-parity/resources.mjs';
 import {LINUX_COMPUTER_DEFAULT,compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
 import {DEVICES,isDeclaredDevice} from './repl-parity/devices.mjs';
 import {laneEngineProblem} from './repl-parity/engine-answered.mjs';
-import {checkEnginePair,declarationsFor,validateNativeLinuxExpected} from './repl-parity/native-linux.mjs';
+import {checkEnginePair,declarationsFor,validateNativeLinuxExpected,vendorReleaseOf} from './repl-parity/native-linux.mjs';
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
 const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
 const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
@@ -101,8 +101,9 @@ export async function main(argv=process.argv.slice(2)){
   // The Linux engine lanes (#171): two runs that name their engine pair by engine, against the Linux native expected
   // file's declarations (./repl-parity/native-linux.mjs), never the host comparison's allowances.
   if(left.meta.engine!==undefined||right.meta.engine!==undefined){
-   // each architecture's own declarations, by the vendor release the runs served (M5's T4)
-   const declarations=v.expected?declarationsFor(validateNativeLinuxExpected(json(v.expected)),left.meta.runtimeRelease):[];
+   // each architecture's own declarations, by the vendor release the runs served (M5's T4; since #171 M6a recorded apart
+   // from the run's own runtime, native-linux.mjs vendorReleaseOf)
+   const declarations=v.expected?declarationsFor(validateNativeLinuxExpected(json(v.expected)),vendorReleaseOf(left.meta)):[];
    checkEnginePair(left.meta,right.meta,{declarations});
    const selected=selectScenarios(scenarios,inventory,{suite:v.suite??left.meta.suite,through:v.through??left.meta.through??undefined,platform:left.meta.platform}).scenarios;
    const result=compareParityRuns(documentComparisonRun(left),documentComparisonRun(right),{engineDeclarations:declarations,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)]))});
@@ -136,7 +137,7 @@ export async function main(argv=process.argv.slice(2)){
  assertNativeEngine(selected,v);
  const environmentPending=resolvePendingDeclarations({logicalCells:v['pending-cell']??[],reason:v['pending-reason'],platform:prepared.platform,through:v.through,scenarios:selected,newRun:true});
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,nodeMode:prepared.nodeMode??null,nodeOverride:prepared.nodeOverride??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:[...LINUX_COMPUTER_DEFAULT.surfaces],sandbox:LINUX_COMPUTER_DEFAULT.sandbox}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),...(v.engine!==undefined?{engine:v.engine,engineBin:v['engine-bin']??null,engineAnswered:[]}:{}),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,...(prepared.platform==='linux'?{vendorRelease:prepared.vendorRelease??null}:{}),ownNode:prepared.ownNode??null,nodeMode:prepared.nodeMode??null,nodeOverride:prepared.nodeOverride??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:[...LINUX_COMPUTER_DEFAULT.surfaces],sandbox:LINUX_COMPUTER_DEFAULT.sandbox}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),...(v.engine!==undefined?{engine:v.engine,engineBin:v['engine-bin']??null,engineAnswered:[]}:{}),complete:false,connections:[],hostAttestations:[]};
  // --pause-file or CUA_PAUSE_FILE (scripts/mini-pause.mjs): every cell waits at its boundary while the file exists; each pause is evidence.
  const pauseFile=v['pause-file']??process.env.CUA_PAUSE_FILE;
  if(pauseFile){meta.pauses=[];usePauseGate(pauseGate({file:pauseFile,record:p=>meta.pauses.push(p),log:line=>console.error(`repl-parity: ${line}`)}));}

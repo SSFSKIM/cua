@@ -1280,7 +1280,7 @@ final class ClickDeliveryTests: XCTestCase {
     held.targetAbove = false
     let standing = activation(held, at: insidePoint)
     try standing.activate()
-    _ = standing.deliver(window: 41, pointer: true, ranBy: nil) {}
+    _ = try standing.deliver(window: 41, pointer: true, ranBy: nil) {}
     XCTAssertEqual(held.scheduledBy, [.holdRelease, .holdRelease, .holdRelease])
   }
 
@@ -1805,8 +1805,13 @@ struct GuardPost: Equatable {
 /// order and the activation point answered.
 final class GuardSeam {
   var posts: [GuardPost] = []
-  /// Run after each left mouse down is posted (#200: what the app does at the action's own mouse down).
+  /// Run after each left mouse down is posted (#200: what the app does at the action's own mouse down), and after each
+  /// mouse down of the other kinds a scene adds to `mouseDownTypes` (#538: a right click's).
   var onMouseDown: (() -> Void)?
+  var mouseDownTypes: Set<NSEvent.EventType> = [.leftMouseDown]
+  /// The process holding window-server key focus (#538: a target holding it while another app is frontmost); none by
+  /// default.
+  var keyFocus: pid_t?
   /// When set, the window order the guards read: whether the target's window is above the user's. A raise of the
   /// user's window puts it back on top.
   var targetAbove: Bool?
@@ -1905,13 +1910,13 @@ final class GuardSeam {
         self.posts.append(GuardPost(kind: kind, pid: pid, flags: nil))
       }
       if let after = self.frontmostAfterPost { self.frontmost = after }
-      if made?.type == .leftMouseDown { self.onMouseDown?() }
+      if let type = made?.type, self.mouseDownTypes.contains(type) { self.onMouseDown?() }
     }
     system.frontmost = {
       self.onFrontmostRead?()
       return self.frontmost
     }
-    system.keyFocus = { nil }
+    system.keyFocus = { self.keyFocus }
     system.secondsSinceInput = { self.secondsSinceInput }
     system.holdScreenUpdates = { stamp in
       self.holds += 1

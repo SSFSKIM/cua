@@ -164,8 +164,9 @@ test('a field\'s selection evidence is lengths and SHA-256 hashes only, with wha
 // #526: cua prints a value's line breaks escaped on the element's one line (`\n`, `\r`, any other break `\uXXXX`), the
 // vendor raw. The reader is lane-aware and nothing more: the ambiguity of a multi-line value followed by another part
 // is the reader ticket's.
-test('#526: a value reads as before on either lane, and on cua\'s a multi-line value that ends its line is decoded', () => {
+test('#526: a value reads as before on either lane, and on cua\'s TextEdit\'s document, ending its line, is decoded', () => {
   const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 ${line}\n\t2 button OK\n`;
+  const doc = value => `Window: "cua-scene.rtf", App: TextEdit.\n0 standard window cua-scene.rtf\n\t\t2 text entry area (settable) ID: First Text View, Value: ${value}\n`;
   // Single-line values: exactly main's reading, on every lane.
   for (const rendering of ['vendor', 'cua', undefined]) {
     assert.equal(text.valueOfIndex(ax('text field (settable) Value: x, Placeholder: p'), 1, rendering), 'x');
@@ -174,18 +175,20 @@ test('#526: a value reads as before on either lane, and on cua\'s a multi-line v
   }
   // A backslash the vendor prints is never decoded; on cua's lane a literal backslash-n reads as a break (#555).
   for (const rendering of ['vendor', undefined]) assert.equal(text.valueOfIndex(ax('text field (settable) Value: C:\\new'), 1, rendering), 'C:\\new');
-  // cua's lane, the value the line's last part: decoded whole, every break the renderer emits.
-  assert.equal(text.valueOfIndex(ax('text entry area (settable) ID: Notes, Value: one\\ntwo\\r\\nthree\\u2028four'), 1, 'cua'), 'one\ntwo\r\nthree\u2028four');
+  // cua's lane: TextEdit's document, the line's last part, decoded whole, every break the renderer emits (ruling 1184);
+  // any other field with a break reads raw, its escapes' backslashes kept.
+  assert.equal(text.valueOfIndex(doc('one\\ntwo\\r\\nthree\\u2028four'), 2, 'cua'), 'one\ntwo\r\nthree\u2028four');
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) ID: Notes, Value: one\\ntwo'), 1, 'cua'), 'one\\ntwo');
   // The vendor's lane: raw lines as before; backslashes never decoded.
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\ntwo'), 1, 'vendor'), 'one\ntwo');
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: C:\\new\\nx'), 1, 'vendor'), 'C:\\new\\nx');
-  // Ruling 1182/1183: a multi-line value followed by another part is never decoded into a value it might not be, nor cut
-  // to a prefix: its raw escaped remainder, so a check comparing it fails rather than passes.
+  // Ruling 1182/1183/1184: a multi-line value followed by another part, TextEdit's document included, is never decoded
+  // into a value it might not be, nor cut to a prefix: its raw escaped text, so a check comparing it fails.
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo, Details: d'), 1, 'cua'), 'one\\ntwo, Details: d');
-  assert.notEqual(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo, Details: d'), 1, 'cua'), 'one\ntwo');
+  assert.equal(text.valueOfIndex(doc('one\\ntwo, Details: d'), 2, 'cua'), 'one\\ntwo, Details: d');
   // The run's bind records the lane.
   globalThis.__axRendering = 'cua';
-  try { assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo'), 1), 'one\ntwo'); } finally { delete globalThis.__axRendering; }
+  try { assert.equal(text.valueOfIndex(doc('one\\ntwo'), 2), 'one\ntwo'); } finally { delete globalThis.__axRendering; }
 });
 
 test('#552: the selected text is read inside a fence of three or more backticks', () => {
@@ -195,13 +198,18 @@ test('#552: the selected text is read inside a fence of three or more backticks'
   assert.equal(text.focusReading(ax('`````'), 1), 'masked');
 });
 
-// Ruling 1183: on cua's lane a line holding an escape is read only by its real parts.
-test('#526 ruling 1183: a Value after another part\'s escaped continuation is no value; an escaped Value with a later part is its raw remainder', () => {
+// Rulings 1183 and 1184: on cua's lane a line holding an escape (other than TextEdit's document) reads raw, from the
+// earlier of its Value part's start and its first escape: never "", never a prefix, always an escape's backslash.
+test('#526 ruling 1184: a cua line holding an escape reads raw from the earlier of its Value part and its first escape', () => {
   const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 ${line}\n`;
   // The reviewer's P1-2: "ok, extra" then a break then "next" is never read as "ok".
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: ok, extra\\nnext'), 1, 'cua'), 'ok, extra\\nnext');
-  // P2-4: an empty field whose Help part continues with "Expected Value: one" and a break: no value.
-  assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: Type here\\nExpected Value: one\\ntwo'), 1, 'cua'), null);
+  // An empty field whose Help part continues with "Expected Value: one" and a break: raw from the first escape.
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: Type here\\nExpected Value: one\\ntwo'), 1, 'cua'), '\\nExpected Value: one\\ntwo');
+  // "Help: a\nb, Value: x": not "x".
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: a\\nb, Value: x'), 1, 'cua'), '\\nb, Value: x');
+  // No Value part at all: raw from the first escape, never "".
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: a\\nb'), 1, 'cua'), '\\nb');
   // A line without an escape reads as on main, on cua's lane too.
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Help: h, Value: one, two'), 1, 'cua'), 'one');
 });

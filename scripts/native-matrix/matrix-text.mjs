@@ -52,27 +52,32 @@ export function indexOfId(ax, id) {
 // element line or the blank line before the trailer), or null when the line carries none. On cua's lane (`rendering`
 // 'cua', by default the lane the run's bind recorded, globalThis.__axRendering, ./goldens-cells.mjs BIND) a multi-line
 // value prints on its element's one line with its breaks escaped (#526: `\n`, `\r`, any other break `\uXXXX`), and so
-// does every other part's continuation. There a line holding an escape is read only by its real parts (ruling 1183):
-// a `Value: ` after an escape may sit in another part's continuation, so it is no value (null); a Value part holding an
-// escape is decoded only as the line's last part (nothing `, ` after it), and otherwise read as its raw escaped
-// remainder, never a prefix, so an exact check fails rather than passes (ruling 1182). A line without an escape reads as
-// before, a value with a later part cut at its first `, ` (#561's residue).
+// does every other part's continuation, so where a part ends cannot be read in general (#561). Ruling 1184: on cua's
+// lane only TextEdit's document is decoded: the header names App TextEdit and the element's text opens exactly
+// `text entry area (settable) ID: First Text View, Value: `, the document's text view (its identifier, its only part
+// before Value), and the value is the line's last part. Every other line holding an escape reads as its raw escaped
+// text, from the earlier of the Value part's start and the line's first escape (the first escape when there is no
+// Value part) to the line's end: it always holds an escape's backslash, so it never equals "" or an expected value and
+// an exact check fails, never passes (ruling 1182). A line without an escape reads as before, a value with a later
+// part cut at its first `, ` (#561's residue).
 export function valueOfIndex(ax, index, rendering = globalThis.__axRendering) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
   if (at < 0) return null;
   const head = lines[at], start = head.indexOf('Value: ');
+  const breaks = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g;
+  if (rendering === 'cua' && head.search(breaks) >= 0) {
+    const document = /^Window: "[^"]*", App: TextEdit\.$/.test(lines[0] ?? '')
+      && /^[~+-]?\t*\d+ text entry area \(settable\) ID: First Text View, Value: /.exec(head);
+    const rest = document ? head.slice(document[0].length) : null;
+    if (rest !== null && !rest.includes(', ')) return rest.replace(breaks, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
+    const escapeAt = head.search(breaks);
+    return head.slice(start < 0 ? escapeAt : Math.min(start + 'Value: '.length, escapeAt));
+  }
   if (start < 0) return null;
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
   const value = parts.join('\n');
-  const breaks = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g;
-  if (rendering === 'cua' && parts.length === 1 && head.search(breaks) >= 0) {
-    if (head.slice(0, start).search(breaks) >= 0) return null;
-    if (value.search(breaks) < 0) return value.split(', ')[0];
-    if (value.includes(', ')) return value;
-    return value.replace(breaks, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
-  }
   // A part after the value on its first line (only short parts follow a value; a long value moves last).
   return parts.length === 1 ? value.split(', ')[0] : value;
 }

@@ -16,12 +16,13 @@ export const windowTitleOf = text => /^Window: "([^"]*)"/m.exec(String(text))?.[
 // (src/services/engine/render.mjs escapeLineBreaks, #526), and so does every other part's continuation. There a line
 // holding an escape is matched only within its first line (the text before its first escape, the vendor's element line):
 // a name ended there by a comma, as before, or, the one exception, a final `Value:` part's first line, the escape right
-// after the name and nothing `, ` after it (a value followed by another part is not found, ruling 1182). A part's
-// continuation never matches. Every other line, and the vendor's lane, match exactly as before.
+// after the name and nothing `, ` after it (a value followed by another part is not found, ruling 1182), its label at a
+// real part start (after `, `, or after the flags group when it is the first part; ruling 1184), never inside another
+// part's text. A part's continuation never matches. Every other line, and the vendor's lane, match exactly as before.
 export function indexOfTarget(ax, name, rendering = globalThis.__axRendering) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)'), inFirst = new RegExp('(?:^| |: )' + escaped + ',');
-  const finalValue = new RegExp('(?:^| |, )Value: ' + escaped + '$');
+  const finalValue = new RegExp('(?:, |\\) )Value: ' + escaped + '$');
   const escape = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/;
   for (const line of String(ax).split('\n')) {
     const element = /^[~+-]?[\t ]*(\d+) (.*)$/.exec(line);

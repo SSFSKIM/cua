@@ -7,7 +7,7 @@ import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {buildLaunch, createLaunchDirs, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR, BIN_DIR, COMPAT_EXECUTABLE} from '../src/runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, nativeEngineFor, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR, BIN_DIR, COMPAT_EXECUTABLE} from '../src/runtime/launch.mjs';
 import {assertSandboxFits, assertTrustedServicesContained} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
@@ -992,7 +992,7 @@ function selectCell({setting, defaultEngine, host, node, installed, pending = nu
   const ambient = {...setting.env, ...(host === undefined ? {} : {CUA_REPL_HOST: host})};
   const result = outcome(() => replHostFor({platform: 'darwin', surfaces, ambient, resolveOwnNode: () => { asked.node++; return (node ? withNode : withoutNode)(); },
     engine: {defaultEngine, config: () => { asked.config++; return setting.config; }, installed: () => { asked.installed++; return installed === 'outdated' ? OLD_APP : installed ? APP : null; },
-      pending: () => { asked.pending++; return pending; }, minimumVersion: FIXTURE_MINIMUM}}));
+      pending: () => { asked.pending++; return pending; }, buildFailure: () => null, minimumVersion: FIXTURE_MINIMUM}}));
   return {result, asked};
 }
 const shapeOf = result => (result.code ? {code: result.code} : {host: result.host, reason: result.reason, engine: result.engine.engine, status: result.engine.status});
@@ -1012,8 +1012,10 @@ test('the engine selection covers every cell of the table: setting, default, CUA
       const engine = setting.invalid ? null : setting.engine ?? defaultEngine;
       assert.equal(asked.installed, engine === 'cua' ? 1 : 0, `${label}: the approved engine is read only for cua's engine`);
       if (asked.node) assert.ok(engine === 'cua' && installed === true && host !== 'vendor', `${label}: Node only on the own host's path`);
-      // pending.json is read only to word the remedy for an engine below the minimum.
-      assert.equal(asked.pending, engine === 'cua' && installed === 'outdated' ? 1 : 0, `${label}: pending read`);
+      // pending.json is read only to word a remedy: for an engine below the minimum, and for an explicit selection's
+      // refusal with none approved (ruling 1148: a compatible pending build gets the approve alone).
+      const explicitCua = engine === 'cua' && (Boolean(setting.explicit) || host === 'cua');
+      assert.equal(asked.pending, engine === 'cua' && (installed === 'outdated' || (!installed && explicitCua)) ? 1 : 0, `${label}: pending read`);
       if (result.engine?.engine === 'cua') assert.deepEqual(result.engine.app, {bundlePath: APP.bundlePath, engineVersion: APP.engineVersion, build: APP.build}, label);
       if (result.host === 'cua') assert.equal(result.node, NODE24, label);
       cells++;
@@ -1048,6 +1050,21 @@ test('the rows written out: today\'s path, the target, comparison A\'s lane and 
   assert.deepEqual(pick('CUA_NATIVE_ENGINE=Cua', 'vendor', undefined, true, true), {code: 'invalid_setting'});
 });
 
+// The design session's ask on ruling 1148: the explicit refusal goes through the same reason and remedy as the default's
+// fallback, so a compatible build already pending gets the approve alone, a failed build its cause.
+test('an explicit cua engine with none approved is refused with the fallback\'s reason and remedy: approve alone for a compatible pending build', () => {
+  const pending = {build: 'd'.repeat(64), engineVersion: MIN_ENGINE_VERSION, bundlePath: '/e/pending/cua Engine.app', builtAt: null};
+  const refused = engine => outcome(() => nativeEngineFor({env: {HOME: '/Users/u', CUA_NATIVE_ENGINE: 'cua'}, config: () => ({}), installed: () => null, ...engine}));
+  const awaiting = refused({pending: () => pending, buildFailure: () => null});
+  assert.equal(awaiting.code, 'engine_not_installed');
+  assert.match(awaiting.message, /no approved cua engine \(build dddddddddddd built, awaiting approve\) \(.*\): to use it, run `cua engine approve` with the owner at the console; or set CUA_NATIVE_ENGINE=vendor for the vendor engine$/);
+  assert.doesNotMatch(awaiting.message, /cua install --engine/);
+  const stale = refused({pending: () => ({...pending, engineVersion: '0.1.0'}), buildFailure: () => null});
+  assert.match(stale.message, /pending is version 0\.1\.0, older than .*: to use cua's engine, build it with `cua install --engine`/);
+  const failed = refused({pending: () => null, buildFailure: () => ({code: 'engine_identity_missing', cause: 'no signing identity is configured', failedAt: null})});
+  assert.match(failed.message, /no approved cua engine \(build failed: no signing identity is configured\) .*: fix that, then run `cua install --engine`/);
+});
+
 test('the three engine_not_installed refusals and the refusal precedence: unknown value, host setting, approved engine, Node', () => {
   const refusal = (settingLabel, host, node, installed, defaultEngine = 'vendor') => selectCell({setting: SETTINGS[settingLabel], defaultEngine, host, node, installed}).result;
   // engine_not_installed whatever the host and the Node: the explicit cua with no approved engine.
@@ -1055,7 +1072,8 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
     const refused = refusal('CUA_NATIVE_ENGINE=cua', host, node, false);
     assert.equal(refused.code, 'engine_not_installed', `${host} ${node}`);
     // cua install --engine builds and signs the bundle, pending; approving it is cua engine approve's, the owner's step.
-    assert.match(refused.message, /install it with `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console;/);
+    // Ruling 1148: the refusal gives the fallback's own reason and remedy (engine-notice.mjs).
+    assert.match(refused.message, /selects cua's own engine, and this Mac has no approved cua engine \(not built\) \(.*cua Engine\.app\): to use cua's engine, run `cua install --engine`, then `cua engine approve` with the owner at the console;/);
     assert.match(refused.message, /CUA_NATIVE_ENGINE=vendor/);
   }
   assert.match(refusal('engine.json cua', undefined, true, false).message, /engine\.json/, 'names where the setting came from');

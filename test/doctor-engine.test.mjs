@@ -267,7 +267,10 @@ test('cua\'s engine preferred with no approved engine: refused sessions fail the
     [facts({approved: null, signature: {kind: 'unreadable', identityMatches: null, reason: 'codesign did not finish within 60 s'}, running: false, status: null}), /could not be read \(codesign did not finish within 60 s\), so it is not taken as approved/],
   ];
   for (const [read, words] of cases) {
-    const refused = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: false, read});
+    // The pending build the row names is engine-minimum.mjs pendingEngine's (`pending`), the one answer the session's
+    // notice reads too; here it agrees with the read's.
+    const pending = read.pending ? {build: read.pending.build, engineVersion: '0.4.1', bundlePath: read.pending.bundlePath, builtAt: read.pending.builtAt} : null;
+    const refused = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: false, read, pending});
     assert.equal(refused.row.status, 'fail', refused.row.detail);
     assert.equal(refused.report.selected, null, 'sessions drive no engine');
     assert.deepEqual(refused.report.preferred, {engine: 'cua', reason: 'explicit'});

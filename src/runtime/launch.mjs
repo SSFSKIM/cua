@@ -197,6 +197,8 @@ import {helperFor} from '../sandbox/linux.mjs';
 import {removeCompatSettings, SESSION_ID, writeCompatSettings} from '../sandbox/compat-settings.mjs';
 import {engineDirectory, enginePaths, installedEngine} from './engine.mjs';
 import {outdatedRemedy, pendingEngine} from './engine-minimum.mjs';
+import {readBuildFailure} from './engine-build-failure.mjs';
+import {missingEngine} from './engine-notice.mjs';
 import {engineSettingsPath, readEngineSettings} from './engine-sign.mjs';
 import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION, belowMinimum, plistString} from '../services/engine/client.mjs';
 import {cursorContext, cursorEnv} from './cursor-identity.mjs';
@@ -504,10 +506,11 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // approve`, else `cua install --engine` builds one first (ruling 1118; outdatedRemedy). An approved engine at or above
 // the minimum is driven whatever is pending. The service's client checks the minimum again at each connect.
 export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, pending,
-  minimumVersion = MIN_MACOS_ENGINE_VERSION}) {
+  buildFailure, minimumVersion = MIN_MACOS_ENGINE_VERSION}) {
   if (platform === 'linux') return linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion});
   installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
   pending ??= () => pendingEngine({dir: engineDirectory(env.HOME || homedir())});
+  buildFailure ??= () => readBuildFailure({dir: engineDirectory(env.HOME || homedir())});
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
     if (requestedHost === 'cua')
@@ -518,7 +521,10 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
   if (!app) {
     if (setting.reason !== 'default' || requestedHost === 'cua') {
       const bundle = enginePaths(engineDirectory(env.HOME || homedir())).bundle;
-      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and no approved engine is installed on this Mac (${bundle}, approved by \`cua engine approve\`): install it with \`cua install --engine\`, which builds it pending approval, then approve it with \`cua engine approve\` with the owner at the console; or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
+      // The fallback's own reason and remedy (engine-notice.mjs, ruling 1148): approve alone for a compatible build
+      // already pending, a failed build's cause.
+      const {why, remedy} = missingEngine({pending: pending(), buildFailure: buildFailure(), minimum: minimumVersion});
+      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and this Mac has ${why} (${bundle}): ${remedy}; or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
     }
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
   }

@@ -22,22 +22,32 @@ const BUILD_THEN_APPROVE = 'run `cua install --engine`, then `cua engine approve
 // read for engine_not_installed; an outdated selection carries its own.
 export function engineFallback({selection, pending = null, buildFailure = null, minimum = MIN_MACOS_ENGINE_VERSION}) {
   if (selection?.engine !== 'vendor') return null;
-  if (selection.reason === 'engine_not_installed') {
-    if (pendingMeetsMinimum(pending, minimum))
-      return {why: `no approved cua engine (build ${shortBuild(pending.build)} built, awaiting approve)`, remedy: 'to use it, run `cua engine approve` with the owner at the console'};
-    if (buildFailure) return {why: `no approved cua engine (build failed: ${buildFailure.cause})`, remedy: `fix that, then ${BUILD_THEN_APPROVE}`};
-    // A build pending below the minimum: approving it would leave the session on the vendor engine (ruling 1118's rule,
-    // as outdatedRemedy words it for an approved engine).
-    if (pending?.bundlePath)
-      return {why: `no approved cua engine (build ${shortBuild(pending.build)} pending is version ${pending.engineVersion}, older than ${minimum}, the oldest this cua drives)`,
-        remedy: `to use cua's engine, ${outdatedRemedy(pending, minimum)}`};
-    return {why: 'no approved cua engine (not built)', remedy: `to use cua's engine, ${BUILD_THEN_APPROVE}`};
-  }
+  if (selection.reason === 'engine_not_installed') return missingEngine({pending, buildFailure, minimum});
   if (selection.reason === 'engine_outdated')
     return {why: `the approved cua engine is version ${selection.outdated.engineVersion}, older than ${selection.minimum}, the oldest this cua drives`,
       remedy: outdatedRemedy(selection.pending, selection.minimum)};
   return null;
 }
+
+// Why there is no approved cua engine, and what to run -> {why, remedy}: the default's fallback and an explicit
+// selection's refusal (launch.mjs nativeEngineFor) say it alike. A build pending at or above the minimum speaks first
+// (approving it is what works). Otherwise the newer of the last failure and a build pending below the minimum, by
+// failedAt against the pending build's builtAt; a pending build with no recorded build time yields to the failure,
+// whose time is always recorded.
+export function missingEngine({pending = null, buildFailure = null, minimum = MIN_MACOS_ENGINE_VERSION}) {
+  if (pendingMeetsMinimum(pending, minimum))
+    return {why: `no approved cua engine (build ${shortBuild(pending.build)} built, awaiting approve)`, remedy: 'to use it, run `cua engine approve` with the owner at the console'};
+  // A build pending below the minimum: approving it would leave the session on the vendor engine (ruling 1118's rule,
+  // as outdatedRemedy words it for an approved engine).
+  const stale = pending?.bundlePath
+    ? {why: `no approved cua engine (build ${shortBuild(pending.build)} pending is version ${pending.engineVersion}, older than ${minimum}, the oldest this cua drives)`,
+      remedy: `to use cua's engine, ${outdatedRemedy(pending, minimum)}`}
+    : null;
+  const failed = buildFailure ? {why: `no approved cua engine (build failed: ${buildFailure.cause})`, remedy: `fix that, then ${BUILD_THEN_APPROVE}`} : null;
+  if (stale && failed) return newer(pending.builtAt, buildFailure.failedAt) ? stale : failed;
+  return stale ?? failed ?? {why: 'no approved cua engine (not built)', remedy: `to use cua's engine, ${BUILD_THEN_APPROVE}`};
+}
+const newer = (at, than) => Boolean(at) && Boolean(than) && Date.parse(at) > Date.parse(than);
 
 // engineFallback with its inputs read: `engine` carries nativeEngineFor's seams (`pending`, `minimumVersion`) and
 // `buildFailure`; without them, the files of the engine directory under `env.HOME`. Nothing is read for a selection

@@ -355,12 +355,16 @@ function notInUseRow(selection, facts, settings, builds, fallback) {
 }
 
 // Why the bundle at the approved location is not the approved engine, and what to run. A build pending beside it is
-// what approve takes first, unless it is older than the minimum (`builds`), when approving it would not be used.
+// what approve takes first, unless it is older than the minimum, when approving it would not be used. The pending build
+// is `builds.pending` (engine-minimum.mjs pendingEngine, the slot authoritative): the one answer the session's notice and
+// this row's opening line read too (ruling 1148).
 function installState(facts, builds) {
   const at = facts.bundlePath;
-  if (facts.pending && builds.pending?.bundlePath && !pendingMeetsMinimum(builds.pending, builds.minimum))
-    return `${facts.exists ? `the bundle at ${at} is not approved` : `no bundle at ${at}`}, and build ${shortBuild(builds.pending.build)} is pending beside it (${builds.pending.bundlePath}), but its version ${builds.pending.engineVersion} is older than ${builds.minimum}, the oldest this cua drives, so approving it would not be used: ${outdatedRemedy(builds.pending, builds.minimum)}`;
-  if (facts.pending) return `${facts.exists ? `the bundle at ${at} is not approved` : `no bundle at ${at}`}, and build ${shortBuild(facts.pending.build)} is pending beside it (${facts.pending.bundlePath}): cua engine approve, with the owner at the console, puts it in place and approves it`;
+  const pending = builds.pending?.bundlePath ? builds.pending : null;
+  const here = facts.exists ? `the bundle at ${at} is not approved` : `no bundle at ${at}`;
+  if (pending && !pendingMeetsMinimum(pending, builds.minimum))
+    return `${here}, and build ${shortBuild(pending.build)} is pending beside it (${pending.bundlePath}), but its version ${pending.engineVersion} is older than ${builds.minimum}, the oldest this cua drives, so approving it would not be used: ${outdatedRemedy(pending, builds.minimum)}`;
+  if (pending) return `${here}, and build ${shortBuild(pending.build)} is pending beside it (${pending.bundlePath}): cua engine approve, with the owner at the console, puts it in place and approves it`;
   if (!facts.exists) return `no bundle at ${at}: build it with cua install --engine, then approve it with cua engine approve (the owner at the console)`;
   if (facts.approved === null) return `the signature of the bundle at ${at} could not be read (${facts.signature?.reason ?? 'unknown'}), so it is not taken as approved; codesign may be waiting behind a prompt at the console`;
   if (facts.approvedBuild && facts.approvedBuild !== facts.build) return `the bundle at ${at} is build ${shortBuild(facts.build)}, but approved.json approves build ${shortBuild(facts.approvedBuild)}: run cua engine approve with the owner at the console`;

@@ -42,6 +42,19 @@ test('a pending build older than the minimum, with no approved engine: approving
   assert.doesNotMatch(fallback.remedy, /^to use it, run `cua engine approve`/);
 });
 
+// A build pending below the minimum and a failure record: the newer known fact speaks. A pending build with no recorded
+// build time is taken as older than the failure, whose time is always recorded.
+test('a pending build below the minimum and a failure record: the newer one names the reason; an unknown build time yields to the failure', () => {
+  const failure = {code: 'engine_build_failed', cause: 'Xcode is not installed or not selected', failedAt: '2026-11-22T00:00:00.000Z'};
+  const stale = at => ({...PENDING, engineVersion: '0.1.0', builtAt: at});
+  const why = (pending, buildFailure) => engineFallback({selection: NOT_INSTALLED, pending, buildFailure, minimum: MINIMUM}).why;
+  assert.match(why(stale('2026-11-23T00:00:00.000Z'), failure), /build a1b2c3d4e5f6 pending is version 0\.1\.0/, 'the pending build is newer');
+  assert.match(why(stale('2026-11-21T00:00:00.000Z'), failure), /build failed: Xcode/, 'the failure is newer');
+  assert.match(why(stale(null), failure), /build failed: Xcode/, 'no build time');
+  // A build awaiting approve speaks whatever the times: approving it is what works.
+  assert.match(why({...PENDING, builtAt: '2026-11-01T00:00:00.000Z'}, failure), /awaiting approve/);
+});
+
 test('a failed build: its cause, and the remedy fixes it, then builds and approves', () => {
   const fallback = engineFallback({selection: NOT_INSTALLED, pending: null, buildFailure: {code: 'engine_build_failed', cause: 'Xcode is not installed (no swift)'}, minimum: MINIMUM});
   assert.deepEqual(fallback, {why: 'no approved cua engine (build failed: Xcode is not installed (no swift))', remedy: `fix that, then ${BUILD_THEN_APPROVE}`});

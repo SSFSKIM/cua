@@ -14,7 +14,11 @@ import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
-import {realpathSync} from 'node:fs';
+import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {infoPlist} from '../src/runtime/engine-bundle.mjs';
+import {inspectRuntime} from '../src/runtime/doctor.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/client.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {ENGINE_NOTICE_META} from '../src/mcp/server.mjs';
 import {FAKE_UPSTREAM, fakeInstalledHome} from './fixtures/installed-home.mjs';
@@ -136,4 +140,38 @@ test('(4) an approve after the fallback: the next connection drives cua\'s engin
   assert.deepEqual(after.launch.replHost, {host: 'cua', reason: 'cua_engine'});
   assert.deepEqual(after.launch.nativeEngine, {engine: 'cua', version: APP.engineVersion, build: APP.build});
   assert.equal(Object.hasOwn(after.results[0]._meta, ENGINE_NOTICE_META), false);
+});
+
+// The pending slot is authoritative (engine-minimum.mjs pendingEngine): with the approved bundle gone and approved.json
+// left, a same-build copy in the slot is a build awaiting approve. Serve's first js result and doctor's repl.host and
+// engine rows all read that one answer, from the engine directory under HOME (no seams); a slot below the minimum
+// never gets the approve alone, anywhere.
+test('serve and doctor agree on the pending slot: approved bundle gone, approved.json left, a same-build copy pending; below the minimum never approve alone', async t => {
+  const build = 'e'.repeat(64);
+  for (const [version, expected] of [
+    [MIN_ENGINE_VERSION, `no approved cua engine (build eeeeeeeeeeee built, awaiting approve); to use it, run \`cua engine approve\` with the owner at the console`],
+    ['0.1.0', `no approved cua engine (build eeeeeeeeeeee pending is version 0.1.0, older than ${MIN_ENGINE_VERSION}, the oldest this cua drives); to use cua's engine, build it with \`cua install --engine\`, which builds it pending approval, then approve it with \`cua engine approve\` with the owner at the console`],
+  ]) {
+    const s = shortScratch('cua-slot-');
+    t.after(s.cleanup);
+    const user = realpathSync(s.dir);
+    const dir = join(user, 'Library', 'Application Support', 'cua', 'engine');
+    mkdirSync(join(dir, 'pending', 'cua Engine.app', 'Contents'), {recursive: true});
+    writeFileSync(join(dir, 'pending', 'cua Engine.app', 'Contents', 'Info.plist'), infoPlist({version, build}));
+    writeFileSync(join(dir, 'approved.json'), JSON.stringify({build, identity: 'adhoc', approvedAt: '2026-11-20T00:00:00.000Z'}));
+    const home = fakeInstalledHome(t, {host: DARWIN});
+    const served = await session(t, {home, env: {HOME: user}});
+    assert.equal(served.launch?.replHost.reason, 'engine_not_installed', served.error?.message);
+    assert.equal(served.results[0]._meta[ENGINE_NOTICE_META], `cua: this session keeps the vendor engine: ${expected}`, version);
+    const report = await inspectRuntime({home, env: {HOME: user, CUA_SHIM_SURFACES: 'computer'}, host: DARWIN,
+      inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [], inspectChrome: async () => [],
+      verifySignatures: async () => [], resolveOwnNode: () => process.execPath});
+    const row = name => report.checks.find(check => check.name === name).detail;
+    assert.ok(row('repl.host').startsWith(`vendor host (engine_not_installed): this session keeps the vendor engine: ${expected}; native engine`), row('repl.host'));
+    assert.ok(row('engine').startsWith(`macOS computer sessions keep the vendor engine: ${expected} (engine_not_installed). `), row('engine'));
+    if (version === '0.1.0') {
+      assert.doesNotMatch(row('engine'), /puts it in place and approves it/, 'the bundle\'s detail agrees: no approve alone');
+      assert.match(row('engine'), /but its version 0\.1\.0 is older than .* so approving it would not be used/);
+    } else assert.match(row('engine'), /build eeeeeeeeeeee is pending beside it \(.*pending\/cua Engine\.app\): cua engine approve, with the owner at the console, puts it in place and approves it/);
+  }
 });

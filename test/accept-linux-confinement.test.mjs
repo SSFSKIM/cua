@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {busSocket, confinementTargets, confinementVerdict, connectOutcome, kernelAncestry, kernelCell, kernelReport, openListeners, REFUSALS, TARGETS, xSocket} from '../scripts/accept/linux-confinement.mjs';
+import {busSocket, confinementStep, confinementTargets, confinementVerdict, connectOutcome, kernelAncestry, kernelCell, kernelReport, openListeners, REFUSALS, TARGETS, xSocket} from '../scripts/accept/linux-confinement.mjs';
 
 test('the bus socket is parsed from the address: a path, an abstract name, the first usable of several, or none', () => {
   assert.deepEqual(busSocket('unix:path=/tmp/dbus-AbC,guid=0123'), {path: '/tmp/dbus-AbC'});
@@ -200,6 +200,21 @@ test('negative control: a kernel that reported no identity, or whose identity ma
   const found = kernelAncestry({serve: 50, helper, identity: {pid: 2, starttime: '123'}, samples: [elsewhere]});
   assert.equal(found.kernel, null);
   assert.deepEqual(found.ancestors, []);
+});
+
+test('the sampler stops even when the kernel\'s cell request is rejected, and the listeners close', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-confinement-test-'));
+  let stopped = 0;
+  const sampler = () => ({stop: () => { stopped += 1; return []; }});
+  const session = {pid: 1, js: () => Promise.reject(new Error('the connection closed'))};
+  try {
+    await assert.rejects(confinementStep({session, env: {DISPLAY: ':99', DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(dir, 'bus')}`}, dir, helper, resultText: () => '', sampler}), /the connection closed/);
+    assert.equal(stopped, 1);
+    // The listeners were closed too: the Unix socket's path answers no one.
+    assert.notEqual(await connectOutcome({path: join(dir, 'confinement.sock')}), 'ok');
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
 });
 
 test('a kernel seen in an earlier sample is still bound, with the executables read while it lived', () => {

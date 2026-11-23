@@ -209,19 +209,24 @@ export function confinementVerdict({controls, accepted, kernel, ancestry}) {
 /**
  * The step, run in a fixture's open session: `session` (scripts/accept/mcp-session.mjs), `env` (the run's display and
  * bus), `dir` (where the Unix listener goes), `helper` (the home's pinned helper path). The listeners are opened and
- * closed here. -> `{targets, controls, accepted, kernel, ancestry, verdict}`.
+ * closed here, and the sampler (`sampler`, a test seam) is stopped whatever the cell's request does. -> `{targets,
+ * controls, accepted, kernel, ancestry, identity, samples, verdict}`.
  */
-export async function confinementStep({session, env, dir, helper, resultText}) {
+export async function confinementStep({session, env, dir, helper, resultText, sampler = startSampler}) {
   const listeners = await openListeners(dir);
   try {
     const targets = confinementTargets({env, listeners});
     const controls = await controlOutcomes(targets);
     await new Promise(r => setTimeout(r, 200));
     const afterControls = listeners.accepted();
-    const sampler = startSampler();
-    const cell = await session.js(kernelCell(targets), 60_000);
-    await new Promise(r => setTimeout(r, 200));
-    const samples = sampler.stop();
+    const sampling = sampler();
+    let cell, samples;
+    try {
+      cell = await session.js(kernelCell(targets), 60_000);
+      await new Promise(r => setTimeout(r, 200));
+    } finally {
+      samples = sampling.stop();
+    }
     const {outcomes, identity} = cell.result?.isError ? {outcomes: null, identity: null} : kernelReport(resultText(cell));
     const ancestry = kernelAncestry({serve: session.pid, helper, identity, samples});
     const observed = {controls, accepted: {afterControls, afterKernel: listeners.accepted()}, kernel: outcomes, ancestry};

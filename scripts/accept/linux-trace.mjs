@@ -33,24 +33,70 @@ const KERNEL = /src\/repl-host\/kernel\.mjs"/;
 // The program an exec line names: its first quoted string (execveat's directory comes first, as a number).
 const program = call => /"((?:[^"\\]|\\.)*)"/.exec(call)?.[1] ?? null;
 
-// -y's decoding: a descriptor (or AT_FDCWD) followed by the path it stands for, `3</usr/lib>`.
-const STRING = '"((?:[^"\\\\]|\\\\.)*)"';
-const DIRFD_PATH = new RegExp(`(AT_FDCWD|\\d+)(?:<([^>]*)>)?, ${STRING}`, 'g');
-const OPERAND_FD = /(?:^|[(\s])(\d+)<([^>]*)>(?!, ")/g;
-const FIRST_STRING = new RegExp(`^${STRING}`);
 const RETURN_FD = /\)\s+=\s+\d+<([^>]*)>/;
 const CWD_DECODED = /AT_FDCWD<([^>]*)>/;
 
+// Where each traced call (`-e trace=%file,%process,fchdir`) keeps its pathnames, by argument position: a bare number is
+// a path against the working directory, `[d, p]` a path `p` against the descriptor `d`, `{fd: d}` a descriptor that is
+// itself the operand. A symlink's target (symlink's 0, symlinkat's 0) is its content, not a path it touches. A call
+// listed nowhere here leaves the count incomplete.
+const OPERANDS = {
+  access: [0], acct: [0], chdir: [0], chmod: [0], chown: [0], chown32: [0], chroot: [0], creat: [0], execve: [0],
+  getxattr: [0], lgetxattr: [0], lchown: [0], lchown32: [0], listxattr: [0], llistxattr: [0], removexattr: [0],
+  lremovexattr: [0], setxattr: [0], lsetxattr: [0], stat: [0], stat64: [0], lstat: [0], lstat64: [0], oldstat: [0],
+  oldlstat: [0], mkdir: [0], mknod: [0], open: [0], readlink: [0], rmdir: [0], statfs: [0], statfs64: [0], swapon: [0],
+  swapoff: [0], truncate: [0], truncate64: [0], unlink: [0], uselib: [0], utime: [0], utimes: [0], umount: [0],
+  umount2: [0], inotify_add_watch: [1], quotactl: [1],
+  rename: [0, 1], link: [0, 1], pivot_root: [0, 1], mount: [0, 1], symlink: [1],
+  openat: [[0, 1]], openat2: [[0, 1]], mkdirat: [[0, 1]], mknodat: [[0, 1]], fchownat: [[0, 1]], futimesat: [[0, 1]],
+  newfstatat: [[0, 1]], fstatat64: [[0, 1]], unlinkat: [[0, 1]], faccessat: [[0, 1]], faccessat2: [[0, 1]],
+  fchmodat: [[0, 1]], fchmodat2: [[0, 1]], readlinkat: [[0, 1]], utimensat: [[0, 1]], statx: [[0, 1]],
+  name_to_handle_at: [[0, 1]], open_tree: [[0, 1]], execveat: [[0, 1]], fspick: [[0, 1]],
+  renameat: [[0, 1], [2, 3]], renameat2: [[0, 1], [2, 3]], linkat: [[0, 1], [2, 3]], move_mount: [[0, 1], [2, 3]],
+  symlinkat: [[1, 2]], fanotify_mark: [[3, 4]],
+  fchdir: [{fd: 0}],
+  // getcwd's only string is its output buffer.
+  getcwd: [],
+};
+// The process calls, which name no path.
+const NO_PATHS = new Set(['clone', 'clone3', 'fork', 'vfork', 'exit', 'exit_group', 'wait4', 'waitid', 'kill', 'tkill',
+  'tgkill', 'rt_sigqueueinfo', 'rt_tgsigqueueinfo', 'pidfd_open', 'pidfd_send_signal', 'pidfd_getfd', 'unshare', 'setns']);
+
+/** A call's top-level arguments: commas inside strings, brackets, braces and -y's `<…>` decodes do not split. */
+export function splitArgs(text) {
+  const args = [];
+  let depth = 0, start = 0, quoted = false, decoded = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) { if (ch === '\\') i++; else if (ch === '"') quoted = false; continue; }
+    if (decoded) { if (ch === '>') decoded = false; continue; }
+    if (ch === '"') quoted = true;
+    else if (ch === '<' && /[0-9D]$/.test(text.slice(start, i))) decoded = true;
+    else if ('[{('.includes(ch)) depth++;
+    else if (']})'.includes(ch)) depth--;
+    else if (ch === ',' && depth === 0) { args.push(text.slice(start, i).trim()); start = i + 1; }
+  }
+  const last = text.slice(start).trim();
+  if (last || args.length) args.push(last);
+  return args;
+}
+
+// A path argument: the string, or null when it is not one strace printed whole (an address, NULL, a truncated "…"...).
+const pathArg = arg => (/^"((?:[^"\\]|\\.)*)"$/.exec(arg ?? '')?.[1] ?? null);
+// A descriptor argument: `AT_FDCWD`, `3`, `AT_FDCWD</cwd>` or `3</a/b>`; its decoding, when -y gave one. A decoding
+// that is not a path (`pipe:[…]`, `socket:[…]`, `anon_inode:[…]`) is kept, and resolves nothing.
+const fdArg = arg => { const m = /^(AT_FDCWD|-?\d+)(?:<(.*)>)?$/.exec(arg ?? ''); return m ? {cwd: m[1] === 'AT_FDCWD', decoded: m[2]} : null; };
+
 /**
- * The paths a call names, each resolved: `{paths, unresolved}`. Its operands are its first argument when that is a
- * string (open, stat, access, chdir, execve: never argv, never an output buffer), each string after a descriptor or
- * AT_FDCWD (resolved against the path -y decoded for it), each decoded descriptor that is itself an operand (fchdir,
- * an AT_EMPTY_PATH stat), and the path of the descriptor it returned. A relative path whose base is unknown is
- * unresolved.
+ * The paths a call names, each resolved: `{paths, unresolved}`, operands in OPERANDS' order and then the path of the
+ * descriptor it returned. An absolute path stands alone; a relative one resolves against its descriptor's decoding, or
+ * for AT_FDCWD and the non-at forms the working directory. What cannot be resolved or read, and a call whose form is not
+ * known, is unresolved.
  */
-function callPaths(call, cwd) {
-  const close = call.lastIndexOf(') = ');
-  const args = (close < 0 ? call : call.slice(0, close)).slice(call.indexOf('(') + 1);
+function callPaths(name, call, cwd) {
+  // The return column: the last `)` followed by `=`, however strace padded it.
+  const close = [...call.matchAll(/\)\s+= /g)].at(-1)?.index ?? -1;
+  const args = splitArgs((close < 0 ? call : call.slice(0, close)).slice(call.indexOf('(') + 1).replace(/\)\s*$/, ''));
   const paths = [];
   let unresolved = 0;
   const take = (path, base) => {
@@ -58,17 +104,36 @@ function callPaths(call, cwd) {
     else if (typeof base === 'string' && base.startsWith('/')) paths.push(posix.resolve(base, path));
     else unresolved += 1;
   };
-  // -y decodes a descriptor that is not a file to its kind (`pipe:[…]`, `socket:[…]`, `anon_inode:[…]`): no path.
-  const isPath = decoded => decoded.startsWith('/');
-  const first = FIRST_STRING.exec(args);
-  if (first) take(first[1], cwd);
-  for (const [, fd, decoded, path] of args.matchAll(DIRFD_PATH)) {
-    if (decoded === undefined) take(path, fd === 'AT_FDCWD' ? cwd : undefined);
-    else if (isPath(decoded)) take(path, decoded);
+  const operands = OPERANDS[name];
+  if (!operands) { if (!NO_PATHS.has(name)) unresolved += 1; }
+  else {
+    for (const operand of operands) {
+      if (typeof operand === 'number') {
+        const path = pathArg(args[operand]);
+        // A NULL operand (mount's source) names nothing.
+        if (args[operand] === 'NULL') continue;
+        if (path === null) unresolved += 1; else take(path, cwd);
+      } else if (Array.isArray(operand)) {
+        const fd = fdArg(args[operand[0]]);
+        const raw = args[operand[1]];
+        const path = pathArg(raw);
+        // A NULL or empty path (AT_EMPTY_PATH) names the descriptor itself: its decoded path, or nothing when it is no
+        // file; AT_FDCWD's is the working directory.
+        if ((raw === 'NULL' || path === '') && fd) {
+          const self = fd.cwd ? fd.decoded ?? cwd : fd.decoded;
+          if (self === undefined || self === null) unresolved += 1;
+          else if (self.startsWith('/')) take(self, undefined);
+        } else if (path === null || !fd) unresolved += 1;
+        else take(path, fd.decoded ?? (fd.cwd ? cwd : undefined));
+      } else {
+        const fd = fdArg(args[operand.fd]);
+        if (fd?.decoded === undefined) unresolved += 1;
+        else if (fd.decoded.startsWith('/')) take(fd.decoded, undefined);
+      }
+    }
   }
-  for (const [, , decoded] of args.matchAll(OPERAND_FD)) if (isPath(decoded)) take(decoded, undefined);
   const returned = close < 0 ? null : RETURN_FD.exec(call.slice(close));
-  if (returned && isPath(returned[1])) take(returned[1], undefined);
+  if (returned && returned[1].startsWith('/')) take(returned[1], undefined);
   return {paths, unresolved};
 }
 
@@ -101,7 +166,7 @@ export function traceReader({helper, home, cwd = null}) {
     }
     const decodedCwd = CWD_DECODED.exec(call)?.[1];
     if (decodedCwd) p.cwd.path = decodedCwd;
-    const {paths, unresolved} = callPaths(call, p.cwd.path);
+    const {paths, unresolved} = callPaths(name, call, p.cwd.path);
     if (paths.some(inRuntimes)) p.runtimesCalls += 1;
     else if (unresolved) p.unresolved += 1;
     if (value === 0 && name === 'chdir') p.cwd.path = paths[0] ?? null;

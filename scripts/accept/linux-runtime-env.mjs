@@ -13,17 +13,32 @@
 //   node scripts/accept/linux-runtime-env.mjs <run dir>   prepares the run's homes and prints the shell lines that set
 //                                                         them (unset, then export); exit 2 with the reason otherwise
 
-import {existsSync, mkdirSync} from 'node:fs';
-import {isAbsolute, join, relative, resolve, sep} from 'node:path';
+import {existsSync, mkdirSync, realpathSync} from 'node:fs';
+import {basename, dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {BUS_VARS, DROPPED_VARS} from '../linux-engine-diff/app-env.mjs';
 
 const DISPLAY_VARS = ['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY'];
 const inside = (dir, path) => { const rel = relative(dir, path); return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel); };
 
-/** The run's variables for `run` (absolute) and the caller's `env`: `{set, unset}`, or a thrown refusal. */
-export function runEnvironment({run, env, exists = existsSync}) {
+/**
+ * A path with its symlinks resolved as far as it exists: the nearest existing ancestor's real path, and the rest as
+ * spelled. So a missing directory under a symlink that leads elsewhere resolves to where it would be created.
+ */
+function realAsFarAsExists(path, exists, realpath) {
+  let head = resolve(path);
+  const rest = [];
+  while (!exists(head) && dirname(head) !== head) { rest.unshift(basename(head)); head = dirname(head); }
+  return join(exists(head) ? realpath(head) : head, ...rest);
+}
+
+/**
+ * The run's variables for `run` (absolute) and the caller's `env`: `{set, unset}`, or a thrown refusal. The run and a
+ * named CUA_HOME are compared by their real paths, so a symlink cannot carry CUA_HOME out of the run.
+ */
+export function runEnvironment({run: given, env, exists = existsSync, realpath = realpathSync}) {
   if (env.CUA_SHIM_SANDBOX !== undefined) throw new Error(`CUA_SHIM_SANDBOX is set (${JSON.stringify(env.CUA_SHIM_SANDBOX)}): these runs are scoped, so it must be unset`);
+  const run = realAsFarAsExists(given, exists, realpath);
   const home = join(run, 'user');
   const runtimeDir = join(run, 'xdg-runtime');
   for (const [dir, what] of [[home, 'HOME'], [runtimeDir, 'XDG_RUNTIME_DIR']]) {
@@ -31,8 +46,8 @@ export function runEnvironment({run, env, exists = existsSync}) {
   }
   let cuaHome = join(home, '.local', 'share', 'cua');
   if (env.CUA_HOME !== undefined) {
-    const named = resolve(env.CUA_HOME);
-    if (!isAbsolute(env.CUA_HOME) || !inside(run, named)) throw new Error(`CUA_HOME ${env.CUA_HOME} is not inside the run ${run}: the run's CUA_HOME is its own`);
+    const named = isAbsolute(env.CUA_HOME) ? realAsFarAsExists(env.CUA_HOME, exists, realpath) : null;
+    if (!named || !inside(run, named)) throw new Error(`CUA_HOME ${env.CUA_HOME} is not inside the run ${run}: it resolves to ${named ?? 'a relative path'}, and the run's CUA_HOME is its own`);
     if (exists(named)) throw new Error(`CUA_HOME ${named} already exists: the run's CUA_HOME must be fresh, never a reused directory`);
     cuaHome = named;
   }

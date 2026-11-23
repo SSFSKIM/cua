@@ -3,7 +3,7 @@
 // fresh and the run's, and CUA_HOME is the run's and fresh too, since the secret store follows HOME.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, mkdtempSync, rmSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {BUS_VARS, DROPPED_VARS} from '../scripts/linux-engine-diff/app-env.mjs';
@@ -34,8 +34,29 @@ test('negative control: a HOME that already exists is refused, never reused', ()
 test('negative control: a CUA_HOME the caller names must be the run\'s and fresh', () => {
   assert.throws(() => runEnvironment({run: RUN, env: {CUA_HOME: '/home/me/.local/share/cua'}, exists: none}), /CUA_HOME \/home\/me\/\.local\/share\/cua is not inside the run/);
   assert.throws(() => runEnvironment({run: RUN, env: {CUA_HOME: '/w/run/../elsewhere'}, exists: none}), /is not inside the run/);
-  assert.throws(() => runEnvironment({run: RUN, env: {CUA_HOME: '/w/run/homes/e'}, exists: path => path === '/w/run/homes/e'}), /CUA_HOME \/w\/run\/homes\/e already exists/);
+  assert.throws(() => runEnvironment({run: RUN, env: {CUA_HOME: '/w/run/homes/e'}, exists: path => path === '/w/run/homes/e', realpath: path => path}), /CUA_HOME \/w\/run\/homes\/e already exists/);
   assert.equal(runEnvironment({run: RUN, env: {CUA_HOME: '/w/run/homes/e'}, exists: none}).set.CUA_HOME, '/w/run/homes/e');
+});
+
+test('negative control: a CUA_HOME under a symlink that leads out of the run is refused, though it lies in the run by its spelling', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-runtime-env-')));
+  try {
+    const run = join(root, 'run');
+    const outside = join(root, 'outside');
+    mkdirSync(run);
+    mkdirSync(outside);
+    symlinkSync(outside, join(run, 'link'));
+    assert.throws(() => runEnvironment({run, env: {CUA_HOME: join(run, 'link', 'cua')}}), /CUA_HOME .*link\/cua is not inside the run.*: it resolves to .*outside\/cua/);
+    // A deeper missing path under the link is refused the same way.
+    assert.throws(() => runEnvironment({run, env: {CUA_HOME: join(run, 'link', 'a', 'b')}}), /is not inside the run/);
+    // A run reached through a symlink is the run: its own CUA_HOME is accepted, and the homes are spelled by its real path.
+    symlinkSync(run, join(root, 'run-alias'));
+    const aliased = runEnvironment({run: join(root, 'run-alias'), env: {CUA_HOME: join(root, 'run-alias', 'homes', 'e')}});
+    assert.equal(aliased.set.CUA_HOME, join(run, 'homes', 'e'));
+    assert.equal(aliased.set.HOME, join(run, 'user'));
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
 });
 
 test('negative control: CUA_SHIM_SANDBOX set, even empty, is refused: the runs are scoped', () => {

@@ -120,6 +120,38 @@ test('the vendor-tree counter counts attempted execs and a resolved descriptor, 
   assert.deepEqual(counted([`200   readlink("/tmp/link", "${R}/26/real", 4096) = 30`]), {calls: 0, unresolved: 0, complete: true});
 });
 
+test('every pathname operand of a call is read at its position: rename\'s and link\'s destinations, the at-forms\' second pair', () => {
+  assert.deepEqual(counted([`200   rename("/tmp/a", "${R}/26/b") = 0`]), {calls: 1, unresolved: 0, complete: true});
+  assert.deepEqual(counted([`200   link("/tmp/a", "${R}/26/b") = 0`]), {calls: 1, unresolved: 0, complete: true});
+  assert.deepEqual(counted([`200   renameat2(AT_FDCWD</tmp>, "a", 7<${R}>, "26/b", RENAME_NOREPLACE) = 0`]), {calls: 1, unresolved: 0, complete: true});
+  assert.deepEqual(counted([`200   linkat(AT_FDCWD</tmp>, "a", AT_FDCWD<${HOME}>, "runtimes/b", 0) = 0`]), {calls: 1, unresolved: 0, complete: true});
+  // A symlink's target is its content, not a path it touches; its link name is.
+  assert.deepEqual(counted([`200   symlink("${R}/26", "/tmp/l") = 0`]), {calls: 0, unresolved: 0, complete: true});
+  assert.deepEqual(counted([`200   symlinkat("/tmp/x", AT_FDCWD<${R}>, "l") = 0`]), {calls: 1, unresolved: 0, complete: true});
+  // A comma inside a path or a decoded base is part of it.
+  assert.deepEqual(counted([`200   openat(AT_FDCWD</tmp/a,b>, "${R}/x,y", O_RDONLY) = -1 ENOENT (No such file or directory)`]), {calls: 1, unresolved: 0, complete: true});
+});
+
+test('an absolute path is read whatever its descriptor decodes to: the kernel ignores the descriptor for it', () => {
+  assert.deepEqual(counted([`200   openat(5<pipe:[42]>, "${R}/26/x", O_RDONLY) = -1 ENOENT (No such file or directory)`]), {calls: 1, unresolved: 0, complete: true});
+  assert.deepEqual(counted([`200   newfstatat(9<socket:[7]>, "${R}/26", 0x7ffd, 0) = 0`]), {calls: 1, unresolved: 0, complete: true});
+  // A relative path against a descriptor that is no directory resolves nowhere: unresolved.
+  assert.deepEqual(counted(['200   openat(5<pipe:[42]>, "x", O_RDONLY) = -1 ENOTDIR (Not a directory)']), {calls: 0, unresolved: 1, complete: false});
+});
+
+test('negative control: a call whose form the reader does not know, or an operand it cannot read, leaves the count incomplete, never zero', () => {
+  assert.deepEqual(counted([`200   frobnicateat(AT_FDCWD<${HOME}>, "runtimes/x", 0) = 0`]), {calls: 0, unresolved: 1, complete: false});
+  assert.deepEqual(counted(['200   openat(AT_FDCWD</tmp>, 0x7ffd1234, O_RDONLY) = -1 EFAULT (Bad address)']), {calls: 0, unresolved: 1, complete: false});
+  assert.deepEqual(counted(['200   stat("/run/home/.local/share/cua/run"..., 0x7ffd) = 0']), {calls: 0, unresolved: 1, complete: false});
+  // The process calls with no path are known, and leave it complete.
+  assert.deepEqual(counted(['200   wait4(-1, 0x7ffd, WNOHANG, NULL) = 0', '200   exit_group(0) = ?', '200   kill(201, SIGTERM) = 0']), {calls: 0, unresolved: 0, complete: true});
+  // As strace pads them (its return column), with an output buffer only (getcwd), and with a NULL source (mount).
+  assert.deepEqual(counted([`200   chdir("${R}")                   = 0`, '200   stat("26/x", 0x7ffd)        = 0']), {calls: 2, unresolved: 0, complete: true});
+  assert.deepEqual(counted([`200   getcwd("${R}", 4096) = 30`, '200   mount(NULL, "/", NULL, MS_REC|MS_SLAVE, NULL) = 0']), {calls: 0, unresolved: 0, complete: true});
+  // utimensat with a NULL path names its descriptor.
+  assert.deepEqual(counted([`200   utimensat(4<${R}/26>, NULL, NULL, 0) = 0`]), {calls: 1, unresolved: 0, complete: true});
+});
+
 test('a descriptor -y decodes to something other than a path (a pipe, a socket, an anonymous inode) is neither a path nor unresolved', () => {
   // As the live trace showed it: the trusted worker opening its inherited pipe through /proc/self/fd.
   assert.deepEqual(counted([`200   openat(AT_FDCWD<${HOME}/run/x>, "/proc/self/fd/5", O_WRONLY|O_NONBLOCK|O_CLOEXEC) = 20<pipe:[278631620]>`]), {calls: 0, unresolved: 0, complete: true});

@@ -603,6 +603,9 @@ test('#481: the record at the point is whole only where every child its node lis
   const strip = {role: 'AXGroup', depth: 3, frame: {x: 0, y: 0, width: 100, height: 1}, children: 3};
   assert.equal(recordAt([whole[0], {...whole[1], children: 1}, strip], p).complete, false);
   assert.equal(signalsOf({nodes: whole, point: p}).record.complete, true);
+  // At the walk's depth cap the wire lists no children though the element has some: incomplete; so is a width cut.
+  assert.equal(recordAt(whole, p, {}, {truncated: {depth: 2}}).complete, false);
+  assert.equal(recordAt([whole[0], {...whole[1], shown: {count: 3, of: 150}}], p).complete, false);
   assert.deepEqual(pressOf({result: {meta: {elementClick: {reason: 'webArea', plan: 'action', action: 'AXPress', pressedRole: 'AXLink', pressed: 'ancestor'}}}}),
     {reason: 'webArea', plan: 'action', action: 'AXPress', pressedRole: 'AXLink', pressed: 'ancestor', walkStopped: null});
   assert.equal(pressOf({result: {meta: {}}}), null);

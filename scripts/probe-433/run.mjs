@@ -152,7 +152,7 @@ async function main(){
           // not when the control found is not the target (`target`), where the click would test nothing.
           gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell),at:c.at});if(gap&&(mode!=='discover'||gap==='target'))throw stepError('uncovered-'+gap);
           // #442: read after the observation, before the change; never invalidates the row.
-          s='signals-pre';sig.nodes=sky.nodes;sig.point=placed.screen;
+          s='signals-pre';sig.nodes=sky.nodes;sig.point=placed.screen;sig.truncated=sky.truncated??null;
           sig.css=cssPoint(prep?.geometry?.link,found.link.frame,placed.screen);
           if(sig.css)try{sig.domPre=await platform.command({op:'probe',trial,x:sig.css.x,y:sig.css.y});}catch{}
           try{sig.pre=await platform.signals(placed.screen,{names:c.rep===0,hits:false});}catch{}
@@ -233,7 +233,7 @@ async function main(){
         ...(spec.popup?{popupDelay,popped:read?.popped??null}:{}),
         // contentsfront: the observation's frame of F (a link reading "Close"), or none listed.
         ...(spec.front==='contents'?{frontFrame:sig.nodes?(sig.nodes.find(n=>n?.role==='AXLink'&&[n.title,n.description].includes('Close'))?.frame??'unlisted'):null}:{}),css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,
-          domPost:sig.domPost,clicks:read?.clicks}):null};
+          domPost:sig.domPost,clicks:read?.clicks,truncated:sig.truncated}):null};
       rows.push(row);
       // A report-only unit's rows never move the abort streak.
       if(!isReportOnly(c))streak=row.valid?0:streak+1;

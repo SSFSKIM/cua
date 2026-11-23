@@ -30,7 +30,7 @@ export function nameOf(label,spec={}){
 // deepest whose frame holds it, the later of two at one depth), whether it is an inert layer (no interactive role, no
 // AXPress, no acting ancestor: #433's precondition), and the innermost controls whose frames hold the point, by the
 // engine's rule (an interactive role or AXPress) and by role alone. Frames stand in for the engine's shown frames.
-export function recordAt(nodes,p,spec={}){
+export function recordAt(nodes,p,spec={},{truncated=null}={}){
   const list=Array.isArray(nodes)?nodes:[];
   const parent=[],path=[];
   list.forEach((n,i)=>{const d=Number.isInteger(n?.depth)?n.depth:0;path.length=Math.min(path.length,d);parent[i]=d>0?path[d-1]??null:null;path[d]=i;});
@@ -48,13 +48,17 @@ export function recordAt(nodes,p,spec={}){
   const recorded=new Array(list.length).fill(0);parent.forEach(j=>{if(j!=null)recorded[j]++;});
   const incomplete=new Set(),gap=new Set(),thin=f=>!!f&&(f.width<=1||f.height<=1);
   for(let i=list.length-1;i>=0;i--){
-    if(recorded[i]<(Number.isInteger(list[i]?.children)?list[i].children:0))incomplete.add(i);
+    // The wire's \`children\` counts the children walked, not those listed: a node at the depth cap (the walk's
+    // \`truncated.depth\`, whose children it never takes) or one the width rule cut (\`shown\`) is incomplete too.
+    const n=list[i];
+    if(recorded[i]<(Number.isInteger(n?.children)?n.children:0)||Number.isInteger(truncated?.depth)&&Number.isInteger(n?.depth)&&n.depth>=truncated.depth
+      ||Number.isInteger(n?.shown?.count)&&Number.isInteger(n?.shown?.of)&&n.shown.count<n.shown.of)incomplete.add(i);
     if(list[i]?.frame==null&&incomplete.has(i)&&parent[i]!=null)incomplete.add(parent[i]);
     if(thin(list[i]?.frame)&&incomplete.has(i))gap.add(i);
     if(gap.has(i)&&parent[i]!=null)gap.add(parent[i]);
   }
   return {deepest:d?role(d.role):null,inert:!!d&&!acts(d)&&!up(deepest).some(j=>acts(list[j])),
-    complete:deepest==null?null:!incomplete.has(deepest)&&!gap.has(deepest),
+    complete:deepest==null?null:!incomplete.has(deepest)&&!gap.has(deepest),depth:d?.depth??null,cutDepth:truncated?.depth??null,
     engine:innermost(acts),role:innermost(n=>INTERACTIVE.has(n?.role))};
 }
 const label=n=>[n?.title,n?.description,n?.value].find(v=>typeof v==='string'&&v.trim())??'';
@@ -132,8 +136,8 @@ const paintControls=dom=>dom?dom.stack.filter(n=>!['overlay','page'].includes(n)
 // - c: elementFromPoint at the click names the control the click reached.
 // \`pre\` and \`post\` are walks (no hit-test before the click, which would move Chromium's hit cache under the engine);
 // \`after\` the hits and the hit sequence read after the click; \`warm\` a hit sequence read just before it (PROBE_HITS=warm).
-export function signalsOf({spec={},nodes,point,pre,post,after,warm,domPre,domPost,clicks}){
-  const record=nodes?recordAt(nodes,point,spec):null;
+export function signalsOf({spec={},nodes,point,pre,post,after,warm,domPre,domPost,clicks,truncated=null}){
+  const record=nodes?recordAt(nodes,point,spec,{truncated}):null;
   const ax={pre:axFacts(pre,spec),post:axFacts(post,spec),after:axFacts(after,spec),warm:axFacts(warm,spec)},dom={pre:domFacts(domPre),post:domFacts(domPost)};
   const live=w=>w?.full?.role??null;
   const recipient=clicks?recipientOf(clicks):null;
@@ -143,7 +147,7 @@ export function signalsOf({spec={},nodes,point,pre,post,after,warm,domPre,domPos
     return {paintTop:painted[0],treeLast:later,treeAgrees:later===painted[0],
       visible:Object.fromEntries(tree.filter(c=>c.visible!==undefined).map(c=>[c.name,c.visible]))};};
   return {
-    record:record&&{deepest:record.deepest,inert:record.inert,complete:record.complete,role:names(record.role),engine:names(record.engine),
+    record:record&&{deepest:record.deepest,inert:record.inert,complete:record.complete,depth:record.depth,cutDepth:record.cutDepth,role:names(record.role),engine:names(record.engine),
       engineRoles:record.engine.map(c=>c.role).sort().join('+')||'none'},
     ax,dom,recipient,
     a:{recordVsPost:record&&live(ax.post)?!sameSet(record.role,live(ax.post)):null,

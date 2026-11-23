@@ -54,7 +54,7 @@ import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../pr
 import {TEXTEDIT_BUNDLE} from './lib.mjs';
 import {approvalLedger, ATTEST_STEP, AttestationRefusal, attestReplies} from './engine-lane.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
-import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
+import {awaitLaunch, CAPTURE_ALERT_APP, cleanUpFixtureApp} from './fixture-app.mjs';
 import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
@@ -209,6 +209,18 @@ export async function fixtureKeyCell({session, step, keys, code, stepMs, frontmo
 // What accept-native's report carries of the fixture's guard, for the hosted check and the sitting's record
 // (scripts/hosted-sittings/checks.mjs `acceptance`): the stop and the counts, and the key cells sent with their key
 // reading not taken; nothing when there are none.
+// STEP.front from the hand-back (./fixture-app.mjs restoreFront's {previous, before, after, restored}) and the front read
+// before the run. The capture alert in front after the hand-back, or before the run (never handed back to), is a system
+// prompt's, which rulings 1136 and 1141 make no verdict: BLOCKED naming it, whatever the guard refused. Any other front
+// not handed back is a failure. -> [status, detail].
+export function frontStep(front, frontBefore) {
+  if (front.restored) return ['PASS', `${front.previous} is frontmost${front.before === front.previous ? ' (it still was)' : ` again (it was ${front.before ?? 'unreadable'})`}`];
+  if (front.after === CAPTURE_ALERT_APP) return ['BLOCKED', `${CAPTURE_ALERT_APP} (replayd's capture alert) is in front after the hand-back to ${frontBefore ?? 'an unread front'}: a system prompt's front, no verdict (rulings 1136, 1141)`];
+  if (frontBefore === CAPTURE_ALERT_APP) return ['BLOCKED', `${CAPTURE_ALERT_APP} (replayd's capture alert) was in front before the run: nothing is handed back to a system prompt (rulings 1136, 1141); now ${front.after ?? 'unreadable'}`];
+  return frontBefore ? ['FAIL', `${frontBefore} was frontmost before the run; now ${front.after ?? 'unreadable'}`]
+    : ['BLOCKED', 'the frontmost application before the run could not be read, so there is nothing to hand back to'];
+}
+
 export const fixtureGuardRecord = observations => ({
   ...(observations?.alertGuardStop ? {alertGuardStop: observations.alertGuardStop, alertGuardCounts: observations.alertGuardCounts ?? null} : {}),
   ...(observations?.keyUnread ? {keyUnread: observations.keyUnread} : {}),
@@ -219,7 +231,7 @@ export const fixtureGuardRecord = observations => ({
 // that types or presses a key refused when the alert holds the key, the marker cell also when its capture's window is
 // under an alert or the screen unread (fixtureKeyCell; the front is the key guard's): the step BLOCKED with its NO
 // VERDICT cause and the refusal's mark, nothing sent and no further input (observations.alertGuards, alertGuardCounts,
-// alertGuardStop, and keyUnread for the key cells sent with their key reading not taken, which accept-native's report
+// alertGuardStop, and keyUnread for the key cells guarded with their key reading not taken, which accept-native's report
 // carries to the hosted check and the sitting's record).
 export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost, guard = null}) {
   const callerKey = secret && typeof secret === 'object' ? secret : null;
@@ -493,9 +505,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
                 : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]
                   : ['PASS', 'nothing to quit: no TextEdit started by the open was seen right after it'];
       record(STEP.quitApp, quitStatus, quitDetail);
-      record(STEP.front, app.front.restored ? 'PASS' : frontBefore ? 'FAIL' : 'BLOCKED', app.front.restored
-        ? `${app.front.previous} is frontmost${app.front.before === app.front.previous ? ' (it still was)' : ` again (it was ${app.front.before ?? 'unreadable'})`}`
-        : frontBefore ? `${frontBefore} was frontmost before the run; now ${app.front.after ?? 'unreadable'}` : 'the frontmost application before the run could not be read, so there is nothing to hand back to');
+      record(STEP.front, ...frontStep(app.front, frontBefore));
     }
     if (docDir) {
       rmSync(docDir, {recursive: true, force: true});  // created exclusively by this invocation (mkdtemp)

@@ -4,7 +4,7 @@
 // hosted check as NO VERDICT, and only the fixture's own checks may go unproven by it. All with doubles.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {APPROVALS_CHECK, FIXTURE_VERDICT_CHECK, fixtureGuardRecord, fixtureKeyCell, OWN_STEPS, SECRET_STEPS, STEP, uiDeliveryCheck} from '../../scripts/accept/textedit.mjs';
+import {APPROVALS_CHECK, FIXTURE_VERDICT_CHECK, fixtureGuardRecord, fixtureKeyCell, frontStep, OWN_STEPS, SECRET_STEPS, STEP, uiDeliveryCheck} from '../../scripts/accept/textedit.mjs';
 import {recordKeyUnread} from '../../scripts/hosted-sittings/alert-guard.mjs';
 import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
 import {sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
@@ -83,6 +83,22 @@ test('sitting D: a refused key cell sends nothing, reads the guard after the pau
   const clear = await keyCellWith(guardOn(CLEAR));
   assert.deepEqual(clear.order, ['pause', 'guard', 'frontmost', 'dispatch']);
   assert.deepEqual(clear.out, {sent: true, result: {ok: true}});
+});
+
+// The fixture's hand-back of the front (STEP.front): the capture alert in front after it, or before the run, is a
+// system prompt's (rulings 1136, 1141): BLOCKED naming it, never FAIL, whether or not the guard refused anything; any
+// other front not handed back stays FAIL.
+test('sitting D: the front handed back: the capture alert in front after it, or before the run, is BLOCKED naming it; any other miss stays FAIL', () => {
+  const front = (previous, before, after) => ({previous, before, after, restored: after === previous});
+  assert.equal(frontStep(front('com.apple.Terminal', 'com.apple.TextEdit', 'com.apple.Terminal'), 'com.apple.Terminal')[0], 'PASS');
+  const alertAfter = frontStep(front('com.apple.Terminal', 'com.apple.TextEdit', UNC), 'com.apple.Terminal');
+  assert.equal(alertAfter[0], 'BLOCKED');
+  assert.match(alertAfter[1], /com\.apple\.UserNotificationCenter.*in front after the hand-back/);
+  const alertBefore = frontStep(front(UNC, 'com.apple.TextEdit', 'com.apple.TextEdit'), UNC);
+  assert.equal(alertBefore[0], 'BLOCKED');
+  assert.match(alertBefore[1], /was in front before the run/);
+  assert.deepEqual(frontStep(front('com.apple.Terminal', 'com.apple.TextEdit', 'com.apple.Safari'), 'com.apple.Terminal')[0], 'FAIL');
+  assert.deepEqual(frontStep(front(null, 'com.apple.TextEdit', 'com.apple.TextEdit'), null)[0], 'BLOCKED');
 });
 
 test('sitting D: the document placed clear of the alerts by its pid, from, to and the read-back recorded', async () => {

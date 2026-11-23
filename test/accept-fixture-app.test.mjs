@@ -60,6 +60,15 @@ test('restoreFront activates the previous front only when another app holds it, 
   assert.equal(stuck.restored, false);
 });
 
+// Rulings 1136 and 1141: replayd's capture alert in front before the run is a system prompt, never an app to hand the
+// front back to; it is left alone, as an unknown previous front is.
+test('restoreFront never activates UserNotificationCenter, the capture alert in front before the run', async () => {
+  const calls = [];
+  const r = await restoreFront('com.apple.UserNotificationCenter', {frontmost: () => 'com.apple.TextEdit', activate: id => calls.push(id), app: 'com.apple.TextEdit', sleep: async () => {}});
+  assert.deepEqual(calls, []);
+  assert.deepEqual(r, {previous: 'com.apple.UserNotificationCenter', before: 'com.apple.TextEdit', after: 'com.apple.TextEdit', restored: false});
+});
+
 const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
 const ours = {pid: 42, at: startedAt + 2000};
 // A cleanup with fakes: `running` pids and their launch times; `quit` records what it was asked to signal.

@@ -1350,9 +1350,23 @@ The sittings share the rules:
     too. Anything else not passed is FAIL, named, with the refusal noted.
 
 `sitting.md` gains a section "The alert guard" (`guardTally` in `counts.mjs`). For every record the plan names, it
-lists per step and cell the refusals (NO VERDICT `alert`, NO VERDICT `unread`) and the key cells sent with their key
-reading not taken (`key unread`). The matrix's `counts.md` adds a `key unread` column per side beside its NO VERDICT
-`alert` column. A row's span (`row:<index>`) maps to that row's cell, and a harness key cell gets its own line.
+lists per step and cell the refusals (NO VERDICT `alert`, NO VERDICT `unread`) and the key cells guarded with their key
+reading not taken (`key cells guarded unread`). The count is taken at the guard, before the front check. So it counts
+the key cells guarded unread, whether or not the front check then sent them. The matrix's `counts.md` adds a `key cells
+guarded unread` column per side beside its NO VERDICT `alert` column. A row's span (`row:<index>`) maps to that row's
+cell, and a harness key cell gets its own line.
+
+Known limit of this diagnostic: the matrix names a row's span by the number of rows recorded when the row began
+(`row:<index>`). A row that is never recorded, for example one a stop interrupts, leaves its index to the next row
+recorded. Its count can then be shown against that next row's cell. The total per side is right; the cell it is shown
+against may not be.
+
+STEP.front, the fixture's hand-back of the front, now accounts for the alert as well:
+- If UserNotificationCenter is in front after the hand-back, STEP.front is BLOCKED and names the alert, because
+  rulings 1136 and 1141 make a system prompt's front no verdict. This holds whether or not the guard refused anything.
+- If the alert was the front before the run, `restoreFront` does not open it. It leaves it alone, as it does an
+  unknown previous front, and STEP.front is BLOCKED, naming it.
+- Any other front not handed back stays FAIL.
 
 A and B also guard off hosted runners, on the mini and anywhere else, as the matrix does. The cost is one launch of
 the focus probe for each guarded cell, outside the cell's timing. D and T3b guard on a GitHub-hosted runner only.
@@ -1509,7 +1523,7 @@ New tests:
   output faked. Only vv-1 runs, every other step is SKIP, and the sitting is NO VERDICT, exit 4.
 - **`keyUnread`.**
   - The helper's shape.
-  - A counts its key cells sent with the key unread per cell (`task.act`, `task.close`, `quit`).
+  - A counts its key cells guarded unread per cell (`task.act`, `task.close`, `quit`).
   - The matrix counts them under the row's span, which `counts.md` maps to the row's cell.
   - D counts them, through `fixtureKeyCell`.
   - `guardTally` reads every record shape.

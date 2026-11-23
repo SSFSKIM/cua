@@ -90,12 +90,13 @@ function overlapCause(bounds, scenes) {
 // target's pid and window only (native/engine/Sources/Engine/Activation.swift: "Only the target's pid and window are
 // posted to"; activate()), never to whatever is under the point. So a key cell is checked for the alert holding the key
 // (here) or the front (the key guard), not for an alert overlapping the target's windows. A key reading that could not
-// be taken refuses nothing here, and the cell is sent unguarded against the alert holding the key: the key guard's
-// front check cannot see UserNotificationCenter holding the key while the target is in front. Every such cell is
-// counted (recordKeyUnread), so a sitting shows how many key cells went unchecked.
+// be taken refuses nothing here, and the cell, if the front check then sends it, goes unguarded against the alert
+// holding the key: the key guard's front check cannot see UserNotificationCenter holding the key while the target is in
+// front. Every such guard is counted (recordKeyUnread), so a sitting shows how many key cells went unchecked.
 export const keyCause = ({key = null} = {}) => (key === CAPTURE_ALERT ? {category: 'alert', detail: `${CAPTURE_ALERT} holds the key`} : null);
-// A key cell sent with its key reading not taken (see keyCause), counted per cell in the record its side keeps, beside
-// the refusals: `keyUnread: {cell: n}`.
+// A key cell guarded with its key reading not taken (see keyCause), counted per cell in the record its side keeps, beside
+// the refusals: `keyUnread: {cell: n}`. It is counted at the guard, before the front check, so it counts the key cells
+// guarded unread, whether or not the front check then sent them.
 export function recordKeyUnread(record, cell) {
   const counts = record.keyUnread ??= {};
   counts[cell] = (counts[cell] ?? 0) + 1;

@@ -80,12 +80,16 @@ export async function quitOwned(pids, {kill = (pid, signal) => process.kill(pid,
   return {quit: pids.filter(pid => !alive(pid)), remaining: pids.filter(alive)};
 }
 
+// replayd's capture alert (rulings 1136, 1141): a system prompt, never an app to hand the front back to.
+export const CAPTURE_ALERT_APP = 'com.apple.UserNotificationCenter';
+
 // Hands the front back to `previous` (a bundle id read before the run) when something else is frontmost now. An unknown
-// previous front, or one that is the fixture app itself, is left alone. -> {previous, before, after, restored}.
+// previous front, one that is the fixture app itself, or the capture alert (CAPTURE_ALERT_APP), is left alone.
+// -> {previous, before, after, restored}.
 export async function restoreFront(previous, {frontmost, activate = id => run('/usr/bin/open', ['-b', id]), app, sleep = ms => new Promise(r => setTimeout(r, ms)), waitMs = 3000, pollMs = 200}) {
   const read = async () => { try { return (await frontmost()) ?? null; } catch { return null; } };
   const before = await read();
-  if (!previous || previous === app || before === previous) return {previous, before, after: before, restored: before === previous};
+  if (!previous || previous === app || previous === CAPTURE_ALERT_APP || before === previous) return {previous, before, after: before, restored: before === previous};
   try { activate(previous); } catch {}
   let after = await read();
   for (let waited = 0; after !== previous && waited < waitMs; waited += pollMs) { await sleep(pollMs); after = await read(); }

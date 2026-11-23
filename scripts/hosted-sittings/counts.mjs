@@ -1,7 +1,7 @@
 // The per-cell counts a hosted sitting's job summary prints (#117 M5, T10b′; T10a's request to the design session for
 // its decision on a looser qualification rule): per cell, on each side, the runs every sample of which has a verdict,
 // each run's verdict samples of the samples it holds, the samples NO VERDICT `alert` (ruling 1154: an alert in front
-// or key, or a cell the alert guard refused unsent), and the key cells sent with their key reading not taken (`key
+// or key, or a cell the alert guard refused unsent), and the key cells guarded with their key reading not taken (`key
 // unread`, keyUnreadByCell).
 //
 // The full matrix runs are counted as the judge counts them (../native-matrix/summary.mjs judge: each judged cell's
@@ -14,7 +14,7 @@ import {judge} from '../native-matrix/summary.mjs';
 const isFull = result => result.cell === 'matrix' && result.meta?.planId === 'full';
 const sideOf = (byRun, alert = 0, keyUnread = 0) => ({complete: Object.values(byRun).filter(r => r.verdicts === r.samples).length, runs: Object.keys(byRun).length, byRun, alert, keyUnread});
 const ROW_SPAN = /^row:(\d+)(?::\d+)?$/;
-// The key cells each result sent with their key reading not taken (meta.keyUnread, by span key; the key-cell premise,
+// The key cells each result guarded with their key reading not taken (meta.keyUnread, by span key; the key-cell premise,
 // ./alert-guard.mjs keyCause), per cell and side: a row's span (`row:<index>[:<attempt>]`) is that row's cell, any other
 // span a harness key cell of its own (`harness <span>`). -> Map(cell -> {source, vendor, cua}).
 function keyUnreadByCell(results) {
@@ -74,7 +74,7 @@ export function cellCounts(results, {judgeFull = full => judge(full)} = {}) {
 
 // The alert guard's tally of a sitting, from every step's record whatever its producer (A's meta.json, the matrix's
 // result.json `meta`, D's acceptance.json; ./alert-guard.mjs recordRefusal and recordKeyUnread): per step and cell, the
-// refusals by cause and the key cells sent with their key reading not taken. `records`: [{step, record}] (null when
+// refusals by cause and the key cells guarded with their key reading not taken. `records`: [{step, record}] (null when
 // unread). -> [{step, cell, alert, unread, keyUnread}], steps in order, cells as their record lists them.
 export function guardTally(records) {
   const out = [];
@@ -88,11 +88,11 @@ export function guardTally(records) {
   return out;
 }
 export function renderGuardTally(tally) {
-  if (!tally.length) return 'No refusal and no key cell sent unread in this sitting\'s records.\n';
+  if (!tally.length) return 'No refusal and no key cell guarded unread in this sitting\'s records.\n';
   return [
-    'Per step and cell: the cells the alert guard refused unsent (NO VERDICT `alert` or `unread`), and the key cells sent with their key reading not taken (`key unread`: unguarded against the alert holding the key, which the key guard\'s front check cannot see).',
+    'Per step and cell: the cells the alert guard refused unsent (NO VERDICT `alert` or `unread`), and the key cells guarded with their key reading not taken (`key cells guarded unread`: unguarded against the alert holding the key, which the key guard\'s front check cannot see).',
     '',
-    '| step | cell | NO VERDICT alert | NO VERDICT unread | key unread |',
+    '| step | cell | NO VERDICT alert | NO VERDICT unread | key cells guarded unread |',
     '|---|---|---|---|---|',
     ...tally.map(t => `| ${t.step} | ${t.cell} | ${t.alert} | ${t.unread} | ${t.keyUnread} |`),
   ].join('\n') + '\n';
@@ -103,9 +103,9 @@ const byRunText = side => Object.entries(side.byRun).map(([run, r]) => `${run}: 
 export function renderCounts(counts) {
   if (!counts.length) return 'No matrix cell result in this sitting\'s output: no per-cell counts.\n';
   return [
-    'Per cell: the runs on each side every sample of which has a verdict (of the runs that hold the cell), each run\'s verdict samples of its samples, the side\'s samples NO VERDICT `alert` (an alert in front or key, or a cell the alert guard refused unsent, ruling 1154), and its key cells sent with their key reading not taken (`key unread`: unguarded against the alert holding the key; a harness key cell on its own line). A sample without a verdict is never a pass and never a fail. Complete pairs are the judge\'s (three qualify a cell); `-` for a cell judged on its own.',
+    'Per cell: the runs on each side every sample of which has a verdict (of the runs that hold the cell), each run\'s verdict samples of its samples, the side\'s samples NO VERDICT `alert` (an alert in front or key, or a cell the alert guard refused unsent, ruling 1154), and its key cells guarded with their key reading not taken (`key cells guarded unread`: unguarded against the alert holding the key; a harness key cell on its own line). A sample without a verdict is never a pass and never a fail. Complete pairs are the judge\'s (three qualify a cell); `-` for a cell judged on its own.',
     '',
-    '| cell | source | vendor: complete runs | vendor: verdicts by run | vendor: NO VERDICT alert | vendor: key unread | cua: complete runs | cua: verdicts by run | cua: NO VERDICT alert | cua: key unread | complete pairs |',
+    '| cell | source | vendor: complete runs | vendor: verdicts by run | vendor: NO VERDICT alert | vendor: key cells guarded unread | cua: complete runs | cua: verdicts by run | cua: NO VERDICT alert | cua: key cells guarded unread | complete pairs |',
     '|---|---|---|---|---|---|---|---|---|---|---|',
     ...counts.map(c => `| ${c.cell} | ${c.source} | ${c.vendor.complete} of ${c.vendor.runs} | ${byRunText(c.vendor)} | ${c.vendor.alert} | ${c.vendor.keyUnread} | ${c.cua.complete} of ${c.cua.runs} | ${byRunText(c.cua)} | ${c.cua.alert} | ${c.cua.keyUnread} | ${c.pairs ?? '-'} |`),
   ].join('\n') + '\n';

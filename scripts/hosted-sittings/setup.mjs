@@ -36,8 +36,10 @@
 //                       are its only windows), no window restored (ApplePersistenceIgnoreState), and the Open panel's
 //                       saved frame and size; each read back from the domain and from TextEdit's sandbox container, the
 //                       file it reads, written through the container when the domain's write did not reach it, and one
-//                       the container does not hold as written fails the setup. Then TextEdit's saved application state
-//                       the warm-ups left is removed (clearTextEditSavedState), each path recorded. After the warm-ups'
+//                       the container does not hold as written fails the setup (the container reached through
+//                       `defaults` alone, never a file call: App Data protection's dialog). Then TextEdit's saved
+//                       application state the warm-ups left outside its container is removed (clearTextEditSavedState),
+//                       recorded; the container's rests on ApplePersistenceIgnoreState. After the warm-ups'
 //                       TextEdit ended, before any run launches one. Kept in `venue.textEdit`
 //   key-window trust    whether the key-window reader (../cursor-sitting/ax-state.swift, ./key-window.mjs) holds the
 //                       Accessibility grant where the runs reach the device: asked over the loopback ssh, in the harness

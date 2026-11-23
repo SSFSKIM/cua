@@ -103,6 +103,12 @@ export const textEditWrites = (panel, display) => [
 // TextEdit is sandboxed: it reads its preferences from its container's plist, which `defaults write com.apple.TextEdit`
 // from outside the sandbox need not reach (pilot A's re-run, run 45277221729: WidthInChars 60 read back from the domain
 // while TextEdit's new document took the default 75). The container's plist, as `defaults` names a domain by its path.
+// `/usr/bin/defaults` is the one route into the container: it asks cfprefsd, which does the file's I/O, while a harness
+// process that opened, stat'ed or removed anything under ~/Library/Containers itself could raise macOS's App Data
+// protection dialog (kTCCServiceSystemPolicyAppDataDetailed, seen live on the mini:
+// docs/evidence/2026-10-17-own-sandbox/m0/mini-vendor-computer-superseded/README.md), one more window over the scenes
+// that nobody may answer. The next hosted run's screen at the end (its alert count, any window beyond them) is what
+// shows no prompt came of the reads and writes.
 const TEXTEDIT_CONTAINER = join('Library', 'Containers', TEXTEDIT_DOMAIN, 'Data', 'Library');
 export const textEditContainerDomain = home => join(home, TEXTEDIT_CONTAINER, 'Preferences', TEXTEDIT_DOMAIN);
 const readDefault = (exec, domain, key) => {
@@ -130,13 +136,14 @@ export function writeTextEditDefaults(writes, {env = process.env, platform = pro
   });
   return {domain: TEXTEDIT_DOMAIN, container, writes: done, ok: done.every(w => w.matched)};
 }
-// TextEdit's saved application state, in its container and outside it: the warm-ups end TextEdit by pid, so its state
-// outlives it, and the next launch would restore the window it saved (pilot A's re-run). -> [path].
-export const textEditSavedStates = home => [join(home, TEXTEDIT_CONTAINER, 'Saved Application State', `${TEXTEDIT_DOMAIN}.savedState`),
-  join(home, 'Library', 'Saved Application State', `${TEXTEDIT_DOMAIN}.savedState`)];
+// TextEdit's saved application state outside its container: the warm-ups end TextEdit by pid, so its state outlives it,
+// and the next launch would restore the window it saved (pilot A's re-run). The container's own saved state is never
+// touched (no file call under ~/Library/Containers: see above); restoration off there rests on ApplePersistenceIgnoreState
+// YES, read back from the container domain. -> [path].
+export const textEditSavedStates = home => [join(home, 'Library', 'Saved Application State', `${TEXTEDIT_DOMAIN}.savedState`)];
 // Each removed, only on a GitHub-hosted runner, after the warm-ups' TextEdit ended and before any run launches one.
-// -> [{path, existed, removed, error?}]. A removal refused (an app-data protection, say) is recorded, not thrown: the
-// persistence key read back from the container keeps restoration off on its own.
+// -> [{path, existed, removed, error?}]. A removal refused is recorded, not thrown: the persistence key read back from
+// the container keeps restoration off on its own.
 export function clearTextEditSavedState(home, {env = process.env, platform = process.platform, exists = existsSync, remove = path => rmSync(path, {recursive: true, force: true})} = {}) {
   assertGithubHosted(env, platform, 'TextEdit\'s saved application state');
   return textEditSavedStates(home).map(path => {

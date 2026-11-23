@@ -162,23 +162,26 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
 
 // Pilot A's re-run (run 45277221729): vv-1's TextEdit launch window stood at 241,87 586x488, the frame every vv run reads,
 // with NSRequiresOpenUntitledWindowAtLaunch NO in force: the warm-ups end TextEdit by pid, so its saved application
-// state outlives it and the next launch restores that window. Setup removes the state, sandboxed and not, and records
-// what it removed; only on a hosted runner.
+// state outlives it and the next launch restores that window. Setup removes the state outside the container and records
+// what it removed; only on a hosted runner. Nothing under ~/Library/Containers is touched by a file call (App Data
+// protection's dialog): the container's restoration rests on ApplePersistenceIgnoreState, through defaults.
 test('TextEdit\'s saved application state removed on a hosted runner only, each path recorded: existed, removed, or why not', () => {
-  assert.deepEqual(textEditSavedStates(HOME), [`${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Saved Application State/com.apple.TextEdit.savedState`,
-    `${HOME}/Library/Saved Application State/com.apple.TextEdit.savedState`]);
+  assert.deepEqual(textEditSavedStates(HOME), [`${HOME}/Library/Saved Application State/com.apple.TextEdit.savedState`]);
+  const touched = [];
+  clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: path => { touched.push(path); return true; }, remove: path => touched.push(path)});
+  assert.ok(touched.length && touched.every(path => !path.includes('/Library/Containers/')), 'no file call under the containers');
   const removed = [];
   const remove = path => { removed.push(path); };
   for (const [env, platform] of [[{}, 'darwin'], [HOSTED, 'linux']]) {
     assert.throws(() => clearTextEditSavedState(HOME, {env, platform, exists: () => true, remove}), /refused/);
   }
   assert.deepEqual(removed, []);
-  const [sandboxed, plain] = textEditSavedStates(HOME);
-  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: path => path === sandboxed, remove}),
-    [{path: sandboxed, existed: true, removed: true}, {path: plain, existed: false, removed: false}]);
-  assert.deepEqual(removed, [sandboxed]);
+  const [plain] = textEditSavedStates(HOME);
+  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => true, remove}), [{path: plain, existed: true, removed: true}]);
+  assert.deepEqual(removed, [plain]);
+  assert.deepEqual(clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => false, remove: () => assert.fail('nothing to remove')}), [{path: plain, existed: false, removed: false}]);
   const denied = clearTextEditSavedState(HOME, {env: HOSTED, platform: 'darwin', exists: () => true, remove: () => { throw new Error('EPERM: operation not permitted'); }});
-  assert.deepEqual(denied.map(d => [d.existed, d.removed, d.error]), [[true, false, 'EPERM: operation not permitted'], [true, false, 'EPERM: operation not permitted']]);
+  assert.deepEqual(denied.map(d => [d.existed, d.removed, d.error]), [[true, false, 'EPERM: operation not permitted']]);
 });
 
 test('the venue record declares each frame that differs from the mini\'s: the frame, the alerts read fresh as the reason, the cells grounded on it', () => {
@@ -231,17 +234,17 @@ test('the venue record declares each frame that differs from the mini\'s: the fr
 
 test('the venue renders for sitting.md: each difference with its frame, reason and cells; none off a hosted runner', () => {
   const placed = hostedFrames(ALERTS, [DISPLAY]);
-  const [sandboxed, plain] = textEditSavedStates(HOME);
+  const [plain] = textEditSavedStates(HOME), other = `${HOME}/Library/Saved Application State/other.savedState`;
   const textEdit = {domain: TEXTEDIT_DOMAIN, container: textEditContainerDomain(HOME), ok: true,
     writes: [{key: 'WidthInChars', value: '60', written: true, readBack: '60', container: {readBack: '60', readBackBefore: '75', written: true}, matched: true},
       {key: PERSISTENCE_KEY, value: 'YES', readsAs: '1', written: true, readBack: '1', container: {readBack: '1'}, matched: true}],
-    savedState: [{path: sandboxed, existed: true, removed: true}, {path: plain, existed: false, removed: false}]};
+    savedState: [{path: plain, existed: true, removed: true}, {path: other, existed: false, removed: false}]};
   const md = renderVenue(venueRecord({alerts: ALERTS, displays: [DISPLAY], placed, textEdit}));
   assert.match(md, /TextEdit's preferences \(com\.apple\.TextEdit, read back from its container's plist\): WidthInChars read back \(written through the container: the domain's write did not reach it\), ApplePersistenceIgnoreState read back\./);
-  assert.match(md, new RegExp(`TextEdit's saved application state: removed ${sandboxed.replace(/[.]/g, '\\.')}; none at ${plain.replace(/[.]/g, '\\.')}\\.`));
+  assert.match(md, new RegExp(`TextEdit's saved application state: removed ${plain.replace(/[.]/g, '\\.')}; none at ${other.replace(/[.]/g, '\\.')}\\.`));
   const notHeld = renderVenue(venueRecord({alerts: ALERTS, displays: [DISPLAY], placed, textEdit: {...textEdit, ok: false,
     writes: [{key: 'WidthInChars', value: '60', written: true, readBack: '60', container: {readBack: '75', readBackBefore: '75', written: false}, matched: false}],
-    savedState: [{path: sandboxed, existed: true, removed: false, error: 'EPERM'}]}}));
+    savedState: [{path: plain, existed: true, removed: false, error: 'EPERM'}]}}));
   assert.match(notHeld, /WidthInChars NOT read back from the container \(75; the domain read 60\)/);
   assert.match(notHeld, /NOT removed .*com\.apple\.TextEdit\.savedState \(EPERM\)/);
   assert.match(md, /^## The venue \(ruling 1169\)/);

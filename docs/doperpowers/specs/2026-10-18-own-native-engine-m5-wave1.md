@@ -292,13 +292,20 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   already); (b) each key is read back from the domain and from
   `~/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`, written through that path
   when the container does not hold it, and only the container's read-back puts it in force (else the setup fails);
-  the record keeps both read-backs and whether it was written through (`venue.textEdit.writes[].container`); (c) after
-  the writes, TextEdit's saved state (container and plain `.savedState`) is removed, each path recorded as removed,
-  absent, or not removed with the error (`venue.textEdit.savedState`; a refused removal does not fail the step, the
-  persistence key holding restoration off on its own). The next A re-run proves it: setup's `textedit defaults` detail
-  says how many keys were written through and which state was removed; vv-1's `meta.placement` must show no window at
-  241,87 586x488 at `setup.activate` (no restored window), and `setup.newDocument`'s window about 500 wide, not 603;
-  sitting.md's read-back table shows both clear of x 830.
+  the record keeps both read-backs and whether it was written through (`venue.textEdit.writes[].container`); the
+  container is reached only through `/usr/bin/defaults`, which asks cfprefsd to do the file's I/O: no harness process
+  opens, stats or removes anything under ~/Library/Containers, since that can raise App Data protection's dialog
+  (`kTCCServiceSystemPolicyAppDataDetailed`, seen live on the mini,
+  `docs/evidence/2026-10-17-own-sandbox/m0/mini-vendor-computer-superseded/README.md`), a window over the scenes nobody
+  may answer; (c) after the writes, TextEdit's saved state outside its container
+  (`~/Library/Saved Application State/com.apple.TextEdit.savedState`) is removed, recorded as removed, absent, or not
+  removed with the error (`venue.textEdit.savedState`; a refused removal does not fail the step); the container's own
+  saved state is left alone, and restoration off there rests on `ApplePersistenceIgnoreState YES`, read back from the
+  container domain. The next A re-run proves it: setup's `textedit defaults` detail says how many keys were written
+  through and whether the state was removed; vv-1's `meta.placement` must show no window at 241,87 586x488 at
+  `setup.activate` (no restored window), and `setup.newDocument`'s window about 500 wide, not 603; sitting.md's
+  read-back table shows both clear of x 830; and the sitting's screen at the end shows only the two capture alerts and
+  no window beyond them, which is what shows the container's reads and writes raised no prompt.
 - 2026-11-23, pilot B's TextEdit scene and the placement record (the design session, after pilot B, run 45274556933):
   the parity TextEdit document, the run's RTF opened as a file, stood at 213,78 627x877 on both sides (an opened RTF
   with no view size takes Letter's 612-point width plus a 15-point scroller; WidthInChars sizes new documents only),

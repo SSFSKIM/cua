@@ -1638,15 +1638,23 @@ The `textedit defaults` step now does three more things, hosted only:
   `~/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit`. A key the container does not
   hold is written through that path and read again. Only the container's read-back puts a key in force; one it does
   not hold fails the setup. Each write keeps both read-backs and whether it was written through
-  (`venue.textEdit.writes[].container`: `{readBack, readBackBefore?, written?}`).
-- After the writes, it removes TextEdit's saved application state, the container's and the plain
-  `~/Library/Saved Application State/com.apple.TextEdit.savedState`. Each path is recorded as removed, absent, or not
-  removed with the error (`venue.textEdit.savedState`). A refused removal does not fail the step, since the
-  persistence key keeps restoration off on its own.
+  (`venue.textEdit.writes[].container`: `{readBack, readBackBefore?, written?}`). `/usr/bin/defaults` is the only
+  route into the container: it asks cfprefsd, which does the file's I/O. No harness process opens, stats or removes
+  anything under `~/Library/Containers` itself, because that can raise macOS's App Data protection dialog
+  (`kTCCServiceSystemPolicyAppDataDetailed`, seen live on the mini:
+  `docs/evidence/2026-10-17-own-sandbox/m0/mini-vendor-computer-superseded/README.md`). That dialog would be one more
+  window over the scenes, and nobody may answer it.
+- After the writes, it removes TextEdit's saved application state outside its container,
+  `~/Library/Saved Application State/com.apple.TextEdit.savedState`, recorded as removed, absent, or not removed with
+  the error (`venue.textEdit.savedState`). A refused removal does not fail the step. The container's own saved state
+  is left alone. Restoration off there rests on `ApplePersistenceIgnoreState YES`, read back from the container
+  domain.
 
-The step's detail and sitting.md's venue line say which keys were written through and which state was removed. The
-next A re-run proves it. vv-1's `meta.placement` must show no window at 241,87 586x488 at `setup.activate`, and the
-`setup.newDocument` window about 500 wide, not 603. The read-back table must show both clear of x 830.
+The step's detail and sitting.md's venue line say which keys were written through and whether the state was removed.
+The next A re-run proves it. vv-1's `meta.placement` must show no window at 241,87 586x488 at `setup.activate`, and
+the `setup.newDocument` window about 500 wide, not 603. The read-back table must show both clear of x 830. The
+sitting's screen at the end must show only the two capture alerts and no window beyond them: that is what shows the
+container's reads and writes raised no prompt.
 
 ### The placement record
 

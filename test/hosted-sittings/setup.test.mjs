@@ -25,8 +25,8 @@ const MODE = (width, height, modeId) => ({width, height, modeId, pixelWidth: wid
 const SWITCHED = {ok: true, detail: '1024x768 (mode 3) -> 1920x1080 (mode 10), read back 1920x1080; 0 alert windows, none moved; no prompt',
   record: {before: {mode: MODE(1024, 768, 3), alerts: [], front: null}, set: MODE(1920, 1080, 10), readBack: {bounds: {x: 0, y: 0, width: 1920, height: 1080}, mode: MODE(1920, 1080, 10)},
     after: {alerts: [], front: null}, promptSeen: [], recentred: [], watchedMs: 3000}};
-// TextEdit's saved application state the warm-ups left (./venue.mjs textEditSavedStates): the container's by default.
-const SAVED_STATE = `${HOME}/Library/Containers/com.apple.TextEdit/Data/Library/Saved Application State/com.apple.TextEdit.savedState`;
+// TextEdit's saved application state the warm-ups left outside its container (./venue.mjs textEditSavedStates).
+const SAVED_STATE = `${HOME}/Library/Saved Application State/com.apple.TextEdit.savedState`;
 function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}, trustFailed = null, savedStates = [SAVED_STATE]} = {}) {
   const calls = [], defaults = new Map();
   const exec = (command, args, options = {}) => {
@@ -174,11 +174,11 @@ test('ruling 1169: the venue: each scene\'s hosted frame clear of the alerts rea
   assert.deepEqual(writes, wrote.flatMap(([key, value]) => [`/usr/bin/defaults write com.apple.TextEdit ${key} ${value}`, `/usr/bin/defaults write ${container} ${key} ${value}`]));
   assert.ok(report.venue.textEdit.writes.every(w => w.matched && w.container.written === true));
   assert.match(report.steps.find(s => s.step === 'textedit defaults').detail,
-    /^com\.apple\.TextEdit: WidthInChars 60, NSRequiresOpenUntitledWindowAtLaunch NO, ApplePersistenceIgnoreState YES, NSWindow Frame NSNavPanelAutosaveName 22 560 720 440 0 0 1920 1055, NSNavPanelExpandedSizeForOpenMode \{720, 440\}; each read back from TextEdit's container \(5 written through it\); saved application state removed: .*Containers\/com\.apple\.TextEdit\/Data\/Library\/Saved Application State\/com\.apple\.TextEdit\.savedState$/);
-  // The warm-ups' saved state removed, after them and before the record; the one not there, recorded as absent.
+    /^com\.apple\.TextEdit: WidthInChars 60, NSRequiresOpenUntitledWindowAtLaunch NO, ApplePersistenceIgnoreState YES, NSWindow Frame NSNavPanelAutosaveName 22 560 720 440 0 0 1920 1055, NSNavPanelExpandedSizeForOpenMode \{720, 440\}; each read back from TextEdit's container \(5 written through it\); saved application state removed: \/Users\/runner\/Library\/Saved Application State\/com\.apple\.TextEdit\.savedState$/);
+  // The warm-ups' saved state removed, after them and before the record; nothing under the containers by a file call.
   assert.deepEqual(calls.filter(c => c.kind === 'remove').map(c => c.path), [SAVED_STATE]);
   assert.ok(calls.findIndex(c => c.kind === 'remove') > calls.findIndex(c => c.kind === 'warm-up vendor'));
-  assert.deepEqual(report.venue.textEdit.savedState.map(s => [s.existed, s.removed]), [[true, true], [false, false]]);
+  assert.deepEqual(report.venue.textEdit.savedState.map(s => [s.existed, s.removed]), [[true, true]]);
   assert.deepEqual(calls.at(-1).record.venue, report.venue);
 
   // The screen unread: the hosted sizes at the mini's origins, unplaced; the setup goes on and the guard refuses what overlaps.

@@ -932,3 +932,33 @@ How this reads:
 - Every row's effect was the same: the list dismissed, with no option taken.
 - The rates are 2/20 on main and 1/20 on the fix. The counted runs' 0/5 on main and 1/5 on the fix are the same
   intermittent failure. It is route 3's activation guard on Chromium's datalist, outside #453's route.
+
+## #500: CFNull label slots, counted, and #453's qual on fix/500-cfnull-label 17930e20 against main 435420cc
+
+Kit `probe/500-measure` (this kit merged with `probe/442-measure`; `02014dd9`): #442's rows record each observation's
+`timings.nullLabelSlots` (`observations: {count, nullLabelSlots[]}`), #453's qual already keeps every observation's
+numeric timings, and `scripts/probe-500/nulls.mjs <dir>...` tabulates both per head, app and scene.
+
+Runs (one hosted macOS run at a time, image 20261117.0516.1, macOS 26.7.2):
+- #442's kit, both heads interleaved, mode measure, 2 reps, cold, every cell but #435's frameless twins (which make
+  rows invalid by design and aborted [45156477627](https://github.com/SSFSKIM/cua/actions/runs/45156477627)):
+  [45158464744](https://github.com/SSFSKIM/cua/actions/runs/45158464744). Every row valid on every lane.
+- #453's qual, every cell, `reps 99`: fix [45168133701](https://github.com/SSFSKIM/cua/actions/runs/45168133701),
+  main [45178518588](https://github.com/SSFSKIM/cua/actions/runs/45178518588).
+
+CFNull label slots on the fix (every observation carried the counter):
+
+| app | scenes | rows | observations | nullLabelSlots total | max in one observation |
+|---|---|---|---|---|---|
+| Chrome for Testing 157.0.8103.78 (#442's cells) | 103 units | 206 | 413 | 0 | 0 |
+| Electron 44.4.5 / Chromium 152 (#442's cells) | 103 units | 206 | 412 | 0 | 0 |
+| Safari 27.2 (#442's cells) | 106 units | 212 | 424 | 0 | 0 |
+| Google Chrome 157.0.8103.79 (#453's qual: omnibox, datalist, permission, popover, Remove suggestion, page, site info, input list) | 44 cells | 258 | 536 | 0 | 0 |
+| TextEdit (#458's font pop-up) | 1 cell | 23 | 46 | 0 | 0 |
+
+#453's rows, fix against main 435420cc: delivered, confirmed and taken the same in every overlay cell (omnibox 18/18,
+popover 18/18, permission allow 15/15 and block 15/15); datalist refused `actionableDescendant` 18/18 and Remove
+suggestion 18/18 on both; the omnibox re-laid out refused 60/60 on both, nothing taken (main `labelChanged` ×60; fix
+`labelChanged` ×59 and `gone` ×1, `omnibox-shared-behind-relayout-1`, whose recorded row was no longer at the point:
+now no row; its observations counted 0 null slots). Wrong row 0/281 on both. #442's kit: 102 of 103 units answer the
+same per lane; `popupwait/link` (report-only, a popup timing race) differs on CfT and Electron.

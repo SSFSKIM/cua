@@ -91,7 +91,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [ ] T4 — The hosted gate builds the bundle.
   - [ ] T5 — The window-frame probe and PR #199.
   - [ ] T6 — Docs.
-  - [ ] T7 — Records: M4's entries, report and evidence; hold 10's evidence.
+  - [x] (2026-11-23) T7 — Records: M4's entries, report and evidence; hold 10's evidence (dd9e3729, 357cff86, c4971d18, 7cd333f8, de0feaeb; all 47 and 103 files in after the owner-content check and the design session's ruling on the account path; reviewed clean).
 
 ## Scope, inheritance and evidence
 

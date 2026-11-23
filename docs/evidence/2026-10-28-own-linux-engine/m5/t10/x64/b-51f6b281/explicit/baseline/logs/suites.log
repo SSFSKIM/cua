@@ -1,0 +1,11 @@
+2026-11-22T07:03:15Z == baseline head 51f6b281692c47060a47399b72da363748aad7db label counted device cua-171 engine installed selection explicit dirty=no
+2026-11-22T07:08:28Z cv run-1 exit 0
+2026-11-22T07:10:34Z cc run-1 exit 0
+2026-11-22T07:15:45Z cv run-2 exit 0
+2026-11-22T07:17:50Z cc run-2 exit 0
+2026-11-22T07:22:59Z cv run-3 exit 0
+2026-11-22T07:25:04Z cc run-3 exit 0
+2026-11-22T07:25:04Z summary cv exit 0
+2026-11-22T07:25:04Z summary cc exit 0
+2026-11-22T07:25:05Z compare exit 0 VERDICT: PASS
+2026-11-22T07:25:05Z == baseline exit 0

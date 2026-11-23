@@ -1,0 +1,17 @@
+2026-11-22T06:01:03Z == fallback head 8f070d5c81786a6f5c1364e3307421c89cc9d3a3 label counted device cua-171 engine installed selection default dirty=no
+2026-11-22T06:01:34Z run home /tmp/t137-a-8f070d5c-fallback/fallback/home installed
+2026-11-22T06:01:34Z fallback home none: shaped exit 0 {"kind":"none","engine":null,"record":null,"verifiedVersion":null}
+2026-11-22T06:01:34Z fallback home none: probe exit 1
+2026-11-22T06:02:11Z run home /tmp/t137-a-8f070d5c-fallback/fallback/home installed
+2026-11-22T06:02:12Z fallback home previous: shaped exit 0 {"kind":"previous","engine":{"sha256":"a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78","build":"pinned","version":"0.4.2"},"record":{"version":"0.4.2","sha256":"a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78"},"verifiedVersion":"0.4.2"}
+2026-11-22T06:02:12Z fallback home previous: probe exit 1
+2026-11-22T06:02:43Z run home /tmp/t137-a-8f070d5c-fallback/fallback/home installed
+2026-11-22T06:02:43Z fallback home released: shaped exit 0 {"kind":"released","engine":{"sha256":"751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca","build":"pinned","version":"0.4.0"},"record":{"version":"0.4.0","sha256":"751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"},"verifiedVersion":"0.4.0"}
+2026-11-22T06:02:44Z fallback home released: probe exit 1
+2026-11-22T06:03:14Z run home /tmp/t137-a-8f070d5c-fallback/fallback/home installed
+2026-11-22T06:03:15Z fallback home older: shaped exit 0 {"kind":"older","engine":{"sha256":"5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60","build":"pinned","version":"0.3.0"},"record":{"version":"0.3.0","sha256":"5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60"},"verifiedVersion":"0.3.0"}
+2026-11-22T06:03:15Z fallback home older: probe exit 1
+2026-11-22T06:03:45Z run home /tmp/t137-a-8f070d5c-fallback/fallback/home installed
+2026-11-22T06:03:46Z fallback home unrecorded: shaped exit 0 {"kind":"unrecorded","engine":{"sha256":"5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60","build":"unknown","version":null},"record":{"version":"0.4.3","sha256":"f1513e79f4efdb3dd950e108fec05ce59b090926907a3071ee65ca3899d4921f"},"verifiedVersion":null}
+2026-11-22T06:03:46Z fallback home unrecorded: probe exit 1
+2026-11-22T06:03:46Z == fallback exit 1

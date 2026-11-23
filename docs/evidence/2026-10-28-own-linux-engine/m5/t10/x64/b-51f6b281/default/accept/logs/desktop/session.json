@@ -1,0 +1,41 @@
+{
+  "mode": "session",
+  "harness": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-ab8d232d7e382f288",
+  "command": [
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-ab8d232d7e382f288/scripts/linux-engine-gate/suites.sh",
+    "inner-accept"
+  ],
+  "started": "2026-11-22T06:07:42.807Z",
+  "display": ":1",
+  "server": 3989887,
+  "bus": "unix:path=/tmp/t137-b-51f6b281-accept/accept/desktop/session/bus/dbus-Ebmc80EGh1,guid=b72872d17fdee05112fd2bc96b0286ae",
+  "busPid": 3989894,
+  "a11y": "unix:path=/run/user/501/at-spi/bus_1,guid=067aca99c1fd131430ea58826b0286ae",
+  "openbox": 3989910,
+  "environment": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-3989880-cbf842f76ff8",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/t137-b-51f6b281-accept/accept/desktop/session/bus/dbus-Ebmc80EGh1,guid=b72872d17fdee05112fd2bc96b0286ae",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop"
+  },
+  "result": {
+    "code": 0,
+    "signal": null
+  },
+  "busStop": {
+    "terminated": true,
+    "killed": false
+  },
+  "watchdog": {
+    "clean": true,
+    "reason": null
+  },
+  "finished": "2026-11-22T06:11:07.346Z",
+  "ended": [
+    {
+      "what": "openbox",
+      "pid": 3989910
+    }
+  ]
+}

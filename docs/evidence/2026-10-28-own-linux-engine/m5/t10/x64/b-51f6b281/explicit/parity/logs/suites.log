@@ -1,0 +1,8 @@
+2026-11-22T06:24:38Z == parity head 51f6b281692c47060a47399b72da363748aad7db label counted device cua-171 engine installed selection explicit dirty=no
+2026-11-22T06:25:29Z prepared home /Users/new/.local/share/cua-parity-remote/parity-QzFseY on :1 unix:path=/tmp/t137-b-51f6b281-parity/parity/desktop/session/bus/dbus-JwJKOWlpIB,guid=637dc62c86b47bb953ac7e156b028aa7
+2026-11-22T06:25:34Z pinned check of /Users/new/.local/share/cua-parity-remote/parity-QzFseY: exit 0, acceptance on the pinned release: /Users/new/.local/share/cua-parity-remote/parity-QzFseY/engine/linux/cua-engine
+2026-11-22T06:45:22Z vendor exit 0 {"out":"/Users/new/.local/share/cua-171/task137/live/b-51f6b281/explicit/parity/vendor","cases":34,"pending":0,"pendingEnvironmentCells":0,"pendingObligations":[],"complete":true,"assertions":"RECORDED_VENDOR_DEFECT","coveredCases":31,"recordedVendorDefects":3,"engine":"vendor"}
+2026-11-22T07:03:13Z cua exit 0 {"out":"/Users/new/.local/share/cua-171/task137/live/b-51f6b281/explicit/parity/cua","cases":34,"pending":0,"pendingEnvironmentCells":0,"pendingObligations":[],"complete":true,"assertions":"PASS","coveredCases":34,"recordedVendorDefects":0,"engine":"cua"}
+2026-11-22T07:03:13Z diff exit 0
+2026-11-22T07:03:14Z cleanup exit 0
+2026-11-22T07:03:15Z == parity exit 0

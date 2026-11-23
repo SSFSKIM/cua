@@ -1,0 +1,6 @@
+2026-11-22T06:00:26Z == device head 8f070d5c81786a6f5c1364e3307421c89cc9d3a3 label counted device cua-171 engine installed selection default dirty=no
+2026-11-22T06:00:57Z run home /tmp/t137-a-8f070d5c-device/device/home installed
+2026-11-22T06:01:02Z pinned check of /tmp/t137-a-8f070d5c-device/device/home/cua: exit 0, acceptance on the pinned release: /tmp/t137-a-8f070d5c-device/device/home/cua/engine/linux/cua-engine
+2026-11-22T06:01:03Z scripts/accept/linux-device-mode.mjs (selection default) exit 1
+2026-11-22T06:01:03Z engine watch: FAIL: no cua-engine under the trusted worker: the engine that answered is not shown to be the home's
+2026-11-22T06:01:03Z == device exit 1

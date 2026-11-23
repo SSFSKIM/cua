@@ -85,7 +85,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-22 01:42Z) M3.5, Linux half — the parity suite with approvals on cua-linux at base 027179bc and head 10846dfd, each against #115's vendor control: head's one difference (`backend`) is also base's; nothing declared for M3 (`m3/linux/README.md`).
   - [x] (2026-10-22 11:23Z) M3.5 — Live: one hold on the mini (10:26:47–11:23Z, controller 98f153b8, rerun on fead3a16, build 0c363f8f approved at the hold start; evidence `m3/hold/`). Results: comparisons A, B and C PASS; acceptance 2 (`verify --engine cua --bind`, asked 1 then 0) and 9 PASS; `accept-native` item 8's live checks PASS after the attestation fix (Decision Log "M3 hold"); items 7 and 8's named suites 141/141 on the mini. Item 1's whole `npm test` on the mini FAILs on 11 environmental cases, so the hosted Node 24 gate is the unit-suite authority (evidence README). Acceptance 6 is M2b's (Decision Log "M3, acceptance 6").
 - [ ] M4 re-cut tasks (branch `feat/117-m4-recut` from main b1b15484; the M4/M5 pre-flight's T1 to T7; Decision Log "M4 re-cut"):
-  - [ ] T1 — Install on macOS, pending-only; builds beside the approved engine and `cua engine approve` promotes (ruling 1118).
+  - [x] (2026-11-23) T1 — Install on macOS, pending-only; builds beside the approved engine and `cua engine approve` promotes (ruling 1118) (bdf3f424, 058bb0e0, review fixes c021e44a, 06864a1f, 768dd996; reviewed clean after four rounds).
   - [x] (2026-11-23) T2 — The permission flow (2865f597, 16a27627, review fixes fda61df9, bcef401d; reviewed clean after three rounds).
   - [ ] T3 — `accept-native`.
   - [ ] T4 — The hosted gate builds the bundle.

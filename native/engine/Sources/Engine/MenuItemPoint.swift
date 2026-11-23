@@ -132,8 +132,9 @@ enum MenuItemPoint<Element> {
 struct RecordedMenuItem<Element> {
   let element: Element
   let title: String?
-  /// #519 (ruling 1146): the title did not read at the observation (`ScreenshotNode.labelsUnread`: a failed read, a null
-  /// slot or a value that is no text), so `title` says nothing, and no title read now can be checked against it.
+  /// #519 (rulings 1146, 1151): the title did not read at the observation as text or as absent
+  /// (`ScreenshotNode.strictLabel`: a failed read, a null slot or a value that is no text), so `title` says nothing, and
+  /// no title read now can be checked against it. It only refuses the item already identified, never chooses another.
   var titleUnread = false
 }
 
@@ -150,7 +151,7 @@ func recordedMenuItem<Element>(_ verdict: StalePointVerdict<Element>) -> Recorde
 /// a role, else #433's recorded control beneath it. Nil when the record names none there.
 func recordedAtPoint<Element>(_ verdict: StalePointVerdict<Element>, roles: Set<String>)
   -> (element: Element, role: String, title: String?, titleUnread: Bool)? {
-  func unread(_ node: ScreenshotNode<Element>) -> Bool { node.labelsUnread.contains(.title) }
+  func unread(_ node: ScreenshotNode<Element>) -> Bool { node.strictLabel(.title) != .text(node.title) }
   if let node = verdict.node {
     if roles.contains(node.role) { return (verdict.current ?? node.element, node.role, node.title, unread(node)) }
     var index = node.ancestor
@@ -182,7 +183,7 @@ func recordedMenuItems<Element>(_ verdict: StalePointVerdict<Element>) -> Record
   guard let point = verdict.point else { return found }
   let shown = CGPoint(x: point.x - verdict.windowShift.dx, y: point.y - verdict.windowShift.dy)
   found.holding = verdict.nodes.filter { $0.role == kAXMenuItemRole && $0.shown.map { holdsPoint($0, shown) } == true }
-    .map { RecordedMenuItem(element: $0.element, title: $0.title, titleUnread: $0.labelsUnread.contains(.title)) }
+    .map { RecordedMenuItem(element: $0.element, title: $0.title, titleUnread: $0.strictLabel(.title) != .text($0.title)) }
   if found.identified == nil, found.holding.count == 1 { found.identified = found.holding[0] }
   return found
 }

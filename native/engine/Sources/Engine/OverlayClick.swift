@@ -216,14 +216,17 @@ private func overlayLabelParts(_ role: String) -> [StalePointLabelPart] {
 /// live one cut by `bounded` as the record's was): a part that did not read at the observation, or does not read now, or
 /// reads otherwise, disagrees. #500 (ruling 1131): a part null then and now is passed over, like with like; null on one
 /// side only disagrees; and with every part passed over nothing was compared, which disagrees too (the review of
-/// 435420cc..17930e20, P1: a row null in all its parts is never pressed unchecked).
+/// 435420cc..17930e20, P1: a row null in all its parts is never pressed unchecked). #519 (rulings 1146, 1151): read
+/// strictly (`ScreenshotNode.strictLabel`, `StalePointReads.readStrictLabel`), so a part whose value is no text, then or
+/// now, or an AXStaticText's value whose element now classifies closed, disagrees: the chosen row is refused, never another
+/// chosen.
 func overlayLabelsAgree<Element>(_ node: ScreenshotNode<Element>, reads: StalePointReads<Element>) -> Bool {
   func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
   var compared = false
   for part in overlayLabelParts(node.role) {
-    let then = node.label(part)
+    let then = node.strictLabel(part)
     if case .unreadable = then { return false }
-    let pair = stalePointLabelPair(then, reads.readLabel(node.element, part))
+    let pair = stalePointLabelPair(then, reads.readStrictLabel(node.element, part))
     if pair == .next { continue }
     guard case let .texts(recorded, now) = pair, text(recorded) == text(now.map(bounded)) else { return false }
     compared = true
@@ -378,13 +381,14 @@ func overlayInert<Element>(_ node: ScreenshotNode<Element>) -> Bool { node.actio
 /// Whether a recorded node repeats the row (ruling 1083; the datalist option's inner text): the same role, the same
 /// recorded label parts (`overlayLabelParts`), every one read (#500, ruling 1131: or null on both, like with like, so
 /// long as at least one part was compared: a node null in all its parts is no repeat, the review of
-/// 435420cc..17930e20, P1), and a frame within `stalePointFrameTolerance` of the row's.
+/// 435420cc..17930e20, P1), and a frame within `stalePointFrameTolerance` of the row's. #519 (rulings 1146, 1151): read
+/// strictly, so a part whose value was no text on either side is unread, and the acting node no repeat.
 func overlayDuplicate<Element>(_ node: ScreenshotNode<Element>, of row: ScreenshotNode<Element>) -> Bool {
   func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
   guard node.role == row.role, frameDistance(node.frame, row.frame) <= stalePointFrameTolerance else { return false }
   var compared = false
   for part in overlayLabelParts(row.role) {
-    switch stalePointLabelPair(node.label(part), row.label(part)) {
+    switch stalePointLabelPair(node.strictLabel(part), row.strictLabel(part)) {
     case .next: continue
     case .unknown: return false
     case let .texts(x, y):

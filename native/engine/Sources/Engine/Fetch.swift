@@ -62,8 +62,9 @@ struct ElementData {
   /// stale-point record keeps the label's apart from a failed read and from an absence (`ScreenshotNode.labelsNull`).
   var null: Set<String> = []
   /// #519 (ruling 1146): the label attributes (`StalePointLabelPart`) whose slot held a value that is no text (a CFNumber
-  /// AXTitle): each decodes as none, but the stale-point record keeps it unread, never absent (`screenshotLabelsUnknown`).
-  /// No text is made of the value. Not a failed read, so `unreadable` and #405's classification are untouched.
+  /// AXTitle), judged by its type alone: each decodes as none, and the stale-point record keeps it apart
+  /// (`ScreenshotNode.labelsNonText`, ruling 1151) for the consumers that read it strictly. No text is made of the value.
+  /// Not a failed read, so `unreadable` and #405's classification are untouched.
   var nonText: Set<String> = []
   /// Whether AXRole read: neither failed nor null (#501, ruling 1131), either of which decodes as AXUnknown and leaves the
   /// node's role unknown (`ScreenshotNodeRead.roleRead`), never a known inert one.

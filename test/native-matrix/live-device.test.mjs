@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {reactivateApp} from '../../scripts/repl-parity/scenes-mac.mjs';
-import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
+import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal, pendingLaunches} from '../../scripts/native-matrix/live-checks.mjs';
 import {
   COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, probeBarrier, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
   probeStatus, saveFrontmost, saveInputSource,
@@ -831,7 +831,7 @@ test('recover: a probe whose pid was never resolved is waited for (any probe of 
 });
 
 // A probe device: the process table the probe appears in once launched, its output file written at the launch.
-function probeDevice({identified = true, exits = true, killable = true, alongside = [], journalAtLaunch = null} = {}) {
+function probeDevice({identified = true, answers = true, exits = true, killable = true, alongside = [], journalAtLaunch = null} = {}) {
   const launched = [], killed = [], atLaunch = [];
   let running = false, polls = 0;
   const probeRow = {pid: 900, ppid: 1, uid: process.getuid(), start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source current`};
@@ -839,7 +839,7 @@ function probeDevice({identified = true, exits = true, killable = true, alongsid
   return {launched, killed, atLaunch, options: {
     exec: (command, args) => {
       if (journalAtLaunch) atLaunch.push(fs.readFileSync(join(journalAtLaunch, JOURNAL_FILE), 'utf8'));
-      launched.push(args); running = true; fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return '';
+      launched.push(args); running = true; if (answers) fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return '';
     },
     table: () => [older, ...(running && identified ? [probeRow] : []), ...(running ? alongside : [])],
     alive: pid => pid === 900 && running && !(exits && ++polls > 2),
@@ -863,6 +863,26 @@ test('runProbe: journaled pending before its open, launched without -W, resolved
     runProbe(BUNDLE, ['input-source', 'current'], {...probeDevice(options).options, run: unresolved});
     assert.deepEqual(journalOf(unresolved).map(e => e.pid), [null, null], JSON.stringify(options));
   }
+});
+
+// LaunchServices has the request, but by the identification deadline no probe process was found and no final line was
+// written: the probe may still start after its launcher is gone. The journal marks the launch `unidentified`, which is
+// still pending, and only the probe's own final line (read by awaitProbe) or a person's `-` gives it an outcome.
+test('launchProbe: a launch neither identified nor answered by its deadline stays pending; recovery once its launcher has exited is not ok', async () => {
+  const run = scratch(), device = probeDevice({identified: false, answers: false});
+  const handle = launchProbe(BUNDLE, ['window-frame', '--pid', '402', '--window', '7', '--frame', '80,80,920,520'], {...device.options, run});
+  assert.equal(handle.pid, null);
+  assert.match(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8'), new RegExp(`\tunidentified\t-\t${handle.label}\n$`));
+  assert.deepEqual(pendingLaunches(journalOf(run)), [handle.label]);
+  // The launcher (this setup) is gone and nothing runs: an empty table is no outcome.
+  const out = await recover({run, io: recoveryIo(run, {rows: [], journal: journalOf(run)}).io, bounds: SCALED});
+  assert.equal(out.ok, false, JSON.stringify(out));
+  assert.equal(out.putBack, null);
+  assert.ok(out.manual.includes(handle.label), out.manual);
+  // The probe's own final line, when it comes, is its outcome.
+  fs.writeFileSync(handle.out, '{"matched":true}\n');
+  assert.deepEqual(awaitProbe(handle, device.options), {matched: true});
+  assert.deepEqual(pendingLaunches(journalOf(run)), []);
 });
 
 test('launchProbe and awaitProbe: the launch returns a handle another process can await (a JSON round trip), the answer read and the scratch removed', () => {

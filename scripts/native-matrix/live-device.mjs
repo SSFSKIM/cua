@@ -885,9 +885,10 @@ const processStart = pid => {
   try { return execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: DEVICE_READ_MS}).trim() || null; }
   catch { return null; }
 };
-export function journalProcess(run, {kind, pid, start, label, pending = false}) {
+export function journalProcess(run, {kind, pid, start, label, pending = false, unidentified = false}) {
   const at = pid ? (start ?? processStart(pid)) : null;
-  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pending ? 'pending' : (pid ?? '-')}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
+  const status = pending ? 'pending' : unidentified ? 'unidentified' : (pid ?? '-');
+  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${status}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
 }
 const readJournal = run => { try { return parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 
@@ -948,8 +949,11 @@ export function launchProbe(bundle, args, {exec = execFileSync, run = null, tabl
       sleep(PROBE_POLL_MS);
     }
     const probe = fresh.length === 1 && fresh[0].command.includes(` --probe ${args[0]}`) ? fresh[0] : null;
-    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label});
-    return {command: args[0], label, pid: probe?.pid ?? null, start: probe?.start ?? null, scratch, out, launchedAt};
+    // No process found and no final line yet: the handoff may still start the probe, so the launch stays pending until
+    // its own final line (awaitProbe) or a person resolves it; never `-` from an empty scan.
+    const unidentified = !probe && lastLine(out) === undefined;
+    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label, unidentified});
+    return {command: args[0], label, pid: probe?.pid ?? null, start: probe?.start ?? null, scratch, out, launchedAt, ...(run && unidentified ? {journal: run} : {})};
   } catch (error) { fs.rmSync(scratch, {recursive: true, force: true}); throw error; }
 }
 
@@ -968,6 +972,8 @@ export function awaitProbe(handle, {alive = processRuns, kill = (pid, signal) =>
     }
     const answer = lastLine(out);
     if (answer === undefined) throw new Error(`the ${command} probe printed no answer`);
+    // An unidentified launch's own final line is its outcome.
+    if (handle.journal) journalProcess(handle.journal, {kind: 'probe', pid: null, label: handle.label});
     return answer;
   } finally { fs.rmSync(handle.scratch, {recursive: true, force: true}); }
 }

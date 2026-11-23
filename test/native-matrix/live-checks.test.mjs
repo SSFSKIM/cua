@@ -387,7 +387,9 @@ test('parseProcessTable and parseJournal: ps\'s lstart and the journal\'s rows r
     {kind: 'probe', pid: null, start: null, label: 'keystroke'},
     {kind: 'probe', pid: null, start: null, label: 'input-source#a1', pending: true}]);
   // Pending until a later row of its label gives its outcome, a pid or `-`; nothing else resolves it.
-  assert.deepEqual(pendingLaunches(parseJournal('probe\tpending\t-\ta#1\nprobe\tpending\t-\tb#2\nprobe\t-\t-\ta#1\nprobe\tpending\t-\tc#3\nprobe\t900\tT\tc#3\n')), ['b#2']);
+  assert.deepEqual(pendingLaunches(parseJournal('probe\tpending\t-\ta#1\nprobe\tpending\t-\tb#2\nprobe\t-\t-\ta#1\nprobe\tpending\t-\tc#3\nprobe\t900\tT\tc#3\n'
+    + 'probe\tpending\t-\td#4\nprobe\tunidentified\t-\td#4\nprobe\tpending\t-\te#5\nprobe\tunidentified\t-\te#5\nprobe\t-\t-\te#5\n')), ['b#2', 'd#4'],
+    'an identification that timed out is still pending, until its final line or a person writes `-`');
 });
 
 test('recoveryPlan: only journaled pids whose start time still matches are stopped; an in-flight scene up is awaited; anything else is listed, untouched', () => {

@@ -124,4 +124,47 @@ final class NeverSecureRoleTests: XCTestCase {
     let others = recording.nodes.filter { !open.contains($0["token"] as? String ?? "") }
     XCTAssertFalse(String(data: try JSONSerialization.data(withJSONObject: others), encoding: .utf8)!.contains(plaintext))
   }
+  /// The review of 271aa18a (P2): a handle observed as a text field that answers AXGroup with a null or failed subrole in
+  /// the batch just before the attributed-string read is open, but no longer a text: neither the walk's Markdown nor
+  /// select_text requests that read of it (a group's text taken for the field's Markdown, or used to choose a range).
+  /// The field still answering a text role is read as before.
+  func testAFieldThatTurnsIntoAGroupBeforeTheMarkdownReadIsNotReadAsText() throws {
+    for slot in SubroleSlot.allCases {
+      let tree = FakeTree()
+      tree.children = [0: [1]]
+      tree.extra[1] = ["AXRole": kAXTextFieldRole as CFString, "AXValue": "abc" as CFString]
+      let source = FakeSource(tree)
+      var data = try XCTUnwrap(source.data(el(1)))
+      XCTAssertEqual(source.markdown(el(1), data: &data, length: 3), nil, "\(slot): the fake's Markdown")
+      XCTAssertEqual(source.markdownCalls, 1, "\(slot): a text field still a text field is read")
+      tree.extra[1]?["AXRole"] = kAXGroupRole as CFString
+      switch slot {
+      case .null: tree.nullAttributes[1] = [kAXSubroleAttribute]
+      case .failed: tree.unreadableAttributes[1] = [kAXSubroleAttribute]
+      }
+      XCTAssertNil(source.markdown(el(1), data: &data, length: 3), "\(slot)")
+      XCTAssertEqual(source.markdownCalls, 1, "\(slot): no attributed read of the group")
+      XCTAssertFalse(data.valueUnread || data.secure, "\(slot): open, its data kept")
+
+      var batches = 0, attributed = 0
+      var ops = FakeAX().ops
+      ops.batch = { _, names in
+        batches += 1
+        var reply = AttributeRead()
+        reply.decode(kAXRoleAttribute, (batches == 1 ? kAXTextFieldRole : kAXGroupRole) as CFString)
+        if batches > 1, slot == .null { reply.decode(kAXSubroleAttribute, kCFNull) }
+        if batches > 1, slot == .failed { reply.unreadable.insert(kAXSubroleAttribute) }
+        if names.contains(kAXValueAttribute) { reply.values[kAXValueAttribute] = "abc" as CFString }
+        return reply
+      }
+      let found = try selectionSearchText(el(1), observedRole: kAXTextFieldRole, ax: ops, attributed: { _, _ in
+        attributed += 1
+        return nil
+      })
+      XCTAssertEqual(found.plain, "abc", "\(slot)")
+      XCTAssertNil(found.markdown, "\(slot)")
+      XCTAssertEqual(batches, 2, "\(slot)")
+      XCTAssertEqual(attributed, 0, "\(slot): select_text requests no attributed read of the group")
+    }
+  }
 }

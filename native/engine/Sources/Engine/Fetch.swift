@@ -273,6 +273,12 @@ func valueClassification(_ read: AttributeRead) -> ValueClassification {
   return ValueClassification(closed: true, secure: presumedSecureRoles.contains(role), failed: true)
 }
 
+/// #525: whether a classification reply that found its element open names a role whose Markdown is read
+/// (`markdownRoles`). An element observed as a text field may answer another role by the time its attributed string
+/// would be read; a group's subrole no longer closes it (`neverSecureRoles`), so the role read in that same reply,
+/// not the one observed, decides the read.
+func markdownEligible(_ read: AttributeRead) -> Bool { readbackBatchRole(read).map(markdownRoles.contains) ?? false }
+
 /// #405: whether a reply classifies its element closed (`valueClassification`), its value attributes dropped, by the rule
 /// every value read of a field follows (`writtenValueFieldClosed`).
 func valueReadClosed(_ read: AttributeRead) -> Bool { valueClassification(read).closed }
@@ -466,14 +472,17 @@ class ElementSource: @unchecked Sendable {
   /// The Markdown rendering of a text element's value (the parameterized attributed-string read), timed. Its role and
   /// subrole are requested again just before (#405): when that request fails or finds the field closed, nil with no
   /// read, and `data` closed too (here and in the cache), so nothing read of it earlier reaches its node or identity.
+  /// #525: an open reply whose role is no longer a text role (`markdownEligible`) is nil with no read, `data` kept.
   final func markdown(_ element: AXUIElement, data: inout ElementData, length: Int) -> String? {
     // Fails closed: an element that cannot be classified now (a request that fails reads as its role unreadable) keeps
     // nothing read of it before.
-    let classified = request(element, classifyingAttributes).map(valueClassification) ?? ValueClassification(closed: true, secure: true, failed: true)
+    let read = request(element, classifyingAttributes)
+    let classified = read.map(valueClassification) ?? ValueClassification(closed: true, secure: true, failed: true)
     if classified.closed {
       data = close(element, data, classified)
       return nil
     }
+    guard let read, markdownEligible(read) else { return nil }
     return costs.time("markdown") { readMarkdown(element, length: length) }
   }
 

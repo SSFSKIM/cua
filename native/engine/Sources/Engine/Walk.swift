@@ -67,7 +67,9 @@ let widthThreshold = 100
 let widthOmitAbove = 499
 /// `valueMarkdown` is fetched only for text elements whose plain value is at most this long.
 let markdownMaxLength = 2_000
-private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
+/// The roles whose value's Markdown is read (the attributed-string read), at the walk and by select_text; #525: checked
+/// again in the batch that classifies the element just before that read (`markdownEligible`).
+let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
 /// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
 /// FUN_10074cb90 runs only for a value it holds; a password field, whose value is never read, counts as holding one, as

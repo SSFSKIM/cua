@@ -1618,7 +1618,9 @@ table. The mini's document is byte for byte what it was.
   `WidthInChars 60`.
 
 The device takes the view size, like the venue's frames, only from a runner record that attests a GitHub-hosted
-runner (`runnerProblems` empty): any other file at the record's path leaves the mini's frames and bytes.
+runner (`runnerProblems` empty): any other file at the record's path leaves the mini's frames and bytes. Declared gap
+(#560, P3): the read is not bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), so a complete hosted record
+copied onto another machine would still be taken; nothing copies one, and each VM is thrown away.
 
 Not proven: that TextEdit sizes the opened window from the view size. AppKit's reader taking it is shown here, and the
 window is TextEdit's to make. The next B and C runs must read the scene window about 505 wide and about 877 high, its

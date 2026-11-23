@@ -49,10 +49,16 @@ export function indexOfId(ax, id) {
   return elementLines(ax).find(l => lone.test(l.content))?.index ?? null;
 }
 // The value of the element `index` (its `Value: ` part, through the lines a multi-line value spans, up to the next
-// element line or the blank line before the trailer), or null when the line carries none. cua's renderer prints a
-// value's breaks escaped on the one line (#526, ruling 1175: `\n`, `\r`, any other break `\uXXXX`); a value with a
-// break is a long part, so it runs to the line's end, and reads back with its breaks.
-export function valueOfIndex(ax, index) {
+// element line or the blank line before the trailer), or null when the line carries none. The text's rendering decides
+// how a value's line breaks read: the vendor's holds them raw (later lines of their own, or a CR or LS inside the line);
+// cua's prints them escaped on the element's one line (#526, ruling 1175: `\n`, `\r`, any other break `\uXXXX`).
+// `rendering` is the lane's, by default the one the run's bind recorded (globalThis.__axRendering, ./goldens-cells.mjs
+// BIND): on cua's the escapes are decoded, on the vendor's the text is left as printed, so a vendor path like `\new`
+// keeps its backslash. A value holding a break is a long part, so only parts the vendor orders after it follow it, each
+// opening with `, <Label>: `; the value ends before the first. A value without a break ends at its first `, ` (only short
+// parts follow a short value). On cua's lane a literal backslash-n in a value decodes as a break (#555): a check that
+// must tell them apart reads it with `decoded: false` and compares at the rendered form (renderedAs).
+export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, decoded = true} = {}) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
   if (at < 0) return null;
@@ -60,21 +66,31 @@ export function valueOfIndex(ax, index) {
   if (start < 0) return null;
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
-  const value = parts.join('\n');
-  const escaped = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g;
-  if (parts.length === 1 && escaped.test(value)) return value.replace(escaped, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
-  // A part after the value on its first line (only short parts follow a value; a long value moves last).
-  return parts.length === 1 ? value.split(', ')[0] : value;
+  let value = parts.join('\n');
+  const cua = rendering === 'cua';
+  const broken = parts.length > 1 || (cua ? /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/.test(value) : /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/.test(value));
+  if (!broken) return value.split(', ')[0];
+  const next = /, (?:Description|Rows|Columns|URL|Help|Details|Placeholder|ID|Secondary Actions): /.exec(value);
+  if (next) value = value.slice(0, next.index);
+  if (!cua || !decoded) return value;
+  return value.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
+}
+// A text as a lane prints it inside a value: on cua's, its line breaks escaped as src/services/engine/render.mjs
+// escapeLineBreaks does; on the vendor's, as it is.
+export function renderedAs(text, rendering = globalThis.__axRendering) {
+  if (rendering !== 'cua') return String(text);
+  return String(text).replace(/[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/g, c => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
 }
 // The trailer's focused element, or null.
 export function focusedIndexOf(ax) {
   const m = /^The focused UI element is (\d+) /m.exec(String(ax));
   return m ? Number(m[1]) : null;
 }
-// The trailer's selected text, or null.
+// The trailer's selected text, or null: raw inside its fence, three backticks on the vendor's lane and on cua's longer
+// than any run of backticks in the text (#552, ruling 1177).
 export function selectedTextOf(ax) {
-  const m = /\nSelected text: ```\n([\s\S]*?)\n```/.exec(String(ax));
-  return m ? m[1] : null;
+  const m = /\nSelected text: (`{3,})\n([\s\S]*?)\n\1(?=\n|$)/.exec(String(ax));
+  return m ? m[2] : null;
 }
 // The trailer's selected elements: [index].
 export function selectedIndexesOf(ax) {
@@ -268,7 +284,7 @@ export function selectionEvidence(ax, index, before = null) {
 }
 
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
-export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex,
+export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex, renderedAs,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, focusReading, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
   namedLines, idCount, sha256Hex, fieldReading, selectionEvidence].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

@@ -693,3 +693,9 @@ test('recording barriers precede every teardown and a failed final barrier still
   assert.equal(fs.existsSync(join(out.dir, 'preparation.json')), true);
   assert.match(out.meta.probeSettlement.error, /SSH/);
 });
+
+test('#526 review 5: a bind that names its engine records the lane\'s rendering for the value reader; one that does not, nothing', () => {
+  assert.match(BIND('textedit', '/A.app', 'cua'), /globalThis\.__axRendering = "cua";/);
+  assert.match(BIND('textedit', '/A.app', 'vendor'), /globalThis\.__axRendering = "vendor";/);
+  assert.doesNotMatch(BIND('textedit', '/A.app'), /__axRendering/);
+});

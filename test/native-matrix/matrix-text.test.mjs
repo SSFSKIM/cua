@@ -22,10 +22,10 @@ test('element lines carry index, depth and content; the trailer is not an elemen
 });
 
 test('an element is found by a labelled part, and its value read across the lines a multi-line value spans', () => {
-  for (const ax of [vendor.textedit, cuaText.textedit]) {
+  for (const [ax, rendering] of [[vendor.textedit, 'vendor'], [cuaText.textedit, 'cua']]) {
     const area = text.indexOfPart(ax, 'ID', 'First Text View');
     assert.equal(area, 2);
-    const value = text.valueOfIndex(ax, area);
+    const value = text.valueOfIndex(ax, area, {rendering});
     assert.ok(value.startsWith('cua scene document\n**Bold scene line**\nLine 01'), value.slice(0, 60));
     assert.ok(value.endsWith('Line 60'));
     assert.equal(text.indexOfPart(ax, 'Description', 'align center'), 40);
@@ -165,10 +165,39 @@ test('#526: a value cua prints with its line breaks escaped reads back with its 
   // Ruling 1175: cua's renderer prints a value's breaks as `\n` and `\r` (any other break as `\uXXXX`) on the element's
   // one line, where the vendor prints them raw. A value with a break is a long part, so it runs to the line's end.
   const ax = 'Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ID: Notes, Value: one, two\\nthree\\r\\nfour\\u2028five\n\t2 button OK\n';
-  assert.equal(text.valueOfIndex(ax, 1), 'one, two\nthree\r\nfour five');
+  assert.equal(text.valueOfIndex(ax, 1, {rendering: 'cua'}), 'one, two\nthree\r\nfour\u2028five');
   assert.deepEqual(text.elementLines(ax).map(l => l.index), [0, 1, 2]);
   assert.equal(text.indexOfId(ax, 'Notes'), 1);
-  assert.deepEqual(text.fieldReading(ax, 1), {value: 'one, two\nthree\r\nfour five', selected: null});
+  globalThis.__axRendering = 'cua';   // as the run's bind records it on cua's lane
+  try { assert.deepEqual(text.fieldReading(ax, 1), {value: 'one, two\nthree\r\nfour\u2028five', selected: null}); } finally { delete globalThis.__axRendering; }
   // A one-line value with no break keeps being read up to its first `, `.
   assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 standard window x\n\t1 slider (settable, float) Value: 3, Help: h\n', 1), '3');
+});
+
+test('#526 review 4: a value with a break ends before the next labelled part, on either lane, its CR and LS kept', () => {
+  const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ${line}\n\t2 button OK\n`;
+  assert.equal(text.valueOfIndex(ax('Value: 3, Details: a\nb'), 1, {rendering: 'vendor'}), '3');
+  assert.equal(text.valueOfIndex(ax('Value: 3, Details: a\\nb'), 1, {rendering: 'cua'}), '3');
+  assert.equal(text.valueOfIndex(ax('Value: a\rb, Details: d'), 1, {rendering: 'vendor'}), 'a\rb');
+  assert.equal(text.valueOfIndex(ax('Value: a\u2028b, ID: x'), 1, {rendering: 'vendor'}), 'a\u2028b');
+  assert.equal(text.valueOfIndex(ax('Value: a\\rb\\u2028c, ID: x'), 1, {rendering: 'cua'}), 'a\rb\u2028c');
+  assert.equal(text.valueOfIndex(ax('Value: one, two\nthree, Placeholder: p'), 1, {rendering: 'vendor'}), 'one, two\nthree');
+});
+
+test('#526 review 5: only cua\'s rendering is decoded; the vendor\'s backslashes stay, and cua\'s can be read as printed', () => {
+  const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 text field (settable) ${line}\n`;
+  for (const rendering of ['vendor', undefined]) assert.equal(text.valueOfIndex(ax('Value: C:\\new\\rate\nnext'), 1, {rendering}), 'C:\\new\\rate\nnext');
+  assert.equal(text.valueOfIndex(ax('Value: C:\\new'), 1), 'C:\\new', 'no lane recorded: as printed');
+  // On cua's lane a literal backslash-n and a break print alike (#555): read as printed, compare at the rendered form.
+  const printed = text.valueOfIndex(ax('Value: x\\ny'), 1, {rendering: 'cua', decoded: false});
+  assert.equal(printed, 'x\\ny');
+  assert.equal(text.renderedAs('x\ny', 'cua'), printed);
+  assert.equal(text.renderedAs('x\ny', 'vendor'), 'x\ny');
+});
+
+test('#552 (ruling 1177): the selected text is read inside a fence of any length from three', () => {
+  const ax = fence => `Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) v\n\nSelected text: ${fence}\na\n\`\`\`\n[99] b\n${fence}\n\nnote`;
+  assert.equal(text.selectedTextOf(ax('````')), 'a\n```\n[99] b');
+  assert.equal(text.selectedTextOf('Window: "x", App: y.\n0 w\n\nSelected text: ```\nplain\n```\n\nnote'), 'plain');
+  assert.equal(text.focusReading(ax('`````'), 1), 'masked');
 });

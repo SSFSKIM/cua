@@ -1,0 +1,17 @@
+{"t":"2026-11-23T11:32:47.170Z","kind":"start","round":0,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"0.00 3.38 9.33"}
+{"t":"2026-11-23T11:34:13.680Z","kind":"end","round":0,"engine":"h9","code":0,"signal":null,"load":"13.79 7.09 10.10"}
+{"t":"2026-11-23T11:34:13.681Z","kind":"start","round":0,"engine":"off","bin":"/Users/new/.local/share/cua-171/task147/bin/off-044","load":"13.79 7.09 10.10"}
+{"t":"2026-11-23T11:34:57.718Z","kind":"end","round":0,"engine":"off","code":0,"signal":null,"load":"15.24 8.30 10.38"}
+{"t":"2026-11-23T11:34:57.718Z","kind":"start","round":1,"engine":"off","bin":"/Users/new/.local/share/cua-171/task147/bin/off-044","load":"15.24 8.30 10.38"}
+{"t":"2026-11-23T11:35:43.268Z","kind":"end","round":1,"engine":"off","code":0,"signal":null,"load":"15.81 9.43 10.67"}
+{"t":"2026-11-23T11:35:43.269Z","kind":"start","round":1,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"15.81 9.43 10.67"}
+{"t":"2026-11-23T11:37:08.301Z","kind":"end","round":1,"engine":"h9","code":0,"signal":null,"load":"16.48 11.17 11.17"}
+{"t":"2026-11-23T11:37:08.301Z","kind":"start","round":2,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"16.48 11.17 11.17"}
+{"t":"2026-11-23T11:38:34.829Z","kind":"end","round":2,"engine":"h9","code":0,"signal":null,"load":"16.52 12.50 11.64"}
+{"t":"2026-11-23T11:38:34.830Z","kind":"start","round":2,"engine":"off","bin":"/Users/new/.local/share/cua-171/task147/bin/off-044","load":"16.52 12.50 11.64"}
+{"t":"2026-11-23T11:39:20.945Z","kind":"end","round":2,"engine":"off","code":0,"signal":null,"load":"17.12 13.25 11.94"}
+{"t":"2026-11-23T11:39:20.945Z","kind":"start","round":3,"engine":"off","bin":"/Users/new/.local/share/cua-171/task147/bin/off-044","load":"17.12 13.25 11.94"}
+{"t":"2026-11-23T11:40:05.581Z","kind":"end","round":3,"engine":"off","code":0,"signal":null,"load":"16.88 13.73 12.16"}
+{"t":"2026-11-23T11:40:05.581Z","kind":"start","round":3,"engine":"h9","bin":"/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine","load":"16.88 13.73 12.16"}
+{"t":"2026-11-23T11:41:31.510Z","kind":"end","round":3,"engine":"h9","code":0,"signal":null,"load":"16.63 14.44 12.55"}
+{"t":"2026-11-23T11:41:31.510Z","kind":"done","runs_failed_their_verdict":0}

@@ -1,0 +1,2 @@
+2026-11-23T11:36:20Z handle-x64: queued at harness cd03a47bde2a484e1c3ecbf07cc97aada720fda7 (1 changes), engine cua-engine 0.4.4 (23f342178d94), chrome t132-handle-long 4 25 2 e044=/Users/new/.local/share/cua-171/m5/home-x64-044/engine/linux/cua-engine off=/Users/new/.local/share/cua-171/task148/bin/off-044@8, df 49G load=6.74 14.29 14.50
+2026-11-23T11:44:46Z handle-x64: end exit 0 load=17.33 16.70 15.65

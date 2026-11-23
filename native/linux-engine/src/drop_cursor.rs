@@ -118,6 +118,31 @@ fn ours(steps: Vec<(Step, u32)>, outstanding: Option<u32>) -> Vec<(Step, u32)> {
         .collect()
 }
 
+/// What a drop's end asks of its Electron source's cursor watch: the settle's pings and rest, and the read at the
+/// release. [`DropCursor`] is the engine's; a test's fake records the calls (#487's regression).
+pub trait DropCursorWatch {
+    /// [`DropCursor::sync`].
+    fn sync(&mut self, bound: Duration) -> Sync;
+    /// [`DropCursor::sync_and_rest`].
+    fn sync_and_rest(&mut self, rest: Duration) -> (Sync, SecondRest);
+    /// [`DropCursor::at_release`].
+    fn at_release(&mut self, take: Option<u32>) -> AtRelease;
+}
+
+impl DropCursorWatch for DropCursor {
+    fn sync(&mut self, bound: Duration) -> Sync {
+        DropCursor::sync(self, bound)
+    }
+
+    fn sync_and_rest(&mut self, rest: Duration) -> (Sync, SecondRest) {
+        DropCursor::sync_and_rest(self, rest)
+    }
+
+    fn at_release(&mut self, take: Option<u32>) -> AtRelease {
+        DropCursor::at_release(self, take)
+    }
+}
+
 /// The displayed cursor, and the real pointer's motions, watched from before a drag's press to its release, for its
 /// drop's confirmation.
 pub struct DropCursor {

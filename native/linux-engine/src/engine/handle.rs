@@ -186,9 +186,41 @@ impl Confirming {
 pub enum EndStep {
     Motion((i16, i16)),
     Rest(Duration),
-    /// The pointer read again before a visit after the first: one no longer at this place (a person moved it, or it is
-    /// on another screen) ends the visits there, and the release's own read reports the move.
+    /// The pointer read again before each visit, the first included (ruling 1034): one no longer at this place (a
+    /// person moved it, or it is on another screen) ends the visits there, and the release's own read reports the move.
     Check((i16, i16)),
+}
+
+/// What a handle's hold for a take at its end saw (ruling 888.1): a take at its first read, which skips the wait, or
+/// one in the wait.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HoldTake {
+    pub at_first_read: bool,
+    pub in_wait: bool,
+}
+
+/// Whether a handle's end settles its Electron drop (`drop_settle::Settle`): the engine settles drops (`on`), the
+/// button is down, the family rests at a held move's end (`held_rest`), and a take is seen, by the hold (`hold`, at its
+/// first read or in its wait) or by the cursor's watch (`watch_seen`, asked only when the hold saw none). A take the
+/// hold saw counts though the watch, on its own thread, may not have read it yet (#488: one the first read saw skipped
+/// the settle).
+pub fn settles(
+    on: bool,
+    pressed: bool,
+    held_rest: Duration,
+    hold: HoldTake,
+    watch_seen: impl FnOnce() -> bool,
+) -> bool {
+    on && pressed && !held_rest.is_zero() && (hold.at_first_read || hold.in_wait || watch_seen())
+}
+
+/// A handle's settle (`settle`, with its `rest_ms`) put in its `drop_cursor` record: beside the cursor's read when the
+/// release read one, else in a record that says none was read, as a drag's. A settle begun on the hold's first take
+/// whose last read then failed judges nothing, but its drop keeps its record (task 140's re-review).
+pub fn record_settle(cursor_record: &mut Option<Value>, settle: Value) {
+    if let Value::Object(record) = cursor_record.get_or_insert_with(|| json!({ "read": false })) {
+        record.insert("settle".into(), settle);
+    }
 }
 
 /// Why a handle's end runs no tail (ruling 998, confirmed by 1026), or None when it runs one. The tail is the drag's
@@ -216,9 +248,10 @@ pub fn tail_refused(
 /// on another screen, whose place a motion on the engine's root would carry the held pointer back from); `revisit`
 /// whether the family rests at a held move's end (`held_rest`), whose end then visits the pointer's place once more.
 /// With `tail`, the step each visit takes first (`release_sync::xtest_step`), the end's rest standing in for the tail's
-/// first [`crate::release_sync::TAIL_REST`]: [`crate::release_sync::TAIL_VISITS`] visits, each the step and back to the
-/// pointer's place, each followed by [`crate::release_sync::TAIL_REST`], in place of the revisit; a family that does
-/// not rest takes the first rest first. Without it, f9d1f86b's end: the revisit alone. On another screen, neither.
+/// first [`crate::release_sync::TAIL_REST`]: [`crate::release_sync::TAIL_VISITS`] visits, each the pointer read again
+/// (a person's motion since the place was read ends the tail there, the first visit's too, ruling 1034), then the step
+/// and back to the pointer's place, then [`crate::release_sync::TAIL_REST`], in place of the revisit; a family that
+/// does not rest takes the first rest first. Without it, f9d1f86b's end: the revisit alone. On another screen, neither.
 pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit: bool) -> Vec<EndStep> {
     let Some(at) = pointer else {
         return Vec::new();
@@ -231,11 +264,9 @@ pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit:
             if !revisit {
                 steps.push(EndStep::Rest(crate::release_sync::TAIL_REST));
             }
-            for visit in 0..crate::release_sync::TAIL_VISITS {
-                if visit > 0 {
-                    steps.push(EndStep::Check(at));
-                }
+            for _ in 0..crate::release_sync::TAIL_VISITS {
                 steps.extend([
+                    EndStep::Check(at),
                     EndStep::Motion(step),
                     EndStep::Motion(at),
                     EndStep::Rest(crate::release_sync::TAIL_REST),
@@ -314,9 +345,9 @@ pub struct EndedTail {
 /// A handle's last take read, and the tail it decides (rulings 998 and 1030; the re-review of 9fb61c32, 1). The hold
 /// watch is read once, just before the release, as f9d1f86b read it: that read is the one take sample, which the tail
 /// and the release's judgement share, and a take it does not see is the after-release watch's to cancel or report, as
-/// at any release with no take seen. With a take under way at a Chrome source's agent end, the tail follows: the step
-/// along the last segment and back to the pointer's place, [`crate::release_sync::TAIL_REST`], the pointer read again,
-/// and the same once more unless it moved ([`run_end`]). Every other end makes no call past the read.
+/// at any release with no take seen. With a take under way at a Chrome source's agent end, the tail follows: the pointer
+/// read again, then unless it moved the step along the last segment and back to the pointer's place and
+/// [`crate::release_sync::TAIL_REST`], and the same once more ([`run_end`]). Every other end makes no call past the read.
 pub fn read_take_then_tail(io: &mut impl EndIo, t: TailInputs) -> EndedTail {
     let held = io.read_take();
     let taken = matches!(&held, Some(Ok(h)) if h.taken);
@@ -876,6 +907,8 @@ impl Engine {
         // judged below as a take before the end is. Only at the agent's `end`: the exit's, the idle bound's and a lost
         // handle's releases go at once, as they did, so the exit stays inside its backstop and nobody's drop begins then
         let mut held_take = false;
+        // what the hold saw of a take, at its first read or in its wait: the settle below counts either
+        let mut hold_take = HoldTake::default();
         // whether that take came only in the extended hold, past B (`Confirming::Extended`)
         let mut extended_take = false;
         let mut hold_record = Value::Null;
@@ -922,6 +955,10 @@ impl Engine {
             if held && !held_take {
                 still = ended - since;
             }
+            hold_take = HoldTake {
+                at_first_read: taken_by_now,
+                in_wait: held_take,
+            };
             hold_record = json!({
                 "bound_ms": ms(bound),
                 "start_after_press_ms": ms(since.saturating_duration_since(pressed_at)),
@@ -939,12 +976,10 @@ impl Engine {
         // runs behind the pointer is waited for here, so the rest is the page's to answer the pointer's last place, and
         // the release reaches a loop that holds that answer. A take the hold above saw counts though the cursor's
         // watch, on its own thread, may not have read it yet
-        let settling = self.cfg.drop_settle
-            && handle.pressed
-            && !pacing.held_rest.is_zero()
-            && matches!(&handle.cursor, Some(Ok(cursor)) if held_take || cursor.take_seen());
+        let settling = matches!(&handle.cursor, Some(Ok(cursor))
+            if settles(self.cfg.drop_settle, handle.pressed, pacing.held_rest, hold_take, || cursor.take_seen()));
         let before_rest = match handle.cursor.as_mut() {
-            Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
+            Some(Ok(cursor)) if settling => Some(crate::drop_settle::Settle::begin(cursor, pacing.held_rest)),
             _ => {
                 std::thread::sleep(pacing.held_rest.saturating_sub(still));
                 None
@@ -962,11 +997,10 @@ impl Engine {
         crate::desktop::handle_hooks::during_dwell();
         std::thread::sleep(pacing.release);
         let settle = match (before_rest, handle.cursor.as_mut()) {
-            (Some((before, second_rest)), Some(Ok(cursor))) => Some(crate::drop_settle::Settle {
-                before,
-                second_rest,
-                after: cursor.sync(crate::drop_settle::SYNC_BOUND),
-            }),
+            (Some(mut settle), Some(Ok(cursor))) => {
+                settle.after = cursor.sync(crate::drop_settle::SYNC_BOUND);
+                Some(settle)
+            }
             _ => None,
         };
         // the hold watch's read just before the release, the one take sample (ruling 1030), and the tail at the end of a
@@ -1092,9 +1126,7 @@ impl Engine {
             let steps = cursor_read.as_ref().map_or(&[][..], |read| &read.steps[..]);
             let settled = settle.settled(steps, true);
             self.drop_settles.count(&settle, settled);
-            if let Some(Value::Object(record)) = cursor_record.as_mut() {
-                record.insert("settle".into(), settle.record(steps, true));
-            }
+            record_settle(&mut cursor_record, settle.record(steps, true));
             settled
         });
         if let (Some(Confirming::Cursor(true)), Some(read)) = (confirmed, &cursor_read) {
@@ -1344,13 +1376,15 @@ mod tests {
     }
 
     /// Ruling 998: the tail's sequence at a Chrome handle's end, the end's rest standing in for its first 8 ms: the
-    /// step and back, 8 ms, the step and back, 8 ms, then the release.
+    /// step and back, 8 ms, the step and back, 8 ms, then the release; the pointer read before each visit.
     #[test]
     fn a_chrome_handle_s_end_visits_twice_8_ms_apart_and_rests_8_ms_before_the_release() {
         let rest = Duration::from_millis(8);
         assert_eq!(
             end_steps(Some((301, 260)), Some((300, 260)), true),
             vec![
+                // and before the first, after the take read (ruling 1034)
+                EndStep::Check((300, 260)),
                 EndStep::Motion((301, 260)),
                 EndStep::Motion((300, 260)),
                 EndStep::Rest(rest),
@@ -1361,10 +1395,10 @@ mod tests {
                 EndStep::Rest(rest),
             ]
         );
-        // a family with no rest at a held move's end takes the tail's first rest first
+        // a family with no rest at a held move's end takes the tail's first rest first, then the read
         assert_eq!(
-            end_steps(Some((301, 260)), Some((300, 260)), false)[0],
-            EndStep::Rest(rest)
+            end_steps(Some((301, 260)), Some((300, 260)), false)[..2],
+            [EndStep::Rest(rest), EndStep::Check((300, 260))]
         );
         // on another screen nothing is sent, as before
         assert_eq!(end_steps(Some((301, 260)), None, true), vec![]);
@@ -1437,7 +1471,7 @@ mod tests {
             ("Electron, a take", Form::Tail, true, false, true, Some(true)),
             ("the form off", Form::Off, true, true, true, Some(true)),
             ("not the agent's end", Form::Tail, false, true, true, Some(true)),
-            ("no after-release watch", Form::Tail, true, false, false, Some(true)),
+            ("no after-release watch", Form::Tail, true, true, false, Some(true)),
             ("no hold watch", Form::Tail, true, true, true, None),
         ] {
             let mut io = Recorder {
@@ -1450,7 +1484,7 @@ mod tests {
             assert!(ended.refused.is_some(), "{case}");
             assert_eq!(ended.run.unwrap(), EndRun::default(), "{case}");
         }
-        // a Chrome take at the read: the tail after it, the pointer read again before the second visit
+        // a Chrome take at the read: the tail after it, the pointer read again before each visit
         let mut io = Recorder {
             calls: Vec::new(),
             taken: Some(true),
@@ -1462,6 +1496,7 @@ mod tests {
             io.calls,
             vec![
                 Call::ReadTake,
+                Call::Place,
                 Call::Motion((301, 260)),
                 Call::Motion((300, 260)),
                 Call::Rest(rest),
@@ -1498,7 +1533,8 @@ mod tests {
 
     /// The re-review of 9fb61c32 (2): a tail the pointer check stopped answers unconfirmed whenever the release's
     /// position check would otherwise pass (the person brought the pointer back where the last request put it), never a
-    /// plain ok on Chrome's activation; an uninterrupted tail is judged as any.
+    /// plain ok on Chrome's activation; an uninterrupted tail is judged as any. Ruling 1034: a pointer moved between the
+    /// end's read and the take read stops the tail before its first visit, nothing sent, and interrupts it the same.
     #[test]
     fn an_interrupted_tail_answers_unconfirmed() {
         let mut io = Recorder {
@@ -1507,11 +1543,16 @@ mod tests {
             at: Some((340, 262)),
         };
         let ended = read_take_then_tail(&mut io, inputs(crate::release_sync::Form::Tail, true, true, true));
+        assert_eq!(
+            io.calls,
+            vec![Call::ReadTake, Call::Place],
+            "no motion undoes the person's"
+        );
         let run = ended.run.unwrap();
         assert_eq!(
             run,
             EndRun {
-                motions: 2,
+                motions: 0,
                 stopped: true
             }
         );
@@ -1543,6 +1584,8 @@ mod tests {
             (None, 2, true),
         ] {
             let sent = std::cell::RefCell::new(Vec::new());
+            // the read before the first visit finds it in place (ruling 1034); the one after the rest, `now_at`
+            let mut reads = 0;
             let run = run_end(
                 plan(),
                 |p| {
@@ -1550,7 +1593,10 @@ mod tests {
                     Ok(())
                 },
                 |d| sent.borrow_mut().push(EndStep::Rest(d)),
-                || now_at,
+                || {
+                    reads += 1;
+                    if reads == 1 { Some((300, 260)) } else { now_at }
+                },
             )
             .unwrap();
             assert_eq!(run, EndRun { motions, stopped }, "{now_at:?}");
@@ -1602,16 +1648,71 @@ mod tests {
     #[test]
     fn a_handle_s_step_follows_its_last_segment_and_a_one_point_handle_steps_in_x() {
         let screen = (640, 480);
-        let first = |previous, at| end_plan(None, previous, Some(at), screen, true)[0];
+        // the first visit's step, after the pointer read before it
+        let first = |previous, at| end_plan(None, previous, Some(at), screen, true)[1];
         assert_eq!(first(Some((200, 260)), (300, 260)), EndStep::Motion((301, 260)));
         assert_eq!(first(Some((300, 300)), (300, 260)), EndStep::Motion((300, 259)));
         // a person moved the pointer since the last request: the visits go to where it is, along the segment to there
         assert_eq!(
-            end_plan(None, Some((200, 260)), Some((310, 260)), screen, true)[..2],
-            [EndStep::Motion((311, 260)), EndStep::Motion((310, 260))]
+            end_plan(None, Some((200, 260)), Some((310, 260)), screen, true)[..3],
+            [
+                EndStep::Check((310, 260)),
+                EndStep::Motion((311, 260)),
+                EndStep::Motion((310, 260))
+            ]
         );
         assert_eq!(first(None, (300, 260)), EndStep::Motion((301, 260)));
         assert_eq!(first(None, (639, 260)), EndStep::Motion((638, 260)));
+    }
+
+    /// #488: a take the hold's first read already saw skips the hold's wait, and the cursor's watch, on its own thread,
+    /// may not have read it by the settle: the end settles all the same, as for a take seen in the wait or by the
+    /// watch. No take, settles off, nothing pressed or a family that does not rest: no settle.
+    #[test]
+    fn a_take_the_hold_s_first_read_saw_settles_though_the_cursor_s_watch_lags() {
+        let rest = Duration::from_millis(30);
+        let first = HoldTake {
+            at_first_read: true,
+            in_wait: false,
+        };
+        let waited = HoldTake {
+            at_first_read: false,
+            in_wait: true,
+        };
+        let lagging = || false;
+        assert!(settles(true, true, rest, first, lagging), "the first read's take");
+        assert!(settles(true, true, rest, waited, lagging), "the wait's take");
+        assert!(
+            settles(true, true, rest, HoldTake::default(), || true),
+            "the watch's take"
+        );
+        assert!(!settles(true, true, rest, HoldTake::default(), lagging), "no take");
+        assert!(!settles(false, true, rest, first, || true), "settles off");
+        assert!(!settles(true, false, rest, first, || true), "nothing pressed");
+        assert!(
+            !settles(true, true, Duration::ZERO, first, || true),
+            "a family that does not rest"
+        );
+    }
+
+    /// Task 140's re-review: a settle begun on the hold's first take whose last read failed (no take, so no read at the
+    /// release and no cursor record) still gets its drop's record, `{ "read": false }` with the settle and its
+    /// `rest_ms`, as a drag's; a record the release made keeps its read beside the settle.
+    #[test]
+    fn a_handle_s_settle_is_recorded_though_the_release_read_no_cursor() {
+        let settle = crate::drop_settle::Settle::interrupted(
+            crate::drop_settle::Sync::Unasked,
+            crate::drop_settle::SecondRest::Needless,
+            Duration::from_millis(30),
+        )
+        .record(&[], true);
+        let mut none = None;
+        record_settle(&mut none, settle.clone());
+        assert_eq!(none, Some(json!({ "read": false, "settle": settle })));
+        assert_eq!(none.unwrap()["settle"]["rest_ms"], json!(30));
+        let mut read = Some(json!({ "accepted": true }));
+        record_settle(&mut read, settle.clone());
+        assert_eq!(read, Some(json!({ "accepted": true, "settle": settle })));
     }
 
     #[test]

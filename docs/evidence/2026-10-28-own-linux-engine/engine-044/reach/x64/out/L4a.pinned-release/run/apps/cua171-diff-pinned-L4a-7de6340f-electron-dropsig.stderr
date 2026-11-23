@@ -1,0 +1,5 @@
+[2110424:1123/025427.379646:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.filetransfer to kAtomsToCache
+[2110424:1123/025427.379693:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.files to kAtomsToCache
+[2110424:1123/031209.852962:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[2110424:1123/031209.870522:ERROR:content/browser/network_service_instance_impl.cc:650] Network service crashed or was terminated, restarting service.
+[2110424:1123/031209.994399:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote

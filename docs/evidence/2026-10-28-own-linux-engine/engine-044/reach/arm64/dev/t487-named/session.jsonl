@@ -1,0 +1,4 @@
+{"t":"2026-11-23T11:41:33.421Z","label":"dev-t147-t487-named-044-load2","kind":"server","display":":1","pid":1410695}
+{"t":"2026-11-23T11:41:33.770Z","label":"dev-t147-t487-named-044-load2","kind":"setup","openbox":1410702,"person":"8388620"}
+{"t":"2026-11-23T11:43:15.492Z","label":"dev-t147-t487-named-044-load2","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-23T11:43:16.503Z","label":"dev-t147-t487-named-044-load2","kind":"server-stopped","clean":true,"reason":null}

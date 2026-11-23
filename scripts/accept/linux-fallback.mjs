@@ -10,7 +10,8 @@
 //     naming the reason and the installer (./linux-selection.mjs refusedSelectionProblem);
 //   - `cua serve`, asked for a session over stdio, to refuse the open: it exits 1 without answering the client, its
 //     refusal naming the reason and the installer, and no engine runs below it, judged from its process tree sampled
-//     every 50 ms (scripts/repl-parity/engine-answered.mjs engineProcesses; ./linux-selection.mjs refusedOpenProblem).
+//     every 50 ms (./linux-selection.mjs refusalSample, which reports a process below the serve it cannot read, and
+//     refusedOpenProblem, which then fails, as it fails with no sample taken or the answer unread).
 // No session opens, so nothing is asked of a person and no window is touched: the probe starts no application.
 // Run in the home to probe (CUA_HOME, HOME and the XDG directories the run's), in the X session's environment as the
 // gate's other parts are:
@@ -19,8 +20,7 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {ownInstaller} from '../../src/runtime/installer.mjs';
-import {engineProcesses, mergeObservations} from '../repl-parity/engine-answered.mjs';
-import {FALLBACK_HOMES, refusedOpenProblem, refusedSelectionProblem, selectionSteps} from './linux-selection.mjs';
+import {FALLBACK_HOMES, refusalSample, refusedOpenProblem, refusedSelectionProblem, selectionSteps} from './linux-selection.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 // How long the serve has to refuse the open; the refusal comes before it reads its input, in well under a second.
@@ -34,7 +34,7 @@ const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FA
 const report = {home, kind, reason: FALLBACK_HOMES[kind] ?? null, remedy, steps};
 let serve = null;
 let sampler = null;
-const observations = [];
+const samples = [];
 let sampleError = null;
 try {
   if (!step('preconditions', process.platform === 'linux' && kind in FALLBACK_HOMES, {platform: process.platform, home: kind})) throw new Error('preconditions');
@@ -48,7 +48,7 @@ try {
   serve.stderr.on('data', data => { stderr += data; });
   serve.stdin.on('error', () => {});   // EPIPE once the serve has refused and gone
   const exited = new Promise(resolve => serve.once('close', (code, signal) => resolve({code, signal})));
-  const sample = () => { try { observations.push(engineProcesses(serve.pid)); } catch (error) { sampleError ??= error.message; } };
+  const sample = () => { try { samples.push(refusalSample(serve.pid)); } catch (error) { sampleError ??= error.message; } };
   sampler = setInterval(sample, 50);
   sample();
   serve.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-linux-fallback', version: '0'}}})}\n`);
@@ -60,11 +60,13 @@ try {
   if (exit) serve = null;
   // Any line the serve wrote that answers the request, a result or an error, is a session the client could read.
   const answered = stdout.split('\n').some(line => { try { const message = JSON.parse(line); return message.id !== undefined && message.method === undefined && ('result' in message || 'error' in message); } catch { return false; } });
-  const observed = mergeObservations(...observations);
-  const open = {exit, stderr, answered, observed, ...(sampleError ? {sampleError} : {})};
+  // each engine and each unreadable process once, by pid and what was read
+  const once = list => [...new Map(list.map(item => [JSON.stringify(item), item])).values()];
+  const observed = once(samples.flatMap(s => s.engines)), uninspectable = once(samples.flatMap(s => s.uninspectable));
+  const open = {exit, stderr, answered, samples: samples.length, observed, uninspectable, ...(sampleError ? {sampleError} : {})};
   const problem = refusedOpenProblem(open, kind, {remedy});
   step(`cua serve refuses the open for ${FALLBACK_HOMES[kind]}: it exits 1 unanswered, naming the reason and ${remedy}, with no engine below it`, problem === null,
-    {exit, answered, samples: observations.length, observed, stderr: stderr.slice(0, 1200), ...(problem ? {problem} : {})});
+    {exit, answered, samples: samples.length, observed, uninspectable, stderr: stderr.slice(0, 1200), ...(problem ? {problem} : {})});
 } catch (error) {
   if (!steps.some(s => s.status === 'FAIL')) step('probe', false, error.message);
 } finally {

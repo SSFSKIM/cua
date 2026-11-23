@@ -141,12 +141,29 @@ test('on Linux a source home cua\'s own runtime does not resolve in is refused, 
   // the home an older cua's install leaves: the vendor tree and the vendor's name in the pointer, no module tree
   mkdirSync(join(source.dir, 'runtimes', '26.928.40906-linux-x64', 'cua_node'), {recursive: true});
   writePointer(source.dir, '26.928.40906-linux-x64');
-  assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), /no installed runtime in .*runtime .* is not installed/s);
-  // the derived name in the pointer does not stand in for the tree
-  const {release, root} = fakeModuleTree(source.dir, {platform: 'linux', arch: 'x64'});
+  // The refusal keeps resolution's own remedy (task 151, fix wave 1): this checkout's installer by its absolute path and
+  // the release it installs, never a bare `cua install`, which an older checkout's cua on PATH answers without fixing it.
+  const {ownInstaller} = await import('../../src/runtime/manifest.mjs');
+  const {release} = fakeModuleTree(join(source.dir, 'elsewhere'), {platform: 'linux', arch: 'x64'});
+  const installer = ownInstaller({release});
+  const refusal = error => {
+    assert.match(error.message, /^no installed runtime in .*: cua's Linux runtime \S+ is not installed .*its module tree .* is missing/s);
+    assert.ok(error.message.includes(installer.hint), error.message);
+    assert.doesNotMatch(error.message, /run `cua install` first/);
+    assert.equal(error.code, 'runtime_not_installed');
+    assert.equal(error.hint, installer.hint);
+    return true;
+  };
+  assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), refusal);
+  // Something at the tree's path that is no install of this lock: the remedy names it, to be moved aside first.
+  const {root} = fakeModuleTree(source.dir, {platform: 'linux', arch: 'x64'});
   writePointer(source.dir, release);
   writeFileSync(join(root, 'install.json'), '{}');
-  assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), /no installed runtime/);
+  assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), error => {
+    assert.ok(error.message.includes(`move ${root} aside, then ${installer.hint}`), error.message);
+    assert.equal(error.hint, `stop any \`cua serve\` using it, move ${root} aside, then ${installer.hint}`);
+    return true;
+  });
 });
 
 test('a home without an installed runtime is refused', () => {

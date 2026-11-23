@@ -42,11 +42,16 @@ function installRuntime({env,run,archives}) {
 
 // The installed runtime of `home` for `host` -> {release, parts}: the directories a copy takes, each [from, the directory
 // of the copy's home it goes into]. On Linux, what the home resolves (its module tree) and the other own parts it holds;
-// elsewhere the pointer's release under runtimes/. A home without one is refused.
+// elsewhere the pointer's release under runtimes/. A home without one is refused; on Linux with resolution's own code
+// and remedy (this checkout's installer by its absolute path, and what to move aside first when something blocks the
+// tree), never a bare `cua install`, which a cua on PATH from an older checkout would answer without fixing it.
 function installedRuntime(home, host) {
   if (host.platform === 'linux') {
     let runtime;
-    try { runtime = resolveRuntime({home, host}); } catch (error) { throw new Error(`no installed runtime in ${home}: ${error.message}; run \`cua install\` first`, {cause: error}); }
+    try { runtime = resolveRuntime({home, host}); } catch (error) {
+      throw Object.assign(new Error(`no installed runtime in ${home}: ${error.message}${error.hint ? `; ${error.hint}` : ''}`, {cause: error}),
+        {...(error.code ? {code: error.code} : {}), ...(error.hint ? {hint: error.hint} : {})});
+    }
     const layout = homeLayout(home);
     return {release: runtime.release, parts: [[runtime.root, 'modules'], ...['node', 'sandbox', 'engine'].filter(part => existsSync(layout[part])).map(part => [layout[part], '.'])]};
   }

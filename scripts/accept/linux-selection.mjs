@@ -11,6 +11,9 @@
 // and from an open (refusedOpenProblem), each naming the reason and this cua's own installer with --engine, by its
 // absolute path (manifest.mjs ownInstaller, ruling 1110).
 import {spawnSync} from 'node:child_process';
+import * as nodeFs from 'node:fs';
+import {join} from 'node:path';
+import {engineKind} from '../repl-parity/engine-answered.mjs';
 import {engineSettingsPath, readEngineSettings} from '../../src/runtime/engine-sign.mjs';
 import {ownInstaller} from '../../src/runtime/installer.mjs';
 
@@ -82,20 +85,62 @@ export function refusedSelectionProblem(report, kind, {remedy = engineInstaller(
 }
 
 /**
+ * One sample of the processes below the serve `root` (a pid) in the /proc tree at `proc`, for the refused open ->
+ * {engines: [{pid, exe, kind}], uninspectable: [{pid, path, code}]}. Beside the facade suites' shared witness
+ * (../repl-parity/engine-answered.mjs engineProcesses, whose contract is its own), with a stricter rule: a process that
+ * ended while it was read (ENOENT, ESRCH) is skipped, and any other failure to read it is reported, since an engine there
+ * would go unseen. A process whose parent cannot be read is reported whether or not it is below the serve, which
+ * cannot be told.
+ */
+export function refusalSample(root, {proc = '/proc', fs = nodeFs} = {}) {
+  const gone = error => error?.code === 'ENOENT' || error?.code === 'ESRCH';
+  const unread = (pid, path, error) => ({pid, path, code: error?.code ?? String(error?.message ?? error)});
+  const parents = new Map();
+  const uninspectable = [];
+  for (const name of fs.readdirSync(proc)) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name), path = join(proc, name, 'stat');
+    try {
+      const stat = fs.readFileSync(path, 'utf8');
+      // The command name may hold spaces and parentheses: the fields after it start after the last ')'.
+      parents.set(pid, Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]));
+    } catch (error) { if (!gone(error)) uninspectable.push(unread(pid, path, error)); }
+  }
+  const below = pid => { for (let at = parents.get(pid), seen = 0; at !== undefined && seen < 4096; at = parents.get(at), seen++) if (at === root) return true; return false; };
+  const engines = [];
+  for (const pid of [...parents.keys()].sort((a, b) => a - b)) {
+    if (!below(pid)) continue;
+    const path = join(proc, String(pid), 'exe');
+    let exe;
+    try { exe = fs.readlinkSync(path); } catch (error) { if (!gone(error)) uninspectable.push(unread(pid, path, error)); continue; }
+    const kind = engineKind(exe);
+    if (kind) engines.push({pid, exe, kind});
+  }
+  return {engines, uninspectable: uninspectable.sort((a, b) => a.pid - b.pid)};
+}
+
+/**
  * A fallback home's judge from an open: `open` is what `cua serve` did when a client asked it for a session, {exit
- * ({code, signal, forced?}, or null while it still ran), stderr, answered (whether it answered the client at all),
- * observed (the engine processes seen below it), sampleError?}. Null when it refused: it exited 1 without answering,
- * its refusal naming the home's reason and `remedy`, and no engine ran below it; else what differs.
+ * ({code, signal, forced?}, or null while it still ran), stderr, answered (false only when its output was read and
+ * held no answer), samples (how many samples of the processes below it were taken), observed (the engines they saw),
+ * uninspectable (the processes below it they could not read), sampleError?}. Null when it refused: it exited 1 without
+ * answering, its refusal naming the home's reason and `remedy`, and at least one sample saw every process below it and
+ * no engine there; else what differs. Evidence that is missing is never read as a negative.
  */
 export function refusedOpenProblem(open, kind, {remedy = engineInstaller()} = {}) {
   const reason = FALLBACK_HOMES[kind];
   if (!reason) return noHome(kind);
   if (!open.exit) return 'cua serve did not refuse the open: it was still running when the probe stopped waiting';
-  if (open.answered) return 'cua serve answered the client: a session opened';
+  if (open.answered === true) return 'cua serve answered the client: a session opened';
+  if (open.answered !== false) return 'whether cua serve answered the client was not read';
   if (open.exit.code !== 1) return `cua serve exited with code ${open.exit.code}, not 1`;
   if (!open.stderr.includes(`[${reason}]`)) return `cua serve's refusal does not name ${reason}`;
   if (!open.stderr.includes(remedy)) return `cua serve's refusal does not name ${remedy}`;
   if (open.sampleError) return `an engine observation failed (${open.sampleError}), so what ran below the serve is unknown`;
+  if (!Number.isInteger(open.samples) || open.samples < 1) return 'no sample of the processes below the serve was taken, so what ran there is unknown';
+  if (!Array.isArray(open.uninspectable)) return 'the sample does not say whether every process below the serve was inspected';
+  if (open.uninspectable.length) return `a process below the refused serve could not be inspected (${open.uninspectable.map(u => `pid ${u.pid}: ${u.path} ${u.code}`).join(', ')}), so what ran there is unknown`;
+  if (!Array.isArray(open.observed)) return 'the sample does not say which engines ran below the serve';
   if (open.observed.length) return `an engine ran below the refused serve: ${open.observed.map(o => `${o.exe} (${o.kind})`).join(', ')}`;
   return null;
 }

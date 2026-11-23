@@ -189,6 +189,8 @@ export async function main(argv=process.argv.slice(2)){
     }
     const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit,context:{host:v.host}});if(!assertion.ok)failed=true;
   }
+  // the connections' recorded provenance first: a Linux run's vendor release is borne out by it (./repl-parity/vendor-release.mjs)
+  Object.assign(meta,pool.metadata());
   const assertions=assessAssertions(meta,runRows);failed=assertions.unexpectedFailures.length>0;Object.assign(meta,{vendorDefects:assertions.vendorDefects,coveredCases:assertions.coveredCases,recordedCases:assertions.recordedCases});
   const ended=await client.call('end_task');if(ended.isError)throw new Error('Task cleanup failed');
   // Which engine answered every native case (./repl-parity/engine-answered.mjs): a lane anything else answered is incomplete.

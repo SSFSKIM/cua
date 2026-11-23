@@ -5,7 +5,7 @@
 // Pure: no doctor runs here.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {FALLBACK_HOMES, defaultSelectionProblem, refusedOpenProblem, refusedSelectionProblem, selectionMode, unsetSelectionProblems} from '../scripts/accept/linux-selection.mjs';
+import {FALLBACK_HOMES, defaultSelectionProblem, refusalSample, refusedOpenProblem, refusedSelectionProblem, selectionMode, unsetSelectionProblems} from '../scripts/accept/linux-selection.mjs';
 
 test('the mode is --selection explicit or default, explicit when not given; anything else is refused', () => {
   assert.equal(selectionMode([]), 'explicit');
@@ -73,7 +73,7 @@ test('a fallback home passes only when the default prefers cua\'s engine and ref
 // runs below it. Anything less is not a refusal, and nothing that ran stands in for one.
 test('a refused open: the serve exits 1 unanswered, naming the reason and the installer, with no engine below it', () => {
   const stderr = `cua: auto … selects cua's own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.4, which this cua needs: install this cua's engine with \`${REMEDY}\` … [engine_outdated]\n  run \`node /checkout/bin/cua.mjs install\`; …\n`;
-  const refused = {exit: {code: 1, signal: null}, stderr, answered: false, observed: []};
+  const refused = {exit: {code: 1, signal: null}, stderr, answered: false, samples: 3, observed: [], uninspectable: []};
   const judge = (open, kind = 'older') => refusedOpenProblem(open, kind, {remedy: REMEDY});
   assert.equal(judge(refused), null);
   assert.equal(judge({...refused, exit: null}), 'cua serve did not refuse the open: it was still running when the probe stopped waiting');
@@ -85,4 +85,43 @@ test('a refused open: the serve exits 1 unanswered, naming the reason and the in
   assert.equal(judge({...refused, observed: [{exe: '/h/engine/linux/cua-engine', kind: 'cua'}]}), 'an engine ran below the refused serve: /h/engine/linux/cua-engine (cua)');
   assert.equal(judge({...refused, sampleError: 'proc unreadable'}), 'an engine observation failed (proc unreadable), so what ran below the serve is unknown');
   assert.equal(judge(refused, 'other'), 'no fallback home other: none, previous, released, older or unrecorded');
+  // Missing evidence is never read as a negative one (task 151, fix wave 1): an answer not read, no sample taken, a
+  // process below the serve that could not be inspected.
+  const {answered, ...unread} = refused;
+  assert.equal(answered, false);
+  assert.equal(judge(unread), 'whether cua serve answered the client was not read');
+  assert.equal(judge({...refused, answered: null}), 'whether cua serve answered the client was not read');
+  assert.equal(judge({...refused, samples: 0}), 'no sample of the processes below the serve was taken, so what ran there is unknown');
+  const {samples, ...unsampled} = refused;
+  assert.equal(samples, 3);
+  assert.equal(judge(unsampled), 'no sample of the processes below the serve was taken, so what ran there is unknown');
+  assert.equal(judge({...refused, uninspectable: [{pid: 7, path: '/proc/7/exe', code: 'EACCES'}]}), 'a process below the refused serve could not be inspected (pid 7: /proc/7/exe EACCES), so what ran there is unknown');
+  const {uninspectable, ...unreported} = refused;
+  assert.deepEqual(uninspectable, []);
+  assert.equal(judge(unreported), 'the sample does not say whether every process below the serve was inspected');
+});
+
+// The refusal's own sampler, beside the facade suites' shared witness (engine-answered.mjs engineProcesses, whose contract
+// is unchanged): it tells a process that ended while it was read (skipped) from a live one below the serve it could not
+// inspect (reported, which fails the refusal).
+test('refusalSample: engines below the serve, a vanished process skipped, an uninspectable descendant reported', () => {
+  const procs = {
+    100: {ppid: 1, exe: '/usr/bin/node'},
+    101: {ppid: 100, exe: '/h/engine/linux/cua-engine'},
+    102: {ppid: 100, exe: {code: 'EACCES'}},       // a live descendant whose executable cannot be read
+    103: {ppid: 102, exe: {code: 'ENOENT'}},       // ended while it was read
+    104: {ppid: 1, exe: {code: 'EACCES'}},         // not below the serve: none of the sample's business
+    105: {stat: {code: 'EACCES'}},                  // its parent unknown: it may be below the serve
+    106: {stat: {code: 'ENOENT'}},                  // ended before its parent was read
+  };
+  const error = code => Object.assign(new Error(code), {code});
+  const fs = {
+    readdirSync: () => [...Object.keys(procs), 'self', 'stat'],
+    readFileSync: path => { const [, pid, file] = path.split('/').slice(-3); const p = procs[pid]; if (file !== 'stat') throw error('ENOENT'); if (p.stat) throw error(p.stat.code); return `${pid} (c d) S ${p.ppid} 1 1`; },
+    readlinkSync: path => { const pid = path.split('/').at(-2); const exe = procs[pid].exe; if (typeof exe !== 'string') throw error(exe.code); return exe; },
+  };
+  assert.deepEqual(refusalSample(100, {proc: '/proc', fs}), {
+    engines: [{pid: 101, exe: '/h/engine/linux/cua-engine', kind: 'cua'}],
+    uninspectable: [{pid: 102, path: '/proc/102/exe', code: 'EACCES'}, {pid: 105, path: '/proc/105/stat', code: 'EACCES'}],
+  });
 });

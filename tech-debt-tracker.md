@@ -2,6 +2,7 @@
 
 ## Open
 
+- **`scripts/sandbox-probe/linux-probes.mjs` `main` (around L416) still reads the vendor tree through `locateRuntime`** (#171 M6a task 151's review, Minor; predates T5). It takes `runtime.paths.codexCli` and `runtime.paths.skyLinuxBin` from the resolved runtime, which on Linux is cua's own since M6a and has neither, so the probe would fail at its first use there. No gate or harness calls it now. Retire it with M6b's sky_linux patterns, or point it at `vendorLinuxRuntime` first if it is needed before then.
 - **Approve can drop a concurrent build's `pending.json`** (#117 M4 re-cut, whole-branch review, 2026-11-23; accepted). A successful approve compares the record with its claimed publication, then unlinks it; a build that rewrites the record in that instant loses it. The bundle survives in the slot; only its status metadata (build time) is lost until the next build.
 - **A busy promoted engine re-signed under another identity keeps serving after a failed approve** (#117 M4 re-cut, same review; accepted). Sessions check build, not signature, so the same build signed differently is accepted until it stops; `candidate.json` makes the next build or approve stop it once idle, and the message names `cua engine stop`.
 - **A console-terminal sign that times out reports `engine_sign_failed` with "check the identity"** (#117 M4 re-cut, pre-existing). When the cause is a keychain prompt left waiting at the console, the hint points the wrong way; the README gives the right steps.

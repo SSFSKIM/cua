@@ -4,13 +4,13 @@
 // alone (a native case carries its observation in its exercise result, with no boundary cell).
 import {readFileSync} from 'node:fs';import {isDeepStrictEqual} from 'node:util';
 import {provisionalCellsFor,recordedCells} from './pending-cells.mjs';
+import {vendorReleaseOf} from './vendor-release.mjs';
 export const vendorDefects=JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json',import.meta.url),'utf8'));
 const engineScoped=d=>d.engine!==undefined;
 // The release a declaration is matched against: a vendor engine's defect against the vendor release the run's vendor
-// engine ran from (#171 M6a: the run's own runtime is cua's, so the preparation records that release apart, as
-// vendorRelease; a run from before M6a served the vendor's runtime itself), any other against the run's runtime.
-// ./native-linux.mjs vendorReleaseOf reads it the same way.
-const runReleaseFor=(d,meta)=>engineScoped(d)?meta.vendorRelease??meta.runtimeRelease:meta.runtimeRelease;
+// engine ran from (./vendor-release.mjs, #171 M6a; null, which matches none, when the run does not establish one), any
+// other against the run's runtime.
+const runReleaseFor=(d,meta)=>engineScoped(d)?vendorReleaseOf(meta):meta.runtimeRelease;
 const validScope=d=>engineScoped(d)?d.host==='cua'&&d.engine==='vendor'&&d.platform==='linux'&&d.observation===undefined:d.host==='vendor'&&Boolean(d.observation);
 // A vendor engine's declared outcome may admit more than one exact content (#171 M5, T4's arm64 round: arm64's typeText
 // ends gedit answering either of two error texts), `result.contents` in place of `result.content`, and may mask the

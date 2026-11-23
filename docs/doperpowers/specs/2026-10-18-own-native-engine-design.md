@@ -8979,6 +8979,30 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
       Unicode rows), probe-run, unicode-run, and the cursor sitting's items 187 and 188 (whose judges give an invalid
       record INVALID, never FAIL). `test/native-matrix/run.test.mjs` runs the check cell's own code on an ambiguous text
       through the real run: the row is `ambiguousReadback`, the next case runs, the run's verdict is not a fail.
+  - Ruling 1179 replaces that path-by-path mapping with one mechanism. The cell wrapper
+    (`scripts/native-baseline/cells.mjs` `cell`) answers the structured `cause: "ambiguousReadback"` only when it catches
+    the typed `AmbiguousReadback` (marked by the registered symbol `cua.ambiguousReadback`); nothing classifies by an
+    error's text, so an RPC error worded alike keeps its own cause. One helper, `readbackOutcome` (`matrix-text.mjs`),
+    is used by every runner and judge: a cell result with that cause, a cell that says its verdict rests on such a read
+    (`value.cause`, a refusal whose watch has no key), a record already invalid for it, or a passing check whose
+    evidence read a value ambiguous (`valueAmbiguous`) is missing proof. The row or block is then no verdict
+    `ambiguousReadback`, steps that depend on it are skipped, independent items go on, and a fail established on its
+    own stands. The paths, each tested through the cells' own code (`test/native-matrix/real-cells.mjs`): #187's setup
+    read-back no longer trips the runner's required-cell stop (`runner.mjs`: the block is marked, its steps skipped, the
+    next block runs); a refusal's ambiguous watch (`click.invalidIndex`); selection evidence (`selectText.line` passing
+    on its trailer, `pressKey.selectAll`, which now reads the value first); #187's bar and its paste repetitions (missing
+    proof, NO VERDICT, never DOES NOT LAND unless something else fails); the sheet variant's typing after its cleanup;
+    the per-context setup; the AXPress route's field read, which keeps its cause and moves no outcome.
+  - Found with it: `scenes-mac-text.mjs` `indexOfTarget` ended a target at a comma or the line's end, so the goldens
+    device's action target, TextEdit's first document line, was not found in cua's escaped rendering
+    (`test/native-matrix/goldens-device.test.mjs`, red since b9a2c38c); it now also ends at cua's escape.
+  - **The split line (ruling 1179).** The product part is the renderer's escaping and join (`render.mjs`), the
+    first-call documentation sentence, the #552 fence, and the judges' `lineBreaks` departure (`compare.mjs`,
+    `native-mac-diff.mjs`, the two expected files): commits b9a2c38c, 9a868828, adf508cf, 58364998 and c226f679. The
+    reader part is the `matrix-text.mjs` reading and ambiguity machinery and every runner and harness change: commits
+    9840f0cd, d51de734, dd5de677, e49ab457, 9f761956, d7211f4b, 04a55a14 and this round's. The Decision Log commits
+    (276ff60b, 9c368efb and this round's) record both. A mechanical split takes the harness target fix
+    (`scenes-mac-text.mjs`, its own commit) with the product part, whose goldens-device test needs it.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

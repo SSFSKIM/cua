@@ -11,13 +11,18 @@ export const windowTitleOf = text => /^Window: "([^"]*)"/m.exec(String(text))?.[
 // localized). A longer name that begins with it ("Scene options") or a window title that only begins with it ("cua scene
 // page - Chrome for Testing") is not it. A longer bare title that ends with it ("My Scene option") can be: the role word
 // before a bare title is localized and multi-word, so its boundary is only a space. The first matching line wins, so
-// targets are names the scene owns.
-export function indexOfTarget(ax, name) {
+// targets are names the scene owns. On cua's lane (`rendering` 'cua', by default the lane the run's bind recorded,
+// globalThis.__axRendering) a multi-line value prints on its element's one line with its breaks escaped
+// (src/services/engine/render.mjs escapeLineBreaks, #526), so there, and only in the `Value:` part, a name also ends at
+// one of the escapes the renderer emits, and only when that value is the line's last part (nothing `, ` after it: a value
+// followed by another part is not found, as before); every other part, and the vendor's lane, match exactly as before.
+export function indexOfTarget(ax, name, rendering = globalThis.__axRendering) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)');
+  const value = rendering === 'cua' ? new RegExp('(?:^| |, )Value: ' + escaped + '\\\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))(?:(?!, )[^])*$') : null;
   for (const line of String(ax).split('\n')) {
     const element = /^[~+-]?[\t ]*(\d+) (.*)$/.exec(line);
-    if (element && part.test(element[2])) return Number(element[1]);
+    if (element && (part.test(element[2]) || (value !== null && value.test(element[2])))) return Number(element[1]);
   }
   return null;
 }
@@ -26,9 +31,9 @@ export function indexOfTarget(ax, name) {
 // is the line two levels above the name field, its cells the lines one level above, and the index is that cell's first
 // child (its text), else the cell. Null when the name has no row or the row no other cell: never the name. It calls
 // indexOfTarget, so a cell that embeds it embeds both.
-export function indexOfRowCell(ax, name) {
+export function indexOfRowCell(ax, name, rendering = globalThis.__axRendering) {
   const lines = String(ax).split('\n').map(line => /^[~+-]?(\t*)(\d+) /.exec(line)).map(m => (m ? {depth: m[1].length, index: Number(m[2])} : null));
-  const at = indexOfTarget(ax, name);
+  const at = indexOfTarget(ax, name, rendering);
   const i = lines.findIndex(l => l && l.index === at);
   if (i < 0) return null;
   const depth = lines[i].depth;
@@ -44,4 +49,5 @@ export function indexOfRowCell(ax, name) {
   return null;
 }
 // The element index a scene's `action` clicks in an observation's text, or null when it is not exposed there.
-export const actionIndex = (ax, {click}) => (typeof click === 'string' ? indexOfTarget(ax, click) : indexOfRowCell(ax, click.rowCellOf));
+// `rendering`: the text's lane, as indexOfTarget takes it.
+export const actionIndex = (ax, {click}, rendering = globalThis.__axRendering) => (typeof click === 'string' ? indexOfTarget(ax, click, rendering) : indexOfRowCell(ax, click.rowCellOf, rendering));

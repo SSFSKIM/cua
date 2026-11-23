@@ -189,7 +189,8 @@ export async function act({id, record, client, screenshots, expect, sleep, now})
   if (settled.problems.length) return refused(settled.problems, {settle, ...(settled.observed ? {observed: settled.observed} : {})});
   if (stateDigest(goldenForm(before)) !== expect)
     return refused([{code: 'start_state', message: 'cua\'s settled observation is not the scene\'s kept fixed state; nothing was clicked'}], {settle, observed: goldenForm(before)});
-  const index = actionIndex(observations.observe(record.app, before, {disableDiff: true}), SCENES[id].action);
+  // cua's own rendering of the settled state (its lane: #526's escaped multi-line values).
+  const index = actionIndex(observations.observe(record.app, before, {disableDiff: true}), SCENES[id].action, 'cua');
   if (index === null) return refused([{code: 'target_missing', message: 'the action\'s target is not in cua\'s rendering of the settled fixed state; nothing was clicked'}], {settle});
   const {token, lineage} = observations.element(record.app, index);
   let clicked;

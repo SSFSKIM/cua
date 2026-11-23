@@ -233,7 +233,9 @@ export async function runNativeMac(options, io) {
     for (const id of [...ctx.up]) takeDown(ctx, id);
     const probesSettled = !ctx.prepared || settleRecordingProbes(ctx).ok === true;
     const outstanding = [...ctx.up];
-    for (const id of outstanding) meta.problems.push(`${id}: could not be brought down (${meta.scenes[id]?.takeDown?.failures.at(-1) ?? 'it stayed up'})`);
+    // Every distinct cause the take-downs met, so the one that kept the scene up is named (a Finder window minimized or on
+    // another Space: the activation's refusal, then down's "still open").
+    for (const id of outstanding) meta.problems.push(`${id}: could not be brought down (${[...new Set(meta.scenes[id]?.takeDown?.failures ?? [])].join('; ') || 'it stayed up'})`);
     if (client) {
       try { await client.call('end_task'); } catch {}
       try { await client.close(); } catch {}

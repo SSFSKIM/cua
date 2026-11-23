@@ -25,7 +25,9 @@
 //
 // Refusals (`refusals`): the harness does not start, and no scene comes up, while a process runs Chrome for Testing's or
 // the fixture's bundle id that the run did not start, while TextEdit runs and is not the run's (its windows may be the
-// owner's), or while Finder has a window that is not the run's. Only the run's own processes are ever stopped: a pid
+// owner's), or while Finder has a window that is not the run's and is new since the sitting began (./finder-baseline.mjs:
+// the owner's own Finder windows, open when the sitting's prepare took its snapshot, are never refused, closed or
+// moved; with no snapshot every Finder window on screen counts). Only the run's own processes are ever stopped: a pid
 // recorded at the run's own launch, signalled only while it is still that launch; Finder is never signalled.
 //
 // What a driver (the goldens recorder, the matrix) does with a scene, in order: `preflight`; `up <scene>`, whose record
@@ -71,6 +73,7 @@
 //   node scripts/repl-parity/scenes-mac.mjs teardown-steps <scene> --run <dir>
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)
 //   node scripts/repl-parity/scenes-mac.mjs restore-finder                  Finder's saved preferences written back
+//   node scripts/repl-parity/scenes-mac.mjs finder-baseline take|clear      the sitting's Finder snapshot (./finder-baseline.mjs)
 //   node scripts/repl-parity/scenes-mac.mjs front                           FrontWindowProbe's reading
 //   node scripts/repl-parity/scenes-mac.mjs frontmost                       the frontmost app's {pid, bundleId} (lsappinfo)
 //   node scripts/repl-parity/scenes-mac.mjs reactivate --bundle-id <id> --pid <n>   that app back in front (reactivateApp)
@@ -91,6 +94,7 @@ import {
   readSavedPreferences, saveOriginalPreferences, savedRecordDistrust,
 } from './scenes-mac-finder.mjs';
 import {windowTitleOf} from './scenes-mac-text.mjs';
+import {FINDER_BASELINE, clearFinderBaseline, newFinderWindows, readFinderBaseline, windowText, writeFinderBaseline} from './finder-baseline.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
@@ -276,8 +280,9 @@ export function ownedProcesses(state, {launchOf: launch = launchOf} = {}) {
 // The refusal preconditions. `running`: the processes of Chrome for Testing's, the fixture's and TextEdit's bundle ids;
 // `finderWindows`: Finder's on-screen document windows; `finderHidden`: whether Finder is hidden (null: Finder runs but
 // the reading failed, which refuses too, since a hidden Finder's windows would pass as off screen); `owned`:
-// ownedProcesses(). -> [{code, message, pids? | windows?}].
-export function refusals({running, finderWindows, finderHidden = false, owned}) {
+// ownedProcesses(); `finderBaseline`: the sitting's snapshot (./finder-baseline.mjs), whose windows never refuse.
+// -> [{code, message, pids? | windows?}].
+export function refusals({running, finderWindows, finderHidden = false, owned, finderBaseline = null}) {
   const out = [];
   for (const bundleId of [CHROME_FOR_TESTING_BUNDLE_ID, FIXTURE_BUNDLE_ID]) {
     const pids = running.filter(p => p.bundleId === bundleId && !owned.pids.has(p.pid)).map(p => p.pid);
@@ -285,8 +290,9 @@ export function refusals({running, finderWindows, finderHidden = false, owned}) 
   }
   const textEdit = running.filter(p => p.bundleId === TEXTEDIT_BUNDLE_ID && !owned.pids.has(p.pid)).map(p => p.pid);
   if (textEdit.length) out.push({code: 'textedit_running', pids: textEdit, message: 'TextEdit is running and is not the run\'s: its windows may be the owner\'s; quit it and re-run'});
-  const windows = finderWindows.filter(w => w.number !== owned.finderWindow).map(w => w.number);
-  if (windows.length) out.push({code: 'finder_window', windows, message: 'Finder has a window that is not the run\'s; close it and re-run'});
+  const foreign = newFinderWindows(finderWindows.filter(w => w.number !== owned.finderWindow), finderBaseline);
+  if (foreign.length) out.push({code: 'finder_window', windows: foreign.map(w => w.number),
+    message: `Finder has a window that is not the run's${finderBaseline ? ' and was not there when the sitting began' : ''} (${foreign.map(windowText).join('; ')}); close it and re-run`});
   if (finderHidden === true) out.push({code: 'finder_hidden', message: 'Finder is hidden; unhide it (click Finder in the Dock) and re-run'});
   if (finderHidden === null) out.push({code: 'finder_hidden_unknown', message: 'could not read whether Finder is hidden; re-run, and if it persists check front-window.swift\'s NSRunningApplication read over this session'});
   return out;
@@ -398,6 +404,7 @@ export const defaultIo = ({env = process.env, platform = process.platform} = {})
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(), windowOrder: ({skipPids}) => windowOrder({skipPids}), enginePids: () => enginePids(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
+  finderBaselineFile: FINDER_BASELINE,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
   venueFrames: () => venueFramesOf(readRunnerRecord(), {env, platform}), venueTextEditView: () => venueTextEditViewOf(readRunnerRecord(), {env, platform}),
 });
@@ -411,7 +418,8 @@ export function preflight({run, io = defaultIo()}) {
   const finderWindows = refusingWindows(documents);
   const offScreen = documents.filter(w => !finderWindows.includes(w)).map(w => ({number: w.number, bounds: w.bounds}));
   const owned = ownedProcesses(readState(run), {launchOf: io.launchOf});
-  return {refusals: refusals({running, finderWindows, finderHidden: hidden, owned}), finderPid: finder, finderHidden: hidden,
+  const finderBaseline = readFinderBaseline(io.finderBaselineFile);
+  return {refusals: refusals({running, finderWindows, finderHidden: hidden, owned, finderBaseline}), finderPid: finder, finderHidden: hidden,
     finderWindows: finderWindows.map(w => w.number),
     ...(offScreen.length ? {finderOffScreenWindows: offScreen, finderOffScreenNote: 'Finder windows not on screen do not refuse: never the focused or main window'} : {})};
 }
@@ -795,11 +803,13 @@ export async function downScene(id, {run, io = defaultIo()}) {
     const open = documentWindows(io.appWindows(record.pid)).some(w => w.number === record.window.number);
     const {preferences} = await restoreFinder({io});
     const kept = preferences.saved === false ? {} : {preferences};
-    // The preflight refused any window of Finder's on screen at up, so one now (the run's gone) is a window the run left
-    // or one opened during it: never closed here, since only the run's window is the run's.
-    const residue = open ? [] : refusingWindows(documentWindows(io.appWindows(record.pid))).map(w => w.number);
+    // The preflight refused any window of Finder's on screen at up that was new since the sitting's snapshot, so one new
+    // now (the run's gone) is a window the run left or one opened during it: never closed here, since only the run's
+    // window is the run's. The owner's windows of the snapshot are not counted (./finder-baseline.mjs).
+    const left = open ? [] : newFinderWindows(refusingWindows(documentWindows(io.appWindows(record.pid))), readFinderBaseline(io.finderBaselineFile));
+    const residue = left.map(w => w.number);
     const reasons = [
-      ...(residue.length ? [`Finder has a window on screen that is not the run's (${residue.join(', ')}); close it, then run down finder again`] : []),
+      ...(residue.length ? [`Finder has a window on screen that is not the run's and was not there when the sitting began (${left.map(windowText).join('; ')}); close it, then run down finder again`] : []),
       ...(preferences.restored ? [] : [preferences.reason])];
     if (open) result = {down: false, windowOpen: true, ...kept, reason: [`the run's Finder window is still open; send the teardown steps (teardown-steps finder), then run down again`, ...reasons].join('. ')};
     else result = {down: reasons.length === 0, ...kept, ...(residue.length ? {residue} : {}), ...(reasons.length ? {reason: reasons.join('. ')} : {})};
@@ -815,6 +825,15 @@ export async function downScene(id, {run, io = defaultIo()}) {
   }
   if (result.down) { const {[id]: _, ...rest} = state.scenes; writeState(run, {...state, scenes: rest}); }
   return {scene: id, ...result};
+}
+
+// The sitting's Finder snapshot (./finder-baseline.mjs): `take` writes Finder's document windows now, on screen or not,
+// replacing an earlier sitting's; `clear` removes it. -> {takenAt, windows} | {cleared}.
+export function finderBaseline(action, {io = defaultIo()} = {}) {
+  if (action === 'clear') return clearFinderBaseline(io.finderBaselineFile);
+  if (action !== 'take') throw new Error('finder-baseline take|clear');
+  const finder = io.finderPid();
+  return writeFinderBaseline(finder ? documentWindows(io.appWindows(finder)) : [], {file: io.finderBaselineFile, at: new Date(io.now()).toISOString()});
 }
 
 // Why a restore did not hold: each key that did not read back, with the owner's value and the command that sets it.
@@ -905,6 +924,7 @@ export async function main(argv) {
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();
+    case 'finder-baseline': return finderBaseline(target);
     case 'down': {
       const run = runDir(flags);
       if (target !== 'all') return downScene(target, {run});
@@ -913,7 +933,7 @@ export async function main(argv) {
       return {down: results.every(r => r.down), scenes: results};
     }
     case 'serve-page': await servePage(runDir(flags), flags.page ?? 'shared'); return undefined;
-    default: throw new Error('usage: scenes-mac.mjs describe | preflight | place-chrome | build-electron | front | up <scene> | activate <scene> | teardown-steps <scene> | down <scene|all> (--run <dir>) | restore-finder');
+    default: throw new Error('usage: scenes-mac.mjs describe | preflight | place-chrome | build-electron | front | up <scene> | activate <scene> | teardown-steps <scene> | down <scene|all> (--run <dir>) | restore-finder | finder-baseline take|clear');
   }
 }
 

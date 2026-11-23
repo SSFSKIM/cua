@@ -109,7 +109,11 @@ test('the writes refuse off a GitHub-hosted runner before touching anything, and
   const calls = [];
   const exec = (command, args) => { calls.push([command, ...args]); return {status: 0, stdout: '', stderr: ''}; };
   const writes = textEditWrites(rect(80, 80, 720, 440), DISPLAY);
+  // Ruling 1181: the venue's TextEdit preferences stay unrestored only because this refusal is the one way to write them,
+  // for every key the venue sets.
+  assert.deepEqual(writes.map(w => w.key), ['WidthInChars', UNTITLED_AT_LAUNCH_KEY, PERSISTENCE_KEY, 'NSWindow Frame NSNavPanelAutosaveName', 'NSNavPanelExpandedSizeForOpenMode']);
   for (const [env, platform] of [[{}, 'darwin'], [{RUNNER_ENVIRONMENT: 'self-hosted'}, 'darwin'], [HOSTED, 'linux']]) {
+    for (const write of writes) assert.throws(() => writeTextEditDefaults([write], {env, platform, exec}), /refused/, write.key);
     assert.throws(() => writeTextEditDefaults(writes, {env, platform, exec}), /refused/);
   }
   assert.deepEqual(calls, [], 'the owner\'s defaults are never written');

@@ -276,6 +276,22 @@ test('a scene that would not come down: its down is tried whatever its teardown 
   assert.deepEqual(stuck.device.calls.at(-1).slice(0, 2), ['scenes', 'reactivate']);
 });
 
+// Ruling 1181: a Finder window minimized or on another Space is not activated (the activation would open a window of
+// Finder's own), so its take-down cannot finish; the lane ends incomplete with that cause named, never skipped silently.
+test('a Finder window off screen at the take-down ends the lane incomplete, naming the activation\'s refusal', async () => {
+  const offScreen = 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one';
+  const run = await runLane({engine: 'vendor', device: fakeDevice({
+    teardown: scene => (scene === 'finder' ? `goldens-device.mjs steps finder: finder did not come to the front: ${offScreen}` : null),
+    down: scene => (scene === 'finder' ? {scene, down: false, windowOpen: true, reason: 'the run\'s Finder window is still open; send the teardown steps (teardown-steps finder), then run down again'} : null)})});
+  assert.equal(run.code, 1);
+  assert.equal(run.meta.complete, false);
+  assert.equal(run.meta.problems.length, 1);
+  assert.ok(run.meta.problems[0].startsWith('finder: could not be brought down (its teardown steps stopped: '), run.meta.problems[0]);
+  assert.ok(run.meta.problems[0].includes(offScreen), 'the cause is named');
+  assert.match(run.meta.problems[0], /still open/);
+  assert.match(run.meta.preparationCleanup.deferred, /finder/);
+});
+
 test('an engine that will not stop when the run ends: the run is incomplete and its journal stays, the home recorded as given back', async () => {
   const device = fakeDevice();
   device.ops.cleanup = prepared => { device.calls.push(['cleanup', prepared.home]); return {removed: true, engineStop: {error: 'busy: connections 1'}}; };

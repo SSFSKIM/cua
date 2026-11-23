@@ -13,13 +13,14 @@ import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, TEXTEDIT_HOLD_MS, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse, defaultIo,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, finderBaseline, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse, defaultIo,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, enginePids, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
 import {runnerRecord} from '../../scripts/hosted-sittings/runner.mjs';
 import {FINDER_RECORD_SCHEMA, markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
+import {newFinderWindows, readFinderBaseline} from '../../scripts/repl-parity/finder-baseline.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, POINTERDOWN_SWITCH} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {PAGE_CONTROLS, PAGE_HTML, POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
@@ -152,6 +153,69 @@ test('refusals: a foreign Chrome for Testing or fixture process, a TextEdit, or 
   assert.deepEqual(refusals({running: [{pid: 20, bundleId: 'com.google.Chrome'}, {pid: 21, bundleId: 'com.github.Electron'}], finderWindows: [], owned: {pids: new Set(), finderWindow: null}}), []);
 });
 
+// Ruling 1181: the owner keeps Finder windows open on the MacBook, which the harness may neither close nor move. The
+// sitting's snapshot (finder-baseline.mjs) holds them; the preflight and down finder count only windows new since.
+const W = (number, x, onScreen = true) => ({number, bounds: {x, y: 80, width: 700, height: 400}, onScreen});
+test('a Finder window is new since the snapshot unless it was there by number, or reopened at a gone window\'s exact frame', () => {
+  const baseline = {takenAt: 'T0', windows: [W(5, 100), W(6, 300), W(7, 500, false)]};
+  assert.deepEqual(newFinderWindows([W(5, 100), W(6, 300)], baseline), [], 'the snapshot\'s windows by number');
+  assert.deepEqual(newFinderWindows([W(5, 140), W(7, 500)], baseline), [], 'by number wherever they moved; an off-screen one come on screen');
+  // The owner closed 6 and reopened it: a new number at 6's saved frame is 6. A second window at that frame is new.
+  assert.deepEqual(newFinderWindows([W(5, 100), W(61, 300), W(62, 300)], baseline).map(w => w.number), [62]);
+  // A frame matches only a window that is gone: beside 6 itself, a window at 6's frame is new.
+  assert.deepEqual(newFinderWindows([W(6, 300), W(63, 300)], baseline).map(w => w.number), [63]);
+  assert.deepEqual(newFinderWindows([W(64, 900)], baseline).map(w => w.number), [64]);
+  assert.deepEqual(newFinderWindows([W(64, 900)], null).map(w => w.number), [64], 'no snapshot: every window counts');
+});
+
+test('the preflight and down finder pass the owner\'s windows of the snapshot and refuse, naming it, a window new since', async () => withRun(async run => {
+  const owner = W(5, 100);
+  const io = fakeDevice({windows: {736: [owner]}});
+  // Before any snapshot (the goldens recorder, the matrix): the owner's window refuses as before.
+  assert.deepEqual(preflight({run, io}).refusals.map(r => [r.code, r.windows]), [['finder_window', [5]]]);
+  const taken = finderBaseline('take', {io});
+  assert.deepEqual(taken.windows, [owner]);
+  assert.deepEqual(readFinderBaseline(io.finderBaselineFile).windows, [owner]);
+  assert.deepEqual(preflight({run, io}).refusals, [], 'the owner\'s window, there when the sitting began, is not refused');
+  const finder = await upScene('finder', {run, io});
+  assert.notEqual(finder.window.number, 5, 'the run\'s window is the new one, never the owner\'s');
+  // The run's window closed by its teardown, the owner's still open: down finder is down.
+  io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
+  assert.equal((await downScene('finder', {run, io})).down, true);
+  // A window new since the snapshot is refused and named, the owner's still passed.
+  io.windows[736].push(W(77, 400));
+  const [refusal] = preflight({run, io}).refusals;
+  assert.deepEqual(refusal.windows, [77]);
+  assert.match(refusal.message, /not the run's and was not there when the sitting began \(77 at 400,80 700x400\)/);
+  assert.deepEqual(finderBaseline('clear', {io}), {cleared: true});
+  assert.equal(readFinderBaseline(io.finderBaselineFile), null);
+}));
+
+// The baseline is the sitting's, taken before the first lane: a window the first lane leaves is new to the second's.
+test('the sitting\'s snapshot carried into the next lane: the first lane\'s leftover is refused, the owner\'s window is not', async () => {
+  const owner = W(5, 100);
+  const io = fakeDevice({windows: {736: [owner]}});
+  finderBaseline('take', {io});   // repl-parity prepare, before the first lane
+  await withRun(async first => {
+    const finder = await upScene('finder', {run: first, io});
+    // The first lane's take-down closed its window, but a window of Finder's own came up (pilot B's reopen window).
+    io.windows[736] = [owner, W(212, 60)];
+    const down = await downScene('finder', {run: first, io});
+    assert.deepEqual([down.down, down.residue], [false, [212]]);
+    assert.notEqual(finder.window.number, 212);
+  });
+  await withRun(async second => {
+    const checked = preflight({run: second, io});
+    assert.deepEqual(checked.refusals.map(r => [r.code, r.windows]), [['finder_window', [212]]]);
+    await assert.rejects(upScene('finder', {run: second, io}), error => error.refusals?.[0]?.windows?.[0] === 212);
+  });
+  // On a hosted runner the snapshot holds no window on screen, so B behaves as before the ruling.
+  const hosted = fakeDevice({windows: {736: [W(4, 0, false)]}});
+  finderBaseline('take', {io: hosted});
+  hosted.windows[736].push(W(212, 60));
+  await withRun(async run => assert.deepEqual(preflight({run, io: hosted}).refusals.map(r => r.windows), [[212]]));
+});
+
 test('owned processes: a recorded pid counts only while it is the same launch', () => {
   const state = {scenes: {
     textedit: {pid: 12, at: 1000}, chrome: {pid: 10, at: 2000, page: {pid: 30, at: 2500}}, electron: {pid: 11, at: 3000},
@@ -217,7 +281,7 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
   let nextPid = 500, clock = 1_000_000, nextWindow = 900;
   const io = {
     calls, running, windows, created, preferences, writes, front: null,
-    savedPreferencesFile: join(PREFS_ROOT, `${prefsFiles++}`, 'finder-preferences.json'),
+    savedPreferencesFile: join(PREFS_ROOT, `${prefsFiles}`, 'finder-preferences.json'), finderBaselineFile: join(PREFS_ROOT, `${prefsFiles++}`, 'finder-baseline.json'),
     finderPreferences: () => ({...preferences}),
     writeFinderPreference: (key, value) => { writes.push([key, value]); if (!stuck.includes(key)) preferences[key] = value; },
     frontmostProcess: () => (io.front ? {pid: io.front.pid, bundleId: io.front.bundleId} : null),
@@ -1202,7 +1266,7 @@ test('down finder stays false while Finder shows a window on screen that is not 
   const left = await downScene('finder', {run, io});
   assert.equal(left.down, false);
   assert.deepEqual(left.residue, [212]);
-  assert.match(left.reason, /Finder has a window on screen that is not the run's \(212\).*close it/);
+  assert.match(left.reason, /Finder has a window on screen that is not the run's and was not there when the sitting began \(212 at 60,90 920x436\).*close it/);
   assert.ok(readState(run).scenes.finder, 'kept, so a later down finishes it');
   assert.equal(exitCodeFor(left), 1);
   io.windows[736] = io.windows[736].filter(w => w.number !== 212);

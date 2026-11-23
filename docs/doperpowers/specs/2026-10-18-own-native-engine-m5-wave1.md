@@ -288,6 +288,26 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1181 (the design session, accepting 6c62fa029 after pilot B, run 45285337366): pilot B's vendor
+  lane passed, but its Finder take-down left a window of Finder's own: the first take-down closed the run's window and
+  its down failed on ShowSidebar's read-back; the retry's teardown activated Finder (`open -a`) with no window on
+  screen, Finder answered with a new window, the down then read `down: true`, and the cua lane's preflight refused that
+  window. Fixed in 6c62fa029: Finder is never activated without the run's window on screen (`activateScene`; a window
+  minimized or on another Space is refused, its cause named in the lane's problem, never skipped), no teardown steps
+  once the run's window is gone, every Finder key read back after a 1 s settle and written again where Finder's late
+  write undid it (a key that never reads back fails naming the owner's value and the command that sets it; the input
+  source's restore names the per-context preference the same way), `down finder` false while a window new since the
+  sitting began stands on screen, and B's cua lane needs the vendor lane. Accepted with conditions: the venue's
+  TextEdit preferences stay unrestored while `assertGithubHosted` is the only way to write them (a test refuses each
+  key off a runner). Corrected: "any window that is not the run's" cannot hold on the MacBook, where the owner keeps
+  Finder windows the harness may not close or move. So the sitting takes one Finder snapshot before its first lane
+  (repl-parity's approved `prepare`, `scenes-mac.mjs finder-baseline take`; removed by `cleanup-prepared`), and the
+  preflight and `down finder` count only windows new since it, each named by number and frame
+  (`scripts/repl-parity/finder-baseline.mjs`). A window is the snapshot's by its number, or, for one the owner closed
+  and reopened (a new number), by exactly the frame of a snapshot window that is gone, each matched once; no title is
+  read (CG titles need the Screen Recording grant, and a folder's name is the owner's). On a hosted runner the
+  snapshot holds no window on screen, so B behaves as before. A driver with no sitting-level prepare (the goldens
+  recorder, the matrix) has no snapshot and refuses every Finder window on screen, as before.
 - 2026-11-23, TextEdit's preferences reach the file it reads (the design session, after pilot A's re-run, run
   45277221729): vv-1's launch window stood again at 241,87 586x488, the frame every vv run reads, with
   NSRequiresOpenUntitledWindowAtLaunch NO in force, and its ⌘N document took 603x505 at 242,107, the default 75

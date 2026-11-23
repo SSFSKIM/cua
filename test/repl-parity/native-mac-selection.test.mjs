@@ -77,13 +77,17 @@ test('prepare on macOS serves the approved runtime and engine: it places the har
   const dir = scratch(), journal = join(dir, 'mini.json'), out = join(dir, 'out');
   const commands = [];
   const execute = command => { commands.push(command.args.at(-1)); return 'Cloning…\n' + 'a'.repeat(40) + '\n'; };
-  const prepared = manageApprovedPreparation('prepare', {journal, out, device: 'mini', commit: 'aaaaaaa', 'approved-runtime': A[1], 'approved-engine': A[3]}, {execute, engineCheck: () => ENGINE_CHECK});
+  // The sitting's Finder snapshot (ruling 1181) is taken here, before the first lane, and removed by cleanup-prepared.
+  const baselines = [];
+  const finderBaseline = (device, action) => { baselines.push([device, action]); return action === 'take' ? {takenAt: 'T0', windows: [{number: 5}]} : {cleared: true}; };
+  const prepared = manageApprovedPreparation('prepare', {journal, out, device: 'mini', commit: 'aaaaaaa', 'approved-runtime': A[1], 'approved-engine': A[3]}, {execute, engineCheck: () => ENGINE_CHECK, finderBaseline});
+  assert.deepEqual(baselines, [['mini', 'take']]);
   assert.equal(commands.length, 1);
   assert.match(commands[0], /git checkout --detach 'aaaaaaa'/);
   assert.match(commands[0], /git rev-parse HEAD$/);
   assert.doesNotMatch(commands[0], /cua\.mjs install|prepare-device\.mjs/);
   assert.deepEqual(prepared, {route: 'approved', device: 'mini', platform: 'darwin', commit: 'a'.repeat(40), approvedRuntime: A[1], approvedEngine: A[3],
-    engine: {build: 'b'.repeat(64), engineVersion: '0.1.0', signature: {kind: 'identity', identityMatches: true}}, preparedAt: prepared.preparedAt});
+    engine: {build: 'b'.repeat(64), engineVersion: '0.1.0', signature: {kind: 'identity', identityMatches: true}}, finderBaseline: {takenAt: 'T0', windows: 1}, preparedAt: prepared.preparedAt});
   assert.deepEqual(JSON.parse(fs.readFileSync(journal, 'utf8')), prepared);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(out, 'prepare.json'), 'utf8')), prepared);
   // A run must name the prepared sitting's approved runtime and engine, on its device.
@@ -93,9 +97,10 @@ test('prepare on macOS serves the approved runtime and engine: it places the har
   assert.throws(() => approvedJournalFor({...prepared, route: undefined, ownedPreparation: {}}, {device: 'mini', 'approved-runtime': A[1], 'approved-engine': A[3]}), /approved-runtime/);
   // Prepared twice: refused while a fresh-home preparation is outstanding; cleanup removes only the journal.
   fs.writeFileSync(journal, JSON.stringify({ownedPreparation: {home: '/h'}}));
-  assert.throws(() => manageApprovedPreparation('prepare', {journal, device: 'mini', commit: 'aaaaaaa', 'approved-runtime': A[1], 'approved-engine': A[3]}, {execute, engineCheck: () => ENGINE_CHECK}), /cleanup-prepared/);
+  assert.throws(() => manageApprovedPreparation('prepare', {journal, device: 'mini', commit: 'aaaaaaa', 'approved-runtime': A[1], 'approved-engine': A[3]}, {execute, engineCheck: () => ENGINE_CHECK, finderBaseline}), /cleanup-prepared/);
   fs.writeFileSync(journal, JSON.stringify(prepared));
-  assert.deepEqual(manageApprovedPreparation('cleanup-prepared', {journal, device: 'mini'}), {removed: true, owned: false});
+  assert.deepEqual(manageApprovedPreparation('cleanup-prepared', {journal, device: 'mini'}, {finderBaseline}), {removed: true, owned: false, finderBaselineCleared: true});
+  assert.deepEqual(baselines, [['mini', 'take'], ['mini', 'clear']]);
   assert.equal(fs.existsSync(journal), false);
 });
 
@@ -106,5 +111,5 @@ test('prepare on macOS refuses an engine that is not approved or not the checkou
   assert.throws(() => manageApprovedPreparation('prepare', options, {execute, engineCheck: () => ({...ENGINE_CHECK, ok: false, problems: ['the approved engine\'s build bbbbbbbbbbbb is not this checkout\'s cccccccccccc']})}), /not this checkout's/);
   assert.throws(() => manageApprovedPreparation('prepare', options, {execute: () => 'e'.repeat(40) + '\n', engineCheck: () => ENGINE_CHECK}), /not at aaaaaaa/);
   assert.equal(fs.existsSync(journal), false);
-  assert.throws(() => manageApprovedPreparation('cleanup-prepared', {journal, device: 'mini'}), /No approved preparation/);
+  assert.throws(() => manageApprovedPreparation('cleanup-prepared', {journal, device: 'mini'}, {finderBaseline: () => assert.fail('no snapshot is touched')}), /No approved preparation/);
 });

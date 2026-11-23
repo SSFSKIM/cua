@@ -103,8 +103,12 @@ export function managePreparation(action,{journal,out,...options},{execute=execu
 // home's admission, stops the engine at its start and its end (scripts/native-baseline/prepare.mjs) and gives it back,
 // so between runs nothing on the device is the harness's, and cleanup-prepared removes only the journal.
 const ENGINE_CHECK=`cd ${PARITY_CHECKOUT} && node scripts/native-matrix/goldens-device.mjs engine-check`;
+// The sitting's Finder snapshot (ruling 1181; ./finder-baseline.mjs): taken here, before the first lane, so every lane's
+// preflight and down finder count only Finder windows new since the sitting began (the owner's are never the run's), and
+// a window the first lane leaves is new to the second's preflight too; cleanup-prepared removes it.
+const FINDER_BASELINE_COMMAND=action=>`cd ${PARITY_CHECKOUT} && node scripts/repl-parity/scenes-mac.mjs finder-baseline ${action}`;
 export const isApprovedJournal=journal=>existsSync(journal)&&readJson(journal).route==='approved';
-export function manageApprovedPreparation(action,{journal,out,device,commit,'approved-runtime':approvedRuntime,'approved-engine':approvedEngine},{execute=executeCommand,engineCheck=d=>JSON.parse(execute(remoteCommand(d,ENGINE_CHECK)).trim().split('\n').at(-1))}={}) {
+export function manageApprovedPreparation(action,{journal,out,device,commit,'approved-runtime':approvedRuntime,'approved-engine':approvedEngine},{execute=executeCommand,engineCheck=d=>JSON.parse(execute(remoteCommand(d,ENGINE_CHECK)).trim().split('\n').at(-1)),finderBaseline=(d,act)=>JSON.parse(execute(remoteCommand(d,FINDER_BASELINE_COMMAND(act))).trim().split('\n').at(-1))}={}) {
  if(action==='prepare') {
   if(existsSync(journal)&&readJson(journal).ownedPreparation)throw new Error('Owned preparation already exists; run cleanup-prepared before preparing again');
   if(declaredDevice(device).platform!=='darwin')throw new Error('the approved route serves a macOS device');
@@ -113,7 +117,9 @@ export function manageApprovedPreparation(action,{journal,out,device,commit,'app
   const checked=engineCheck(device);
   if(!checked?.ok)throw new Error(`the approved engine cannot serve this sitting: ${(checked?.problems??['the device gave no answer']).join('; ')}`);
   const {build,engineVersion,signature}=checked.engine;
-  const prepared={route:'approved',device,platform:'darwin',commit:head,approvedRuntime,approvedEngine,engine:{build,engineVersion,signature},preparedAt:new Date().toISOString()};
+  const baseline=finderBaseline(device,'take');
+  const prepared={route:'approved',device,platform:'darwin',commit:head,approvedRuntime,approvedEngine,engine:{build,engineVersion,signature},
+   finderBaseline:{takenAt:baseline.takenAt,windows:baseline.windows.length},preparedAt:new Date().toISOString()};
   save(journal,prepared);
   if(out)save(join(resolve(out),'prepare.json'),prepared);
   return prepared;
@@ -121,7 +127,8 @@ export function manageApprovedPreparation(action,{journal,out,device,commit,'app
  if(action!=='cleanup-prepared')throw new Error('Unknown preparation action');
  const prepared=existsSync(journal)?readJson(journal):null;
  if(prepared?.route!=='approved'||prepared.device!==device)throw new Error('No approved preparation of this device to clean');
- rmSync(journal);return {removed:true,owned:false};
+ const {cleared}=finderBaseline(device,'clear');
+ rmSync(journal);return {removed:true,owned:false,finderBaselineCleared:cleared};
 }
 // The journal a native-mac run may use: the approved route's, for this device, naming the run's approved runtime and
 // engine (one sitting serves one of each).

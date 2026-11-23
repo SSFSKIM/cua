@@ -1918,3 +1918,49 @@ Added in review round 1:
 - **The fixture** focuses its window only under `--cua-fixture-focus`, tested by running `main.js` itself under a
   stubbed `electron`.
 - **The fixture.** Shown inactive, then focused once, with the bounds and page switches each read on its own.
+
+### Pilot B's Finder take-down (run 45285337366) and ruling 1181
+
+**What the artifacts show.** The vendor lane ran all four scenes and passed. Its Finder take-down took two attempts:
+
+1. The teardown closed window 81. The down then failed because ShowSidebar did not read back. It did not say "window
+   still open".
+2. The retry's teardown began with `{activate: 'finder'}`, which runs `open -a Finder.app`. Finder had no window on
+   screen, so it answered that reopen with a new window. The activation then found Finder frontmost without window 81
+   ("not in the on-screen layer-0 snapshot").
+3. The down read `down: true`: window 81 was gone and the keys read back.
+4. The cua lane's preflight refused the new window.
+
+The device's `activation-guards.jsonl` was not collected, so the new window is deduced, not observed. ShowSidebar's
+first failure is unproven. The likeliest cause is Finder writing the key from its own process after the toggle-back,
+racing the restore's single write and read; the same code read back a few seconds later.
+
+**The fixes (6c62fa029).**
+
+- Finder is never activated without the run's window on screen. A window minimized or on another Space is refused,
+  and the lane's problem names that cause.
+- There are no teardown steps once the run's window is gone.
+- Every Finder key is read back after a 1 s settle and written again where Finder's late write undid it, for at most
+  3 rounds. A key that never reads back fails, naming the owner's value and the `defaults` command that sets it. The
+  input source's restore names the per-context preference and the owner's value the same way.
+- `down finder` stays false while a window new since the sitting began stands on screen, and names it. The harness
+  never closes it.
+- Sitting B's cua lane needs the vendor lane to pass.
+
+**Ruling 1181's correction: the sitting's Finder snapshot.** The owner keeps Finder windows open on the MacBook, and
+the harness may neither close nor move them. So repl-parity's approved `prepare` takes one snapshot of Finder's
+document windows before the first lane (`scenes-mac.mjs finder-baseline take`, in
+`~/Library/Caches/cua-harness/finder-baseline.json`; the journal records when and how many), and `cleanup-prepared`
+removes it. Every lane's preflight and every `down finder` count only windows new since then
+(`scripts/repl-parity/finder-baseline.mjs`). So the second lane's preflight catches a window the first lane left.
+
+- **Matching.** A window is the snapshot's by its number. One the owner closed and reopened comes back with a new
+  number, and is the snapshot's when its frame is exactly that of a snapshot window that is gone, each matched once.
+  Finder brings a folder's window back at its saved frame. No title is read: a CG title needs the Screen Recording
+  grant, and a folder's name is the owner's.
+- **Hosted.** The snapshot holds no window on screen, so B behaves as before.
+- **Without a sitting.** The goldens recorder and the matrix take no snapshot, and refuse every Finder window on
+  screen, as before.
+- **The venue's TextEdit preferences** stay unrestored: `writeTextEditDefaults` is the only way to write them, and it
+  refuses off a GitHub-hosted runner for every key (`venue.test.mjs`).
+

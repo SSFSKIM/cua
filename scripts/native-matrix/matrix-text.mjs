@@ -54,10 +54,17 @@ export function indexOfId(ax, id) {
 // cua's prints them escaped on the element's one line (#526, ruling 1175: `\n`, `\r`, any other break `\uXXXX`).
 // `rendering` is the lane's, by default the one the run's bind recorded (globalThis.__axRendering, ./goldens-cells.mjs
 // BIND): on cua's the escapes are decoded, on the vendor's the text is left as printed, so a vendor path like `\new`
-// keeps its backslash. A value holding a break is a long part, so only parts the vendor orders after it follow it, each
-// opening with `, <Label>: `; the value ends before the first. A value without a break ends at its first `, ` (only short
-// parts follow a short value). On cua's lane a literal backslash-n in a value decodes as a break (#555): a check that
-// must tell them apart reads it with `decoded: false` and compares at the rendered form (renderedAs).
+// keeps its backslash. On cua's lane a literal backslash-n in a value decodes as a break (#555): a check that must tell
+// them apart reads it with `decoded: false` and compares at the rendered form (renderedAs).
+// Where the value ends is read by the renderer's grammar [F §2.4; src/services/engine/render.mjs parts]: the labelled
+// parts in their order (Description, Rows, Columns, URL, Help, Value, Details, Placeholder, ID, Secondary Actions), the
+// short ones first and the long ones (100 characters or more, or a line break) after them, each group in that order.
+// So after a short value come short Details, Placeholder, ID or Secondary Actions, then long parts of any label; after
+// a long value only long parts after Value. Every end of the value from which the rest of the line reads so is a
+// reading: one reading is the value; several (a value that itself holds `, Details: …`, or a short value followed by a
+// short Details part, which could be one longer value) give {ambiguous: true, candidates}, shortest first, never a
+// guessed prefix (a settable number's type in the flags settles it); a cell that knows the value it expects asks
+// valueMatches instead.
 export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, decoded = true} = {}) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
@@ -66,14 +73,49 @@ export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, d
   if (start < 0) return null;
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
-  let value = parts.join('\n');
-  const cua = rendering === 'cua';
-  const broken = parts.length > 1 || (cua ? /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/.test(value) : /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/.test(value));
-  if (!broken) return value.split(', ')[0];
-  const next = /, (?:Description|Rows|Columns|URL|Help|Details|Placeholder|ID|Secondary Actions): /.exec(value);
-  if (next) value = value.slice(0, next.index);
-  if (!cua || !decoded) return value;
-  return value.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
+  const rest = parts.join('\n'), cua = rendering === 'cua';
+  const decode = t => (cua ? t.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16)))) : t);
+  const long = t => { const d = decode(t); return d.length >= 100 || d.includes('\n'); };
+  const ORDER = ['Description', 'Rows', 'Columns', 'URL', 'Help', 'Value', 'Details', 'Placeholder', 'ID', 'Secondary Actions'], VALUE = 5;
+  const label = /^, (Description|Rows|Columns|URL|Help|Value|Details|Placeholder|ID|Secondary Actions): /;
+  const ends = [];
+  for (let i = rest.indexOf(', '); i >= 0; i = rest.indexOf(', ', i + 1)) ends.push(i);
+  ends.push(rest.length);
+  const memo = new Map();
+  // Whether the line from `from` reads as the parts that may follow, the last one's order `after`, in `phase`.
+  const follows = (from, after, phase) => {
+    if (from === rest.length) return true;
+    const key = `${from} ${after} ${phase}`;
+    if (memo.has(key)) return memo.get(key);
+    let ok = false;
+    const m = label.exec(rest.slice(from, from + 24));
+    const order = m ? ORDER.indexOf(m[1]) : -1;
+    if (m && order !== VALUE) {
+      const textStart = from + m[0].length;
+      for (const end of ends) {
+        if (ok || end <= textStart) continue;
+        const isLong = long(rest.slice(textStart, end));
+        if (!isLong) ok = phase === 'short' && order > after && follows(end, order, 'short');
+        else ok = (phase === 'short' || order > after) && follows(end, order, 'long');
+      }
+    }
+    memo.set(key, ok);
+    return ok;
+  };
+  let candidates = ends.filter(end => end > 0 && follows(end, VALUE, long(rest.slice(0, end)) ? 'long' : 'short'))
+    .map(end => (decoded ? decode(rest.slice(0, end)) : rest.slice(0, end)));
+  // A settable number's type in the flags (`(settable, float)`) settles it: the value is the reading that is a number.
+  const numbers = candidates.filter(candidate => /^-?(?:\d+(?:\.\d+)?(?:e[+-]?\d+)?|inf|nan)$/.test(candidate));
+  if (/\(([^()]*, )?settable, (?:float|integer)(, [^()]*)?\)/.test(head.slice(0, start)) && numbers.length) candidates = numbers;
+  if (candidates.length === 0) return null;
+  return candidates.length === 1 ? candidates[0] : {ambiguous: true, candidates};
+}
+// Whether the element `index`'s value is `expected`: the value, or one of an ambiguous reading's candidates, after
+// `normalize` (a cell's own, such as dropping the bold markers). The value a cell wrote is known, so a reading the text
+// cannot settle on its own is settled by it.
+export function valueMatches(ax, index, expected, {rendering = globalThis.__axRendering, normalize = text => text} = {}) {
+  const value = valueOfIndex(ax, index, {rendering});
+  return (value?.ambiguous ? value.candidates : [value]).some(candidate => candidate !== null && normalize(candidate) === expected);
 }
 // A text as a lane prints it inside a value: on cua's, its line breaks escaped as src/services/engine/render.mjs
 // escapeLineBreaks does; on the vendor's, as it is.
@@ -270,7 +312,10 @@ export function sha256Hex(text) {
 // selected text, each null when the text shows none. -> {value, selected}.
 export function fieldReading(ax, index) {
   const plainOf = t => (t === null ? null : String(t).replace(/\*\*/g, ''));
-  return {value: index === null ? null : plainOf(valueOfIndex(ax, index)), selected: plainOf(selectedTextOf(ax))};
+  const value = index === null ? null : valueOfIndex(ax, index);
+  // A value the text cannot settle is no reading: null, marked so.
+  if (value?.ambiguous) return {value: null, ambiguous: true, selected: plainOf(selectedTextOf(ax))};
+  return {value: plainOf(value), selected: plainOf(selectedTextOf(ax))};
 }
 // What a field's check records of its selection and value, by UTF-16 length and SHA-256 only (never the text), and
 // whether each changed from the prepare's reading `before` (fieldReading's; null: not said). So an action that did
@@ -284,7 +329,7 @@ export function selectionEvidence(ax, index, before = null) {
 }
 
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
-export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex, renderedAs,
+export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex, valueMatches, renderedAs,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, focusReading, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
   namedLines, idCount, sha256Hex, fieldReading, selectionEvidence].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

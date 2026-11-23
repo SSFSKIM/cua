@@ -171,17 +171,28 @@ test('#526: a value cua prints with its line breaks escaped reads back with its 
   globalThis.__axRendering = 'cua';   // as the run's bind records it on cua's lane
   try { assert.deepEqual(text.fieldReading(ax, 1), {value: 'one, two\nthree\r\nfour\u2028five', selected: null}); } finally { delete globalThis.__axRendering; }
   // A one-line value with no break keeps being read up to its first `, `.
-  assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 standard window x\n\t1 slider (settable, float) Value: 3, Help: h\n', 1), '3');
+  assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 standard window x\n\t1 slider (settable, float) Help: h, Value: 3, Secondary Actions: Decrement\n', 1), '3');
 });
 
-test('#526 review 4: a value with a break ends before the next labelled part, on either lane, its CR and LS kept', () => {
+test('#526 review 4: a value ends where the renderer\'s grammar says, on either lane, its CR and LS kept', () => {
   const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) ${line}\n\t2 button OK\n`;
-  assert.equal(text.valueOfIndex(ax('Value: 3, Details: a\nb'), 1, {rendering: 'vendor'}), '3');
-  assert.equal(text.valueOfIndex(ax('Value: 3, Details: a\\nb'), 1, {rendering: 'cua'}), '3');
-  assert.equal(text.valueOfIndex(ax('Value: a\rb, Details: d'), 1, {rendering: 'vendor'}), 'a\rb');
-  assert.equal(text.valueOfIndex(ax('Value: a\u2028b, ID: x'), 1, {rendering: 'vendor'}), 'a\u2028b');
-  assert.equal(text.valueOfIndex(ax('Value: a\\rb\\u2028c, ID: x'), 1, {rendering: 'cua'}), 'a\rb\u2028c');
-  assert.equal(text.valueOfIndex(ax('Value: one, two\nthree, Placeholder: p'), 1, {rendering: 'vendor'}), 'one, two\nthree');
+  // A long value: only long parts after Value can follow it, so a short one after it is the value's own text.
+  assert.equal(text.valueOfIndex(ax('Value: one, two\nthree, Placeholder: p'), 1, {rendering: 'vendor'}), 'one, two\nthree, Placeholder: p');
+  // A label the grammar never puts after Value is the value's text (the review's `second, Rows: unassigned`).
+  assert.equal(text.valueOfIndex(ax('Value: first\nsecond, Rows: unassigned'), 1, {rendering: 'vendor'}), 'first\nsecond, Rows: unassigned');
+  assert.equal(text.valueOfIndex(ax('Value: first\\nsecond, Rows: unassigned'), 1, {rendering: 'cua'}), 'first\nsecond, Rows: unassigned');
+  for (const rendering of ['vendor', 'cua']) assert.equal(text.valueOfIndex(ax('Value: second, Rows: unassigned'), 1, {rendering}), 'second, Rows: unassigned');
+  // Where the grammar allows two readings, the reader says so rather than guess; the cell's known value settles it.
+  const twice = text.valueOfIndex(ax('Value: 3, Details: a\\nb'), 1, {rendering: 'cua'});
+  assert.deepEqual(twice, {ambiguous: true, candidates: ['3', '3, Details: a\nb']});
+  assert.equal(text.valueMatches(ax('Value: 3, Details: a\\nb'), 1, '3', {rendering: 'cua'}), true);
+  assert.equal(text.valueMatches(ax('Value: 3, Details: a\\nb'), 1, '4', {rendering: 'cua'}), false);
+  assert.deepEqual(text.valueOfIndex(ax('Value: 3, Details: a\nb'), 1, {rendering: 'vendor'}), {ambiguous: true, candidates: ['3', '3, Details: a\nb']});
+  assert.deepEqual(text.valueOfIndex(ax('Value: a\rb, Details: d'), 1, {rendering: 'vendor'}), {ambiguous: true, candidates: ['a\rb', 'a\rb, Details: d']});
+  assert.deepEqual(text.valueOfIndex(ax('Value: a\\rb\\u2028c, ID: x'), 1, {rendering: 'cua'}), {ambiguous: true, candidates: ['a\rb c', 'a\rb c, ID: x']});
+  assert.deepEqual(text.fieldReading(ax('Value: 3, Details: d'), 1), {value: null, ambiguous: true, selected: null});
+  // A settable number's type settles its reading.
+  assert.equal(text.valueOfIndex('Window: "x", App: y.\n0 w\n\t1 ruler marker (settable, float) Value: 15.23809523809524, Secondary Actions: Delete\n', 1), '15.23809523809524');
 });
 
 test('#526 review 5: only cua\'s rendering is decoded; the vendor\'s backslashes stay, and cua\'s can be read as printed', () => {

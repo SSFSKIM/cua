@@ -47,7 +47,9 @@ const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 // holds the lines before the first item that are none of the text's kind (a full tree read as a diff, say), which a
 // comparison reports rather than drops. The trailer runs to the end and is kept whole.
 export function parse(text, {kind}) {
-  const lines = text.replace(/\n$/, '').split('\n');
+  // A final LF ends a tree with no trailer; after a focused-element trailer it is that element's own text (a value
+  // ending in a break), kept for the trailer (#526).
+  const full = text.split('\n'), lines = full.slice(0, text.endsWith('\n') ? -1 : undefined);
   const header = lines.shift();
   const items = [];
   // headerTail: how many of the unparsed lines directly follow the header, before any line the parse consumed (a
@@ -58,7 +60,7 @@ export function parse(text, {kind}) {
     if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
       const last = items.at(-1);
       if (last && lines[i - 1] === '') last.rest = last.rest.replace(/\n$/, '');
-      out.trailer = parseTrailer(lines.slice(i));
+      out.trailer = parseTrailer(line.startsWith('The focused UI element is ') ? full.slice(i + 1) : lines.slice(i));
       break;
     }
     const removed = /^Removed element IDs: (.*)$/.exec(line);

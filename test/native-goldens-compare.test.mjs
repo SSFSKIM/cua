@@ -145,3 +145,13 @@ test('#526 round 2, item 3: where the vendor\'s text needs an escape or a longer
   const plain = tree(['1 button A'], {trailer: focused('1 button A')});
   assert.deepEqual(kinds(plain, plain), []);
 });
+
+test('#526 (ruling 1183, P2-6): a focused trailer whose value ends in a break keeps that break, so only cua\'s escaped form of it compares clean', () => {
+  const focused = value => `\nThe focused UI element is 1 text entry area (settable) Value: ${value}`;
+  const vendor = tree(['1 text entry area (settable) Value: abc\n'], {trailer: focused('abc\n')});
+  assert.equal(parse(vendor, {kind: 'full'}).trailer.text, 'The focused UI element is 1 text entry area (settable) Value: abc\n');
+  assert.deepEqual(kinds(vendor, tree(['1 text entry area (settable) Value: abc\\n'], {trailer: focused('abc\\n')})), []);
+  assert.deepEqual(kinds(vendor, tree(['1 text entry area (settable) Value: abc\\n'], {trailer: focused('abc')})), ['trailer'], 'cua missing the final break');
+  // A tree with no trailer keeps its final LF as the terminator, not as a line of the last element.
+  assert.equal(parse('Window: "w", App: A.\n0 standard window w\n\t1 button A\n', {kind: 'full'}).items.at(-1).rest, 'button A');
+});

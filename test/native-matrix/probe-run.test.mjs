@@ -492,3 +492,53 @@ test('the capture alert at the key guard: off a runner, or not held by the alert
   assert.ok(unheld.result.problems.some(p => /possible system alert/.test(p)), JSON.stringify(unheld.result.problems));
   assert.equal(rowOf(unheld.result, SAVE_SHEET), undefined);
 });
+
+// I3b of fix wave 3: a hold after the attempt made its fixture (the untitled document) still cleans it up. The cleanup is
+// registered when the document opens; a cleanup the alert holds too is retried with TextEdit activated before anything
+// else is collected, and one that cannot be reset stops the run. `persist`: 'flash' (up for the typing's guard only),
+// 'activation' (up until TextEdit is next activated) or 'always' (no activation clears it).
+function heldTyping(calls, persist) {
+  let state = 'idle', pending = false;
+  const opened = () => calls.some(c => tagOf(c.code) === 'sheet.new') && !calls.some(c => tagOf(c.code) === 'sheet.type');
+  const held = {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}, held: {count: 1, windows: [{bundleId: UNC, layer: 8, titled: null, size: null}]}}};
+  return {matrix: (base, a) => {
+    if (a[0] === 'step' && a[1] === 'activate' && state === 'up' && persist === 'activation') state = 'gone';
+    if (a[0] === 'alerts' && a[1] === 'check' && (state === 'up' || pending)) { pending = false; return {...held, at: base(a).at}; }
+    if (a[0] === 'read') {
+      if (state === 'idle' && opened() && !a.includes('--with')) state = 'up';
+      if (state !== 'up') return base(a);
+      if (persist === 'flash') { state = 'gone'; pending = true; }
+      const x = base(a);
+      return {...x, reading: {...x.reading, frontmost: {pid: 77, bundleId: UNC, owned: false}}, ...(x.frontKey ? {frontKey: {front: UNC, key: UNC}} : {})};
+    }
+    return base(a);
+  }};
+}
+const sheetTags = calls => calls.map(c => tagOf(c.code)).filter(t => /^(sheet|savesheet)\./.test(t ?? ''));
+
+test('#212\'s save sheet, hosted: the typing held after the untitled document opened still runs its cleanup, the row NO VERDICT', async () => {
+  const calls = [];
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls, cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: heldTyping(calls, 'flash')});
+  assert.equal(result.complete, true, JSON.stringify(result.problems));
+  assert.deepEqual(sheetTags(calls), ['sheet.new', 'savesheet.cancel', 'sheet.cleanup'], 'nothing typed; the sheet cancelled and the document closed');
+  const row = rowOf(result, SAVE_SHEET);
+  assert.equal(sampleCause({...row, hosted: true}).category, 'alert');
+  assert.equal(row.outcome?.cleanupHeld, undefined);
+  assert.equal(result.meta.fixturesHeld, undefined);
+});
+
+test('#212\'s save sheet, hosted: a cleanup the alert holds too is reset with TextEdit activated; one that cannot be reset stops the run', async () => {
+  const calls = [];
+  const reset = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls, cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: heldTyping(calls, 'activation')});
+  assert.equal(reset.result.complete, true, JSON.stringify(reset.result.problems));
+  const row = rowOf(reset.result, SAVE_SHEET);
+  assert.match(row.outcome.cleanupHeld, /Escape not sent/);
+  assert.deepEqual(reset.result.meta.fixturesHeld, [{row: SAVE_SHEET, sample: 1, scene: 'textedit', reset: true}]);
+  assert.deepEqual(sheetTags(calls), ['sheet.new', 'savesheet.cancel', 'sheet.cleanup'], 'the cleanup ran once TextEdit was activated again');
+  const stuck = [];
+  const stopped = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls: stuck, cell: saveCells(), env: {RUNNER_ENVIRONMENT: 'github-hosted'}, ops: heldTyping(stuck, 'always')});
+  assert.equal(stopped.result.complete, false);
+  assert.ok(stopped.result.problems.some(p => /fixture.*could not be reset/.test(p)), JSON.stringify(stopped.result.problems));
+  assert.deepEqual(stopped.result.meta.fixturesHeld, [{row: SAVE_SHEET, sample: 1, scene: 'textedit', reset: false}]);
+  assert.equal(sampleCause({...rowOf(stopped.result, SAVE_SHEET), hosted: true}).category, 'alert', 'the row it kept stays missing proof');
+});

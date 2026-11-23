@@ -50,6 +50,21 @@ export async function probeCells(ctx, plan) {
   if (plan.intervention?.includes('fires')) await sampled(ctx, PROBE_ROWS.fires, a => firesAttempt(ctx, a));
   if (plan.intervention?.includes('preAction')) await sampled(ctx, PROBE_ROWS.preAction, a => preActionAttempt(ctx, a));
   if (plan.intervention?.includes('saveSheet')) await sampled(ctx, PROBE_ROWS.saveSheet, a => saveSheetAttempt(ctx, a));
+  await resetHeldFixture(ctx);
+}
+
+// A fixture an attempt made (its untitled document) whose cleanup the capture alert held (I3b, ruling 1141): nothing more
+// is collected until it is reset. Before the next sample, and once the probe cells end, its scene is activated ("alert up,
+// scene activated first") and the cleanup run again; one that still does not run stops the run, so no evidence is taken
+// from a scene left dirty. Each such fixture is kept in `meta.fixturesHeld` ({row, sample, scene, reset}).
+async function resetHeldFixture(ctx) {
+  const held = ctx.heldFixture;
+  if (!held) return;
+  ctx.heldFixture = null;
+  let failed;
+  try { activate(ctx, held.scene); failed = await cleanedUp({cleanup: held.cleanup}); } catch (error) { failed = error; }
+  held.entry.reset = !failed;
+  if (failed) throw new Stop(`the ${held.scene} fixture ${held.entry.row} left (its cleanup held by the capture alert) could not be reset: ${String(failed.message ?? failed).slice(0, 300)}; the run stopped collecting evidence`);
 }
 
 // One sample from up to PROBE_ATTEMPTS attempts. An attempt answers {row, retry?, lead?, oracle?, cleanup?, key}:
@@ -59,6 +74,7 @@ export async function probeCells(ctx, plan) {
 // run stops with it among its problems. The kept row is judged by the oracle when it carries one, else charged its
 // activations.
 async function sampled(ctx, base, attempt) {
+  await resetHeldFixture(ctx);
   const row = {...base, engine: ctx.engine, sample: ctx.n, ok: false};
   if (!ctx.latin) return push(ctx, {...row, invalid: 'the Latin input source was not selected and read back with the per-context preference off'});
   const retries = [];
@@ -69,7 +85,8 @@ async function sampled(ctx, base, attempt) {
     let out;
     try { out = await attempt({lead, n, id: base.id, key, span}); } catch (error) {
       if (!(error instanceof AlertHeld)) throw error;
-      out = span.end({...error.row, frontKey: heldReadings(ctx, base, error, span)});
+      // What the attempt made before the hold is cleaned up as any attempt's is: its cleanup was registered with it.
+      out = span.end({...error.row, frontKey: heldReadings(ctx, base, error, span)}, span.fixture ? {cleanup: span.fixture.cleanup} : {});
     }
     let cleanupFailed = null;
     if (out.retry && n < PROBE_ATTEMPTS) {
@@ -79,8 +96,15 @@ async function sampled(ctx, base, attempt) {
     const pushed = push(ctx, {...row, ...out.row, attempts: n, ...(retries.length ? {outcome: {...(out.row.outcome ?? {}), retries}} : {})});
     if (!pushed.invalid) ctx.judged.set(out.key, {row: pushed, oracle: out.oracle ?? null});
     cleanupFailed ??= await cleanedUp(out);
-    // A cleanup whose keys the capture alert held leaves what it would have closed; the run goes on (ruling 1141).
-    if (cleanupFailed instanceof AlertHeld) { pushed.outcome = {...(pushed.outcome ?? {}), cleanupHeld: cleanupFailed.message}; return pushed; }
+    // A cleanup whose keys the capture alert held leaves what it would have closed: kept as the run's held fixture, reset
+    // before anything else is collected (resetHeldFixture).
+    if (cleanupFailed instanceof AlertHeld) {
+      pushed.outcome = {...(pushed.outcome ?? {}), cleanupHeld: cleanupFailed.message};
+      const entry = {row: pushed.id, sample: pushed.sample, scene: span.fixture?.scene ?? base.scene, reset: null};
+      (ctx.meta.fixturesHeld ??= []).push(entry);
+      ctx.heldFixture = {scene: entry.scene, cleanup: out.cleanup, entry};
+      return pushed;
+    }
     if (cleanupFailed) {
       pushed.outcome = {...(pushed.outcome ?? {}), cleanupFailed: String(cleanupFailed.message ?? cleanupFailed).slice(0, 500)};
       throw cleanupFailed;
@@ -100,12 +124,17 @@ function heldReadings(ctx, base, error, span) {
 const cleanedUp = async out => { try { await out.cleanup?.(); return null; } catch (error) { return error; } };
 
 // The device-clock window of an attempt's cells, marked as one row window when it ends (made by sampled, one an attempt).
+// `made(scene, cleanup)`: the attempt made a fixture on `scene` that `cleanup` undoes, registered the moment it exists, so
+// an attempt that ends by a throw (AlertHeld) still has it undone (`fixture`).
 function spanOf(ctx, key) {
   let from = null, to = null;
-  return {
+  const span = {
+    fixture: null,
+    made: (scene, cleanup) => { span.fixture = {scene, cleanup}; },
     add: r => { if (r?.at) { from ??= r.at[0]; to = r.at[1]; } return r; },
     end: (row, extra = {}) => { if (from !== null) mark(ctx, 'row', key, [from, to]); return {row, key, ...extra}; },
   };
+  return span;
 }
 // A precondition that did not hold, as the row: with the focus probe's reading when that was what failed (why it did not
 // name the window, ./matrix-device.mjs ownedFocus), recorded and never judged.
@@ -219,6 +248,7 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
     return front.inFront ? span.add(await sendKeys(ctx, code, names, {scene: driven, front, userWindow, kind: 'row', key})) : null;
   };
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
+  span.made(driven, () => closeUntitled(ctx, keys));
   if (!opened?.ok || opened.value?.opened !== true) {
     await closeUntitled(ctx, keys);
     return span.end({invalid: `the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`});
@@ -412,6 +442,7 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const cleanup = () => closeSaveSheet(ctx, keys);
   const unprepared = invalid => span.end({invalid}, {cleanup});
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
+  span.made(scene, cleanup);
   if (!opened?.ok || opened.value?.opened !== true) return unprepared(`the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`);
   alertCheck(ctx, `before ${id} typing`);
   const typed = await keys(SHEET_TYPE_CELL, ['typeText']);

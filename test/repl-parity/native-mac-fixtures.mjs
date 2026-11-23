@@ -15,7 +15,7 @@ const noChange = full => `There has been no change in the accessibility tree for
 // The no-change answer an observation of `after`'s scene gives when nothing moved: the sentence, then `after`'s trailer
 // (the renderer appends the current selection or focus to it, src/services/engine/diff.mjs).
 export function settledAfter(after, full) {
-  const lines = after.split('\n'), at = lines.findIndex(line => /^(The focused UI element is |Selected:$|Selected text: ```$)/.test(line));
+  const lines = after.split('\n'), at = lines.findIndex(line => /^(The focused UI element is |Selected:$|Selected text: `{3,}$)/.test(line));
   return `${noChange(full)}${at < 0 ? '' : `\n${lines.slice(at).join('\n')}`}`;
 }
 

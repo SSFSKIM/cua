@@ -137,8 +137,8 @@ struct ScreenshotNode<Element> {
   var labelsNonText: Set<StalePointLabelPart> = []
   /// #520 (ruling 1163): whether #405's classification at the observation found the element open (neither a password
   /// field nor unclassifiable) and its value was read (`screenshotLabelsUnknown`). Only then may a refusal's sentence
-  /// quote a value of it, recorded or read now (`stalePointName(_:)`, `stalePointOutcome`); the classification is never
-  /// taken again for a sentence.
+  /// quote the value the record kept (`stalePointName(_:)`); a value read now is never quoted (ruling 1165), and the
+  /// classification is never taken again for a sentence.
   var valueOpen = false
 
   /// #500 (ruling 1131): a label part as the observation read it: null (its slot held kCFNull), unreadable (its read
@@ -875,8 +875,8 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
   return StalePointLabelNow(text: now, part: nowPart)
 }
 
-/// #298's label read now (`relabelledLabel`) and the part it was taken from, which (#520, ruling 1163) decides whether a
-/// sentence may quote it: a value only where the record's classification found it open (`ScreenshotNode.valueOpen`).
+/// #298's label read now (`relabelledLabel`) and the part it was taken from, which (#520, rulings 1163, 1165) decides
+/// whether a sentence may quote it: a title or description, never a value (`stalePointQuotable`).
 struct StalePointLabelNow: Equatable {
   let text: String
   let part: StalePointLabelPart
@@ -2161,15 +2161,14 @@ func stalePointName<Element>(_ node: ScreenshotNode<Element>) -> String {
                  valueWithheld: node.role == "AXStaticText" && !node.valueOpen)
 }
 
-/// #520 (ruling 1163): whether a refusal may quote the label `recorded` reads now (`labelNow`): a title or description,
-/// or a value only where the observation's classification of the same node found it open.
-func stalePointQuotable<Element>(_ label: StalePointLabelNow, of recorded: ScreenshotNode<Element>) -> Bool {
-  label.part != .value || recorded.valueOpen
-}
+/// #520 (rulings 1163, 1165): whether a refusal may quote a label read now (`labelNow`): a title or description, never a
+/// value. A value read now is unclassified, whatever the record says of the element then.
+func stalePointQuotable(_ label: StalePointLabelNow) -> Bool { label.part != .value }
 
-/// The words a relabelled refusal says of the label read now: the label in quotes, or (#520) that it is withheld.
+/// The words a relabelled refusal says of the label read now: the label in quotes, or (#520, ruling 1165), for a value,
+/// only that it changed.
 private func stalePointReadsNow(_ label: String?, withheld: Bool) -> String? {
-  if withheld { return "now reads another label (value withheld)" }
+  if withheld { return "now reads another label" }
   return label.map { "now reads \"\(stalePointShownLabel($0))\"" }
 }
 
@@ -2180,7 +2179,7 @@ func stalePointShownLabel(_ label: String) -> String {
 
 /// The guard's refusal (#296): the screenshot's element at the point and what became of it, what the point reaches now,
 /// and the re-observation that lets the model aim again. Nothing was posted. For `relabelled` (#298), `label` is the
-/// label the element reads now; `labelWithheld` (#520) when that label is a value the sentence may not quote.
+/// label the element reads now; `labelWithheld` (#520) when that label is a value, which the sentence never quotes.
 func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: String?, label: String? = nil, labelWithheld: Bool = false,
                                   afterActivation: Bool = false) -> EngineError {
   let there = now.map { "; \($0) is there now" } ?? ""
@@ -2210,7 +2209,7 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
 /// an overlay or a decoration), and the recorded control a click there reaches (`control`) moved or changed. The same
 /// name as the guard's other refusals; its sentence says that the same point would reach whatever is under the layer
 /// now, so the model aims again from a new screenshot rather than retrying it. For `relabelled`, `label` is the label
-/// the control reads now; `labelWithheld` (#520) when that label is a value the sentence may not quote.
+/// the control reads now; `labelWithheld` (#520) when that label is a value, which the sentence never quotes.
 func controlUnderInertChanged(over: String, control: String, reason: StalePointReason, label: String?, labelWithheld: Bool = false,
                               afterActivation: Bool = false) -> EngineError {
   let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
@@ -2269,9 +2268,9 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
   if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app, afterActivation: afterActivation)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
-  // #520 (ruling 1163): a value is quoted only where the recorded node's classification at the observation found it open
-  // (`stalePointName(_:)`, `stalePointQuotable`); otherwise the sentence says it is withheld. Nothing here reads, compares
-  // or decides anything the verdict did not.
+  // #520 (rulings 1163, 1165): a sentence quotes a value only as the record kept it, where the observation's classification
+  // found it open (`stalePointName(_:)`); a value read now is never quoted (`stalePointQuotable`), only said to differ.
+  // Nothing here reads, compares or decides anything the verdict did not.
   if verdict.reason == .controlGone {
     let control = node.control.flatMap { control in (verdict.nodes + verdict.frameless).first { reads.same($0.element, control) } }
     return (record, inertOutlivedControl(
@@ -2283,19 +2282,17 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
     // What the screenshot showed there: #433's control beneath, else the node's recorded control, else the node.
     let shown = verdict.underlying
       ?? node.control.flatMap { control in (verdict.nodes + verdict.frameless).first { reads.same($0.element, control) } } ?? node
-    // The control on top is recorded by its handle (`movedOverPoint`); its value read now is quoted only when every record
-    // of that handle classified it open.
-    let records = verdict.nodes.filter { reads.same($0.element, top) }
-    let topOpen = !records.isEmpty && records.allSatisfy(\.valueOpen)
+    // The control on top is named by its role and its title or description read now. Its value is still read, in main's
+    // order (ruling 1163: no read changes), and never quoted (ruling 1165): it is named by its role alone.
+    let title = reads.title(top), description = reads.description(top)
+    if verdict.onTopRole == "AXStaticText" { _ = reads.value(top) }
     return (record, otherControlOnTopRefusal(
-      top: stalePointName(role: verdict.onTopRole, title: reads.title(top), description: reads.description(top),
-                          value: verdict.onTopRole == "AXStaticText" ? reads.value(top) : nil,
-                          valueWithheld: verdict.onTopRole == "AXStaticText" && !topOpen),
+      top: stalePointName(role: verdict.onTopRole, title: title, description: description),
       shown: stalePointName(shown),
       afterActivation: afterActivation))
   }
   if verdict.underlyingRefused, let control = verdict.underlying {
-    let quotable = verdict.labelNow.map { stalePointQuotable($0, of: control) } ?? true
+    let quotable = verdict.labelNow.map(stalePointQuotable) ?? true
     return (record, controlUnderInertChanged(
       over: stalePointName(node),
       control: stalePointName(control),
@@ -2307,7 +2304,7 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
   if verdict.reason != .relabelled, let hit = verdict.hit, let role = verdict.hitRole, !(verdict.current.map { reads.same(hit, $0) } ?? false) {
     now = stalePointName(role: role, title: reads.title(hit), description: reads.description(hit))
   }
-  let quotable = verdict.labelNow.map { stalePointQuotable($0, of: node) } ?? true
+  let quotable = verdict.labelNow.map(stalePointQuotable) ?? true
   return (record, screenChangedSinceScreenshot(was: was, reason: verdict.reason, now: now, label: quotable ? verdict.labelNow?.text : nil,
                                                labelWithheld: !quotable, afterActivation: afterActivation))
 }

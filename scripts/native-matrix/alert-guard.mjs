@@ -3,25 +3,41 @@
 // scroll that landed on it would answer it. So before any cell that sends a pointer event, on either engine alike, the
 // device reads the on-screen windows afresh (./matrix-device.mjs read --with alert-bounds), and the cell is refused,
 // never sent and never retried, when:
-//   - an alert window (UserNotificationCenter's) overlaps a window of the run (a scene's, the Open panel's): every
-//     pointer event a cell sends lands inside the window of the element or point it names, so a window clear of every
-//     alert keeps each of its points clear. A point inside an alert is always inside an overlap; the guard refuses on the
-//     window, the conservative superset, since an element's point is the engine's to compute;
+//   - an alert window (UserNotificationCenter's) overlaps a window of the cell's target: every window the scene's own
+//     process shows (a document it opened, a sheet; Finder's, which also shows the owner's, only the run's recorded
+//     one), and the Open panel's. A click, a drag's ends or an element scroll lands inside the window of the element or
+//     point it names, so a window clear of every alert keeps those points clear. A point inside an alert is always
+//     inside an overlap; the guard refuses on the window, the conservative superset, since an element's point is the
+//     engine's to compute. The target is the scene the cell's prelude binds (./matrix-cells.mjs); a cell bound to none
+//     is checked against every window of the run;
 //   - the alert holds the front or the key;
 //   - the window list was not read: no bounds, no proof the points are clear.
+// Not every event an engine posts lands in the window: cua's route 3 (Activation.swift) may post an inert click outside
+// the window's frame, stamped with its window number, around a paste, a keyed typeText or an element action, and an
+// element action's held activation (a secondary action's Scroll Down among them) may do the same. The window test does
+// not place those; avoidance below keeps the run's windows, and so their surroundings, clear of the alerts it saw.
 // The refused sample is NO VERDICT, `alert` or `unread` (./front-key.mjs sampleCause). A keyboard cell is refused when the
-// alert holds the key (./steps.mjs sendKeys). Screenshots: both engines capture the target's window alone (cua's engine
-// by SCContentFilter(desktopIndependentWindow:), the vendor's by its window filter), which an alert above it cannot enter,
-// so a capture is exempt; no matrix cell compares a display region.
+// alert holds the key (./steps.mjs sendKeys). Screenshots: cua's engine captures the target's window alone
+// (SCContentFilter(desktopIndependentWindow:)); the vendor captures by window too, but falls back to a display capture
+// cropped to the window's frame when the window is absent from shareable content (F-helper-logic.md §15 item 3), which
+// would show an alert above it. The harness cannot tell which it took, so a screenshot sample whose target window
+// overlaps an alert at its fresh read is NO VERDICT `alert` (./run.mjs speedCells); one of a window clear of every alert
+// is exempt.
 //
 // Avoidance keeps the guard from refusing whole scenes: a scene window that would overlap an alert is moved clear of it,
 // the same size, by the smallest move that stays on its display (clearFrame); the run places its windows so on both
 // sides alike (./run.mjs placeScenes), and the hosted setup records where each planned window would go
 // (scripts/hosted-sittings/setup.mjs).
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 
 // The service that serves TextEdit's Open panel out of process: its window is the panel's.
 export const PANEL_SERVICE = 'com.apple.appkit.xpc.openAndSavePanelService';
+// The panel's windows, by the service's bundle id or, when NSRunningApplication answers none for the XPC service, by its
+// process name.
+export const isPanelWindow = w => w?.ownerBundleId === PANEL_SERVICE || /^(com\.apple\.appkit\.xpc\.)?open ?and ?save ?panel ?service$/i.test(w?.ownerName ?? '');
+// The scene a cell's code is bound to: the one its prelude takes `__app` from (./matrix-cells.mjs sceneHead), or null.
+export const sceneOfCell = code => /const __app = globalThis\.__apps\?\.\["([a-z]+)"\];/.exec(String(code ?? ''))?.[1] ?? null;
 // The cells that send pointer events: a click (by element or by point), a drag, a scroll at an element. An element
 // click may go by an accessibility action instead; the guard does not know beforehand, so it treats it as a pointer.
 const POINTER_CALL = /\.(?:click|drag|scroll)\(/;
@@ -41,31 +57,39 @@ const rectText = r => `${r.x},${r.y} ${r.width}x${r.height}`;
 const documentSize = w => isRect(w?.bounds) && w.bounds.width >= 100 && w.bounds.height >= 100;
 
 // The device's reading (./system-windows.swift `windows` and `displays`, the run's scene records): the alert windows'
-// bounds, and the bounds of the run's windows a pointer can be sent to, each scene's by its recorded pid and window number
-// (null when it is not on screen) and the Open panel's. A list the window server did not answer is unread (null), never
-// an empty screen. Only the run's own windows and the alerts' bounds leave the device, never a title.
-// -> {alerts: [{number, layer, bounds}], windows: [{scene, bounds}], displays?} | null.
+// bounds, and the bounds of the run's windows a pointer can be sent to: for a scene whose process the run launched, every
+// on-screen window of that process (a document or sheet a cell opened among them); for Finder, the system's process that
+// also shows the owner's windows, only the run's recorded one; and the Open panel's. A scene's recorded window not on
+// screen is kept with null bounds. A list the window server did not answer is unread (null), never an empty screen. Only
+// the run's own windows and the alerts' bounds leave the device, never a title.
+// -> {alerts: [{number, layer, bounds}], windows: [{scene, number, recorded, bounds}], displays?} | null.
 export function alertBoundsOf(windows, scenes = {}, displays) {
   if (!Array.isArray(windows)) return null;
   const alerts = windows.filter(isAlertWindow).map(w => ({number: w.number ?? null, layer: w.layer ?? 0, bounds: w.bounds ?? null}));
-  const own = Object.entries(scenes ?? {}).filter(([, r]) => Number.isInteger(r?.pid) && Number.isInteger(r?.window?.number))
-    .map(([scene, r]) => ({scene, bounds: windows.find(w => w.ownerPid === r.pid && w.number === r.window.number)?.bounds ?? null}));
-  const panels = windows.filter(w => w.ownerBundleId === PANEL_SERVICE && documentSize(w)).map(w => ({scene: 'openPanel', bounds: w.bounds}));
+  const own = Object.entries(scenes ?? {}).filter(([, r]) => Number.isInteger(r?.pid) && Number.isInteger(r?.window?.number)).flatMap(([scene, r]) => {
+    const mine = windows.filter(w => w.ownerPid === r.pid && (SCENES[scene]?.process === 'run' || w.number === r.window.number))
+      .map(w => ({scene, number: w.number ?? null, recorded: w.number === r.window.number, bounds: w.bounds ?? null}));
+    return mine.some(w => w.recorded) ? mine : [{scene, number: r.window.number, recorded: true, bounds: null}, ...mine];
+  });
+  const panels = windows.filter(w => isPanelWindow(w) && documentSize(w)).map(w => ({scene: 'openPanel', number: w.number ?? null, recorded: false, bounds: w.bounds}));
   return {alerts, windows: [...own, ...panels], ...(Array.isArray(displays) ? {displays} : {})};
 }
 
-// Why a pointer cell must not be sent, from the device's fresh reading: `bounds` (alertBoundsOf's, null when unread) and
-// the front and key applications (bundle ids). -> {category: 'alert' | 'unread', detail} | null (send it).
-export function guardCause(bounds, {front = null, key = null} = {}) {
+// Why a pointer cell must not be sent, from the device's fresh reading: `bounds` (alertBoundsOf's, null when unread), the
+// front and key applications (bundle ids), and the cell's target `scenes` (null: every window of the run). Each of the
+// target's windows, and the Open panel's, is checked against each alert. -> {category: 'alert' | 'unread', detail} | null
+// (send it).
+export function guardCause(bounds, {front = null, key = null} = {}, {scenes = null} = {}) {
   if (front === CAPTURE_ALERT_PROCESS || key === CAPTURE_ALERT_PROCESS) {
     return {category: 'alert', detail: `${CAPTURE_ALERT_PROCESS} holds the ${[front === CAPTURE_ALERT_PROCESS && 'front', key === CAPTURE_ALERT_PROCESS && 'key'].filter(Boolean).join(' and ')}`};
   }
   if (!Array.isArray(bounds?.alerts) || !Array.isArray(bounds?.windows)) return {category: 'unread', detail: 'the on-screen windows were not read: the alert windows\' bounds are unknown'};
   const unbounded = bounds.alerts.find(a => !isRect(a.bounds));
   if (unbounded) return {category: 'unread', detail: `alert window ${unbounded.number ?? '?'} has no readable bounds`};
+  const targets = bounds.windows.filter(w => scenes === null || scenes.includes(w.scene) || w.scene === 'openPanel');
   for (const alert of bounds.alerts) {
-    const hit = bounds.windows.find(w => overlaps(alert.bounds, w.bounds));
-    if (hit) return {category: 'alert', detail: `alert window ${alert.number ?? '?'} (${rectText(alert.bounds)}) overlaps the ${hit.scene} window (${rectText(hit.bounds)})`};
+    const hit = targets.find(w => overlaps(alert.bounds, w.bounds));
+    if (hit) return {category: 'alert', detail: `alert window ${alert.number ?? '?'} (${rectText(alert.bounds)}) overlaps the ${hit.scene} window ${hit.number ?? '?'} (${rectText(hit.bounds)})`};
   }
   return null;
 }

@@ -63,8 +63,9 @@ const selectionWords = s => `the ${s.selected} engine (${s.reason}) on the ${s.h
 // before or after the Go To dialog), at least one element line of it.
 const panelObserved = observed => [observed?.before, observed?.after].some(s => s?.count > 0 && Array.isArray(s.lines) && s.lines.length > 0);
 // A run the matrix stopped because the capture alert held its fixture's reset too (../native-matrix/probe-run.mjs
-// resetHeldFixture, `blockedBy: 'alert'`): its proof is missing, not failed. -> the reason, or null for any other stop.
-const resetBlocked = (path, record) => (record.meta?.fixturesHeld ?? []).some(f => f.reset === false && f.blockedBy === 'alert')
+// resetHeldFixture, `blockedBy: 'alert'`, or `unread` when the alert guard could not read the screen): its proof is
+// missing, not failed. -> the reason, or null for any other stop.
+const resetBlocked = (path, record) => (record.meta?.fixturesHeld ?? []).some(f => f.reset === false && ['alert', 'unread'].includes(f.blockedBy))
   ? `${path} stopped: a fixture's cleanup the capture alert held could not be reset (${firstProblem(record)})` : null;
 // A native-baseline run stopped where it needed its TextEdit in front and found the capture alert there (its producer's
 // incompleteCause, ../native-baseline/macos.mjs; pilot A, run 45220897246): no verdict, never a failure (rulings 1136,

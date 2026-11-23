@@ -73,6 +73,9 @@ export function accountOf(vendorRows, cuaRows, cuaCause, {required = 1, pairable
   return {vendor: side(vendorRows, causeOf), cua: side(cuaRows, cuaCause), pairs: pairRuns.length, pairRuns, qualifies: pairRuns.length >= required};
 }
 
+// A caret row's device reading on its outcome (./caret.mjs caretOutcome: the range it read).
+const hasReading = row => typeof row?.outcome?.range === 'object' && row.outcome.range !== null;
+
 const VERDICTS = ['worse', 'equal', 'better', 'honest', 'declared', 'shared'];
 
 // One cell's verdict. `mode`: 'reference' (a frontmost method row), 'own' (its own outcome against ground truth or its
@@ -116,6 +119,8 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     const own = causeOf(c);
     if (own) { outcomes.set(c, own); continue; }
     const v = vendorByRun.get(runOf(c))?.[0] ?? null;
+    // 'reading': a pair missing either side's reading has no verdict (ruling 1141), never a difference.
+    if (mode === 'reading' && v && !(hasReading(v) && hasReading(c))) { outcomes.set(c, 'unread'); continue; }
     if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? 'unpaired' : v && !passes(v) && mode !== 'pressKey' ? 'better'
       : mode === 'reading' && !sameEffect(v, c) ? 'worse' : 'equal');
     else outcomes.set(c, failed(c, v));

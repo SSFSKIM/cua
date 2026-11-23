@@ -42,6 +42,9 @@ test('record: a matrix run the alert guard stopped is NO VERDICT, by its meta\'s
   assert.deepEqual(check('record', step, 1, {[step.record]: stopped}),
     ['NO VERDICT', `alert: /o/c/vendor/run-1/result.json stopped: the alert guard refused a harness cell (${detail})`]);
   assert.equal(check('record', step, 1, {[step.record]: {...stopped, meta: {}}})[0], 'FAIL', 'the message alone names no cause');
+  // A fixture's reset the guard refused for an unread screen is missing proof too.
+  const unread = {complete: false, problems: ['stopped: the textedit fixture could not be reset'], meta: {fixturesHeld: [{row: 'r', sample: 1, scene: 'textedit', reset: false, blockedBy: 'unread'}]}};
+  assert.equal(check('record', step, 1, {[step.record]: unread})[0], 'NO VERDICT');
 });
 
 // Ruling 1149: a run whose side answered on another engine measured nothing of that side. Above all the cua side that

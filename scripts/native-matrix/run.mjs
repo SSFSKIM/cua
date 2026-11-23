@@ -61,13 +61,14 @@ import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs
 import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
-import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
+import {CLOSE_PANEL, CLOSE_PANEL_KEY, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
+import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
-import {clearFrame} from './alert-guard.mjs';
+import {clearFrame, guardCause} from './alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
-  TEXTEDIT, guardLane} from './steps.mjs';
+  TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
@@ -300,7 +301,10 @@ async function runOnce(options, io) {
     problems.push(error instanceof Stop ? `stopped: ${error.message}` : error.message);
     // A harness cell (no row of its own: the Open panel's Cancel, a fixture's reset) the alert guard refused stops the
     // run rather than click where an alert is: its proof is missing, not failed (../hosted-sittings/checks.mjs).
-    if (error instanceof AlertGuarded) meta.alertGuardStop = {cause: error.cause.category, detail: error.cause.detail};
+    if (error instanceof AlertGuarded) {
+      meta.alertGuardStop = {cause: error.guard.category, detail: error.guard.detail};
+      recordUnrun(ctx, plan, error.guard);
+    }
     log(`run ${n} stopped: ${error.message}`);
   } finally {
     if (ctx.watcher !== null) finishWatch(ctx);
@@ -463,14 +467,43 @@ function placeScenes(ctx) {
   const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
   if (!bounds) { ctx.meta.placement = {unread: true}; return; }
   const alerts = bounds.alerts.map(a => a.bounds), scenes = {};
-  for (const {scene, bounds: from} of bounds.windows) {
-    if (scene === 'openPanel' || !from) continue;
+  // The scenes' recorded windows: the ones up placed; a window a cell opens later is the guard's alone.
+  for (const {scene, bounds: from} of bounds.windows.filter(w => w.recorded && w.scene !== 'openPanel')) {
+    if (!from) continue;
     const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
     if (!moved) { scenes[scene] = {from, moved: false, ...(reason ? {reason} : {})}; continue; }
     const placed = ctx.ops.matrix(['place', '--run', ctx.run, '--scene', scene, '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')])?.answer ?? null;
     scenes[scene] = {from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null};
   }
   ctx.meta.placement = {alerts, scenes};
+}
+
+// The Open panel, just opened, placed clear of the alerts as the scenes are (placeScenes): its window (the service's,
+// by its number) moved through the frame probe and read back, each opening kept in meta.placement.panel ({beforeRow,
+// number, from, to, moved, matched, readBack, pid} or why it stayed, or {beforeRow, unread}).
+function placePanel(ctx) {
+  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
+  const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;
+  if (!bounds) { kept.push({beforeRow, unread: true}); return; }
+  const alerts = bounds.alerts.map(a => a.bounds);
+  for (const {number, bounds: from} of bounds.windows.filter(w => w.scene === 'openPanel' && w.bounds)) {
+    const {frame, moved, reason} = clearFrame(from, alerts, bounds.displays);
+    if (!moved) { kept.push({beforeRow, number, from, moved: false, ...(reason ? {reason} : {})}); continue; }
+    const placed = device(ctx, ['place', '--scene', 'openPanel', '--window', String(number), '--frame', [frame.x, frame.y, frame.width, frame.height].join(',')]);
+    kept.push({beforeRow, number, from, to: frame, moved: true, matched: placed?.matched === true, readBack: placed?.readBack ?? null, pid: placed?.pid ?? null});
+  }
+}
+
+// A run the alert guard stopped (a harness cell refused): every sample its plan still had to take recorded NO VERDICT by
+// the guard's cause, as an activation that did not take records its target's (skippedTarget), so the per-cell counts see
+// them (./manifest.mjs manifestOf, the rows the judge expects).
+function recordUnrun(ctx, plan, guard) {
+  const have = new Set(ctx.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
+  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when the alert guard refused a harness cell (${guard.detail})`});
+  for (const {section, id, sample, expect} of manifestOf({run: ctx.n, samples: ctx.samples}, plan)) {
+    if (have.has(`${section} ${id} ${sample}`)) continue;
+    push(ctx, {section, id, engine: ctx.engine, sample, ok: false, ...(section === 'method' ? {regime: id.split('/')[1], expect} : {}), ...mark});
+  }
 }
 
 // ---- the regimes --------------------------------------------------------------------------------------------------------
@@ -513,6 +546,7 @@ async function openPanel(ctx, apps) {
   }
   if (opened === null) return {problem: 'the key guard did not send ⌘O'};
   if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
+  placePanel(ctx);
   return null;
 }
 
@@ -534,7 +568,15 @@ async function frontmostTarget(ctx, target, plan) {
   if (target === 'openPanel') await closePanel(ctx);
 }
 
+// The panel closed after its cases: by Escape under the key guard, and only when that did not close it (the key held,
+// skipped, or not taken by the out-of-process panel) by its Cancel, a click under the alert guard (ruling 1154), whose
+// refusal stops the run (runOnce records the samples it would still have taken).
 async function closePanel(ctx) {
+  let keyed = null;
+  try { keyed = await sendKeys(ctx, CLOSE_PANEL_KEY, ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'}); } catch (error) {
+    if (!(error instanceof AlertHeld)) throw error;
+  }
+  if (keyed?.ok && keyed.value?.closed) return;
   const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL, {apps: TEXTEDIT});
   if (!closed.ok || !closed.value?.closed) throw new Stop('TextEdit\'s Open panel stayed open after its cases');
 }
@@ -584,6 +626,12 @@ async function speedCells(ctx, scene) {
       const row = {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene};
       if (reason) { push(ctx, {...row, invalid: reason}); continue; }
       await ctx.checkpoint();
+      // A screenshot of a window under an alert could be the vendor's display crop showing the alert (./alert-guard.mjs):
+      // NO VERDICT at its fresh read, unsent.
+      if (op === 'getScreenshot') {
+        const cause = guardCause(read(ctx, null, {alertBounds: true})?.alertBounds ?? null, {}, {scenes: [scene]});
+        if (cause) { noteGuard(ctx, cause); boundary = null; push(ctx, {...row, ...guardRow(cause)}); continue; }
+      }
       const before = boundary ?? readKeyAt(ctx);
       const r = await measured(ctx, `${scene}/${op}`, code, before, () => (boundary = readKeyAt(ctx)));
       series.push(push(ctx, {...row, ok: r.ok && !r.value?.invalid, inCellMs: r.inCellMs, wallMs: r.wallMs, ...(r.value?.invalid ? {invalid: r.value.invalid} : {}),

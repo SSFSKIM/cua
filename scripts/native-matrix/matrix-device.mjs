@@ -20,8 +20,8 @@
 //       run's own by pid and number, any other by bundle id and layer only (the window-order oracle, #485); with
 //       alert-bounds, the alert windows' bounds, the run's own windows' and the displays', read afresh (the alert guard,
 //       ./alert-guard.mjs alertBoundsOf; null when the window list was unread)
-//   place --run <dir> --scene <id> --frame <x,y,w,h>
-//       the scene's recorded window moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
+//   place --run <dir> --scene <id> --frame <x,y,w,h> [--window <number>]
+//       the scene's recorded window (with --scene openPanel, the Open panel's window of that number) moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
 //       is pinned, ./goldens-device.mjs), read back -> {answer: {requested, readBack, matched, exitStatus}, at}: the run's
 //       placement of a window clear of the alerts (./run.mjs placeScenes)
 //   text-range --run <dir> --scene <id>
@@ -97,7 +97,7 @@ import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
-import {alertBoundsOf} from './alert-guard.mjs';
+import {alertBoundsOf, isPanelWindow} from './alert-guard.mjs';
 import {fieldRange} from './caret.mjs';
 import {alertWatch, bundlePids} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
@@ -203,17 +203,27 @@ function guardReading(io) {
   return alertBoundsOf(screen?.windows, io.state().scenes, screen?.displays ?? undefined);
 }
 
-// The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window moved by the frame probe and read back.
-// io: {state(), probe(args)}. -> {requested, readBack, matched, exitStatus}.
-export function placeScene({scene, frame}, io) {
-  const record = io.state().scenes?.[scene];
-  if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
+// The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, or for `openPanel` the panel's window
+// numbered `window` (its service's pid read from the window list), moved by the frame probe and read back.
+// io: {state(), probe(args), screen()}. -> {requested, readBack, matched, exitStatus, pid?}.
+export function placeScene({scene, frame, window = null}, io) {
+  let pid, number;
+  if (scene === 'openPanel') {
+    const shown = (io.screen()?.windows ?? []).find(w => isPanelWindow(w) && w.number === Number(window));
+    if (!shown) throw new Error(`--window names no Open panel window on screen (${window})`);
+    [pid, number] = [shown.ownerPid, shown.number];
+  } else {
+    const record = io.state().scenes?.[scene];
+    if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
+    [pid, number] = [record.pid, record.window.number];
+  }
   const parts = String(frame ?? '').split(',').map(Number);
   if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
   const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
-  const out = io.probe(['window-frame', '--pid', String(record.pid), '--window', String(record.window.number), '--frame', parts.join(',')]);
+  const out = io.probe(['window-frame', '--pid', String(pid), '--window', String(number), '--frame', parts.join(',')]);
   const readBack = out?.readBack ?? null;
-  return {requested, readBack, matched: out?.matched === true && ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]), exitStatus: out?.exitStatus ?? null};
+  return {requested, readBack, matched: out?.matched === true && ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]), exitStatus: out?.exitStatus ?? null,
+    ...(scene === 'openPanel' ? {pid} : {})};
 }
 
 // A bundle id as it may leave the device, or null.
@@ -598,7 +608,7 @@ export async function main(argv, {io: given = {}} = {}) {
     }
     case 'electron-mode': return electronModeRecord(io);
     case 'text-range': return timed(() => textRange(flags.scene, io));
-    case 'place': return timed(() => placeScene({scene: flags.scene, frame: flags.frame}, io));
+    case 'place': return timed(() => placeScene({scene: flags.scene, frame: flags.frame, window: flags.window ?? null}, io));
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {
       const from = Date.now();

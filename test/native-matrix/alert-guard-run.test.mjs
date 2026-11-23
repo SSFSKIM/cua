@@ -8,6 +8,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../../scripts/native-matrix/live-checks.mjs';
 import {CASES} from '../../scripts/native-matrix/plan.mjs';
+import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {matrixSteps, names, runWith} from './run-doubles.mjs';
 
@@ -22,7 +23,8 @@ const isGuardRead = a => a[0] === 'read' && withList(a).includes('alert-bounds')
 // device's text-range) answer what their prepares make and a caret after each click, so their clicks are sent unless
 // the guard refuses them.
 const FIELD = ['alpha one', 'bravo two', 'charlie three', 'delta four', 'echo five', 'foxtrot six', 'golf seven', 'hotel eight'].join('\n');
-const RANGES = [{location: 20, length: 7}, {location: 44, length: 0}, {location: FIELD.length, length: 0}, {location: 25, length: 0}];
+// Each click's before-read, then its after-read twice (the settle: two reads that agree).
+const RANGES = [{location: 20, length: 7}, {location: 44, length: 0}, {location: 44, length: 0}, {location: FIELD.length, length: 0}, {location: 25, length: 0}, {location: 25, length: 0}];
 const alertsBy = alerts => {
   let n = -1, ranges = 0;
   return {matrix: (base, a) => {
@@ -42,12 +44,13 @@ const METHOD = planOf('method', {scene: 'electron'});
 test('an alert over the run\'s window: every pointer cell is refused unsent, NO VERDICT alert, on cua and the vendor alike; the rest run', async () => {
   for (const engine of ['cua', 'vendor']) {
     const calls = [];
-    const {result} = await runWith({engine, plan: METHOD, calls, ops: alertsBy(() => [OVER])});
+    // With its timings on, so the timing row a refused case pushes is seen too.
+    const {result} = await runWith({engine, plan: {...METHOD, speed: true}, calls, ops: alertsBy(() => [OVER])});
     assert.deepEqual(validateCellResult(result), [], engine);
     const point = rowOf(result, 'electron/frontmost/click.point');
     assert.equal(point.alertGuard.cause, 'alert', engine);
-    // The run's windows are one region: any of them under an alert refuses every pointer cell (Finder's is the user window).
-    assert.match(point.alertGuard.detail, /overlaps the (finder|electron) window/);
+    // The cell's target's windows: the fixture's.
+    assert.match(point.alertGuard.detail, /overlaps the electron window/);
     assert.equal(sampleCause({...point, hosted: true}).category, 'alert');
     // Neither its prepare (a focus click, the screenshot's size) nor its act was sent: the guard read came first.
     assert.ok(!sent(calls, caseOf('electron', 'click', 'point').act), `${engine}: #259's click was sent`);
@@ -60,7 +63,7 @@ test('an alert over the run\'s window: every pointer cell is refused unsent, NO 
     // Each refusal kept in the run's meta, and its timing row NO VERDICT with it.
     assert.ok(result.meta.alertGuards.length > 0);
     const timing = result.rows.find(r => r.section === 'speed' && r.id === 'electron/method.click.point');
-    if (timing) assert.equal(sampleCause(timing)?.category, 'alert');
+    assert.deepEqual([timing.ok, sampleCause(timing)?.category], [false, 'alert']);
   }
 });
 
@@ -113,12 +116,29 @@ test('a key cell is refused when the alert holds the key, its keys never sent', 
   assert.ok(!sent(calls, typed.act));
 });
 
-test('a window capture is exempt: the speed cells\' screenshots run under an alert over the window', async () => {
+test('a screenshot of a window under an alert is NO VERDICT alert, unsent (the vendor may crop a display capture); one clear of it is exempt', async () => {
+  const shots = result => result.rows.filter(r => r.section === 'speed' && r.id === 'electron/getScreenshot');
+  const over = await runWith({plan: planOf('speed', {scene: 'electron'}), ops: alertsBy(() => [OVER])});
+  assert.ok(shots(over.result).length > 0);
+  assert.ok(shots(over.result).every(r => r.alertGuard?.cause === 'alert' && sampleCause(r).category === 'alert'));
+  // The other speed ops capture nothing: measured whatever the alert.
+  assert.ok(over.result.rows.filter(r => r.id === 'electron/getAXState').every(r => r.alertGuard === undefined));
+  const beside = await runWith({plan: planOf('speed', {scene: 'electron'}), ops: alertsBy(() => [BESIDE])});
+  assert.ok(shots(beside.result).every(r => r.alertGuard === undefined && Number.isFinite(r.inCellMs)));
+});
+
+test('per target: an alert over Finder\'s window alone leaves the Electron fixture\'s pointer cells sent', async () => {
   const calls = [];
-  const {result} = await runWith({plan: planOf('speed', {scene: 'electron'}), calls, ops: alertsBy(() => [OVER])});
-  const shots = result.rows.filter(r => r.section === 'speed' && r.id === 'electron/getScreenshot');
-  assert.ok(shots.length > 0);
-  assert.ok(shots.every(r => r.alertGuard === undefined));
+  const overFinder = alertsBy(() => [rect(150, 150, 100, 100)]);
+  const apart = {matrix: (base, a) => {
+    const out = overFinder.matrix(base, a);
+    if (!isGuardRead(a) || !out?.alertBounds) return out;
+    return {...out, alertBounds: {...out.alertBounds, windows: out.alertBounds.windows.map(w => (w.scene === 'electron' ? {...w, bounds: rect(1000, 100, 800, 600)} : w))}};
+  }};
+  const {result} = await runWith({plan: METHOD, calls, ops: apart});
+  assert.ok(sent(calls, caseOf('electron', 'drag', 'select').act));
+  assert.equal(rowOf(result, 'electron/frontmost/click.button').alertGuard, undefined);
+  assert.equal(rowOf(result, 'electron/background/click.button@finder').alertGuard, undefined, 'behind Finder\'s window, the target is still the fixture');
 });
 
 test('the finding cell scrolls Finder\'s list back up: under an alert it is refused, each of its rows NO VERDICT alert', async () => {
@@ -148,13 +168,74 @@ test('the Unicode rows: a field\'s focus click the guard refused leaves its rows
   assert.deepEqual(result.problems, [], 'no refusal stopped the run');
 });
 
-test('a harness cell the guard refused (the Open panel\'s Cancel after its cases) stops the run unsent, marked for the hosted check', async () => {
+// The Open panel under the pilots' alerts (pilot A: about x 382-671, y 118-511 on 1920x1080). `escape`: whether Escape
+// closes the panel; `placeable`: whether the frame probe moves its window.
+const PILOT = rect(382, 118, 289, 393), PANEL_AT = rect(300, 100, 800, 500);
+// The harness's own Cancel click (./matrix-cells.mjs CLOSE_PANEL), told from the case's.
+const HARNESS_CANCEL = 'if (index !== null) await __app.click(index);';
+const PANEL_PLAN = {id: 'test', frontmost: ['openPanel', 'electron'], speed: false, finding: false, background: [], launch: []};
+function panelRun({escape = true, placeable = true} = {}) {
+  let open = false, panelAt = PANEL_AT;
+  const placed = [];
+  const cell = code => {
+    if (code.includes('pressKey("super+o")')) { open = true; return {opened: true}; }
+    if (code.includes('pressKey("Escape")')) { if (escape) open = false; return {closed: escape}; }
+    if (code.includes(HARNESS_CANCEL)) { open = false; return {closed: true}; }
+    return null;
+  };
+  const matrix = (base, a) => {
+    if (a[0] === 'place' && a[a.indexOf('--scene') + 1] === 'openPanel') {
+      placed.push(a);
+      const [x, y, width, height] = a[a.indexOf('--frame') + 1].split(',').map(Number), to = {x, y, width, height};
+      if (placeable) panelAt = to;
+      return {answer: {requested: to, readBack: placeable ? to : PANEL_AT, matched: placeable, exitStatus: 0, pid: 12}, at: [1, 2]};
+    }
+    const out = base(a);
+    if (!isGuardRead(a)) return out;
+    return {...out, alertBounds: {...out.alertBounds, alerts: [{number: 90, layer: 0, bounds: PILOT}],
+      windows: [...out.alertBounds.windows, ...(open ? [{scene: 'openPanel', number: 77, recorded: false, bounds: panelAt}] : [])]}};
+  };
+  return {cell, ops: {matrix}, placed};
+}
+
+test('the Open panel under the pilots\' alerts is placed clear after ⌘O, its Cancel sent, and closed by Escape under the key guard', async () => {
   const calls = [];
-  const {result} = await runWith({plan: planOf('method', {scene: 'openPanel'}), calls, ops: alertsBy(() => [OVER])});
+  const {cell, ops, placed} = panelRun();
+  const {result} = await runWith({plan: PANEL_PLAN, calls, cell, ops});
+  assert.equal(result.complete, true, result.problems.join('; '));
+  assert.deepEqual(placed.map(a => [a[a.indexOf('--window') + 1], a[a.indexOf('--frame') + 1]]), [['77', '679,100,800,500']]);
+  assert.deepEqual(result.meta.placement.panel, [{beforeRow: 0, number: 77, from: PANEL_AT, to: rect(679, 100, 800, 500), moved: true, matched: true, readBack: rect(679, 100, 800, 500), pid: 12}]);
+  // The scenes went to the same column, clear of the alert.
+  assert.deepEqual(result.meta.placement.scenes.electron.to, rect(679, 100, 800, 600));
+  assert.equal(rowOf(result, 'openPanel/frontmost/click.cancel').alertGuard, undefined);
+  assert.ok(sent(calls, 'pressKey("Escape")') && !sent(calls, HARNESS_CANCEL), 'closed by key, its Cancel never clicked by the harness');
+  assert.equal(rowOf(result, 'electron/frontmost/click.point').alertGuard, undefined, 'the targets after it ran');
+});
+
+test('a panel that cannot be placed nor closed by key: its Cancel refused stops the run, and every sample it planned after is NO VERDICT alert', async () => {
+  const calls = [];
+  const {cell, ops} = panelRun({escape: false, placeable: false});
+  const {result} = await runWith({plan: PANEL_PLAN, calls, cell, ops});
   assert.equal(rowOf(result, 'openPanel/frontmost/click.cancel').alertGuard.cause, 'alert');
+  assert.equal(result.meta.placement.panel[0].matched, false);
+  assert.ok(!sent(calls, HARNESS_CANCEL), 'the harness\'s Cancel click refused, never sent');
   assert.equal(result.complete, false);
-  assert.deepEqual(result.meta.alertGuardStop.cause, 'alert');
+  assert.equal(result.meta.alertGuardStop.cause, 'alert');
   assert.ok(result.problems.some(p => /nothing sent: .* \(the alert guard, ruling 1154\)/.test(p)));
+  // Every planned sample is there: the Electron fixture's never ran, each NO VERDICT alert on this side.
+  const planned = manifestOf({run: 1, samples: 2}, PANEL_PLAN);
+  const have = new Set(result.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
+  assert.deepEqual(planned.filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`)), []);
+  const unrun = result.rows.filter(r => r.id.startsWith('electron/'));
+  assert.equal(unrun.length, planned.filter(e => e.id.startsWith('electron/')).length);
+  assert.ok(unrun.every(r => r.engine === 'cua' && sampleCause(r).category === 'alert' && /not run/.test(r.alertGuard.detail)));
+  assert.deepEqual(validateCellResult(result), []);
+});
+
+test('a fixture whose cleanup the guard refused for an unread screen is kept blocked by `unread`, its real cause', async () => {
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', ops: alertsBy(() => null)});
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.meta.fixturesHeld.map(f => [f.reset, f.blockedBy]), [[false, 'unread']]);
 });
 
 // ---- placement --------------------------------------------------------------------------------------------------------

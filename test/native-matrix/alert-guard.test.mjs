@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {main} from '../../scripts/native-matrix/matrix-device.mjs';
 import {writeState} from '../../scripts/repl-parity/scenes-mac.mjs';
-import {alertBoundsOf, clearFrame, contains, guardCause, isAlertWindow, MENU_BAR, overlaps, PANEL_SERVICE, sendsPointer} from '../../scripts/native-matrix/alert-guard.mjs';
+import {alertBoundsOf, clearFrame, contains, guardCause, isAlertWindow, isPanelWindow, MENU_BAR, overlaps, PANEL_SERVICE, sendsPointer} from '../../scripts/native-matrix/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../../scripts/native-matrix/live-checks.mjs';
 import {CASES} from '../../scripts/native-matrix/plan.mjs';
 
@@ -35,11 +35,40 @@ test('the device\'s reading: the alert windows\' bounds and the run\'s windows b
     {ownerPid: 12, ownerName: 'Open', ownerBundleId: PANEL_SERVICE, layer: 0, number: 56, name: null, bounds: rect(0, 0, 4, 4)}];
   const read = alertBoundsOf(windows, {electron: ELECTRON, textedit: {pid: 600, window: {number: 7}}}, [rect(0, 0, 1920, 1080)]);
   assert.deepEqual(read, {alerts: [{number: 90, layer: 0, bounds: rect(700, 200, 420, 180)}],
-    windows: [{scene: 'electron', bounds: PLACED}, {scene: 'textedit', bounds: null}, {scene: 'openPanel', bounds: rect(300, 150, 800, 500)}],
+    windows: [{scene: 'electron', number: 41, recorded: true, bounds: PLACED}, {scene: 'textedit', number: 7, recorded: true, bounds: null},
+      {scene: 'openPanel', number: 55, recorded: false, bounds: rect(300, 150, 800, 500)}],
     displays: [rect(0, 0, 1920, 1080)]});
   assert.ok(!JSON.stringify(read).includes('secret'), 'nothing of another app\'s window leaves the device');
   assert.equal(alertBoundsOf(null, {electron: ELECTRON}), null);
   assert.equal(isAlertWindow({ownerName: 'UserNotificationCenter', ownerBundleId: null}), true, 'by its process name when the bundle id was not read');
+});
+
+test('every window the run made counts: a new document cascaded over the alert refuses TextEdit\'s cells; Finder keeps only the run\'s window', () => {
+  const alert = rect(382, 118, 289, 393);
+  const textedit = {pid: 600, window: {number: 7}}, finder = {pid: 410, window: {number: 21}};
+  const windows = [alertAt(alert),
+    {ownerPid: 600, ownerName: 'TextEdit', ownerBundleId: 'com.apple.TextEdit', layer: 0, number: 7, name: null, bounds: rect(800, 100, 600, 500)},
+    // super+n's untitled document, cascaded down onto the alert; its sheet a window of its own.
+    {ownerPid: 600, ownerName: 'TextEdit', ownerBundleId: 'com.apple.TextEdit', layer: 0, number: 8, name: null, bounds: rect(420, 140, 600, 500)},
+    {ownerPid: 410, ownerName: 'Finder', ownerBundleId: 'com.apple.finder', layer: 0, number: 21, name: null, bounds: rect(1100, 600, 600, 400)},
+    // An owner's Finder window: never the run's, never read.
+    {ownerPid: 410, ownerName: 'Finder', ownerBundleId: 'com.apple.finder', layer: 0, number: 22, name: 'Owner', bounds: rect(300, 100, 600, 400)}];
+  const read = alertBoundsOf(windows, {textedit, finder});
+  assert.deepEqual(read.windows.map(w => [w.scene, w.number, w.recorded]), [['textedit', 7, true], ['textedit', 8, false], ['finder', 21, true]]);
+  assert.match(guardCause(read, {}, {scenes: ['textedit']}).detail, /overlaps the textedit window 8/);
+  // Per target: Finder's own window is clear, so its cells run while TextEdit's new document sits under the alert.
+  assert.equal(guardCause(read, {}, {scenes: ['finder']}), null);
+  // No target named (a cell the guard cannot tie to a scene): every window of the run.
+  assert.equal(guardCause(read).category, 'alert');
+});
+
+test('the Open panel by its service\'s bundle id or, unread, its process name; its windows count for every target', () => {
+  assert.equal(isPanelWindow({ownerBundleId: PANEL_SERVICE}), true);
+  assert.equal(isPanelWindow({ownerBundleId: null, ownerName: 'Open and Save Panel Service'}), true);
+  assert.equal(isPanelWindow({ownerBundleId: null, ownerName: 'com.apple.appkit.xpc.openAndSavePanelService'}), true);
+  assert.equal(isPanelWindow({ownerBundleId: null, ownerName: 'TextEdit'}), false);
+  const read = alertBoundsOf([alertAt(rect(382, 118, 289, 393)), {ownerPid: 12, ownerName: 'Open and Save Panel Service', ownerBundleId: null, layer: 0, number: 55, name: null, bounds: rect(300, 150, 800, 500)}], {});
+  assert.equal(guardCause(read, {}, {scenes: ['textedit']}).category, 'alert', 'a TextEdit cell with the panel up clicks into the panel');
 });
 
 test('a point inside an alert is refused, through the window it lies in; a window clear of every alert is sent', () => {
@@ -118,7 +147,7 @@ test('read --with alert-bounds: one fresh screen read, the alerts and the run\'s
     const io = {frontWindow: () => ({frontmost: {pid: 501, bundleId: 'com.cua.fixture'}, topWindow: null}), probe: () => ({focusedApp: {bundleId: 'com.cua.fixture'}}),
       enginePids: () => [], watcherRuns: () => true, screen: () => screen};
     const out = await main(['read', '--run', dir, '--with', 'front-key,alert-bounds'], {io});
-    assert.deepEqual(out.alertBounds, {alerts: [{number: 90, layer: 0, bounds: rect(700, 200, 420, 180)}], windows: [{scene: 'electron', bounds: PLACED}], displays: [rect(0, 0, 1920, 1080)]});
+    assert.deepEqual(out.alertBounds, {alerts: [{number: 90, layer: 0, bounds: rect(700, 200, 420, 180)}], windows: [{scene: 'electron', number: 41, recorded: true, bounds: PLACED}], displays: [rect(0, 0, 1920, 1080)]});
     assert.equal(guardCause(out.alertBounds, out.frontKey).category, 'alert');
     const unread = await main(['read', '--run', dir, '--with', 'alert-bounds'], {io: {...io, screen: () => { throw new Error('swift exited 1'); }}});
     assert.equal(unread.alertBounds, null);
@@ -137,5 +166,12 @@ test('place: the scene\'s recorded window moved by the frame probe and read back
     assert.equal((await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {probe: probe(rect(22, 120, 720, 560))}})).answer.matched, false);
     await assert.rejects(main(['place', '--run', dir, '--scene', 'chrome', '--frame', '0,0,1,1'], {io: {probe: probe(to)}}), /names no scene/);
     await assert.rejects(main(['place', '--run', dir, '--scene', 'electron', '--frame', '0,0'], {io: {probe: probe(to)}}), /x,y,w,h/);
+    // The Open panel: its window found by number on screen, the service's pid from the list.
+    asked.length = 0;
+    const screen = () => ({windows: [{ownerPid: 12, ownerName: 'Open and Save Panel Service', ownerBundleId: null, layer: 0, number: 77, name: null, bounds: rect(300, 100, 800, 500)}]});
+    const panel = await main(['place', '--run', dir, '--scene', 'openPanel', '--window', '77', '--frame', '679,100,800,500'], {io: {probe: probe(rect(679, 100, 800, 500)), screen}});
+    assert.deepEqual(panel.answer, {requested: rect(679, 100, 800, 500), readBack: rect(679, 100, 800, 500), matched: true, exitStatus: 0, pid: 12});
+    assert.deepEqual(asked, [['window-frame', '--pid', '12', '--window', '77', '--frame', '679,100,800,500']]);
+    await assert.rejects(main(['place', '--run', dir, '--scene', 'openPanel', '--window', '78', '--frame', '0,0,1,1'], {io: {probe: probe(to), screen}}), /no Open panel window/);
   });
 });

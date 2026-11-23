@@ -10,6 +10,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {caretOutcome, caretPrepared, fieldRange, lineColumn} from '../../scripts/native-matrix/caret.mjs';
+import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {departureProblems} from '../../scripts/native-matrix/departures.mjs';
@@ -194,7 +195,7 @@ const PLACED = {screenshotPoint: {x: 120, y: 168}, windowPoint: {x: 60, y: 84}, 
 test('a caret row: the device reads the range before and after the click, and the outcome carries the reading', async () => {
   const asked = [];
   const {result} = await runWith({plan: planOf('method', {scene: 'electron'}),
-    ops: ranged([reading(20, 7), reading(44), reading(VALUE.length), reading(25)], asked),
+    ops: ranged([reading(20, 7), reading(44), reading(44), reading(VALUE.length), reading(25), reading(25)], asked),
     cell: code => (code.includes(caseOf('point').act) ? {actMs: 1, at: [5, 6], threw: false, _meta: {'cua/inputRoute': 3, 'cua/coordinateClick': PLACED}}
       : code.includes(caseOf('selection').check) || code.includes(caseOf('point').check) ? {ok: true, outcome: {valueKept: true}} : null)});
   assert.deepEqual(validateCellResult(result), []);
@@ -205,7 +206,7 @@ test('a caret row: the device reads the range before and after the click, and th
   assert.deepEqual([rows.point.ok, rows.point.outcome.onTarget, rows.point.outcome.line], [true, true, 2]);
   // #259's coordinate click keeps its placement record (cua's engine reports it), for a difference to be diagnosed.
   assert.deepEqual([rows.point.inputRoute, rows.point.engineMeta.act.coordinateClick], [3, PLACED]);
-  assert.deepEqual(asked.map(a => a.slice(0, 3)), Array(4).fill(['text-range', '--scene', 'electron']), 'one read before and one after each click');
+  assert.deepEqual(asked.map(a => a.slice(0, 3)), Array(6).fill(['text-range', '--scene', 'electron']), 'one read before each click, and after it until two agree');
   // Only the frontmost regime runs them.
   assert.ok(!result.rows.some(r => /click\.(selection|point)@/.test(r.id)));
 });
@@ -213,16 +214,30 @@ test('a caret row: the device reads the range before and after the click, and th
 test('a caret row: a kept selection fails its own check; a range the prepare did not make, or one unread after, says nothing', async () => {
   const run = answers => runWith({plan: planOf('method', {scene: 'electron'}), ops: ranged(answers),
     cell: code => (code.includes(caseOf('selection').check) || code.includes(caseOf('point').check) ? {ok: true, outcome: {valueKept: true}} : null)});
-  const kept = caretRows((await run([reading(20, 7), reading(20, 7), reading(VALUE.length), reading(39)])).result);
+  const kept = caretRows((await run([reading(20, 7), reading(20, 7), reading(20, 7), reading(VALUE.length), reading(39), reading(39)])).result);
   assert.deepEqual([kept.selection.ok, kept.selection.invalid, kept.selection.outcome.kept], [false, undefined, true]);
   assert.deepEqual([kept.point.ok, kept.point.outcome.line], [false, 3]);
   const bad = caretRows((await run([reading(0, 0), {error: 'no text area'}])).result);
   assert.match(bad.selection.invalid, /^not prepared: the field's range read 0\+0 where the prepare made 20\+7/);
   assert.deepEqual([bad.selection.inCellMs, bad.selection.frontKey], [undefined, undefined], 'nothing was sent');
   assert.match(bad.point.invalid, /^not prepared: the field's range could not be read before the click \(no text area\)/);
-  const after = caretRows((await run([reading(20, 7), {error: 'the probe did not exit'}, reading(VALUE.length), reading(25)])).result);
+  const after = caretRows((await run([reading(20, 7), {error: 'the probe did not exit'}, {error: 'the probe did not exit'}, reading(VALUE.length), reading(25), reading(25)])).result);
   assert.match(after.selection.invalid, /could not be read after the click \(the probe did not exit\)/);
   assert.ok(after.selection.frontKey?.after, 'the act was sent: the row carries its readings');
+});
+
+test('the caret after the click is read until two reads agree, up to three 150 ms apart; one that never settles is unproven, never worse', async () => {
+  const slept = [];
+  const run = answers => runWith({plan: planOf('method', {scene: 'electron'}), ops: ranged(answers), slept,
+    cell: code => (code.includes(caseOf('selection').check) || code.includes(caseOf('point').check) ? {ok: true, outcome: {valueKept: true}} : null)});
+  // The selection's caret moves once after the click (Chromium's selection follows the DOM), then holds.
+  const settled = caretRows((await run([reading(20, 7), reading(30), reading(44), reading(44), reading(VALUE.length), reading(25), reading(25)])).result);
+  assert.deepEqual([settled.selection.ok, settled.selection.caret.after], [true, reading(44)]);
+  assert.ok(slept.filter(ms => ms === 150).length >= 3);
+  const moving = caretRows((await run([reading(20, 7), reading(30), reading(40), reading(44), reading(VALUE.length), reading(25), reading(25)])).result);
+  assert.match(moving.selection.invalid, /the caret did not settle after the click/);
+  assert.equal(moving.selection.ok, false);
+  assert.equal(sampleCause(moving.selection).category, 'invalid', 'no verdict, never a difference');
 });
 
 // ---- the judge --------------------------------------------------------------------------------------------------------
@@ -238,7 +253,11 @@ test('judged by its reading: two passes are equal only with the same reading; ot
   assert.equal(judge([row('vendor', 1, true, caret(44))], [row('cua', 1, false, keptSel)]), 'worse', '#258 as registered');
   assert.equal(judge([row('vendor', 1, false, keptSel)], [row('cua', 1, false, keptSel)]), 'equal', 'the vendor keeping it too: equal to the vendor\'s');
   assert.equal(judge([row('vendor', 1, false, keptSel)], [row('cua', 1, true, caret(44))]), 'better');
-  assert.equal(judge([row('vendor', 1, true, {})], [row('cua', 1, true, {})]), 'worse', 'no reading recorded is no proof of the same one');
+  // A missing reading on either side is no verdict (ruling 1141), never a difference.
+  assert.equal(judge([row('vendor', 1, true, {})], [row('cua', 1, true, {})]), 'no-verdict', 'no reading recorded is no proof either way');
+  assert.equal(judge([row('vendor', 1, true, {})], [row('cua', 1, true, caret(44))]), 'no-verdict');
+  assert.equal(judge([row('vendor', 1, true, caret(44))], [row('cua', 1, false, {valueKept: true})]), 'no-verdict');
+  assert.deepEqual(judgeCell('reading', [row('vendor', 1, true, {})], [row('cua', 1, true, {})]).account.cua.noVerdict, {unread: 1});
   assert.equal(judge([], [row('cua', 1, true, caret(44))]), 'no-verdict', 'no vendor sample, no verdict (ruling 1116)');
   assert.equal(judge([row('vendor', 1, true, caret(44))], [{...row('cua', 1, true, caret(44)), invalid: 'x'}]), 'no-verdict');
   // The reference mode is unchanged: two passes are equal whatever they recorded.

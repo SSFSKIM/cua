@@ -5,7 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
-import {guardCause, PANEL_SERVICE, sendsPointer} from './alert-guard.mjs';
+import {guardCause, PANEL_SERVICE, sceneOfCell, sendsPointer} from './alert-guard.mjs';
 import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
@@ -104,30 +104,35 @@ export class AlertHeld extends Error {
 // A cell the alert guard refused (ruling 1154, ./alert-guard.mjs): nothing of it was sent, and it is never retried. Thrown
 // in the cell's place, it is an AlertHeld, so every place that makes a row of a held key makes one of it alike (the
 // readings around it the row's), its `row` mark (`alertGuard` {cause, detail}) making the sample NO VERDICT `alert` or
-// `unread` (./front-key.mjs sampleCause), with an invalid reason as a backstop. `reading`: the front and key the guard read.
+// `unread` (./front-key.mjs sampleCause), with an invalid reason as a backstop. `reading`: the front and key the guard read;
+// `guard`: the guard's cause ({category, detail}).
 export const GUARD_INVALID = 'the alert guard refused the cell: nothing of it was sent';
+export const guardRow = cause => ({alertGuard: {cause: cause.category, detail: cause.detail}, invalid: GUARD_INVALID});
 export class AlertGuarded extends AlertHeld {
   constructor(cause, reading) {
     super([], reading);
     this.message = `nothing sent: ${cause.detail} (the alert guard, ruling 1154)`;
-    this.cause = cause;
-    this.row = {alertGuard: {cause: cause.category, detail: cause.detail}, invalid: GUARD_INVALID};
+    this.guard = cause;
+    this.row = guardRow(cause);
   }
 }
-// The guard before a cell: refused when `cause` (./alert-guard.mjs guardCause) names one, kept in the run's meta
-// (`alertGuards`: {beforeRow, cause, detail}).
+// A refusal kept in the run's meta (`alertGuards`: {beforeRow, cause, detail}).
+export const noteGuard = (ctx, cause) => (ctx.meta.alertGuards ??= []).push({beforeRow: ctx.rows.length, cause: cause.category, detail: cause.detail});
+// The guard before a cell: refused when `cause` (./alert-guard.mjs guardCause) names one.
 function refuse(ctx, cause, reading) {
-  (ctx.meta.alertGuards ??= []).push({beforeRow: ctx.rows.length, cause: cause.category, detail: cause.detail});
+  noteGuard(ctx, cause);
   throw new AlertGuarded(cause, reading);
 }
 // The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
-// sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over the run's
-// windows and the alert holding neither front nor key; else AlertGuarded, the cell unsent.
+// sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over its target's
+// windows (the scene its prelude binds, sceneOfCell; every window of the run when it binds none) and the alert holding
+// neither front nor key; else AlertGuarded, the cell unsent.
 export function guardLane(ctx, lane) {
   return {...lane, js: async (code, timeoutMs) => {
     if (sendsPointer(code)) {
       const r = read(ctx, null, {frontKey: true, alertBounds: true});
-      const reading = keyReading(r), cause = guardCause(r?.alertBounds ?? null, reading);
+      const scene = sceneOfCell(code);
+      const reading = keyReading(r), cause = guardCause(r?.alertBounds ?? null, reading, {scenes: scene ? [scene] : null});
       if (cause) refuse(ctx, cause, reading);
     }
     return lane.js(code, timeoutMs);
@@ -255,6 +260,9 @@ export async function quiet(ctx, scene) {
 
 // ---- a case's row ----------------------------------------------------------------------------------------------------
 
+// The caret after-read's settle (#258, #259): reads at most, and the time between them.
+export const CARET_SETTLE = 3, CARET_SETTLE_MS = 150;
+
 // The scenes whose rows keep the engine's per-call meta of their prepare, act and check (./lane.mjs engineMetaOf, its
 // nulls dropped): the web-shaped ones, whose observations depend on enablement, the web area and the settle.
 const DIAGNOSED = Object.freeze(['chrome', 'electron']);
@@ -319,6 +327,18 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   // (it must be the one the prepare made, or nothing is sent) and after it, inside the row's window.
   const rangeRead = () => span(ctx.ops.matrix(['text-range', '--scene', scene, '--run', ctx.run]))?.answer ?? null;
   const caretBefore = c.caret ? rangeRead() : null;
+  // After the click the caret is read until two reads agree (a web field's selection follows its DOM a moment later),
+  // CARET_SETTLE reads at most, CARET_SETTLE_MS apart. -> {reading, settled}.
+  const settledRange = async () => {
+    let last = rangeRead();
+    for (let n = 1; n < CARET_SETTLE; n++) {
+      await ctx.sleep(CARET_SETTLE_MS);
+      const next = rangeRead();
+      if (JSON.stringify(next) === JSON.stringify(last)) return {reading: next, settled: true};
+      last = next;
+    }
+    return {reading: last, settled: false};
+  };
   const unprepared = c.caret ? caretPrepared(c.caret, caretBefore) : null;
   if (unprepared) return done({invalid: `not prepared: ${unprepared}`, caret: {before: caretBefore}});
   // The row's window runs through the final before-read, so what it saw (an alert that prompted a re-activation) is
@@ -354,13 +374,16 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
   if (!act.ok) return finish({invalid: 'the act cell failed', error: act.error});
   Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(electron ? {actAt: act.value.at ?? act.at} : {})});
-  if (c.caret) row.caret = {before: caretBefore, after: rangeRead()};
+  const caretAfter = c.caret ? await settledRange() : null;
+  if (c.caret) row.caret = {before: caretBefore, after: caretAfter.reading};
   const oracleAfter = regime === 'background' ? read(ctx, focusOf(userWindow), {electronMode: electron, windowOrder: true}) : null;
   const check = span(await ctx.lane.js(cells.check));
   keep('check', check);
   if (electron) row.electronMode = (oracleAfter ?? after({electronMode: true}))?.electronMode ?? null;
   if (!check.ok) return finish({invalid: 'the check cell failed', error: check.error});
   if (check.value?.invalid) return finish({invalid: check.value.invalid});
+  // A caret that never settled proves nothing: no verdict, never a difference.
+  if (caretAfter && !caretAfter.settled) return finish({invalid: `the caret did not settle after the click: ${CARET_SETTLE} reads ${CARET_SETTLE_MS} ms apart never agreed`});
   const caret = c.caret ? caretOutcome(c.caret, row.caret.after) : null;
   if (caret?.invalid) return finish({invalid: caret.invalid});
   if (oracleAfter && oracleAfter.watcher !== true) return finish({invalid: 'the activation watcher was not running after the action'});

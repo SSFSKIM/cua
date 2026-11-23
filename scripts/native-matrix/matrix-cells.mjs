@@ -161,8 +161,16 @@ await __app.pressKey("super+o");
 for (const end = Date.now() + 10000; !panel(ax) && Date.now() < end;) ax = await observe();
 return {opened: panel(ax)};`);
 
-// The panel closed by the harness when its case did not close it (a click on Cancel: the panel, served out of process,
-// takes no keys sent to TextEdit). -> {closed}.
+// The panel closed by the harness when its case did not close it, first by Escape (a key cell, sent under the key guard:
+// a key the alert guard holds is never a click on the alert, ruling 1154), awaited. The panel is served out of process
+// and may take no key sent to TextEdit; then CLOSE_PANEL clicks its Cancel, under the alert guard. -> {closed}.
+export const CLOSE_PANEL_KEY = cell(`${prelude('textedit')}
+let ax = await observe();
+if (!panel(ax)) return {closed: true};
+await __app.pressKey("Escape");
+for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await observe();
+return {closed: !panel(ax)};`);
+// The panel's Cancel clicked when Escape did not close it. -> {closed}.
 export const CLOSE_PANEL = cell(`${prelude('textedit')}
 let ax = await observe();
 if (!panel(ax)) return {closed: true};

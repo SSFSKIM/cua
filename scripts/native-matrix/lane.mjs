@@ -174,7 +174,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
             ...(also.includes('window-order') ? {windowOrder: [front, ...Object.values(records).filter(r => r !== front)].filter(Boolean)
               .map(r => ({owned: true, pid: r.pid, number: r.window.number, bundleId: r.bundleId, layer: 0}))} : {}),
             // No alert window, the scenes where they were put, one display.
-            ...(also.includes('alert-bounds') ? {alertBounds: {alerts: [], windows: Object.entries(records).map(([scene, r]) => ({scene, bounds: placed[scene] ?? r.window.bounds})),
+            ...(also.includes('alert-bounds') ? {alertBounds: {alerts: [], windows: Object.entries(records).map(([scene, r]) => ({scene, number: r.window.number, recorded: true, bounds: placed[scene] ?? r.window.bounds})),
               displays: [{x: 0, y: 0, width: 1920, height: 1080}]}} : {})};
         }
         case 'place': {

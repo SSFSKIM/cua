@@ -1258,14 +1258,18 @@ function manifestShort(specs, plan, trials) {
 const declaredCells = (plan, trials) => PART_CELLS[plan].map(([lane, cell, n]) => ({ lane, cell, n: trials ? Math.min(trials, n) : n }));
 
 /**
- * The specs a part is judged against: its manifest, with each declared cell it leaves out or holds short added at its
- * declared drags, so the part's own judge counts the missing drags as a missing case and its status and summary agree
- * with the manifest's fail (the re-review's P3: they said every cell of the plan ran).
+ * The specs a part is judged against: its manifest as written, and for each declared cell it leaves out or holds short
+ * (counted per lane and cell, its entries summed, as `planCells` sums them) one more entry of the deficit, so the part's
+ * own judge counts the missing drags as a missing case and its status and summary agree with the manifest's fail (the
+ * re-review's P3: they said every cell of the plan ran). A complete manifest, split into entries or not, is unchanged.
  */
-const partSpecs = (specs, plan, trials) => [...specs, ...declaredCells(plan, trials).filter(({ lane, cell }) => !specs.some((s) => s.lane === lane && s.cell === cell))].map((s) => {
-  const want = declaredCells(plan, trials).find((d) => d.lane === s.lane && d.cell === s.cell)?.n ?? 0;
-  return { ...s, n: Math.max(s.n, want) };
-});
+const partSpecs = (specs, plan, trials) => [
+  ...specs,
+  ...declaredCells(plan, trials).flatMap(({ lane, cell, n }) => {
+    const got = specs.filter((s) => s.lane === lane && s.cell === cell).reduce((sum, s) => sum + s.n, 0);
+    return got < n ? [{ lane, cell, n: n - got }] : [];
+  }),
+];
 
 /**
  * A plan of parts judged (`PART_PLANS`): each part's rows (`part`) by its own plan's judge, as a run of that plan alone

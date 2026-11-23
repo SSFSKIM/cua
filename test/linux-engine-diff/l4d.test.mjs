@@ -123,6 +123,24 @@ test("a part's manifest is held to its plan's declared cells: one a lane filter 
   assert.ok(!capped.failed.some((f) => /part 3 .*manifest/.test(f)), capped.failed.join('\n'));
 });
 
+test("a part's manifest is counted per lane and cell, however its entries are split: only the deficit is a missing case (the re-review of 85aec4f4)", () => {
+  const args = l4dArgs();
+  const part0 = (specs, n) => [
+    { kind: 'drop-signal-scene', part: 0, family: 'chrome', plan: 't14-long', specs },
+    ...many(n, (i) => ({ ...dropRow({ family: 'chrome', cell: 'long-left', i, pending: 'unconfirmed' }), part: 0 })),
+  ];
+  const t14long = (rows) => partsVerdict(args, rows).failed.filter((f) => f.startsWith('part 1 '));
+  // complete, written as two entries of 50: judged as the one entry of 100 is
+  const split = [{ lane: 'cua', cell: 'long-left', n: 50 }, { lane: 'cua', cell: 'long-left', n: 50 }];
+  assert.deepEqual(t14long(part0(split, 100)), []);
+  assert.deepEqual(t14long(part0([{ lane: 'cua', cell: 'long-left', n: 100 }], 100)), []);
+  // short, two entries of 30 and their 60 drags run: the manifest's fail and a missing case of the 40 that never ran
+  assert.deepEqual(t14long(part0([{ lane: 'cua', cell: 'long-left', n: 30 }, { lane: 'cua', cell: 'long-left', n: 30 }], 60)), [
+    "part 1 (chrome t14-long): the manifest leaves out the plan's cua long-left x100 (60 in the manifest)",
+    "part 1 (chrome t14-long): cua long-left: 60 of the plan's 100 drags ran (a missing case)",
+  ]);
+});
+
 test("launch-plan.mjs prints L4d's plan part by part", async () => {
   const lines = await planContents([...stepArgs(stepNamed('L4d'), { paths: PATHS, gate: 'pinned' }), '--out', '/o'], 'arm64');
   assert.deepEqual(lines, [

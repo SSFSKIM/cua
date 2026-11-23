@@ -1049,3 +1049,18 @@ The bar:
 5. Ruling 1105: every row whose node record is incomplete (`deepfront`, and any other cell where it applies) answers exactly as main does, with no `routeHit`. The deepfront tally is given per lane, cold and warm.
 6. Unchanged: slideover refuses as on 8feea998, decomove refuses `controlGone`, and #453's three delivering kinds (10 each, shared-behind) behave as on 45128593886.
 7. Cost: `stalePoint.ms` p50 / p95, main against fix, as #442's.
+
+### #481 pilot on the wave head 2285528b (ruling 1106): `overcontrol`, CfT and Electron, 5 per head per unit, main `b1b154845573859d2f5680b3ede6cec57617cf5e` against fix `2285528bfc486b7b7bdf890a28ec573049274569`
+
+Cold run [45138877413](https://github.com/SSFSKIM/cua/actions/runs/45138877413) and warm run [45140137383](https://github.com/SSFSKIM/cua/actions/runs/45140137383), both kit `06e2b50a`; every row valid. `pilot481.js` prints the rows one by one.
+
+| Lane, hits | main | fix |
+|---|---|---|
+| CfT cold | kept `sameElement`, hit AXGroup, `hitCorrection` changed. The route's walk stopped at `roleNotAllowed`, and the click answered `backgroundClickRefused`; nothing reached the page (10/10). | Kept `recordedHit`, hit AXLink, **`routeHit: "corrected"`**. The route pressed the AXLink (the hit), the page logged the click on the target, and the click answered ok (10/10). `hitCorrection` was `same` at the text point and absent at the link point. |
+| Electron cold | kept `sameElement`, hit AXGroup, `hitCorrection` changed, no press (posted events), landed (10/10) | the same, row for row, no `routeHit` |
+| CfT warm | landed (10/10): `recordedHit` with the AXLink pressed (the hit at the link point, an ancestor at the text point) | the same, row for row, no `routeHit` |
+| Electron warm | landed (10/10): `nonInteractiveHit` at the text point, `recordedHit` at the link point, no press | the same, row for row |
+
+#481's own case lands on CfT cold: the target is pressed by handle and `routeHit` is "corrected", where main reaches nothing. Every other lane and mode answers as main.
+
+The smoke of candidate 02b5372a ([45135723087](https://github.com/SSFSKIM/cua/actions/runs/45135723087), reps 1, every cell; its fix rows are void for the bar, ruling 1106) checked the kit's new parsing. It found the record's completeness read count-based only, so it missed the walk's depth cap: the wire's `children` counts the children walked, not those listed. Kit `06e2b50a` adds the cut depth and the width rule's cut. On that smoke, `deepfront` on CfT cold answered `backgroundClickRefused` on both heads (the walk stopped at `roleNotAllowed`), not ok.

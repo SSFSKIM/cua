@@ -281,6 +281,20 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1169 (the design session, after pilot A's re-run, run 45252131587): the re-run proved the
+  plumbing (the mode switch read back exactly with no prompt and held to the end; the guard refused vv-1's first
+  capture unsent, and the chained runs and comparisons skipped, NO VERDICT). The alerts re-centred on the switch, to
+  about x 830–1153, y 188–608, and the approved engine's `--probe window-frame` moves Finder windows only
+  (WindowFrameProbe.swift's header). Placement is therefore: Chrome for Testing and the Electron fixture at launch
+  (`--window-position`/`--window-size`, the BrowserWindow's frame; no Accessibility write), Chrome 800×600 on hosted
+  runners; TextEdit by a hosted-only `defaults write` to its own preferences on the throwaway runner, the frame read
+  back and a target still overlapping NO VERDICT alert; Finder by the existing probe at about 800×520 on hosted
+  runners; the Open panel placed only if that needs no Accessibility write, else its cells NO VERDICT alert and
+  counted. Extending the probe to other windows the harness launched stays with the design session, brought only if
+  TextEdit's or the panel's placement fails live. Each hosted frame that differs from the mini's is a declared venue
+  difference in the record (the frame, the alert geometry as the reason, the cells whose layout rests on it); a cell
+  whose points or drag paths were grounded on the mini's frame is re-grounded on the hosted frame, never scaled, and
+  reviewed with the module; both sides use the same frame in every run.
 - 2026-11-23, rulings 1160 and 1164 (the design session, after the display probe, run 45233464944): both hosted
   images run at 1024×768 (mode 3) and offer 1920×1080 (mode 10) as their widest mode. At 1024×768 no scene can be
   placed clear of the alerts, and at 1920×1080 an alert re-centred with the display leaves Chrome's 1000×760 frame

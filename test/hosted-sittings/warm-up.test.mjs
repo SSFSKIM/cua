@@ -112,9 +112,9 @@ test('the capture: one session on the copy, TextEdit\'s approval only, and the T
   const reads = [[], [4009]];
   let ended = false;
   const signalled = [];
-  const out = await captureOnce('vendor', {env: {HOME: '/Users/runner'}, checkout: '/w/cua', open, sleep: async () => {},
+  const out = await captureOnce('vendor', {env: {HOME: '/Users/runner', CUA_HOME: '/elsewhere'}, checkout: '/w/cua', open, sleep: async () => {},
     textEditPids: () => (ended ? [] : reads.shift() ?? [4009]), signal: pid => { signalled.push(pid); ended = true; }});
-  assert.equal(state.opened.env.CUA_NATIVE_ENGINE, 'vendor');
+  assert.deepEqual(state.opened.env, {HOME: '/Users/runner', CUA_NATIVE_ENGINE: 'vendor'}, 'the default home, the approved install the runs reuse');
   assert.deepEqual(state.opened.args, ['/w/cua/bin/cua.mjs', 'serve']);
   assert.deepEqual(state.answers, [{action: 'accept', content: {}}, {action: 'decline'}]);
   assert.match(state.code, /cua\.getApp\("com\.apple\.TextEdit"\)[\s\S]*getScreenshot/);

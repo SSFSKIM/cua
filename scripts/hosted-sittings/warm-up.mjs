@@ -70,7 +70,9 @@ export async function captureOnce(copy, {env, checkout, open = openSession, slee
   signal = pid => process.kill(pid, 'SIGTERM')}) {
   const before = textEditPids();
   if (before.length) return {ok: false, error: `TextEdit is already running (pid ${before.join(', ')}): the warm-up ends only the TextEdit it launches`};
-  const session = open({args: [join(checkout, 'bin', 'cua.mjs'), 'serve'], env: {...env, CUA_NATIVE_ENGINE: copy}, clientName: 'cua-hosted-warm-up',
+  // The default home, as the setup's install: the approved runtime whose helper copy the runs reuse.
+  const {CUA_HOME: _ignored, ...base} = env;
+  const session = open({args: [join(checkout, 'bin', 'cua.mjs'), 'serve'], env: {...base, CUA_NATIVE_ENGINE: copy}, clientName: 'cua-hosted-warm-up',
     onServerRequest: msg => (isTextEditApproval(msg) ? {action: 'accept', content: {}} : {action: 'decline'})});
   let out;
   try {

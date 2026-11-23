@@ -247,6 +247,17 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, after M4 merged (d38630f9; the design session): origin/main is merged into `feat/117-m5` (no rebase),
+  conflicts resolved by the logged merge notes, and every Decision Log entry from both sides kept (#502, #500 with
+  #507, M4's block); `engineVersion` moves to 0.3.0 in that merge commit so the pilot tests the version that ships,
+  the minimum staying 0.1.0 here and the flip raising it to 0.2.0; then `feat/117-m5` is merged into
+  `feat/117-m5-flip` and T11b's docs get a manual pass against M4's text. The pilot: each sitting once in its smallest
+  form at the merged head, on GitHub-hosted macOS, at most one hosted macOS run in flight, watched at 120 s or more;
+  it reports each sitting's runner minutes and whether full C or D would exceed one job's 360-minute cap (if so, a
+  split is proposed, not run). The TCC writer's guard is proven by a spy-store unit test (ruling 1137):
+  RUNNER_ENVIRONMENT unset, not hosted, not macOS, or the O0 entry missing gives zero store calls; it never runs on
+  this Mac. No replayd writes (1141). Every cell reports its NO VERDICT counts (1141) and shared limits (1144), and
+  those counts go to the design session before anyone proposes loosening "every sample with a verdict".
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

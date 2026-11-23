@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {AFTER_END, ALERT, CHOOSER, CONFIRM, DOWNLOAD, FEATURE_STEPS, FIRST_USE, FIRST_USE_CHECKS, IGNORED_VISIBLE, ISOLATION, KEY_MISS, KEY_TAB, PROFILES_ENTRY, STEPS, VISIBILITY_LIMIT, cell, featureDecision, literalEnv, runLiteral, UPLOAD_BYTES, VIEWPORT} from '../scripts/accept/maws-features.mjs';
 import {REPORT_BODY} from '../scripts/accept/features-page.mjs';
+import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {parseFeatureResult} from '../scripts/accept/linux-chrome-features.mjs';
 
 const runCell = async (code, cua) => {
@@ -153,7 +154,7 @@ test('literalVendor: five separate js calls on a computer,browser serve with the
     [[true, false, false, false], [false, true, false, false], [false, false, false, false], [false, false, true, false], [false, false, false, true]]);
   assert.ok(vendor.sent.slice(1, 4).every(({code}) => code.includes(page.url) && code.includes('await tab.close()')), 'every tab it opens is closed, and only the loopback page is opened');
 
-  const ownHost = vendorReplies.map(reply => ({...reply, result: {...reply.result, _meta: {'cua/replHost': {host: 'cua', version: '0.5.0'}}}}));
+  const ownHost = vendorReplies.map(reply => ({...reply, result: {...reply.result, _meta: {'cua/replHost': {host: 'cua', version: REPL_HOST_VERSION}}}}));
   assert.equal((await runLiteral({session: fakeSession(ownHost), page})).detail.host, 'cua');
   assert.equal((await runLiteral({session: fakeSession(ownHost), page})).ok, false, 'not the host a MAWS session runs');
   const opened = [...vendorReplies];

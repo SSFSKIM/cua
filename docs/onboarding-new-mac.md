@@ -123,8 +123,10 @@ system alert or touches System Settings.
 
    The label is the signing private key's name in Keychain Access. When `codesign` asks for the key, answer with the
    login password and **Always Allow** while the build still waits (`--sign-wait 600000` gives ten minutes; 45 s by
-   default). If the build gave up first, the prompt stays on screen: answer it and run the build again. Later builds
-   sign with no prompt, also when started over SSH: the build then signs through a one-shot job in the GUI session
+   default). If the build stops waiting first, it fails (`engine_sign_failed` from a console terminal,
+   `engine_sign_prompt_waiting` from outside the GUI session) and its prompt can stay on screen. Answering a prompt
+   whose signer has gone may leave the key's access unchanged: dismiss it, run the build again with a long
+   `--sign-wait`, and choose **Always Allow** while that build is still waiting. Later builds sign with no prompt, also when started over SSH: the build then signs through a one-shot job in the GUI session
    (`launchctl bootstrap gui/<uid>`), which needs someone logged in at the console.
 
    The build lands in the pending slot, `pending/cua Engine.app` beside the approved place, and says "a new build is
@@ -141,14 +143,20 @@ system alert or touches System Settings.
    `~/Library/Application Support/cua/engine/cua Engine.app`, and switch **cua Engine** on. Grant them to that bundle,
    not to the terminal or a copy, then press Enter in the approve terminal (`n` aborts). Input Monitoring is the
    intervention tap's grant: without it the engine runs with user-intervention detection off. The command relaunches
-   the engine, takes one display capture it discards, and only then writes `approved.json`; if macOS shows a
-   screen-capture confirmation, the owner answers it and confirms at the terminal. If approval does not complete, the
-   previous engine goes back and keeps serving, and the build is pending again.
+   the engine, takes one display capture it discards, and only then writes `approved.json`. When replayd shows a
+   screen-capture confirmation, or its log could not be watched, the command stops and asks: the owner answers any
+   alert at the console (Allow), presses Enter at the terminal, and approval continues. On a copy macOS has not seen
+   before, the first capture can raise replayd's alert about bypassing the system's private window picker. With no
+   answer at the terminal (its input closed), approve fails with `engine_capture_confirmation` and writes nothing,
+   whether an alert appeared or the watch was only unavailable: answer any alert at the console, then run
+   `cua engine approve` again from a terminal. `cua engine approve --foreground` makes the first grant requests from a
+   foreground launch, which may let macOS show its own prompts.
 
-   On a copy macOS has not seen before, the first capture can raise replayd's alert about bypassing the system's
-   private window picker, and approve fails with `engine_capture_confirmation`: answer the alert at the console
-   (Allow), then run `cua engine approve` again. `cua engine approve --foreground` makes the first grant requests from
-   a foreground launch, which may let macOS show its own prompts.
+   If approval does not complete, the previous engine goes back on disk and the build is pending again, with two
+   exceptions the command reports. A build published while the approval ran keeps the pending slot and the failed one
+   is dropped: check `cua engine status` before approving again. A promoted engine that a session connected to
+   meanwhile refuses to stop and keeps the engine's socket, so sessions are refused until it stops: run
+   `cua engine stop` once it is idle, and the next session launches the restored engine.
 5. Check it:
 
    ```sh

@@ -181,13 +181,17 @@ not survive one).
    The label is the signing private key's name in Keychain Access (it need not be the certificate's), so the partition
    list admits `codesign` to that key only. During the first sign `codesign` asks for the key: answer with the login
    password and **Always Allow** while it still waits. `--sign-wait` (or `CUA_SIGN_WAIT_MS`, in milliseconds, at most
-   1800000) sets how long a build waits for `codesign`, 45 s by default; 600000 gives the owner ten minutes. A prompt left on screen after the build gave up (`engine_sign_prompt_waiting`) stays there:
-   answer it, then build again. From then on builds sign with no prompt.
+   1800000) sets how long a build waits for `codesign`, 45 s by default; 600000 gives the owner ten minutes. If the
+   build stops waiting first, it fails (`engine_sign_failed` from a console terminal, `engine_sign_prompt_waiting`
+   from outside the GUI session, below) and its prompt can stay on screen. Answering a prompt whose signer has gone may
+   leave the key's access unchanged, so dismiss it, run the build again with a long `--sign-wait`, and choose **Always
+   Allow** while that build is still waiting. Once that is done, builds sign with no prompt.
 
 A build started outside the GUI login, over SSH for instance, cannot use the unlocked login keychain, so cua runs only
 its `codesign` step as a one-shot job in the GUI session (`launchctl bootstrap gui/<uid>`) and removes the job after.
 That needs someone logged in at the console (`engine_no_gui_login` otherwise; Screen Sharing will do) and is silent once
-the steps above are done. A keychain prompt it raises waits on the console, not in the SSH session.
+the steps above are done. A keychain prompt it raises waits on the console, not in the SSH session, and a build that
+stops waiting for it fails with `engine_sign_prompt_waiting`.
 
 **Build.**
 
@@ -223,15 +227,21 @@ Press Enter once they are granted (the engine's status is polled meanwhile; `n` 
 never to the terminal or a copy. Input Monitoring is the intervention tap's grant: without it the engine runs with
 user-intervention detection off and says so. The command then relaunches the engine so it takes its grants, has it
 take one display capture that it discards, and only then writes `approved.json`. If approval does not complete (a
-failure, `n`, Ctrl-C, or no capture after the relaunch), the previous bundle goes back and keeps serving, and the build
-is pending again. `--foreground` makes the first grant requests from a foreground launch, which may let macOS show its
+failure, `n`, Ctrl-C, or no capture after the relaunch), the previous bundle goes back on disk and the build is pending
+again, with two exceptions the command reports. A build published while the approval ran keeps the pending slot, and
+the one that failed is dropped: check what is pending (`cua engine status`, or doctor's `engine` row) before
+approving again. A promoted engine that a session connected to meanwhile refuses to stop and still holds the engine's
+socket, so sessions are refused until it stops: run `cua engine stop` once it is idle, and the next session launches
+the restored bundle. `--foreground` makes the first grant requests from a foreground launch, which may let macOS show its
 prompts; the printed steps still lead. A rebuild under the same identity keeps the grants, so its approval normally
 needs no one at the Mac.
 
-If macOS raises a screen-capture confirmation during the capture, the owner answers it and confirms at the terminal.
-On a copy macOS has not seen before, the first capture can raise replayd's alert about bypassing the system's private
-window picker, and approve fails with `engine_capture_confirmation`: answer the alert at the console (Allow), then run
-`cua engine approve` again.
+When replayd shows a screen-capture confirmation during a capture, or its log could not be watched through one, the
+command stops and asks: the owner answers any alert at the console (Allow), then presses Enter at the terminal, and
+approval continues. On a copy macOS has not seen before, the first capture can raise replayd's alert about bypassing
+the system's private window picker. With no answer at the terminal (its input closed, as in a script), approve fails
+with `engine_capture_confirmation` and writes nothing, whether an alert appeared or the watch was only unavailable:
+answer any alert at the console, then run `cua engine approve` again from a terminal.
 
 **In a session.** A request that needs a grant the engine lacks fails with `permissionsPending`, whose sentence names
 **cua Engine**, the pane, the "+" button, ⌘⇧G and the bundle's path (the result's `_meta['cua/permission']` says which
@@ -330,9 +340,12 @@ macOS also unless `bin/node` carries the OpenJS Foundation's Developer ID signat
 binary's SHA-256: a `bin/node` that no longer matches its record is never run, neither by a later install nor as a
 candidate. Like the runtime, a verified Node makes it a no-op, and a damaged one is reported, never repaired in place. If that step fails,
 the command fails after the runtime is in place and says so; `--no-node` skips it, as for an offline install without
-the tarball. If no candidate qualifies, a macOS session that would default to cua keeps the vendor host with reason
-`own_host_node_unavailable`, and a Linux session is refused: run `cua install`, install Node 24 or later yourself, or
-set `CUA_NODE` to one. This is selection before launch, not a retry on another host after a failed launch. On macOS
+the tarball. If no candidate qualifies, a macOS session that selects nothing (browser-only, with `CUA_REPL_HOST`
+unset) keeps the vendor host with reason `own_host_node_unavailable`, and a Linux session is refused: run `cua install`,
+install Node 24 or later yourself, or set `CUA_NODE` to one. So is a macOS computer session that selects cua's engine
+(`CUA_NATIVE_ENGINE=cua` or `"engine": "cua"`): it is refused (`repl_host_node`), never moved to the vendor engine, and
+the sentence names `CUA_REPL_HOST=vendor`, which runs cua's engine on the vendor host instead, changing the host and not
+the engine. This is selection before launch, not a retry on another host after a failed launch. On macOS
 `CUA_REPL_HOST=vendor` is the rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`) or when the
 computer surface on macOS runs the vendor engine (`repl_host_refused`, naming `CUA_NATIVE_ENGINE=cua`); it is never
 silently downgraded. This replaces the host and facade on supported sessions, not the installed vendor runtime.
@@ -1706,7 +1719,7 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 | `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime (`runtimes/`), the Node `cua install` places for cua's own host (`node/`), on Linux cua's sandbox helper (`sandbox/<tag>/`), on macOS the vendor host's config and approvals (`state/codex`, its `CODEX_HOME`) and its per-session compat settings (`state/compat`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory, with its session temp `run/<session>/tmp`, which is the connection's `TMPDIR`, and a record of the process that owns it; on Linux under `default` also `kernel/<session>`; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row). JavaScript cells cannot read it under `scoped` or `default` but the runtime, the Node and their own run directory (see below) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host and cua's own browser service, no login needed), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
-| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions take the host their engine needs, the vendor host for the vendor engine and cua's for cua's. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS with the vendor engine (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
+| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions take the host their engine needs, the vendor host for the vendor engine and cua's for cua's. If only Node is missing, a macOS session that selects nothing (browser-only) keeps the vendor host (`own_host_node_unavailable`); a macOS computer session that selects cua's engine is refused (`repl_host_node`), naming `CUA_REPL_HOST=vendor`, which runs cua's engine on the vendor host (the host changes, not the engine); Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS with the vendor engine (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
 | `CUA_NATIVE_ENGINE` | `cua` on Linux, `vendor` on macOS | `vendor` or `cua`: the native engine of computer sessions, on macOS (#117) and on Linux (#171; Linux, cua's own engine). Unset or empty, `"engine"` in `~/.config/cua/engine.json` decides, else the default: on Linux cua's engine where one this cua can drive is installed (else the vendor engine, with a warning in `cua doctor`), on macOS the vendor engine. cua's engine needs one installed: on Linux `cua-engine` (`cua install --engine`), on macOS an approved engine (`cua install --engine` or `cua engine build`, then `cua engine approve`; Install, cua's own macOS engine). An explicit selection with none installed is refused (`engine_not_installed`, naming the remedy). Any other value refuses (`invalid_setting`). Each connection resolves it once at its open; `cua doctor`'s `engine` row reports it |
 | `CUA_SIGNING_IDENTITY` | `"signingIdentity"` in `~/.config/cua/engine.json` | macOS, cua's own engine: the Apple Development identity that `cua install --engine` and `cua engine build` sign it with, its SHA-1 or common name as `security find-identity -v -p codesigning` lists it; wins over the file. Never printed: reports say only whether a signature matches it. With neither set a build refuses (`engine_identity_missing`); `--engine-sign adhoc` or `--sign adhoc` is for CI only |

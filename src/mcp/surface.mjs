@@ -240,10 +240,12 @@ const JS_TITLE = 'Host rules (cua), before the documentation below:';
 // On macOS the text rule follows the engine as on Linux (below) (#117 M4; the own native engine spec's "Input" and
 // "Install, signing and permissions"). cua's typeText keys what a reliably read Latin layout can, sends the rest as
 // Unicode and Return, and pastes under any other input source (native/engine Routes.swift textRoute), so the vendor's
-// workaround is not needed. A {{secret:…}} is never pasted (concealedInputUnavailable, nothing entered); saying so up
-// front saves the refused call, and the refusal of a typeText under a non-Latin source names setValue itself. The
-// permissionsPending sentences give the by-hand steps for "cua Engine"; the rule makes them the user's to take, since a
-// model driving the Mac could otherwise open System Settings itself. The budget is tight: with the computer surface
+// workaround is not needed. A {{secret:…}} is never pasted, and is keyed only under a Latin layout the engine reads
+// reliably (Routes.swift textRoute; otherwise concealedInputUnavailable, nothing entered), so setValue comes first and
+// saying so up front saves the refused call. A missing grant fails permissionsPending, whose name the model never sees:
+// the trusted worker forwards only the message, "Computer Use server error -10014: cua Engine needs <pane>: …" with
+// the by-hand steps (native/engine Permissions.swift), so the rule quotes that sentence's start and makes the steps the
+// user's to take, since a model driving the Mac could otherwise open System Settings itself. The budget is tight: with the computer surface
 // alone the runtime's js description is 1,511 characters and Claude Code cuts at 2,048, which leaves cua's engine about
 // 200 characters for its lines (test/mcp-browser-surface.test.mjs checks it).
 const macosComputerRules = engineRules => [
@@ -255,8 +257,9 @@ const macosComputerRules = engineRules => [
 const COMPUTER_RULES = {
   vendor: macosComputerRules(['- typeText drops characters the layout cannot key (emoji); paste those and multiline text.']),
   cua: macosComputerRules([
-    '- typeText enters any text under any input source; enter {{secret:KEY}} by typeText or setValue, never paste.',
-    '- permissionsPending: the user, not you, grants "cua Engine" in System Settings; then retry.',
+    '- typeText enters any text under any input source.',
+    '- A {{secret:KEY}}: setValue, or typeText under a Latin layout; never paste.',
+    '- "cua Engine needs …": the user grants it, not you; then retry.',
   ]),
 };
 // The Linux text rule F2 measured (above) is the vendor engine's. With cua's own Linux engine (#171; its spec's Decision Log, M5 pre-flight) the

@@ -12,7 +12,7 @@ import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {ACCESS_NOTE} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile} from '../src/profiles/registry.mjs';
 import {profileReadiness} from '../src/profiles/commands.mjs';
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
@@ -20,6 +20,7 @@ import {randomUUID} from 'node:crypto';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {toolOverrides} from '../src/repl-host/instructions.mjs';
+import {ENGINE_GRANTS, grantSteps} from '../src/runtime/engine.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
@@ -479,11 +480,13 @@ test('on Linux the js rule on text input follows the selected engine', () => {
 // rule says it takes any text. cua's engine never pastes a secret, and its permission errors name "cua Engine", whose
 // grants are the user's to make.
 const MAC_VENDOR_TEXT_RULE = COMPUTER_RULES['typeText drops emoji: paste those'];
-const MAC_CUA_TEXT_RULE = /typeText enters any text under any input source; enter \{\{secret:KEY\}\} by typeText or setValue, never paste\./;
-const MAC_CUA_PERMISSION_RULE = /permissionsPending: the user, not you, grants "cua Engine" in System Settings; then retry\./;
-const MAC_CUA_RULES = [MAC_CUA_TEXT_RULE, MAC_CUA_PERMISSION_RULE];
+const MAC_CUA_TEXT_RULE = /typeText enters any text under any input source\./;
+const MAC_CUA_SECRETS_RULE = /A \{\{secret:KEY\}\}: setValue, or typeText under a Latin layout; never paste\./;
+// Keyed to the sentence the model receives, not the error's name, which the trusted worker does not forward.
+const MAC_CUA_PERMISSION_RULE = /"cua Engine needs …": the user grants it, not you; then retry\./;
+const MAC_CUA_RULES = [MAC_CUA_TEXT_RULE, MAC_CUA_SECRETS_RULE, MAC_CUA_PERMISSION_RULE];
 
-test('on macOS the js rules follow the selected engine: cua\'s typing-and-secrets and permission rules in place of the vendor\'s typing rule', () => {
+test('on macOS the js rules follow the selected engine: cua\'s typing, secrets and permission rules in place of the vendor\'s typing rule', () => {
   for (const surfaces of [['computer'], ['computer', 'browser']]) {
     const vendor = jsRulesFor(surfaces, {platform: 'darwin', engine: 'vendor'});
     const cua = jsRulesFor(surfaces, {platform: 'darwin', engine: 'cua'});
@@ -501,6 +504,9 @@ test('on macOS the js rules follow the selected engine: cua\'s typing-and-secret
   for (const base of [VENDOR_COMPUTER_JS, runtimeJs])
     assert.ok(jsRulesFor(['computer'], {platform: 'darwin', engine: 'cua'}).length + 2 + base <= DESCRIPTION_CAP, `the computer surface's js description on cua's engine is never cut (${base})`);
   assert.equal(jsRulesFor(['browser'], {platform: 'darwin', engine: 'cua'}), jsRulesFor(['browser'], {platform: 'darwin', engine: 'vendor'}), 'no computer surface, no rule');
+  // The permission rule quotes the start of the engine's permissionsPending sentence, as the engine and approve say it.
+  assert.match(readFileSync(new URL('../native/engine/Sources/Engine/Permissions.swift', import.meta.url), 'utf8'), /let steps = "cua Engine needs \\\(pane\): /);
+  for (const grant of ENGINE_GRANTS) assert.ok(grantSteps(grant, '/x').startsWith(`cua Engine needs ${grant.pane}: `), grant.key);
 });
 
 test('a macOS server shows the js rules of the engine it was given', async () => {

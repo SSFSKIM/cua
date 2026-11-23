@@ -95,6 +95,8 @@ test('(2) no approved engine and no vendor runtime: the macOS computer open is r
   assert.equal(refused.error.message, `no runtime is installed in ${home}, and cua's engine cannot serve macOS computer sessions instead: no approved cua engine (not built)`);
   assert.match(refused.error.hint, /^run `cua install`/, 'the runtime\'s own remedy first');
   assert.match(refused.error.hint, /; to use cua's engine, run `cua install --engine`, then `cua engine approve` with the owner at the console$/);
+  // The one line a device's HTTP refusal carries across (src/mcp/http.mjs): the reason and remedy, no path.
+  assert.equal(refused.error.engineNotice, 'cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console');
   // The same reason as the session line, for a build awaiting approve.
   const awaiting = await session(t, {home, engine: engineWith({pending: {build: 'a'.repeat(64), engineVersion: '0.3.0', bundlePath: '/e/pending/cua Engine.app', builtAt: null}})});
   assert.match(awaiting.error.message, /no approved cua engine \(build aaaaaaaaaaaa built, awaiting approve\)$/);
@@ -112,6 +114,7 @@ test('(2) no approved engine and no vendor runtime: the macOS computer open is r
     assert.equal(other.error?.code, 'runtime_not_installed', label);
     assert.equal(other.error.message, plain, label);
     assert.doesNotMatch(other.error.hint, /cua engine approve/, label);
+    assert.equal(other.error.engineNotice, undefined, label);
   }
 });
 

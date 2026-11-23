@@ -435,6 +435,11 @@ test('open classifies its refusals: 401, relay 503 device offline, 502, session 
   d.open.failWith = 'runtime_not_installed';
   const failed = await rejectsWith(open(), 'device_failed');
   assert.match(failed.message, /runtime_not_installed/);
+  // Ruling 1148: the device's engine notice reaches the client whole, its remedy included.
+  d.open.failNotice = 'cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  const noticed = await rejectsWith(open(), 'device_failed');
+  assert.ok(noticed.message.includes(`cua: runtime_not_installed: ${d.open.failNotice}`), noticed.message);
+  d.open.failNotice = undefined;
   d.open.failWith = undefined;
 
   // At the device's cap of 1 a session with a call running is not Idle, so a second open is refused.

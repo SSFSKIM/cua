@@ -150,14 +150,15 @@ export const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
 
 // A connection opener for the HTTP handler (createMcpHttp's `open`) serving in-process connections: each session's
 // createServer runs over a fake upstream that answers initialize and tools/list by itself; everything else waits for
-// the test (`open.opened[i].upstream`). `open.failWith` (a code) makes the next opens fail; `open.negotiate` is the protocol
+// the test (`open.opened[i].upstream`). `open.failWith` (a code) makes the next opens fail, with `open.failNotice` as the
+// error's engineNotice (src/mcp/connection.mjs withEngineFallback); `open.negotiate` is the protocol
 // version the runtime answers initialize with.
 const UPSTREAM_INIT = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'rmcp', version: '1.5.0'}, instructions: 'Upstream.'};
 
 export function inProcessConnections() {
   const opened = [];
   const open = async ({sessionId, input, output, onWithdrawn}) => {
-    if (open.failWith) throw Object.assign(new Error('open failed'), {code: open.failWith});
+    if (open.failWith) throw Object.assign(new Error('open failed in /Users/someone/runtime'), {code: open.failWith, ...(open.failNotice ? {engineNotice: open.failNotice} : {})});
     const upstream = fakeUpstream();
     const send = upstream.send;
     upstream.send = msg => {

@@ -48,12 +48,12 @@ const isResponse = msg => msg !== null && typeof msg === 'object' && msg.method 
 const replyOf = msg => (msg.error !== undefined ? {error: msg.error} : {result: msg.result});
 
 // The JSON-RPC error message in a refusal's body, when there is one (the device's and the relay's are `cua: …` and
-// `cua-relay: …`; neither ever carries a credential), shortened.
+// `cua-relay: …`; neither ever carries a credential), shortened, with room for a device's one-line engine notice (ruling 1148).
 async function refusalMessage(response) {
   const text = await response.text().catch(() => '');
   try {
     const message = JSON.parse(text)?.error?.message;
-    return typeof message === 'string' ? message.slice(0, 200) : '';
+    return typeof message === 'string' ? message.slice(0, 600) : '';
   } catch { return ''; }
 }
 

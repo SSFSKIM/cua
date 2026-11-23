@@ -373,7 +373,10 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     let connection;
     try { connection = await opened; } catch (error) {
       diagnostics(`session ${sessionId}: could not open: ${error.message}${error.code ? ` [${error.code}]` : ''}`);
-      return rpcError(res, 500, -32000, `cua: ${error.code ?? 'open_failed'}`, message.id);
+      // Only the code crosses, and a refusal's engine notice (ruling 1148: the reason and remedy, one line with no path,
+      // src/mcp/connection.mjs withEngineFallback); never the error's message or hint, which name this machine's paths.
+      const notice = typeof error.engineNotice === 'string' && /^[^\n\r]{1,500}$/.test(error.engineNotice) ? `: ${error.engineNotice}` : '';
+      return rpcError(res, 500, -32000, `cua: ${error.code ?? 'open_failed'}${notice}`, message.id);
     } finally { opening.delete(opened); }
     session = createSession(sessionId, connection, input, output);
     if (shutdown) {

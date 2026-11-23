@@ -104,8 +104,11 @@ function withEngineFallback(error, {host, surfaces, env, engine}) {
     fallback = selection.reason === 'engine_not_installed' || selection.reason === 'engine_outdated' ? engineFallbackFor({selection, env, engine}) : null;
   } catch { return error; }
   if (!fallback) return error;
-  return new CuaError(error.code, `${error.message}, and cua's engine cannot serve macOS computer sessions instead: ${fallback.why}`,
+  const refused = new CuaError(error.code, `${error.message}, and cua's engine cannot serve macOS computer sessions instead: ${fallback.why}`,
     {hint: error.hint ? `${error.hint}; ${fallback.remedy}` : fallback.remedy, cause: error});
+  // The reason and remedy alone, one line with no path: what crosses to a device's remote client (src/mcp/http.mjs).
+  refused.engineNotice = `cua's engine cannot serve macOS computer sessions instead: ${fallback.why}; ${fallback.remedy}`;
+  return refused;
 }
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},

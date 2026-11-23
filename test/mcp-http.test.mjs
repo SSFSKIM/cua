@@ -244,6 +244,26 @@ test('a session that cannot open answers 500 with -32000 cua: <code> and leaves 
   assert.equal(http.sessions.size, 0);
 });
 
+// Ruling 1148, state 2 on a device: the refusal of a macOS computer open with no runtime and no approved cua engine
+// carries its one-line reason and remedy (the connection's `engineNotice`) to the remote client; the error's message and
+// hint, which name this machine's paths, never cross.
+test('a refused open carries the engine\'s one-line reason and remedy across, and nothing else of the error', async t => {
+  const {open, send} = setup(t);
+  const line = 'cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console';
+  open.failWith = 'runtime_not_installed';
+  open.failNotice = line;
+  const {res, done} = send({body: INITIALIZE});
+  await done;
+  assert.equal(res.status, 500);
+  assert.deepEqual(res.json(), {jsonrpc: '2.0', id: 0, error: {code: -32000, message: `cua: runtime_not_installed: ${line}`}});
+  assert.doesNotMatch(res.body, /\/Users\/|open failed/);
+  // A notice that is not one plain line is not carried.
+  open.failNotice = 'two\nlines';
+  const second = send({body: INITIALIZE});
+  await second.done;
+  assert.equal(second.res.json().error.message, 'cua: runtime_not_installed');
+});
+
 test('a request\'s response goes on the POST stream that carried it, with two concurrent POSTs answered out of order', async t => {
   const {send, initialize, upstreamOf} = setup(t);
   const session = await initialize();
@@ -1024,12 +1044,16 @@ test('over real connections, a session lists no device tools, and DELETE answers
 test('over real connections, a home with nothing installed fails the open as cua: runtime_not_installed and claims nothing', async t => {
   const s = scratch();
   t.after(s.cleanup);
-  const http = createMcpHttp({home: s.dir, env: {CUA_SHIM_SECRETS: 'off'}, clientCredential: CREDENTIAL, diagnostics: () => {}});
+  // HOME is the scratch home too, so the engine selection finds no approved engine there rather than reading the account's.
+  const http = createMcpHttp({home: s.dir, env: {CUA_SHIM_SECRETS: 'off', HOME: s.dir}, clientCredential: CREDENTIAL, diagnostics: () => {}});
   const res = recorder();
   await http.handle({method: 'POST', url: '/mcp', signal: new AbortController().signal, headers: {authorization: `Bearer ${CREDENTIAL}`},
     body: (async function* () { yield Buffer.from(JSON.stringify(INITIALIZE)); })()}, res);
   assert.equal(res.status, 500);
-  assert.equal(res.json().error.message, 'cua: runtime_not_installed');
+  // On macOS the computer surface's open also says why cua's engine cannot serve instead (ruling 1148), in one line.
+  assert.equal(res.json().error.message, process.platform === 'darwin'
+    ? 'cua: runtime_not_installed: cua\'s engine cannot serve macOS computer sessions instead: no approved cua engine (not built); to use cua\'s engine, run `cua install --engine`, then `cua engine approve` with the owner at the console'
+    : 'cua: runtime_not_installed');
   assert.equal(existsSync(join(s.dir, 'run')), false);
 });
 

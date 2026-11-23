@@ -3,11 +3,15 @@
 // the zone, sat in turn in one run (a plan of parts) and each judged by its own plan's judge. Display-free.
 
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { PART_PLANS, ZONE, dropSignalsVerdict, judgedPartsPlan, partsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { PART_CELLS, PART_PLANS, ZONE, dropSignalsVerdict, judgedPartsPlan, partsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { CELLS, planSpecs, runSittings } from '../../scripts/linux-engine-diff/drop-signals.mjs';
+import { rejudge } from '../../scripts/linux-engine-diff/rejudge-drops.mjs';
 import { planContents } from '../../scripts/linux-engine-gate/launch-plan.mjs';
 import { MAX_STEP_MINUTES, stepArgs, stepNamed } from '../../scripts/linux-engine-gate/steps.mjs';
 import { dropRow } from './drop-rows.mjs';
@@ -92,6 +96,26 @@ test("a plan of parts is judged part by part, each by its own plan's judge, its 
   assert.ok(missing.failed.includes('part 3 (electron t17-long): its scene row is missing: which cells ran is unknown'), missing.failed.join('\n'));
 });
 
+test("a part's manifest is held to its plan's declared cells: one a lane filter emptied or shortened fails (the final review's P2)", () => {
+  const args = l4dArgs();
+  // the plans' cells are the judge's, and drop-signals.mjs runs them as declared
+  for (const part of PART_PLANS['t14-stale']) assert.deepEqual(planSpecs({ plan: part.plan }), PART_CELLS[part.plan].map(([lane, cell, n]) => ({ lane, cell, n })), part.plan);
+  // `--lanes cua:handle` on t14-stale: every part's scene row with an empty manifest, and no drags
+  const emptied = PART_PLANS['t14-stale'].map((p, part) => ({ kind: 'drop-signal-scene', part, family: p.family, plan: p.plan, specs: [] }));
+  const v = partsVerdict(args, emptied);
+  assert.deepEqual(v.failed, [
+    "part 1 (chrome t14-long): the manifest leaves out the plan's cua long-left x100",
+    "part 2 (chrome t14-floor): the manifest leaves out the plan's cua plain-long x300, cua left x30, cua inzone-out x30",
+    "part 3 (electron t17-long): the manifest leaves out the plan's cua long-left x30",
+  ]);
+  // a short cell, its drags all run, fails as well
+  const short = [{ kind: 'drop-signal-scene', part: 2, family: 'electron', plan: 't17-long', specs: [{ lane: 'cua', cell: 'long-left', n: 10 }] }];
+  assert.ok(partsVerdict(args, short).failed.includes("part 3 (electron t17-long): the manifest leaves out the plan's cua long-left x30 (10 in the manifest)"));
+  // a sitting capped by --trials (a development pilot; a counted run refuses it) is held to its cap
+  const capped = partsVerdict({ ...args, samplesTrials: 10 }, short);
+  assert.ok(!capped.failed.some((f) => /part 3 .*manifest/.test(f)), capped.failed.join('\n'));
+});
+
 test("launch-plan.mjs prints L4d's plan part by part", async () => {
   const lines = await planContents([...stepArgs(stepNamed('L4d'), { paths: PATHS, gate: 'pinned' }), '--out', '/o'], 'arm64');
   assert.deepEqual(lines, [
@@ -120,4 +144,18 @@ test("a plan of parts opens the run's front window once, before its first sittin
   assert.deepEqual(fronts, ['visible']);
   assert.deepEqual(sat, ['chrome t14-long 0', 'chrome t14-floor 1', 'electron t17-long 2']);
   assert.deepEqual(result, { md: ['part 0', 'part 1', 'part 2'], complete: true, failed: [] });
+});
+
+test('the rejudge of stored sittings reports each run beside its stored verdict: an emptied part the run stored as passing moves', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-rejudge-'));
+  try {
+    const meta = { run: 'r', kind: 'meta', experiment: 'drop-signals', families: ['chrome', 'electron'], plan: 't14-stale', lanes: ['cua:handle'], trials: null, gate: 'pinned' };
+    const scenes = PART_PLANS['t14-stale'].map((p, part) => ({ run: 'r', kind: 'drop-signal-scene', part, family: p.family, plan: p.plan, specs: [] }));
+    writeFileSync(join(dir, 'results.jsonl'), [meta, ...scenes, { run: 'r', kind: 'drop-parts-verdict', pass: true, failed: [] }].map((r) => JSON.stringify(r)).join('\n'));
+    const [line] = await rejudge([dir]);
+    assert.deepEqual([line.judge, line.gate, line.lanes, line.trials, line.stored, line.moved], ['partsVerdict', 'pinned', ['cua:handle'], null, { pass: true, failed: [] }, true]);
+    assert.equal(line.failed.length, 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

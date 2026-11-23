@@ -22,7 +22,7 @@ import { join } from 'node:path';
 
 import { PreparationStopped, candidateLine, gateLabel, isCounted, isPinnedRule, prepareCandidate } from './candidate.mjs';
 import { pinnedEngine } from './pinned-home.mjs';
-import { HOLD_REGRESSION_PLAN, dropSignalsVerdict, judgedChromePlan, judgedElectronPlan, judgedPartsPlan } from './drop-signals-judge.mjs';
+import { dropSignalsVerdict, judgedDropSignalsPlan } from './drop-signals-judge.mjs';
 import { RunRefused, runHasRows } from './run.mjs';
 
 import { elementClick, partialCover } from './clicks.mjs';
@@ -35,7 +35,7 @@ import { runFocusTimer } from './focus-timer.mjs';
 import { runQtActivation } from './qt-activation.mjs';
 import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
-import { runDropSignals } from './drop-signals.mjs';
+import { lanesLeftOut, runDropSignals } from './drop-signals.mjs';
 import { runWriterDrag } from './writer-drag.mjs';
 import { runKinds } from './kinds.mjs';
 import { runPredicates } from './predicates.mjs';
@@ -389,10 +389,12 @@ export async function runExperiment(args, { prepare = prepareCandidate, start = 
   // and candidate), or a gate step with no judge to fail it
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
-  if (isCounted(args.gate) && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args) && !judgedPartsPlan(args) && args.plan !== HOLD_REGRESSION_PLAN) {
-    throw new RunRefused(`no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'}): its counts would pass whatever they are; run it as a development run`);
+  if (isCounted(args.gate) && args.experiment === 'drop-signals' && !judgedDropSignalsPlan(args)) {
+    throw new RunRefused(`${unjudgedPlan(args)}: its counts would pass whatever they are; run it as a development run`);
   }
   if (isCounted(args.gate) && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
+  const leftOut = isCounted(args.gate) && args.experiment === 'drop-signals' ? lanesLeftOut(args) : [];
+  if (leftOut.length) throw new RunRefused(`a gate drop-signals step runs its plan whole: --lanes ${args.lanes.join(',')} leaves out the counted plan ${args.plan}'s cells: ${leftOut.join(', ')}`);
   return withExperimentCandidate(args, async (runArgs, record) => {
     mkdirSync(args.out, { recursive: true });
     // true (a release gate), 'pinned' (acceptance on the pinned release), 'pinned-dev' (a development run on it, a pilot)
@@ -495,12 +497,15 @@ async function experimentRun(args, { emit, results }) {
       // the gate's drop-signals cells are judged (drop-signals-judge.mjs `dropSignalsVerdict`): T17's Electron cells and
       // T14's Chrome cells. A false ok, an unreported late take, a broken pending contract, a missing landing or a
       // missing cell fails the run; the unconfirmed drops are findings with their counts. A gate run of any other plan
-      // was refused before it began (`runExperiment`)
-      const judged = args.experiment === 'drop-signals' ? dropSignalsVerdict(args, readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run)) : null;
-      if (judged) {
-        emit({ kind: { electronDropVerdict: 'electron-drop-verdict', partsVerdict: 'drop-parts-verdict' }[judged.judge] ?? 'chrome-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
-        md = [...md, ...judged.md];
-        outcome = { complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] };
+      // was refused before it began (`runExperiment`), and fails here if one ran (`dropSignalsOutcome`)
+      if (args.experiment === 'drop-signals') {
+        const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+        const { judged, outcome: judgedOutcome } = dropSignalsOutcome(args, rows, outcome);
+        if (judged) {
+          emit({ kind: { electronDropVerdict: 'electron-drop-verdict', partsVerdict: 'drop-parts-verdict' }[judged.judge] ?? 'chrome-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
+          md = [...md, ...judged.md];
+        }
+        outcome = judgedOutcome;
       }
     } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
@@ -520,6 +525,21 @@ async function experimentRun(args, { emit, results }) {
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
   return outcome.complete;
+}
+
+/** Why a counted drop-signals run is not judged: no gate judge holds its family and plan. */
+const unjudgedPlan = (args) => `no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'})`;
+
+/**
+ * A drop-signals run's outcome, judged (drop-signals-judge.mjs `dropSignalsVerdict`): the judge's fails fail it. A
+ * counted run no judge holds fails (its admission refuses one; this is the dispatch's side of the same predicate, the
+ * final review's P2), never passing on the runner's own `complete`; a development run's measure stands. Answers
+ * `{judged, outcome}`.
+ */
+export function dropSignalsOutcome(args, rows, outcome) {
+  const judged = dropSignalsVerdict(args, rows);
+  if (!judged) return { judged, outcome: isCounted(args.gate) ? { ...outcome, complete: false, failed: [...outcome.failed, `${unjudgedPlan(args)}: a counted run is never passed unjudged`] } : outcome };
+  return { judged, outcome: { ...outcome, complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] } };
 }
 
 /**

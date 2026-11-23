@@ -1,8 +1,9 @@
 // The gate's drop judges run again over stored drop-signals sittings (the harness-fix wave, 2026-11-12), display-free
 // from their rows: each run's verdict by the judge its family and plan get now (drop-signals-judge.mjs
 // `dropSignalsVerdict`), beside a former judge's where one is named (`--old`, a copy of an earlier drop-signals-judge.mjs,
-// whose `electronDropVerdict` is run on the same rows), with the drags whose false-ok reading changed. One JSON line per
-// run.
+// whose `electronDropVerdict` is run on the same rows), with the drags whose false-ok reading changed, and beside the
+// verdict the run stored (`stored`; `moved` when the two differ in pass or fails) with the lanes and trials it ran under.
+// One JSON line per run.
 //
 //   node scripts/linux-engine-diff/rejudge-drops.mjs [--old <drop-signals-judge.mjs>] <sitting dir or results.jsonl[.gz]>...
 
@@ -25,6 +26,18 @@ const rowsOf = (file) => {
   return (file.endsWith('.gz') ? gunzipSync(bytes) : bytes).toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 };
 
+/** The verdict rows a drop-signals run stores (experiments.mjs), one per run: Chrome's (the hold's regression gate's too), Electron's, a plan of parts'. */
+const VERDICT_KINDS = ['chrome-drop-verdict', 'electron-drop-verdict', 'drop-parts-verdict'];
+
+/** A run's stored verdict, `{pass, failed}`, or null where it stored none. */
+const storedOf = (own) => {
+  const v = own.find((r) => VERDICT_KINDS.includes(r.kind));
+  return v ? { pass: v.pass === true, failed: v.failed ?? [] } : null;
+};
+
+/** Whether a verdict judged now differs from the stored one, in pass or in its fails; a run with none stored differs from any verdict. */
+const verdictMoved = (stored, now) => !stored || !now || stored.pass !== (now.failed.length === 0) || JSON.stringify(stored.failed) !== JSON.stringify(now.failed);
+
 /** The drags a verdict's false-ok fail names, as `lane cell #i` keys, from its fail lines' first three. */
 const named = (failed) => failed.filter((f) => /answered ok with no drop/.test(f)).join('\n');
 
@@ -43,17 +56,23 @@ export async function rejudge(paths, { old = null } = {}) {
       const drags = own.filter((r) => r.kind === 'drop-signal');
       const specs = own.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [];
       const then = former && judgedElectronPlan(args) ? former.electronDropVerdict(drags, { specs }) : null;
+      const stored = storedOf(own);
       out.push({
         path,
         run,
         family: args.families[0],
         plan: args.plan,
+        gate: meta.gate ?? null,
+        lanes: meta.lanes ?? null,
+        trials: meta.trials ?? null,
         load: drags[0]?.load ?? null,
         drags: drags.length,
         judge: now?.judge ?? null,
         counts: now?.counts ?? null,
         failed: now?.failed ?? null,
         findings: now?.findings ?? null,
+        stored,
+        moved: verdictMoved(stored, now),
         old: then && { counts: then.counts, failed: then.failed },
         false_ok_changed: then ? named(then.failed) !== named(now.failed) : null,
       });

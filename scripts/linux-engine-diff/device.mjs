@@ -1215,14 +1215,17 @@ export function judgeDevice(op, samples, audit, premise = undefined, { canary: c
     const pending = (r) => r.state_notice != null && held(r).kept;
     // a drop counts as landed only where its path ended (ruling 957): on the target, as planned; one from a path that
     // ended outside the target is a drop at a stale position, a wrong outcome, and one ending within the border margin is
-    // ambiguous, neither (ruling 961)
+    // ambiguous, neither (ruling 961). A drop is the case's effect, or the page's counter read risen after the effect's
+    // poll (`dropSeen`): a late drop at a stale position is still one (the final review's P1, ruling 1091)
     const at = DEVICE_OPS[op].endsAt ? endAgainstZone(DEVICE_OPS[op].endsAt, DRAG_TARGET) : 'inside';
-    const dropped = rows.filter((r) => r.effect === true);
+    const didDrop = (r) => r.effect === true || dropSeen(r);
+    const dropped = rows.filter(didDrop);
     const landed = at === 'inside' ? dropped : [];
     const stale = at === 'outside' ? dropped : [];
     const ambiguous = at === 'ambiguous' ? dropped : [];
-    // an honest hold notice is no false ok (ruling 898.2); one of another wording, or with no page to vouch for it, is
-    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r) && !honestNotice(r));
+    // an honest hold notice is no false ok (ruling 898.2); one of another wording, or with no page to vouch for it, is.
+    // A drag that dropped is judged by where it dropped, never a false ok as well
+    const falseOk = rows.filter((r) => r.ok && !didDrop(r) && !pending(r) && !honestNotice(r));
     drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length, stale_position: stale.length, ambiguous: ambiguous.length };
     if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     if (stale.length) reasons.push(`a drop at a stale position (the path ended outside the target, the drop landed on it) on ${stale.length} of ${rows.length} samples (${stale.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);

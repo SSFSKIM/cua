@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, PART_PLANS, partFamilies, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, PART_CELLS, PART_PLANS, partFamilies, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -348,10 +348,10 @@ export const PLANS = {
   // engine that shipped the release (f9bdb5c2, the lane `cua` there); the press-inside control's false release reverted
   // it to this measurement flag. `t14-floor`: the same drags on the engine as it ships, the floor and the confirmation
   t14: [['cua:accept', 'plain-long', 300], ['cua:accept', 'left', 30], ['cua:accept', 'inzone-out', 30]],
-  't14-floor': [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  't14-floor': PART_CELLS['t14-floor'],
   // the long-path accepted-then-left control on the engine as it ships: 100 a load at idle and twice the load, 30 at
   // the gate's window load
-  't14-long': [['cua', 'long-left', 100]],
+  't14-long': PART_CELLS['t14-long'],
   // m5-a959 (ruling 964): the same cell on the pinned and newest vendor builds and cua, 100 each, the lanes taking turns
   // block by block (`blockPlan`)
   't14-long-vendor': [['pinned', 'long-left', 100], ['newest', 'long-left', 100], ['cua', 'long-left', 100]],
@@ -404,7 +404,7 @@ export const PLANS = {
   // origin, every point of the path is in the window and clear of the run's other windows (no `other` window or sink
   // opens for it), it crosses the zone (into it at x 560 on y 128, down x 800 from y 128 to 500), ends 60 px left of it
   // at (500, 500), and is about 940 px long, so its steps after the take outlast the floor (task 128's x64 run, h7/l4d/)
-  't17-long': [['cua', 'long-left', 30]],
+  't17-long': PART_CELLS['t17-long'],
   't17-moved': [['cua:desktop', 'moved', 30]],
   // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
@@ -441,6 +441,17 @@ export function runSittings(args) {
   if (!parts) return [{ family: args.families?.[0] ?? 'chrome', plan: args.plan, specs: runSpecs(args), part: undefined }];
   if ((args.families ?? []).join(',') !== partFamilies(args.plan).join(',')) throw new Error(`the plan of parts ${args.plan} runs --family ${partFamilies(args.plan).join(',')}`);
   return parts.map((p, k) => ({ family: p.family, plan: p.plan, specs: runSpecs({ ...args, plan: p.plan }), part: k }));
+}
+
+/**
+ * The cells of a run's plan its `--lanes` leaves out, every sitting's, as `lane cell` (`part N lane cell` in a plan of
+ * parts); none without `--lanes`. A counted run must run its plan's every cell (experiments.mjs `runExperiment`).
+ */
+export function lanesLeftOut(args) {
+  if (!args.lanes) return [];
+  const label = (s, c) => `${s.part === undefined ? '' : `part ${s.part + 1} `}${c.lane} ${c.cell}`;
+  const kept = new Set(runSittings(args).flatMap((s) => s.specs.map((c) => label(s, c))));
+  return runSittings({ ...args, lanes: null }).flatMap((s) => s.specs.map((c) => label(s, c))).filter((l) => !kept.has(l));
 }
 
 /** A cell's base cell and cover part (`select@middle`). */

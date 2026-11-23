@@ -796,3 +796,30 @@ test("ruling 957 in the device scene: a drop on the target from a drag whose pat
   const landed = row({ ok: true, effect: true, dnd: { in_front: true }, desktop_same: true, state_notice: null });
   assert.equal(judgeDevice('chrome_dnd_short_in_front_shared', [landed], audit).drops.landed, 1);
 });
+
+test("a drop the page showed after the effect poll is placed by the path's end as any drop is (the final review's P1, ruling 1091)", () => {
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  const refused = { state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') };
+  for (const op of ['chrome_dnd_inzone_out_in_front_shared', 'chrome_dnd_long_left_in_front_shared']) {
+    // the reviewer's row: the effect poll saw nothing, the page's later read showed the counter risen, the notice refused
+    const late = row({ ok: true, effect: false, started: true, dnd: { in_front: true }, desktop_same: true, ...refused, drop_seen: true });
+    const v = judgeDevice(op, [late], audit);
+    assert.equal(v.pass, false, op);
+    assert.deepEqual(v.drops, { samples: 1, landed: 0, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 1, ambiguous: 0 }, op);
+    // the page's later read (`drop_status`) alone says the same
+    const counted = judgeDevice(op, [{ ...late, drop_seen: undefined, drop_status: { before: { drops: 4 }, after: { drops: 5 } } }], audit);
+    assert.equal(counted.drops.stale_position, 1, `${op}: the later read`);
+    // and a plain ok on it is a drop at a stale position, never a false ok as well
+    const plain = judgeDevice(op, [{ ...late, state_notice: null, next_ok: true, next_error: null }], audit);
+    assert.deepEqual(plain.drops, { samples: 1, landed: 0, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 1, ambiguous: 0 }, `${op}: a plain ok`);
+    // the counter read unchanged on both reads: no drop, the honest notice passes
+    assert.equal(judgeDevice(op, [{ ...late, drop_seen: false, drop_status: { before: { drops: 4 }, after: { drops: 4 } } }], audit).pass, true, `${op}: nothing dropped`);
+  }
+  // on a case whose path ends on the target the late drop is a landing, and the case still needs its effect verified
+  const short = 'chrome_dnd_short_in_front_shared';
+  const late = row({ ok: true, effect: false, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, next_ok: true, next_error: null, drop_status: { before: { drops: 4 }, after: { drops: 5 } } });
+  const v = judgeDevice(short, [late], audit);
+  assert.deepEqual(v.drops, { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 0, ambiguous: 0 });
+  assert.equal(v.pass, false);
+  assert.ok(v.reasons.some((r) => /the effect was not verified/.test(r)), v.reasons.join('\n'));
+});

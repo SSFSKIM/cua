@@ -1156,6 +1156,13 @@ export const HOLD_REGRESSION_PLAN = 'hold-regression';
 export const HOLD_REGRESSION_CELLS = [['cua', 'dragstart-150', 10], ['cua', 'dragstart-400', 10]];
 
 /**
+ * Whether a drop-signals run is the hold's regression gate its judge holds: Chrome's (the judge reads Chrome's hold), the
+ * one predicate the run's admission and its verdict's dispatch both read (the final review's P2: an Electron run of the
+ * plan was admitted by its name, and its null verdict passed).
+ */
+export const judgedHoldRegressionPlan = (args) => (args.families?.[0] ?? 'chrome') === 'chrome' && args.plan === HOLD_REGRESSION_PLAN;
+
+/**
  * The hold's regression cells (ruling 900): drops whose page starts them late from a busy handler (`dragstart-150`,
  * `dragstart-400`, Chrome's own browser idle and fast) must land inside B, as the fixed 450 ms lands them and an early
  * release on fast pings did not (task 117: 24 of 24 lost). Fails, each named: a drag that did not land, whose page did
@@ -1191,7 +1198,7 @@ export function dropSignalsVerdict(args, rows) {
   const drags = rows.filter((r) => r.kind === 'drop-signal');
   const manifest = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? null;
   const specs = manifest ?? [];
-  if ((args.families?.[0] ?? 'chrome') === 'chrome' && args.plan === HOLD_REGRESSION_PLAN) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs: manifest }) };
+  if (judgedHoldRegressionPlan(args)) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs: manifest }) };
   if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;
@@ -1199,6 +1206,17 @@ export function dropSignalsVerdict(args, rows) {
 
 // ---------------------------------------------------------------------------------------------------------------
 // a plan of parts (the design session's ruling 962: step L4d)
+
+/**
+ * The parts' plans' cells, `[lane, cell, n]`: the plans' own (drop-signals.mjs PLANS takes them from here) and what
+ * `partsVerdict` holds each part's manifest to, whatever the run's rows say (the final review's P2: `--lanes` emptied
+ * every part's manifest, and each part passed on none).
+ */
+export const PART_CELLS = {
+  't14-long': [['cua', 'long-left', 100]],
+  't14-floor': [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  't17-long': [['cua', 'long-left', 30]],
+};
 
 /**
  * The plans of parts: each part a family and a plan of its own, sat in turn in one run (drop-signals.mjs
@@ -1221,6 +1239,22 @@ export const partFamilies = (plan) => [...new Set(PART_PLANS[plan].map((p) => p.
 /** Whether a drop-signals run is a plan of parts every part of which a gate judge holds. */
 export const judgedPartsPlan = (args) => Boolean(PART_PLANS[args.plan]) && PART_PLANS[args.plan].every((p) => judgedChromePlan({ families: [p.family], plan: p.plan }) || judgedElectronPlan({ families: [p.family], plan: p.plan }));
 
+/** Whether a gate judge holds a drop-signals run (`dropSignalsVerdict` answers a verdict for it): what a counted run must be. */
+export const judgedDropSignalsPlan = (args) => judgedPartsPlan(args) || judgedHoldRegressionPlan(args) || judgedElectronPlan(args) || judgedChromePlan(args);
+
+/**
+ * A part's declared cells its manifest leaves out or holds short, as `lane cell xN`: each of `PART_CELLS[plan]`, capped
+ * by `trials` where the sitting was (a development pilot; a counted run refuses `--trials`), must be in the manifest with
+ * at least its drags. A lane filter is never excused.
+ */
+function manifestShort(specs, plan, trials) {
+  return PART_CELLS[plan].flatMap(([lane, cell, n]) => {
+    const want = trials ? Math.min(trials, n) : n;
+    const got = specs.filter((s) => s.lane === lane && s.cell === cell).reduce((sum, s) => sum + s.n, 0);
+    return got >= want ? [] : [`${lane} ${cell} x${want}${got ? ` (${got} in the manifest)` : ''}`];
+  });
+}
+
 /**
  * A plan of parts judged (`PART_PLANS`): each part's rows (`part`) by its own plan's judge, as a run of that plan alone
  * would be, under its own scene row's manifest. Fails each part's fails, named by the part, and a part whose scene row is
@@ -1235,7 +1269,12 @@ export function partsVerdict(args, rows) {
   for (const [k, part] of PART_PLANS[args.plan].entries()) {
     const name = `part ${k + 1} (${part.family} ${part.plan})`;
     const own = rows.filter((r) => r.part === k);
-    if (!own.some((r) => r.kind === 'drop-signal-scene')) failed.push(`${name}: its scene row is missing: which cells ran is unknown`);
+    const scene = own.find((r) => r.kind === 'drop-signal-scene');
+    if (!scene) failed.push(`${name}: its scene row is missing: which cells ran is unknown`);
+    else {
+      const short = manifestShort(scene.specs ?? [], part.plan, args.samplesTrials ?? null);
+      if (short.length) failed.push(`${name}: the manifest leaves out the plan's ${short.join(', ')}`);
+    }
     const v = dropSignalsVerdict({ ...args, families: [part.family], plan: part.plan }, own);
     if (!v) {
       failed.push(`${name}: no gate judge holds it`);

@@ -144,14 +144,16 @@ export function classifyAttestation(attested, expected) {
 }
 
 // A lane's collected attestations (`record` {attested: the distinct values, unattested: a count}, as
-// scripts/native-baseline/engine.mjs attestEngine keeps them) against `expected`, as classifyAttestation classes one: a
-// vendor answer anywhere on the cua side is state 1 whatever else the record holds; then results left unattested, or
-// none attested at all, are missing; then the first value that is not the side's. -> {status, problem}.
+// scripts/native-baseline/engine.mjs attestEngine keeps them) against `expected`, as classifyAttestation classes one.
+// Affirmative evidence of the wrong engine outranks missing evidence, on either side: a vendor answer anywhere on the cua
+// side is state 1 whatever else the record holds; then any other wrong answer (another engine, or the side's at another
+// version or build); only then results left unattested, none attested at all, or a value naming no engine are missing.
+// -> {status, problem}.
 export function classifyAttestedRecord(record, expected) {
   const values = Array.isArray(record?.attested) ? record.attested : [];
   const classes = values.map(value => classifyAttestation(value, expected));
-  const fellBack = classes.find(c => c.status === 'vendor-on-cua-side');
-  if (fellBack) return fellBack;
+  const wrong = classes.find(c => c.status === 'vendor-on-cua-side') ?? classes.find(c => c.status === 'mismatched');
+  if (wrong) return wrong;
   if (record?.unattested > 0) return {status: 'missing', problem: `${record.unattested} js result(s) carry no ${ENGINE_META_KEY} attestation`};
   if (!values.length) return {status: 'missing', problem: `no result attested an engine (${ENGINE_META_KEY})`};
   return classes.find(c => c.status !== 'ok') ?? {status: 'ok', problem: null};

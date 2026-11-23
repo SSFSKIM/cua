@@ -149,6 +149,13 @@ test('ruling 1149: a lane\'s collected attestations ({attested, unattested}) are
   assert.equal(classifyAttestedRecord(null, {engine: 'cua'}).status, 'missing');
   assert.equal(classifyAttestedRecord({attested: [cua], unattested: 0}, {engine: 'vendor'}).status, 'mismatched');
   assert.deepEqual(classifyAttestedRecord({attested: [vendor], unattested: 0}, {engine: 'vendor'}), {status: 'ok', problem: null});
+  // Affirmative wrong-engine evidence outranks missing evidence on either side: an answer from another engine, or the
+  // side's at another build, is named before results left unattested or nameless.
+  assert.equal(classifyAttestedRecord({attested: [cua], unattested: 1}, {engine: 'vendor'}).status, 'mismatched');
+  assert.equal(classifyAttestedRecord({attested: [{engine: ''}, cua], unattested: 0}, {engine: 'vendor'}).status, 'mismatched');
+  assert.equal(classifyAttestedRecord({attested: [{...cua, build: 'e'.repeat(64)}], unattested: 3}, cua).status, 'mismatched');
+  assert.equal(classifyAttestedRecord({attested: [{engine: ''}, vendor], unattested: 1}, {engine: 'cua'}).status, 'vendor-on-cua-side');
+  assert.equal(classifyAttestedRecord({attested: [cua, {engine: ''}], unattested: 0}, {engine: 'cua'}).status, 'missing');
 });
 
 const approval = (app, overrides = {}) => ({

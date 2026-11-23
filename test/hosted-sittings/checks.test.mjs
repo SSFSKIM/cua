@@ -51,6 +51,11 @@ test('ruling 1149: a run of the cua side that attests the vendor engine is NO VE
   const [status, reason] = one({complete: true, nativeEngine: {requested: 'vendor', attested: [cua], unattested: 0}}, 0, {...step, engine: 'vendor'});
   assert.equal(status, 'NO VERDICT');
   assert.match(reason, /^the vendor side is not measured: the result attested engine cua .* where engine vendor was expected/);
+  // An incomplete vendor-side run with one cua answer and one left unattested: the wrong engine outranks the missing one,
+  // so it is NO VERDICT on the wrong engine, not the runtime error of an incomplete record.
+  const [mixedStatus, mixedReason] = one({complete: false, error: 'stopped', nativeEngine: {requested: 'vendor', attested: [cua], unattested: 1}}, 1, {...step, engine: 'vendor'});
+  assert.equal(mixedStatus, 'NO VERDICT');
+  assert.match(mixedReason, /^the vendor side is not measured: the result attested engine cua/);
 
   // #212's observation-only cell: one run of the cua side on the vendor's engine makes the step NO VERDICT.
   const records = ['/o/save-sheet/cua/run-1/result.json', '/o/save-sheet/cua/run-2/result.json'];

@@ -6,8 +6,8 @@
 //
 //   node scripts/hosted-sittings.mjs setup [--engine-archive <tgz>] [--report <file>]
 //       The runner's setup in H0's order (scripts/hosted-sittings/setup.mjs): the loopback device, the harness checkout,
-//       the run's install and engine, the system-database TCC rows, the relaunch and the two-pass approve, the record.
-//       Exit 0 ready, 1 a step failed, 2 refused.
+//       the run's install and engine, the system-database TCC rows, the relaunch and the two-pass approve, each copy's
+//       warm-up capture, the record. Exit 0 ready, 1 a step failed, 2 refused.
 //   node scripts/hosted-sittings.mjs pin-decision [--commit <full SHA>] [--env-file <file>]
 //       The O0 source pinned for the TCC writer (scripts/hosted-sittings/pin.mjs): the design spec at the commit (the
 //       entry's own by default) written to a run-owned file; prints CUA_HOSTED_DECISION_FILE and _SHA, and appends them

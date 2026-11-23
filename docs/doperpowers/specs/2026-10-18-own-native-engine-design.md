@@ -8929,9 +8929,10 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     through every runner and judge) is #561's, whose branch starts at `fix/526-multiline-value` 3cd20c39.
   - The harness support, lane-aware and nothing more. The run's bind records the lane (`goldens-cells.mjs` `BIND(scene,
     app, engine)`, `globalThis.__axRendering`; the matrix's run and the cursor sitting's sessions pass their engine).
-    `matrix-text.mjs` `valueOfIndex` decodes, on cua's lane only, a multi-line value that is its line's last part
-    (nothing `, ` after `Value: `), and only the escapes the renderer emits; every other value reads exactly as on main,
-    so a multi-line value followed by another part is cut at its first `, ` (#561's residue).
+    `matrix-text.mjs` `valueOfIndex` decoded, on cua's lane only, a multi-line value that is its line's last part
+    (nothing `, ` after `Value: `), and only the escapes the renderer emits (narrowed by rulings 1183 and 1184 below);
+    every other value reads exactly as on main, so a multi-line value followed by another part is cut at its first `, `
+    (#561's residue).
     `scenes-mac-text.mjs` `indexOfTarget` ends a name at such an escape only on cua's lane, only in the `Value:` part
     and only when that value ends its line; every other part and the vendor's lane match exactly as before.
     `selectedTextOf` and `live-checks.mjs` `vendorSelectedText` read a fence of three backticks or more. Ruling 1182:
@@ -8954,6 +8955,20 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     stripping it as a tree's terminator. Tested through the real cells (`multiline-lanes.test.mjs`) and through the
     parity runner's own bind and action cells on the checked-in cua TextEdit golden (`native-mac-run.test.mjs`). The
     fence readers accepting a longer fence anywhere in vendor output is #561's.
+  - Ruling 1184, after the re-review of 357070ff..36c1b32d (1183's guard read a real Value after another multi-line
+    part as no value, which the field checks took as "", a false PASS; and a `Value:` inside another part's first line
+    was still taken as the Value part): on cua's lane `valueOfIndex` decodes only TextEdit's document, identified by
+    the observation's header (`App: TextEdit.`) and the element's text opening exactly `text entry area (settable) ID:
+    First Text View, Value: ` (the document's text view, its identifier its only part before Value), and only as its
+    line's last part. That cannot misfire on another field: another app's header, another TextEdit element or another
+    part before Value fails the match, and the match leaves no room for a `Value:` inside another part. Every other cua
+    line holding an escape reads as its raw escaped text, from the earlier of its Value part's start and its first
+    escape (the first escape when there is no Value part) to the line's end; it always holds an escape's backslash, so
+    it never equals "" or an expected value: an exact check fails, an emptiness check is not ready and the field is
+    emptied. `indexOfTarget` keeps 1183's first-line rule and counts a final `Value:` only at a real part start (after
+    `, `, or after the flags group as the first part), never inside another part's text. The cost: every multi-line
+    field other than TextEdit's document (#187's and #188's Chrome and Electron fields among them) is a false FAIL on
+    cua's lane, never a pass; #561 lifts it. The parity test's action now writes into its own temp directory.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

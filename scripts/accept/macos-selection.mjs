@@ -4,6 +4,11 @@
 // cua's engine by default, and every other home keeps the vendor's host and engine with a warning naming why and the
 // remedy. The runner, macos-default-selection.mjs, shapes each home on a runner and reads `cua doctor --json` there;
 // everything here is pure.
+//
+// Two lanes judge the default home. `fixture`: a synthetic approved bundle (scripts/probe/fixture-engine.mjs), a
+// selection check only: doctor's inspection of that bundle cannot pass (it is not cua's engine), so the engine row is
+// recorded, not judged. `approved`: the run's own engine, built and approved in a disposable runner home (the hosted+
+// witness): the engine row must pass too, and a failed inspection is named apart from a wrong selection.
 import {defaultSelectionProblem} from './linux-selection.mjs';
 
 export {defaultSelectionProblem};
@@ -34,6 +39,38 @@ const REMEDIES = Object.freeze({
 });
 
 const row = (report, name) => (report?.checks ?? []).find(check => check.name === name);
+export const LANES = Object.freeze(['fixture', 'approved']);
+
+// repl.host's selection as its row states it: `<host> host (<reason>)` opens the session's sentence.
+const HOST_LINE = /^(cua|vendor) host \(([a-z_]+)\)/;
+/** The host doctor's repl.host row says a session here runs -> {host, reason, status} (host and reason null when the
+ * row states none, as for a refusal), or null without the row. */
+export function hostOf(report) {
+  const found = row(report, 'repl.host');
+  if (!found) return null;
+  const [, host = null, reason = null] = HOST_LINE.exec(found.detail ?? '') ?? [];
+  return {host, reason, status: found.status};
+}
+
+/**
+ * The default home's judge: null when doctor says the default selected cua's engine and runs it on cua's own host
+ * (repl.host `cua host (cua_engine)`, pass); in the `approved` lane doctor's inspection of the approved bundle (the
+ * engine row) must pass as well, and its failure is named as such, apart from a wrong selection.
+ */
+export function defaultHomeProblem(report, {lane = 'fixture'} = {}) {
+  if (!LANES.includes(lane)) return `no lane ${lane}: ${LANES.join(' or ')}`;
+  const selection = defaultSelectionProblem(report);
+  if (selection) return selection;
+  const host = hostOf(report);
+  if (!host) return 'cua doctor --json reports no repl.host row';
+  if (host.host !== 'cua' || host.reason !== 'cua_engine' || host.status !== 'pass')
+    return `doctor's repl.host row is ${host.status}, ${host.host ? `${host.host} host (${host.reason})` : 'no host'}, not cua's host for cua's engine (cua_engine) with pass`;
+  if (lane === 'approved') {
+    const engine = row(report, 'engine');
+    if (engine.status !== 'pass') return `the default selected cua's engine on cua's host, but doctor's inspection of the approved bundle is ${engine.status}: ${engine.detail.slice(0, 400)}`;
+  }
+  return null;
+}
 
 /**
  * A fallback home's judge (`kind` a key of FALLBACK_HOMES): null when doctor says the default kept the vendor's engine
@@ -56,14 +93,30 @@ export function fallbackSelectionProblem(report, kind) {
   return null;
 }
 
-/** The judge of home `kind`: the default's for the home where cua's engine is expected, else the fallback's. */
-export const judgeFor = kind => (HOMES[kind]?.expect === 'cua' ? defaultSelectionProblem : report => fallbackSelectionProblem(report, kind));
+/** The judge of home `kind` in `lane`: the default home's where cua's engine is expected, else the fallback's. */
+export const judgeFor = (kind, {lane = 'fixture'} = {}) => (HOMES[kind]?.expect === 'cua' ? report => defaultHomeProblem(report, {lane}) : report => fallbackSelectionProblem(report, kind));
 
 /**
- * The sitting's verdict from each home's doctor report (`reports`, kind -> report): {pass, homes: {kind: problem |
- * null}}. Every home of HOMES is judged; one without a report fails.
+ * The sitting's verdict from each home's doctor report (`reports`, kind -> report) in `lane`: {pass, homes: {kind:
+ * problem | null}}. Every home of HOMES is judged; one without a report fails.
  */
-export function sittingVerdict(reports) {
-  const homes = Object.fromEntries(Object.keys(HOMES).map(kind => [kind, kind in reports ? judgeFor(kind)(reports[kind]) : 'not run']));
+export function sittingVerdict(reports, {lane = 'fixture'} = {}) {
+  const homes = Object.fromEntries(Object.keys(HOMES).map(kind => [kind, kind in reports ? judgeFor(kind, {lane})(reports[kind]) : 'not run']));
   return {pass: Object.values(homes).every(problem => problem === null), homes};
+}
+
+/**
+ * Why `home` (its real path) may not stand in as the default home's approved engine, or null: the approved lane runs
+ * only on a GitHub-hosted runner (`env.RUNNER_ENVIRONMENT`), in a disposable home strictly under the runner's temp
+ * directory (`runnerTemp`, its real path; never the account's own home, `accountHome`), whose approved engine is this
+ * checkout's build (`approvedBuild`, the home's installedEngine build or null; `sourceBuild`, engine-bundle.mjs
+ * engineBuild). Doctor launches and stops an approved bundle it inspects, so nothing else may be named.
+ */
+export function approvedHomeProblem({home, env, runnerTemp, accountHome, approvedBuild, sourceBuild}) {
+  if (env.RUNNER_ENVIRONMENT !== 'github-hosted') return '--approved-home runs only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted)';
+  if (!runnerTemp) return '--approved-home needs the runner\'s temp directory (RUNNER_TEMP)';
+  if (home === accountHome || !home.startsWith(`${runnerTemp}/`)) return `--approved-home must be a disposable home under the runner's temp directory (${runnerTemp}), not ${home}`;
+  if (!approvedBuild) return `--approved-home ${home} holds no approved engine`;
+  if (approvedBuild !== sourceBuild) return `the engine approved in ${home} is build ${approvedBuild}, not this checkout's (${sourceBuild}): the run builds and approves its own`;
+  return null;
 }

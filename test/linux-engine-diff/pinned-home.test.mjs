@@ -14,6 +14,7 @@ import { CandidateRefused } from '../../scripts/linux-engine-diff/candidate.mjs'
 import { serveEnv } from '../../scripts/linux-engine-diff/engine-stop.mjs';
 import { withExperimentCandidate } from '../../scripts/linux-engine-diff/experiments.mjs';
 import { cuaHomeOf, pinnedEngine, pinnedServeEnvironment, selectedEngine } from '../../scripts/linux-engine-diff/pinned-home.mjs';
+import { MIN_ENGINE_VERSION } from '../../src/services/engine/linux/client.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-pinned-home-test-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -21,13 +22,15 @@ let n = 0;
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const PERSON = { HOME: '/Users/new', XDG_CONFIG_HOME: '/Users/new/.config', CUA_HOME: '/Users/new/.local/share/cua', DISPLAY: ':7', CUA_LINUX_ENGINE_BIN: '/Users/new/build/cua-engine' };
 
-/** A run home whose cua install placed an engine of `bytes`: `{home, engine}`. */
+/** A run home whose cua install placed an engine of `bytes`, with its install record: `{home, engine}`. */
 function runHome(bytes = Buffer.from('engine bytes')) {
   const home = join(scratch, `cua-${n++}`);
   mkdirSync(join(home, 'engine', 'linux'), { recursive: true });
   const engine = join(home, 'engine', 'linux', 'cua-engine');
   writeFileSync(engine, bytes);
   chmodSync(engine, 0o755);
+  // since #171 M6a cua's selection takes only an engine a record of its bytes names, at or above the minimum
+  writeFileSync(join(home, 'engine', 'linux', 'install.json'), JSON.stringify({ schema: 1, build: 'pinned', version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`, sha256: sha(bytes), source: 'test', installedAt: '2026-11-23T00:00:00.000Z' }));
   return { home: realpathSync(home), engine: realpathSync(engine) };
 }
 

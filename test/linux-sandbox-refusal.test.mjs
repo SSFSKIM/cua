@@ -19,6 +19,8 @@ import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends, listingSandboxMode} from '../src/profiles/inventory.mjs';
 import {resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
@@ -105,6 +107,7 @@ test('a confined Linux connection where user namespaces are refused is refused b
 
 test('the Linux computer surface defaults to scoped and is checked like any confined connection; disabled is never checked', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
+  fakeInstalledEngine(home, MIN_ENGINE_VERSION);   // the computer surface needs cua's engine since #171 M6a
   const base = {PATH: process.env.PATH, HOME: process.env.HOME, DISPLAY: ':0'};
   for (const [env, calls] of [[base, 1], [{...base, CUA_SHIM_SURFACES: 'browser'}, 1], [{...base, CUA_SHIM_SANDBOX: 'disabled'}, 0]]) {
     const probe = counted('pass'), verifyHelper = helperCheck();
@@ -132,6 +135,7 @@ test('the profile listing runs under CUA_SHIM_SANDBOX (scoped unless told otherw
 // connection the model's cells already run unconfined, so refusing its listing would protect nothing.
 test('a disabled connection lists its profiles under disabled, unprobed, where a scoped listing would be refused', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
+  fakeInstalledEngine(home, MIN_ENGINE_VERSION);   // the computer surface needs cua's engine since #171 M6a
   const userHome = join(home, 'user');
   const extension = join(userHome, '.config', 'google-chrome', 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});

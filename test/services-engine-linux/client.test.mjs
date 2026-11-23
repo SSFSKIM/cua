@@ -84,6 +84,27 @@ test('restart: true ends that engine and fails what else was pending; the next r
   assert.deepEqual(engine.requests().filter(r => r.pid === spawns[1].pid).map(r => r.command), ['capabilities', 'list_windows'], 'the fresh engine reports its capabilities first');
 });
 
+// #171 M6a (the pre-flight's §3.3, finding 15): a connection binds the engine's pathname, not its bytes, so an install
+// may replace the file between two starts. The minimum holds for whatever runs: each start checks the version of the
+// file now at the path before anything is sent to it.
+test('an engine replaced at its path between starts: the next start runs the file now there, and one below the minimum is refused before any request', async t => {
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command) {
+    if (command === 'move') return {error: 'the X connection broke', restart: true};
+  }`});
+  const made = client(t, engine);
+  await made.request('list_windows', {});
+  engine.setVersion('cua-engine 9.0.0 (replaced)');
+  await assert.rejects(made.request('move', {}), {message: 'the X connection broke'});
+  assert.equal((await made.request('list_windows', {})).length, 2, 'a newer release now at the path is started');
+  assert.equal(engine.spawns().length, 2);
+  engine.setVersion('cua-engine 0.4.2 (replaced)');
+  await assert.rejects(made.request('move', {}), {message: 'the X connection broke'});
+  const sent = engine.requests().length;
+  await assert.rejects(made.request('list_windows', {}), {message: 'cua-engine 0.4.2 is older than 0.4.3, which this cua needs; run cua install --engine'});
+  assert.equal(engine.spawns().length, 2, 'the older one is never started');
+  assert.equal(engine.requests().length, sent, 'and nothing is sent to it');
+});
+
 test('an engine that exits fails what was pending with its exit status and the tail of its stderr; the next request restarts it', async t => {
   const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command) {
     if (command === 'drag') return {exit: 3, stderr: 'panicked at src/x11.rs\\n'};

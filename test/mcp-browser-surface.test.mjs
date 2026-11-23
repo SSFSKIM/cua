@@ -20,6 +20,7 @@ import {randomUUID} from 'node:crypto';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
 
@@ -501,7 +502,7 @@ test('a Linux connection shows the js rule of the engine it selected', async t =
     const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
     const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
       resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'}),
-      engine: {config: () => ({engine: selected}), installed: () => ({path: engineBin})}});
+      engine: {config: () => ({engine: selected}), installed: () => ({path: engineBin}), installedVersion: () => MIN_ENGINE_VERSION}});
     const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
     const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
     let js;

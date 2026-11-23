@@ -14,6 +14,8 @@ import {ownHostNode, replHostFor} from '../src/runtime/launch.mjs';
 import {main} from '../src/cli.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {digest, scratch} from './fixtures/runtime-fixture.mjs';
+import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const outcome = fn => { try { return fn(); } catch (error) { return {code: error.code, message: error.message}; } };
@@ -292,8 +294,9 @@ test('a replaced bin/node is never run: not on reinstall, even when it prints th
   assert.deepEqual(probed, [], 'not run on reinstall');
   assert.deepEqual(managedNode(ctx.home), {missing: `${join(root, 'bin/node')} is not the binary its install record names`});
   const none = outcome(() => ownHostNode({ambient: {}, home: ctx.home, execPath: '/nonexistent', versionOf}));
-  assert.equal(none.code, 'repl_host_node');
-  assert.match(none.message, /the cua-installed Node \(.* is not the binary its install record names\)/);
+  // on Linux the managed Node is the only candidate but CUA_NODE, and without it the runtime is not installed (#171 M6a)
+  assert.equal(none.code, thisHost.platform === 'linux' ? 'runtime_not_installed' : 'repl_host_node');
+  assert.match(none.message, thisHost.platform === 'linux' ? /its Node is not installed \(.* is not the binary its install record names\)/ : /the cua-installed Node \(.* is not the binary its install record names\)/);
   assert.deepEqual(probed, [], 'the resolution never probes it either');
   assert.equal(existsSync(join(root, 'bin/node.ran')), false, 'the replaced binary never ran');
   // A symlink in its place, even to the recorded bytes elsewhere, is not the install either.
@@ -402,17 +405,22 @@ test('acceptance 9\'s fifth case: no CUA_NODE, Node 22 on PATH and running cua, 
   const dir = realpathSync(ctx.dir);
   const node22 = fakeNode(dir, 'p/node', '22.23.2');
   const ambient = {PATH: dirname(node22)};
+  // The resolver is this host's own lookup; the selection is a Linux computer one, whose engine (#171) is cua's, installed.
+  const enginePath = fakeInstalledEngine(ctx.home, MIN_ENGINE_VERSION);
   const select = platform => replHostFor({platform, surfaces: ['computer'], ambient, home: ctx.home, browserSelection: null,
-    resolveOwnNode: () => ownHostNode({ambient, home: ctx.home, execPath: node22})});
-  // Linux has no vendor host to fall back to (#115 M3): the session is refused, naming what was tried and `cua install`.
-  assert.throws(() => select('linux'), error => error.code === 'repl_host_node' && /run `cua install`/.test(error.message)
-    && JSON.stringify(error.tried) === JSON.stringify(['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]));
+    resolveOwnNode: () => ownHostNode({ambient, home: ctx.home, platform: thisHost.platform, arch: thisHost.arch, execPath: node22})});
+  // Linux has no vendor host to fall back to (#115 M3): the session is refused. On a Linux host the managed Node is the
+  // only candidate but CUA_NODE (#171 M6a, F2a), so it is the runtime that is not installed, naming this cua's installer;
+  // on macOS the lookup names what it tried and `cua install`.
+  assert.throws(() => select('linux'), error => (thisHost.platform === 'linux'
+    ? error.code === 'runtime_not_installed' && /its Node is not installed/.test(error.message) && /bin\/cua\.mjs install/.test(error.hint)
+    : error.code === 'repl_host_node' && /run `cua install`/.test(error.message)
+      && JSON.stringify(error.tried) === JSON.stringify(['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`])));
   await install(ctx, {verifySignature: acceptSignature});
-  // A Linux computer selection carries its engine (#171): cua's by default (M5), and with none installed in this home the
-  // vendor's, with a warning.
-  assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node'), engine: {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'}});
+  assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node'),
+    engine: {engine: 'cua', reason: 'default', status: 'pass', bin: {path: realpathSync(enginePath), lookup: realpathSync(enginePath), source: 'installed'}}});
   // The production default resolver reads the home it is given.
-  assert.equal(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {PATH: dirname(node22)}, home: ctx.home, browserSelection: null}).node,
+  assert.equal(replHostFor({platform: thisHost.platform, arch: thisHost.arch, surfaces: ['browser'], ambient: {PATH: dirname(node22)}, home: ctx.home, browserSelection: null}).node,
     join(nodeDir(ctx.home), VERSION, 'bin/node'));
 });
 

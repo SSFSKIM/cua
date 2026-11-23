@@ -35,7 +35,7 @@ test('independent M5 table preserves explicit refusals and Node fallback, whatev
  assert.equal(expectedSelection({...base,registration:'chatgpt',surfaces:['computer','browser'],override:'cua'}).error,'repl_host_refused');
  assert.equal(expectedSelection({...base,override:'invalid'}).error,'invalid_setting');
  assert.equal(expectedSelection({...base,override:'invalid',lane:'profiles'}).error,'invalid_repl_host');
- assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none'}).reason,'linux');
+ assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none',installed:true}).reason,'linux');
 });
 test('selection matrix covers both launch consumers, registration orderings, surfaces and all overrides',()=>{
  const rows=selectionCases('darwin');
@@ -54,13 +54,16 @@ function reviewedSource(t){
 const HOME='/scratch',MANAGED='/scratch/node/24.22.0/bin/node';
 const ownObservation=(commit,path=MANAGED)=>({host:'cua',serverInfo:{name:'cua-repl-host',version:'0.5.0'},_meta:{'cua/replHost':{host:'cua',version:'0.5.0'}},executionFacts:{commit,dirty:false,home:HOME,ownNode:{path,version:'v24.22.0'}}});
 const envFor=row=>({CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override})});
-const doctorFor=(t,row,{node=MANAGED,...env}={})=>doctorReplHost(t,{platform:row.platform,env:{...envFor(row),...env},node});
+// A Linux computer row's engine is cua's, installed at the minimum this cua drives (#171 M6a: without one the open is
+// refused), as its `installed` says.
+const LINUX_ENGINE={config:()=>({}),installed:()=>({path:'/scratch/engine/linux/cua-engine'}),installedVersion:()=>'0.4.3'};
+const doctorFor=(t,row,{node=MANAGED,...env}={})=>doctorReplHost(t,{platform:row.platform,env:{...envFor(row),...env},node,...(row.platform==='linux'&&row.installed?{engine:LINUX_ENGINE}:{})});
 const lanes=detail=>{const [ordinary,listing]=detail.split('. The profile listing (browser only): ');return {ordinary,listing:listing.replace(/\. CUA_REPL_HOST=cua or vendor chooses$/,'')};};
 const rejoin=({ordinary,listing})=>`${ordinary}. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
 const ownRows=[
  ...['ordinary','profiles'].flatMap(lane=>['unset','cua'].map(override=>({platform:'darwin',registration:'cua',maws:false,surfaces:['browser'],lane,override,node24:true,managedNode:true}))),
  ...['ordinary','profiles'].map(lane=>({platform:'darwin',registration:'cua',maws:false,surfaces:['browser'],lane,override:'unset',node24:false,managedNode:true})),
- {platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true},
+ {platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true,installed:true},
 ];
 test('own-host successes pass on doctor\'s actual sentence, both lanes and the managed fifth case',async t=>{
  const reviewed=reviewedSource(t),observation=ownObservation(reviewed.reviewedCommit);
@@ -168,8 +171,9 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
 // #171: on Linux the engine never changes the host, so the table's rows are the host's with the engine's refusals.
 test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host always cua\'s, and the vendor host refused',()=>{
  const row=fields=>expectedSelection({platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'unset',installed:false,...fields});
- // the default is cua's engine (#171 M5): none installed, the vendor's with a warning; installed, cua's
- assert.deepEqual(row({}),{host:'cua',reason:'linux',status:'warn'});
+ // the default is cua's engine (#171 M5); since M6a (F3) one this cua cannot drive refuses the open, the default as an
+ // explicit setting, and nothing falls back to the vendor's engine
+ assert.deepEqual(row({}),{error:'engine_not_installed'});
  assert.deepEqual(row({installed:true}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({defaultEngine:'vendor'}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({engine:'vendor',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
@@ -177,22 +181,30 @@ test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host alw
  assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({engine:'invalid'}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be vendor or cua'});
  assert.deepEqual(row({engine:'invalid',engineFrom:'settings'}),{error:'invalid_setting'});
- assert.deepEqual(row({defaultEngine:'cua'}),{host:'cua',reason:'linux',status:'warn'});
- // #171 M5 (F5): an installed engine older than this cua needs (or one its record does not match) keeps the default on
- // the vendor's engine with a warning; set explicitly, it is selected (and refused at its first request, not here)
- assert.deepEqual(row({defaultEngine:'cua',installed:'outdated'}),{host:'cua',reason:'linux',status:'warn'});
- assert.deepEqual(row({engine:'cua',installed:'outdated'}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({engine:'cua',engineFrom:'settings',installed:'outdated'}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({defaultEngine:'cua'}),{error:'engine_not_installed'});
+ // #171 M6a (F2): an installed engine older than this cua needs, or one no record of its bytes names, is refused at the
+ // open under any setting
+ for(const [installed,error] of [['outdated','engine_outdated'],['unrecorded','engine_unrecorded']])for(const fields of [{},{engine:'cua'},{engine:'cua',engineFrom:'settings'}])
+  assert.deepEqual(row({...fields,installed}),{error},`${installed} ${JSON.stringify(fields)}`);
  assert.deepEqual(row({defaultEngine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({node24:false}),{error:'repl_host_node'},'Linux has no vendor host to fall back to');
+ // the vendor's tree: needed by the vendor selection alone, and refused without it; a browser-only session needs no engine
+ assert.deepEqual(row({engine:'vendor',vendorTree:false}),{error:'engine_not_installed'});
+ assert.deepEqual(row({engine:'vendor',engineFrom:'settings',vendorTree:false}),{error:'engine_not_installed'});
+ assert.deepEqual(row({engine:'cua',installed:true,vendorTree:false}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({engine:'vendor',vendorTree:false,lane:'profiles'}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({node24:false,installed:true}),{error:'repl_host_node'},'Linux has no vendor host to fall back to');
  assert.deepEqual(row({override:'vendor'}),{error:'repl_host_refused'});
  assert.deepEqual(row({override:'vendor',lane:'profiles'}),{error:'repl_host_refused'});
 });
+// The vendor selection's tree as the live lane's home holds it (vendorTree true, the seam standing in for the lookup), or
+// as the doctor fixture's scratch home does not (false, the real lookup finding none).
+const LINUX_TREE={release:'26.928.40906-linux-x64',root:'/scratch/runtimes/26.928.40906-linux-x64',paths:{skyLinuxBin:'/scratch/sky_linux_x64',skyVendorService:'/scratch/service.js',moduleDir:'/scratch/node_modules'}};
+const linuxEngineInputs=row=>({config:()=>({}),installed:()=>null,...(row.vendorTree===false?{}:{vendor:()=>LINUX_TREE})});
 test('every Linux engine row agrees with doctor\'s actual row, which names no engine',async t=>{
  const reviewed=reviewedSource(t);
- for(const row of selectionCases('linux').filter(r=>r.engine).map(r=>({...r,managedNode:true})))await t.test(JSON.stringify(row),async t=>{
+ for(const vendorTree of [true,false])for(const row of selectionCases('linux').filter(r=>r.engine).map(r=>({...r,managedNode:true,vendorTree})))await t.test(JSON.stringify(row),async t=>{
   const expected=expectedSelection(row);
-  const doctor=await doctorReplHost(t,{platform:'linux',env:{...envFor(row),...engineEnv(row)},node:MANAGED});
+  const doctor=await doctorReplHost(t,{platform:'linux',env:{...envFor(row),...engineEnv(row)},node:MANAGED,engine:linuxEngineInputs(row)});
   if(expected.error){assert.doesNotThrow(()=>assertSelection(row,{doctor,error:expected.error,errorMessage:expected.sentence??'refused'},reviewed));return;}
   assert.doesNotThrow(()=>assertSelection(row,{doctor,observation:ownObservation(reviewed.reviewedCommit)},reviewed));
   assert.throws(()=>assertSelection(row,{doctor,observation:{...ownObservation(reviewed.reviewedCommit),_meta:{...ownObservation(reviewed.reviewedCommit)._meta,...attestation('cua')}}},reviewed),/attests engine/);

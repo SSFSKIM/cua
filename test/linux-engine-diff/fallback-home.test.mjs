@@ -59,7 +59,7 @@ test("the previous pin is linux-engine-v0.4.2's, the release just below this cua
   if (recorded) assert.deepEqual(PREVIOUS_PIN, recorded);
 });
 
-test('each fallback home, shaped from a current install, keeps the default on the vendor\'s engine for its own reason', async (t) => {
+test('each fallback home, shaped from a current install, refuses the default for its own reason (M5 kept the vendor\'s engine)', async (t) => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-fallback-home-')));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const reasons = { none: 'engine_not_installed', previous: 'engine_outdated', released: 'engine_outdated', older: 'engine_outdated', unrecorded: 'engine_unrecorded' };
@@ -72,7 +72,8 @@ test('each fallback home, shaped from a current install, keeps the default on th
     assert.equal(byDefault().engine, 'cua', `${kind}: the current install is selected before it is shaped`);
     const shaped = await shapeFallbackHome({ home, kind, olderPin: OLDER, previousPin: PREVIOUS, releasedPin: RELEASED, fetch: serving, host: HOST, pin: CURRENT });
     assert.equal(shapeProblem(shaped), null, `${kind}: ${JSON.stringify(shaped)}`);
-    assert.deepEqual(byDefault(), { engine: 'vendor', reason: reasons[kind], status: 'warn' }, kind);
+    // #171 M6a (F3): M5's fallback to the vendor's engine is a refusal of the open now, for the same reason
+    assert.throws(byDefault, { code: reasons[kind] }, kind);
   }
   const unrecorded = await shapeFallbackHome({ home: join(dir, 'unrecorded'), kind: 'unrecorded', olderPin: OLDER, previousPin: PREVIOUS, releasedPin: RELEASED, fetch: serving, host: HOST, pin: CURRENT });
   assert.deepEqual([unrecorded.engine.sha256, unrecorded.record], [sha(engine('0.3.0')), { version: MIN_ENGINE_VERSION, sha256: sha(engine(MIN_ENGINE_VERSION)) }], "0.3.0's file beside the current record");

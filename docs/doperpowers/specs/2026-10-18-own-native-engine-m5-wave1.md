@@ -161,6 +161,21 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `cua-shim.mjs:11`, adds `_meta.persist` to every accepted app approval, so remembering more would widen consent for
   no known client); 216.md names it as a client contract. The hosted witness is `scripts/approval-cycles.mjs`, twenty
   cycles, run in T10's pilot; Claude Code's own answering and a reconnect are O10's.
+- 2026-11-23, T10a (527c85376; detail in `docs/evidence/2026-11-23-own-native-engine/judge.md`): one declaration
+  mechanism, `scripts/native-matrix/expected/departures.json` (the Unicode expected file, its reader and the run's
+  `applyDeclarations` removed); an entry `{section, id, vendor: {answer: 'ok'}, cua: {answer: 'refused'|'unconfirmed',
+  sentence}, decision}` covers a sample only with the vendor's same-run sample passing and cua's act throwing the
+  declared sentence with the state unchanged (refused) or unchanged or the intended effect (unconfirmed) and the oracle
+  held on both sides; any other kind blocks. Departures do not turn PASS into OWNER; they are counted and listed under
+  "What changes for a user". Ruling 1116 per sample: an unpaired cua sample has no verdict. The front/key field
+  contract is `scripts/native-matrix/front-key.mjs` (`frontKey` per judged row, `meta.hosted`, `meta.desktopMode`); NO
+  VERDICT causes in order: unread, activation, alert, invalid, unmeasured, unpaired; "alert" is an app outside the
+  cell's own apps front or key. A cell qualifies with at least three runs per side in which every sample has a
+  verdict. A device mode other than shared is missing proof. Hold 3, 2a and 2b still judge FAIL; none of hold 3's 355
+  cells qualifies. Open with the design session: a Unicode row both engines fail the same way (recommended `equal`
+  with the same read-back, listed as a shared limit); until ruled, the absolute expected string stands. The pilot
+  reports, per cell, how many runs have every sample with a verdict and how many verdict samples each run got, for the
+  design session's decision on a looser qualification rule.
 - 2026-11-23: T10 splits in two executor tasks, both built now with unit tests: T10a, the judge (`summary.mjs` and
   its declared-departures file: R3's one declarable kind, NO VERDICT without a valid vendor pair, the alert-frontmost
   and failed-activation NO VERDICTs, NO VERDICT counts per cell beside the verdicts); then T10b′, the harness on a

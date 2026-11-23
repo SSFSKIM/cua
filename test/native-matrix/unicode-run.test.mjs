@@ -9,7 +9,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {KOREAN_2SET, MID_SWITCH, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
-import {HANGUL_LAYOUT} from '../../scripts/native-matrix/unicode-run.mjs';
+import {HANGUL_LAYOUT, judgeMidSwitch} from '../../scripts/native-matrix/unicode-run.mjs';
 import {matrixSteps, runWith} from './run-doubles.mjs';
 
 const tagOf = code => /cua-matrix-cell: ([\w.]+)/.exec(code)?.[1] ?? null;
@@ -65,6 +65,26 @@ test('the mid-switch row: a switch outside the typing is retried; a typing the s
     cell: c => (tagOf(c) === 'unicode.midSwitch' ? {...midSwitch(c), _meta: {...midSwitch(c)._meta, 'cua/actionInterval': {startedAt: atOf(c) + 500, endedAt: atOf(c) + 900}}} : midSwitch(c))});
   assert.equal(outside.result.rows[0].attempts, 2, 'the second attempt aimed at the measured interval');
   assert.equal(outside.result.rows[0].invalid, undefined);
+});
+
+// #186's oracle: the count in the engine's own sentence, the meta's count and the field's committed prefix (its length,
+// and its hash against the text's first units) must all agree.
+test('the mid-switch judgement holds the sentence\'s count to the field-backed offset, and the meta\'s too', () => {
+  const text = MID_SWITCH.text;
+  const sentence = (n, of = text.length) => `Computer Use server error -10005: The input source changed after ${n} of ${of} characters were entered; get the app's state to see what was typed.`;
+  const field = n => ({length: n, hash: sha256Hex(text.slice(0, n))});
+  const judge = ({n = 30, said = n, of = text.length, entered = n, held = field(n), threw = true} = {}) =>
+    judgeMidSwitch({threw, message: sentence(said, of), entered, field: held, text});
+  assert.deepEqual(judge(), {stopped: true, exact: true, sentenceEntered: 30, sentenceAgrees: true, ok: true});
+  // The sentence one short of the field (#186's defect), the meta right: fails on the sentence.
+  assert.deepEqual(judge({said: 29}), {stopped: true, exact: true, sentenceEntered: 29, sentenceAgrees: false, ok: false});
+  // Both counts one short of what the field holds: not exact, and the sentence disagrees with the field.
+  assert.deepEqual(judge({said: 29, entered: 29}), {stopped: true, exact: false, sentenceEntered: 29, sentenceAgrees: false, ok: false});
+  assert.equal(judge({of: text.length + 1}).ok, false, 'the sentence names another request\'s length');
+  assert.equal(judge({held: {length: 30, hash: sha256Hex('x')}}).ok, false, 'the field holds other text');
+  assert.equal(judge({threw: false}).stopped, false);
+  assert.deepEqual(judgeMidSwitch({threw: true, message: 'Computer Use server error -10005: Timed out', entered: 30, field: field(30), text}),
+    {stopped: false, exact: true, sentenceEntered: null, sentenceAgrees: false, ok: false});
 });
 
 test('a composition the user window did not show, or a per-context context that did not hold, leaves those rows invalid; a row that disturbed the composition fails and the rest are invalid', async () => {

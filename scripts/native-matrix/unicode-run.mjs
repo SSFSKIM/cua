@@ -204,7 +204,8 @@ async function perContextRows(ctx, field, rows) {
 
 // The mid-switch row: the Latin source, the field's scene in front, a long keyed typeText, and the probe's switch to
 // Korean scheduled inside it. It must stop with inputSourceChanged (its sentence in the message), entering exactly what the field then holds (its
-// hash against the text's first `cua/entered` units). The Latin source is selected again after it.
+// hash against the text's first `cua/entered` units), the sentence's own count the same (`judgeMidSwitch`). The Latin
+// source is selected again after it.
 async function midSwitchRow(ctx, r) {
   const field = r.field;
   await quiet(ctx, field);
@@ -222,6 +223,19 @@ async function midSwitchRow(ctx, r) {
       ...(latin ? {} : {error: 'the Latin source was not selected again after the switch'})});
   }
   return null;
+}
+// The mid-switch row's judgement (#186): stopped by the engine's inputSourceChanged sentence, and the field's committed
+// prefix (`field`: its length and hash, read back in the cell) equal to the text's first `entered` units (the meta's
+// count, `exact`) and to the count the sentence itself names, "after N of M" with M the request's own length
+// (`sentenceAgrees`): the number a model resumes from is the one it reads.
+// -> {stopped, exact, sentenceEntered, sentenceAgrees, ok}.
+export function judgeMidSwitch({threw, message, entered, field, text}) {
+  const said = threw === true ? INPUT_SOURCE_CHANGED.exec(message ?? '') : null;
+  const sentenceEntered = said ? Number(said[1]) : null;
+  const prefixOf = n => Number.isInteger(n) && field?.length === n && field?.hash === sha256Hex(text.slice(0, n));
+  const exact = prefixOf(entered);
+  const sentenceAgrees = said !== null && Number(said[2]) === text.length && prefixOf(sentenceEntered);
+  return {stopped: said !== null, exact, sentenceEntered, sentenceAgrees, ok: said !== null && exact && sentenceAgrees};
 }
 async function midSwitchAttempt(ctx, r, {preMs, key}) {
   const field = r.field;
@@ -243,11 +257,10 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   const check = span(await ctx.lane.js(fieldCheckCell(field, null, 'unicode.midSwitch.check')));
   const entered = act.engine?.entered ?? null, switchedAt = finished?.answer?.selectedAt;
   const interval = intervalOf(ctx.engine, act);
-  const stopped = act.value.threw === true && INPUT_SOURCE_CHANGED.test(act.value.message ?? '');
-  const exact = Number.isInteger(entered) && check.value?.length === entered && check.value?.hash === sha256Hex(r.string.text.slice(0, entered));
-  const row = {ok: stopped && exact, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {stopped, errorName: act.value.errorName, message: act.value.message ?? null, entered, length: check.value?.length ?? null, exact, intervalSource: interval?.source ?? null,
-      switchOffsetMs: interval && Number.isFinite(switchedAt) ? switchedAt - interval.from : null}};
+  const {ok, stopped, exact, sentenceEntered, sentenceAgrees} = judgeMidSwitch({threw: act.value.threw, message: act.value.message, entered, field: check.value, text: r.string.text});
+  const row = {ok, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
+    outcome: {stopped, errorName: act.value.errorName, message: act.value.message ?? null, entered, sentenceEntered, sentenceAgrees, length: check.value?.length ?? null, exact,
+      intervalSource: interval?.source ?? null, switchOffsetMs: interval && Number.isFinite(switchedAt) ? switchedAt - interval.from : null}};
   const why = probeProblem(finished?.answer) ?? postValidity(switchedAt, interval)?.replace('the probe posted', 'the probe switched');
   if (why) return end({...row, ok: false, invalid: why}, {retry: true, preMs: nextPreMs({callAt: act.value.callAt, interval, postedAt: switchedAt, scheduled: started.scheduled, preMs})});
   return end(row);

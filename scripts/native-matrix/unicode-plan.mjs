@@ -39,7 +39,7 @@ export const PRESS_KEY = Object.freeze({id: 'rk', text: 'rk', keys: 'r k'});
 export const MID_SWITCH = Object.freeze({id: 'long', text: Array.from({length: 24}, () => TYPED).join(' ')});
 // The engine's inputSourceChanged sentence (native/engine/Sources/Engine/Input.swift checkInputSource). The cell sees a
 // plain Error (the REPL's boundary), so the stop is told by this sentence in its message, never by an error name.
-export const INPUT_SOURCE_CHANGED = /The input source changed after \d+ of \d+ characters/;
+export const INPUT_SOURCE_CHANGED = /The input source changed after (\d+) of (\d+) characters/;
 // The background conditions' user window per field: another scene's text field (TextEdit's own with Electron's).
 export const UNICODE_USERS = Object.freeze({textedit: 'electron', chrome: 'textedit', electron: 'textedit'});
 // The composition: the ANSI key r under Korean 2-Set, which the input method holds as ㄱ until committed.

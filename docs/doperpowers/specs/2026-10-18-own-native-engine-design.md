@@ -8465,43 +8465,92 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   put it in neither `unreadable` nor `null`, so the record held the part as known absent. A numeric title then and an
   absent one now compared nil with nil and agreed, and #453 pressed the row on its description.
   1. The observation. `ElementData.nonText` names the label attributes (AXTitle, AXDescription, AXValue) whose slot held
-     a value that is no text. `screenshotLabelsUnknown` folds it into `labelsUnread` (an AXStaticText's value only, as
-     for a failed read) and never into `labelsNull`. It stays out of `unreadable`, so #405's classification, `valueFailed`
-     and the identity do not change.
-  2. The read now. `stalePointLabelRead` answers `.unreadable` for a success that is no text (main answered `.text(nil)`),
-     so the mirror case, absent then and numeric now, is unread too.
+     a value that is no text, judged by `CFGetTypeID` alone, so the contents are never read. `screenshotLabelsUnknown`
+     folds it into `labelsUnread` (an AXStaticText's value only, as for a failed read) and into `labelsNonText`, never
+     into `labelsNull`. It stays out of `unreadable`, so #405's classification, `valueFailed` and the identity do not
+     change.
+  2. The read now. `stalePointLabelRead` answers `.nonText` for a success that is no text. Main answered `.text(nil)`.
+     So the mirror case, absent then and numeric now, is unknown too.
   3. Not like with like. A null holds nothing, so null on both sides passes to the next part (#500). A value that is no
-     text holds something the record never kept, so it is unread on both sides and never passed over.
+     text holds something the record never kept, so it never agrees with anything, on either side. A rule that looks for
+     the first part carrying text still passes it as carrying none (`stalePointLabelCarried`), as main did. So a
+     difference main found that way still refuses.
+  4. Ruling 1147 (the review's amendment, below): an unread part never hides a later part known on both sides, and no
+     label keeps vacuously.
   The consumers, before and after:
   - #453 `overlayLabelsAgree`: numeric then and absent now, the reverse, or numeric on both sides pressed the row. Now
     it refuses `labelChanged`.
   - #453 `overlayDuplicate`: an acting inner text whose title was numeric beside the row's absent one counted as a
     repeat. Now it is no repeat, and the row refuses `actionableDescendant`.
-  - #298 `relabelledLabel` (#433's candidate too): compared the descriptions past two nils and refused. Now the label
-    is unknown, and the point is kept.
+  - #298 `relabelledLabel` (#433's candidate too) and #443 `controlDiffers`: see the amendment below.
   - #431 `recreatedLabelsAgree`: a numeric title beside an absent one ruled the twin out. Now it is a twin, and the
     re-created match is refused.
-  - #443 `controlDiffers`: compared the descriptions past two nils. Now the label comparison stops, and only the frame
-    is checked.
   - #454's menu item: `menuItemPoint` compared the recorded title with no regard to `labelsUnread`, so a recorded title
     that was unread (failed, null or no text) and an absent one now delivered. Now `RecordedMenuItem.titleUnread`
     refuses `relabelled`, as a title that fails to read now does. The failed and null cases predate #519. They are the
     same gap and are fixed here. The live read (`menuTextRead`) already took a non-text title as failed.
-  - Unchanged: the lenient `stalePointLabelsAgree` (#296's match, #305) ignores unknown parts by design. #458's
-    `recordedPopUp` reads no title. The identity (`ElementIdentity`) reads a non-text title, description, value
-    description, placeholder or help as nil, the same as a failed or null read, as #500 and #501 left it. The node's wire
-    and Markdown still show those as null or leave them out, and AXValue as its scalar. `stalePointName` in the meta
-    is nil, as before. No model-facing text changes.
-  No hosted live-rate measurement is needed. Every consumer that changes now refuses or keeps the point, as it does for
-  a failed read, and none now presses where main refused. A live rate would only show how often an element whose label
-  slot is always non-text is refused when main would have pressed it.
+  - Unchanged: the lenient `stalePointLabelsAgree` (#296's match, #305) ignores unknown parts by design, and reads a
+    non-text label as none, exactly as main does. #458's `recordedPopUp` reads no title. The identity
+    (`ElementIdentity`) reads a non-text title, description, value description, placeholder or help as nil, the same
+    as a failed or null read, as #500 and #501 left it. The node's wire and Markdown still show those as null or leave
+    them out, and AXValue as its scalar. `stalePointName` in the meta is nil, as before.
   Proven offline: `NonTextLabelSlotTests` (3), `RecreatedIdentityTests.testANonTextTitleNeverRulesATwinOut`,
   `OverlayClickTests` (2: #453's regression, the numeric title then with the description unchanged, and the duplicate),
   and `MenuItemPointTests.testAnItemWhoseRecordedTitleIsUnreadIsRefused`. The non-text slots enter at decode time,
   through `AttributeRead.decode` (`decodedLabels`' `nonText`, the walk fake's `extra`).
   - On da927265 the seven tests fail with 19 assertions. The menu test stops at its first case.
-  - One older assertion (`UnreadableLabelTests`) held main's `.text(nil)` for a CFNumber read now, and is updated.
-  1721 swift tests (1 skipped), 0 failures, after merging main at 0d19fdfa. The release build passes on Xcode 27.2.
+  - One older assertion (`UnreadableLabelTests`) held main's `.text(nil)` for a CFNumber read now, and now expects
+    `.nonText`.
+  Date/Author: 2026-11-23, cursor235's builder for #519.
+
+- Decision (#519, ruling 1147, the review of 0d19fdfa..34818106, 2026-11-23; amends the entry above): an unread label
+  part never hides a later part known on both sides, and a label keeps the point only on a part that agrees.
+  The review found that 34818106 kept a press main refused. A button kept its handle and frame, its title was numeric
+  then and absent now, and its description went from "Open" to "Delete". Main refused it `relabelled`. 34818106 stopped
+  at the unread title and kept the point, so on the web-area element route the AXPress reached "Delete".
+  - The rule, for #298's `relabelledLabel` (#433's candidate too) and #443's `controlDiffers`. Main's label walk runs
+    first, unchanged: the first part carrying text on each side, with a non-text part carrying none
+    (`stalePointLabelCarried`). Any difference it finds refuses. Where some part is unknown (failed, null on one side,
+    withheld or no text), or no part is known at all (every one null on both sides):
+    - a part read as text on both sides whose text differs refuses, past any unread part;
+    - the point is kept only when a part read as non-empty text on both sides agrees;
+    - otherwise the label is unread and refuses. `relabelled` names the label now when one was read, else says the
+      label can no longer be read (a new sentence). `controlDiffers` answers another control, so #443 refuses
+      `controlGone`.
+    Two parts absent on both sides are no agreement: they say nothing of the part that carried the label. A part null
+    on both sides is still passed over (#500) and counts as no agreement. A label read whole keeps main's rule, so a
+    button with no label at all still keeps.
+  - The guarantee: no consumer presses where main (0d19fdfa) refused. Each one, checked against the table above:
+    - `relabelledLabel` and `controlDiffers`: main's walk runs first and gives the same result as on main, and the rest
+      only adds refusals.
+    - `overlayLabelsAgree`, `overlayDuplicate` and the menu item: they agree only where every part is read, so they
+      agree on a subset of what main agreed on.
+    - `recreatedLabelsAgree`: it answers a twin (a refusal) at the first unknown part, where main read further.
+    - The lenient `stalePointLabelsAgree` and the identity: these read exactly as on main.
+    `stalePointLabelsAgree` keeps on unknown parts by design (#296's match, #305). Ruling 1147 would refuse there, so it
+    is left for the owner and not changed.
+  - It tightens main's failed, null and withheld cases, as intended. #298 now refuses where it kept an entirely unknown
+    label, and refuses where a description changed past a title unread on one side. #443 now finds another control
+    where the label is unknown. The older assertions that flip, each now commented:
+    - `NullLabelSlotTests.testRelabelledComparesLikeWithLike`: null then and absent now, with the description changed.
+    - `NullLabelSlotTests.testRelabelledChecksTheCounterpartOfEachPartUsed`: both counterpart cases, every part null on
+      both sides, and #433's two counterpart cases.
+    - `NullLabelSlotTests.testControlDiffersComparesLikeWithLike`: null then and absent now; all null with the frame in
+      place.
+    - `UnreadableLabelTests.testATitleUnreadableNowDoesNotRefuse`: the title failing now, with the description changed.
+    - `UnreadableLabelTests.testALowerPriorityUnreadableAttributeChangesNothing`: the description, now the label,
+      unreadable; a text's value unreadable now; its description unreadable with the value changed.
+    - `OverlayTargetTests.testAnUnreadTitleEndsTheLabelComparison`: in place, its description another, now `controlGone`
+      (this reverses the f394677e re-review's item 3). With the same description it keeps main's verdict.
+  - Proven by `NonTextLabelSlotTests.testRelabelledComparesPastAnUnknownTitle`: a title numeric, failed or null on one
+    side, each with the description changed, refuses, and an all-unknown label refuses. Also by
+    `testControlDiffersComparesPastANonTextTitle`. Both tests run on 34818106 fail with 14 assertions.
+  No hosted live-rate measurement is needed for the correctness of any consumer, since each change only adds refusals.
+  A live rate would size the wrong refusals 1147 adds: elements whose label is always unknown, and transient failed
+  reads. If they show up in use, a hosted run can count them then.
+  The decoder (the review's second finding) judges a non-text slot by `CFGetTypeID` alone (`isTextValue`). It no longer
+  decodes and bounds a text area's whole AXValue only to throw it away.
+  1721 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
   Date/Author: 2026-11-23, cursor235's builder for #519.
 
 ## Outcomes & Retrospective

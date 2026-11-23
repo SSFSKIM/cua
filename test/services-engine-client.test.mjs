@@ -721,6 +721,54 @@ test('end_task during the relaunch stops it there: nothing is launched for the e
   assert.equal(launches.length, 1);
 });
 
+// The relay delivers the status answer, then end_task comes before the request goes on (the review of 16a27627).
+test('end_task right after the pid\'s status answer arrives cancels the screenshot: Released, nothing more written, and the next request starts afresh', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let releaseAfterStatus = false;
+  let releasing;
+  const engine = await startFakeEngine(t, socket, {handlers: {
+    status: () => { releaseAfterStatus = releasing === undefined; return {pid: 4242}; },  // once
+    'execute:get_app_state': () => 'captured',
+    endTask: () => ({released: 0}),
+  }});
+  const {client, nodeRepl} = clientFor(socket);
+  const open = nodeRepl.nativePipe.createConnection;
+  nodeRepl.nativePipe.createConnection = async path => {
+    const pipe = await open(path);
+    return {...pipe, on(event, listener) {
+      if (event !== 'data') return pipe.on(event, listener);
+      return pipe.on(event, chunk => {
+        listener(chunk);  // the status answer settles here; its awaiting request resumes only after this turn
+        if (releaseAfterStatus) { releaseAfterStatus = false; releasing = client.release(); }
+      });
+    }};
+  };
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), error => error instanceof SkyComputerUseTransportError
+    && error.message === 'cua engine: the task ended (end_task) before this request reached the engine');
+  await releasing;
+  assert.equal(engine.executes().length, 0, 'the ended task\'s screenshot is never written');
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'status', 'endTask']);
+  assert.equal((await client.execute('get_app_state', screenshotArgs)).result, 'captured');
+});
+
+test('a launch that brings back the engine that failed (the same pid) is no replacement: the original error, nothing observed, the relaunch still owed', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engines = [await permissionEngine(t, socket, {pid: 4242})];
+  const {client, launches} = clientFor(socket, {launch: async () => {
+    engines.push(await permissionEngine(t, socket, {pid: engines.length === 1 ? 4242 : 4343, observe: () => 'captured'}));
+  }});
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(launches.length, 1);
+  assert.equal(engines[1].executes().length, 0, 'no observation on an unconfirmed replacement');
+  assert.equal((await client.execute('get_app_state', screenshotArgs)).result, 'captured', 'the next screenshot relaunches again');
+  assert.equal(engines[1].received.filter(r => r.method === 'shutdown').length, 1);
+  assert.equal(launches.length, 2);
+  assert.equal(engines[2].executes().length, 1);
+});
+
 // The debug engine (no permission is asked for: ping, status and list_apps read nothing of any app).
 function realEngine(t) {
   try { return debugEngine(); } catch (error) {

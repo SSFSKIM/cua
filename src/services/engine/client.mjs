@@ -313,27 +313,33 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return connecting.promise;
   }
 
-  // The live connection's engine pid, read once before its first screenshot, so an exit right after a permission
+  // The live connection, its engine's pid read once before its first screenshot, so an exit right after a permission
   // failure cannot lose which process failed. A pending recovery owed by another pid is spent: that engine already
-  // restarted. A pid that is reused keeps the recovery pending, which costs one relaunch and never skips one.
-  async function checkScreenshotProcess() {
-    if (connection.pid === null) {
-      const status = await connection.call('status', {}, PING_MS);
+  // restarted. A pid that is reused keeps the recovery pending, which costs one relaunch and never skips one. The
+  // connection is the one the status went to, and an end_task while it was read cancels the request (`Released`).
+  async function screenshotConnection(born) {
+    releasedSince(born);
+    const target = connection;
+    if (target.pid === null) {
+      const status = await target.call('status', {}, PING_MS);
+      releasedSince(born);
       if (!Number.isSafeInteger(status?.pid) || status.pid <= 0) {
         throw new SkyComputerUseTransportError('cua engine status named no valid process id, so its screenshot permission recovery cannot be followed');
       }
-      connection.pid = status.pid;
+      target.pid = status.pid;
     }
-    if (permissionsPending && permissionsPending.pid !== connection.pid) permissionsPending = null;
+    if (permissionsPending && permissionsPending.pid !== target.pid) permissionsPending = null;
+    return target;
   }
 
-  // The owed relaunch (see the header): shutdown on the checked connection, the engine's close awaited, then a launch.
-  async function relaunchForPermissions(born) {
-    const target = connection;
+  // The owed relaunch (see the header): shutdown on `target`, the checked connection, the engine's close awaited, then a
+  // launch, none of it for a task that ended meanwhile.
+  async function relaunchForPermissions(target, born) {
     try { await target.call('shutdown', {}, shutdownWaitMs); } catch (error) {
       if (error instanceof SkyComputerUseError && error.errorName === 'busy') throw permissionsPending.error;
       throw error;
     }
+    releasedSince(born);
     await within(target.peerClosed, shutdownWaitMs, 'cua engine did not close after shutdown; its permission relaunch is still pending');
     if (connection === target) connection = null;
     await launch(identity, born);
@@ -348,14 +354,18 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       releasedSince(born);  // queued behind a request when end_task came: never sent, never reconnected for
       await connect();
       releasedSince(born);
+      let live = connection;
       if (screenshot) {
-        await checkScreenshotProcess();
+        live = await screenshotConnection(born);
         if (permissionsPending) {
-          await relaunchForPermissions(born);
-          await checkScreenshotProcess();
+          await relaunchForPermissions(live, born);
+          live = await screenshotConnection(born);
+          // What answered after the launch is the process that failed: no replacement is confirmed, so nothing is
+          // observed on it, and the relaunch stays owed.
+          if (permissionsPending) throw permissionsPending.error;
         }
+        releasedSince(born);  // an end_task while the pid was read, or during the relaunch: the frame is never written
       }
-      const live = connection;
       const body = typeof params === 'function' ? params() : params;
       const started = performance.now();
       try {

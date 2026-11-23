@@ -14,19 +14,20 @@ import {bind_linux_app} from './bind-linux-app.mjs';
 import {bind_mac_app} from './bind-mac-app.mjs';
 import {create_bootstrap_emitter} from './bootstrap-emitter.mjs';
 import {create_browser_api, setup_browser} from './browser-api.mjs';
-import {create_documentation, read_documentation} from './documentation.mjs';
+import {create_documentation, read_documentation, serve_lookups} from './documentation.mjs';
 import {get_apps, get_state, UnreachableCaseError} from './get-state.mjs';
 
 export async function create_tinysky_alt(options = {}) {
-  let computer;
-  // cua's own additions (./documentation.mjs): the agent cursor's paragraph for a macOS computer surface, and cua's
-  // Linux document for a Linux one.
-  const documentation = create_documentation(read_documentation, {agentCursor: () => computer?.target === 'mac', linuxEngine: () => computer?.target === 'linux'});
-  const [agent, loaded] = await Promise.all([
+  let agent, computer;
+  // cua's own additions (./documentation.mjs): the agent cursor's document for a macOS computer surface, its detail
+  // looked up by name where `agent` can look it up and inline where there is none, and cua's Linux document for a
+  // Linux one.
+  const documentation = create_documentation(read_documentation, {agentCursor: () => computer?.target === 'mac', linuxEngine: () => computer?.target === 'linux',
+    lookups: () => agent !== undefined});
+  [agent, computer] = await Promise.all([
     setupBrowser({browser: options.browser, exclude_browser_confirmations: documentation.exclude_browser_confirmations}),
     loadComputer(options),
   ]);
-  computer = loaded;
   const emitter = create_bootstrap_emitter(documentation);
   await emitter.emit();
   const cua = {
@@ -38,6 +39,7 @@ export async function create_tinysky_alt(options = {}) {
     },
   };
   if (agent !== undefined) {
+    serve_lookups(agent, documentation);
     Reflect.set(globalThis, 'agent', agent);
     Object.assign(cua, create_browser_api(agent.browsers, emitter));
   }

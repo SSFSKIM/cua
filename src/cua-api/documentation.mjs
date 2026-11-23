@@ -23,12 +23,22 @@
 // pending drag, duplicate windows, the truncation line) takes the same place. The facade answers it from the computer
 // surface's target: every Linux computer surface, under either engine, since each paragraph names an answer and what
 // to do on meeting it, and the vendor's engine gives none of them. core.md stays the vendor's text.
+// #503 gives agent-cursor.md #494's treatment: an MCP client shows the first cell inline only under its limit (Claude
+// Code saves a result of more than 50,000 characters to a file), and the first getBrowser() cell carries this core with
+// the browser's first-use document. agent-cursor.md keeps the cursor paragraph and the rules a first action acts on,
+// then one pointer per lookup (AGENT_CURSOR_LOOKUPS, docs/cua-api/macos/), each stating its rule. The lookups are
+// read through `agent.documentation.get(name)`, answered here (serve_lookups) ahead of the browser service, so they
+// exist exactly where the pointers do: with `lookups()` true, which the facade answers from the browser surface (its
+// `agent`). Without it the core carries the cursor paragraph (agent-cursor.md's first) and every lookup's text in
+// their place, the document as it read before #503.
 import {readFile} from 'node:fs/promises';
 
 const DOCUMENTS = new URL('../../docs/cua-api/', import.meta.url);
-// The vendor's document names (tinysky-alt-<name>.md) and the files that hold them here.
+// The agent cursor's lookups, in the order the document without them reads their text.
+export const AGENT_CURSOR_LOOKUPS = ['macos/background-web-pages', 'macos/click-checks', 'macos/action-answers', 'macos/accessibility-tree', 'macos/typing'];
+// The vendor's document names (tinysky-alt-<name>.md) and the files that hold them here, and cua's own.
 const FILES = {'core-cua-repl': 'core.md', confirmations: 'confirmations.md', 'other-browser-apis': 'other-browser-apis.md', 'agent-cursor': 'agent-cursor.md',
-  'linux-engine': 'linux-engine.md'};
+  'linux-engine': 'linux-engine.md', ...Object.fromEntries(AGENT_CURSOR_LOOKUPS.map(name => [name, `${name}.md`]))};
 const POLICY_MAX_BYTES = 12_000;
 
 export function read_documentation(name) {
@@ -44,16 +54,45 @@ function confirmationPolicyOverride(requestMeta) {
   return undefined;
 }
 
-export function create_documentation(read, {agentCursor = () => false, linuxEngine = () => false} = {}) {
+export function create_documentation(read, {agentCursor = () => false, linuxEngine = () => false, lookups = () => false} = {}) {
+  async function agentCursorDocument() {
+    const document = await read('agent-cursor');
+    if (lookups()) return document;
+    const sections = await Promise.all(AGENT_CURSOR_LOOKUPS.map(name => read(name)));
+    return [document.slice(0, document.indexOf('\n\n') + 1), ...sections].join('\n');
+  }
   return {
     read,
     async read_core() {
       const base = await read('core-cua-repl');
-      const platform = agentCursor() ? 'agent-cursor' : linuxEngine() ? 'linux-engine' : null;
-      const core = platform ? `${base}\n${await read(platform)}` : base;
+      const platform = agentCursor() ? await agentCursorDocument() : linuxEngine() ? await read('linux-engine') : null;
+      const core = platform ? `${base}\n${platform}` : base;
       const policy = confirmationPolicyOverride(globalThis.nodeRepl?.requestMeta) ?? await read('confirmations');
       return policy === '' ? core : `${core}\n${policy}`;
     },
+    // -> the text of a lookup the core points to, or undefined for every other name.
+    async lookup(name) {
+      return agentCursor() && lookups() && AGENT_CURSOR_LOOKUPS.includes(name) ? await read(name) : undefined;
+    },
     exclude_browser_confirmations: true,
   };
+}
+
+// `agent.documentation.get(name)` answers the core's lookups itself and passes every other name to the browser
+// service. The client's agent is a view that caches its methods by name, so its documentation object is replaced, by
+// one that, as the client's, has no own enumerable member.
+export function serve_lookups(agent, documentation) {
+  agent.documentation = new LookupDocumentation(documentation, agent.documentation);
+}
+
+class LookupDocumentation {
+  #documentation;
+  #service;
+  constructor(documentation, service) {
+    this.#documentation = documentation;
+    this.#service = service;
+  }
+  async get(name) {
+    return (await this.#documentation.lookup(name)) ?? await this.#service.get(name);
+  }
 }

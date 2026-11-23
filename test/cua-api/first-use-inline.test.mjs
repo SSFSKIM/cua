@@ -5,10 +5,13 @@
 // first cell carries the core (cua.core) and the selected browser's first-use documentation (cua.browser.<id>), so both
 // are measured together, as the bootstrap emitter writes them, under every core the own host emits with the browser
 // surface: browser alone (MAWS), with a macOS computer surface (agent-cursor.md, the largest) and with a Linux one.
+// #503 gives agent-cursor.md the same treatment and holds every such cell to 40,000 (20% under the limit) with the
+// bundled confirmations policy, and under 47,500 with the largest override a client may send (12,000 UTF-8 bytes in
+// place of the bundled policy, which src/cua-api/documentation.mjs emits whole), so the cell's own output keeps room.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {create_bootstrap_emitter} from '../../src/cua-api/bootstrap-emitter.mjs';
-import {create_documentation, read_documentation} from '../../src/cua-api/documentation.mjs';
+import {AGENT_CURSOR_LOOKUPS, create_documentation, read_documentation, serve_lookups} from '../../src/cua-api/documentation.mjs';
 import {setup_browser} from '../../src/cua-api/browser-api.mjs';
 import {Documentation} from '../../src/browser-service/docs.mjs';
 import {API_MANIFEST, disabledMemberIds} from '../../src/browser-service/manifest.mjs';
@@ -21,9 +24,14 @@ const {node, skip} = kernelNode();
 const own = {skip};
 
 const INLINE_LIMIT = 50_000;
-// The first cell's documentation leaves the cell's own output at least 5% of the limit in the largest configuration
-// (a macOS computer surface); without it the margin is far wider.
-const TARGET = 47_500;
+// The first cell's documentation under the bundled policy, and under the largest override, which leaves the cell's own
+// output at least 5% of the limit.
+const TARGET = 40_000;
+const OVERRIDE_TARGET = 47_500;
+// A valid override of the largest size (documentation.mjs POLICY_MAX_BYTES), its ends marked to show it whole.
+const MAXIMUM_POLICY = `# Client Policy\n${'p'.repeat(12_000 - '# Client Policy\n'.length - '\nEND OF POLICY'.length)}\nEND OF POLICY`;
+const POLICIES = {'the bundled policy': {requestMeta: null, target: TARGET},
+  'the largest override': {requestMeta: {'openai/confirmation_policies': {computer_use: MAXIMUM_POLICY}}, target: OVERRIDE_TARGET - 1}};
 // The Tab interface is on the first screen of the browser's documentation.
 const TAB_WITHIN = 7_000;
 
@@ -43,13 +51,15 @@ const SELECTIONS = {
     name: 'MAWS in-app browser (maws)'},
   'a Chrome profile': {selection: browserSelection({}, 'extension:1', announced('inst-personal')), keys: {maws: 'maws:app-1', personal: 'inst-personal'}, name: 'cua'},
 };
-const CORES = {'browser alone': {}, 'a macOS computer surface': {agentCursor: () => true}, 'a Linux computer surface': {linuxEngine: () => true}};
+// With the browser surface `agent` looks the agent cursor's detail up (create-tinysky-alt.mjs), so its core points to it.
+const MACOS = {agentCursor: () => true, lookups: () => true};
+const CORES = {'browser alone': {}, 'a macOS computer surface': MACOS, 'a Linux computer surface': {linuxEngine: () => true}};
 
 // The named outputs of a first cell `await cua.getBrowser(...)`: the bootstrap's emit, then getBrowser's.
-async function firstCell(docs, {selection, keys}, core) {
+async function firstCell(docs, {selection, keys}, core, requestMeta = null) {
   const writes = [];
   const saved = globalThis.nodeRepl;
-  globalThis.nodeRepl = {requestMeta: null, env: {}, write: (text, name) => { writes.push({name, text}); }};
+  globalThis.nodeRepl = {requestMeta, env: {}, write: (text, name) => { writes.push({name, text}); }};
   try {
     const emitter = create_bootstrap_emitter(create_documentation(read_documentation, core));
     await emitter.emit();
@@ -63,12 +73,14 @@ async function firstCell(docs, {selection, keys}, core) {
 }
 
 for (const [label, selected] of Object.entries(SELECTIONS)) {
-  test(`the first getBrowser() cell on ${label} stays under the inline target, with the Tab interface on its first screen`, async () => {
-    for (const [surfaces, core] of Object.entries(CORES)) {
-      const writes = await firstCell(serviceDocumentation(), selected, core);
+  test(`the first getBrowser() cell on ${label} stays under the inline targets, the policy whole, with the Tab interface on its first screen`, async () => {
+    assert.equal(Buffer.byteLength(MAXIMUM_POLICY), 12_000);
+    for (const [surfaces, core] of Object.entries(CORES)) for (const [policy, {requestMeta, target}] of Object.entries(POLICIES)) {
+      const writes = await firstCell(serviceDocumentation(), selected, core, requestMeta);
       assert.deepEqual(writes.map(({name}) => name), ['cua.core', `cua.browser.${selected.selection.id}`], surfaces);
       const total = writes.reduce((sum, {text}) => sum + text.length, 0);
-      assert.ok(total <= TARGET, `${surfaces}: the first cell's documentation is ${total} characters, over the ${TARGET} target (Claude Code saves a result over ${INLINE_LIMIT} to a file)`);
+      assert.ok(total <= target, `${surfaces}, ${policy}: the first cell's documentation is ${total} characters, over ${target} (Claude Code saves a result over ${INLINE_LIMIT} to a file)`);
+      if (requestMeta !== null) assert.ok(writes[0].text.endsWith(`\n${MAXIMUM_POLICY}`), `${surfaces}: the override closes the core whole`);
       const browserDocument = writes[1].text;
       assert.ok(browserDocument.includes(`\n# Selected Browser\n- Name: ${selected.name}\n`), `${surfaces}: the Name line`);
       for (const member of ['interface Tab {', '  goto(url: string)', '  markHandoff()', '  markDeliverable()']) {
@@ -113,6 +125,34 @@ test('the api-reference pointer is bound to its browser: after A, B, A each poin
   assert.ok(!(await docs.read(pointer(onB))).includes(selectOption), 'B\'s pointer after A again reads B\'s reference');
 });
 
+// #503: what agent-cursor.md moved out is each a lookup it points to by name. Through `agent.documentation.get` as the
+// facade serves it (serve_lookups ahead of the browser service), every pointer's name reads its document without asking
+// the service, and the documents are the macOS core's detail as the core carries it without lookups.
+test('every lookup the macOS core points to reads its moved section, and every other name still goes to the browser service', async () => {
+  const pointed = [...(await create_documentation(read_documentation, MACOS).read_core()).matchAll(/^- `(macos\/[^`]+)`: /gmu)].map(([, name]) => name);
+  assert.deepEqual(pointed, AGENT_CURSOR_LOOKUPS);
+  const whole = await create_documentation(read_documentation, {agentCursor: () => true}).read_core();
+  const asked = [];
+  const agent = {documentation: {get: async name => { asked.push(name); return `SERVICE ${name}`; }}};
+  serve_lookups(agent, create_documentation(read_documentation, MACOS));
+  const agentDocumentation = agent.documentation;
+  for (const name of pointed) {
+    const text = await agentDocumentation.get(name);
+    assert.ok(text.length > 0 && whole.includes(`\n${text}`), `${name}: a section of the core without lookups`);
+    assert.ok(!(await create_documentation(read_documentation, MACOS).read_core()).includes(text), `${name}: not inline`);
+  }
+  assert.deepEqual(asked, []);
+  assert.equal(await agentDocumentation.get('browser-safety'), 'SERVICE browser-safety');
+  // Where the core has no pointer (no macOS computer surface), the name is the service's to answer or refuse.
+  const elsewhere = {documentation: {get: async name => `SERVICE ${name}`}};
+  serve_lookups(elsewhere, create_documentation(read_documentation, {linuxEngine: () => true}));
+  assert.equal(await elsewhere.documentation.get(pointed[0]), `SERVICE ${pointed[0]}`);
+  // Every section moved: the core without lookups is the cursor paragraph and the sections, nothing else.
+  const sections = await Promise.all(pointed.map(name => read_documentation(name)));
+  const cursor = (await read_documentation('agent-cursor')).split('\n\n')[0];
+  assert.ok(whole.includes(`\n${[`${cursor}\n`, ...sections].join('\n')}\n`));
+});
+
 // Each balanced `nodeRepl.write(…)` call in `text`.
 function writeCalls(text) {
   const calls = [];
@@ -135,7 +175,7 @@ test('every advertised lookup prints its text in the own host\'s visible tool re
   const {selection, keys} = SELECTIONS['a Chrome profile'];
   const text = await docs.readBrowser(selection, {browserKeys: keys});
   const required = (() => { try { docs.assertRequiredDocumentationRead('tab_cdp_call'); } catch (error) { return error.message; } })();
-  const sources = [text, await docs.read(`api-reference/${selection.id}`), required];
+  const sources = [text, await docs.read(`api-reference/${selection.id}`), required, await read_documentation('agent-cursor')];
   const lookup = /await (?:agent\.documentation\.get\(|\(await \w+\.capabilities\.get\([^)]*\)\)\.documentation\(\)|browser\.documentation\(\))/gu;
   for (const source of sources) for (const match of source.matchAll(lookup))
     assert.equal(source.slice(match.index - 'nodeRepl.write('.length, match.index), 'nodeRepl.write(', `an advertised lookup that shows nothing: ${source.slice(match.index, match.index + 80)}`);

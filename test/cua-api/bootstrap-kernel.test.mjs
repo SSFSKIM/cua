@@ -17,6 +17,10 @@ const doc = name => readFileSync(new URL(`../../docs/cua-api/${name}`, import.me
 // A macOS computer surface is served only by cua's own engine on this host, so its core carries the agent cursor's
 // paragraph (src/cua-api/documentation.mjs).
 const MAC_CORE = `${doc('core.md')}\n${doc('agent-cursor.md')}\n${doc('confirmations.md')}`;
+// Its detail is looked up through `agent` (#503); with no browser surface there is no `agent`, so the core carries the
+// cursor paragraph and each lookup's text in their place.
+const MACOS_LOOKUPS = ['background-web-pages', 'click-checks', 'action-answers', 'accessibility-tree', 'typing'];
+const MAC_COMPUTER_ONLY_CORE = `${doc('core.md')}\n${[`${doc('agent-cursor.md').split('\n\n')[0]}\n`, ...MACOS_LOOKUPS.map(name => doc(`macos/${name}.md`))].join('\n')}\n${doc('confirmations.md')}`;
 // A Linux computer surface's core carries cua's Linux document in that place, under either engine (the #171 spec's
 // Decision Log, M5 pre-flight, F4).
 const LINUX_CORE = `${doc('core.md')}\n${doc('linux-engine.md')}\n${doc('confirmations.md')}`;
@@ -61,6 +65,19 @@ test('the first cell installs cua and agent for the enabled surfaces and writes 
   const setup = ok(await exec('nodeRepl.write(typeof cua.listWindows);'));
   assert.equal(setup.output, 'undefined', 'listWindows is Linux\'s');
   assert.deepEqual(setup.named_outputs, [], 'the core is written once per bootstrap');
+});
+
+test('on macOS agent.documentation.get reads the agent cursor\'s lookups itself and passes other names to the service; computer-only carries their text', {skip}, async t => {
+  const {exec, services} = facadeKernel(t);
+  ok(await exec('1;'));
+  for (const name of MACOS_LOOKUPS) assert.equal(ok(await exec(`nodeRepl.write(await agent.documentation.get("macos/${name}"));`)).output, doc(`macos/${name}.md`), name);
+  assert.deepEqual(services.sort(), ['browser.setup', 'sky.setup'], 'the browser service is not asked');
+  assert.equal(ok(await exec('nodeRepl.write(JSON.stringify([Object.keys(agent.documentation), typeof agent.documentation.get]));')).output, '[[],"function"]', 'shaped as the client\'s');
+  ok(await exec('await agent.documentation.get("screenshots");'));
+  assert.deepEqual(services.slice(-1), ['browser.get_documentation']);
+  const computerOnly = facadeKernel(t, {surfaces: 'computer'});
+  const first = ok(await computerOnly.exec('nodeRepl.write(typeof agent);'));
+  assert.deepEqual([first.output, first.named_outputs], ['undefined', [MAC_COMPUTER_ONLY_CORE]]);
 });
 
 test('a selected browser\'s documents come before the state; emit:false suppresses only the value; rewriteDocumentation skips the same requestMeta', {skip}, async t => {

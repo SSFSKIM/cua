@@ -183,7 +183,9 @@ extension Engine {
       // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops), #316's
       // new-window rule and #452's window of the app's over the point included, as a click's.
       let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, windowID: windowID, hit: hit,
-                                  place: hitOutcome.place, hitMs: hitOutcome.ms, rehit: { hitTest(window: start.window, pid: appPid, at: start.point) }, app: app, appPid: appPid,
+                                  place: hitOutcome.place, hitMs: hitOutcome.ms, rehit: { hitTest(window: start.window, pid: appPid, at: start.point) },
+                                  hitTest: { hitTestOutcome(window: start.window, pid: appPid, at: start.point, now: monotonicMilliseconds) },
+                                  app: app, appPid: appPid,
                                   context: context)
       meta.stalePoint = stale.record
       pointer.staleRefusal = stale.refusal

@@ -74,6 +74,12 @@ import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs
 import {realHome} from '../runtime/layout.mjs';
 import {approvalMemory} from './approval-memory.mjs';
 
+// The request metadata that carries profiles_list's keys to the browser service, and the keys whose browser the
+// running runtime cannot reach (src/browser-service/browsers.mjs; not imported, so this process loads none of the
+// service; a test keeps them equal).
+export const BROWSER_KEYS_META = 'cua/browserKeys';
+export const BROWSER_KEYS_UNREACHED_META = 'cua/browserKeysUnreached';
+
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
 // #117 M3: an approval is remembered for its connection only (./approval-memory.mjs), so `always` would be a
@@ -136,11 +142,15 @@ export function createServer({
   const respond = (id, result) => write({jsonrpc: '2.0', id, result});
   const respondError = (id, code, message) => write({jsonrpc: '2.0', id, error: {code, message}});
 
-  // The turn metadata and the sandbox state, over whatever `_meta` the client sent.
-  const turnMeta = (taskId, callId, clientMeta) => withSandbox({
-    ...clientMeta, callId, threadId: sessionId, sessionId,
-    'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: clientModel ?? 'mcp-client'},
-  }, sandboxState);
+  // The turn metadata and the sandbox state, over whatever `_meta` the client sent, less the browser keys' metadata,
+  // which only the connection puts on a call as it reaches the runtime (src/mcp/connection.mjs).
+  const turnMeta = (taskId, callId, clientMeta) => {
+    const {[BROWSER_KEYS_META]: _, [BROWSER_KEYS_UNREACHED_META]: __, ...kept} = clientMeta ?? {};
+    return withSandbox({
+      ...kept, callId, threadId: sessionId, sessionId,
+      'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: clientModel ?? 'mcp-client'},
+    }, sandboxState);
+  };
 
   function upstreamRequest(method, params, {clientKey} = {}) {
     const id = ++nextUpstreamId;

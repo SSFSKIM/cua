@@ -7922,6 +7922,165 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   0 failures; the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #453.
 
+- Decision (#442, ruling 1073, 2026-11-22, `fix/442-other-control-on-top`, plugin 0.29.1; amends #433's keep and #296's
+  `nonInteractiveHit` keep, StalePoint.swift `otherControlOnTopVerdict`, `heldAtPoint`, `recordLacks`): **a click kept
+  through an inert layer, or past a non-interactive hit, is judged by the control the corrected hit lies in; a live
+  control the record does not hold at the point refuses (`otherControlOnTop`).** Kit `probe/442-measure` (README
+  2050fb42, rule cost b7beb361; runs 45050323412, 45053201038 and 45055361997 on main 5580ac20) measured `slideover`: link
+  A under a veil, button B slid over it by a transform, A neither removed nor changed. Main kept and landed on B
+  (Electron cold 20/20, its text point warm 10/10) or kept while CfT's element route pressed the overlay group, reaching
+  nothing. #433's check vouches for the recorded controls beneath an inert layer and `nonInteractiveHit` keeps without
+  asking whose control the hit lies in, so neither sees stacking. The page's own hit test does: a corrected AX hit named
+  `elementFromPoint`'s element in 1,694 of 1,695 rows, through `pointer-events: none` and by z-order. Chromium's first
+  answer at a new point is approximate (the deepest element by bounds, here the overlay group, which is the recorded
+  inert node itself) and corrects 25-35 ms later at the median, 61 ms at most, with no signal; Safari's first answer is
+  already correct.
+  The rule runs only where the verdict kept and #433's check ran and kept (`underlying` set), or the reason is
+  `nonInteractiveHit`; every other verdict is main's. (1) The hit: on a Chromium-family app (`PageEngine.chromium`, by its
+  Info.plist's principal class, as every Chromium rule here decides it: Chrome, CfT, Electron;
+  `Engine.stalePointCorrectsLate`) the point is hit-tested again after 80 ms (`stalePointCorrectionMs`) and that answer
+  is judged, through a bare hit-test that never replaces the action's own (`LatestHit`, which #454's and #458's steps
+  read after the guard); elsewhere the action's own hit. The meta's `stalePoint.hitCorrection` (`same`, `changed`,
+  `none`) says whether the second answer named the first's element, whenever it was taken. The element route's recheck
+  takes the same wait on the same paths. (2) Acting control: the hit itself or its nearest ancestor that acts on its own,
+  #443's `liveControl` walk (`firstActing`: an interactive role or AXPress read now, below the document), which now tells
+  no control (the document reached) from an element it cannot classify (a role or actions unread, a parent unread, the
+  bound). (3) The controls the record holds at the point (`heldAtPoint`): the node as the verdict found it (its own
+  handle or one re-created in place) or the control it lies in now; #433's control beneath found on its own handle; the
+  hit's recorded control when the hit is its recorded content shown at the point, both in place (#443's
+  `contentVouches`, a front link's text drawn outside its frame); or any element #305's `recordedHitAtPoint` takes (a
+  recorded node the screenshot showed at the point, in place within 2 pt, by handle, or re-created under #431's
+  refusals). A live control outside them refuses. (4) No control: a post-wait hit the record is known to lack refuses
+  (`recordLacks`: no recorded element, framed, frameless or in the handle map, and its nearest recorded ancestor had
+  every child recorded, as #330 proves novelty); a recorded hit keeps, so a scrim, whose 80 ms answer is legitimately
+  its first, keeps as on main. (5) An unclassified ancestor, no hit, or a second hit-test answering nothing keeps the
+  verdict.
+  The refusal is `screenChangedSinceScreenshot`, meta `stalePoint.reason` `otherControlOnTop`, `controlRole` the role of
+  the control on top (none on the no-control refusal), as #443's `controlGone`; its sentence: "The screen changed since
+  the screenshot: the <control> now lies on top at this point, over the <shown> the screenshot showed there, and a click
+  would reach it." or "...: at this point the app now answers an <element> the screenshot did not show, over the <shown>
+  it showed there, so what a click would reach is not known.", then "Nothing was sent. Call getScreenshot for a new
+  screenshot and aim again from what it shows." (the activated form as the guard's others; `shown` is #433's control
+  beneath, else the node's recorded control, else the node). The service forwards `stalePoint` whole, so both new fields
+  reach the MCP result unchanged. The model-facing docs are unchanged: "has given way to another control" covers it.
+  Decisions of the build: the brief's example of an uncorrected hit (CfT's approximate overlay group) is the recorded
+  node itself (README b7beb361, the coordinator's correction), so a recorded post-wait hit keeps; the record must also
+  be known to lack the hit (`recordLacks`), since a cut record (node cap, deadline, width rule) may lack what the
+  screenshot showed, and a read that cannot say keeps main's verdict. A kept verdict carries the action's own hit, so the
+  element route still builds from it (on CfT, `overcontrol` still presses the overlay group, as on main); taking the
+  corrected hit for the route is not part of this change.
+  Limits and costs: `siblingstack` (two recorded controls stacked at the point, the top one removed) keeps, a declared
+  limit (spike #479); walking the web area for live controls was dropped (seconds on a 6,000-element page), and
+  `elementFromPoint` through the extension is not used. 80 ms on every Chromium click on the two keep paths, again at
+  the element route's recheck (the cost and an early exit, #491). A Chromium correction slower than 80 ms keeps the
+  veil's hit as main does (`hitCorrection` `same` over a veil marks such rows; #480). `veilinto`'s link point is kept on
+  Chromium through `recordedHit` and `hitAboveNode`, on main and the fix alike, so the check never runs there (#490).
+  Evidence: `docs/evidence/2026-11-23-other-control-on-top/README.md`. On Chromium, a new inert element at the point past a `nonInteractiveHit` (the
+  record proving it new) now refuses where main kept. The rule as measured refused 0 of 890 keep rows (README b7beb361).
+  Proven offline (`OtherControlOnTopTests`, 7 tests): `slideover` on Chromium (first hit the veil or B's text, the
+  80 ms hit B or its text, at the link and at the text) and Safari-like (B's text at once, no wait) refuse, with the
+  meta and sentence; a post-wait hit the record lacks refuses, outside a web area too, while a scrim's recorded veil, a
+  cut record, an unclassified hit, no second answer and an engine that answers at once keep; the recorded A under the
+  veil, A's own text, and A widened by its count keep; a non-interactive hit on B's text refuses; `siblingstack`'s and
+  `bgbutton`'s records keep; the wait is never taken on `sameElement` without a layer, `recordedHit`, `interactiveHit`,
+  `nodeGone`, `hitAboveNode` or `decomove`'s `controlGone`. With the check returning main's verdict, five of the seven
+  fail; the other two (the declared limit's records, and the wait's scope) pin mutations. Fourteen mutations (the
+  paths, the wait, the corrected hit, the no-control refusal and its engine, record and coverage conditions, each clause
+  of `heldAtPoint`, the unclassified case) each fail a test, #443's `testOverflowingContentOfAControlInPlaceVouches`
+  catching the content vouch, which a first draft lacked. The whole suite run once with every existing verdict given
+  a second answer equal to the first (Chromium with nothing to correct) passed unchanged: #433's keep cells (`retext`,
+  `plain`, `like`, `remount`, `textbehind`, `overlaprow`, `overlapinto`), #340's and #443's. 1614 swift tests, 0
+  failures. Not measured live: this build.
+  Date/Author: 2026-11-22, cursor235's builder for #442.
+
+- Decision (#442, ruling 1078, the review of adebc77a2 by reviewer-high, 2026-11-22; narrows the entry above,
+  StalePoint.swift `otherControlOnTopVerdict`, `movedOverPoint`, `appWindowVerdict`): **`otherControlOnTop` refuses only
+  a known control that moved over the target; anything unread, unrecorded or inconclusive keeps main's verdict.** The
+  review found 2 P1 and 5 P2, reproduced on fakes: six false refusals and two wrong-target keeps. The cause: a control
+  not found in the record was taken for a different control, and the recorded node's live parent was taken for its
+  owner. So `heldAtPoint` and the no-control refusal (`recordLacks`) are gone, and the rule is:
+  (1) The re-hit after the 80 ms wait is a `WindowHit` and goes through #452's window check first (`appWindowVerdict`,
+  extracted from `guardedPointVerdict`, with the window list read afresh): a window of the app's that arrived over the
+  point during the wait refuses `appWindowOverPoint`. The action's own hit stays the verdict's, as before. The click's
+  guard, the drag's and the element route's recheck all build the same check (`Engine.stalePointWindowCheck`).
+  (2) Where #433's check ran, a candidate beneath the layer that the corrected hit's control names is judged by #433's
+  own test (`underlyingRefusal`: its handle, its label, its frame under the pointer), whichever candidate it is and not
+  only the first survivor. Passing, it becomes the meta's control beneath and the point is kept; failing, the point is
+  refused as #433 refuses (`relabelled`, `frameMoved`).
+  (3) Otherwise the control refuses `otherControlOnTop` only when all of these hold (`movedOverPoint`): (a) it is live
+  (`firstActing` read it now; an unread role, actions or parent ends the walk inconclusive, and that keeps); (b) the record
+  holds it by handle as a control (an interactive role or AXPress read then, as `controlVouches` asks); (c) its every
+  recorded frame, widened 2 pt, lies away from the point the model meant; (d) it is not the recorded control at the
+  point. For (d), the node itself, the node's recorded control (`ScreenshotNode.control` by handle, never a live parent),
+  and the recorded control of the hit, where the hit is recorded content whose shown frame held the point (a link's text
+  overflowing its frame, #443's `contentVouches` shape).
+  The no-control refusal and its sentence are gone; `controlRole` is always set on the refusal.
+  Proven offline (`OtherControlOnTopTests`, 10 tests). These are the reviewer's eight shapes:
+  - the veil moved into B as B slides over refuses (B is recorded elsewhere);
+  - an overflowing link whose text's parent no longer reads, the corrected hit on the link, keeps;
+  - a front button the cut walk omitted keeps;
+  - a popup arriving during the wait refuses `appWindowOverPoint`;
+  - an inert group that gained AXPress keeps, as main does (a declared limit);
+  - a re-created scrim keeps;
+  - a child Chromium hits that no parent lists keeps;
+  - with two candidates, the front one widened 10 pt keeps, as the named control beneath.
+  Added beside them: the named candidate relabelled refuses `relabelled`, and a post-wait group the record lacks, an
+  unread hit, the recorded veil and no second answer keep. `slideover` still refuses at both points, on Chromium and
+  Safari-like, and a non-interactive hit on B's text still refuses.
+  Against adebc77a2's rule put behind the new signature, every one of those shapes fails (18 assertions in 5 tests),
+  each by its own assertion. Eleven mutations each fail a test: the window check, the corrected hit, the named candidate
+  and its keep, (b) twice, (c), (d)'s node and its content, the content's shown frame, and an unknown control taken for
+  none. #433's, #340's and #443's tests are unchanged. 1617 swift tests, 0 failures. Not measured live: this build.
+  Date/Author: 2026-11-22, cursor235's builder for #442.
+
+- Decision (#442, the re-review of adebc77a2..d7b958b93, 2026-11-22, the last wave; amends the entry above): five P2
+  false refusals against main and one P3, all fixed. From here the counted qualification is the check, with no further
+  review round.
+  1. A named candidate that fails #433's test is no longer refused for #433's reason. Passing, it is the control beneath;
+     failing, the moved-control rule decides, and a control recorded at the point never meets that rule. Example: a front
+     link whose box shrank away from the point while its text stays there, which main keeps and lands on.
+  2. (d) asks whether the record showed any content of the control at the point, whatever the hit names. Example: the
+     hit is the link whose overflowing text lay under a deeper veil.
+  3. A control #305's `recordedHitAtPoint` takes at the point (in place, its own frame or its parent's padding,
+     `.ancestor`) has not moved.
+  4. A node whose control is unknown (`controlUnknown`, a wrapper's actions unread then) leaves ownership inconclusive,
+     and that keeps.
+  5. Unplaced frames (`unplacedFrame`, CGRect.zero) establish no previous location.
+  6. (P3) When the delayed hit supplies #452's refusal, the meta's `hitMs` is that hit-test's time
+     (`correctedHitMs`), in the click's guard and the final recheck. The verdict keeps the action's own hit.
+  Proven offline (`OtherControlOnTopTests`, 15 tests): five new tests, one per shape, and the popup test's timing.
+  - Against d7b958b93's rule, all six fail (10 assertions in 7 tests).
+  - Each fix reverted alone fails its own test: 1 the shrunk candidate (and the relabelled one, now main's verdict); 2
+    the overflowing content; 3 the parent padding; 4 the unknown ownership; 5 the unplaced button; P3 the popup's timing
+    and hit.
+  `slideover`, the popup and the reviewer's earlier eight shapes answer as before. 1622 swift tests, 0 failures.
+  Date/Author: 2026-11-22, cursor235's builder for #442.
+
+- Decision (#442 merged with #453's main 33c8dd09, 2026-11-22; amends the entries above): `appWindowVerdict`, which #442
+  pulled out of `guardedPointVerdict` for the delayed re-hit, now sets #453's `overLayer` and `observedLayer` as the
+  original did, with the window list read once per verdict. #453's row press does not take an `appWindowOverPoint`
+  that the delayed re-hit decided (`overlayPressApplies` requires `hitCorrection` nil). The reason: its decision reads
+  the action's own hit-test (`answered`), not the re-hit the refusal came from, and a window that opened during the wait
+  is not an overlay the screenshot showed. Cost: an overlay already in the screenshot, reached only by the corrected hit
+  (Chromium's approximate first answer in the observed window), stays refused as before #453. The popup test asserts
+  the layers and that the press does not apply, and it fails with the condition removed. 1659 swift tests, 0 failures;
+  the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #442.
+
+- Decision (#502, 2026-11-23): `popUpAwaitOpen` reads the control's kind through a local (`let kind = target.kind`), and
+  its local functions capture that, never `target`. Xcode 27.2 (Swift 6.4.2, 27B52) crashed `swift build -c release`
+  in the SIL pass CopyPropagation ("Found a leak due to a consuming post-dominance failure", "Found ownership
+  error?!") on the function's AXUIElement specialization, a leak of the `target` argument. Bisected: it is
+  `activatedNow` (declared in the poll loop and called from its `defer`) capturing `target`. Hoisting the kind into
+  `unconfirmed` and the restore note, with `activatedNow` left on `target`, still crashed; hoisting it there too fixed
+  it. Behaviour is unchanged, since `target` is an immutable struct. A restructure was chosen over `@_optimize(none)`,
+  which would leave the function unoptimized and the pattern free to recur. The code carries a comment so the hoist is not undone. Proven locally on
+  Xcode 27.2: the release and debug builds pass, and `swift test` runs 1659 tests (1 skipped, `CUA_304_TREES` unset)
+  with 0 failures. Hosted CI cannot see this class of failure yet: `engine-swift`'s `macos-latest` carries Xcode 26.x
+  only, and Xcode 27 exists only on the preview image `xcode-27`, which no ci-kit lane selects. Until a lane can reach
+  it, the local release build on Xcode 27.2 is the check (`tech-debt-tracker.md`).
+  Date/Author: 2026-11-23, cursor235's builder for #502.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -103,6 +103,7 @@ test('MAWS down at start: the wait ends at the first refusal, the entry reads ma
   assert.ok(Date.now() - started < 1000, 'no fixed 5 s wait when nothing listens');
   assert.deepEqual(client.entries(), [{key: 'maws', ready: false, reason: 'maws_unreachable'}]);
   assert.equal(client.defaultInstance(), null);
+  assert.deepEqual(client.keys(), {maws: 'maws:'}, 'before its hello maws is the marker, which selects the first MAWS instance (#493)');
   assert.equal(existsSync(client.hostPaths()[0]), false, 'the host socket exists only while connected');
   const peer = await startFakeMawsPeer({path: peerPath});
   t.after(() => peer.stop());
@@ -160,6 +161,7 @@ test('a second configured backend is maws-2; a refused hello (another protocol m
   await client.waitForHellos(2000);
   assert.deepEqual(client.entries(), [{key: 'maws', ready: true, extensionInstanceId: a.instanceId}, {key: 'maws-2', ready: false, reason: 'maws_unreachable'}]);
   assert.equal(client.defaultInstance(), a.instanceId, 'the first configured backend is the default');
+  assert.deepEqual(client.keys(), {maws: a.instanceId}, 'a key is offered once its backend said hello; maws-2 has not (#493)');
   await waitFor(() => b.connections.length >= 2, 'the refused backend retried');
   assert.equal(b.connections[0].ext.refusals[0]?.code, 'protocol_mismatch');
   assert.equal(existsSync(client.hostPaths()[1]), false);

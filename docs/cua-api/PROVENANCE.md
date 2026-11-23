@@ -17,7 +17,9 @@ source comment cannot go inside them; this file carries it instead.
 the edits of the surface inventory's Tables 2 and 3
 (`docs/doperpowers/research/2026-10-14-own-repl-host/surface-inventory.md`): the `"iab"` and `"mcpapps"` browser types
 and `codexSessionId` (:66, :68), the `"windows"` target (:128), the MCP App tabs paragraph (:154), and the Windows words,
-clauses and sentences at :160, :162, :164, :170, :198, :204, :205 and :206, and the Orbit new-tab page clause (:175).
+clauses and sentences at :160, :162, :164, :170, :198, :204, :205 and :206, and the Orbit new-tab page clause (:175);
+and one exception of cua's own at :138 (#493): `createBrowserTab`'s `visible` on a browser without the visibility
+capability is ignored and noted in the result, where the vendor's throws.
 After those deletions, the surface inventory's "Table 3 amendment (2026-10-15, owner ruling)" repairs the grammar of the
 two sentences they broke: "Linux always return" becomes "Linux always returns" (:170), and "Linux app `paste` support
 only `text` and use" becomes "supports … uses" (:204). Product names appear in the vendor's prose only inside the

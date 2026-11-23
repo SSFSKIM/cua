@@ -792,9 +792,13 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
                              activated: () -> Bool = { false },
                              restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID, _ intervened: () -> Bool) -> PopUpRestoreRecord,
                              record: inout PopUpClickRecord, meta: inout InputMeta) throws {
+  // #502: the local functions read `kind`, never `target`. When `activatedNow` (declared in the loop and called from its
+  // `defer`) captures `target`, Xcode 27.2's (Swift 6.4.2) release build crashes in the SIL pass CopyPropagation
+  // ("Found ownership error?!", a leak of `target` on the AXUIElement specialization). Keep the capture off `target`.
+  let kind = target.kind
   func unconfirmed() -> EngineError {
     record.activated = activated()
-    return popUpUnconfirmed(app: app, kind: target.kind, activated: record.activated)
+    return popUpUnconfirmed(app: app, kind: kind, activated: record.activated)
   }
   guard let before else {
     record.baselineUnread = true
@@ -816,7 +820,7 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
       func activatedNow() -> Bool {
         guard !noted, activated() else { return noted }
         (noted, record.activated) = (true, true)
-        meta.note = popUpActivatedNote(app: app, kind: target.kind)
+        meta.note = popUpActivatedNote(app: app, kind: kind)
         return true
       }
       defer { _ = activatedNow() }
@@ -831,7 +835,7 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
       guard crossed, !activatedNow() else { return }
       let restored = restore(persons, appWindow, intervened)
       record.restored = restored
-      if !restored.complete && restored.stopped != .personInput { meta.note = popUpRestoreIncomplete(app: app, kind: target.kind) }
+      if !restored.complete && restored.stopped != .personInput { meta.note = popUpRestoreIncomplete(app: app, kind: kind) }
       return
     }
     let ms = record.ms ?? 0

@@ -161,9 +161,11 @@ struct OverlayNote: Equatable {
 
 /// Whether #453 may replace main's answer: only main's `appWindowOverPoint` (so every verdict decided before it, #316's
 /// `newWindow`, and every tree verdict, #443's `controlGone` included, stays main's), for a plain left click (one click,
-/// the left button, no spike route), never a drag, a right click or a double click.
+/// the left button, no spike route), never a drag, a right click or a double click. Not one #442's delayed re-hit decided
+/// (`hitCorrection` set): the decision reads the action's own hit-test (`answered`), not the re-hit the refusal came from,
+/// and a window that opened during the wait is no overlay the screenshot showed.
 func overlayPressApplies<Element>(_ verdict: StalePointVerdict<Element>, button: MouseButton, count: Int, forced: Bool) -> Bool {
-  verdict.reason == .appWindowOverPoint && button == .left && count == 1 && !forced
+  verdict.reason == .appWindowOverPoint && verdict.hitCorrection == nil && button == .left && count == 1 && !forced
 }
 
 /// The hit-test's answer read up to where the overlay starts: through its AXWindow for `axHit` (another window of the

@@ -31,6 +31,9 @@ export function transformCoreDocument(source){
  // Table 3 amendment (2026-10-15): only these two grammar repairs follow the literal Windows deletions.
  source=replaceOnce(source,'Linux always return full accessibility state.','Linux always returns full accessibility state.');
  source=replaceOnce(source,"Linux app `paste` support only `text` and use the platform's native text input.","Linux app `paste` supports only `text` and uses the platform's native text input.");
+ // cua's own exception (#493, 2026-11-23): the own host's createBrowserTab ignores `visible` on a browser without the
+ // visibility capability, where the vendor's throws; the vendor's bytes stay pinned as they are.
+ source=replaceOnce(source,'unsupported settings throw. */','unsupported settings throw, except `visible` on a browser without the visibility capability, which is ignored and noted in the result. */');
  // No surviving ChatGPT/Codex/Orbit product prose in this pinned core: do not rename identifiers, URLs or Sky.
  return source;
 }

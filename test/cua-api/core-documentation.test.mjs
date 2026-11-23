@@ -52,6 +52,9 @@ const CORE_EDITS = [
   [' On Windows, pass a coordinate target and `{ pixels: 500 }`; element targets and page counts are unsupported.', ''],
   // :206 "Notes Windows selectText word".
   ['`selectText` is unavailable on Linux and Windows.', '`selectText` is unavailable on Linux.'],
+  // :138 cua's own exception (#493, 2026-11-23): own-host createBrowserTab ignores `visible` without the visibility
+  // capability (src/cua-api/browser-api.mjs), where the vendor's throws.
+  ['  /** Apply options before opening the tab; omitted settings stay unchanged, unsupported settings throw. */\n', '  /** Apply options before opening the tab; omitted settings stay unchanged, unsupported settings throw, except `visible` on a browser without the visibility capability, which is ignored and noted in the result. */\n'],
 ];
 
 // The surface inventory's "Table 3 amendment (2026-10-15, owner ruling)": two grammar repairs of sentences the Windows

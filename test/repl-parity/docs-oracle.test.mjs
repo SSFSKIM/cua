@@ -15,6 +15,9 @@ test('core transform preserves every surviving source byte and refuses unpinned 
  assert.equal(coreDocument({host:'vendor'}),source+'\n'+fixture('vendor-confirmations.md'));
  assert.equal(coreDocument({host:'cua'}),expected+'\n'+fixture('vendor-confirmations.md'));
 });
+test('the oracle\'s own-host core is the shipped first-call document, byte for byte (#493\'s visible exception included)',()=>{
+ assert.equal(transformCoreDocument(fixture('vendor-core.md')),readFileSync(new URL('../../docs/cua-api/core.md',import.meta.url),'utf8'));
+});
 test('fixtures independently match the readable vendor source when explicitly supplied',()=>{
  const pins=JSON.parse(fixture('source-pins.json'));
  for(const entry of Object.values(pins.files))assert.equal(hash(fixture(entry.fixture)),entry.sha256);

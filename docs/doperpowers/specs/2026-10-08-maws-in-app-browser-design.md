@@ -1048,6 +1048,49 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   Rationale: a lease that followed the undo could screenshot or act on the old size.
   Date/Author: 2026-10-26, the design session (cua_repl session 1ea561bc), recording the MAWS architect's change.
 
+- Decision (2026-11-23, #493, plugin 0.29.3): the documented first path works on the first try. Two MAWS sessions on
+  2026-11-22 failed at their first browser call: `createBrowserTab(id, url, {visible: true})` threw `Capability is not
+  available: visibility`, `createBrowserTab("iab" | "maws", …)` answered `Browser is not available`, and the Selected
+  Browser block named the backend "cua". Four changes:
+  (1) profiles_list's keys are browser ids. The connection puts the keys on every call as it reaches the runtime
+  (request metadata `cua/browserKeys`, never the client's: `src/mcp/connection.mjs` through `src/mcp/lazy-runtime.mjs`
+  `outgoing`, so a first call held by the launch is stamped after the MAWS hellos; `src/chrome/discovery.mjs`
+  currentBrowserKeys): {key: instance} for the MAWS backends (`maws`, `maws-2`, … once each said hello; `maws` before
+  its hello is the marker `maws:`) and every profile bound on the cua route. So a key rebound, or a MAWS backend that
+  connects, while the runtime lives selects what profiles_list names at that moment, never a stale binding; per-call
+  metadata rather than a launch variable because the trusted worker's sandbox cannot read the registry. With MAWS
+  backends configured a reserved MAWS key is never a Chrome profile's, even one registered before the reservation or
+  for a backend not yet connected. The service (`src/browser-service/browsers.mjs`) tries a key only when no id,
+  backend type or family answers, and a backend type or family (`iab`, `chrome`, `extension`, …) is never a key even
+  when nothing answers to it: a profile registered under such a name is a miss that names its extensionInstanceId.
+  So a selection lands in a Chrome profile only when it names that profile, by id or by its current key. A key
+  selects the listed extension browser carrying its instance; when two listed browsers carry it (two hosts serving one
+  profile or panel) the first listed, since both are the same browser. `maws` falls back as the unqualified default
+  does (its instance unknown or not listed: the first listed MAWS instance), so `getBrowser()` and
+  `getBrowser({id: "maws"})` always agree, and never reach Chrome. A miss keeps the vendor's sentence and appends the
+  listed ids and the keys that select a browser now, never a colliding one. The browser service dials only the
+  sockets its launch listed (and its sandbox admits no other), so a profile bound after the launch is not reachable
+  from that runtime: rather than widen what the trusted worker dials mid-run, the connection also names such keys
+  (`cua/browserKeysUnreached`, keysBeyondLaunch) and their miss says this runtime cannot reach the browser and a new
+  session can.
+  (2) `visible` on a browser without the `visibility` capability is ignored, and the result says so after the tab's
+  state (`src/cua-api/browser-api.mjs`); with the capability it is set as before. MAWS gets no visibility capability:
+  raising its Browser panel would move the person's windows.
+  (3) The Selected Browser block names a MAWS backend "MAWS in-app browser (<its key>)", the key whose instance it is
+  (no key when none carries it, never a guessed one); the listing and selection results keep the backend's own name.
+  The own host's core reference (`docs/cua-api/core.md`) states the `visible` exception; the vendor's stays as it is.
+  (4) js's MAWS rule (`src/mcp/surface.mjs`) says the in-app browser's tabs show in the session's Browser panel, that
+  "maws" or another key works where an id goes, that there is no "iab" browser, and to leave `visible` out.
+  What stays the vendor's: a macOS session with the computer surface on the default (vendor) engine runs the vendor's
+  REPL host, whose js description is the vendor's unedited text (the `"iab"` line and its `visible` advice; cua's own
+  host already removes them, `src/repl-host/instructions.mjs` BROWSER_EDITS) and whose `cua.createBrowserTab` is the
+  vendor's, which still throws on `visible` there. cua's rule in front of that text says to leave `visible` out, and
+  (1) and (3) live in cua's browser service, which both hosts use. The college sessions ran that host.
+  Rationale: the agent's first call is its most literal one; each failure sent an agent away from the panel the user
+  watches (one considered headed Playwright on the owner's screen). Accepting a key costs nothing an id did not, and
+  ignoring `visible` with a note keeps the call useful without letting it raise a window.
+  Date/Author: 2026-11-23, the #493 builder.
+
 ## Outcomes & Retrospective
 
 (2026-10-08, at the pull requests.) The route works as designed: MAWS's main process serves the extension's

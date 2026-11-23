@@ -78,6 +78,10 @@ Part 1 names, for every item, the release each verdict stands on.
 - **On arm64 at twice the load, an Electron drop can answer ok where it landed outside the target** (#415, a declared
   limit), seen in two test cells: 4 of 30 in L4d's Electron long-left at H8 on 0.4.3, 3 of 30 in L4a's left at
   H6 (part 3).
+- **In dedicated mode, an Electron drop can answer ok without a full settle** when the request names a window other
+  than the one the drag presses into: the settle takes the named window's rest, which can be zero, not the Electron
+  source's (#487, P2, for 0.4.4; found by M5's whole-branch review, not seen in its runs, which named the press
+  window).
 - **Some context menus answer "unconfirmed" after about a second**: a page that draws its own menu, where the vendor
   answered "ok" (#377), and GTK 4's, Firefox's and Qt's menus, which the engine does not detect (#379) (part 3).
 - **Chromium drags on a shared desktop are refused unless their whole path is visible**, and an Electron key release
@@ -470,6 +474,9 @@ still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/sp
   - **#415** (P2): at twice the load on arm64, an Electron drop can answer ok where it landed outside the target,
     seen in L4d's and L4a's test cells (part 3).
   - **#459** (P2): the long Chrome drag and drop's residual bound, 1.5% (part 3).
+  - **#487** (P2): an Electron drop in dedicated mode, with the request naming a window other than the press window,
+    settles on that window's rest, not Electron's, so it can answer ok on a stale accept; fixed in 0.4.4. **#488**
+    (P3): a handle end that already sees an Electron take can answer a landed drop unconfirmed.
   - **#468**, **#474**, **#457**, **#460** (P3): the confirmation's read order, the unshipped accept lane, #358's
     margin and the coverage gaps (part 3).
   - **#384** (closed), the browser, not the Linux engine: under near-saturating CPU load, a background tab the agent

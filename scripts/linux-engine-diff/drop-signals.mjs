@@ -347,11 +347,13 @@ export const FRESH = { from: 'fresh', counter: { entered: 0 } };
  * `FRESH`), with both and their requests kept (`before_from`, `after_from`). Null where either side has no current
  * counter or the counter went back, which fails the row (drop-signals-judge.mjs `settlesEntered`).
  */
-export function settleCount(before, after) {
+export function settleCount(before, after, requests) {
   const [b, a] = [before?.counter?.entered, after?.counter?.entered];
   if (!Number.isInteger(b) || !Number.isInteger(a) || a < b) return null;
   if (!(before.from === 'fresh' || Number.isInteger(before.from)) || !Number.isInteger(after.from)) return null;
-  return { before: b, after: a, entered: a - b, before_from: before.from, after_from: after.from };
+  // the drop's own requests, its first and last (a drag's one request both): the after must be the last's own line
+  if (!Number.isInteger(requests?.first) || !Number.isInteger(requests?.last) || requests.first > requests.last || after.from !== requests.last) return null;
+  return { before: b, after: a, entered: a - b, before_from: before.from, after_from: after.from, requests: { first: requests.first, last: requests.last } };
 }
 
 /** Each engine's last request in a sitting's drops (`counterOf` its reply): the next drop's `before`. */
@@ -368,25 +370,31 @@ const PLAIN_SOURCE = 'Plain source';
  * presses at (the named window's root origin, `ctx.named`, plus the path's first point in its coordinates); `park`, the
  * real pointer parked there on the scene's window and read back (`parkPointer`: the window chain under it, and whether
  * the scene's window is in it); `source`, the plain source's rectangle on the root from the page's tree; `inside`,
- * whether the press lies in it. The park is the pointer where the drag's own first motion puts it.
+ * whether the press lies in it. The park is the pointer where the drag's own first motion puts it. What is on top at the
+ * point is read first (`desktop.topAt`): a point the scene's window does not hold, or a park the pointer's reading then
+ * refuses, answers `{root, refused}`, and the drop sends no input (`oneDrag`). `park` is the parking, for the tests.
  */
-async function namedAim(ctx, path) {
+export async function namedAim(ctx, path, { park = parkPointer } = {}) {
   const { desktop, scene, named, oracle } = ctx;
   const first = namedPath(scene, named, path)[0];
   const root = { x: named.x + first.x, y: named.y + first.y };
-  let park;
+  // what is on top at the press point, read before any warp (the review of 1317cc35, P2 4): only the scene's Electron
+  // window may hold it, or the trial is refused and nothing is moved or pressed
+  const { top, holds } = desktop.topAt(root, [scene.id]);
+  if (holds !== scene.id) return { root, top, holds, refused: `the press point (${root.x}, ${root.y}) is not over the scene's Electron window (on top there: ${top ? `0x${top.toString(16)}` : 'the root'})` };
+  let parked;
   try {
-    const reading = parkPointer(root, scene.id);
-    park = { ok: true, at: { x: reading.x, y: reading.y }, chain: reading.chain };
+    const reading = park(root, scene.id);
+    parked = { ok: true, at: { x: reading.x, y: reading.y }, chain: reading.chain };
   } catch (e) {
     if (!(e instanceof ParkRefused)) throw e;
-    const reading = readPointer();
-    park = { ok: false, why: e.message, at: reading ? { x: reading.x, y: reading.y } : null, chain: reading?.chain ?? null };
+    // the window under the point changed between the read and the warp: refused, and nothing is pressed
+    return { root, top, holds, refused: e.message };
   }
   const node = preorder((await desktop.state(scene)).ax_tree).find((n) => n.name === PLAIN_SOURCE);
   const e = node ? oracle.extents(node.id) : null;
   const source = e && e.w > 0 ? { x: e.x, y: e.y, w: e.w, h: e.h } : null;
-  return { root, park, source, inside: source ? pathUnder(source, [root]).length === 1 : null };
+  return { root, top, holds, park: parked, source, inside: source ? pathUnder(source, [root]).length === 1 : null };
 }
 
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
@@ -403,8 +411,10 @@ export async function handleDrag(engine, scene, path) {
   const t0 = performance.now();
   const steps = [{ action: 'start', ...screen[0] }, ...screen.slice(1).map((p) => ({ action: 'move_to', ...p }))];
   let failed = null;
+  let firstId = null;
   for (const step of steps) {
     const value = await engine.request('drag_handle', step);
+    firstId ??= value.id;
     if (value.response.ok !== true) {
       failed = value;
       break;
@@ -413,7 +423,7 @@ export async function handleDrag(engine, scene, path) {
   const end = await engine.request('drag_handle', { action: 'end' });
   const value = failed ?? end;
   // the end's own reply (its id and stats line), whatever came before it: where the handle's settle is counted
-  return { ...value, ms: performance.now() - t0, end: failed ? end.response : undefined, endReply: { id: end.id, stats: end.stats } };
+  return { ...value, ms: performance.now() - t0, end: failed ? end.response : undefined, endReply: { id: end.id, stats: end.stats }, firstId };
 }
 
 /** The plans: `[lane, cell, drags]`. The never-take survey reads every drag's start point, whatever its lane. */
@@ -913,12 +923,18 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   // its coordinates, as the engine translates it), the window under it, read by parking the real pointer there (on the
   // scene's own window, as the drag would put it), and the plain source's rectangle on the root, read from its tree
   const aim = namedLane ? await namedAim(ctx, path) : undefined;
+  // a refused aim sends no input: the trial is recorded unexercised, with why (the review of 1317cc35, P2 4)
+  if (aim?.refused) {
+    const row = { kind: 'drop-signal', load: ctx.load, family: ctx.family, lane, cell, base, cover, i, end: null, block: spec.block, cold, skipped: aim.refused, named: { id: ctx.named.id, x: ctx.named.x, y: ctx.named.y, aim }, before, after: before };
+    emit(row);
+    return { row, after: before };
+  }
   const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : namedLane ? engine.request('drag', { window: { id: ctx.named.id }, path: namedPath(scene, ctx.named, path) }) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   // the settles the drop's requests entered, by the engine's own counter on the lines matched to its requests: the drag's
   // own reply, or the handle end's
-  const settle_count = settleCount(countedBefore, counterOf(handled ? value.endReply : value));
+  const settle_count = settleCount(countedBefore, counterOf(handled ? value.endReply : value), handled ? { first: value.firstId, last: value.endReply?.id } : { first: value.id, last: value.id });
   // an off-window cell's end read where the drag left the real pointer, once the drag image is gone: the window it is
   // for under it (the bare root, the xterm, the other browser window, the sink), or the row says what was there instead
   // and the tables leave the drag out. Read, not parked: a park on the bare root is a pointer warp on a window the run did
@@ -1134,6 +1150,6 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
     await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...(sink ? [sink] : []), ...(named ? [named] : []), ...ballast]);
   }
   const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${planName ?? 'main'}${part === undefined ? '' : ` (part ${part + 1} of ${args.plan})`}: ${rows.length} drags.`, ''];
-  for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows), namedSourceTable(rows)]) if (table.md.length) md.push(...table.md, '');
+  for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows), namedSourceTable(rows, { electronWindow: scene?.id ?? null })]) if (table.md.length) md.push(...table.md, '');
   return md;
 }

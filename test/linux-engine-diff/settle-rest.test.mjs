@@ -12,6 +12,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
+
 import { FRESH, counterOf, settleCount } from '../../scripts/linux-engine-diff/drop-signals.mjs';
 import { SETTLE_REST, dropSignalsVerdict, electronDropVerdict, engineVersionOf, settleOf, settlesEntered, versionDisagreements, watchFailedToStart, zeroCountOwn } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { dropRow } from './drop-rows.mjs';
@@ -35,7 +38,7 @@ const settle = (rest) => ({ after_motion: { answered: true, ms: 1.5 }, before_re
 const releaseRead = (extra = {}) => ({ steps: [['c', 1, 2]], accepted: true, shown: null, initial: '0', history: [], take_time: 1, read_ms: 0.9, error: null, start: [640, 400], motions: 0, last_motions: [], ...extra });
 
 /** A drop's settle count as drop-signals.mjs `settleCount` writes it: from the lines matched to its requests. */
-const counted = (entered, { before = 3, before_from = 7, after_from = 9 } = {}) => ({ before, after: before + entered, entered, before_from, after_from });
+const counted = (entered, { before = 3, before_from = 7, after_from = 9, requests = { first: after_from, last: after_from } } = {}) => ({ before, after: before + entered, entered, before_from, after_from, requests });
 
 /**
  * An Electron drop, landed and ok, whose requests entered `entered` settles by the engine's count: its settle on the
@@ -86,8 +89,8 @@ test("a row's settle record is its own operation's: the drag's on a drag lane, t
 
 test("the drop's settle count comes from the stats lines matched to its own requests, never the engine's last counter", () => {
   const reply = (id, entered) => ({ id, stats: { drop_settles: { entered, second_rest: 0, skipped: 0, unsettled: 0 } } });
-  assert.deepEqual(settleCount(counterOf(reply(7, 4)), counterOf(reply(9, 5))), { before: 4, after: 5, entered: 1, before_from: 7, after_from: 9 });
-  assert.deepEqual(settleCount(FRESH, counterOf(reply(1, 0))), { before: 0, after: 0, entered: 0, before_from: 'fresh', after_from: 1 });
+  assert.deepEqual(settleCount(counterOf(reply(7, 4)), counterOf(reply(9, 5)), { first: 9, last: 9 }), { before: 4, after: 5, entered: 1, before_from: 7, after_from: 9, requests: { first: 9, last: 9 } });
+  assert.deepEqual(settleCount(FRESH, counterOf(reply(1, 0)), { first: 1, last: 1 }), { before: 0, after: 0, entered: 0, before_from: 'fresh', after_from: 1, requests: { first: 1, last: 1 } });
   // a lost stats line on either side leaves the count null, which fails the row; never the last counter read twice
   assert.equal(settleCount(counterOf(reply(7, 4)), counterOf({ id: 9, stats: null })), null);
   assert.equal(settleCount(counterOf({ id: 7, stats: null }), counterOf(reply(9, 4))), null);
@@ -100,8 +103,9 @@ test('a whole count only: non-negative integer endpoints and entered their diffe
   assert.equal(settlesEntered({ settle_count: counted(1) }), 1);
   for (const c of [undefined, null, {}, { entered: 1 }, { before: 0, after: 1, entered: 0 }, { before: 4, after: 4, entered: 1 }, { before: -1, after: 0, entered: 1 }, { before: 0, after: 1.5, entered: 1.5 }, { before: '0', after: 1, entered: 1 }]) assert.equal(settlesEntered({ settle_count: c }), null, JSON.stringify(c));
   assert.equal(zeroCountOwn({ settle_count: counted(0) }), true);
-  assert.equal(zeroCountOwn({ settle_count: counted(0, { before_from: 'fresh' }) }), true);
+  assert.equal(zeroCountOwn({ settle_count: counted(0, { before_from: 'fresh' }) }), false, "a fresh engine's before is 0, not 3");
   for (const c of [{ before: 4, after: 4, entered: 0 }, counted(0, { after_from: null }), counted(0, { before_from: 'stale' })]) assert.equal(zeroCountOwn({ settle_count: c }), false, JSON.stringify(c));
+  assert.equal(zeroCountOwn({ settle_count: counted(0, { before: 0, before_from: 'fresh', after_from: 1 }) }), true);
 });
 
 test('a watch that failed to start is told apart from a release read that carried an error', () => {
@@ -296,4 +300,55 @@ test("the dispatcher reads the version from the run's meta row, its candidate wi
 
 test('SETTLE_REST names the plan, the first version and the rest', () => {
   assert.deepEqual(SETTLE_REST, { plan: 't17-fix3', since: [0, 4, 4], rest_ms: 30 });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix wave 4 (the whole-branch re-review of 1317cc35): each the reviewer's constructed case, which the judge at 1317cc35
+// passed
+
+test('wave 4, P2 1: two snapshots from one stats line, {before 19, after 19, entered 0, before_from 12, after_from 12}, settle removed, fails', () => {
+  const one = unsettled(settled(1, 30, { count: { before: 19, after: 19, entered: 0, before_from: 12, after_from: 12 } }));
+  assert.equal(zeroCountOwn(one), false);
+  assert.match(settleFails(fix3([settled(0, 30), one], V044)).join('\n'), /a drop's count of no settle is not shown to be its own/);
+  // the ids must be positive and strictly increase, and the after the drop's own last request; a fresh engine's before
+  // is 0 with no request of its own
+  const bad = [
+    counted(0, { before_from: 13, after_from: 12 }),
+    counted(0, { before_from: 0, after_from: 12 }),
+    counted(0, { before_from: -3, after_from: 12 }),
+    counted(0, { before_from: 7, after_from: 0, requests: { first: 0, last: 0 } }),
+    counted(0, { before_from: 'fresh', before: 5 }),
+    counted(0, { before_from: 7, after_from: 9, requests: { first: 9, last: 10 } }),
+    counted(0, { before_from: 9, after_from: 9 }),
+    counted(0, { before_from: 9, after_from: 11, requests: { first: 9, last: 11 } }),
+    { ...counted(0), requests: undefined },
+  ];
+  for (const c of bad) assert.equal(zeroCountOwn({ settle_count: c }), false, JSON.stringify(c));
+  for (const c of [counted(0, { before_from: 11, after_from: 13 }), counted(0, { before: 0, before_from: 'fresh', after_from: 1 }), counted(0, { before_from: 4, after_from: 9, requests: { first: 5, last: 9 } })]) assert.equal(zeroCountOwn({ settle_count: c }), true, JSON.stringify(c));
+});
+
+/** x64 H8's stored H1 run's meta row, as experiments.mjs wrote it (its candidate and attestation recorded). */
+const storedH1Meta = () => {
+  const file = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m5/x64/h8/out/H1.pinned-release/run/results.jsonl.gz', import.meta.url);
+  return JSON.parse(gunzipSync(readFileSync(file)).toString('utf8').split('\n')[0]);
+};
+
+test("wave 4, P2 2: a counted run whose candidate's attestation is absent, or attests no subject of its digest, does not stand", () => {
+  const meta = storedH1Meta();
+  assert.equal(meta.kind, 'meta');
+  assert.deepEqual(versionDisagreements(meta), [], 'the stored H1 stands as recorded');
+  const without = { ...meta, candidate: { ...meta.candidate } };
+  delete without.candidate.attestation;
+  assert.equal(versionDisagreements(without).length, 1, 'no attestation');
+  const unverified = { ...meta, candidate: { ...meta.candidate, attestation: { ...meta.candidate.attestation, verified: false } } };
+  assert.equal(versionDisagreements(unverified).length, 1, 'an attestation not verified');
+  const otherDigest = { ...meta, candidate: { ...meta.candidate, sha256: '0'.repeat(64) } };
+  assert.equal(versionDisagreements(otherDigest).length, 1, 'no subject of the digest');
+  // the settle check on that run fails rather than grants the pre-0.4.4 exemption
+  const v = fix3([settled(0, 30)], without);
+  assert.equal(v.counts.settle_rest.applies, null);
+  assert.match(settleFails(v)[0], /does not stand/);
+  // a development run need not have one
+  assert.deepEqual(versionDisagreements({ kind: 'meta', gate: false, cua_version: V044 }), []);
+  assert.deepEqual(versionDisagreements({ kind: 'meta', gate: 'pinned-dev', cua_version: V044, candidate: { version: V044, sha256: 'f'.repeat(64) } }), []);
 });

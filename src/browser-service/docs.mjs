@@ -5,18 +5,26 @@
 //
 // The first-use documentation. A selected browser's documentation is "# Selected Browser" with the browser and the
 // service marker `cua browser service <version>` (the parity harness's and the live runners' attestation checks it),
-// then the guidance documents its backend type and API members call for (docs-content.mjs: the vendor's where its text
-// still holds, and cua's own "cua-browser-service": the Chrome rules, the lifted budgets, evaluate in the page with
-// the no-replay rule, the prompts cua does not make, and the errors as the model sees them), the lookup catalogue, its
-// capabilities, the API reference generated from the manifest, and the launch's addendum. A document a command requires (requiredFor) must have been
-// read, through the browser documentation or by name, before that command runs. Dropped from the vendor: the
-// orbit/cloud renames and GaaS instruction overrides, and the Codex app's confirmation-policy override read from the
-// request meta.
+// then the guidance documents its backend type and API members call for, the lookup catalogue, its capabilities, the
+// API reference's summary generated from the manifest, and the launch's addendum. A document a command requires
+// (requiredFor) must have been read, through the browser documentation or by name, before that command runs. Dropped
+// from the vendor: the orbit/cloud renames and GaaS instruction overrides, and the Codex app's confirmation-policy
+// override read from the request meta.
+// cua's own split (#494, ruling 1107): an MCP client shows the first-use documentation inline only while the first
+// cell's result stays under its inline limit (Claude Code saves a result of more than 50,000 characters to a file), so
+// it carries what a first call needs and points to the rest. Inline: the selected browser, the guidance a first call
+// acts on (session naming; the requiredFor documents stay included), and Browser, Tabs and Tab with the Playwright and
+// locator members most tasks use (SUMMARY). Looked up by name, each behind a one-line pointer in the catalogue that
+// states its rule: the vendor's safety, tab cleanup, interruption and API use guidance, cua's own
+// "cua-browser-service" (docs-content.mjs), and "api-reference/<browser id>", the full reference the vendor inlined,
+// generated for that browser. A lookup returns its text without showing it, so every lookup the documentation
+// advertises is written as `nodeRepl.write(await …)`, the form that shows it in the cell's result.
 import {DOCUMENT_MANIFEST, DOCUMENTS} from './docs-content.mjs';
 import {CAPABILITY_INFO, unsupportedMembers} from './manifest.mjs';
 import {documentedName} from './browsers.mjs';
 
 const DOCUMENT_NAME = /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+$/u;   // Sz
+const REFERENCE = 'api-reference';   // the manifest's lookup for the generated full reference
 
 export class Documentation {
   // {apiManifest, disabledMemberIds: Set, serviceVersion, undocumentedApiMembers?, excludedDocumentation?, addendum?,
@@ -27,9 +35,11 @@ export class Documentation {
 
   options;
   readNames = new Set();
+  references = new Map();   // browser id -> its full API reference ("api-reference/<browser id>")
 
   async read(name) {
-    if (!this.options.documentManifest.some(d => d.name === name)) throw new Error(`Documentation is not available: ${name}`);
+    const generated = typeof name === 'string' && name.startsWith(`${REFERENCE}/`);
+    if (!generated && !this.options.documentManifest.some(d => d.name === name)) throw new Error(`Documentation is not available: ${name}`);
     const text = this.readDocument(name);
     this.readNames.add(name);
     return text;
@@ -53,16 +63,19 @@ export class Documentation {
       'If a tab is stale or missing later, obtain or create a fresh tab from this browser; never reselect a browser to recover a tab. Empty tab lists are normal after cleanup and do not invalidate this browser binding.',
     ].join('\n');
     const capabilities = ['# Additional Capabilities', capabilityList('browser', browser.capabilities?.browser), capabilityList('tab', browser.capabilities?.tab)].join('\n');
+    const referenceName = `${REFERENCE}/${browser.id}`;
+    this.references.set(browser.id, apiReference(apiManifest, browser.type, hidden));
     const text = [
       header,
       ...guidance,
       selected.lookup.length === 0 ? undefined : [
         '# Additional Documentation',
-        'Use `await agent.documentation.get("<name>")` when you need one of these topics:',
-        ...selected.lookup.map(({description, name}) => `- \`${name}\`: ${description}`),
+        // The vendor's "Use `await agent.documentation.get(…)` when …" shows nothing on its own (#494).
+        'Use `nodeRepl.write(await agent.documentation.get("<name>"))` when you need one of these topics; the call alone returns the text without showing it:',
+        ...selected.lookup.map(({description, name}) => `- \`${name === REFERENCE ? referenceName : name}\`: ${description}`),
       ].join('\n'),
       capabilities,
-      apiReference(apiManifest, browser.type, hidden),
+      apiReference(apiManifest, browser.type, hidden, {members: SUMMARY, full: referenceName}),
       this.options.addendum,
     ].filter(part => part != null).join('\n\n');
     for (const name of selected.guidanceNames) this.readNames.add(name);
@@ -72,12 +85,19 @@ export class Documentation {
   assertRequiredDocumentationRead(type) {
     const unread = this.options.documentManifest.filter(({name, requiredFor}) => requiredFor?.includes(type) === true && !this.readNames.has(name)).map(({name}) => name);
     if (unread.length !== 0) {
-      throw new Error(`Required documentation has not been read: ${unread.map(n => JSON.stringify(n)).join(', ')}. Read the instructions with ${unread.map(n => `await agent.documentation.get(${JSON.stringify(n)})`).join('; ')}.`);
+      throw new Error(`Required documentation has not been read: ${unread.map(n => JSON.stringify(n)).join(', ')}. Read the instructions with ${unread.map(n => `nodeRepl.write(await agent.documentation.get(${JSON.stringify(n)}))`).join('; ')}.`);
     }
   }
 
-  // Lp: a relative name without an extension, of a packaged document.
+  // Lp: a relative name without an extension, of a packaged document; "api-reference/<browser id>" is generated, for
+  // a browser this session has documented (its id may hold characters a packaged name may not).
   readDocument(name) {
+    if (typeof name === 'string' && name.startsWith(`${REFERENCE}/`)) {
+      const reference = this.references.get(name.slice(REFERENCE.length + 1));
+      if (reference === undefined) throw new Error(`Documentation is not available: ${name}. Its browser has not been documented in this session; select it first.`);
+      return reference;
+    }
+    if (name === REFERENCE) throw new Error(`Documentation is not available: ${REFERENCE}. Name the browser: nodeRepl.write(await agent.documentation.get("${REFERENCE}/<browser id>")).`);
     if (typeof name !== 'string' || !DOCUMENT_NAME.test(name)) throw new Error('Documentation name must be a relative path without an extension.');
     const text = this.options.documents[name];
     if (typeof text !== 'string') throw new Error(`Documentation is not available: ${name}`);
@@ -114,7 +134,7 @@ function capabilityList(kind, announced) {
   const known = new Map(CAPABILITY_INFO[kind].map(info => [info.id, info]));
   const lines = (announced ?? []).flatMap(({id}) => {
     const info = known.get(id);
-    return info == null ? [] : [`- \`${id}\`: ${info.description}\n  Read with \`await (await ${kind}.capabilities.get("${id}")).documentation()\`.`];
+    return info == null ? [] : [`- \`${id}\`: ${info.description}\n  Read with \`nodeRepl.write(await (await ${kind}.capabilities.get("${id}")).documentation())\`.`];
   });
   return [`## ${kind === 'browser' ? 'Browser' : 'Tab'} Capabilities`, ...(lines.length === 0 ? ['- None'] : lines)].join('\n');
 }
@@ -126,9 +146,20 @@ function declarations(iface, members, browserType, hidden) {
     : definition.declarations.filter(({documented, unsupportedByDefaultIn}) => documented !== false && unsupportedByDefaultIn?.includes(browserType) !== true)));
 }
 
+// What the first-use documentation's API reference lists (#494): these interfaces, each whole (true) or only the
+// members named; their declarations are the manifest's, so the summary never drifts from the full reference.
+export const SUMMARY = {
+  Browser: true,
+  Tabs: true,
+  Tab: true,
+  PlaywrightAPI: ['domSnapshot', 'evaluate', 'getByLabel', 'getByRole', 'getByText', 'locator', 'waitForLoadState', 'waitForURL'],
+  PlaywrightLocator: ['click', 'count', 'fill', 'filter', 'first', 'innerText', 'isVisible', 'nth', 'press', 'selectOption', 'textContent', 'waitFor'],
+};
+
 // The API reference: every interface and type reachable from the root through the declarations the browser gets (IN),
-// with cua's budget rule (the clamp's lifted maximum, the spec's "Lifted") at its head.
-export function apiReference(manifest, browserType, hidden = new Set()) {
+// with cua's budget rule (the clamp's lifted maximum, the spec's "Lifted") at its head. With `summary` ({members, full}),
+// only the interfaces and members it names, after a pointer to the full reference's document name.
+export function apiReference(manifest, browserType, hidden = new Set(), summary = undefined) {
   const reached = new Set();
   const queue = [manifest.root];
   for (const name of queue) {
@@ -144,10 +175,14 @@ export function apiReference(manifest, browserType, hidden = new Set()) {
   }
   const lines = ['# API Reference', '', 'Use this as the supported `agent.browsers.*` surface.', '', '```ts', '// Returned by setupBrowserRuntime().', '// browser was selected during bootstrap.',
     '// timeoutMs on locator, wait and evaluate calls is a per-phase budget in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000.'];
+  if (summary !== undefined) lines.push(`// The members most tasks use. Every interface, member and option type: nodeRepl.write(await agent.documentation.get(${JSON.stringify(summary.full)})).`);
   for (const [name, members] of Object.entries(manifest.interfaces)) {
-    if (reached.has(name)) lines.push(`interface ${name} {`, ...declarations(name, members, browserType, hidden).map(({text}) => `  ${text}`), '}', '');
+    const only = summary === undefined ? true : summary.members[name];
+    if (!reached.has(name) || only === undefined) continue;
+    const listed = only === true ? members : Object.fromEntries(Object.entries(members).filter(([member]) => only.includes(member)));
+    lines.push(`interface ${name} {`, ...declarations(name, listed, browserType, hidden).map(({text}) => `  ${text}`), '}', '');
   }
-  for (const [name, type] of Object.entries(manifest.types)) if (reached.has(name)) lines.push(type.text, '');
+  if (summary === undefined) for (const [name, type] of Object.entries(manifest.types)) if (reached.has(name)) lines.push(type.text, '');
   lines[lines.length - 1] = '```';
   return `${lines.join('\n').trim()}\n`;
 }

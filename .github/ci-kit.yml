@@ -48,6 +48,22 @@ gates:
     paths:
       - "native/engine/**"
       - ".github/ci-kit.yml"
+  # #502: the engine's release build on GitHub's xcode-27 image (macOS 27.0.1), whose Xcode 27.2 (Swift 6.4.2) is the
+  # owner's MacBook's. Swift 6.4.2's CopyPropagation crashed on an ownership pattern Xcode 26 compiles; engine-swift
+  # above runs on macos-latest (Xcode 26) and cannot see that. Build only: the tests run in engine-swift.
+  - name: engine-swift-xcode27
+    lane: hosted-macos
+    image: xcode-27
+    timeout: 20
+    setup: false
+    run: |
+      if [ -d /Applications/Xcode_27.2.app ]; then export DEVELOPER_DIR=/Applications/Xcode_27.2.app/Contents/Developer; fi
+      sw_vers
+      swift --version
+      swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
+    paths:
+      - "native/engine/**"
+      - ".github/ci-kit.yml"
   # #171: cua's own Linux engine (native/linux-engine/, Rust) formatted, built in release for the musl target as the
   # release workflow (.github/workflows/linux-engine.yml) builds it, and its tests run: the unit tests, and under Xvfb
   # with a session bus and AT-SPI the live ones (a GTK 3 window's tree read, a background key read back through the

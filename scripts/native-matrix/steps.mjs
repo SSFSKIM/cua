@@ -595,10 +595,12 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
 // typeReadback record: its reason, which names the read that failed, the snapshot's and the poll's time, the poll's
 // reads, the checkpoints and keys unconfirmed, both lengths on a mismatch; the key target's pid when its walk was cut
 // off), and the harness's own read of the scene's focused text element right after the call (./matrix-device.mjs
-// focusedText) with its time after the call's end, on the device clock. `mark` takes the read into the row's window.
+// focusedText) with its time after the call's end, on the device clock. `mark` takes the read into the row's window. A
+// read that threw is recorded ({ok: false, reason}), never the run's stop.
 // -> {engine, keyTargetCutOff?, harness, msAfterCall}.
 export function readbackOf(ctx, scene, act, mark) {
-  const read = mark(ctx.ops.matrix(['focused-text', '--scene', scene, '--run', ctx.run])) ?? {};
+  let read;
+  try { read = mark(ctx.ops.matrix(['focused-text', '--scene', scene, '--run', ctx.run])) ?? {}; } catch (error) { read = {answer: {ok: false, reason: String(error.message).slice(0, 160)}}; }
   const end = act.value?.at?.[1] ?? act.at?.[1];
   return {engine: act.engine?.typeReadback ?? null, ...(act.engine?.keyTargetCutOff ? {keyTargetCutOff: act.engine.keyTargetCutOff} : {}), harness: read.answer ?? null,
     msAfterCall: Array.isArray(read.at) && Number.isFinite(read.at[0]) && Number.isFinite(end) ? read.at[0] - end : null};

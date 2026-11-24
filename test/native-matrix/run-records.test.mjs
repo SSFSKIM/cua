@@ -332,6 +332,13 @@ test('a typeUnconfirmed row records the engine\'s read-back record and the harne
   assert.deepEqual(row.readback, {engine: record, keyTargetCutOff: {pid: 11},
     harness: {ok: false, role: 'AXTextArea', characters: 44, selected: null, failed: ['selected'], errors: {selected: -25212}}, msAfterCall: 10});
   assert.ok(reads.every(a => a[a.indexOf('--scene') + 1] === 'textedit'));
+  // Fix wave M2: a harness read that throws is recorded, never the run's stop.
+  const failing = steer((a, answer) => { if (a[0] === 'focused-text') throw new Error('the reader died'); return answer; });
+  const broken = await runWith({ops: failing, cell: code => (code.includes(act) ? {actMs: 1, at: [6_990, 7_000], threw: true, _meta: {'cua/errorName': 'typeUnconfirmed', 'cua/typeReadback': record}}
+    : code.includes(check) ? {ok: false, outcome: {effect: true, threw: 'x', errorName: 'Error'}} : null)});
+  const unread = broken.result.rows.find(r => r.section === 'method' && r.method === 'typeText' && r.case === 'replace');
+  assert.deepEqual([unread.readback.harness, unread.readback.msAfterCall], [{ok: false, reason: 'the reader died'}, null]);
+  assert.ok(!broken.result.problems.some(p => /the reader died/.test(p)), JSON.stringify(broken.result.problems));
   // Any other answer reads nothing more.
   const plain = await runWith({ops, cell: code => (code.includes(check) ? {ok: false, outcome: {threw: 'x', errorName: 'Error'}} : null)});
   assert.equal(plain.result.rows.find(r => r.section === 'method' && r.method === 'typeText' && r.case === 'replace').readback, undefined);

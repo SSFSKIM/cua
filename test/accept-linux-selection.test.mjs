@@ -46,7 +46,9 @@ test('the default mode passes only when doctor says the default selected cua\'s 
 // default prefers cua's engine and refuses every computer session for that home's own reason, its engine row a failure
 // naming the reason and this cua's own installer with --engine (the absolute command the refusal names, ruling 1110).
 const REMEDY = 'node /checkout/bin/cua.mjs install --engine';
-const refusedDoctor = (reason, {status = 'fail', detail = `cua's engine is preferred (the default engine), but sessions here are refused (${reason}): … install this cua's engine with \`${REMEDY}\` …`,
+// T1's sentence for the installed engine (src/runtime/launch.mjs linuxEngineFor) and its hint (installer.mjs ENGINE_HINT)
+const HINT = 'a `cua` from another checkout installs that checkout\'s engine, not this one\'s';
+const refusedDoctor = (reason, {status = 'fail', detail = `cua's engine is preferred (the default engine), but sessions here are refused (${reason}): the default engine (cua) selects cua's own engine, and … : run \`${REMEDY}\`; ${HINT}`,
   selected = null, preferred = {engine: 'cua', reason: 'default'}, refused = reason} = {}) => ({ok: false, checks: [{name: 'repl.host', status: 'pass', detail: '…'}, {name: 'engine', status, detail}],
   engine: {selected, reason: selected === null ? refused : 'default', refused: refused && {code: refused, message: '…'}, preferred, service: selected}});
 
@@ -69,10 +71,33 @@ test('a fallback home passes only when the default prefers cua\'s engine and ref
   assert.match(refusedSelectionProblem(refusedDoctor('engine_outdated'), 'older'), /does not name node .*\/bin\/cua\.mjs install --engine$/);
 });
 
+// Ruling 1212 (#171 M6b): the refusal's one remedy is this cua's installer with --engine, given as `: run \`<it>\``; it
+// offers no vendor engine, no local build, no cargo and no second command. The negatives are the wording before M6b.
+const OLD_TAIL = `: run \`${REMEDY}\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`;
+test('a fallback home\'s doctor row gives the one command as its remedy and offers nothing else (1212)', () => {
+  const judge = detail => refusedSelectionProblem(refusedDoctor('engine_outdated', {detail}), 'older', {remedy: REMEDY});
+  const head = 'cua\'s engine is preferred (the default engine), but sessions here are refused (engine_outdated): the default engine (cua) selects cua\'s own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.5, which this cua needs';
+  assert.equal(judge(`${head}: run \`${REMEDY}\`; ${HINT}`), null);
+  assert.equal(judge(`${head}${OLD_TAIL}`), 'doctor\'s engine row offers the vendor engine (CUA_NATIVE_ENGINE=vendor)');
+  assert.equal(judge(`${head}: run \`${REMEDY}\` (or a local build with \`cua engine build\`)`), 'doctor\'s engine row offers a local build (cua engine build)');
+  assert.equal(judge(`${head}: run \`${REMEDY}\`, or cargo build --release`), 'doctor\'s engine row offers a local build (cargo)');
+  assert.equal(judge(`${head}: run \`${REMEDY}\`; ${HINT}; run \`node /checkout/bin/cua.mjs install\``), 'doctor\'s engine row gives a second command');
+  assert.equal(judge(`${head}; install this cua's engine with \`${REMEDY}\``), `doctor's engine row does not give run \`${REMEDY}\` as its remedy`);
+});
+
+test('a refused open gives the one command as its remedy and offers nothing else (1212)', () => {
+  const head = 'cua: the default engine (cua) selects cua\'s own engine, and none is installed in this cua home (/h/engine/linux/cua-engine)';
+  const open = stderr => refusedOpenProblem({exit: {code: 1, signal: null}, stderr, answered: false, samples: 3, observed: [], uninspectable: []}, 'none', {remedy: REMEDY});
+  assert.equal(open(`${head}: run \`${REMEDY}\` [engine_not_installed]\n  ${HINT}\n`), null);
+  assert.equal(open(`${head}${OLD_TAIL} [engine_not_installed]\n  ${HINT}\n`), 'cua serve\'s refusal offers the vendor engine (CUA_NATIVE_ENGINE=vendor)');
+  assert.equal(open(`${head}: run \`${REMEDY}\` [engine_not_installed]\n  run \`node /checkout/bin/cua.mjs install\`; …\n`), 'cua serve\'s refusal gives a second command');
+  assert.equal(open(`${head}: install it with \`${REMEDY}\` [engine_not_installed]\n`), `cua serve's refusal does not give run \`${REMEDY}\` as its remedy`);
+});
+
 // The refused open: `cua serve` exits 1 before it answers anything, saying the reason and the installer, and no engine
 // runs below it. Anything less is not a refusal, and nothing that ran stands in for one.
 test('a refused open: the serve exits 1 unanswered, naming the reason and the installer, with no engine below it', () => {
-  const stderr = `cua: auto … selects cua's own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.4, which this cua needs: install this cua's engine with \`${REMEDY}\` … [engine_outdated]\n  run \`node /checkout/bin/cua.mjs install\`; …\n`;
+  const stderr = `cua: the default engine (cua) selects cua's own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.5, which this cua needs: run \`${REMEDY}\` [engine_outdated]\n  ${HINT}\n`;
   const refused = {exit: {code: 1, signal: null}, stderr, answered: false, samples: 3, observed: [], uninspectable: []};
   const judge = (open, kind = 'older') => refusedOpenProblem(open, kind, {remedy: REMEDY});
   assert.equal(judge(refused), null);

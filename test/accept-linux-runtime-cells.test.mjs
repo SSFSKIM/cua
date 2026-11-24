@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {APPROVED_OLDER, CELLS, FIXTURE_STEPS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, initializeAnswered, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal,
   pinsChanged, refusalProblems, reinstallProblems, runVerdict, traceProblems, upgradeProblems, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
-import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, vendorEngineProblems, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
+import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
 
 const HOME = '/run/user/.local/share/cua';
 const ENGINE = `${HOME}/engine/linux/cua-engine`;
@@ -58,17 +58,6 @@ test('no engine ran: no cua-engine and no sky_linux at any sample', () => {
   assert.match(noEngineProblems(watched()).join('; '), /took no samples/);
 });
 
-test('the vendor\'s engine answered: this home\'s sky_linux behind the vendor service, and no cua-engine', () => {
-  assert.deepEqual(vendorEngineProblems(watched([WORKER, sky()]), {bin: SKY, service: SERVICE}), []);
-});
-
-test('negative control: a cua-engine beside it, another sky_linux, another service, or none fails the vendor\'s engine', () => {
-  assert.match(vendorEngineProblems(watched([WORKER, sky(), cuaEngine()]), {bin: SKY, service: SERVICE}).join('; '), /cua-engine 21 ran/);
-  assert.match(vendorEngineProblems(watched([WORKER, sky('/elsewhere/sky_linux_x64')]), {bin: SKY, service: SERVICE}).join('; '), /no sky_linux .* ran this home's/);
-  assert.match(vendorEngineProblems(watched([WORKER, sky(SKY, '/repo/src/services/engine/linux/service.mjs')]), {bin: SKY, service: SERVICE}).join('; '), /behind the vendor service/);
-  assert.match(vendorEngineProblems(watched([WORKER]), {bin: SKY, service: SERVICE}).join('; '), /no sky_linux/);
-});
-
 test('nothing launched: no REPL host process and no engine at any sample', () => {
   assert.deepEqual(nothingLaunchedProblems(watched([], [])), []);
   assert.match(nothingLaunchedProblems(watched([], [WORKER])).join('; '), /trusted-worker 20 ran/);
@@ -97,8 +86,21 @@ test('the bubblewrap and helper processes that carry the kernel\'s words are not
 // ---- the cells ----
 
 test('the cell table is the pre-flight\'s, in its order, with the empty home\'s and the upgraded home\'s cells', () => {
-  assert.deepEqual(CELLS.map(c => c.cell), ['E0', 'E1', 'E2', 'E3', 'E4', 'E5', 'U0', 'U1', 'U2', 'U3', 'U4', 'U5']);
+  assert.deepEqual(CELLS.map(c => c.cell), ['E0', 'E1', 'E2', 'E3', 'U0', 'U1', 'U2', 'U3', 'U5']);
   assert.deepEqual([...new Set(CELLS.map(c => c.home))], ['empty', 'upgraded']);
+});
+
+// #171 M6b (T3): acceptance 12's vendor cells are out of the driver. E4 and U4 (the vendor selection refused) and E5 (the
+// rollback onto the vendor's engine) go; acceptance 13's E3 replaces them (T6). Nothing runs the vendor's engine, judges
+// it as the answering engine, or finds its tree through the vendor selection's lookup.
+test('no cell selects the vendor\'s engine: no vendor cell, no rollback fixture, no vendor judge, no vendor lookup', async () => {
+  const source = f => readFileSync(new URL(`../scripts/accept/${f}`, import.meta.url), 'utf8');
+  for (const c of CELLS) assert.doesNotMatch(`${c.step} ${c.passing}`, /vendor selection|CUA_NATIVE_ENGINE=vendor|"engine": "vendor"|sky_linux behind/, c.cell);
+  assert.deepEqual(Object.keys(FIXTURE_STEPS), ['linux-native', 'linux-text', 'linux-browser-only']);
+  assert.equal('vendorEngineProblems' in await import('../scripts/accept/linux-runtime-watch.mjs'), false);
+  assert.doesNotMatch(source('linux-text.mjs'), /--read-only|readOnly/);
+  const driver = source('linux-runtime.mjs');
+  assert.doesNotMatch(driver, /vendorLinuxRuntime|CUA_NATIVE_ENGINE: 'vendor'|engine: 'vendor'|vendorRefused|'rollback'/);
 });
 
 const passed = fixture => ({fixture, status: 'PASS', steps: FIXTURE_STEPS[fixture].map(name => ({name, status: 'PASS'}))});
@@ -119,7 +121,7 @@ test('negative control (fix wave 1, #1): a PASS with no steps, a PASS from anoth
 });
 
 test('each fixture\'s mandatory steps are named in its own source, so the list cannot drift from it', () => {
-  const sources = {'linux-native': ['linux-native.mjs', 'linux-selection.mjs'], 'linux-text': ['linux-text.mjs'], 'linux-text --read-only': ['linux-text.mjs'], 'linux-browser-only': ['linux-browser-only.mjs']};
+  const sources = {'linux-native': ['linux-native.mjs', 'linux-selection.mjs'], 'linux-text': ['linux-text.mjs'], 'linux-browser-only': ['linux-browser-only.mjs']};
   for (const [fixture, files] of Object.entries(sources)) {
     const text = files.map(f => readFileSync(new URL(`../scripts/accept/${f}`, import.meta.url), 'utf8')).join('\n');
     for (const name of FIXTURE_STEPS[fixture]) assert.ok(text.includes(JSON.stringify(name).slice(1, -1)) || text.includes(name.replaceAll("'", "\\'")), `${fixture}: ${name}`);
@@ -366,17 +368,16 @@ test('negative control (fix wave 2, #4): a kernel or worker pid that ever exec\'
   assert.match(ownNodeProblems(record, {node: '/n/bin/node'}).join('; '), /kernel 30 ran \/usr\/bin\/node/);
 });
 
-test('negative control (fix wave 2, #5): an engine sighted only as it vanished still fails a no-engine run, the vendor\'s and nothing-launched', () => {
+test('negative control (fix wave 2, #5): an engine sighted only as it vanished still fails a no-engine run and nothing-launched', () => {
   const entries = sampleTree(10, tree({'/proc/11/stat': [statLine(11, 'cua-engine', 'S', 10), null], '/proc/11/exe': null}));
   const record = watched(entries);
   assert.match(noEngineProblems(record).join('; '), /cua-engine 11 ran/);
   assert.match(nothingLaunchedProblems(record).join('; '), /cua-engine 11 ran/);
-  assert.match(vendorEngineProblems(watched([WORKER, sky()], entries), {bin: SKY, service: SERVICE}).join('; '), /cua-engine 11 ran/);
 });
 
 test('negative control (fix wave 2, #3): an exec under runtimes/ in a refused open\'s trace, attempted or done, is a launch', () => {
   const ok = {serve: 101, launched: [], runtimes: {complete: true, pending: 0, unended: 0, unresolved: 0, calls: 2}};
-  // The vendor selection stats its own tree to find it absent (E4, U4): a call there is no launch.
+  // A refused open's stat under runtimes/ is a call there, not a launch.
   assert.deepEqual(launchedProblems(ok), []);
   assert.match(launchedProblems({...ok, launched: [{pid: 102, kind: 'runtimes', program: '/h/runtimes/26/x'}]}).join('; '), /runtimes 102 was launched/);
   assert.match(launchedProblems({...ok, launched: [{pid: 102, kind: 'runtimes', program: '/h/runtimes/26/x', attempted: true}]}).join('; '), /runtimes 102 was attempted/);

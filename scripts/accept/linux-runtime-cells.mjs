@@ -9,19 +9,20 @@ import {traceVerdict} from './linux-trace.mjs';
 export const APPROVED_OLDER = '0d19fdfadce47fc6ba88db180fb4845346c9be26';
 const PHASES = ['E', 'U'];
 
-/** The cells, in the pre-flight's order: the home each runs over, its state, its step, what passing means. */
+/**
+ * The cells, in the pre-flight's order: the home each runs over, its state, its step, what passing means. Since #171 M6b
+ * (its T3) without the vendor selection's cells, E4, E5 and U4: the vendor's engine is retired on Linux, and acceptance
+ * 13's E3 (T6) judges its refusal.
+ */
 export const CELLS = Object.freeze([
   {cell: 'E0', home: 'empty', state: '-', step: 'cua install at the head', passing: 'exit 0; the tree, helper, Node and engine placed; the pointer the derived name; doctor\'s runtime.installed, runtime.modules, runtime.node and sandbox.launcher pass, its engine row the pinned version and hash behind service cua'},
   {cell: 'E1', home: 'empty', state: 'vendor tree present', step: 'the item 1 smoke and the item 6 witness, plain and under strace -f', passing: 'every step passes; no sky_linux at any sample; the engine child the home\'s cua-engine; traced, no call of the serve\'s tree under runtimes/, with the kernel and the worker in the trace'},
   {cell: 'E2', home: 'empty', state: 'present', step: 'the browser-only session, plain and traced; the loader', passing: 'every step passes; each of the six selected entries the one named, in the module tree, and opened by the kernel in the traced run; the mapped natives the tree\'s; no engine process at any sample'},
   {cell: 'E3', home: 'empty', state: 'runtimes/ moved out of the home', step: 'E1 and E2, plain', passing: 'as E1 and E2'},
-  {cell: 'E4', home: 'empty', state: 'moved out', step: 'a computer session with CUA_NATIVE_ENGINE=vendor, then with "engine": "vendor"', passing: 'the open refused engine_not_installed, naming the installer; nothing launched; doctor\'s engine row fails with the sentence; a browser-only session with the variable set passes'},
-  {cell: 'E5', home: 'empty', state: 'moved back', step: 'the vendor selection: list the apps, bind a harness gedit, read its tree; no input', passing: 'the engine child this home\'s sky_linux behind the vendor service, no cua-engine; a cell\'s import from the module tree'},
   {cell: 'U0', home: 'upgraded', state: 'installed by the cua before M6a', step: 'at the head, before any install: a session', passing: 'refused runtime_not_installed, the vendor tree intact; the sentence names the head\'s own installer by absolute path and the derived release; doctor says the same'},
   {cell: 'U1', home: 'upgraded', state: '-', step: 'the older cua\'s cua install again', passing: 'exit 0, nothing built; the session at the head refused as in U0, word for word; nothing launched'},
   {cell: 'U2', home: 'upgraded', state: '-', step: 'the command U0 printed', passing: 'the pointer from the vendor name to the derived one, both recorded; the tree placed; helper, Node and engine unchanged; the vendor tree\'s install.json the same file'},
   {cell: 'U3', home: 'upgraded', state: 'runtimes/ removed', step: 'E1 and E2, plain', passing: 'as E1 and E2'},
-  {cell: 'U4', home: 'upgraded', state: 'removed', step: 'E4', passing: 'as E4'},
   {cell: 'U5', home: 'upgraded', state: 'removed, and the pointer set back to the vendor name', step: 'E1 and E2, plain', passing: 'as E1 and E2'},
 ]);
 
@@ -61,8 +62,6 @@ export const FIXTURE_STEPS = Object.freeze({
   'linux-text': ['preconditions: Linux, a private display, gedit', 'bind the harness gedit by X11 id', 'the field is found and read through the fixture\'s own accessibility reads',
     'typeText answers success, and the field holds acceptance 6\'s string exactly, once', 'end_task', 'approvals: the harness gedit\'s app asked once and accepted, nothing else asked',
     'cua serve exited cleanly', 'no run entry left for the connection'],
-  'linux-text --read-only': ['preconditions: Linux, a private display, gedit', 'list the apps', 'bind the harness gedit by X11 id and read its tree', 'a cell\'s import still loads from the module tree',
-    'end_task', 'approvals: the harness gedit\'s app asked once and accepted, nothing else asked', 'cua serve exited cleanly', 'no run entry left for the connection'],
   'linux-browser-only': ['preconditions: Linux, a private display', 'the handshake and the tool list', 'the browser service answers: cua.listBrowsers gives a list',
     'the kernel\'s resolver selects each of the six entries in the module tree',
     'pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox',
@@ -268,8 +267,7 @@ export function initializeAnswered(transcript, id = 1) {
 
 /**
  * Nothing launched, by exec evidence: a trace of the serve, whole, in which its tree exec'd no helper, bubblewrap, REPL
- * host or engine, and exec'd or attempted nothing under runtimes/, whatever its name. Other calls there are not launches:
- * the vendor selection looks for its own tree before it refuses (E4, U4).
+ * host or engine, and exec'd or attempted nothing under runtimes/, whatever its name. Other calls there are not launches.
  */
 export function launchedProblems(summary) {
   if (!summary) return ['no trace of the open'];

@@ -5,11 +5,13 @@
 //   E  an empty home (the wrapper's CUA_HOME): E0 this cua's install, E1 the item 1 smoke (./linux-native.mjs
 //      --selection default) and the item 6 witness (./linux-text.mjs), each plain and under `strace -f`, E2 the
 //      browser-only session (./linux-browser-only.mjs) plain and traced and the profile map's loader, E3 both again with
-//      runtimes/ moved out, E4 the vendor selection refused (by the variable, by engine.json) while a browser-only
-//      session with the variable passes, E5 the rollback with runtimes/ moved back (./linux-text.mjs --read-only);
+//      runtimes/ moved out;
 //   U  an upgraded home (<run>/upgraded/cua) installed by the cua before M6a (--older, a checkout of it): U0 refused at
-//      this cua, U1 the older install again, U2 the command U0 printed, U3 to U5 the sessions with runtimes/ removed,
-//      the vendor selection refused, and the pointer set back to the vendor name.
+//      this cua, U1 the older install again, U2 the command U0 printed, U3 and U5 the sessions with runtimes/ removed,
+//      and with the pointer set back to the vendor name.
+// Since #171 M6b (its T3) acceptance 12's vendor cells are out: E4 and U4 (the vendor selection refused) and E5 (the
+// rollback onto the vendor's engine). The vendor's engine is retired on Linux; acceptance 13's E3 judges its refusal (T6).
+// The vendor tree at a cell's boundary is read by plain lstat (recordedTree), never through the vendor selection's lookup.
 // Around every fixture a 50 ms watch of its process tree (./linux-runtime-watch.mjs) says which engine answered. Before
 // any cell doctor's four environment rows must pass, and after each home's install sandbox.launcher must pass, or no
 // session cell starts there. The upgraded home is installed first, and a browser-only session of the older cua in it
@@ -23,23 +25,22 @@
 //     DISPLAY, or on display :0.
 import {spawn, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
-import {engineSettingsPath} from '../../src/runtime/engine-sign.mjs';
 import {readPointer, writePointer} from '../../src/runtime/layout.mjs';
 import {linuxEnginePath, loadEnginePin} from '../../src/runtime/linux-engine.mjs';
-import {linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, resolveRuntime, selectPin, vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
+import {linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, resolveRuntime, selectPin} from '../../src/runtime/manifest.mjs';
 import {loadModuleProvenance, moduleHost} from '../../src/runtime/module-tree.mjs';
 import {loadNodePins, managedNode, selectNodePin} from '../../src/runtime/managed-node.mjs';
 import {HELPER_PIN_FILE, helperFor} from '../../src/sandbox/linux.mjs';
 import {loadClassicLevel} from '../../src/profiles/directory-map.mjs';
 import {APPROVED_OLDER, CELLS, boundaryProblems, engineRowProblems, fixtureProblems, inheritedOverrides, installProblems, launchedProblems, olderProblems, parsePhases, parseRefusal, pinsChanged,
   refusalProblems, reinstallProblems, rowProblems, runVerdict, traceProblems, upgradeProblems, witnessOf, initializeAnswered} from './linux-runtime-cells.mjs';
-import {cuaEngineProblems, noEngineProblems, ownNodeProblems, startWatch, vendorEngineProblems} from './linux-runtime-watch.mjs';
+import {cuaEngineProblems, noEngineProblems, ownNodeProblems, startWatch} from './linux-runtime-watch.mjs';
 import {environmentVerdict} from './linux-runtime-pilot.mjs';
 import {summarizeTraceFile, TRACE_ARGS} from './linux-trace.mjs';
 import {readDoctor} from './linux-selection.mjs';
@@ -51,11 +52,10 @@ const CLI = join(REPO, 'bin', 'cua.mjs');
 const FIXTURES = {
   smoke: [join(REPO, 'scripts', 'accept', 'linux-native.mjs'), '--selection', 'default'],
   witness: [join(REPO, 'scripts', 'accept', 'linux-text.mjs')],
-  rollback: [join(REPO, 'scripts', 'accept', 'linux-text.mjs'), '--read-only'],
   browser: [join(REPO, 'scripts', 'accept', 'linux-browser-only.mjs')],
 };
 // The identity each fixture's report must carry (linux-runtime-cells.mjs FIXTURE_STEPS).
-const FIXTURE_ID = {smoke: 'linux-native', witness: 'linux-text', rollback: 'linux-text --read-only', browser: 'linux-browser-only'};
+const FIXTURE_ID = {smoke: 'linux-native', witness: 'linux-text', browser: 'linux-browser-only'};
 const MINUTES = {plain: 12, traced: 25};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const readJson = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
@@ -81,6 +81,23 @@ async function loader(home) {
     const natives = readFileSync('/proc/self/maps', 'utf8').split('\n').map(l => l.trim().split(/\s+/).slice(5).join(' ')).filter(p => /classic-level.*\.node$/.test(p));
     process.stdout.write(`${JSON.stringify({root: runtime.root, resolved, readBack: value === JSON.stringify('m6a-loader'), natives: [...new Set(natives)]})}\n`);
   } finally { rmSync(dir, {recursive: true, force: true}); }
+}
+
+// ---- the vendor tree, by lstat ---------------------------------------------------------------------------------------
+
+/**
+ * Whether `home` holds the vendor release `release` as an install placed it, read by lstat alone and following no link:
+ * runtimes/ and runtimes/<release> real directories, its install.json a regular file, its cua_node/ a directory ->
+ * {resolves, why}, `why` the first thing that is not so.
+ */
+export function recordedTree(home, release) {
+  const kind = path => { try { const s = lstatSync(path); return s.isSymbolicLink() ? 'link' : s.isDirectory() ? 'directory' : s.isFile() ? 'file' : 'other'; } catch (error) { return error.code ?? 'unreadable'; } };
+  const root = join(home, 'runtimes', release ?? '');
+  for (const [path, want] of [[join(home, 'runtimes'), 'directory'], [root, 'directory'], [join(root, 'install.json'), 'file'], [join(root, 'cua_node'), 'directory']]) {
+    const found = kind(path);
+    if (!release || found !== want) return {resolves: false, why: release ? `${path} is ${found}, not a ${want}` : 'no vendor release named'};
+  }
+  return {resolves: true, why: null};
 }
 
 // ---- the run ---------------------------------------------------------------------------------------------------------
@@ -227,6 +244,8 @@ async function main() {
   const release = linuxRelease(record, arch);
   const installer = ownInstaller().command;
   const pin = loadEnginePin();
+  // The vendor release this arch's install placed before M6b, by its pin's name: the tree the boundaries look for.
+  const vendorName = selectPin(loadPins(), {platform: 'linux', arch}).release;
   const report = {driver: 'm6a-acceptance-12', leg: option('--leg') ?? null, arch, node: process.version, head: gitHead(REPO), release, installer,
     older: older && {path: older, commit: gitHead(older)}, phases, out: resolve(out), scratch, startedAt: new Date().toISOString(), cells: [], measured: {}};
   const say = line => process.stderr.write(`linux-runtime: ${line}\n`);
@@ -296,37 +315,13 @@ async function main() {
     if (!result?.natives?.length || !result.natives.every(p => p.startsWith(`${real(root)}/`))) problems.push(`classic-level's addon mapped from ${JSON.stringify(result?.natives ?? null)}, not the module tree`);
     check(cell, 'the profile map\'s loader opens a store with the module tree\'s classic-level, writes a key and reads it back', problems, {report: run.out});
   }
-  // E4 and U4: the vendor selection refused with the tree absent, by the variable and by engine.json; a browser-only
-  // session with the variable set still passes.
-  async function vendorRefused(cell, {env, home}) {
-    const settings = engineSettingsPath(env);
-    const kept = existsSync(settings) ? readFileSync(settings, 'utf8') : null;
-    for (const [by, sessionEnv] of [['CUA_NATIVE_ENGINE=vendor', {...env, CUA_NATIVE_ENGINE: 'vendor'}], ['"engine": "vendor" in engine.json', env]]) {
-      if (sessionEnv === env) { mkdirSync(dirname(settings), {recursive: true}); writeFileSync(settings, `${JSON.stringify({...(kept ? JSON.parse(kept) : {}), engine: 'vendor'})}\n`); }
-      try {
-        const facts = homeFacts(home);
-        const attempt = await r.attemptOpen(`open-vendor-${sessionEnv === env ? 'settings' : 'env'}`, {env: sessionEnv, helper: facts.helper, homes: facts.homes});
-        cell.runs.push(attemptRecord(`open with ${by}`, attempt));
-        check(cell, `with ${by}: the open is refused engine_not_installed, naming the installer`, refusalProblems(attempt, {code: 'engine_not_installed', installer}));
-        check(cell, `with ${by}: nothing is launched, by the serve's trace`, launchedProblems(attempt.trace));
-        const {report: doctor} = readDoctor({cli: CLI, env: sessionEnv});
-        const row = doctor?.checks?.find(c => c.name === 'engine');
-        const refusal = parseRefusal(attempt.stderr);
-        check(cell, `with ${by}: doctor's engine row fails with the sentence`,
-          row?.status !== 'fail' ? [`the engine row is ${row?.status ?? 'missing'}`] : refusal && !row.detail.includes(refusal.message) ? ['the engine row does not carry the refusal\'s sentence'] : []);
-      } finally {
-        if (sessionEnv === env) { if (kept === null) rmSync(settings, {force: true}); else writeFileSync(settings, kept); }
-      }
-    }
-    await browserRuns(cell, {env: {...env, CUA_NATIVE_ENGINE: 'vendor'}, home, traced: false, label: 'a browser-only session with CUA_NATIVE_ENGINE=vendor'});
-  }
   // A refused open as the artifact carries it.
   const attemptRecord = (label, a) => ({label, exit: a.exit, signal: a.signal, replied: a.replied, spontaneous: a.spontaneous, drained: a.drained, err: a.err, trace: a.traceFile,
     launched: a.trace?.launched?.map(l => l.kind) ?? null, runtimes: a.trace?.runtimes ?? null});
-  // The vendor tree at a cell's boundary, read rather than taken from the cell's label (fix wave 1, #5).
+  // The vendor tree at a cell's boundary, read rather than taken from the cell's label (fix wave 1, #5): by lstat alone
+  // (recordedTree), the vendor selection's own lookup being gone with that engine (#171 M6b).
   const boundary = (cell, home, expected, when) => {
-    let resolves = false, why = null;
-    try { vendorLinuxRuntime({home}); resolves = true; } catch (error) { why = error.code ?? error.message; }
+    const {resolves, why} = recordedTree(home, vendorName);
     return check(cell, `the vendor tree is ${expected} at the cell's ${when}`, boundaryProblems({expected, exists: existsSync(join(home, 'runtimes')), resolves, why}));
   };
   const launcherPasses = (env, cell) => {
@@ -366,13 +361,14 @@ async function main() {
     const vendorRelease = readPointer(uHome);
     const vendorRecordPath = vendorRelease ? join(uHome, 'runtimes', vendorRelease, 'install.json') : null;
     const vendorRecord = vendorRecordPath && fileIdentity(vendorRecordPath);
-    const pinnedRelease = selectPin(loadPins(), {platform: 'linux', arch}).release;
+    const pinnedRelease = vendorName;
     const vendorRow = readDoctor({cli: CLI, env: uEnv}).report?.checks?.find(c => c.name === 'runtime.vendor') ?? null;
     const setupProblems = olderProblems({commit: report.older.commit, clean: report.older.clean, exit: setup.code, vendorRelease, pinnedRelease, vendorRow, record: vendorRecord});
     report.upgradedHome = {home: uHome, olderInstall: {exit: setup.code, seconds: setup.seconds, out: setup.out}, vendorRelease, pinnedRelease, vendorRow: vendorRow?.status ?? null, problems: setupProblems};
-    // The older cua's kernel resolves from its vendor tree's module directory, the base being that directory's parent.
-    let olderBase = null;
-    try { olderBase = real(dirname(vendorLinuxRuntime({home: uHome}).paths.moduleDir)); } catch {}
+    // The older cua's kernel resolves from its vendor tree's module directory (cua_node/lib/node_modules, the pin's
+    // layout), the base being that directory's parent, read by the path the older install placed it at.
+    const olderLib = vendorRelease ? join(uHome, 'runtimes', vendorRelease, 'cua_node', 'lib') : null;
+    const olderBase = olderLib && recordedTree(uHome, vendorRelease).resolves ? real(olderLib) : null;
     report.measured.importsOlder = setup.code === 0 && olderBase ? await r.imports(olderCli, {env: uEnv, expectedBase: olderBase})
       : {failed: `the older cua's install exited ${setup.code}${olderBase ? '' : ', and its vendor tree does not resolve'}`};
     baselineFile = join(scratch, 'imports-older.json');
@@ -397,7 +393,7 @@ async function main() {
         packages: target?.packages.length ?? null, treeBytes: root ? Number(spawnSync('du', ['-sb', root], {encoding: 'utf8'}).stdout.split('\t')[0]) : null};
       const launcher = cell.checks[0].detail.rows?.['sandbox.launcher'] === 'pass';
       finish(cell);
-      if (!launcher) for (const id of ['E1', 'E2', 'E3', 'E4', 'E5']) notRun(id, 'sandbox.launcher does not pass in the empty home after E0');
+      if (!launcher) for (const id of ['E1', 'E2', 'E3']) notRun(id, 'sandbox.launcher does not pass in the empty home after E0');
       else {
         cell = cellOf('E1');
         boundary(cell, home, 'present', 'start');
@@ -419,23 +415,8 @@ async function main() {
         await loaderRun(cell, {env, home});
         boundary(cell, home, 'absent', 'end');
         finish(cell);
-        cell = cellOf('E4');
-        boundary(cell, home, 'absent', 'start');
-        await vendorRefused(cell, {env, home});
-        boundary(cell, home, 'absent', 'end');
-        finish(cell);
-        cell = cellOf('E5');
+        // the home as it was before E3
         renameSync(moved, runtimes);
-        boundary(cell, home, 'present', 'start');
-        const vendor = vendorLinuxRuntime({home});
-        const run = await r.fixture('rollback', {env: {...env, CUA_NATIVE_ENGINE: 'vendor'}});
-        cell.runs.push(projectRun(run));
-        check(cell, 'the vendor selection lists the apps, binds the harness gedit and reads its tree; a cell\'s import loads from the module tree', fixtureProblems(run, {fixture: FIXTURE_ID.rollback}));
-        check(cell, 'the engine child is this home\'s sky_linux behind the vendor service, and no cua-engine runs',
-          vendorEngineProblems(run.watch, {bin: real(vendor.paths.skyLinuxBin), service: vendor.paths.skyVendorService}));
-        ownNode(cell, 'the rollback', run, homeFacts(home));
-        boundary(cell, home, 'present', 'end');
-        finish(cell);
         if (sampleCount > 0) report.measured.firstAnswerHere = await r.firstAnswers(CLI, {env, n: sampleCount});
       }
     }
@@ -444,7 +425,7 @@ async function main() {
       const home = uHome;
       const env = uEnv;
       if (setupProblems.length) {
-        for (const id of ['U0', 'U1', 'U2', 'U3', 'U4', 'U5']) notRun(id, `the upgraded home's setup: ${setupProblems.join('; ')}`);
+        for (const id of ['U0', 'U1', 'U2', 'U3', 'U5']) notRun(id, `the upgraded home's setup: ${setupProblems.join('; ')}`);
       } else {
         const facts = homeFacts(home);
         let cell = cellOf('U0');
@@ -498,7 +479,7 @@ async function main() {
         boundary(cell, home, 'present', 'end');
         finish(cell);
 
-        if (!launcher) for (const id of ['U3', 'U4', 'U5']) notRun(id, 'sandbox.launcher does not pass in the upgraded home after U2');
+        if (!launcher) for (const id of ['U3', 'U5']) notRun(id, 'sandbox.launcher does not pass in the upgraded home after U2');
         else {
           cell = cellOf('U3');
           rmSync(join(home, 'runtimes'), {recursive: true, force: true});
@@ -506,11 +487,6 @@ async function main() {
           await computerRuns(cell, {env, home, traced: false});
           await browserRuns(cell, {env, home, traced: false});
           await loaderRun(cell, {env, home});
-          boundary(cell, home, 'absent', 'end');
-          finish(cell);
-          cell = cellOf('U4');
-          boundary(cell, home, 'absent', 'start');
-          await vendorRefused(cell, {env, home});
           boundary(cell, home, 'absent', 'end');
           finish(cell);
           cell = cellOf('U5');

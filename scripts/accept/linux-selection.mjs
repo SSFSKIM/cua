@@ -9,7 +9,8 @@
 // engine of cua's. M5's default kept the vendor's engine there; since #171 M6a (F3) it refuses every computer session
 // for the home's own reason (FALLBACK_HOMES), and the probe requires that refusal from doctor (refusedSelectionProblem)
 // and from an open (refusedOpenProblem), each naming the reason and this cua's own installer with --engine, by its
-// absolute path (manifest.mjs ownInstaller, ruling 1110).
+// absolute path (manifest.mjs ownInstaller, ruling 1110), as the one remedy, with no vendor engine, local build or
+// second command offered (ruling 1212, #171 M6b).
 import {spawnSync} from 'node:child_process';
 import * as nodeFs from 'node:fs';
 import {join} from 'node:path';
@@ -23,6 +24,21 @@ export const FALLBACK_HOMES = Object.freeze({none: 'engine_not_installed', previ
 // The remedy every refusal names: this checkout's own installer with --engine.
 const engineInstaller = () => `${ownInstaller().command} --engine`;
 const noHome = kind => `no fallback home ${kind}: ${Object.keys(FALLBACK_HOMES).join(', ').replace(/, (?=[^,]*$)/, ' or ')}`;
+// What a refusal may no longer offer (ruling 1212, #171 M6b): the vendor engine, removed from Linux in cua 0.30.0, and a
+// local build, which only the README's engine section names.
+const RETIRED_OFFERS = [['CUA_NATIVE_ENGINE=vendor', 'the vendor engine'], ['cua engine build', 'a local build'], ['cargo', 'a local build']];
+/**
+ * Ruling 1212's form of a refusal's remedy in `text` (`where` names it): the one command, `remedy`, given as
+ * `: run \`<remedy>\``, and nothing else offered: no vendor engine, no local build, no second command. -> a problem
+ * sentence, or null.
+ */
+function remedyProblem(text, remedy, where) {
+  if (!text.includes(`: run \`${remedy}\``)) return `${where} does not give run \`${remedy}\` as its remedy`;
+  const offer = RETIRED_OFFERS.find(([phrase]) => text.includes(phrase));
+  if (offer) return `${where} offers ${offer[1]} (${offer[0]})`;
+  if ((text.match(/\brun `/g) ?? []).length > 1) return `${where} gives a second command`;
+  return null;
+}
 
 /** The mode `--selection <mode>` in `argv` names: explicit when absent; anything else throws. */
 export function selectionMode(argv) {
@@ -66,7 +82,8 @@ export function defaultSelectionProblem(report) {
 /**
  * A fallback home's judge from doctor (`kind` a key of FALLBACK_HOMES; `remedy` the installer the refusal must name,
  * this checkout's own with --engine): null when doctor says the default prefers cua's engine and refuses every computer
- * session for that home's reason, its engine row a failure naming the reason and `remedy`; else what differs. An engine
+ * session for that home's reason, its engine row a failure naming the reason and `remedy` as its one remedy (ruling
+ * 1212: remedyProblem); else what differs. An engine
  * selected, the vendor's included, is never a refusal.
  */
 export function refusedSelectionProblem(report, kind, {remedy = engineInstaller()} = {}) {
@@ -81,7 +98,7 @@ export function refusedSelectionProblem(report, kind, {remedy = engineInstaller(
   if (found.row.status !== 'fail') return `doctor's engine row is ${found.row.status}, not a failure`;
   if (!found.row.detail.includes(`(${reason})`)) return `doctor's engine row does not name its reason, ${reason}`;
   if (!found.row.detail.includes(remedy)) return `doctor's engine row does not name ${remedy}`;
-  return null;
+  return remedyProblem(found.row.detail, remedy, 'doctor\'s engine row');
 }
 
 /**
@@ -124,7 +141,7 @@ export function refusalSample(root, {proc = '/proc', fs = nodeFs} = {}) {
  * ({code, signal, forced?}, or null while it still ran), stderr, answered (false only when its output was read and
  * held no answer), samples (how many samples of the processes below it were taken), observed (the engines they saw),
  * uninspectable (the processes below it they could not read), sampleError?}. Null when it refused: it exited 1 without
- * answering, its refusal naming the home's reason and `remedy`, and at least one sample saw every process below it and
+ * answering, its refusal naming the home's reason and `remedy` as its one remedy (remedyProblem), and at least one sample saw every process below it and
  * no engine there; else what differs. Evidence that is missing is never read as a negative.
  */
 export function refusedOpenProblem(open, kind, {remedy = engineInstaller()} = {}) {
@@ -136,6 +153,8 @@ export function refusedOpenProblem(open, kind, {remedy = engineInstaller()} = {}
   if (open.exit.code !== 1) return `cua serve exited with code ${open.exit.code}, not 1`;
   if (!open.stderr.includes(`[${reason}]`)) return `cua serve's refusal does not name ${reason}`;
   if (!open.stderr.includes(remedy)) return `cua serve's refusal does not name ${remedy}`;
+  const offered = remedyProblem(open.stderr, remedy, 'cua serve\'s refusal');
+  if (offered) return offered;
   if (open.sampleError) return `an engine observation failed (${open.sampleError}), so what ran below the serve is unknown`;
   if (!Number.isInteger(open.samples) || open.samples < 1) return 'no sample of the processes below the serve was taken, so what ran there is unknown';
   if (!Array.isArray(open.uninspectable)) return 'the sample does not say whether every process below the serve was inspected';

@@ -314,7 +314,8 @@ async function main() {
   mkdirSync(scratch, {recursive: true});
   const r = createRun({out, scratch});
   const arch = process.arch;
-  const release = linuxRelease(loadLinuxRuntime(), arch);
+  // The Linux runtime this arch's install derives, named on any host: a host that is not Linux stops at the preconditions.
+  const release = linuxRelease(loadLinuxRuntime({host: {platform: 'linux', arch}}), arch);
   // This checkout's install command as every refusal names it: its own bin/cua.mjs by absolute path.
   const installer = `node ${CLI} install`;
   const pin = loadEnginePin();

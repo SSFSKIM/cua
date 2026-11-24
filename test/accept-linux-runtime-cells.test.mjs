@@ -600,6 +600,8 @@ test('negative control: a worker, a helper, an engine server, a second probe, a 
   assert.match(judged(probe(`["${OVERRIDE}", "server"]`), [600, 601], allowed), /engine 601 ran .*cua-engine server/);
   assert.match(judged([], [600], allowed), /\/r\/outdated\/cua-engine --version ran 0 times, not once/);
   assert.match(execRoleProblems(null, {helper: '/h/helper', allowed: []}).join('; '), /no trace/);
+  // A Node whose argument vector strace abbreviated could be the REPL host: it fails rather than passing unread.
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 606', '606   execve("/n/bin/node", ["node", ...], 0x7ffd /* 9 vars */) = 0'], [600, 606]), /node with unread arguments 606/);
 });
 
 const doctorRefused = ({engine = `the vendor's engine is selected (CUA_NATIVE_ENGINE=vendor), and every Linux computer session is refused (engine_retired; see repl.host): ${RETIRED.message}; ${RETIRED.hint}; in this home: the pinned engine`,

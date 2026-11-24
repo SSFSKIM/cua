@@ -336,7 +336,8 @@ export function runtimesCallProblems(summary, {home, releases, recordOpens = 1})
 }
 
 // What a program an exec ran is, by role: an engine, the sandbox helper, bubblewrap, a REPL host process (by the
-// script Node runs), or anything under a runtimes/ (`inRuntimes`); null for anything else (a shell, gzip, a probe).
+// script Node runs; a Node whose arguments are unread counts too), or anything under a runtimes/; null for anything
+// else (a shell, gzip, a probe).
 const ROLE_SCRIPT = /\/src\/repl-host\/([\w-]+)\.mjs$/;
 function roleOf(e, {helper}) {
   const program = e.program ?? '';
@@ -344,7 +345,11 @@ function roleOf(e, {helper}) {
   if (basename(program) === 'cua-engine' || /^sky_linux/.test(basename(program))) return 'engine';
   if (helper && program === helper) return 'helper';
   if (basename(program) === 'bwrap') return 'bwrap';
-  if (/^node/.test(basename(program))) for (const arg of e.argv ?? []) { const role = ROLE_SCRIPT.exec(arg)?.[1]; if (role) return role; }
+  if (/^node/.test(basename(program))) {
+    // A Node whose arguments the trace did not print whole may be running the REPL host: it is never passed unread.
+    if (!Array.isArray(e.argv)) return 'node with unread arguments';
+    for (const arg of e.argv) { const role = ROLE_SCRIPT.exec(arg)?.[1]; if (role) return role; }
+  }
   return null;
 }
 const sameArgv = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);

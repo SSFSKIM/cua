@@ -14,29 +14,31 @@ import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createHash} from 'node:crypto';
 import {spawn, spawnSync} from 'node:child_process';
 import {syncBuiltinESMExports} from 'node:module';
+import {PassThrough} from 'node:stream';
 import {dirname, join, relative} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {buildLaunch, nativeEngineFor, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
+import {openConnection} from '../src/mcp/connection.mjs';
+import {listLiveBackends} from '../src/profiles/inventory.mjs';
 import {linuxRelease, loadLinuxRuntime, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {assertSandboxConfines, assertSandboxFits} from '../src/runtime/sandbox.mjs';
 import {installLinuxEngine, installSandboxHelper, useRuntime} from '../src/runtime/install.mjs';
 import {installLinux} from '../src/runtime/linux-install.mjs';
-import {installModuleTree, loadModuleLock, loadModuleProvenance} from '../src/runtime/module-tree.mjs';
+import {installModuleTree} from '../src/runtime/module-tree.mjs';
 import {installNode} from '../src/runtime/node-install.mjs';
 import {buildLinuxEngine} from '../src/runtime/linux-engine.mjs';
 import {retiredTrees} from '../src/runtime/retired-tree.mjs';
 import {stagingGuard} from '../src/runtime/vendor-tree.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
-import {helperFor, loadHelperPin} from '../src/sandbox/linux.mjs';
+import {helperFor} from '../src/sandbox/linux.mjs';
 import {projectRoot} from '../src/secrets/project.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {RETIRED, plantRetiredRelease} from './fixtures/retired-release.mjs';
 import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree, moduleHostOf} from './fixtures/own-linux-runtime.mjs';
-import {writeFixtureModules} from './fixtures/module-registry.mjs';
+import {HELPER_BYTES, NODE_VERSION, enginePinFor, helperPin, nodePinFor, servedArchives, sha256} from './fixtures/linux-install-archives.mjs';
 import {inVendorTree, recorded, startRecording, within} from './helpers/vendor-tree-recorder.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -399,6 +401,131 @@ test('a home directory that is a link into the tree, the sandbox helper\'s, stag
   }
 });
 
+// #589, folded into #171 M6b T4: a Linux launch names state/, remote/, chrome/ and run/ by their real paths (the deny
+// list's entries, and the connection's run directory), so each is resolved by the guard's own walk, the one resolution
+// the launch then uses, as doctor's sandbox row resolves them: one that is a link into the tree is refused, naming the
+// link to move aside, and nothing there is resolved. run/ is refused in every mode (layout_invalid), before the open or a
+// listing claims the session, which writes its record there, and again at every launch's construction; the other three
+// wherever a deny list is built, scoped and default (sandbox_conflict). Each is planted two ways: a link into the tree,
+// and a link whose relative target names a missing directory and then `..` into the tree, which the kernel cannot
+// follow and only a lexical reading (realish's, for a dangling link) would collapse into the tree.
+const DENY_ROOTS = ['state', 'remote', 'chrome', 'run'];
+const PLANTS = {
+  'a link into the tree': (h, name) => {
+    const planted = join(h.runtimes, `planted-${name}`);
+    fs.mkdirSync(name === 'state' ? join(planted, 'codex') : planted, {recursive: true});
+    fs.symlinkSync(planted, join(h.home, name));
+    return {lead: `leads to ${h.runtimes}, under the vendor's tree`};
+  },
+  'a link through a missing directory and `..` into the tree': (h, name) => {
+    fs.mkdirSync(join(h.runtimes, `planted-${name}`), {recursive: true});
+    fs.symlinkSync(`missing-${name}/../runtimes/planted-${name}`, join(h.home, name));
+    return {lead: `cannot be resolved as the kernel would resolve it, past ${join(h.home, `missing-${name}`)}`};
+  },
+};
+const refusedAs = name => (name === 'run'
+  ? {code: 'layout_invalid', what: 'a connection\'s run directory is made there; nothing was started'}
+  : {code: 'sandbox_conflict', what: 'what JavaScript cells may not read is taken by its real path, which is not resolved there; nothing was started'});
+const installerHint = link => `move ${link} aside, then run \`node ${join(REPO, 'bin', 'cua.mjs')} install\``;
+
+test('a deny-list directory linked into the tree, state/, remote/, chrome/ or run/, directly or through a missing directory and `..`: every launch refuses it, naming it, nothing there resolved; doctor says the same', async t => {
+  for (const [plant, make] of Object.entries(PLANTS)) {
+    for (const name of DENY_ROOTS) {
+      const h = homeWithVendorTree(t);
+      const own = join(h.home, name);
+      const {lead} = make(h, name);
+      const {code, what} = refusedAs(name);
+      const runtime = resolveRuntime({home: h.home, host: LINUX});
+      for (const surfaces of [['computer'], ['browser']]) {
+        const replHost = replHostFor({platform: 'linux', arch: LINUX.arch, surfaces, ambient: h.ambient, home: h.home});
+        const services = surfaces.includes('computer') ? {sky: SKY_SERVICE} : {browser: BROWSER_SERVICE};
+        const launchWith = sandbox => buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces, replHost, services, sandbox});
+        for (const sandbox of name === 'run' ? ['scoped', 'default', 'disabled'] : ['scoped', 'default']) {
+          const label = `${plant}, ${name}/ (${surfaces}, ${sandbox})`;
+          let error;
+          const seen = recorded(() => { try { assertSandboxFits(sandbox, launchWith(sandbox)); } catch (caught) { error = caught; } });
+          assert.equal(error?.code, code, `${label}: ${error?.message ?? 'not refused'}`);
+          assert.ok(error.message.includes(lead) && error.message.endsWith(what), `${label}: ${error.message}`);
+          assert.equal(error.hint, installerHint(own), label);
+          assert.deepEqual(inVendorTree(seen, h.home), [], label);
+        }
+        if (name !== 'run') {
+          const open = launchWith('disabled');
+          assert.equal(open.denyRead, null, `${plant}, ${name}/: a disabled launch builds no deny list`);
+          assert.ok(!Object.values(open.env).some(value => value.includes(h.runtimes)), `${plant}, ${name}/: a disabled launch names nothing in the tree`);
+        }
+      }
+      // doctor's sandbox row refuses what the launch refuses, in its words, in both confined modes
+      for (const mode of ['scoped', 'default']) {
+        const {value, seen} = await recordedRun(() => doctorOf(h, NO_RETIRED, {CUA_SHIM_SANDBOX: mode}));
+        const row = value.checks.find(c => c.name === 'sandbox');
+        const label = `${plant}, ${name}/, doctor (${mode})`;
+        assert.equal(row.status, 'fail', label);
+        assert.ok(row.detail.includes(lead) && row.detail.includes(`refuse to start like this (${code}): ${installerHint(own)}`), `${label}: ${row.detail}`);
+        assert.deepEqual(inVendorTree(seen, h.home), [], label);
+      }
+    }
+  }
+});
+
+// Fix wave 2: the deny list's discovery of the secret store's tiers (src/sandbox/policy.mjs denyListFor) reads the
+// filesystem, so the home's guarded roots are resolved before it runs. A store beneath a state/ linked into the tree,
+// with a projects/ there to list, is refused, and discovery never reads inside the tree, for a launch (the store named
+// directly) and for doctor (the store under $HOME).
+test('a secret store beneath a state/ linked into the tree: the launch and doctor refuse it before the store\'s tiers are discovered, nothing there touched', async t => {
+  const h = homeWithVendorTree(t);
+  const planted = join(h.runtimes, 'planted-state');
+  for (const store of ['store', 'user/.config/claude-secrets']) fs.mkdirSync(join(planted, store, 'projects', 'tier'), {recursive: true});
+  fs.symlinkSync(planted, join(h.home, 'state'));
+  const runtime = resolveRuntime({home: h.home, host: LINUX});
+  const replHost = replHostFor({platform: 'linux', arch: LINUX.arch, surfaces: ['browser'], ambient: h.ambient, home: h.home});
+  for (const sandbox of ['scoped', 'default']) {
+    let error;
+    const seen = recorded(() => {
+      try { buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces: ['browser'], replHost, services: {browser: BROWSER_SERVICE}, sandbox, secretsDir: join(h.home, 'state', 'store')}); } catch (caught) { error = caught; }
+    });
+    assert.equal(error?.code, 'sandbox_conflict', `launch (${sandbox}): ${error?.message ?? 'not refused'}`);
+    assert.equal(error.hint, installerHint(join(h.home, 'state')), sandbox);
+    assert.deepEqual(inVendorTree(seen, h.home), [], `launch (${sandbox})`);
+    const doctor = await recordedRun(() => doctorOf({...h, ambient: {...h.ambient, HOME: join(h.home, 'state', 'user')}}, NO_RETIRED, {CUA_SHIM_SANDBOX: sandbox}));
+    const row = doctor.value.checks.find(c => c.name === 'sandbox');
+    assert.equal(row.status, 'fail', `doctor (${sandbox})`);
+    assert.ok(row.detail.includes(`refuse to start like this (sandbox_conflict): ${installerHint(join(h.home, 'state'))}`), `doctor (${sandbox}): ${row.detail}`);
+    assert.deepEqual(inVendorTree(doctor.seen, h.home), [], `doctor (${sandbox})`);
+  }
+  // the control: with state/ a real directory holding the same store, the same discovery lists its projects/
+  fs.rmSync(join(h.home, 'state'));
+  fs.cpSync(planted, join(h.home, 'state'), {recursive: true});
+  const seen = recorded(() => buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces: ['browser'], replHost, services: {browser: BROWSER_SERVICE}, sandbox: 'scoped', secretsDir: join(h.home, 'state', 'store')}));
+  assert.ok(seen.some(({call, path}) => /readdirSync/.test(call) && path === join(h.home, 'state', 'store', 'projects')), 'discovery lists the store\'s projects/');
+});
+
+// The open itself, as `cua serve` makes it, and a profile listing: each refuses a linked run/ before it claims the
+// session, so no record is written through the link into the tree, where its own cleanup, which follows no link,
+// would leave it.
+test('a run/ linked into the tree: a connection\'s open and a profile listing refuse it before claiming the session, and write nothing there', async t => {
+  for (const [plant, make] of Object.entries(PLANTS)) {
+    const h = homeWithVendorTree(t);
+    const own = join(h.home, 'run');
+    const {lead} = make(h, 'run');
+    const before = fs.readdirSync(h.runtimes, {recursive: true}).sort();
+    const runtime = resolveRuntime({home: h.home, host: LINUX});
+    const entries = {
+      'the open': () => openConnection({home: h.home, env: h.ambient, sessionId: SESSION, input: new PassThrough(), output: new PassThrough(), host: LINUX}),
+      'a listing': () => listLiveBackends({home: h.home, runtime, ambient: h.ambient}),
+    };
+    for (const [entry, run] of Object.entries(entries)) {
+      const {error, seen} = await recordedRun(run);
+      const label = `${plant}, ${entry}`;
+      assert.equal(error?.code, 'layout_invalid', `${label}: ${error?.message ?? 'not refused'}`);
+      assert.ok(error.message.includes(lead), `${label}: ${error.message}`);
+      assert.equal(error.hint, installerHint(own), label);
+      assert.deepEqual(inVendorTree(seen, h.home), [], label);
+      assert.deepEqual(fs.readdirSync(h.runtimes, {recursive: true}).sort(), before, `${label}: nothing was written in the tree`);
+    }
+  }
+});
+
 // The helper that was outside the tree at the open and is a link into it by a later (lazy or idle) launch: the
 // connection does not repeat its preflight there, so the launch's own construction refuses it.
 test('a helper that becomes a link into the tree after the open: the next confined launch\'s construction refuses it; a disabled one names no path there', t => {
@@ -459,16 +586,6 @@ test('the project lookup on Linux keeps PATH\'s meaning: `..` after a link is th
 
 // ---- #171 M6b: install's and doctor's own reads and writes (the pre-flight's §3.4, §5.1) ----
 
-const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const HELPER_BYTES = Buffer.from('#!/bin/sh\nexit 0\n');
-const REAL_HELPER_PIN = loadHelperPin();
-// Pins of the test's own, each naming bytes the test lays or serves (the real assets are never fetched).
-const helperPin = bytes => ({...REAL_HELPER_PIN, assets: {...REAL_HELPER_PIN.assets, 'linux-x64': {url: 'https://fixture.invalid/codex-linux-sandbox', length: bytes.length, sha256: sha256(bytes)}}});
-const enginePinFor = bytes => ({version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`,
-  assets: {x64: {url: 'https://fixture.invalid/cua-engine', sha256: sha256(bytes)}, arm64: {url: 'https://fixture.invalid/cua-engine-arm64', sha256: sha256('arm64')}}});
-const NODE_VERSION = loadLinuxRuntime({host: LINUX}).node.version;
-const nodePinFor = ({sha256: hash, length}) => ({schema: 1, version: NODE_VERSION, platform: 'linux', arch: 'x64',
-  archive: {url: `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz`, length, sha256: hash}, notes: 'fixture'});
 // The engine fakeInstalledEngine lays, and the archive fakeManagedNode's record names.
 const FAKE_ENGINE = Buffer.from(`#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (0123456789ab)"\n`);
 const FAKE_NODE_ARCHIVE = {sha256: 'a'.repeat(64), length: 1};
@@ -627,27 +744,6 @@ test('doctor\'s sandbox row with staging/ linked into the tree: scoped names the
 
 // ---- full installs with staging/ a link into the recorded release ----
 
-// The archives a full install takes, each served by URL: the module tree's fixture registry, the helper, a Node tarball
-// and the engine.
-function servedArchives(t) {
-  const s = shortScratch();
-  t.after(s.cleanup);
-  const registry = writeFixtureModules(join(s.dir, 'modules-pins'));
-  const modules = {lock: loadModuleLock(registry.dir), provenance: loadModuleProvenance(registry.dir), fetch: registry.fetch};
-  const top = `node-v${NODE_VERSION}-linux-x64`;
-  fs.mkdirSync(join(s.dir, 'node-tree', top, 'bin'), {recursive: true});
-  fs.writeFileSync(join(s.dir, 'node-tree', top, 'bin', 'node'), `#!/bin/sh\necho v${NODE_VERSION}\n`, {mode: 0o755});
-  fs.writeFileSync(join(s.dir, 'node-tree', top, 'LICENSE'), 'licence\n');
-  const tarball = join(s.dir, 'node.tar.gz');
-  assert.equal(spawnSync('tar', ['-czf', tarball, '-C', join(s.dir, 'node-tree'), top]).status, 0);
-  const nodeBytes = fs.readFileSync(tarball);
-  const nodePin = nodePinFor({sha256: sha256(nodeBytes), length: nodeBytes.length});
-  const engine = Buffer.from(`#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (fedcba987654)"\n`);
-  const helper = helperPin(HELPER_BYTES);
-  const enginePin = enginePinFor(engine);
-  return {modules, nodePin, enginePin, helper,
-    serve: {[helper.assets['linux-x64'].url]: HELPER_BYTES, [nodePin.archive.url]: nodeBytes, [enginePin.assets.x64.url]: engine}};
-}
 const PARTS = {
   'the module tree': (h, a) => fs.rmSync(join(h.home, 'modules', a.modules.lock.hash), {recursive: true}),
   'the helper': h => fs.rmSync(helperFor({home: h.home, arch: LINUX.arch}).path),

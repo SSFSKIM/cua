@@ -4,12 +4,11 @@
 // launched. Parsing is strict: an unknown or malformed field is an error, never ignored, because every field affects
 // execution. `resolveRuntime` turns the active (or a named) installed release into absolute relocated paths.
 //
-// The schema branches on `platform`. A darwin pin names a zip whose components are signed by the pinned Apple team.
-// A linux pin names a vendor deb (`archive.format: "deb"`) whose length and SHA-256 are the whole trust root: it has no
-// `signing`, no native IPC version and no helper app, its components may be files, its layout
-// names the X11 helper (`skyLinuxBin`), and an optional `notes` records how the archive's provenance was checked when
-// the pin was written. A pin is selected only by its own host, so the
-// Linux pins ship beside the darwin one without affecting a macOS install.
+// A pin names a darwin zip whose components are signed by the pinned Apple team; it is selected only by its own host.
+// There is no Linux release pin (#171 M6b; docs/doperpowers/specs/2026-10-28-own-linux-engine-m6b-preflight.md §1.2,
+// §4.1): cua 0.30.0 retired the vendor's engine on Linux, and the two deb records that were its pins are provenance
+// now, read at pin time by scripts/modules-pin.mjs alone and by nothing here. `parsePin` refuses a Linux pin, naming
+// Linux's own record instead, so a record put back here cannot load.
 // cua's own Linux engine (#171) is not a layout key: it is no part of the vendor's release, but an owned path under the
 // cua home ($CUA_HOME/engine/linux/cua-engine) with its own pin, runtime/engine/linux-engine.json (src/runtime/linux-
 // engine.mjs), so a release tree never names it and installing it never touches one.
@@ -20,13 +19,14 @@
 // helper (src/sandbox/linux.mjs) and the engine (linux-engine.mjs). It is bound to those pins at load, and its release
 // name is derived from it, so a change to any part is a new release for the handshake records. `locateRuntime` and
 // `resolveRuntime` answer that record on a Linux host and never read the pointer there: it records what `cua install`
-// last completed and selects nothing (§4.3). The vendor's tree is reached only through `vendorLinuxRuntime`, for
-// `CUA_NATIVE_ENGINE=vendor`, until M6b removes it. Every Linux remedy names this cua's own installer by its absolute
-// path (`ownInstaller`, ruling 1110's F9): a `cua` on PATH from another checkout installs that checkout's runtime.
-import {readFileSync, readdirSync, lstatSync, statSync} from 'node:fs';
+// last completed and selects nothing (§4.3). Nothing here reaches the vendor's Linux tree: an older cua's install may
+// have left it under runtimes/, which src/runtime/retired-tree.mjs alone reports. Every Linux remedy names this cua's
+// own installer by its absolute path (`ownInstaller`, ruling 1110's F9): a `cua` on PATH from another checkout installs
+// that checkout's runtime.
+import {readFileSync, readdirSync, lstatSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {CuaError, fail} from './errors.mjs';
+import {fail} from './errors.mjs';
 import {ownInstaller} from './installer.mjs';
 import {homeLayout, readPointer, realHome} from './layout.mjs';
 import {checkLayout} from './checks.mjs';
@@ -38,6 +38,7 @@ import {HELPER_PIN_FILE, loadHelperPin} from '../sandbox/linux.mjs';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const RELEASES_DIR = join(REPO_ROOT, 'runtime', 'releases');
 export const LINUX_RUNTIME_FILE = join(REPO_ROOT, 'runtime', 'linux-runtime.json');
+const LINUX_RUNTIME_NAME = 'runtime/linux-runtime.json';
 // This cua's own entry point and installer (installer.mjs), re-exported here, where every remedy has named them.
 export {CUA_ENTRY, ownInstaller} from './installer.mjs';
 export const RECORD_FILE = 'install.json';
@@ -46,31 +47,24 @@ export const RECORD_FILE = 'install.json';
 // The darwin layout names no Codex CLI since #115 M2 (the vendor host's CODEX_CLI_PATH is cua's compat executable,
 // bin/cua-codex-compat); a release installed before keeps its CodexCLI.app, which this cua neither checks nor
 // launches (an older cua sharing the home may), until `cua install --prune-leftovers` removes it
-// (src/runtime/codex-leftovers.mjs). The Linux layout names none since #115 M3 (cua's own host
-// confines its children with the pinned helper, src/sandbox/linux.mjs); a Linux release installed before keeps its
-// `codex` file, which this cua never launches, until the same prune removes it.
+// (src/runtime/codex-leftovers.mjs).
 export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
-export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
 
-// The remedy for the vendor's release: on macOS the plain `cua install` (unchanged), on Linux this cua's own
-// installer; each also with `--archive` and the platform's pinned archive.
-export const installHint = (platform = process.platform) => {
-  const command = platform === 'linux' ? ownInstaller().command : 'cua install';
-  return `run \`${command}\` (or \`${command} --archive <${platform === 'linux' ? 'ChatGPT deb' : 'ChatGPT zip'}>\` with the pinned archive)`;
-};
+// The remedy for the vendor's release, which only macOS installs: the plain `cua install`, or with `--archive` and the
+// pinned zip.
+export const installHint = () => 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)';
 const hostTarget = () => ({platform: process.platform, arch: process.arch});
 
 // A damaged installed release is never repaired in place (a running connection may still execute from it), so its
 // recovery is offline and explicit.
-export const recoveryHint = (root, platform = process.platform) => `stop any \`cua serve\` using it, remove ${root}, then ${installHint(platform)}`;
+export const recoveryHint = root => `stop any \`cua serve\` using it, remove ${root}, then ${installHint()}`;
 
 // Release trees are real directories; a symlink at a release path is never followed as an installed release.
 export function isRealDirectory(path) {
   try { return lstatSync(path).isDirectory(); } catch { return false; }
 }
-// Whether anything, a link included, is at `path`; and whether it is, or leads to, a directory.
+// Whether anything, a link included, is at `path`.
 const present = path => { try { lstatSync(path); return true; } catch { return false; } };
-const isDirectory = path => { try { return statSync(path).isDirectory(); } catch { return false; } };
 
 export function assertHostSupports(pin, host = hostTarget()) {
   if (pin.platform !== host.platform || pin.arch !== host.arch)
@@ -104,21 +98,21 @@ function underComponent(value, components, where) {
   return value;
 }
 
+// A pin's JSON -> the pin, exactly as the darwin schema has it: `signing` and `runtime.ipc` required, no archive format
+// and no notes. A Linux pin is refused first, whatever else it holds (#171 M6b).
 export function parsePin(json, {file} = {}) {
   const where = file ?? 'pin';
-  const linux = isObject(json) && json.platform === 'linux';
-  const keys = ['schema', 'release', 'appVersion', 'platform', 'arch', 'archive', 'components', 'runtime', 'layout', ...(linux ? [] : ['signing'])];
-  exactKeys(json, keys, where, linux ? ['notes'] : []);
+  if (isObject(json) && json.platform === 'linux')
+    invalid(where, `cua 0.30.0 reads no Linux release pin: Linux's runtime is cua's own, recorded in ${LINUX_RUNTIME_NAME}`);
+  exactKeys(json, ['schema', 'release', 'appVersion', 'platform', 'arch', 'archive', 'components', 'runtime', 'layout', 'signing'], where);
   if (json.schema !== 1) invalid(where, `unsupported schema ${JSON.stringify(json.schema)}`);
   const appVersion = text(json.appVersion, `${where}.appVersion`, /^\d+(\.\d+)+$/);
   const platform = text(json.platform, `${where}.platform`, /^[a-z0-9]+$/);
   const arch = text(json.arch, `${where}.arch`, /^[a-z0-9]+$/);
   const release = text(json.release, `${where}.release`);
   if (release !== `${appVersion}-${platform}-${arch}`) invalid(`${where}.release`, `must be "${appVersion}-${platform}-${arch}"`);
-  const notes = linux && 'notes' in json ? text(json.notes, `${where}.notes`) : undefined;
 
-  exactKeys(json.archive, linux ? ['format', 'url', 'length', 'sha256'] : ['url', 'length', 'sha256'], `${where}.archive`);
-  if (linux && json.archive.format !== 'deb') invalid(`${where}.archive.format`, 'must be "deb" on linux');
+  exactKeys(json.archive, ['url', 'length', 'sha256'], `${where}.archive`);
   let url;
   try { url = new URL(json.archive.url); } catch { invalid(`${where}.archive.url`, 'not a URL'); }
   if (url.protocol !== 'https:') invalid(`${where}.archive.url`, 'must be https');
@@ -132,29 +126,24 @@ export function parsePin(json, {file} = {}) {
     components[name] = relativePath(from, `${where}.components.${name}`);
   }
 
-  exactKeys(json.runtime, linux ? ['version', 'node'] : ['version', 'node', 'ipc'], `${where}.runtime`);
+  exactKeys(json.runtime, ['version', 'node', 'ipc'], `${where}.runtime`);
   const runtime = {
     version: text(json.runtime.version, `${where}.runtime.version`),
     node: text(json.runtime.node, `${where}.runtime.node`),
-    ...(linux ? {} : {ipc: text(json.runtime.ipc, `${where}.runtime.ipc`, /^[A-Za-z]+-\d+$/)}),
+    ipc: text(json.runtime.ipc, `${where}.runtime.ipc`, /^[A-Za-z]+-\d+$/),
   };
 
-  const layoutKeys = linux ? LINUX_LAYOUT_KEYS : LAYOUT_KEYS;
-  exactKeys(json.layout, layoutKeys, `${where}.layout`);
-  const layout = Object.fromEntries(layoutKeys.map(key => [key, underComponent(json.layout[key], components, `${where}.layout.${key}`)]));
+  exactKeys(json.layout, LAYOUT_KEYS, `${where}.layout`);
+  const layout = Object.fromEntries(LAYOUT_KEYS.map(key => [key, underComponent(json.layout[key], components, `${where}.layout.${key}`)]));
 
-  let signing;
-  if (!linux) {
-    exactKeys(json.signing, ['team', 'components'], `${where}.signing`);
-    if (!Array.isArray(json.signing.components) || !json.signing.components.length) invalid(`${where}.signing.components`, 'must be a non-empty list');
-    signing = {
-      team: text(json.signing.team, `${where}.signing.team`, /^[A-Z0-9]{10}$/),
-      components: json.signing.components.map((c, i) => underComponent(c, components, `${where}.signing.components[${i}]`)),
-    };
-  }
+  exactKeys(json.signing, ['team', 'components'], `${where}.signing`);
+  if (!Array.isArray(json.signing.components) || !json.signing.components.length) invalid(`${where}.signing.components`, 'must be a non-empty list');
+  const signing = {
+    team: text(json.signing.team, `${where}.signing.team`, /^[A-Z0-9]{10}$/),
+    components: json.signing.components.map((c, i) => underComponent(c, components, `${where}.signing.components[${i}]`)),
+  };
 
-  const archive = {...(linux ? {format: 'deb'} : {}), url: url.href, length: json.archive.length, sha256};
-  return {schema: 1, release, appVersion, platform, arch, archive, ...(notes === undefined ? {} : {notes}), components, runtime, layout, ...(signing ? {signing} : {})};
+  return {schema: 1, release, appVersion, platform, arch, archive: {url: url.href, length: json.archive.length, sha256}, components, runtime, layout, signing};
 }
 
 export function loadPins(dir = RELEASES_DIR) {
@@ -167,18 +156,6 @@ export function loadPins(dir = RELEASES_DIR) {
     return pin;
   });
 }
-
-// The vendor's pins where they describe only the vendor's tree (Linux, #171 M6a): a pins directory the filesystem refuses
-// is a pin error like a pin that does not parse (pins_unavailable), never thrown raw, so the caller keeps it in the
-// vendor's lane or row. `load` is loadPins, or a test's.
-export function vendorPinsOf(load = loadPins) {
-  try { return load(); } catch (error) {
-    if (error instanceof CuaError || typeof error?.code !== 'string') throw error;
-    fail('pins_unavailable', `the vendor's release pins at ${error.path ?? RELEASES_DIR} cannot be read (${error.code})`, {cause: error});
-  }
-}
-// The remedy for either pin error: the pins as this checkout ships them.
-export const RESTORE_PINS = `restore ${RELEASES_DIR} as this cua's checkout ships it`;
 
 // current.json in the real home `home` as install and doctor both classify it on Linux -> null when it is a file or
 // absent (a file that does not parse is the install's to replace), else {code, message, hint}: anything else there (a
@@ -227,7 +204,7 @@ export function readInstalledRecord(root, pin) {
   try { record = JSON.parse(readFileSync(file, 'utf8')); } catch { record = null; }
   const valid = isObject(record) && record.schema === 1 && record.release === pin.release && isObject(record.archive)
     && record.archive.sha256 === pin.archive.sha256 && record.archive.length === pin.archive.length;
-  if (!valid) fail('installed_record_invalid', `${file} does not record a verified install of ${pin.release} from its pinned archive`, {hint: recoveryHint(root, pin.platform)});
+  if (!valid) fail('installed_record_invalid', `${file} does not record a verified install of ${pin.release} from its pinned archive`, {hint: recoveryHint(root)});
   return record;
 }
 
@@ -328,40 +305,6 @@ function locateOwnLinuxRuntime({home, release: named, host}) {
   return {release, home, root: tree.root, paths: {moduleDir: tree.moduleDir}, manifest: {platform: 'linux', arch: host.arch, release, parts}, record: tree.record};
 }
 
-// The vendor's Linux tree, for the vendor selection only (CUA_NATIVE_ENGINE=vendor, until M6b): the host's pinned
-// release under runtimes/, its install record and its layout, found by the pin and never through the pointer. Every
-// refusal carries `context: {release, home, root}` for the caller's own sentence, and tells the two states apart:
-// nothing at the tree's path is `release_not_installed`; anything else that is not a whole tree (a file or a link
-// there, a path that cannot be stat-ed, an install record that is not the pin's, a layout file missing) is
-// `release_damaged`, which is never repaired in place; its remedy names what to remove, which for a runtimes/ (or a
-// home) that is a file is that file, not a release path beneath it that cannot exist.
-export function vendorLinuxRuntime({home, pins = loadPins(), host = hostTarget()}) {
-  if (host.platform !== 'linux') fail('unsupported_platform', `the vendor's Linux tree is for a Linux host; this host is ${host.platform}-${host.arch}`);
-  const real = realHome(home);
-  const pin = selectPin(pins, host);
-  const root = join(homeLayout(real).runtimes, pin.release);
-  const context = {release: pin.release, home: real, root};
-  const damaged = (why, cause, blocking = root) => fail('release_damaged', `the vendor's release ${pin.release} in ${real} is damaged: ${why}`, {hint: recoveryHint(blocking, 'linux'), cause, context});
-  let stat;
-  try { stat = lstatSync(root); } catch (error) {
-    // A file where a directory on the way should be, or a link there that leads nowhere (which reads as absent),
-    // blocks every release under it: the remedy names that file.
-    const {runtimes} = homeLayout(real);
-    if (error.code === 'ENOTDIR' || (error.code === 'ENOENT' && present(runtimes) && !isDirectory(runtimes))) {
-      const blocking = isRealDirectory(real) ? runtimes : real;
-      damaged(`${blocking} is not a directory, so no release can be installed under it`, error, blocking);
-    }
-    if (error.code === 'ENOENT') fail('release_not_installed', `the vendor's release ${pin.release} is not installed in ${real}`, {hint: installHint('linux'), context});
-    damaged(`${root} cannot be read (${error.code ?? error.message})`, error);
-  }
-  if (!stat.isDirectory()) damaged(`${root} is ${stat.isSymbolicLink() ? 'a link' : 'not a directory'}`);
-  let record;
-  try { record = readInstalledRecord(root, pin); } catch (error) { damaged(error.message, error); }
-  const layout = checkLayout(root, pin);
-  if (!layout.ok) damaged(`it is missing ${layout.missing.join(', ')}`);
-  return runtimeFor({home: real, pin, record});
-}
-
 // ---- resolution ----
 
 // The installed release a home points at (or the named one), with its pin and install record, without checking its
@@ -373,11 +316,11 @@ export function locateRuntime({home, release, pins, host = hostTarget()}) {
   if (host.platform === 'linux') return locateOwnLinuxRuntime({home: real, release, host});
   pins ??= loadPins();
   const selected = release ?? readPointer(real);
-  if (!selected) fail('runtime_not_installed', `no runtime is installed in ${real}`, {hint: installHint(host.platform)});
+  if (!selected) fail('runtime_not_installed', `no runtime is installed in ${real}`, {hint: installHint()});
   const pin = findPin(pins, selected);
   assertHostSupports(pin, host);
   const root = join(homeLayout(real).runtimes, pin.release);
-  if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: installHint(host.platform)});
+  if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: installHint()});
   return runtimeFor({home: real, pin, record: readInstalledRecord(root, pin)});
 }
 
@@ -392,6 +335,6 @@ export function resolveRuntime({home, release, pins, host = hostTarget()}) {
     return runtime;
   }
   const layout = checkLayout(runtime.root, runtime.manifest);
-  if (!layout.ok) fail('layout_invalid', `installed release ${runtime.release} is missing ${layout.missing.join(', ')}`, {hint: recoveryHint(runtime.root, runtime.manifest.platform)});
+  if (!layout.ok) fail('layout_invalid', `installed release ${runtime.release} is missing ${layout.missing.join(', ')}`, {hint: recoveryHint(runtime.root)});
   return runtime;
 }

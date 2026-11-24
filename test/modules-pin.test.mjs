@@ -3,24 +3,26 @@
 // `.pnpm/lock.yaml` is the one thing taken out of it, both architectures' closures computed from package-lock.json equal
 // the vendor lockfile's closures by name, version and SHA-512, and each tarball fetched has its SHA-512. Run twice, it
 // writes the same bytes. The archive here is a fixture deb built like the real one (an ar archive whose data.tar.xz
-// holds the lockfile at the pin's module directory), the pins are fixture pins naming it, and fetch serves the fixture
-// registry.
+// holds the lockfile at the member its record names), the records are provenance records of the new shape (#171 M6b;
+// the pre-flight's §4.1, §4.2) written to a directory of the test's and read through the script's own reader, and fetch
+// serves the fixture registry.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {pinModules} from '../scripts/modules-pin.mjs';
-import {arArchive, digest, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
+import {PROVENANCE_DIR, loadProvenanceRecords, parseProvenanceRecord, pinModules} from '../scripts/modules-pin.mjs';
+import {REPO, arArchive, digest} from './fixtures/runtime-fixture.mjs';
 import {FIXTURE_CLOSURES, FIXTURE_PACKAGES, fixtureProvenance, fixturePnpmLock, registry, sha256Of, tarball, writeFixtureModules} from './fixtures/module-registry.mjs';
 
 const LOCK_IN_DEB = 'usr/lib/chatgpt/resources/cua_node/lib/node_modules/.pnpm/lock.yaml';
 
-function fixtureDeb(dir, name, lockYaml) {
+function fixtureDeb(dir, name, lockYaml, {member = LOCK_IN_DEB} = {}) {
   const tree = join(dir, `${name}-tree`);
-  mkdirSync(dirname(join(tree, LOCK_IN_DEB)), {recursive: true});
-  writeFileSync(join(tree, LOCK_IN_DEB), lockYaml);
+  mkdirSync(dirname(join(tree, member)), {recursive: true});
+  writeFileSync(join(tree, member), lockYaml);
+  mkdirSync(join(tree, 'usr/lib/chatgpt/resources/cua_node'), {recursive: true});
   writeFileSync(join(tree, 'usr/lib/chatgpt/resources/cua_node/other-file'), `not taken out: ${name}`);
   const tar = (out, ...paths) => {
     const r = spawnSync('tar', ['-cJf', join(dir, out), '-C', tree, ...paths], {encoding: 'utf8'});
@@ -37,22 +39,40 @@ function fixtureDeb(dir, name, lockYaml) {
   return {path, ...digest(bytes)};
 }
 
-function setup(t, {pnpm = {}, arm64 = false, lock, packages} = {}) {
+// A provenance record of the new shape (§4.1) for a fixture deb, with `over` merged in (a key set to undefined is
+// dropped).
+function fixtureRecord({arch = 'x64', sha256, length, lockfile = LOCK_IN_DEB, ...over}) {
+  const record = {schema: 1, release: `0.0.1-linux-${arch}`, platform: 'linux', arch,
+    archive: {format: 'deb', url: `https://example.invalid/chatgpt_0.0.1_${arch}.deb`, length, sha256}, lockfile, notes: 'fixture: no signature was checked', ...over};
+  for (const [key, value] of Object.entries(record)) if (value === undefined) delete record[key];
+  return record;
+}
+// Writes `records` to a fresh directory `name` of the test's -> that directory.
+function writeRecords(dir, records, name = 'provenance') {
+  const out = join(dir, name);
+  rmSync(out, {recursive: true, force: true});
+  mkdirSync(out);
+  for (const record of records) writeFileSync(join(out, `${record.release}.json`), `${JSON.stringify(record, null, 2)}\n`);
+  return out;
+}
+
+function setup(t, {pnpm = {}, arm64 = false, lock, packages, record = {}} = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-modules-pin-')));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const modules = writeFixtureModules(join(dir, 'modules'), {lock, packages});
   rmSync(join(modules.dir, 'provenance.json'));
   const yaml = fixturePnpmLock({packages, ...pnpm});
   const x64 = fixtureDeb(dir, 'x64', yaml);
-  const pins = [linuxFixturePin({arch: 'x64', sha256: x64.sha256, length: x64.length})];
+  const records = [fixtureRecord({arch: 'x64', sha256: x64.sha256, length: x64.length, ...record})];
   const debs = [x64.path];
   if (arm64) {
     const deb = fixtureDeb(dir, 'arm64', fixturePnpmLock(arm64 === true ? {} : arm64));
-    pins.push(linuxFixturePin({arch: 'arm64', sha256: deb.sha256, length: deb.length}));
+    records.push(fixtureRecord({arch: 'arm64', sha256: deb.sha256, length: deb.length}));
     debs.push(deb.path);
   }
-  const run = (extra = {}) => pinModules({debs, modulesDir: modules.dir, pins, fetch: modules.fetch, log: () => {}, ...extra});
-  return {dir, modules, pins, debs, run, yaml, x64, out: join(modules.dir, 'provenance.json')};
+  const provenanceDir = writeRecords(dir, records);
+  const run = (extra = {}) => pinModules({debs, modulesDir: modules.dir, provenanceDir, fetch: modules.fetch, log: () => {}, ...extra});
+  return {dir, modules, records, provenanceDir, debs, run, yaml, x64, out: join(modules.dir, 'provenance.json')};
 }
 const refused = pattern => error => { assert.ok(error.code, error.message); if (pattern) assert.match(error.message, pattern); return true; };
 
@@ -64,7 +84,7 @@ test('against a pinned deb whose lockfile agrees, it writes the provenance: both
   const expected = fixtureProvenance(s.modules.lockText, s.modules.tarballs);
   assert.deepEqual(written.targets, expected.targets);
   assert.equal(written.lock, sha256Of(Buffer.from(s.modules.lockText)));
-  assert.deepEqual(written.vendor, [{release: s.pins[0].release, archiveSha256: s.x64.sha256, lockfileSha256: sha256Of(Buffer.from(s.yaml))}]);
+  assert.deepEqual(written.vendor, [{release: s.records[0].release, archiveSha256: s.x64.sha256, lockfileSha256: sha256Of(Buffer.from(s.yaml))}]);
   const fetched = new Set([...FIXTURE_CLOSURES.x64, ...FIXTURE_CLOSURES.arm64].map(path => s.modules.lock.packages[path].resolved));
   assert.deepEqual([...s.modules.urls].sort(), [...fetched].sort(), 'each tarball of either closure fetched once');
 });
@@ -80,7 +100,7 @@ test('the same input twice writes the same bytes', async t => {
 test('given the arm64 deb as well, it compares against that lockfile too and records that it did', async t => {
   const s = setup(t, {arm64: true});
   const {provenance} = await s.run();
-  assert.deepEqual(provenance.vendor.map(v => v.release).sort(), s.pins.map(p => p.release).sort());
+  assert.deepEqual(provenance.vendor.map(v => v.release).sort(), s.records.map(r => r.release).sort());
 });
 
 test('a vendor lockfile whose version, integrity or name differs from the lock\'s closure is refused, and nothing is written', async t => {
@@ -173,4 +193,100 @@ test('a package the installer would refuse is refused at pin time: a tarball wit
   const s = setup(t, {packages});
   await assert.rejects(s.run(), refused(/package\.json/));
   assert.equal(existsSync(s.out), false);
+});
+
+// ---- the records and their reader (#171 M6b; the pre-flight's §4.1, §4.2) ----
+
+test('the two checked-in records load through the script\'s reader: the release, the length, the SHA-256 and the lockfile member, and no URL', () => {
+  assert.equal(PROVENANCE_DIR, join(REPO, 'runtime', 'provenance'));
+  assert.deepEqual(readdirSync(PROVENANCE_DIR).sort(), ['26.928.40906-linux-arm64.json', '26.928.40906-linux-x64.json']);
+  const records = loadProvenanceRecords();
+  assert.deepEqual(records, [
+    {release: '26.928.40906-linux-arm64', length: 453477698, sha256: 'ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd', lockfile: LOCK_IN_DEB},
+    {release: '26.928.40906-linux-x64', length: 474898954, sha256: '8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30', lockfile: LOCK_IN_DEB},
+  ]);
+  // what a record keeps: where the archive was published, and the record of its signature check
+  for (const [arch, deb] of [['x64', 'amd64'], ['arm64', 'arm64']]) {
+    const json = JSON.parse(readFileSync(join(PROVENANCE_DIR, `26.928.40906-linux-${arch}.json`), 'utf8'));
+    assert.deepEqual(Object.keys(json), ['schema', 'release', 'platform', 'arch', 'archive', 'lockfile', 'notes'], arch);
+    assert.equal(json.archive.url, `https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_${deb}.deb`);
+    for (const fact of ['_gpgorigin', '3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4', 'GOODSIG', `chatgpt_26.928.40906_${deb}.deb`, 'BADSIG']) assert.ok(json.notes.includes(fact), `${arch}: ${fact}`);
+  }
+});
+
+test('the reader is strict: exactly the record\'s keys, each in its form, and a lockfile member of plain components ending in /.pnpm/lock.yaml', () => {
+  const good = fixtureRecord({sha256: 'a'.repeat(64), length: 1});
+  assert.deepEqual(parseProvenanceRecord(good), {release: '0.0.1-linux-x64', length: 1, sha256: 'a'.repeat(64), lockfile: LOCK_IN_DEB});
+  assert.deepEqual(parseProvenanceRecord({...good, lockfile: 'opt/@scope/v_1-2/.pnpm/lock.yaml'}).lockfile, 'opt/@scope/v_1-2/.pnpm/lock.yaml');
+  // the shape these records had as pins, before the trim: what an installer could act on is no record
+  const asPin = {...good, appVersion: '0.0.1', components: {cua_node: 'usr/lib/chatgpt/resources/cua_node'}, runtime: {version: 'x', node: 'y'}, layout: {moduleDir: 'cua_node/lib/node_modules'}, lockfile: undefined};
+  delete asPin.lockfile;
+  const cases = {
+    'the pin\'s shape': asPin,
+    'an extra key': {...good, components: {}},
+    'an extra archive key': {...good, archive: {...good.archive, mirror: 'https://elsewhere.invalid/x.deb'}},
+    'no notes': fixtureRecord({sha256: 'a'.repeat(64), length: 1, notes: undefined}),
+    'empty notes': {...good, notes: ''},
+    'schema 2': {...good, schema: 2},
+    'another platform': {...good, platform: 'darwin'},
+    'a release that is not the arch\'s': {...good, release: '0.0.1-linux-arm64'},
+    'a release of another form': {...good, release: 'cua-linux-x64'},
+    'a zip': {...good, archive: {...good.archive, format: 'zip'}},
+    'http': {...good, archive: {...good.archive, url: 'http://example.invalid/x.deb'}},
+    'not a URL': {...good, archive: {...good.archive, url: 'chatgpt.deb'}},
+    'a URL in a list': {...good, archive: {...good.archive, url: [good.archive.url]}},
+    'a short hash': {...good, archive: {...good.archive, sha256: 'abc'}},
+    'a length of 0': {...good, archive: {...good.archive, length: 0}},
+    'an absolute lockfile': {...good, lockfile: `/${LOCK_IN_DEB}`},
+    'a ./ lockfile': {...good, lockfile: `./${LOCK_IN_DEB}`},
+    'a lockfile that climbs': {...good, lockfile: 'usr/lib/../../etc/.pnpm/lock.yaml'},
+    'a lockfile with a . component': {...good, lockfile: 'usr/./lib/.pnpm/lock.yaml'},
+    'a lockfile with an empty component': {...good, lockfile: 'usr//lib/.pnpm/lock.yaml'},
+    'a lockfile that ends elsewhere': {...good, lockfile: 'usr/lib/chatgpt/resources/cua_node/manifest.json'},
+    'a lockfile named alone': {...good, lockfile: '.pnpm/lock.yaml'},
+    'a lockfile with a space': {...good, lockfile: 'usr/lib/chat gpt/.pnpm/lock.yaml'},
+    'a lockfile with a wildcard': {...good, lockfile: 'usr/lib/*/.pnpm/lock.yaml'},
+    'a lockfile with a newline': {...good, lockfile: 'usr/lib\n/.pnpm/lock.yaml'},
+    'a lockfile that is an option': {...good, lockfile: '--to-command=sh/.pnpm/lock.yaml'},
+    'a list': [good],
+  };
+  for (const [name, json] of Object.entries(cases)) assert.throws(() => parseProvenanceRecord(json), {code: 'invalid_provenance'}, name);
+});
+
+test('a record whose lockfile is absolute, climbs or ends elsewhere refuses the run before the deb is read, and nothing is written', async t => {
+  for (const lockfile of [`/${LOCK_IN_DEB}`, 'usr/lib/../../etc/.pnpm/lock.yaml', 'usr/lib/chatgpt/resources/cua_node/manifest.json']) {
+    const s = setup(t, {record: {lockfile}});
+    const read = [];
+    await assert.rejects(s.run({log: line => read.push(line)}), {code: 'invalid_provenance'}, lockfile);
+    assert.deepEqual(read, [], `${lockfile}: no deb matched`);
+    assert.equal(existsSync(s.out), false, lockfile);
+    assert.deepEqual(s.modules.urls, [], 'nothing fetched');
+  }
+});
+
+test('the lockfile is the member the record names: a deb that lacks it is refused, and one holding it elsewhere is read there', async t => {
+  const s = setup(t, {record: {lockfile: 'usr/lib/chatgpt/resources/elsewhere/lib/node_modules/.pnpm/lock.yaml'}});
+  await assert.rejects(s.run(), refused(/could not take \.\/usr\/lib\/chatgpt\/resources\/elsewhere\/lib\/node_modules\/\.pnpm\/lock\.yaml out of/));
+  assert.equal(existsSync(s.out), false);
+  const member = 'opt/vendor/lib/node_modules/.pnpm/lock.yaml';
+  const deb = fixtureDeb(s.dir, 'moved', s.yaml, {member});
+  const provenanceDir = writeRecords(s.dir, [fixtureRecord({sha256: deb.sha256, length: deb.length, lockfile: member})], 'moved');
+  const {provenance} = await s.run({debs: [deb.path], provenanceDir});
+  assert.equal(provenance.vendor[0].lockfileSha256, sha256Of(Buffer.from(s.yaml)));
+});
+
+test('pinModules takes no pins: one of the old shape naming the deb is not read, and only the records directory can match it', async t => {
+  const s = setup(t);
+  const oldShape = {schema: 1, release: s.records[0].release, appVersion: '0.0.1', platform: 'linux', arch: 'x64',
+    archive: {format: 'deb', url: 'https://example.invalid/x.deb', length: s.x64.length, sha256: s.x64.sha256},
+    components: {cua_node: 'usr/lib/chatgpt/resources/cua_node'}, runtime: {version: 'x', node: 'y'}, layout: {moduleDir: 'cua_node/lib/node_modules'}};
+  await assert.rejects(s.run({pins: [oldShape], provenanceDir: writeRecords(s.dir, [], 'empty')}), {code: 'archive_not_pinned'});
+  // a record of the old shape in the directory is no record
+  await assert.rejects(s.run({provenanceDir: writeRecords(s.dir, [oldShape], 'old')}), {code: 'invalid_provenance'});
+  // nor is one whose file is not named for its release
+  const misnamed = writeRecords(s.dir, [], 'misnamed');
+  writeFileSync(join(misnamed, 'other.json'), JSON.stringify(s.records[0]));
+  await assert.rejects(s.run({provenanceDir: misnamed}), {code: 'invalid_provenance'});
+  assert.equal(existsSync(s.out), false);
+  assert.deepEqual(s.modules.urls, [], 'nothing fetched');
 });

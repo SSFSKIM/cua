@@ -219,8 +219,7 @@ test('what the module does, under the recorder: lstat of runtimes/ and the two n
 });
 
 test('the module\'s two archives are the provenance records\' and provenance.json\'s', () => {
-  // T4 moves the records to runtime/provenance/; until then they are runtime/releases/'s.
-  const recordOf = release => [join(REPO, 'runtime', 'provenance', `${release}.json`), join(REPO, 'runtime', 'releases', `${release}.json`)].find(existsSync);
+  const recordOf = release => join(REPO, 'runtime', 'provenance', `${release}.json`);
   const {vendor} = JSON.parse(readFileSync(join(REPO, 'runtime', 'modules', 'provenance.json'), 'utf8'));
   assert.deepEqual(Object.keys(RETIRED_RELEASES).sort(), vendor.map(v => v.release).sort());
   for (const [release, {sha256: hash, length}] of Object.entries(RETIRED_RELEASES)) {

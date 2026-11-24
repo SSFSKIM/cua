@@ -181,23 +181,23 @@
 // (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
 import {accessSync, chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
+import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {defaultHome, homeLayout, realHome} from './layout.mjs';
 import {spawnSync} from 'node:child_process';
 import {ENGINE_RECORD, executableFile, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
 import {MIN_ENGINE_VERSION, engineVersionOf, isOlder} from '../services/engine/linux/client.mjs';
-import {STORE_ENV} from '../secrets/store.mjs';
+import {STORE_ENV, storeDir} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
-import {assertTrustedServicesContained, helperOutsideVendorTree} from './sandbox.mjs';
+import {assertTrustedServicesContained, helperOutsideVendorTree, realish} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
 import {NODE_FLOOR, managedNode, managedNodeIntoVendorTree, nodeVersion, readNodePointer} from './managed-node.mjs';
 import {ownInstaller} from './manifest.mjs';
 import {ENGINE_HINT} from './installer.mjs';
-import {outsideVendorTree} from './vendor-tree.mjs';
+import {outsideVendorTree, realOutsideVendorTree} from './vendor-tree.mjs';
 import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {helperFor} from '../sandbox/linux.mjs';
@@ -295,8 +295,14 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   // A disabled connection confines nothing, so it neither needs the deny list nor fails on discovering it (an unreadable
   // store refuses only confined launches). Its launch carries no list, and the supervisor refuses any confined call
   // without one, so it can never be confined later without its list.
-  const denyRead = sandbox === 'disabled' ? null
-    : realDenyList(denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform}));
+  // On Linux the run directory is kept out of the vendor's tree in every mode, as the connection's open keeps it before
+  // it claims the session (a later launch repeats no open), and the deny list is resolved by the guard's own walk, its
+  // roots in the home before the list's discovery of the secret store reads anything.
+  if (linux) assertRunOutsideVendorTree(owned.home, sessionId);
+  const homeRoots = linux && sandbox !== 'disabled' ? linuxHomeRoots(owned.home, sessionId, sessionTmp, [secretsDir ?? storeDir(ambient), secretsProjectDir]) : null;
+  const denyList = sandbox === 'disabled' ? null
+    : denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform});
+  const denyRead = denyList && (linux ? linuxDenyList(denyList, owned.home, homeRoots) : realDenyList(denyList));
 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
@@ -652,6 +658,48 @@ const unresolved = resolved => (resolved.notDirectory ? `cannot be opened as wri
 // Where `path` enters the vendor's tree, or null (outsideVendorTree's `lead`).
 export const vendorTreeLead = (path, home) => outsideVendorTree(path, home).lead ?? null;
 export {outsideVendorTree};
+
+const within = (path, root) => { const rel = relative(root, path); return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('../')); };
+// A path of the real cua home `home` that a Linux launch names by its real path (the deny list's state/, remote/,
+// chrome/ and run/ entries, and a connection's run directory), resolved by the guard's own walk (vendor-tree.mjs
+// realOutsideVendorTree), so the check and the resolution are one (#589, #171 M6b) -> its real path. One that leads into
+// the vendor's tree, or that only a lexical reading could resolve, is refused, naming the link to move aside, and nothing
+// there is resolved: a run directory as layout_invalid, since every mode makes one; a deny-list entry as sandbox_conflict.
+// Doctor's sandbox row resolves the same paths the same way (doctor.mjs sandboxRow).
+function homePathOutsideVendorTree(path, home) {
+  const at = realOutsideVendorTree(path, home);
+  if (at.real !== undefined) return at.real;
+  const run = within(path, homeLayout(home).run);
+  const where = at.lead ? `leads to ${at.lead}, under the vendor's tree, which is no part of cua's`
+    : `cannot be resolved as the kernel would resolve it, past ${at.unresolved}, so it might lead into the vendor's tree`;
+  const what = run ? 'a connection\'s run directory is made there' : 'what JavaScript cells may not read is taken by its real path, which is not resolved there';
+  fail(run ? 'layout_invalid' : 'sandbox_conflict', `${path} ${where}: ${what}; nothing was started`, {hint: `move ${at.links[0] ?? path} aside, then run \`${ownInstaller().command}\``});
+}
+// The run directory of `sessionId` in the cua home `home` (and so run/ itself) kept out of the vendor's tree. A Linux
+// connection's open and a listing's call it before they claim the session, which writes its record in run/, and every
+// launch's construction calls it again.
+export const assertRunOutsideVendorTree = (home, sessionId) => {
+  const real = realHome(home);
+  homePathOutsideVendorTree(join(homeLayout(real).run, sessionId, 'tmp'), real);
+};
+// The paths of the real cua home `home` a Linux deny list names, resolved by homePathOutsideVendorTree before the list is
+// built: its state/, remote/, chrome/ and run/, the session's directory and temp `sessionTmp` it re-exposes, and those of
+// `stores` (the secret store and a project tier) that lie in the home. Building the list discovers the store's tiers on
+// the filesystem (src/sandbox/policy.mjs denyListFor), and a store may lie beneath one of these, so each is refused, or
+// resolved, before anything is read there (#589, fix wave 2) -> Map(path -> its real path), for linuxDenyList to reuse.
+export function linuxHomeRoots(home, sessionId, sessionTmp, stores = []) {
+  const {run} = homeLayout(home);
+  const roots = [...['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)), join(run, sessionId), sessionTmp,
+    ...stores.filter(path => typeof path === 'string' && within(path, home))];
+  return new Map(roots.map(path => [path, homePathOutsideVendorTree(path, home)]));
+}
+// The Linux deny list `list` (denyListFor's) at its real locations, as realDenyList gives them, but every entry of the
+// real cua home `home` resolved by homePathOutsideVendorTree (as `roots`, linuxHomeRoots', already resolved it); the rest
+// (a secret store and ~/.config/cua outside the home) by realish.
+export function linuxDenyList(list, home, roots = new Map()) {
+  const real = path => roots.get(path) ?? (within(path, home) ? homePathOutsideVendorTree(path, home) : realish(path));
+  return {deny: list.deny.map(real), reexpose: list.reexpose.map(real), metadataOnly: list.metadataOnly.map(real), tiers: list.tiers.map(real)};
+}
 // The sentence half that says where a path that entered the tree went.
 const intoTree = (path, lead) => (lead === resolve(path) ? 'lies under the vendor\'s tree' : `leads to ${lead}, under the vendor's tree`);
 

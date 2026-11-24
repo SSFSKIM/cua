@@ -88,7 +88,7 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
       await verifyRuntimeTree(target, manifest, {verifySignatures});
     } catch (error) {
       if (!(error instanceof CuaError)) throw error;
-      fail('installed_release_invalid', `installed release ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: recoveryHint(target, manifest.platform), cause: error});
+      fail('installed_release_invalid', `installed release ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: recoveryHint(target), cause: error});
     }
     activate(real, manifest.release);
     return {release: manifest.release, root: target, record: existing, changed: false};

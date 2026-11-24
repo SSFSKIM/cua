@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { after, afterEach, beforeEach, test } from 'node:test';
 
 import { DECLARED_VENDOR_ENDS } from '../../scripts/linux-engine-diff/scene-ended.mjs';
-import { EXTRACTED, SERVICE_PATH, VendorFixtureRefused, binaryPath, fixturePaths, loadFixtureManifest, releaseName, verifyVendorFixture } from '../../scripts/linux-engine-diff/vendor-fixture.mjs';
+import { EXTRACTED, SERVICE_PATH, VendorFixtureRefused, binaryPath, fixturePaths, loadFixtureManifest, releaseName, VENDOR_FIXTURE_RELEASE, verifyVendorFixture } from '../../scripts/linux-engine-diff/vendor-fixture.mjs';
 import { pinVendorFixture } from '../../scripts/linux-engine-gate/vendor-fixture-pin.mjs';
 import { arArchive } from '../fixtures/runtime-fixture.mjs';
 
@@ -196,7 +196,7 @@ test("the committed manifest holds hashes only, each arch's pinned build the dig
 // ---- the one-time pin tool --------------------------------------------------------------------------------------------
 
 const DEB_ROOT = 'usr/lib/chatgpt/resources/cua_node';
-/** A fixture deb whose payload holds `files` (relative to cua_node/) and `links`, and the pin that names it. */
+/** A fixture deb whose payload holds `files` (relative to cua_node/) and `links`, and the provenance record that names it. */
 function makeDeb({ files, links = {}, member = DEB_ROOT } = {}) {
   const tree = fresh('deb-tree');
   writeTree(join(tree, member), files, links);
@@ -207,15 +207,23 @@ function makeDeb({ files, links = {}, member = DEB_ROOT } = {}) {
   const bytes = arArchive([['debian-binary', Buffer.from('2.0\n')], ['control.tar.xz', readFileSync(data)], ['data.tar.xz', readFileSync(data)]]);
   const path = join(fresh('deb'), 'chatgpt.deb');
   writeFileSync(path, bytes);
-  const pin = { release: RELEASE, platform: 'linux', arch: ARCH, archive: { format: 'deb', url: 'https://example.invalid/chatgpt.deb', length: bytes.length, sha256: sha(bytes) } };
-  return { path, pin, sha256: sha(bytes), length: bytes.length };
+  const record = { schema: 1, release: RELEASE, platform: 'linux', arch: ARCH, archive: { format: 'deb', url: 'https://example.invalid/chatgpt.deb', length: bytes.length, sha256: sha(bytes) },
+    lockfile: `${DEB_ROOT}/lib/node_modules/.pnpm/lock.yaml`, notes: 'fixture' };
+  return { path, record, sha256: sha(bytes), length: bytes.length };
 }
 const cuaNode = (files) => Object.fromEntries(Object.entries(files).filter(([p]) => p.startsWith('cua_node/')).map(([p, t]) => [p.slice('cua_node/'.length), t]));
 
-function pinRun({ deb, fixture, pins = [deb.pin] }) {
+/** A records directory holding `records`, as modules-pin.mjs's reader takes them. */
+function recordsDir(records) {
+  const dir = fresh('provenance');
+  for (const record of records) writeFileSync(join(dir, `${record.release}.json`), JSON.stringify(record));
+  return dir;
+}
+function pinRun({ deb, fixture, records = [deb.record] }) {
   const manifestFile = join(fresh('manifest'), 'vendor-fixture.json');
   const log = [];
-  const run = () => pinVendorFixture({ deb: deb.path, fixture: fixture.dir, pins, manifestFile, log: (line) => log.push(line) });
+  const provenanceDir = recordsDir(records);
+  const run = () => pinVendorFixture({ deb: deb.path, fixture: fixture.dir, provenanceDir, manifestFile, log: (line) => log.push(line) });
   return { manifestFile, log, run };
 }
 
@@ -261,14 +269,28 @@ test('the pin tool refuses a deb that is no pin\'s before reading it, and a list
   const fixture = makeFixture();
   const deb = makeDeb({ files: cuaNode(TREE) });
   const other = makeDeb({ files: { ...cuaNode(TREE), 'bin/node': 'other' } });
-  const { manifestFile, run } = pinRun({ deb, fixture, pins: [other.pin] });
-  await assert.rejects(run(), /is not a pinned vendor deb/);
+  const { manifestFile, run } = pinRun({ deb, fixture, records: [other.record] });
+  await assert.rejects(run(), /is not a vendor deb any provenance record pins/);
   assert.equal(existsSync(manifestFile), false);
   // a list that says another hash for a file than the tar holds
   const lying = makeFixture({ list: listOf({ ...TREE, 'cua_node/bin/node': 'something else' }) });
   const second = pinRun({ deb, fixture: lying });
   await assert.rejects(second.run(), /the tree list is not the tar's; nothing was written: 1 changed: cua_node\/bin\/node/);
   assert.equal(existsSync(second.manifestFile), false);
+});
+
+// #171 M6b T4: the tool reads the provenance records through modules-pin.mjs's reader, never a pin: a record of the
+// pins' old shape naming the deb matches nothing, and a record of a release the fixtures do not hold gets no entry
+test('the pin tool takes the deb\'s record through the provenance reader: an old-shape pin is no record, and another release is refused', async () => {
+  const fixture = makeFixture();
+  const deb = makeDeb({ files: cuaNode(TREE) });
+  const asPin = { ...deb.record, lockfile: undefined, appVersion: VENDOR_FIXTURE_RELEASE, components: { cua_node: DEB_ROOT }, runtime: { version: 'x', node: 'y' }, layout: { moduleDir: 'cua_node/lib/node_modules' } };
+  const old = pinRun({ deb, fixture, records: [asPin] });
+  await assert.rejects(old.run(), (error) => error.code === 'invalid_provenance');
+  assert.equal(existsSync(old.manifestFile), false);
+  const other = pinRun({ deb, fixture, records: [{ ...deb.record, release: '26.928.40906-linux-riscv64', arch: 'riscv64' }] });
+  await assert.rejects(other.run(), /is the pinned 26\.928\.40906-linux-riscv64, not 26\.928\.40906-linux-x64 or 26\.928\.40906-linux-arm64/);
+  assert.equal(existsSync(other.manifestFile), false);
 });
 
 // fix wave 1, finding 3: the tar hashed is the tar compared. A tar swapped at its path after its hash was taken (here,
@@ -282,7 +304,7 @@ test('the pin tool compares the very tar it hashed: one swapped at its path afte
   const swap = (line) => {
     if (line.startsWith('fixture tar ')) writeFileSync(fixture.tar, readFileSync(good.tar));
   };
-  await assert.rejects(pinVendorFixture({ deb: deb.path, fixture: fixture.dir, pins: [deb.pin], manifestFile, log: swap }), /bytes differ: cua_node\/bin\/node/);
+  await assert.rejects(pinVendorFixture({ deb: deb.path, fixture: fixture.dir, provenanceDir: recordsDir([deb.record]), manifestFile, log: swap }), /bytes differ: cua_node\/bin\/node/);
   assert.equal(existsSync(manifestFile), false, 'no manifest for a tar it never compared');
 });
 

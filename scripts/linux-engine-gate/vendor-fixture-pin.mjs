@@ -6,8 +6,9 @@
 //
 // A fixture's checksums prove that its tar is the one preserved, not that its tree is the vendor's: each tar was taken
 // from an installed home, which could have changed after its install. So the tool
-//   1. matches the deb to its record by length and SHA-256, through scripts/modules-pin.mjs's own matcher, over the Linux
-//      pins (a private snapshot of the deb is hashed, matched and read, so a deb replaced meanwhile changes nothing);
+//   1. matches the deb to its record by length and SHA-256, through scripts/modules-pin.mjs's own matcher, over the
+//      provenance records its own reader loads (a private snapshot of the deb is hashed, matched and read, so a deb
+//      replaced meanwhile changes nothing);
 //   2. unpacks the deb's payload under usr/lib/chatgpt/resources/cua_node/ and the fixture's tar (a private snapshot, hashed
 //      once: the hash written is that of the bytes compared) to scratch, and compares
 //      the deb's cua_node/ with the fixture's: the same names, the same types, the same link targets and the same bytes
@@ -26,14 +27,15 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 import { MANIFEST_FILE, TREE_LIST, binaryPath, checkManifestEntry, loadFixtureManifest, parseTreeList, releaseName, sha256Bytes, sha256File, treeDifferences, walkTree } from '../linux-engine-diff/vendor-fixture.mjs';
-import { loadPins } from '../../src/runtime/manifest.mjs';
-import { arMember, matchPin } from '../modules-pin.mjs';
+import { arMember, loadProvenanceRecords, matchRecord } from '../modules-pin.mjs';
 
 /** The deb's payload directory the fixture's cua_node/ is compared with. */
 export const DEB_CUA_NODE = 'usr/lib/chatgpt/resources/cua_node';
 /** The one entry beside cua_node/ in a release tree that is cua's, not the vendor's. */
 export const SET_ASIDE = 'install.json';
 const LIMIT = 20;
+/** The architectures a fixture is kept for. */
+const ARCHES = ['x64', 'arm64'];
 
 const run = (command, args) => new Promise((done, reject) => {
   execFile(command, args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => (error ? reject(Object.assign(error, { stderr })) : done(stdout)));
@@ -108,10 +110,12 @@ class IdentityDiffers extends Error {
 }
 
 /**
- * The check and the entry. `pins` the Linux pins the matcher reads, `manifestFile` the manifest written, `log` one line
- * a step. -> {entry, manifest}; throws on any difference with nothing written.
+ * The check and the entry. `provenanceDir` the records' directory the matcher reads (modules-pin.mjs's own, by
+ * default), `manifestFile` the manifest written, `log` one line a step. -> {entry, manifest}; throws on any difference
+ * with nothing written.
  */
-export async function pinVendorFixture({ deb, fixture, pins = loadPins().filter((p) => p.platform === 'linux'), manifestFile = MANIFEST_FILE, tar = 'tar', log = (line) => console.log(line) }) {
+export async function pinVendorFixture({ deb, fixture, provenanceDir, manifestFile = MANIFEST_FILE, tar = 'tar', log = (line) => console.log(line) }) {
+  const records = loadProvenanceRecords(provenanceDir);
   const scratch = mkdtempSync(join(tmpdir(), 'cua-vendor-fixture-pin-'));
   try {
     const snapshot = join(scratch, 'archive.deb');
@@ -120,12 +124,12 @@ export async function pinVendorFixture({ deb, fixture, pins = loadPins().filter(
     } catch (error) {
       throw new Error(`${deb} is not readable: ${error.code ?? error.message}`);
     }
-    const { pin, sha256: debSha256 } = await matchPin(deb, snapshot, pins);
-    const arch = pin.arch;
-    const release = releaseName(arch);
-    if (pin.release !== release) throw new Error(`${deb} is the pinned ${pin.release}, not ${release}, the release the fixtures hold`);
+    const { record, sha256: debSha256 } = await matchRecord(deb, snapshot, records);
+    const arch = ARCHES.find((a) => releaseName(a) === record.release);
+    if (!arch) throw new Error(`${deb} is the pinned ${record.release}, not ${ARCHES.map(releaseName).join(' or ')}, the releases the fixtures hold`);
+    const release = record.release;
     const debLength = lstatSync(snapshot).size;
-    log(`deb ${deb}: ${debLength} bytes, SHA-256 ${debSha256}: the pinned ${pin.release} (${pin.archive.url ?? 'no url'})`);
+    log(`deb ${deb}: ${debLength} bytes, SHA-256 ${debSha256}: the pinned ${record.release}`);
 
     const tarName = `${release}.tar`;
     const tarPath = join(fixture, tarName);
@@ -176,7 +180,7 @@ export async function pinVendorFixture({ deb, fixture, pins = loadPins().filter(
       tar: { name: tarName, sha256: tarSha256, length: tarLength },
       treeList: { sha256: sha256Bytes(listBytes), files: listed.size },
       binary: { path: binaryPath(arch), sha256: listed.get(binaryPath(arch)) ?? '' },
-      deb: { release: pin.release, sha256: debSha256, length: debLength },
+      deb: { release: record.release, sha256: debSha256, length: debLength },
     });
     const manifest = existsSync(manifestFile) ? loadFixtureManifest(manifestFile) : {
       schema: 1,

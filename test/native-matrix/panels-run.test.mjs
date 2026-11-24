@@ -34,11 +34,13 @@ const sent = (calls, test) => calls.some(c => test(c.code));
 // reading at all; `claims`: the harness Escape's answer whatever happened (a lane's word the device may contradict);
 // `afterCase`: what a case's act does to the world (`recentre`: the panel back over the alerts; `foreign`: another
 // app's window in front); `sheet`: the helper answering that it found a Save sheet as an AXSheet child; `clamps`: the
-// system keeping a moved panel's x at 0 or more; `drifts`: each move's read-back x off the asked one, in turn (none
+// system keeping a moved panel's x at that x or more (true: 0); `axWrite`: the helper's answer for its write, over a
+// successful one's; `drifts`: each move's read-back x off the asked one, in turn (none
 // after them); `elements`: the frames the device reads for the panel's focused element and search field.
 const OTHER_FRONT = {pid: 999, bundleId: 'com.example.other', owned: false};
 function panelDevice({moves = true, escape = true, click = true, ax = true, alerts = ALERTS, savePanel = false, unread = false, listed = true, twin = false, claims = null,
-  afterCase = null, sheet = false, clamps = false, drifts = [], elements = {}} = {}) {
+  afterCase = null, sheet = false, clamps = false, axWrite = {}, drifts = [], elements = {}} = {}) {
+  const clampAt = clamps === true ? 0 : clamps === false ? null : clamps;
   let open = false, at = CENTRED, foreign = false;
   const placed = [], cancelled = [], states = [], elementReads = [];
   const drift = [...drifts];
@@ -56,8 +58,8 @@ function panelDevice({moves = true, escape = true, click = true, ax = true, aler
     if (a[0] === 'place' && ['openPanel', 'savePanel'].includes(flag(a, 'scene'))) {
       const [x, y, width, height] = flag(a, 'frame').split(',').map(Number);
       placed.push(a);
-      if (moves) at = sheet ? {x, y, width: at.width, height: at.height} : {x: clamps ? Math.max(0, x) : x + (drift.shift() ?? 0), y, width, height};
-      return {answer: {requested: {x, y, width, height}, readBack: at, matched: moves, exitStatus: null, pid: 300, ax: {trusted: true, found: true, size: sheet ? null : 0, position: sheet ? null : 0, readBack: at, ...(sheet ? {kind: 'sheet', parentPosition: 0} : {})}}, at: [1, 2]};
+      if (moves) at = sheet ? {x, y, width: at.width, height: at.height} : {x: clampAt !== null ? Math.max(clampAt, x) : x + (drift.shift() ?? 0), y, width, height};
+      return {answer: {requested: {x, y, width, height}, readBack: at, matched: moves, exitStatus: null, pid: 300, ax: {trusted: true, found: true, size: null, position: sheet ? null : 0, readBack: at, ...(sheet ? {kind: 'sheet', parentPosition: 0} : {}), ...axWrite}}, at: [1, 2]};
     }
     // The device's reading of the panel's window (`panel state`), and its AX cancel.
     if (a[0] === 'panel' && a[1] === 'state') { states.push(a); return {answer: {state: unread ? 'unread' : open ? 'open' : 'closed'}, at: [1, 2]}; }
@@ -531,7 +533,7 @@ test('a clamped panel takes the fallback: its key cells clear of the alerts run,
     // The click cases: NO VERDICT ownerSitting, their act never sent; their timing row with them.
     for (const id of ['openPanel/frontmost/click.cancel', 'openPanel/background/click.cancel@finder']) {
       assert.equal(sampleCause({...rows[id], hosted: true}).category, 'ownerSitting', `${engine} ${id}`);
-      assert.match(rows[id].ownerSitting, /left to the owner's sitting, unsent: the Open panel's window 994 stood at 0,80 880x448: its x clamped at 0 or more where -58 was asked/);
+      assert.match(rows[id].ownerSitting, /left to the owner's sitting, unsent: the Open panel's window 994 stood at 0,80 880x448: its x clamped where -116 was asked/);
     }
     assert.ok(!calls.some(c => c.code.includes('__m.threw = null') && c.code.includes('await __app.click(__m.index)')), 'no click case\'s act was sent');
     assert.equal(sampleCause(result.rows.find(r => r.section === 'speed' && r.id === 'textedit/method.panel.click.cancel')).category, 'ownerSitting');
@@ -547,6 +549,37 @@ test('under the fallback a key cell whose element an alert overlaps, or whose el
     if (category === 'alert') assert.match(escape.alertGuard.detail, /overlaps the Open panel's focused element \(840,200 40x22\)/);
     assert.ok(!sent(calls, CASE_ESCAPE), 'the judged Escape was not sent');
   }
+});
+// Review finding 3: a clamp is judged on the final read-back, and only after a position write that took. A write not
+// taken, or one that left the panel where it opened, is an unproven placement: NO VERDICT venue, the case unsent. A clamp
+// short of the strip at a negative x is a clamp too.
+test('a clamp is a written position the system moved elsewhere; a write not taken, or no move, is the venue\'s', async () => {
+  const plan = {...PANEL_PLAN, background: []};
+  for (const [what, options, fallback] of [
+    ['untrusted, unmoved', {moves: false, axWrite: {trusted: false, position: null}}, false],
+    ['no window found, unmoved', {moves: false, axWrite: {found: false, position: null}}, false],
+    ['an AXError, unmoved', {moves: false, axWrite: {position: -25205}}, false],
+    ['written, unmoved', {moves: false}, false],
+    ['written, clamped at x -20', {clamps: -20, elements: {focused: FIELD, search: FIELD}}, true],
+    ['written, clamped at x 0', {clamps: true, elements: {focused: FIELD, search: FIELD}}, true],
+  ]) {
+    const calls = [];
+    const dev = panelDevice(options);
+    const {result} = await runWith({plan, env: HOSTED, calls, cell: dev.cell, ops: dev.ops});
+    const placements = result.meta.placement.panel;
+    assert.ok(placements.every(p => (p.fallback === 'clamped') === fallback && p.inStrip === false), `${what}: ${JSON.stringify(placements[0])}`);
+    const rows = panelRows(result);
+    if (fallback) assert.ok(rows.every(r => r.venueInput === undefined), what);
+    else {
+      assert.ok(rows.every(r => sampleCause({...r, hosted: true}).category === 'venue' && r.ownerSitting === undefined), what);
+      assert.ok(!sent(calls, CASE_ESCAPE), `${what}: nothing of the cases sent`);
+    }
+  }
+  // At -20 the read-back is judged after the one correction: asked -58, then -58 - 38, read back at -20 both times.
+  const dev = panelDevice({clamps: -20, elements: {focused: FIELD, search: FIELD}});
+  const {result} = await runWith({plan, env: HOSTED, cell: dev.cell, ops: dev.ops});
+  assert.deepEqual(dev.placed.slice(0, 2).map(a => flag(a, 'frame')), ['-58,80,880,448', '-96,80,880,448']);
+  assert.deepEqual(result.meta.placement.panel[0].readBack, rect(-20, 80, 880, 448));
 });
 test('off a hosted runner no fallback is taken: nothing is moved, nothing left to the owner\'s sitting', async () => {
   const dev = panelDevice({clamps: true, alerts: []});

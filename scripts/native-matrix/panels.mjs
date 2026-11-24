@@ -15,8 +15,9 @@
 // the window's before the move), readBack?, matched?, ax?, moved, inStrip, fallback?, reason?}, or {beforeRow, target,
 // unread | found: false}); a read-back that misses the strip makes the case on that opening NO VERDICT `venue`, naming
 // where it stood; so does, on a hosted runner, a placement it could not prove (the list unread or no window found, after
-// a few reads), the case unsent. The Open panel whose negative x the system clamped (read back at x 0 or more) takes
-// ruling 1203's fallback instead (`fallback: 'clamped'`, ctx.panelFallback): its key cases run, the alert guard reading
+// a few reads), the case unsent. The Open panel the system clamped (its position written without error, the panel moved,
+// its read-back right of the x asked and still outside the strip) takes ruling 1203's fallback instead (`fallback:
+// 'clamped'`, ctx.panelFallback): its key cases run, the alert guard reading
 // the frame of the element their input lands on (./steps.mjs elementGuardCause), and its pointer cases are left to the
 // owner's sitting, unsent (NO VERDICT `ownerSitting`, ./run.mjs). A Save sheet the helper finds as an AXSheet child of its
 // document is placed by moving the document (`via: 'parent'`). Each entry and each row of
@@ -142,18 +143,22 @@ async function placePanel(ctx, target, known, opening) {
     if (stripCause(at, alerts)) {
       const to = stripFrame(w.bounds, alerts);
       const move = frame => { try { return device(ctx, ['place', '--scene', target, '--window', String(w.number), '--frame', frameArg(frame)]); } catch (error) { return {error: String(error.message).slice(0, 200)}; } };
-      let answer = move(to);
+      let answer = move(to), asked = to;
       if (isRect(answer?.readBack)) at = answer.readBack;
-      // The system kept x at 0 or more where a negative x was asked: no move puts the panel in the strip.
-      clamped = to.x < 0 && isRect(answer?.readBack) && answer.readBack.x >= 0;
-      // The move's own drift (pilot C-3: 81,73 read back for 80,80) past the strip's edge: once more, by that much.
+      // A read-back right of the x asked and past the strip's edge (pilot C-3's drift: 81,73 read back for 80,80): once
+      // more, left by that much.
       const over = isRect(answer?.readBack) ? answer.readBack.x + answer.readBack.width - (to.x + to.width) : 0;
-      if (!clamped && over > 0 && answer.readBack.x > to.x && stripCause(at, alerts)) {
-        const again = {...to, x: to.x - over};
-        entry.corrected = {first: answer.readBack, to: again};
-        answer = move(again);
+      if (over > 0 && answer.readBack.x > to.x && stripCause(at, alerts)) {
+        asked = {...to, x: to.x - over};
+        entry.corrected = {first: answer.readBack, to: asked};
+        answer = move(asked);
         if (isRect(answer?.readBack)) at = answer.readBack;
       }
+      // Judged on the final read-back (review finding 3): a clamp is the system putting a panel whose position write
+      // succeeded somewhere right of the x asked, the panel moved from where it opened. A write not taken (refused,
+      // untrusted, no window found, an AXError) or a panel that did not move is an unproven placement, the venue's.
+      const ax = answer?.ax, wrote = ax?.trusted === true && ax.found === true && (ax.kind === 'sheet' ? ax.parentPosition === 0 : ax.position === 0);
+      clamped = wrote && isRect(answer?.readBack) && !sameRect(answer.readBack, w.bounds) && answer.readBack.x > asked.x;
       // A Save sheet the helper found as an AXSheet child takes no position of its own: its parent was moved to place it
       // (`via: 'parent'`) and the sheet's frame read back. Nothing is asked to change size; one that did says so.
       const sheet = answer?.ax?.kind === 'sheet';
@@ -170,7 +175,7 @@ async function placePanel(ctx, target, known, opening) {
       // fallback allows (see the header), the opening not the venue's.
       if (clamped && target === 'openPanel' && hosted) {
         entry.fallback = 'clamped';
-        ctx.panelFallback = {target, window: w.number, frame: at, detail: `the ${PANEL_NAMES[target]}'s window ${w.number} stood at ${rectText(at)}: its x clamped at 0 or more where ${entry.to.x} was asked, so it could not be placed in the strip left of the capture alerts (ruling 1203)`};
+        ctx.panelFallback = {target, window: w.number, frame: at, detail: `the ${PANEL_NAMES[target]}'s window ${w.number} stood at ${rectText(at)}: its x clamped where ${(entry.corrected?.to ?? entry.to).x} was asked, so it could not be placed in the strip left of the capture alerts (ruling 1203)`};
       } else venue ??= `the ${PANEL_NAMES[target]}'s window ${w.number} was not placed in the strip left of the capture alerts: ${missed}${entry.reason !== missed ? `; ${entry.reason}` : ''} (ruling 1195)`;
     }
     kept.push(entry);

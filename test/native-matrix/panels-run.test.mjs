@@ -39,12 +39,15 @@ const sent = (calls, test) => calls.some(c => test(c.code));
 // after them); `elements`: the frames the device reads for the panel's focused element and search field.
 const OTHER_FRONT = {pid: 999, bundleId: 'com.example.other', owned: false};
 function panelDevice({moves = true, escape = true, click = true, ax = true, alerts = ALERTS, savePanel = false, unread = false, listed = true, twin = false, claims = null,
-  afterCase = null, sheet = false, clamps = false, axWrite = {}, drifts = [], elements = {}} = {}) {
+  afterCase = null, sheet = false, clamps = false, axWrite = {}, drifts = [], elements = {}, foreignAtEscapeGuard = false} = {}) {
   const clampAt = clamps === true ? 0 : clamps === false ? null : clamps;
-  let open = false, at = CENTRED, foreign = false;
+  let open = false, at = CENTRED, foreign = false, guardForeign = false;
   const placed = [], cancelled = [], states = [], elementReads = [];
   const drift = [...drifts];
   const cell = code => {
+    // `foreignAtEscapeGuard`: once the judged Escape's case is prepared, another app is in front in every read the alert
+    // guard takes (its own fresh read), while the plain reads before it still show TextEdit.
+    if (foreignAtEscapeGuard && code.includes('__m.ready = __r?.ready') && code.includes('the Open panel is not up') && !code.includes('the field is not in the text')) guardForeign = true;
     if (code.includes('__m.threw = null')) { if (afterCase === 'recentre') at = CENTRED; if (afterCase === 'foreign' || afterCase === 'unread') foreign = afterCase; }
     if (code.includes('pressKey("super+o")') || code.includes('cua-matrix-cell: savesheet.open')) { open = true; at = savePanel === true ? rect(240, 100, 480, 200) : savePanel || CENTRED; return {opened: true}; }
     if (code.includes('cua-matrix-cell: sheet.new')) return {opened: true};
@@ -67,7 +70,7 @@ function panelDevice({moves = true, escape = true, click = true, ax = true, aler
     if (a[0] === 'panel') { cancelled.push(a); if (ax) open = false; return {answer: {found: true, via: 'cancelButton', pressed: 0, closed: !open, state: open ? 'open' : 'closed', pid: 300}, at: [1, 2]}; }
     const out = base(a);
     if (!isGuardRead(a)) return foreign && a[0] === 'read' && out.reading ? {...out, reading: {...out.reading, frontmost: foreign === 'unread' ? null : OTHER_FRONT}} : out;
-    return {...out, alertBounds: {...out.alertBounds, alerts: alerts.map((bounds, i) => ({number: 59 + i, layer: 8, bounds})),
+    return {...out, ...(guardForeign && out.reading ? {reading: {...out.reading, frontmost: OTHER_FRONT}} : {}), alertBounds: {...out.alertBounds, alerts: alerts.map((bounds, i) => ({number: 59 + i, layer: 8, bounds})),
       windows: [...out.alertBounds.windows.map(w => ({...w, bounds: SCENE})), ...(open && listed ? [{scene: 'textedit', number: 994, recorded: false, bounds: at}, ...(twin ? [{scene: 'textedit', number: 995, recorded: false, bounds: rect(300, 300, 500, 300)}] : [])] : [])]}};
   };
   return {cell, ops: {matrix}, placed, cancelled, states, elementReads};
@@ -527,8 +530,9 @@ test('a clamped panel takes the fallback: its key cells clear of the alerts run,
     }
     assert.ok(sent(calls, CASE_ESCAPE), 'the judged Escape was sent');
     assert.ok(calls.some(c => c.code.includes(`typeText(${JSON.stringify(PANEL_SEARCH)})`)), 'the judged search typing was sent');
-    // The search typing's click on its field checked on the field, its keys on the focused element; Escape's on the focused element.
-    assert.deepEqual(dev.elementReads, ['search', 'focused', 'focused'], engine);
+    // The search typing's click on its field checked on the field, its keys on the focused element; the judged Escape's
+    // on the focused element, and so the close's Escape after each of the five openings (review finding 4).
+    assert.deepEqual([dev.elementReads.filter(e => e === 'search').length, dev.elementReads.filter(e => e === 'focused').length], [1, 2 + 5], engine);
     assert.ok(result.meta.elementGuards.every(g => g.cause === undefined && g.frame.x === FIELD.x));
     // The click cases: NO VERDICT ownerSitting, their act never sent; their timing row with them.
     for (const id of ['openPanel/frontmost/click.cancel', 'openPanel/background/click.cancel@finder']) {
@@ -539,15 +543,22 @@ test('a clamped panel takes the fallback: its key cells clear of the alerts run,
     assert.equal(sampleCause(result.rows.find(r => r.section === 'speed' && r.id === 'textedit/method.panel.click.cancel')).category, 'ownerSitting');
   }
 });
-test('under the fallback a key cell whose element an alert overlaps, or whose element is unread, is refused unsent', async () => {
+test('under the fallback a key cell whose element an alert overlaps, or whose element is unread, is refused unsent; no Escape is sent, judged or the close\'s', async () => {
   for (const [elements, category] of [[{focused: UNDER_ALERT, search: FIELD}, 'alert'], [{search: FIELD}, 'unread']]) {
-    const calls = [];
-    const dev = panelDevice({clamps: true, elements});
-    const {result} = await runWith({plan: {...PANEL_PLAN, background: []}, env: HOSTED, calls, cell: dev.cell, ops: dev.ops});
-    const escape = panelRows(result).find(r => r.id === 'openPanel/frontmost/pressKey.escape');
-    assert.equal(escape.alertGuard?.cause, category, JSON.stringify(escape));
-    if (category === 'alert') assert.match(escape.alertGuard.detail, /overlaps the Open panel's focused element \(840,200 40x22\)/);
-    assert.ok(!sent(calls, CASE_ESCAPE), 'the judged Escape was not sent');
+    for (const engine of ['vendor', 'cua']) {
+      const calls = [];
+      const dev = panelDevice({clamps: true, elements});
+      const {result} = await runWith({engine, plan: {...PANEL_PLAN, background: []}, env: HOSTED, calls, cell: dev.cell, ops: dev.ops});
+      const escape = panelRows(result).find(r => r.id === 'openPanel/frontmost/pressKey.escape');
+      assert.equal(escape.alertGuard?.cause, category, JSON.stringify(escape));
+      if (category === 'alert') assert.match(escape.alertGuard.detail, /overlaps the Open panel's focused element \(840,200 40x22\)/);
+      assert.ok(!sent(calls, CASE_ESCAPE), 'the judged Escape was not sent');
+      assert.ok(!sent(calls, HARNESS_ESCAPE), 'nor any close\'s Escape');
+      // Every close refused its Escape and went on: the click refused by the guard (the panel over the alerts), the
+      // device's AX cancel closing it.
+      assert.ok(result.meta.panelCloses.every(c => c.closed && c.steps[0].refused?.cause === category && c.steps.at(-1).step === 'device'), JSON.stringify(result.meta.panelCloses));
+      assert.equal(result.complete, true, result.problems.join('; '));
+    }
   }
 });
 // Review finding 3: a clamp is judged on the final read-back, and only after a position write that took. A write not
@@ -580,6 +591,15 @@ test('a clamp is a written position the system moved elsewhere; a write not take
   const {result} = await runWith({plan, env: HOSTED, cell: dev.cell, ops: dev.ops});
   assert.deepEqual(dev.placed.slice(0, 2).map(a => flag(a, 'frame')), ['-58,80,880,448', '-96,80,880,448']);
   assert.deepEqual(result.meta.placement.panel[0].readBack, rect(-20, 80, 880, 448));
+});
+// Review finding 4: under the fallback the key guard sends on its own fresh reading, not on the one taken before it.
+test('under the fallback the judged Escape is sent on the guard\'s fresh reading: another app in front there, nothing sent', async () => {
+  const calls = [];
+  const dev = panelDevice({clamps: true, elements: {focused: FIELD, search: FIELD}, foreignAtEscapeGuard: true});
+  const {result} = await runWith({plan: {...PANEL_PLAN, background: []}, env: HOSTED, calls, cell: dev.cell, ops: dev.ops});
+  assert.ok(!sent(calls, CASE_ESCAPE), 'the judged Escape was not sent');
+  assert.equal(result.complete, false);
+  assert.ok(result.problems.some(p => /not one of the run's windows/.test(p)), result.problems.join('; '));
 });
 test('off a hosted runner no fallback is taken: nothing is moved, nothing left to the owner\'s sitting', async () => {
   const dev = panelDevice({clamps: true, alerts: []});

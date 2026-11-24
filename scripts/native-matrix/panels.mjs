@@ -238,6 +238,9 @@ export async function closePanel(ctx, target, {from = ctx.rows.length, activateF
   if (activateFirst) activate(ctx, 'textedit');
   const escape = {step: 'escape'};
   let guardStop = null;
+  // Under ruling 1203's fallback the close's Escape is checked where it lands, as a key case's is (review finding 4): one
+  // refused goes on to the click and the device's AX cancel, no key sent.
+  ctx.elementGuard = ctx.panelFallback ?? null;
   try {
     const keyed = await sendKeys(ctx, closePanelKeyCell(target), ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'});
     if (keyed === null) escape.sent = false;
@@ -246,7 +249,7 @@ export async function closePanel(ctx, target, {from = ctx.rows.length, activateF
     if (error instanceof KeyGuardStop) { guardStop = error; Object.assign(escape, {sent: false, guardStop: error.message.slice(0, 200)}); }
     else if (error instanceof AlertHeld) Object.assign(escape, error.guard ? {refused: {cause: error.guard.category, detail: error.guard.detail}} : {held: true});
     else throw error;
-  }
+  } finally { ctx.elementGuard = null; }
   record.steps.push(escape);
   if (!guardStop && closedBy(escape)) return done();
   let click = null;

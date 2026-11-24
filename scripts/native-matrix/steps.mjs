@@ -212,7 +212,8 @@ export function guardLane(ctx, lane) {
 // -> the cell's answer, or null when it was not sent.
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
   const owned = keyWindowScene(ctx, scene);
-  const elementGuard = kind === 'row' && ctx.elementGuard;
+  // Under ruling 1203's fallback (a key case's cells, the close's Escape) every check reads afresh, the front included.
+  const elementGuard = ctx.elementGuard ?? null;
   const r = !elementGuard && front?.frontKey && (!owned || front.ownKey) ? front : read(ctx, null, {frontKey: true, keyWindow: owned, alertBounds: Boolean(elementGuard)});
   const seenKey = keyReading(r);
   if (seenKey.key === CAPTURE_ALERT_PROCESS && seenKey.front !== CAPTURE_ALERT_PROCESS) refuse(ctx, guardCause(null, {key: seenKey.key}), seenKey);
@@ -222,7 +223,7 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
   // span's key (meta.keyUnread; a row's `row:<index>`, which the hosted counts map to the row's cell).
   if (seenKey.key === null) recordKeyUnread(ctx.meta, key);
   const target = guardOf(scene, ctx.records[scene]);
-  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
+  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((elementGuard ? r : front ?? read(ctx)).reading),
     send: () => js(ctx, kind, key, code, {apps: [SCENES[scene].bundleId]}),
     ...(userWindow ? {userWindow} : {})});
   if (out.sent) return out.result;

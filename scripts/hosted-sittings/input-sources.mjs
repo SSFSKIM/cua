@@ -30,13 +30,17 @@ export const KOREAN_IM = 'com.apple.inputmethod.Korean';
 // In enabling order; `selects`: a run selects it (the rows' sources), else it only carries one that does.
 export const VENUE_INPUT_SOURCES = Object.freeze([{id: ABC, selects: true}, {id: KOREAN_IM, selects: false}, {id: KOREAN_2SET, selects: true}]);
 export const READ_ROUNDS = 3, READ_SETTLE_MS = 1000;
+// The bound on each helper call: swift compiles the script before it runs (tens of seconds on a cold runner).
+export const HELPER_MS = 120_000;
 
-// The helper's one JSON line. -> its answer; throws with the exit and the last stderr line otherwise.
+// The helper's one JSON line. -> its answer; throws with the exit, or the bound it outlived, and the last stderr line
+// otherwise.
 function helper(exec, args, env) {
-  const result = exec('swift', [INPUT_SOURCES_SCRIPT, ...args], {env});
+  const result = exec('swift', [INPUT_SOURCES_SCRIPT, ...args], {env, timeout: HELPER_MS});
+  if (result.error?.code === 'ETIMEDOUT') throw new Error(`input-sources.swift ${args[0]}: timed out after ${HELPER_MS / 1000} s`);
   let answer = null;
   try { answer = JSON.parse(String(result.stdout ?? '').trim().split('\n').at(-1)); } catch { answer = null; }
-  if (result.status !== 0 || !answer) throw new Error(`input-sources.swift ${args[0]}: exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : ''}`);
+  if (result.status !== 0 || !answer) throw new Error(`input-sources.swift ${args[0]}: exit ${result.status}${result.stderr ? `: ${String(result.stderr).trim().split('\n').at(-1)}` : result.error ? `: ${result.error.message}` : ''}`);
   return answer;
 }
 

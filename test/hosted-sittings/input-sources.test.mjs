@@ -6,7 +6,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
-import {ABC, INPUT_SOURCES_SCRIPT, KOREAN_2SET, KOREAN_IM, READ_ROUNDS, enableInputSources, inputSourcesDetail, inputSourcesRecord, preferenceLists} from '../../scripts/hosted-sittings/input-sources.mjs';
+import {ABC, HELPER_MS, INPUT_SOURCES_SCRIPT, KOREAN_2SET, KOREAN_IM, READ_ROUNDS, enableInputSources, inputSourcesDetail, inputSourcesRecord, preferenceLists} from '../../scripts/hosted-sittings/input-sources.mjs';
 import {runnerRecord, venueInputMissingOf} from '../../scripts/hosted-sittings/runner.mjs';
 import {renderVenue} from '../../scripts/hosted-sittings/venue.mjs';
 
@@ -74,6 +74,17 @@ test('enabling: read again after each settle until every source holds, up to the
   assert.deepEqual(failed.missing, [ABC, KOREAN_2SET]);
   assert.match(failed.error, /input-sources\.swift enable: exit 1: error: no such module 'Carbon'/);
   assert.match(inputSourcesDetail(failed), /MISSING com\.apple\.keylayout\.ABC, com\.apple\.inputmethod\.Korean\.2SetKorean: the input rows needing them are NO VERDICT venue \(input-sources\.swift enable/);
+  // Each call is bounded; one that outlives its bound is the helper failing: recorded, its sources missing.
+  const bounds = [];
+  const hung = await enableInputSources({...HOSTED, sleep: async () => {}, exec: (c, args, options) => {
+    bounds.push(options.timeout);
+    if (args[1] === 'enable') return answer({enabled: [ABC, KOREAN_IM, KOREAN_2SET].map(id => ({id, status: 0}))});
+    return {status: null, signal: 'SIGTERM', stdout: '', stderr: '', error: Object.assign(new Error('spawnSync swift ETIMEDOUT'), {code: 'ETIMEDOUT'})};
+  }});
+  assert.deepEqual(bounds, [HELPER_MS, HELPER_MS]);
+  assert.deepEqual(hung.missing, [ABC, KOREAN_2SET]);
+  assert.match(hung.error, /input-sources\.swift list: timed out after 120 s/);
+  assert.match(inputSourcesDetail(hung), /MISSING .*\(input-sources\.swift list: timed out after 120 s\)/);
 });
 
 test('the venue record carries the missing sources to the device, on a hosted runner only; sitting.md renders both readings', () => {

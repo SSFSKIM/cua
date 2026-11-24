@@ -29,7 +29,7 @@ import {requeryCell} from './matrix-cells.mjs';
 import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
-import {activate, activateToTop, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
+import {activate, activateToTop, activated, activationOf, AlertGuarded, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
   ownWindowClosed, ownWindowOpened, readbackOf, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet, frontSeen, userWindowSeen} from './steps.mjs';
 
 const j = JSON.stringify;
@@ -584,8 +584,16 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const {observed, goTo, threw, identification, lastObservation} = destination?.value ?? {};
   const kept = Object.fromEntries(Object.entries({observed, goTo, threw, identification, lastObservation}).filter(([, v]) => v !== undefined && v !== null));
   // From here every exit cancels the sheet and reads the unsaved proof before its row is recorded (C-6), so a row that
-  // never reached the act's check still says what the run's folder held and whether anything was saved.
-  const proved = async row => span.end({...row, outcome: {...row.outcome, ...unsavedOutcome(await unsavedProof(ctx, keys))}}, {cleanup});
+  // never reached the act's check still says what the run's folder held and whether anything was saved. A save found so
+  // (a file at the cancel, a document on disk) is the harness's, surfaced loudly: a FAIL naming it, the exit's own
+  // reason kept as `earlyExit`, never NO VERDICT (fix wave M7).
+  const proved = async row => {
+    const unsaved = await unsavedProof(ctx, keys), outcome = {...row.outcome, ...unsavedOutcome(unsaved)};
+    const saved = savedFindings(unsaved);
+    if (!saved.length) return span.end({...row, outcome}, {cleanup});
+    const {invalid, ...rest} = row;
+    return span.end({...rest, ok: false, outcome: {...outcome, findings: saved, earlyExit: invalid}}, {cleanup});
+  };
   if (!destination?.ok || destination.value?.ready !== true) {
     // A failure on the destination path decides the row alone (ruling 1220's fourth condition).
     const left = goTo?.closed === false ? '; the Go To dialog would not close' : '';
@@ -661,7 +669,10 @@ async function unsavedProof(ctx, keys) {
     }
     if (!cancelled?.ok || cancelled.value?.cancelled !== true) return none(`the Save sheet was not cancelled first (${!cancelled ? 'not sent' : !cancelled.ok ? `the cell failed: ${String(cancelled.error ?? '').slice(0, 160)}` : 'the sheet still up'})`);
   } catch (error) {
-    return none(`the Save sheet's cancel was ${error instanceof AlertHeld ? 'held' : 'refused'} (${String(error.message).slice(0, 160)})`);
+    // The alert holding the cancel's key, or the alert guard refusing it (AlertGuarded): the proof unread. Anything else
+    // (a key-guard stop: the front not the run's) stops the run, as it does everywhere else (fix wave M1).
+    if (!(error instanceof AlertHeld)) throw error;
+    return none(`the Save sheet's cancel was ${error instanceof AlertGuarded ? 'refused' : 'held'} (${String(error.message).slice(0, 160)})`);
   }
   const number = ctx.ownWindow?.scene === 'textedit' ? ctx.ownWindow.number : null;
   if (number === null) return none('TextEdit\'s own window is not known');
@@ -670,6 +681,12 @@ async function unsavedProof(ctx, keys) {
   if (read?.ok !== true) return none(`TextEdit's own window could not be read (${read?.reason ?? 'no answer'})`);
   return {document: read.document, edited: read.edited, cancel, reading: {document: read.document, edited: read.edited, editedFrom: read.editedFrom ?? null}};
 }
+// A save the proof found: a document on disk behind TextEdit's window, a file in the run's folder at the cancel; worded
+// as ./probe-plan.mjs saveSheetFindings words them. -> [finding].
+const savedFindings = unsaved => [
+  ...(unsaved.document === true ? ['a document on disk behind TextEdit\'s window (AXDocument names a file)'] : []),
+  ...(unsaved.cancel?.destinationFiles?.length ? [`the run's folder held ${unsaved.cancel.destinationFiles.join(', ')} at the cancel`] : []),
+];
 // The proof as a row keeps it: the reading, else why it is unread, and the cancel's answer.
 const unsavedOutcome = unsaved => ({unsaved: unsaved.reading ?? {unread: unsaved.unread}, cancel: unsaved.cancel});
 // cua's lane: the probe's post after the engine received the request and before the cell had its response. -> null,

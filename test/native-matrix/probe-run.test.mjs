@@ -810,6 +810,22 @@ test('#212\'s row proves nothing saved on TextEdit\'s own window after the cance
   assert.equal(unread.invalid, 'nothing saved was not proved: TextEdit\'s own window could not be read (the reader is not trusted for Accessibility)');
 });
 
+// Fix wave M1: the unsaved proof's cancel catches only the alert holding its key (AlertHeld, the guard's refusal among
+// them); a key-guard stop (the front not the run's) stops the run, as it does everywhere else.
+test('#212\'s unsaved proof: a key-guard stop at the cancel stops the run, never a row with its proof unread', async () => {
+  let foreign = false;
+  const ops = {matrix: (base, a) => {
+    const r = base(a);
+    if (a[0] !== 'read' || !foreign) return r;
+    return {...r, reading: {...r.reading, frontmost: {pid: 77, bundleId: 'com.example.foreign', owned: false}, topWindow: null}, ...(r.frontKey ? {frontKey: {front: 'com.example.foreign', key: 'com.example.foreign'}} : {})};
+  }};
+  const cell = c => { if (tagOf(c) === 'savesheet.check') foreign = true; return saveCells()(c); };
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', ops, cell});
+  assert.equal(result.complete, false);
+  assert.ok(result.problems.some(p => /Escape not sent: the front is not one of the run's windows/.test(p)), JSON.stringify(result.problems));
+  assert.equal(rowOf(result, SAVE_SHEET)?.outcome?.unsaved?.unread, undefined, 'no row records the stop as an unread proof');
+});
+
 // C-6: every exit of #212's destination cell carries its Go To close record and the observation it was judged on, the
 // ready one included; and once the destination cell ran, an exit before the act's check still cancels the sheet first, so
 // its row carries the cancel's temp-folder result and the unsaved proof (cua's C-6 row carried neither).
@@ -835,12 +851,22 @@ test('#212\'s exits after the destination cell carry the cancel\'s temp-folder r
   assert.deepEqual([row.outcome.unsaved, row.outcome.cancel], [{document: false, edited: true, editedFrom: 'window'}, CANCELLED]);
   assert.deepEqual(calls.map(c => tagOf(c.code)).filter(t => /^(sheet|savesheet)\./.test(t)), ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.destination', 'savesheet.cancel', 'savesheet.cancel', 'sheet.cleanup']);
   assert.equal(failed.result.verdict, 'no-verdict');
-  // The act cell failing: the same, a file the cancel found in the run's folder kept.
-  const found = {cancelled: true, destinationRemoved: false, destinationFiles: ['cua-212-intended.rtf']};
-  const act = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: () => ({cellError: 'boom'}), cancel: found})});
+  // The act cell failing: the same, its proof read.
+  const act = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: () => ({cellError: 'boom'}), cancel: CANCELLED})});
   const unacted = rowOf(act.result, SAVE_SHEET);
   assert.match(unacted.invalid, /^the act cell failed/);
-  assert.deepEqual([unacted.outcome.unsaved, unacted.outcome.cancel], [{document: false, edited: true, editedFrom: 'window'}, found]);
+  assert.deepEqual([unacted.outcome.unsaved, unacted.outcome.cancel], [{document: false, edited: true, editedFrom: 'window'}, CANCELLED]);
+  // Fix wave M7: an early exit whose cancel found a file in the run's folder, or whose window has a document on disk, is
+  // a harness save: a FAIL naming it, the exit's reason kept, never NO VERDICT.
+  const found = {cancelled: true, destinationRemoved: false, destinationFiles: ['cua-212-intended.rtf']};
+  const savedEarly = rowOf((await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: () => ({cellError: 'boom'}), cancel: found})})).result, SAVE_SHEET);
+  assert.deepEqual([savedEarly.ok, savedEarly.invalid, savedEarly.outcome.cancel], [false, undefined, found]);
+  assert.deepEqual(savedEarly.outcome.findings, ['the run\'s folder held cua-212-intended.rtf at the cancel']);
+  assert.match(savedEarly.outcome.earlyExit, /^the act cell failed/);
+  const documentOps = {matrix: (base, a) => (a[0] === 'document' ? {answer: {ok: true, number: 1, found: true, document: true, edited: false, editedFrom: 'window'}, at: [1, 2]} : base(a))};
+  const onDisk = rowOf((await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', ops: documentOps, cell: saveCells({destination, cancel: CANCELLED})})).result, SAVE_SHEET);
+  assert.deepEqual([onDisk.ok, onDisk.invalid, onDisk.outcome.findings], [false, undefined, ['a document on disk behind TextEdit\'s window (AXDocument names a file)']]);
+  assert.match(onDisk.outcome.earlyExit, /^the Save sheet's destination was not set/);
   // The cancel that did not take leaves the proof unread, said on the row.
   const held = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({destination, cancel: {cancelled: false, destinationRemoved: null, destinationFiles: null}})});
   const unread = rowOf(held.result, SAVE_SHEET);

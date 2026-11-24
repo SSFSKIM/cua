@@ -55,8 +55,10 @@
 //   (r k, ruling 1119) is judged on both engines' raw outcomes (./cell-verdict.mjs judgePressKey), and no departure may
 //   name it; under Korean each engine is judged against ruling 1119's oracle 가 (ruling 1219), so the vendor composing
 //   otherwise fails the vendor alone, listed as a declared departure where cua is right.
-// - Not judged (./not-judged.mjs, ruling 1119: the per-context rows, by section and condition): outside the manifest and
-//   every judgment, listed with their cause under "Not judged".
+// - Not judged (./not-judged.mjs; rulings 1119 and 1222: the per-context rows, #577, and the Open panel's search row,
+//   #588, by section and id; and a not-interfering failure cua shares with its paired vendor sample, a defect with its
+//   ticket or the venue's on its recorded evidence): outside the manifest and every judgment, listed under "Not judged"
+//   with their reason and their ticket or evidence. An entry with neither is missing proof instead (ruling 1222).
 // - Any other cell (the settle cell, M2a's residue): each cell's verdict per engine as its rows give it
 //   (./cell-result.mjs verdictOf), listed.
 //
@@ -76,14 +78,14 @@
 // declared departures listed beside it).
 import {stats} from '../native-baseline/summary.mjs';
 import {isOsRecord, readCellResults} from './cell-result.mjs';
-import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
+import {findingSamples, judgeCell, judgeSpeed, runOf} from './cell-verdict.mjs';
 import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
-import {ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
+import {caseId, casesOf, ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
-import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
+import {exclusionOf, NOT_JUDGED_RULES, notJudgedRefusal, notJudgedRuleOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, PRESS_KEY, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
 import {frameAsymmetry, panelFrameSplits} from '../hosted-sittings/venue.mjs';
@@ -113,12 +115,20 @@ const sampleCounts = rows => {
   const valid = rows.filter(r => !r.invalid), owned = rows.filter(r => r.ownerInput).length, venue = rows.filter(r => r.venueInput).length;
   return {ok: valid.filter(r => r.ok === true).length, valid: valid.length, invalid: rows.length - valid.length, ...(owned ? {ownerInput: owned} : {}), ...(venue ? {venue} : {})};
 };
-// Every not-judged row of the plan and any other not-judged row a run recorded (./not-judged.mjs: by section and
-// condition, never by a row's own mark), with its cause and what each engine read; `recorded` is false for a row of the
-// plan no lane recorded. -> [{id, condition, cause, recorded, vendor: {ok, valid, invalid, ownerInput?, venue?}, cua: {…}}], by id.
-function notJudgedOf(excluded, plan = FULL_PLAN) {
-  const planned = unicodeRowsOf(plan.unicode).filter(r => Object.hasOwn(NOT_JUDGED, r.condition)).map(r => ({id: r.id, condition: r.condition, cause: NOT_JUDGED[r.condition]}));
-  const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, {id: r.id, condition: unicodeConditionOf(r.id), cause: exclusionOf(r)}])).values()];
+// Every not-judged row of the plan and any other not-judged row a run recorded (./not-judged.mjs: by section and id,
+// never by a row's own mark), with its rule's condition, cause and ticket and what each engine read; `recorded` is false
+// for a row of the plan no lane recorded. -> [{id, section, condition, cause, ticket?, recorded, vendor: {ok, valid,
+// invalid, ownerInput?, venue?}, cua: {…}}], by id.
+function notJudgedOf(excluded, plan = FULL_PLAN, rules = NOT_JUDGED_RULES) {
+  const candidates = [...unicodeRowsOf(plan.unicode).map(r => ({section: 'unicode', id: r.id})),
+    ...plan.frontmost.flatMap(t => casesOf(t, 'frontmost').map(c => ({section: 'method', id: caseId(t, 'frontmost', c)}))),
+    ...plan.background.flatMap(({driven, user}) => casesOf(driven, 'background').map(c => ({section: 'method', id: caseId(driven, 'background', c, user)})))];
+  const entryOf = r => {
+    const rule = notJudgedRuleOf(r, rules);
+    return {id: r.id, section: r.section, condition: rule.condition, cause: rule.cause, ...(rule.ticket ? {ticket: rule.ticket} : {})};
+  };
+  const planned = candidates.filter(r => notJudgedRuleOf(r, rules)).map(entryOf);
+  const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, entryOf(r)])).values()];
   return [...planned, ...others].map(entry => {
     const mine = excluded.filter(r => r.id === entry.id);
     return {...entry, recorded: mine.length > 0, ...Object.fromEntries(['vendor', 'cua'].map(engine => [engine, sampleCounts(mine.filter(r => r.engine === engine))]))};
@@ -285,7 +295,7 @@ const oracleJudges = r => (r.section === 'method' && r.regime === 'background') 
 // declared-departures file's entries (./departures.mjs). -> {problems, runs, narrowed, methods, launch, speed, finding,
 // findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures, cells, others, owner, blocking,
 // missing, options, desktop, verdict}.
-export function judge(results, problems = [], {departures: entries = readDepartures()} = {}) {
+export function judge(results, problems = [], {departures: entries = readDepartures(), knownDefects = KNOWN_DEFECTS, notJudgedRules = NOT_JUDGED_RULES} = {}) {
   const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
   const fullRuns = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
   const narrowed = results.filter(r => own(r) && !fullRuns.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
@@ -302,14 +312,14 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     ...(split.has(result.meta?.run) ? {frameSplit: split.get(result.meta.run)}
       : panelSplit.get(result.meta?.run)?.has(row.opening) ? {frameSplit: `the panel opening ${row.opening}: ${panelSplit.get(result.meta.run).get(row.opening)}`} : {})})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
-  const rows = all.filter(r => !exclusionOf(r));
-  const notJudged = full.length ? notJudgedOf(all.filter(r => exclusionOf(r))) : [];
+  const rows = all.filter(r => !exclusionOf(r, notJudgedRules));
+  const notJudgedRows = full.length ? notJudgedOf(all.filter(r => exclusionOf(r, notJudgedRules)), FULL_PLAN, notJudgedRules) : [];
   const runs = {vendor: 0, cua: 0};
   for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
   const missingProof = [...problems, ...unmeasured.map(([{path}, problem]) => `${path}: ${problem}; its rows are not judged`), ...proofProblems(full)];
   // Marks the rules do not allow, on results that reached the judge without the reader's check: an `excluded` mark on a
   // row no ruling puts out (the row is judged as it read), a declaration on a full run's row (judged on its raw outcome).
-  const misMarked = all.filter(r => r.excluded !== undefined && !exclusionOf(r)).length;
+  const misMarked = all.filter(r => r.excluded !== undefined && !exclusionOf(r, notJudgedRules)).length;
   if (misMarked) missingProof.push(`${misMarked} row(s) of the full runs are marked excluded, which only ruling 1119's per-context rows may be: they are judged as they read`);
   for (const r of rows.filter(x => x.declared !== undefined)) {
     missingProof.push(r.section === 'unicode' && isPressKeyRow(r.id)
@@ -446,11 +456,16 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     }
   }
 
-  // Ruling 1219 (h5): a not-interfering cell failed on both engines blocks nothing; what moved decides it (sharedInterferenceOf).
-  const sharedInterference = sharedInterferenceOf(rows, interference);
-  const sharedIds = new Set(sharedInterference.map(s => s.id));
-  const cuaFailed = interference.cua.failed.filter(f => !sharedIds.has(f.id));
+  // Ruling 1219 (h5): a cua sample that failed not interfering alongside its own paired vendor sample blocks nothing; what
+  // moved decides its kind, and none of the kinds is a pass (sharedInterferenceOf). Ruling 1222: a defect with its ticket,
+  // or the venue's on its recorded evidence, is not judged; anything else of it is missing proof.
+  const {shared: sharedInterference, cuaKeys: sharedKeys} = sharedInterferenceOf(rows, applicable, knownDefects);
+  const cuaFailed = judgedRows('cua').filter(r => interferenceFailed(r) && !sharedKeys.has(pairKey(r)));
   const interferencePass = interference.cua.rows > 0 && cuaFailed.length === 0 && interference.cua.declared.length === 0;
+  const sharedEntries = sharedInterference.map(sharedEntryOf).filter(Boolean);
+  // Every not-judged entry under ruling 1222's condition: one with neither a ticket nor evidence is missing proof.
+  const refusedNotJudged = [...notJudgedRows, ...sharedEntries].map(entry => [entry, notJudgedRefusal(entry)]).filter(([, why]) => why);
+  const notJudged = [...notJudgedRows, ...sharedEntries].filter(entry => !refusedNotJudged.some(([e]) => e === entry));
   const speedMisses = speed.filter(s => s.beat === false);
   const owner = [
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
@@ -491,6 +506,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     ...(interference.cua.rows === 0 ? ['not interfering: no background row was judged on cua'] : []),
     ...speed.filter(s => !s.partial.vendor || !s.partial.cua).map(s => `speed: ${s.id} has no measure on one engine`),
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
+    ...sharedInterference.filter(s => !sharedEntries.some(e => e.id === s.id)).map(s => `not interfering: ${s.id} failed on both engines (${s.kind}), NO VERDICT on cua: ticket to be registered`),
+    ...refusedNotJudged.map(([e, why]) => `not judged without a ticket or recorded evidence: ${e.section} ${e.id} (${e.condition}): ${why}; ${e.cause}`),
   ];
   const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
@@ -530,6 +547,41 @@ export function thrownButLandedOf(rows) {
 }
 
 // ---- the report ---------------------------------------------------------------------------------------------------------
+
+// The not-judged entries one line each for a log (ruling 1222): a rule's rows by condition with their ticket, a shared
+// item with its ticket or its evidence. -> [line].
+export function notJudgedLines(j) {
+  const rows = j.notJudged.filter(n => n.section !== 'interference'), shared = j.notJudged.filter(n => n.section === 'interference');
+  return [...[...groupBy(rows, n => n.condition)].map(([condition, list]) => `${condition} (${list.length} row${list.length === 1 ? '' : 's'}): ticket ${[...new Set(list.map(n => n.ticket))].join(', ')}`),
+    ...shared.map(n => `${n.id} (${n.condition}): ${n.ticket ? `ticket ${n.ticket}` : `evidence ${n.evidence.map(e => `${e.engine} run ${e.run} sample ${e.sample} ${e.field}`).join('; ')}`}`)];
+}
+
+// The "Not judged" section (ruling 1222), as the summary, the matrix CLI's sitting report and the hosted sitting's
+// sitting.md show it: every not-judged entry with its reason and its ticket or its recorded evidence. A row rule's rows
+// by condition, with what each engine read; a shared not-interfering item with its samples. -> [line].
+export function renderNotJudged(j) {
+  if (!j.notJudged?.length) return [];
+  const out = ['## Not judged', '', 'What a ruling put out of the judged matrix: it runs and is reported, and counts as neither pass nor fail, nor as missing proof. Each entry names its reason and its ticket or the recorded evidence it rests on (ruling 1222); one with neither is missing proof instead. For rows, cua ok/valid, then the vendor\'s; "not recorded" where that lane has no sample of the row, which is distinct from an invalid sample.', ''];
+  const recorded = c => (c.valid + c.invalid ? counts(c) : 'not recorded');
+  const rowEntries = j.notJudged.filter(n => n.section !== 'interference'), shared = j.notJudged.filter(n => n.section === 'interference');
+  for (const [condition, list] of groupBy(rowEntries, n => n.condition)) {
+    // The input causes among the invalid samples (rulings 1188 and 1189), so the report shows what the run could not take.
+    const sum = (side, key) => list.reduce((n, entry) => n + (entry[side][key] ?? 0), 0);
+    const causes = [['ownerInput', 'the owner\'s input source or per-context preference not the row\'s, never changed off a GitHub-hosted runner, ruling 1188'],
+      ['venue', `an input source the runner's setup could not enable, ruling 1189${condition === 'perContext' ? ', or the sources enabled and the per-context context not reading Korean after its reactivation, #577' : ''}`]].filter(([key]) => sum('cua', key) + sum('vendor', key))
+      .map(([key, what]) => `\`${key}\` (${what}): cua ${sum('cua', key)}, vendor ${sum('vendor', key)}`);
+    const tickets = [...new Set(list.map(n => n.ticket).filter(Boolean))];
+    out.push(`### ${condition}`, '', list[0].cause, '', `Ticket: ${tickets.join(', ')}.`, '', ...(causes.length ? [`Of the invalid samples, ${causes.join('; ')}.`, ''] : []), '| row | cua ok | vendor ok |', '|---|---|---|');
+    for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);
+    out.push('');
+  }
+  if (shared.length) {
+    const evidence = n => n.evidence.map(e => `${e.engine} run ${e.run} sample ${e.sample}: ${e.row}'s ${e.field}`).join('; ');
+    out.push('### Shared not-interfering failures', '', 'Cells where a cua sample failed not interfering with its own paired vendor sample (rulings 1219 and 1222): a product defect both engines share, with its ticket, or the venue\'s, on the evidence recorded.', '',
+      '| row | reason | ticket or evidence | samples |', '|---|---|---|---|', ...shared.map(n => `| ${n.id} | ${n.cause} | ${n.ticket ? `ticket ${n.ticket}` : `evidence: ${evidence(n)}`} | ${n.samples} |`), '');
+  }
+  return out;
+}
 
 const MARK = {equal: 'equal', better: 'better', declared: 'declared', shared: 'shared', worse: '**worse**', 'no-verdict': '**no verdict**', beat: 'beat', missed: 'missed', measured: 'measured'};
 const ms = n => (n === null || n === undefined ? '-' : (Math.round(n * 10) / 10).toFixed(1));
@@ -593,7 +645,8 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   // A shared limit is equal to the vendor, never a pass of the row's own check.
   const passing = list => list.filter(r => ['equal', 'better', 'declared'].includes(r.verdict)).length;
   out.push(`- **Concurrent use and intervention**: ${passing(j.probe)} of ${j.probe.length} rows pass on cua (concurrent use and its sheet variant, intervention fires, the pre-action refusal).`);
-  const notJudged = j.notJudged.length ? `; ${j.notJudged.length} ${[...new Set(j.notJudged.map(n => n.condition))].join(', ')} rows are not judged (below)` : '';
+  const unicodeNotJudged = j.notJudged.filter(n => n.section === 'unicode');
+  const notJudged = unicodeNotJudged.length ? `; ${unicodeNotJudged.length} ${[...new Set(unicodeNotJudged.map(n => n.condition))].join(', ')} rows are not judged (below)` : '';
   const sharedRows = j.unicode.filter(r => r.verdict === 'shared').length;
   out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${sharedRows ? `, ${sharedRows} a shared limit` : ''}${notJudged}.`);
   const without = side => j.cells.reduce((n, c) => n + Object.values(c.account[side].noVerdict).reduce((a, b) => a + b, 0), 0);
@@ -659,8 +712,9 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     out.push(`- User windows to the top (ruling 1221): ${toTop.counts.map(c => `${c.scene} ${c.engine} waited ${c.waited}, raised ${c.raised}`).join('; ')}`
       + `${toTop.afterRaise.length ? `; not ok after a raise: ${toTop.afterRaise.map(r => `${r.engine} ${r.id}`).join(', ')}` : ''}.`);
   }
-  for (const s of j.sharedInterference ?? []) out.push(`- ${s.id}: both engines failed; ${s.kind === 'defect' ? `the person's ${s.moved.map(m => m.replace(/^the /, '')).join(', ')} moved: a shared product defect, NO VERDICT on cua, ${s.ticket ? `ticket ${s.ticket}` : 'ticket to be registered'}`
-    : s.kind === 'venue' ? `nothing of the person's moved (${s.seen.join(', ')}): the venue's, NO VERDICT on cua` : `the record does not say what moved (${s.seen.join(', ')}): unread, NO VERDICT on cua`} (ruling 1219)`);
+  const notJudgedListed = s => j.notJudged.some(n => n.section === 'interference' && n.id === s.id);
+  for (const s of j.sharedInterference ?? []) out.push(`- ${s.id}: both engines failed; ${s.kind === 'defect' ? `the person's ${s.moved.map(m => m.replace(/^the /, '')).join(', ')} moved: a shared product defect, ${notJudgedListed(s) ? `ticket ${s.ticket}, not judged (below)` : 'NO VERDICT on cua, ticket to be registered'}`
+    : s.kind === 'venue' ? `nothing of the person's moved (${s.seen.join(', ')}): the venue's, ${notJudgedListed(s) ? 'not judged on its recorded evidence (below)' : 'NO VERDICT on cua'}` : `the record does not say what moved (${s.seen.join(', ')}): unread, NO VERDICT on cua`} (rulings 1219 and 1222)`);
   if (j.sharedInterference?.length) out.push('');
   out.push('## What changes for a user', '', 'The places where cua refuses or answers unconfirmed where the vendor answered ok (R3), each declared with its Decision Log entry; nothing else can be here.', '');
   if (j.departures.length) for (const d of j.departures) out.push(`- ${d.section} ${d.id}: the vendor answered ok, cua ${d.cua.answer} ("${d.cua.sentence}") in ${d.samples} sample(s); ${d.decision}`);
@@ -678,20 +732,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     }
   }
 
-  if (j.notJudged.length) {
-    out.push('## Not judged', '', 'The plan\'s rows a ruling put out of the judged matrix: they run and are reported, and count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s; "not recorded" where that lane has no sample of the row, which is distinct from an invalid sample.', '');
-    const recorded = c => (c.valid + c.invalid ? counts(c) : 'not recorded');
-    for (const [condition, list] of groupBy(j.notJudged, n => n.condition)) {
-      // The input causes among the invalid samples (rulings 1188 and 1189), so the report shows what the run could not take.
-      const sum = (side, key) => list.reduce((n, entry) => n + (entry[side][key] ?? 0), 0);
-      const causes = [['ownerInput', 'the owner\'s input source or per-context preference not the row\'s, never changed off a GitHub-hosted runner, ruling 1188'],
-        ['venue', `an input source the runner's setup could not enable, ruling 1189${condition === 'perContext' ? ', or the sources enabled and the per-context context not reading Korean after its reactivation, #577' : ''}`]].filter(([key]) => sum('cua', key) + sum('vendor', key))
-        .map(([key, what]) => `\`${key}\` (${what}): cua ${sum('cua', key)}, vendor ${sum('vendor', key)}`);
-      out.push(`### ${condition}`, '', list[0].cause, '', ...(causes.length ? [`Of the invalid samples, ${causes.join('; ')}.`, ''] : []), '| row | cua ok | vendor ok |', '|---|---|---|');
-      for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);
-      out.push('');
-    }
-  }
+  out.push(...renderNotJudged(j));
 
   out.push('## NO VERDICT by cell', '');
   const listed = j.cells.filter(c => !c.qualifies || Object.keys(c.account.vendor.noVerdict).length || Object.keys(c.account.cua.noVerdict).length);
@@ -753,34 +794,57 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
 
 // Main's tickets for known defects (#587, #588), cited wherever the judge names their cells; the same field a shared
 // not-interfering defect's ticket fills once main registers it (sharedInterferenceOf's `ticket`).
-export const KNOWN_DEFECTS = Object.freeze({'method finder/frontmost/typeText.typeSelect': '#587', 'method openPanel/frontmost/typeText.search': '#588'});
+// #588's Open panel search row is not judged (ruling 1222, ./not-judged.mjs), so it is no longer named here.
+export const KNOWN_DEFECTS = Object.freeze({'method finder/frontmost/typeText.typeSelect': '#587'});
 const knownDefect = (section, id) => (KNOWN_DEFECTS[`${section} ${id}`] ? ` (known defect ${KNOWN_DEFECTS[`${section} ${id}`]})` : '');
 
 // Ruling 1219 (h5): the not-interfering cells cua failed whose vendor rows failed too (undeclared on both). Each is judged
 // from what moved, read on both engines' failing records: the person's front app, focus, an activation, the user's own
 // window (`topChange.userWindowMoved`), or the user's input (`userKept`, `userLanded`) is a shared product defect, NO
-// VERDICT on cua naming a ticket (null until main registers it; KNOWN_DEFECTS); with none of those, a window other than
-// the user's over it (`topChange` recorded) or a target window above the user's (`windowOrder.after`) is the venue's; a top
-// window changed with nothing recorded of what came over it is unread. -> [{id, kind: 'defect'|'venue'|'unread', moved, seen, ticket}].
-function sharedInterferenceOf(rows, interference) {
-  const failing = engine => new Set(interference[engine].failed.map(f => f.id));
-  const vendorFailed = failing('vendor');
-  const ids = [...failing('cua')].filter(id => vendorFailed.has(id)).sort();
-  return ids.map(id => {
-    const records = rows.filter(r => r.id === id && r.interference && !r.interference.ok && !r.interference.declared);
-    const moved = new Set(), seen = new Set();
-    for (const r of records) {
+// VERDICT on cua naming a ticket (null until main registers it; KNOWN_DEFECTS); with none of those, positive evidence of
+// a window over the user's (`topChange` recorded with another window on top, or a target window above the user's,
+// `windowOrder.after`) is the venue's, each such sample's row and field kept as its evidence; anything else (a top
+// window changed with nothing recorded of what came over it, route 4 alone, an order or focus unread) is unread, never
+// the venue's by default (fix wave I3).
+// A cua sample is shared only with its own paired vendor sample, the same row, run and sample, as ruling 1144's shared
+// limits pair (fix wave I2): a vendor failure elsewhere in the cell excuses nothing. Only samples the oracle judges
+// (`applicable`: no sampleCause) pair or feed what moved. -> {shared: [{id, kind: 'defect'|'venue'|'unread', moved, seen,
+// ticket, samples, evidence}], cuaKeys: Set(pairKey)}.
+function sharedInterferenceOf(rows, applicable, knownDefects = KNOWN_DEFECTS) {
+  const failing = engine => rows.filter(r => r.engine === engine && applicable(r) && r.interference && interferenceFailed(r));
+  const vendorFailed = new Map(failing('vendor').map(r => [pairKey(r), r]));
+  const pairs = failing('cua').filter(c => vendorFailed.has(pairKey(c))).map(c => [c, vendorFailed.get(pairKey(c))]);
+  const shared = [...groupBy(pairs, ([c]) => c.id)].sort(([a], [b]) => a.localeCompare(b)).map(([id, list]) => {
+    const moved = new Set(), seen = new Set(), evidence = [];
+    for (const r of [...list.map(([c]) => c), ...list.map(([, v]) => v)]) {
       const i = r.interference;
       if (i.frontmost === false) moved.add('the front app');
       if (i.focus === false) moved.add('the focus');
       if (i.activations > 0) moved.add('an activation');
       if (i.topChange?.userWindowMoved) moved.add('the user window');
       if (r.outcome?.userKept === false || r.outcome?.userLanded === false) moved.add('the input');
+      const at = field => evidence.push({row: r.id, engine: r.engine, run: runOf(r), sample: r.sample ?? runOf(r), field});
       // A target window above the user's (`windowOrder.after`) is what came over it; else `topChange` says, or nothing does.
-      if (i.windowOrder?.after === true) seen.add('a target window above the user\'s');
-      else if (i.topWindow === false && !i.topChange?.userWindowMoved) seen.add(i.topChange ? 'the top window (another window over the user\'s)' : 'the top window (what came over it not recorded)');
+      if (i.windowOrder?.after === true) { seen.add('a target window above the user\'s'); at('interference.windowOrder.after'); }
+      else if (i.topWindow === false && !i.topChange?.userWindowMoved) {
+        seen.add(i.topChange ? 'the top window (another window over the user\'s)' : 'the top window (what came over it not recorded)');
+        if (i.topChange) at('interference.topChange');
+      }
+      if (i.route4) seen.add('route 4');
     }
-    const unread = !moved.size && [...seen].some(s => s.includes('not recorded'));
-    return {id, kind: moved.size ? 'defect' : unread ? 'unread' : 'venue', moved: [...moved], seen: [...seen], ticket: KNOWN_DEFECTS[`interference ${id}`] ?? null};
+    return {id, kind: moved.size ? 'defect' : evidence.length ? 'venue' : 'unread', moved: [...moved], seen: [...seen], ticket: knownDefects[`interference ${id}`] ?? null, samples: list.length, evidence};
   });
+  return {shared, cuaKeys: new Set(pairs.map(([c]) => pairKey(c)))};
+}
+// A sample's pairing key: its row, run and sample (ruling 1144's pairing).
+const pairKey = r => `${r.id}\u0000${runOf(r)}\u0000${r.sample ?? runOf(r)}`;
+// A judged sample that failed not interfering, not declared.
+const interferenceFailed = r => !r.interference.ok && !r.interference.declared;
+// A shared item as a not-judged entry (ruling 1222): a defect with its ticket, or the venue's with its evidence; null for
+// anything else, which stays missing proof.
+function sharedEntryOf(s) {
+  const base = {id: s.id, section: 'interference'};
+  if (s.kind === 'defect' && s.ticket) return {...base, condition: 'sharedDefect', cause: `cua failed not interfering with its paired vendor sample, and the person's ${s.moved.map(m => m.replace(/^the /, '')).join(', ')} moved: a product defect both engines share (rulings 1219 and 1222)`, ticket: s.ticket, samples: s.samples};
+  if (s.kind === 'venue') return {...base, condition: 'sharedVenue', cause: `cua failed not interfering with its paired vendor sample, and nothing of the person's moved (${s.seen.join(', ')}): the venue's (rulings 1219 and 1222)`, evidence: s.evidence, samples: s.samples};
+  return null;
 }

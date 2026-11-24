@@ -17,8 +17,9 @@ export {SPEED_OPS};
 // expect?}].
 export function manifestOf({run, samples}, plan = FULL_PLAN) {
   const out = [];
-  for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
-  for (const {driven, user} of plan.background) for (const c of casesOf(driven, 'background')) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});
+  const judged = id => !exclusionOf({section: 'method', id});
+  for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) if (judged(caseId(target, 'frontmost', c))) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
+  for (const {driven, user} of plan.background) for (const c of casesOf(driven, 'background')) if (judged(caseId(driven, 'background', c, user))) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});
   const scenes = [...new Set(plan.frontmost.filter(t => !isPanelTarget(t)).map(t => SCENE_OF[t]))];
   if (plan.speed) for (const scene of scenes) for (const op of SPEED_OPS) for (let i = 1; i <= samples; i++) out.push({section: 'speed', id: `${scene}/${op}`, sample: (run - 1) * samples + i});
   // Each frontmost case's own timing, one per run (./steps.mjs caseRow's `speed`): part 5's "each method cell".

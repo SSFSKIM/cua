@@ -16,6 +16,7 @@ import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary, toTopOf} from '../../scripts/native-matrix/summary.mjs';
 import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
+import {NOT_JUDGED_RULES, notJudgedRefusal} from '../../scripts/native-matrix/not-judged.mjs';
 
 const m = (engine, sample, ok, extra = {}) => ({section: 'method', id: 'textedit/frontmost/click.control', engine, sample, ok, regime: 'frontmost', method: 'click', case: 'control', ...extra});
 
@@ -91,7 +92,7 @@ const set = (id, patch) => rows => rows.map(r => (r.id === id ? {...r, ...patch}
 const OS = Object.freeze({name: 'macOS', version: '26.0', build: '25A354'});
 // Three full runs per side unless given; `extra` results written beside them; `departures` the declared-departures
 // file's entries (none unless given).
-function judged({vendor = {}, cua = {}, runs = 3, extra = [], departures = []} = {}) {
+function judged({vendor = {}, cua = {}, runs = 3, extra = [], departures = [], knownDefects, notJudgedRules} = {}) {
   const dir = fs.mkdtempSync(join(tmpdir(), 'matrix-summary-'));
   try {
     for (let n = 1; n <= runs; n++) {
@@ -100,7 +101,7 @@ function judged({vendor = {}, cua = {}, runs = 3, extra = [], departures = []} =
     }
     extra.forEach((r, i) => writeCellResult(join(dir, `other-${i}`), r));
     const {results, problems} = readResults([dir]);
-    return judge(results, problems, {departures});
+    return judge(results, problems, {departures, ...(knownDefects ? {knownDefects} : {}), ...(notJudgedRules ? {notJudgedRules} : {})});
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 }
 
@@ -391,17 +392,17 @@ test('the per-context rows are out of the verdict: absent from the manifest, nev
   assert.deepEqual([j.verdict, j.blocking, j.missing, j.owner], ['PASS', [], [], []]);
   assert.ok(!j.unicode.some(u => u.id.includes('/perContext')), 'not among the judged Unicode rows');
   assert.equal(j.interference.cua.rows, j.interference.vendor.rows, 'not among the interference rows');
-  assert.deepEqual(j.notJudged.map(n => n.id), [...planned].sort());
-  assert.deepEqual(j.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: true,
+  assert.deepEqual(j.notJudged.filter(n => n.section === 'unicode').map(n => n.id), [...planned].sort());
+  assert.deepEqual(j.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, section: 'unicode', condition: 'perContext', cause: NOT_JUDGED.perContext, ticket: '#577', recorded: true,
     vendor: {ok: 0, valid: 0, invalid: 3}, cua: {ok: 0, valid: 3, invalid: 0}});
   // Recorded by neither lane: still listed, labelled not recorded (not invalid), with nothing counted.
   const none = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40}});
   assert.equal(none.verdict, 'PASS');
-  assert.deepEqual(none.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: false,
+  assert.deepEqual(none.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, section: 'unicode', condition: 'perContext', cause: NOT_JUDGED.perContext, ticket: '#577', recorded: false,
     vendor: {ok: 0, valid: 0, invalid: 0}, cua: {ok: 0, valid: 0, invalid: 0}});
   assert.ok(renderSummary(none).includes(`| ${PER_CONTEXT} | not recorded | not recorded |`));
   const text = renderSummary(j);
-  for (const part of ['## Not judged', `### perContext\n\n${NOT_JUDGED.perContext}`, `| ${PER_CONTEXT} | 0/3 | 0/0 (+3 invalid) |`,
+  for (const part of ['## Not judged', `### perContext\n\n${NOT_JUDGED.perContext}\n\nTicket: #577.`, `| ${PER_CONTEXT} | 0/3 | 0/0 (+3 invalid) |`,
     '**Korean and Unicode**: 171 of 171 rows pass on cua; 54 perContext rows are not judged (below).'])
     assert.ok(text.includes(part), part);
   assert.ok(text.indexOf('## Not judged') > text.indexOf('## What changes for a user'), 'the three-point report\'s order');
@@ -414,9 +415,9 @@ test('the per-context rows are out of the verdict: absent from the manifest, nev
   const owned = judged({vendor: {axMs: 50, resolved: 9, tweak: marked('vendor', {ok: false, ownerInput: cause, invalid: cause})},
     cua: {axMs: 40, tweak: marked('cua', {ok: false, venueInput: 'the runner\'s setup could not enable …', invalid: 'the runner\'s setup could not enable …'})}});
   assert.deepEqual([owned.verdict, owned.blocking, owned.missing], ['PASS', [], []]);
-  assert.deepEqual(owned.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: true,
+  assert.deepEqual(owned.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, section: 'unicode', condition: 'perContext', cause: NOT_JUDGED.perContext, ticket: '#577', recorded: true,
     vendor: {ok: 0, valid: 0, invalid: 3, ownerInput: 3}, cua: {ok: 0, valid: 0, invalid: 3, venue: 3}});
-  assert.ok(renderSummary(owned).includes(`${NOT_JUDGED.perContext}\n\nOf the invalid samples, \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua 0, vendor 162; \`venue\` (an input source the runner's setup could not enable, ruling 1189, or the sources enabled and the per-context context not reading Korean after its reactivation, #577): cua 162, vendor 0.\n`), renderSummary(owned));
+  assert.ok(renderSummary(owned).includes(`${NOT_JUDGED.perContext}\n\nTicket: #577.\n\nOf the invalid samples, \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua 0, vendor 162; \`venue\` (an input source the runner's setup could not enable, ruling 1189, or the sources enabled and the per-context context not reading Korean after its reactivation, #577): cua 162, vendor 0.\n`), renderSummary(owned));
 });
 
 // The review's regression: only ruling 1119's per-context rows are out of the verdict, by section and condition. An
@@ -802,10 +803,14 @@ test('hold 3\'s records still load and judge: FAIL, on interference and Unicode 
   for (const line of ['unicode: chrome/korean/typeText.lines failed on cua', 'finding elements: finder is lower on cua',
     'unicode: chrome/midSwitch/typeText.long failed on cua'])
     assert.ok(j.blocking.includes(line), line);
-  // Its concurrent rows failed the oracle on both engines with nothing recorded of what came over the user window: shared,
-  // unread, and no longer blocking (ruling 1219, h5).
-  assert.ok(!j.blocking.includes('not interfering: chrome/concurrent@textedit failed on cua'));
-  assert.deepEqual(j.sharedInterference.map(s => [s.id, s.kind]), [['chrome/concurrent@textedit', 'unread'], ['finder/concurrent@textedit', 'unread']]);
+  // Its concurrent rows failed the oracle on both engines in run 1 with nothing recorded of what came over the user
+  // window: that pair is shared and unread, missing proof (ruling 1219, h5; fix wave I1). cua's run 2 failed them too and
+  // has no vendor run to pair with, so by the paired rule (fix wave I2) each still blocks.
+  for (const id of ['chrome/concurrent@textedit', 'finder/concurrent@textedit']) {
+    assert.ok(j.blocking.includes(`not interfering: ${id} failed on cua`), id);
+    assert.ok(j.missing.includes(`not interfering: ${id} failed on both engines (unread), NO VERDICT on cua: ticket to be registered`), id);
+  }
+  assert.deepEqual(j.sharedInterference.map(s => [s.id, s.kind, s.samples]), [['chrome/concurrent@textedit', 'unread', 1], ['finder/concurrent@textedit', 'unread', 1]]);
   // Its Chrome notText row (#190): run 1's pair both refused alike, equal (a frontmost row, no shared limit); cua's run 2
   // has no vendor run, so it no longer fails on its own. It was the record's one frontmost "worse".
   const notText = j.methods.find(x => x.id === 'chrome/frontmost/selectText.notText');
@@ -1110,6 +1115,9 @@ test('thrown but landed: compare lists each one per engine with its error name a
     await main(['compare', join(dir, 'vendor'), join(dir, 'cua')], {log: line => lines.push(line)});
     assert.ok(lines.includes('  thrownButLanded: cua 0, vendor 1'), lines.join('\n'));
     assert.ok(lines.includes(`    vendor ${SET_NAME} (run 1, sample 1): no error name: the vendor write was not confirmed`), lines.join('\n'));
+    // Ruling 1222: every not-judged entry with its reason and its ticket or evidence, here the rules' rows by condition.
+    assert.ok(lines.includes('  not judged: perContext (54 rows): ticket #577'), lines.join('\n'));
+    assert.ok(lines.includes('  not judged: openPanelSearch (1 row): ticket #588'), lines.join('\n'));
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
@@ -1191,7 +1199,14 @@ test('a not-interfering failure on both engines: a shared defect, the venue\'s o
     topChange: {before: {owned: true, pid: 11, number: 3, bounds: null}, after: {owned: false, bundleId: 'com.apple.TextInputUI.xpc.CursorUIViewService'}, userWindowMoved: false}};
   const venue = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: topOver})}, cua: {axMs: 40, tweak: set(BACK, {interference: topOver})}});
   assert.ok(!venue.blocking.some(b => b.includes(BACK)), venue.blocking.join('\n'));
-  assert.deepEqual(venue.sharedInterference, [{id: BACK, kind: 'venue', moved: [], seen: ['the top window (another window over the user\'s)'], ticket: null}]);
+  assert.deepEqual(venue.sharedInterference.map(({evidence, ...s}) => s), [{id: BACK, kind: 'venue', moved: [], seen: ['the top window (another window over the user\'s)'], ticket: null, samples: 3}]);
+  // Ruling 1222: the venue's is not judged on its recorded evidence (each failing sample's row and field), so it is
+  // neither blocking nor missing; its entry names the evidence.
+  assert.ok(!venue.missing.some(m => m.includes(BACK)), venue.missing.join('\n'));
+  const venueEntry = venue.notJudged.find(n => n.id === BACK);
+  assert.equal(venueEntry.condition, 'sharedVenue');
+  assert.equal(venueEntry.evidence.length, 6, 'both engines\' three failing samples');
+  assert.deepEqual(venueEntry.evidence[0], {row: BACK, engine: 'cua', run: 1, sample: 1, field: 'interference.topChange'});
   const focusLost = {ok: false, frontmost: true, topWindow: false, focus: false, activations: 0, route4: false};
   const defect = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: focusLost})}, cua: {axMs: 40, tweak: set(BACK, {interference: topOver})}});
   assert.ok(!defect.blocking.some(b => b.includes(BACK)), defect.blocking.join('\n'));
@@ -1202,6 +1217,11 @@ test('a not-interfering failure on both engines: a shared defect, the venue\'s o
   const unread = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: bare})}, cua: {axMs: 40, tweak: set(BACK, {interference: bare})}});
   assert.deepEqual(unread.sharedInterference.map(s => [s.kind, s.seen]), [['unread', ['the top window (what came over it not recorded)']]]);
   assert.ok(!unread.blocking.some(b => b.includes(BACK)));
+  // Unread is no pass (fix wave I1): missing proof, so NO VERDICT.
+  assert.ok(unread.missing.includes(`not interfering: ${BACK} failed on both engines (unread), NO VERDICT on cua: ticket to be registered`), unread.missing.join('\n'));
+  assert.equal(unread.verdict, 'NO VERDICT');
+  // A defect with no ticket yet is missing proof too.
+  assert.ok(defect.missing.includes(`not interfering: ${BACK} failed on both engines (defect), NO VERDICT on cua: ticket to be registered`), defect.missing.join('\n'));
   // A target window above the user's says what came over it (C-5's launch row): the venue's.
   const raised = {...bare, windowOrder: {before: false, after: true}};
   const target = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: raised})}, cua: {axMs: 40, tweak: set(BACK, {interference: raised})}});
@@ -1217,9 +1237,7 @@ test('the cells of a known defect are named with their ticket', () => {
   const TYPE_SELECT = 'finder/frontmost/typeText.typeSelect';
   const worse = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(TYPE_SELECT, {ok: false, outcome: {threw: 'x', errorName: 'typeUnconfirmed'}})}});
   assert.ok(worse.blocking.includes(`method: ${TYPE_SELECT} is worse on cua (known defect #587)`), worse.blocking.join('\n'));
-  const SEARCH = 'openPanel/frontmost/typeText.search';
-  const unprepared = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(SEARCH, {ok: false, invalid: 'not prepared: the field could not be given the focus'})}});
-  assert.ok(unprepared.missing.includes(`method: ${SEARCH} has no valid cua sample (known defect #588)`), unprepared.missing.join('\n'));
+  // #588's Open panel search row is not judged since ruling 1222 (its own test below).
 });
 
 // Ruling 1221 (H2): the background rows' user windows by the path they took to the top, per scene and engine, and the
@@ -1233,4 +1251,87 @@ test('to the top: background rows counted waited and raised per user scene and e
   const text = renderSummary({...judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}}), toTop: t});
   assert.match(text, /^- User windows to the top \(ruling 1221\): electron vendor waited 1, raised 0; textedit cua waited 1, raised 2; not ok after a raise: cua finder\/background\/c@textedit\.$/m);
   assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /User windows to the top/);
+});
+
+// Fix wave I2 and I3: a cua failure is shared only with its own paired vendor sample's (the same run and sample, as
+// ruling 1144's shared limits pair); one vendor failure elsewhere in the cell excuses nothing. With nothing moved and
+// nothing over the user's window on either record (route 4 alone, an unread order or focus), the kind is unread, never
+// venue; a sample out of the oracle's judgment (sampleCause) does not feed what moved.
+test('shared interference pairs by run and sample; with no positive evidence it is unread; a sample with its own cause feeds nothing', () => {
+  const topOver = {ok: false, frontmost: true, topWindow: false, focus: true, activations: 0, route4: false, windowOrder: {before: false, after: false},
+    topChange: {before: {owned: true, pid: 11, number: 3, bounds: null}, after: {owned: false, bundleId: 'com.example.over'}, userWindowMoved: false}};
+  // An oracle row has one sample a run (its sample is the run's number), so its pair is the same run's.
+  const inRun = (run, patch) => (rows, r) => (r === run ? set(BACK, patch)(rows) : rows);
+  // The vendor failed run 1, cua run 2: no pair failed on both, so cua's blocks.
+  const apart = judged({vendor: {resolved: 9, axMs: 50, tweak: inRun(1, {interference: topOver})}, cua: {axMs: 40, tweak: inRun(2, {interference: topOver})}});
+  assert.ok(apart.blocking.includes(`not interfering: ${BACK} failed on cua`), apart.blocking.join('\n'));
+  assert.deepEqual(apart.sharedInterference, []);
+  // The vendor failed runs 1 and 2, cua runs 2 and 3: run 2's pair is shared, run 3's cua failure still blocks.
+  const inRuns = (runs, patch) => (rows, r) => (runs.includes(r) ? set(BACK, patch)(rows) : rows);
+  const some = judged({vendor: {resolved: 9, axMs: 50, tweak: inRuns([1, 2], {interference: topOver})}, cua: {axMs: 40, tweak: inRuns([2, 3], {interference: topOver})}});
+  assert.ok(some.blocking.includes(`not interfering: ${BACK} failed on cua`), some.blocking.join('\n'));
+  assert.deepEqual(some.sharedInterference.map(s => [s.kind, s.samples]), [['venue', 1]]);
+  // The same run and sample: shared, one pair.
+  const paired = judged({vendor: {resolved: 9, axMs: 50, tweak: inRun(1, {interference: topOver})}, cua: {axMs: 40, tweak: inRun(1, {interference: topOver})}});
+  assert.ok(!paired.blocking.some(b => b.includes(BACK)), paired.blocking.join('\n'));
+  assert.deepEqual(paired.sharedInterference.map(s => [s.kind, s.samples]), [['venue', 1]]);
+  // Route 4 alone on both: nothing moved, nothing over the user's window: unread, missing proof.
+  const route4 = {ok: false, frontmost: true, topWindow: true, focus: true, activations: 0, route4: true};
+  const r4 = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: route4})}, cua: {axMs: 40, tweak: set(BACK, {interference: route4})}});
+  assert.deepEqual(r4.sharedInterference.map(s => [s.kind, s.seen]), [['unread', ['route 4']]]);
+  assert.ok(r4.missing.includes(`not interfering: ${BACK} failed on both engines (unread), NO VERDICT on cua: ticket to be registered`), r4.missing.join('\n'));
+  // A vendor sample with its own cause (an alert held its keys) is out of the oracle's judgment: it pairs nothing and
+  // says nothing of what moved, so cua's failure of that sample blocks.
+  const focusLost = {ok: false, frontmost: true, topWindow: true, focus: false, activations: 0, route4: false};
+  const held = {interference: focusLost, alertHeld: {front: 'com.apple.UserNotificationCenter', keys: ['Return']}};
+  const caused = judged({vendor: {resolved: 9, axMs: 50, tweak: inRun(1, held)}, cua: {axMs: 40, tweak: inRun(1, {interference: topOver})}});
+  assert.ok(caused.blocking.includes(`not interfering: ${BACK} failed on cua`), caused.blocking.join('\n'));
+  assert.deepEqual(caused.sharedInterference, []);
+});
+
+// Ruling 1222: every not-judged entry, the per-context rows', the Open panel's search row's and a shared item's, carries
+// its reason and a ticket or a recorded evidence reference (row and field); one with neither is refused into missing.
+test('not judged (ruling 1222): every entry a reason and a ticket or evidence; one with neither is missing proof, NO VERDICT', () => {
+  for (const rule of NOT_JUDGED_RULES) assert.ok(rule.cause && /^#\d+$/.test(rule.ticket ?? ''), rule.condition);
+  const base = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}});
+  assert.equal(base.verdict, 'PASS');
+  for (const n of base.notJudged) assert.ok(n.cause && (n.ticket || n.evidence?.length), n.id);
+  // A rule with neither: its rows stay out of the judgment, and the entry is missing proof.
+  const bare = NOT_JUDGED_RULES.map(r => (r.condition === 'perContext' ? {...r, ticket: undefined} : r));
+  const unticketed = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}, notJudgedRules: bare});
+  assert.equal(unticketed.verdict, 'NO VERDICT');
+  assert.ok(unticketed.missing.some(m => m.startsWith('not judged without a ticket or recorded evidence: unicode chrome/perContext@textedit/typeText.hangul (perContext)')), unticketed.missing.join('\n'));
+  assert.ok(!unticketed.notJudged.some(n => n.condition === 'perContext'));
+  // A venue entry with no evidence is refused; one with its evidence, or a defect with its ticket, is admitted.
+  assert.match(notJudgedRefusal({section: 'interference', id: 'x', condition: 'sharedVenue', cause: 'the venue\'s', evidence: []}), /no ticket and no recorded evidence/);
+  assert.equal(notJudgedRefusal({section: 'interference', id: 'x', condition: 'sharedVenue', cause: 'the venue\'s', evidence: [{row: 'x', engine: 'cua', run: 1, sample: 1, field: 'interference.windowOrder.after'}]}), null);
+  assert.equal(notJudgedRefusal({section: 'interference', id: 'x', condition: 'sharedDefect', cause: 'a defect', ticket: '#9'}), null);
+  assert.match(notJudgedRefusal({section: 'interference', id: 'x', condition: 'sharedDefect', ticket: '#9'}), /no reason/);
+});
+test('ruling 1222: a shared defect with its ticket counts as a #577 per-context row does: the same verdict, neither in missing', () => {
+  const focusLost = {ok: false, frontmost: true, topWindow: true, focus: false, activations: 0, route4: false};
+  const ticketed = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: focusLost})}, cua: {axMs: 40, tweak: set(BACK, {interference: focusLost})},
+    knownDefects: {[`interference ${BACK}`]: '#999'}});
+  const planned = unicodeRowsOf(FULL_PLAN.unicode).filter(r => r.condition === 'perContext').map(r => r.id);
+  const perContext = engine => (rows, run) => [...rows, ...planned.map(id => ({section: 'unicode', id, engine, sample: run, ok: false, invalid: 'the context did not read Korean afterwards'}))];
+  const ctx = judged({vendor: {resolved: 9, axMs: 50, tweak: perContext('vendor')}, cua: {axMs: 40, tweak: perContext('cua')}});
+  assert.equal(ticketed.verdict, ctx.verdict);
+  assert.deepEqual([ticketed.missing, ticketed.blocking], [ctx.missing, ctx.blocking]);
+  assert.deepEqual(ticketed.notJudged.find(n => n.id === BACK), {id: BACK, section: 'interference', condition: 'sharedDefect',
+    cause: 'cua failed not interfering with its paired vendor sample, and the person\'s focus moved: a product defect both engines share (rulings 1219 and 1222)', ticket: '#999', samples: 3});
+  const text = renderSummary(ticketed);
+  assert.ok(text.includes(`| ${BACK} | cua failed not interfering with its paired vendor sample, and the person's focus moved: a product defect both engines share (rulings 1219 and 1222) | ticket #999 | 3 |`), text.slice(text.indexOf('## Not judged')));
+});
+// Ruling 1222 (a): the Open panel's search row is not judged, naming #588, as the per-context rows are.
+test('ruling 1222: openPanel/frontmost/typeText.search is not judged, naming #588: neither pass, fail nor missing', () => {
+  const SEARCH = 'openPanel/frontmost/typeText.search';
+  assert.ok(!manifestOf({run: 1, samples: 2}).some(e => e.id === SEARCH));
+  // The run still runs and records it (outside the manifest, as the per-context rows are).
+  const search = (engine, ok) => (rows, run) => [...rows, {section: 'method', id: SEARCH, engine, sample: run, ok, target: 'openPanel', regime: 'frontmost', method: 'typeText', case: 'search'}];
+  const failing = judged({vendor: {resolved: 9, axMs: 50, tweak: search('vendor', true)}, cua: {axMs: 40, tweak: search('cua', false)}});
+  assert.equal(failing.verdict, 'PASS');
+  assert.ok(!failing.methods.some(m => m.id === SEARCH));
+  const entry = failing.notJudged.find(n => n.id === SEARCH);
+  assert.deepEqual([entry.section, entry.condition, entry.ticket, entry.cua], ['method', 'openPanelSearch', '#588', {ok: 0, valid: 3, invalid: 0}]);
+  assert.match(renderSummary(failing), /### openPanelSearch\n\n.*#588.*\n\nTicket: #588\./);
 });

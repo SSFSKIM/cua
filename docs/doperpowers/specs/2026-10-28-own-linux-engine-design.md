@@ -2960,7 +2960,7 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Doctor's row is informational and never fails.
     - A tree with no record behind it is not named as cua's.
     - The sentence gives the path to delete by hand, and cua runs no deletion. Forks F3 and F4 fall away.
-    - An opt-in removal is a later ticket, carrying the three P1s as its requirements.
+    - An opt-in removal is #586, a later ticket carrying the three P1s as its requirements.
   - **The refusals (1215; 1216 on the override).**
     - The bump is minor, 0.30.0. Every refusal names one install command, `node <checkout>/bin/cua.mjs install --engine`. `cua engine build` stays in the README's engine section only.
     - Each sentence first gives the prerequisite for the source that selected it: unset CUA_LINUX_ENGINE_BIN; unset CUA_NATIVE_ENGINE; remove `engine` from engine.json, or name both in precedence order. Then comes that command. The prerequisite is a precondition, not a second remedy.

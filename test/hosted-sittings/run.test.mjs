@@ -8,7 +8,7 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {Writable} from 'node:stream';
 import {join} from 'node:path';
-import {execStep, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
+import {execStep, JOB_LIMIT_MINUTES, jobStartedOf, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
 
 const plan = (steps, form = 'full') => ({sitting: 'x', title: 'a test sitting', proves: 'nothing', form, setup: true, counts: [], pilotReads: false, steps});
 const step = (id, kind = 'run', extra = {}) => ({id, label: id, kind, argv: ['node', `${id}.mjs`], ...extra});
@@ -83,9 +83,38 @@ test('the report renders as the job summary: one line a step, its status, exit a
   const {report} = await run(plan([step('a'), step('b', 'run', {needs: ['a']})]), {a: 1});
   const text = renderSitting(report);
   assert.match(text, /^## Sitting X \(full\): a test sitting$/m);
-  assert.match(text, /^\| a \| run \| FAIL \| 1 \| 0 s \| \|$/m);
-  assert.match(text, /^\| b \| run \| SKIP \| - \| - \| needs a, which did not pass \|$/m);
+  assert.match(text, /^\| a \| run \| FAIL \| 1 \| 0 s \| 0 min \| \|$/m);
+  assert.match(text, /^\| b \| run \| SKIP \| - \| - \| 0 min \| needs a, which did not pass \|$/m);
   assert.match(text, /^\*\*FAIL\*\* \(exit 1\)/m);
+});
+
+// Design (after pilot C's estimate, 150 of 360 min): each step's wall time and the sitting's and the job's so far are
+// recorded as the sitting goes, in the log and to a partial report, so a slowing runner shows before the limit ends it.
+test('the wall time so far: each step carries the sitting\'s and the job\'s, logged and handed on as it ends, and the report closes with it against the limit', async () => {
+  let t = 10 * 60000;
+  const clock = () => t, lines = [], seen = [];
+  const report = await runSitting(plan([step('a'), step('b')]), {out: '/w/out', exec: async () => { t += 25 * 60000; return {exit: 0}; },
+    keep: () => {}, readText: () => '', readJson: () => null, exists: () => false, remove: () => {}, now: clock, log: line => lines.push(line),
+    jobStartedMs: 0, onStep: entry => seen.push([entry.id, entry.wall])});
+  assert.deepEqual(seen, [['a', {sittingMs: 25 * 60000, jobMs: 35 * 60000}], ['b', {sittingMs: 50 * 60000, jobMs: 60 * 60000}]]);
+  assert.ok(lines.some(l => /x b: PASS; the sitting 50 min so far, the job 60 min of its 360$/.test(l)), lines.join('\n'));
+  const text = renderSitting(report);
+  assert.match(text, /^\| b \| run \| PASS \| 0 \| 1500 s \| 50 min \| \|$/m);
+  assert.match(text, /^Wall time: the sitting 50 min so far, the job 60 min of its 360\.$/m);
+  // Without the job's start, the sitting's alone, the limit named.
+  const bare = await runSitting(plan([step('a')]), {out: '/w/out', exec: async () => ({exit: 0}), keep: () => {}, readText: () => '', readJson: () => null,
+    exists: () => false, remove: () => {}, now: () => 0, log: () => {}});
+  assert.match(renderSitting(bare), /^Wall time: the sitting 0 min so far \(the job's start unread; its limit is 360 min\)\.$/m);
+});
+
+test('the limit the report names is the sitting job\'s timeout in the workflow, and the job records its start first', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/m5-sittings.yml', import.meta.url), 'utf8');
+  const sittingJob = workflow.slice(workflow.indexOf('    strategy:'));
+  assert.equal(Number(/timeout-minutes: (\d+)/.exec(sittingJob)?.[1]), JOB_LIMIT_MINUTES);
+  const prerequisites = sittingJob.slice(sittingJob.indexOf('- name: Prerequisites'));
+  assert.ok(prerequisites.indexOf('M5_JOB_STARTED=$(date +%s)') < prerequisites.indexOf('npm ci'), 'recorded before anything slow');
+  assert.equal(jobStartedOf({M5_JOB_STARTED: '1700000000'}), 1700000000000);
+  for (const bad of [undefined, '', 'soon', '1.5']) assert.equal(jobStartedOf({M5_JOB_STARTED: bad}), null);
 });
 
 test('a pilot that proved nothing is labelled so, not "Proves" and PASS: judges with only the expected NO VERDICT, or steps all pending; the exit stays 0', async () => {

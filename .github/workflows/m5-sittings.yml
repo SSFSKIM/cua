@@ -100,6 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
+          echo "M5_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
           git log -1 --format='sitting %H %s'
           sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) sitting=$SITTING form=$FORM flipped=$FLIPPED"
           npm ci --no-audit --no-fund

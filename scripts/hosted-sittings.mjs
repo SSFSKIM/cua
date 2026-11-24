@@ -41,7 +41,7 @@ import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
 import {assertGithubHosted, readRunnerRecord} from './hosted-sittings/runner.mjs';
-import {execStep, renderSitting, runSitting} from './hosted-sittings/run.mjs';
+import {execStep, jobStartedOf, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
 import {runOnboarding} from './hosted-sittings/onboarding.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
@@ -79,9 +79,17 @@ async function runCommand(sitting, values) {
   const plan = planOf(sitting, values);
   const out = resolve(values.out);
   for (const dir of [join(process.env.RUNNER_TEMP, 'hosted-sittings-scratch'), ...plan.scratchDirs]) mkdirSync(dir, {recursive: true});
+  mkdirSync(out, {recursive: true});
+  const finished = [];
   const report = await runSitting(plan, {out, exec: (step, {logPath}) => execStep(step, {logPath, cwd: REPO}),
     keep: (from, to) => { mkdirSync(dirname(to), {recursive: true}); copyFileSync(resolve(REPO, from), to); }, exists: path => existsSync(resolve(REPO, path)),
-    readJson: path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } }, remove: path => rmSync(resolve(REPO, path), {force: true})});
+    readJson: path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } }, remove: path => rmSync(resolve(REPO, path), {force: true}),
+    // The job's start (the workflow's M5_JOB_STARTED, epoch seconds), and after each step a partial sitting.md, so a
+    // sitting the job's limit cuts short still leaves each finished step's wall time in the uploaded artifact.
+    jobStartedMs: jobStartedOf(process.env), onStep: entry => {
+      finished.push(entry);
+      writeFileSync(join(out, 'sitting.md'), renderSitting({...plan, steps: finished, verdict: 'IN PROGRESS', exit: '-', wall: entry.wall}));
+    }});
   const parts = [renderSitting(report)];
   if (plan.counts.length) {
     const {results, problems} = readResults(plan.counts.filter(existsSync));

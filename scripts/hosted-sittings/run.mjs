@@ -53,8 +53,11 @@ const checkOf = step => step.check ?? (step.kind === 'expect' ? 'expect' : 'exit
 // log, expected?}], verdict, exit}.
 export async function runSitting(plan, {out, exec = execStep, keep = (from, to) => { mkdirSync(dirname(to), {recursive: true}); copyFileSync(from, to); },
   readJson = readJsonFile, readText = readTextFile, exists = existsSync, remove = path => rmSync(path, {force: true}), now = Date.now,
-  log = line => process.stderr.write(`${line}\n`)}) {
-  const done = new Map();
+  log = line => process.stderr.write(`${line}\n`), jobStartedMs = null, onStep = () => {}}) {
+  const done = new Map(), sittingStarted = now();
+  // The wall time so far, after each step: the sitting's own and the job's (from `jobStartedMs`, the workflow's first
+  // step, so setup counts), so a slowing runner shows in the log and the partial report before the job's limit ends it.
+  const wall = () => ({sittingMs: now() - sittingStarted, jobMs: jobStartedMs === null ? null : now() - jobStartedMs});
   for (const step of plan.steps) {
     const entry = {id: step.id, label: step.label, kind: step.kind, check: checkOf(step), status: null, exit: null, ms: null, reason: null, log: null};
     done.set(step.id, entry);
@@ -82,15 +85,25 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
         try { keep(file, join(out, step.id, basename(file))); } catch (error) { entry.reason = [entry.reason, `${file} not kept (${error.code ?? error.message})`].filter(Boolean).join('; '); }
       }
     }
-    log(`hosted-sittings: ${plan.sitting} ${step.id}: ${entry.status}${entry.reason ? ` (${entry.reason})` : ''}`);
+    entry.wall = wall();
+    log(`hosted-sittings: ${plan.sitting} ${step.id}: ${entry.status}${entry.reason ? ` (${entry.reason})` : ''}; ${wallText(entry.wall)}`);
+    onStep(entry);
   }
   const steps = [...done.values()];
   const counted = steps.filter(s => !s.expected);
   const holds = {FAIL: counted.some(s => s.status === 'FAIL'), 'NO VERDICT': counted.some(s => s.status === 'NO VERDICT'),
     INCOMPLETE: plan.form === 'full' && counted.some(s => s.status === 'PENDING'), OWNER: counted.some(s => s.status === 'OWNER')};
   const [verdict, exit] = SITTING_EXITS.find(([name]) => holds[name]) ?? ['PASS', 0];
-  return {sitting: plan.sitting, form: plan.form, title: plan.title, proves: plan.proves, steps, verdict, exit};
+  return {sitting: plan.sitting, form: plan.form, title: plan.title, proves: plan.proves, steps, verdict, exit, wall: wall()};
 }
+
+// The job's start as the workflow's first step records it (M5_JOB_STARTED, epoch seconds), or null when unset or
+// unreadable. -> ms | null.
+export const jobStartedOf = env => (/^\d+$/.test(env.M5_JOB_STARTED ?? '') ? Number(env.M5_JOB_STARTED) * 1000 : null);
+// The sitting job's limit (.github/workflows/m5-sittings.yml `timeout-minutes` of the sitting job, held to it by a test).
+export const JOB_LIMIT_MINUTES = 360;
+const minutes = ms => `${Math.round(ms / 60000)} min`;
+const wallText = w => `the sitting ${minutes(w.sittingMs)} so far${w.jobMs === null ? '' : `, the job ${minutes(w.jobMs)} of its ${JOB_LIMIT_MINUTES}`}`;
 
 const seconds = ms => (ms === null ? '-' : `${Math.round(ms / 1000)} s`);
 const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -103,9 +116,10 @@ export function renderSitting(report) {
   const why = [expected && `${counted(expected, 'judge')} gave the expected NO VERDICT`, pending && `${counted(pending, 'step')} pending`].filter(Boolean).join(', ');
   const out = [`## Sitting ${report.sitting.toUpperCase()} (${report.form}): ${report.title}`, '',
     unproved ? `Would prove: ${report.proves}. This pilot proves none of it: ${why}.` : `Proves: ${report.proves}.`, '',
-    '| step | kind | status | exit | time | note |', '|---|---|---|---|---|---|'];
-  for (const s of report.steps) out.push(`| ${[s.id, s.kind, s.status, s.exit ?? '-', seconds(s.ms)].join(' | ')} |${s.reason ? ` ${String(s.reason).replaceAll('|', '\\|')} ` : ' '}|`);
+    '| step | kind | status | exit | time | sitting so far | note |', '|---|---|---|---|---|---|---|'];
+  for (const s of report.steps) out.push(`| ${[s.id, s.kind, s.status, s.exit ?? '-', seconds(s.ms), s.wall ? minutes(s.wall.sittingMs) : '-'].join(' | ')} |${s.reason ? ` ${String(s.reason).replaceAll('|', '\\|')} ` : ' '}|`);
   const count = status => report.steps.filter(s => s.status === status).length;
   out.push('', `**${unproved ? 'PILOT COMPLETED WITHOUT ACCEPTANCE PROOF' : report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
+  if (report.wall) out.push('', `Wall time: ${wallText(report.wall)}${report.wall.jobMs === null ? ` (the job's start unread; its limit is ${JOB_LIMIT_MINUTES} min)` : ''}.`);
   return out.join('\n') + '\n';
 }

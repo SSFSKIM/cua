@@ -311,6 +311,36 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-24, ruling 1223 (the design session, after pilot C-6, 45408876276). C-6 confirmed ruling 1221's cause.
+  Every TextEdit or Electron user window that missed the wait had Finder's window on top. The raise fixed it: the
+  background cells @textedit and @electron went from 0 of 28 valid per lane to 27 of 28, with no raise failed.
+  - **Save sheet.**
+    - The sitting step (kind `saveSheet`, was `observation`) judges the real path's row. An `invalid` row is NO
+      VERDICT, an ok row is PASS, and anything else FAILs naming its findings. The findings come from one rule,
+      `saveSheetFindings`.
+    - Every destination exit carries `goTo`, its last observation and, on the identification exit, which part failed.
+    - Every attempt exit carries the folder result and the unsaved proof, read after the cancel.
+    - The unsaved proof is no file URL on the document plus the run's folder empty. AXEdited is a diagnostic only: on
+      hosted, read through the close button, it was false for a dirty untitled document.
+    - C-6's vendor destination reached `ready`, so the Where check is proven on hosted.
+  - **Intervention.** The user activations of intervention.fires and preAction take ruling 1221's wait-then-raise
+    (`activateToTop`). In C-6 the run's Electron fixture window sat over TextEdit on both lanes.
+  - **Not interfering.** A top window owned by the user app's pid passes, recorded as "user app's own window", only
+    when all three hold:
+    - the user window is unchanged (number, bounds, focus);
+    - the input landed;
+    - an event record shows cua posted nothing to the user app's pid in that cell.
+
+    No matrix cell records where cua posted. So C-6's Finder and Chrome concurrent@textedit (a 52×22 window of the
+    user's own TextEdit) stay shared and in missing proof, with what is missing recorded.
+  - **chrome/background/pressKey.tab@textedit.** A harness oracle defect, not a limit. The frontmost rows left a name
+    in the Scene-name field, Chrome selects a field's whole value when Tab focuses it, and the renderer then prints
+    "Selected text" instead of the focused-element line. So the check read no focus on either engine, while cua's
+    meta showed 22→23. The prepare now empties the field first.
+  - **Tickets.** #587 is cited on cua's background typeSelect cells. #590 (P2, blocks #506) is cited on
+    textedit/latin/typeText.latin and on typeUnconfirmed-after-landed rows on a text field. Every typeUnconfirmed row
+    records cua's `typeReadback` and a harness read (role, character count, range, per-read AXError, ms after the
+    call).
 - 2026-11-24, ruling 1222 (the design session, after C-6's preparation review), the not-judged route. Each kind of
   item takes this route:
   - **#577's perContext rows**: not judged. They count as neither pass, fail nor missing proof.

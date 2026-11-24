@@ -5,6 +5,7 @@
 // under TextEdit's pid.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
@@ -380,61 +381,104 @@ test('no panel cell sends Return or Enter, types a line break, or presses Save o
   }
 });
 
-// The same cells executed against a stand-in TextEdit whose panel records every key, text, value and click it is sent:
-// the openers, each case's prepare, act and check, and the harness's close cells. Nothing but the opening keys and
-// Escape is pressed, nothing but the two tokens typed, nothing but emptying written, and only the panel's fields and its
-// Cancel are clicked.
+// The same cells executed against a stand-in TextEdit whose panel records every key, text, value, selection and click it
+// is sent: the openers, each case's prepare, act and check, and the harness's close cells. Nothing but the opening keys
+// and Escape is pressed, nothing but the two tokens typed, nothing written, and only the panel's fields and its Cancel
+// are clicked.
 const AsyncFunction = (async () => {}).constructor;
 async function runCell(text, apps) {
   let out = '';
   globalThis.__apps = apps;
   try { await new AsyncFunction('cua', 'nodeRepl', text)({}, {write: s => { out += s; }}); } finally { delete globalThis.__apps; }
-  return out;
+  return parseCell(out);
 }
-function standInTextEdit() {
-  const sent = {keys: [], texts: [], values: [], clicks: []};
-  let up = null, value = '', focused = null;
+// `saveName`: the name the Save sheet opens with, wholly selected in its focused name field (AppKit's); `writes`: whether
+// an AX value write takes (pilot C-3: the vendor's setValue("") on the sheet's name field left it non-empty). The trailer
+// shows the selected text in place of the focused element, as the renderer does.
+function standInTextEdit({saveName = '', writes = true} = {}) {
+  const sent = {keys: [], texts: [], values: [], selections: [], clicks: []};
+  let up = null, value = '', focused = null, selected = null;
   const CANCEL = 3;
+  const close = () => { up = null; value = ''; focused = null; selected = null; };
   const render = () => {
     const field = `${value ? `, Value: ${value}` : ''}`;
+    const trailer = selected !== null ? `Selected text: \`\`\`\n${selected}\n\`\`\`` : null;
     if (up === 'open') return [`Window: "Open", App: TextEdit.`, '0 standard window ID: open-panel', `\t1 search text field (settable) Description: Search${field}`, `\t${CANCEL} button Cancel`, '',
-      `The focused UI element is ${focused ?? 0} ${focused === 1 ? 'search text field' : 'standard window'}`].join('\n');
+      trailer ?? `The focused UI element is ${focused ?? 0} ${focused === 1 ? 'search text field' : 'standard window'}`].join('\n');
     if (up === 'save') return [`Window: "Untitled", App: TextEdit.`, '0 standard window Untitled', '\t1 sheet ID: save-panel', `\t\t2 text field (settable) ID: saveAsNameTextField${field}`, `\t\t${CANCEL} button Cancel`, '',
-      `The focused UI element is ${focused ?? 0} ${focused === 2 ? 'text field' : 'standard window'}`].join('\n');
+      trailer ?? `The focused UI element is ${focused ?? 0} ${focused === 2 ? 'text field' : 'standard window'}`].join('\n');
     return 'Window: "Untitled", App: TextEdit.\n0 standard window Untitled\n\t1 text entry area (settable) ID: First Text View\n';
   };
   const app = {
     async getAXState() { return render(); },
-    async pressKey(k) { sent.keys.push(k); if (k === 'super+o') up = 'open'; if (k === 'super+s') up = 'save'; if (k === 'Escape') { up = null; value = ''; focused = null; } },
-    async typeText(t) { sent.texts.push(t); value += t; },
-    async setValue(i, v) { sent.values.push([i, v]); value = v; },
-    async click(i) { sent.clicks.push(i); if (i === CANCEL) { up = null; value = ''; focused = null; } else focused = i; },
+    async pressKey(k) {
+      sent.keys.push(k);
+      if (k === 'super+o') up = 'open';
+      if (k === 'super+s') { up = 'save'; value = saveName; focused = 2; selected = saveName || null; }
+      if (k === 'Escape') close();
+    },
+    async typeText(t) { sent.texts.push(t); value = selected !== null ? value.replace(selected, t) : value + t; selected = null; },
+    async setValue(i, v) { sent.values.push([i, v]); if (writes) { value = v; selected = null; } },
+    async selectText(i, t) { sent.selections.push([i, t]); if (i === focused && value.includes(t)) selected = t; },
+    async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else { focused = i; selected = null; } },
   };
   return {app, sent, open: () => { up = 'open'; }};
 }
-test('the panel cells executed against a stand-in TextEdit press, type, write and click nothing that could commit', async () => {
+// Each frontmost case of the panels run in the stand-in, its opener first and the harness's close after. -> [{target,
+// case, prepare, check}], each cell's answer.
+async function standInCases(stand) {
   const {closePanelClickCell, closePanelKeyCell, panelGoneCell, caseCells} = await import('../../scripts/native-matrix/matrix-cells.mjs');
   const {SAVE_SHEET_OPEN_CELL} = await import('../../scripts/native-matrix/probe-plan.mjs');
-  const {app, sent, open} = standInTextEdit();
-  const apps = {textedit: app};
+  const apps = {textedit: stand.app}, out = [];
   globalThis.__sheetDoc = 'Untitled';
   try {
     // The Open panel is opened in the stand-in itself (OPEN_PANEL's ⌘O needs the run's scene document in front; its
     // source is in the scan above); the Save sheet by its own opener.
     for (const [target, opener] of [['openPanel', null], ['savePanel', SAVE_SHEET_OPEN_CELL]]) {
       for (const c of casesOf(target, 'frontmost')) {
-        if (opener) await runCell(opener, apps); else open();
+        if (opener) await runCell(opener, apps); else stand.open();
         const cells = caseCells(target, c);
-        for (const cell of [cells.prepare, cells.act, cells.check]) await runCell(cell, apps);
+        const prepare = await runCell(cells.prepare, apps);
+        await runCell(cells.act, apps);
+        out.push({target, case: `${c.method}.${c.case}`, prepare: prepare.value, check: (await runCell(cells.check, apps)).value});
         for (const cell of [closePanelKeyCell(target), closePanelClickCell(target), panelGoneCell(target)]) await runCell(cell, apps);
       }
     }
   } finally { delete globalThis.__sheetDoc; delete globalThis.__m; }
+  return out;
+}
+test('the panel cells executed against a stand-in TextEdit press, type, write and click nothing that could commit', async () => {
+  const stand = standInTextEdit();
+  const {sent} = stand;
+  await standInCases(stand);
   assert.deepEqual([...new Set(sent.keys)].sort(), ['Escape', 'super+s']);
   assert.deepEqual([...new Set(sent.texts)].sort(), [PANEL_SEARCH, SAVE_PANEL_NAME].sort(), 'both typing cases typed their token');
-  assert.ok(sent.values.every(([, v]) => v === ''), JSON.stringify(sent.values));
+  assert.deepEqual(sent.values, [], 'nothing written');
   assert.ok(sent.clicks.every(i => [1, 2, 3].includes(i)), `only the fields and Cancel: ${JSON.stringify(sent.clicks)}`);
   assert.ok(sent.texts.every(t => !/[\r\n]/.test(t)));
+});
+// Pilot C-3: the vendor's Save sheet name typing was "not prepared: the field could not be emptied" after its setValue("")
+// (prepared: field emptied) left the name field non-empty. The prepare writes nothing: it focuses the field and selects
+// its whole value (an AX selection, no key, as both engines do), so the typing replaces it; the check, the token read
+// back whole, is unchanged.
+test('a Save sheet name field no value write empties: its name selected whole by the prepare, the token typed over it and read back', async () => {
+  const stand = standInTextEdit({saveName: 'Untitled', writes: false});
+  const name = (await standInCases(stand)).find(r => r.case === 'typeText.name');
+  assert.equal(name.prepare.ready, true, JSON.stringify(name.prepare));
+  assert.deepEqual(name.check.outcome, {readBack: true, length: SAVE_PANEL_NAME.length, up: true});
+  assert.equal(name.check.ok, true);
+  assert.deepEqual(stand.sent.values, []);
+  // The field focused and its name selected by the prepare (the click deselects what AppKit selected at the opening).
+  assert.deepEqual(stand.sent.selections, [[2, 'Untitled']]);
+  assert.deepEqual(name.prepare.prepared, ['field selected']);
+});
+test('a field whose value the prepare cannot select whole is not prepared, by a reason that says so, nothing typed', async () => {
+  const stand = standInTextEdit({saveName: 'Untitled'});
+  stand.app.selectText = async () => {};
+  const name = (await standInCases(stand)).find(r => r.case === 'typeText.name');
+  assert.equal(name.prepare.ready, false);
+  assert.match(name.prepare.reason, /^the field's value could not be selected whole/);
+  assert.ok(!stand.sent.texts.includes(SAVE_PANEL_NAME));
 });
 // Re-review, finding 4: two windows that both qualify for one opening do not tell which is the panel. On a hosted runner
 // the placement is recorded ambiguous, nothing is moved, and the case and its timing are NO VERDICT venue, unsent; the

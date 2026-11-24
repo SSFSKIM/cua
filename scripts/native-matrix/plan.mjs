@@ -327,17 +327,23 @@ return {ready: true};`,
 for (const end = Date.now() + 5000; ${PANEL_UP[target]} && Date.now() < end;) ax = await observe();
 const closed = !${PANEL_UP[target]}, front = ${front};
 return {ok: closed && front, outcome: {closed, documentInFront: front}};`});
-// A panel's typing (ruling 1196): `field` (cell source over `ax`) emptied by value and focused by the prepare, the text
-// typed, then read back, awaited up to 3 s; only whether it read back and its length leave the cell.
+// A panel's typing (ruling 1196): `field` (cell source over `ax`) focused by the prepare and its value, if any, selected
+// whole, so the text typed replaces it; then read back, awaited up to 3 s; only whether it read back and its length leave
+// the cell. Nothing is written: pilot C-3's vendor left the Save sheet's name field non-empty after setValue(""), the
+// panel service's field taking no AX value write there. The selection is an AX selection both engines make (no key: a
+// prepare's keys pass no key guard), read back in the trailer, which shows it in the focused element's place (so the
+// focus is read before it, a click's own selection read as masked, ./matrix-text.mjs focusReading).
 const panelTyping = (target, kase, field, text, what) => ({method: 'typeText', case: kase, expect: 'outcome', keys: ['typeText'], regimes: ['frontmost'],
   prepare: `let ax = await observe();
 if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
 let index = ${field};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-if (plain(valueOfIndex(ax, index) ?? "") !== "") { await __app.setValue(index, ""); ax = await observe(); index = ${field}; __m.prepared.push("field emptied"); }
-if (index !== null && focusedIndexOf(ax) !== index) { await __app.click(index); ax = await observe(); index = ${field}; }
-if (index === null || plain(valueOfIndex(ax, index) ?? "") !== "") return {ready: false, reason: "the field could not be emptied"};
-if (focusedIndexOf(ax) !== index) return {ready: false, reason: "the field could not be focused"};
+if (focusReading(ax, index) !== "focused") { await __app.click(index); ax = await observe(); index = ${field}; }
+if (index === null || focusReading(ax, index) === "unfocused") return {ready: false, reason: "the field could not be focused"};
+const value = plain(valueOfIndex(ax, index) ?? "");
+if (value !== "" && selectedTextOf(ax) !== value) { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }
+const selected = selectedTextOf(ax);
+if (value !== "" && (index === null || selected !== value || plain(valueOfIndex(ax, index) ?? "") !== value)) return {ready: false, reason: "the field's value could not be selected whole: " + value.length + " characters, " + (selected === null ? "none" : selected.length) + " selected"};
 return {ready: true};`,
   act: `await __app.typeText(${j(text)});`,
   check: `let ax = await observe(), value = null;

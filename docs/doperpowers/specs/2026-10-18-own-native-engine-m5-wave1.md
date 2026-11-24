@@ -46,6 +46,15 @@ back (its put-back held), complete or not; a cua sample whose vendor sample a st
 row is judged against the vendor's, is NO VERDICT `vendorStopped` naming the stop, and own-effect rows are judged as
 ever.
 
+**C-6: after C-5 (rulings 1219–1221).** C-5 (45373370067) ran both matrix lanes complete, with no #584 regression on
+the panel cells. C-6 runs the same pilot with these additions:
+- #212's real destination path, under ruling 1221's Go To escalation and unsaved-document proof;
+- background user windows waited for, and raised on hosted when the wait misses;
+- the Korean `r k` judged against 가;
+- shared not-interfering failures judged by what moved;
+- the front read skipping both engines' windows.
+C-6's report gives, per scene and lane, the waited/raised counts and the cells still failing after a raise.
+
 **The owner's sitting (PF §5, O1 to O6): a prerequisite this wave adds.** #560 lands first: the device side's read of
 the hosted venue is bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), beside the direct
 `RUNNER_ENVIRONMENT=github-hosted` checks every hosted-only write already makes. Until #560 is on the branch the owner
@@ -302,6 +311,55 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-24, ruling 1221 (the design session, on C-6's preparation): three settlements.
+  - **Background user windows** (`activateScene`'s `top`, the background pairings' and launch rows' user activations
+    only). Pilots C-2 to C-5 left every background cell whose user app is TextEdit or Electron NO VERDICT on both
+    lanes ("did not come to the front"). For those scenes the activation checked only the frontmost pid, never the
+    window order, while Finder's path raised its window.
+    - The activation now waits within its bound for the run's own window to be the top layer-0 window. Only on a miss
+      does it raise that window, and only on a hosted runner (AXRaise through `panel-ax raise`, behind
+      `assertGithubHosted`). Off hosted a miss stays NO VERDICT.
+    - Each row records `toTop {path: waited|raised, ms, topBefore}`. The summary counts waited/raised per scene and
+      lane and lists the rows not ok after a raise; design takes those.
+    - Resets, panels, frontmost targets and the probe and unicode user activations keep the old activation. A raise
+      there could lift the scene window over the untitled document and its sheet.
+  - **A Go To dialog that will not close.** Ruling 1219 grants no sheet-chain exemption. So the destination cell
+    escalates within its one dispatch: Escape up to 3 times, then the dialog's CloseButton, then cancelling the Save
+    sheet. Only a dialog that survives all three stops the lane, and the stop text leads with the dialog and each step
+    tried, with its result.
+  - **Nothing saved.** No protected folder (~/Documents, ~/Desktop, iCloud) is read in a hosted run, because a Files &
+    Folders prompt would be a foreign window mid-matrix. The proof is read after the cancel:
+    - the run's TextEdit window has no AXDocument and is still edited (`ax-state document`, booleans only);
+    - the run's temp folder holds no file;
+    - the panel's initial Where is kept by name and never read.
+    A saved document fails the row; a proof not read leaves it invalid. This replaces the default-location read
+    relayed with ruling 1220, which was never design's wording.
+- 2026-11-24, ruling 1220 (the design session, after pilot C-5): `SAVE_PANEL_CONTROLS` is filled from C-5's
+  observations, which were identical on both lanes: `save-panel` and `GoToWindow` as sheets, `PathTextField`, and
+  `where popup`. C-6 runs #212's real destination path.
+  - The typed folder is a temp directory the run creates and removes.
+  - The only Return is the Go To field's. The Save sheet is cancelled after Where is checked, so nothing is saved
+    (rulings 1196/1199).
+  - A failure there decides only that row, except the stuck dialog of ruling 1221.
+  - Unverified until C-6: that the Where pop-up's value is the folder's basename. Otherwise the check fails closed.
+- 2026-11-24, ruling 1219 (the design session, after pilot C-5), the save sheet: the stop of C-5's save-sheet runs is
+  the case's own input, not a nesting the guard must learn.
+  - The destination cell's observation branch pressed super+shift+g and returned with the Go To dialog up. The
+    cleanup, a separate dispatch, met the key-window guard: the focused window was the Go To sheet on the Save sheet,
+    which reads as 'other'. The guard refused the cleanup and then the fixture reset, and the run stopped. The stop
+    text named the capture alert; it now names the guard that held it.
+  - The fix is in the input: the cell closes the dialog it opened on every exit (ruling 1221's escalation). The
+    sheet-chain exemption (h1) is dropped. A focused sheet records `sheetAx {sheetOf, parentRole, listed}` as
+    diagnostics only.
+  - The AXSheet inference of ruling 1214 held on hosted: matrix row 353 and the Save sheet, on both engines, with the
+    case's own document as parent.
+  - Also ruled after C-5:
+    - The front read skips both engines' own windows on both lanes, and records each skip.
+    - A not-interfering cell failing on both engines blocks nothing. It is judged by what moved: the person's window,
+      focus or input → a shared product defect, NO VERDICT with its ticket; a target or other window over the user's
+      → venue; unrecorded → unread.
+    - Product tickets #587 (Finder type-select `typeUnconfirmed`) and #588 (the Open panel's search-field click) are
+      cited where the judge names those cells.
 - 2026-11-24, ruling 1219 (the design session, after pilot C-5), the Korean `r k`: the Korean pressKey rows
   (`chrome/korean/pressKey.rk`, `electron/korean/pressKey.rk`, and TextEdit's for consistency) are judged against
   ruling 1119's oracle, 가, on each engine, not cua against the vendor (`judgeCell`'s `expected`,

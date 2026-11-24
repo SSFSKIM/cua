@@ -1992,10 +1992,14 @@ domain.
   -type` and `-extract … raw` on that one output): the dictionary's presence and the key's value come from the same
   reading. A string where the dictionary belongs, or a number where the Boolean belongs, is `{malformed: why}`, never
   "unset". A malformed owner's value is never written back: the restore holds only while it still reads as saved, and
-  the failure says to set it by hand.
-- **Saving.** The saved record keeps whether the dictionary existed before the run (`perContextDict`).
+  the failure says to set it by hand. A hosted matrix run whose baseline reads malformed therefore writes nothing: it
+  reads only, as off a hosted runner, and the rows needing a write are `ownerInput` naming why.
+- **Saving.** The saved record keeps whether the dictionary existed before the run (`perContextDict`), taken with the
+  value from the same typed read.
 - **Unsetting.** `unsetPerContext` runs `scripts/native-matrix/unset-per-context.sh`, the one implementation, which a
-  person can run by hand too:
+  person can run by hand too. Against the real domain it refuses off a GitHub-hosted runner, before any defaults call,
+  unless run with `--manual-recovery`: the owner's own recovery, the mode every failure names. A scratch path domain
+  (the tests') runs anywhere.
   1. It reads the domain through cfprefsd: `defaults export com.apple.HIToolbox -`.
   2. With the dictionary, or the key in it, already absent it prints `none` and writes nothing: it is safe to repeat.
      A dictionary key that is not a dictionary stops it, nothing written.
@@ -2029,8 +2033,8 @@ keeps the record. It never names a System Settings toggle, which cannot express 
 
 - on: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true`
 - off: the same with `-bool false`
-- unset: `sh scripts/native-matrix/unset-per-context.sh` from the harness checkout, with `--delete-if-empty` when the
-  dictionary was absent before the run.
+- unset: `sh scripts/native-matrix/unset-per-context.sh --manual-recovery` from the harness checkout, with
+  `--delete-if-empty` when the dictionary was absent before the run.
 
 **A record a failed run left.** The record is removed only once both values read back. One that stays now refuses
 the next run's `begin` (`scripts/native-matrix/live-device.mjs`). The refusal names the record, the owner's source and
@@ -2098,7 +2102,10 @@ lanes should begin.
 C complete, but without this step its input rows could never be judged.
 
 **The step.** A new setup step, `input sources`, runs after `textedit defaults` and before the runs
-(`scripts/hosted-sittings/input-sources.mjs`, `input-sources.swift`). It is hosted only (`assertGithubHosted`).
+(`scripts/hosted-sittings/input-sources.mjs`, `input-sources.swift`). It is hosted only: the module asserts it
+(`assertGithubHosted`), and the Swift helper's `enable` refuses off a GitHub-hosted runner itself, before any TIS call,
+however it is run; its `list` is a read and runs anywhere. Each helper call is bounded (120 s); one that outlives it
+is recorded, its sources missing.
 
 - **What it enables.** com.apple.keylayout.ABC, then com.apple.inputmethod.Korean (the input method, never
   selectable itself), then com.apple.inputmethod.Korean.2SetKorean (its mode).
@@ -2130,6 +2137,9 @@ C complete, but without this step its input rows could never be judged.
   cells and the Latin rows need ABC, the Korean rows need 2-Set, and the mid-switch, composition and per-context rows
   need both. None runs under the US layout to be judged.
 - `summary.mjs` counts `venue` per side in its NO VERDICT line.
+- The live harness reads the same record: without Korean 2-Set, its paste check's Korean window and its
+  `input-source` check save and select nothing, and type_text is NO VERDICT `venue`. A measured plain-text or Markdown
+  failure in the same check stays its headline.
 
 **Unproven until a hosted run:**
 

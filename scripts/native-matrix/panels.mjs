@@ -30,7 +30,7 @@ import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {ALERT_MARGIN, MENU_BAR, overlaps} from './alert-guard.mjs';
 import {closePanelClickCell, closePanelKeyCell, OPEN_PANEL, panelGoneCell} from './matrix-cells.mjs';
 import {CLOSE_UNTITLED_CELL, NEW_DOCUMENT_CELL, SAVE_SHEET_OPEN_CELL} from './probe-plan.mjs';
-import {activate, activationOf, AlertGuarded, AlertHeld, device, js, KeyGuardStop, notActivated, read, readKey, sendKeys, Stop, TEXTEDIT} from './steps.mjs';
+import {activate, activationOf, AlertGuarded, AlertHeld, device, js, KeyGuardStop, notActivated, ownWindowClosed, ownWindowOpened, read, readKey, sceneWindowNumbers, sendKeys, Stop, TEXTEDIT} from './steps.mjs';
 
 // What opens each panel: the cell (a key cell, sent under the key guard with TextEdit's process in front) and its keys.
 const OPENERS = Object.freeze({openPanel: {code: OPEN_PANEL, keys: ['super+o']}, savePanel: {code: SAVE_SHEET_OPEN_CELL, keys: ['super+s']}});
@@ -294,11 +294,12 @@ export async function untitledDocument(ctx, apps) {
   if (skipped) return {skipped};
   if (!front?.ok) return {problem: `TextEdit did not come to the front (${front?.reason ?? 'no answer'})`};
   let made;
+  const known = sceneWindowNumbers(ctx, 'textedit');
   try { made = await sendKeys(ctx, NEW_DOCUMENT_CELL, ['super+n'], {scene: 'textedit', front: read(ctx)}); } catch (error) {
     if (!(error instanceof AlertHeld)) throw error;
     return {skipped: {apps, activate: activationOf(ctx, SCENES.textedit.bundleId), before: error.reading, after: readKey(ctx)}, held: error.row};
   }
-  if (made?.ok && made.value?.opened === true) return null;
+  if (made?.ok && made.value?.opened === true) { ownWindowOpened(ctx, 'textedit', known); return null; }
   await closeUntitledDocument(ctx);
   return {problem: `the untitled document did not open (${made?.error ?? made?.value?.reason ?? 'not sent'})`};
 }
@@ -307,6 +308,6 @@ export async function untitledDocument(ctx, apps) {
 export async function closeUntitledDocument(ctx) {
   activate(ctx, 'textedit');
   const closed = await sendKeys(ctx, CLOSE_UNTITLED_CELL, ['super+w'], {scene: 'textedit', front: read(ctx), key: 'save-panel:untitled'});
-  if (closed?.ok && closed.value?.sceneInFront === true) return;
+  if (closed?.ok && closed.value?.sceneInFront === true) return ownWindowClosed(ctx);
   throw new Stop(`the Save sheet's untitled document could not be closed: TextEdit's scene document is not in front (${!closed ? 'not sent' : !closed.ok ? `the cell failed: ${String(closed.error ?? '').slice(0, 160)}` : `front: ${closed.value?.front ?? 'unknown'}`})`);
 }

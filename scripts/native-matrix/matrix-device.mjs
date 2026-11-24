@@ -10,7 +10,7 @@
 //       ../cursor-sitting/ax-state.swift) compiled once into the run directory and reused by every read after (an
 //       interpreted read costs seconds)
 //   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>] [--approved-runtime <home> --approved-engine <bundle>]
-//        [--electron-mode latest] [--with front-key,window-order,alert-bounds] [--key-window <scene>]
+//        [--electron-mode latest] [--with front-key,window-order,alert-bounds] [--key-window <scene> [--key-window-number <n>]]
 //       the oracle's reading (./oracle.mjs ownedReading): the frontmost application and the top on-screen window, the
 //       run's processes by pid and any other application by bundle id only; whether the activation watcher <pid> still
 //       runs (`watch-activations` of the approved bundle), so a row's coverage is proven at both its ends; with --focus,
@@ -22,7 +22,8 @@
 //       alert-bounds, the alert windows' bounds, the run's own windows' and the displays', read afresh (the alert guard,
 //       ./alert-guard.mjs alertBoundsOf; null when the window list was unread); with --key-window, whether the scene's
 //       app holds its recorded window as its own key window (`ownKey`, ../hosted-sittings/key-window.mjs: the key-window
-//       requirement of ruling 1169's addition, ../hosted-sittings/alert-guard.mjs keyWindowCause)
+//       requirement of ruling 1169's addition, ../hosted-sittings/alert-guard.mjs keyWindowCause); with --key-window-number, for
+//       that window of the scene's app instead: one the run opened for the case in force (./steps.mjs ownKeyWindowNumber)
 //   place --run <dir> --scene <id> --frame <x,y,w,h> [--window <number>]
 //       the scene's recorded window moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
 //       is pinned, ./goldens-device.mjs), read back -> {answer: {requested, readBack, matched, exitStatus}, at}: the run's
@@ -196,7 +197,7 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // its own key window (sceneKeyWindow). All inside the reading's `at`.
 // io: {enginePids(bundles), frontWindow({skipPids}), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids),
 // electronRecord(), windows(), screen() ({windows, displays}), axState(pid, 'x,y,w,h')}.
-export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false, frontKey = false, windowOrder = false, alertBounds = false, keyWindow = null}, io) {
+export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false, frontKey = false, windowOrder = false, alertBounds = false, keyWindow = null, keyWindowNumber = null}, io) {
   const skipPids = approvedEngine ? io.enginePids([approvedEngine]) : [];
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
@@ -213,7 +214,7 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
   if (frontKey) out.frontKey = {front: bundleOf(raw?.frontmost?.bundleId), key: keyOf(report ?? unnamedFocus(io))};
   if (windowOrder) out.windowOrder = windowOrderOf(io.windows(), owned, skipPids);
   if (alertBounds) out.alertBounds = guardReading(io);
-  if (keyWindow !== null) out.ownKey = sceneKeyWindow(keyWindow, io);
+  if (keyWindow !== null) out.ownKey = sceneKeyWindow(keyWindow, io, keyWindowNumber);
   const at = [from, Date.now()];
   if (unownedTop) out.reading.topWindow.engine = engineOwns(unownedTop.pid, [approvedRuntime, approvedEngine], io);
   if (electronMode) {
@@ -234,13 +235,16 @@ function guardReading(io) {
 // its process's frontmost window when the run launched the process (a document ⌘N opened, a sheet on it counting as
 // its window), the recorded one for Finder, whose process also shows the owner's windows. Not taken (ok false, with
 // why) when the scene is not up or the window list was not read.
-export function sceneKeyWindow(scene, io) {
+// `own`: the number of a window the run opened on the scene for the case in force (../native-matrix/steps.mjs
+// ownKeyWindowNumber; pilot C-3), read for in place of the scene's own window.
+export function sceneKeyWindow(scene, io, own = null) {
   const record = io.state().scenes?.[scene];
   if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) return {scene, number: null, trusted: null, ok: false, reason: 'the scene is not up in this run'};
   let windows = null;
   try { windows = io.windows(); } catch { windows = null; }
   if (!Array.isArray(windows)) return {scene, number: null, trusted: null, ok: false, reason: 'the window list was unread'};
-  return ownKeyWindow(windows, {scene, pid: record.pid, number: SCENES[scene]?.process === 'run' ? null : record.window.number}, io.axState);
+  const number = own !== null && /^\d+$/.test(String(own)) ? Number(own) : SCENES[scene]?.process === 'run' ? null : record.window.number;
+  return {...ownKeyWindow(windows, {scene, pid: record.pid, number}, io.axState), ...(own !== null ? {own: true} : {})};
 }
 
 // The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, moved by the frame probe and read
@@ -714,7 +718,7 @@ export async function main(argv, {io: given = {}} = {}) {
       if (also.some(w => !READ_WITH.includes(w))) throw new Error(`--with names readings of ${READ_WITH.join(', ')}`);
       if (flags['key-window'] !== undefined && !SCENES[flags['key-window']]) throw new Error('--key-window names a scene');
       return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest',
-        frontKey: also.includes('front-key'), windowOrder: also.includes('window-order'), alertBounds: also.includes('alert-bounds'), keyWindow: flags['key-window'] ?? null, ...roots}, io);
+        frontKey: also.includes('front-key'), windowOrder: also.includes('window-order'), alertBounds: also.includes('alert-bounds'), keyWindow: flags['key-window'] ?? null, keyWindowNumber: flags['key-window-number'] ?? null, ...roots}, io);
     }
     case 'electron-mode': return electronModeRecord(io);
     case 'text-range': return timed(() => textRange(flags.scene, io));

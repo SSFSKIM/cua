@@ -71,10 +71,39 @@ const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--app
 // is read (`ownKey`, ../hosted-sittings/key-window.mjs).
 export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false, alertBounds = false, keyWindow = null} = {}) => {
   const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : []), ...(alertBounds ? ['alert-bounds'] : [])];
+  const own = keyWindow ? ownKeyWindowNumber(ctx, keyWindow) : null;
   return ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
     ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : []), ...(also.length ? ['--with', also.join(',')] : []),
-    ...(keyWindow ? ['--key-window', keyWindow] : [])]);
+    ...(keyWindow ? ['--key-window', keyWindow] : []), ...(own !== null ? ['--key-window-number', String(own)] : [])]);
 };
+
+// The run's own windows as the key window it expects (pilot C-3, ruling 1203): a document the run opened with ⌘N on a
+// scene (the sheet variant's and #212's untitled document, the Save sheet target's) becomes that app's key window
+// without being its frontmost window in the window list when the app is in the background, so the key-window guard,
+// reading the frontmost one, refused the case's next key and its cleanup. Its number, read when it opens
+// (ownWindowOpened), is the window the guard reads for, but only for the cells of the case that opened it (`owner`, the
+// case in force: ctx.caseOwner) and that case's cleanup, its held fixture's reset included. Any other case's cell is
+// read as before, so a window the run did not open for that case still refuses. Each opening is kept in
+// meta.ownWindows ({owner, scene, number} or {owner, scene, reason}).
+export const ownKeyWindowNumber = (ctx, scene) => (ctx.ownWindow && ctx.ownWindow.scene === scene && ctx.ownWindow.owner === ctx.caseOwner ? ctx.ownWindow.number : null);
+// The scene's windows on screen by number (the alert guard's reading), or null when the list was unread.
+export function sceneWindowNumbers(ctx, scene) {
+  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
+  return Array.isArray(bounds?.windows) ? new Set(bounds.windows.filter(w => w.scene === scene).map(w => w.number)) : null;
+}
+// The window the run just opened on `scene` (one new since `known`) recorded as the case's own key window. A window not
+// told apart (the list unread, none or several new) is recorded with why, and the guard reads as before.
+export function ownWindowOpened(ctx, scene, known) {
+  const owner = ctx.caseOwner ?? null, now = sceneWindowNumbers(ctx, scene);
+  const fresh = now && known ? [...now].filter(n => !known.has(n)) : null;
+  const entry = fresh?.length === 1 ? {owner, scene, number: fresh[0]}
+    : {owner, scene, reason: !fresh ? 'the window list was unread' : fresh.length ? `${fresh.length} new windows` : 'no new window'};
+  (ctx.meta.ownWindows ??= []).push(entry);
+  ctx.ownWindow = entry.number === undefined ? null : entry;
+  return ctx.ownWindow;
+}
+// The case's own window closed (its cleanup ran) or the case over: the window counts for nothing more.
+export const ownWindowClosed = ctx => { ctx.ownWindow = null; };
 export const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.width},${w.bounds.height}`;
 export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
 

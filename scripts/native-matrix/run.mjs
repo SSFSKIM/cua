@@ -583,8 +583,15 @@ async function sceneTarget(ctx, target, plan) {
 // case that closes the panel (its Escape, its Cancel) leaves the next one a panel of its own. An opening outside the
 // strip leaves its case NO VERDICT `venue` (ruling 1195), unsent. The Save sheet's untitled document is made once before
 // its cases and closed after them.
+// The Save sheet's untitled document is the run's own window for the savePanel target's cases and its close
+// (./steps.mjs ownKeyWindowNumber): the target is the case in force until its document is closed.
 async function panelTarget(ctx, target, plan) {
   if (plan.onlyMeasures) return;
+  if (target !== 'savePanel') return panelCases(ctx, target, plan);
+  ctx.caseOwner = 'savePanel/frontmost';
+  try { return await panelCases(ctx, target, plan); } finally { ctx.caseOwner = null; ctx.ownWindow = null; }
+}
+async function panelCases(ctx, target, plan) {
   const apps = appsOf(target);
   if (target === 'savePanel') {
     const made = await untitledDocument(ctx, apps);

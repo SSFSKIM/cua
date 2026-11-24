@@ -29,7 +29,7 @@ import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInp
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
-  skippedReadings, Stop, userFront, waitQuiet} from './steps.mjs';
+  ownWindowClosed, ownWindowOpened, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
 const USER_HASH = sha256Hex(PROBE_TEXT);
@@ -64,7 +64,11 @@ async function resetHeldFixture(ctx) {
   if (!held) return;
   ctx.heldFixture = null;
   let failed;
-  try { activate(ctx, held.scene); failed = await cleanedUp({cleanup: held.cleanup}); } catch (error) { failed = error; }
+  ctx.caseOwner = held.entry.row;
+  try { activate(ctx, held.scene); failed = await cleanedUp({cleanup: held.cleanup}); } catch (error) { failed = error; } finally {
+    ctx.caseOwner = null;
+    ownWindowClosed(ctx);
+  }
   held.entry.reset = !failed;
   // The guard's own cause when it refused the cleanup (./steps.mjs AlertGuarded: `alert` or `unread`), else the held key's.
   if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
@@ -87,8 +91,18 @@ export class ResetBlocked extends Stop {
 // that throws keeps the attempt it followed, its failure on the row's `outcome.cleanupFailed` and then thrown, so the
 // run stops with it among its problems. The kept row is judged by the oracle when it carries one, else charged its
 // activations.
+// The case in force (ctx.caseOwner) is the row's for its attempts and cleanups, so a window an attempt opened is the key
+// window the guard reads for its cells alone (./steps.mjs ownKeyWindowNumber); once the case is over that window counts
+// for nothing, unless its held fixture still waits for its reset, which runs as the case's.
 async function sampled(ctx, base, attempt) {
   await resetHeldFixture(ctx);
+  ctx.caseOwner = base.id;
+  try { return await sampledRows(ctx, base, attempt); } finally {
+    ctx.caseOwner = null;
+    if (!ctx.heldFixture) ownWindowClosed(ctx);
+  }
+}
+async function sampledRows(ctx, base, attempt) {
   const row = {...base, engine: ctx.engine, sample: ctx.n, ok: false};
   const venue = venueInputCause(ctx.venueMissing, [ABC]);
   if (venue) return push(ctx, {...row, ...venueInputMarks(venue)});
@@ -266,8 +280,10 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
     const front = await userFront(ctx, user, userWindow, {keysTo: driven});
     return front.inFront ? span.add(await sendKeys(ctx, code, names, {scene: driven, front, userWindow, kind: 'row', key})) : null;
   };
+  const known = sceneWindowNumbers(ctx, driven);
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
   span.made(driven, () => closeUntitled(ctx, keys));
+  if (opened?.ok && opened.value?.opened === true) ownWindowOpened(ctx, driven, known);
   if (!opened?.ok || opened.value?.opened !== true) {
     await closeUntitled(ctx, keys);
     return span.end({invalid: `the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`});
@@ -506,8 +522,10 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const keys = async (code, names) => span.add(await sendKeys(ctx, code, names, {scene, front: read(ctx), kind: 'row', key}));
   const cleanup = () => closeSaveSheet(ctx, keys);
   const unprepared = invalid => span.end({invalid}, {cleanup});
+  const known = sceneWindowNumbers(ctx, scene);
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
   span.made(scene, cleanup);
+  if (opened?.ok && opened.value?.opened === true) ownWindowOpened(ctx, scene, known);
   if (!opened?.ok || opened.value?.opened !== true) return unprepared(`the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`);
   alertCheck(ctx, `before ${id} typing`);
   const typed = await keys(SHEET_TYPE_CELL, ['typeText']);

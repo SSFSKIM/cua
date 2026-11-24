@@ -1237,6 +1237,11 @@ test('the cells of a known defect are named with their ticket', () => {
   const TYPE_SELECT = 'finder/frontmost/typeText.typeSelect';
   const worse = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(TYPE_SELECT, {ok: false, outcome: {threw: 'x', errorName: 'typeUnconfirmed'}})}});
   assert.ok(worse.blocking.includes(`method: ${TYPE_SELECT} is worse on cua (known defect #587)`), worse.blocking.join('\n'));
+  // Ruling 1223 (R5 i): cua's background type-select cells are #587's too.
+  for (const id of ['finder/background/typeText.typeSelect@textedit', 'finder/background/typeText.typeSelect@electron']) {
+    const background = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(id, {ok: false, outcome: {threw: 'x', errorName: 'typeUnconfirmed'}})}});
+    assert.ok(background.blocking.includes(`method: ${id} is worse on cua (known defect #587)`), background.blocking.join('\n'));
+  }
   // #588's Open panel search row is not judged since ruling 1222 (its own test below).
 });
 

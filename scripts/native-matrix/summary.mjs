@@ -798,7 +798,9 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
 // Main's tickets for known defects (#587, #588), cited wherever the judge names their cells; the same field a shared
 // not-interfering defect's ticket fills once main registers it (sharedInterferenceOf's `ticket`).
 // #588's Open panel search row is not judged (ruling 1222, ./not-judged.mjs), so it is no longer named here.
-export const KNOWN_DEFECTS = Object.freeze({'method finder/frontmost/typeText.typeSelect': '#587'});
+// Ruling 1223 (R5 i): cua's background type-select cells are #587's as the frontmost one is.
+export const KNOWN_DEFECTS = Object.freeze({'method finder/frontmost/typeText.typeSelect': '#587', 'method finder/background/typeText.typeSelect@textedit': '#587',
+  'method finder/background/typeText.typeSelect@electron': '#587'});
 const knownDefect = (section, id) => (KNOWN_DEFECTS[`${section} ${id}`] ? ` (known defect ${KNOWN_DEFECTS[`${section} ${id}`]})` : '');
 
 // Ruling 1219 (h5): the not-interfering cells cua failed whose vendor rows failed too (undeclared on both). Each is judged

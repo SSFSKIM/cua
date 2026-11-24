@@ -41,6 +41,11 @@ every entry point (the step, the matrix cell, the device commands, the AX helper
 run proves: that the tap app's own row is the one TCC asks (its readiness reports `listenAccess`), that the per-pid
 taps see a CGEventPostToPid post, and the pids themselves.
 
+**C-5: the lanes after a stopped run (ruling 1214).** Each matrix run starts when the run before it put the device
+back (its put-back held), complete or not; a cua sample whose vendor sample a stopped vendor run never took, where the
+row is judged against the vendor's, is NO VERDICT `vendorStopped` naming the stop, and own-effect rows are judged as
+ever.
+
 **The owner's sitting (PF §5, O1 to O6): a prerequisite this wave adds.** #560 lands first: the device side's read of
 the hosted venue is bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), beside the direct
 `RUNNER_ENVIRONMENT=github-hosted` checks every hosted-only write already makes. Until #560 is on the branch the owner

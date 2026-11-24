@@ -462,8 +462,13 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const unproven = judgedCells.filter(c => c.verdict === 'no-verdict' && c.cua.valid === 0).map(c => {
     const causes = Object.keys(c.account.cua.noVerdict);
     const unpaired = (c.account.cua.noVerdict.unpaired ?? 0) > 0, only = k => causes.length > 0 && causes.every(x => x === k);
+    // Ruling 1214: where the vendor's run stopped before its samples, the missing proof is the vendor's, named.
+    const byStop = new Map();
+    for (const s of c.account.vendorStopped ?? []) { const k = `${s.reason ?? 'its stop unrecorded'}; after ${s.after ?? 'no row'}`; byStop.set(k, [...(byStop.get(k) ?? []), s.run]); }
+    const stops = [...byStop].map(([k, runs]) => `${k} (run ${runs.join(', ')})`).join('; ');
     // Ruling 1168: where every sample's vendor pair could not be the reference, the missing proof is the vendor's.
-    return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
+    return `${SECTION_NAMES[c.section]}: ${c.id} ${only('vendorStopped') ? `has no cua sample with a vendor sample to compare: the vendor's run stopped before it (${stops})`
+      : unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
       : only('reference') ? 'has no vendor sample that registered the pointerdown (ruling 1168)'
       : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}`;
   });
@@ -576,7 +581,16 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   // Ruling 1203: the Open panel's pointer cells a hosted runner left to the owner's sitting, per side.
   const ownerSitting = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.ownerSitting ?? 0), 0);
   const sitting = ownerSitting('cua') + ownerSitting('vendor');
-  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}${sitting ? `; \`ownerSitting\` (the Open panel's pointer cells left to the owner's sitting, the panel clamped short of the strip, ruling 1203): cua ${ownerSitting('cua')}, vendor ${ownerSitting('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  // Ruling 1214: the cua samples whose vendor sample a stopped vendor run never took (cua's side only).
+  const stoppedCount = j.cells.reduce((n, c) => n + (c.account.cua.noVerdict.vendorStopped ?? 0), 0);
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}${sitting ? `; \`ownerSitting\` (the Open panel's pointer cells left to the owner's sitting, the panel clamped short of the strip, ruling 1203): cua ${ownerSitting('cua')}, vendor ${ownerSitting('vendor')}` : ''}${stoppedCount ? `; \`vendorStopped\` (cua samples whose vendor sample was never run, the vendor's run having stopped before it: no verdict, never cua's failure): cua ${stoppedCount}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  const stoppedCells = j.cells.filter(c => c.account.vendorStopped?.length);
+  if (stoppedCells.length) {
+    out.push('## The vendor\'s run stopped', '', 'Each judged cell whose cua samples have no vendor sample to compare because the vendor\'s run stopped part-way before it (ruling 1214): NO VERDICT `vendorStopped`, the proof missing the vendor\'s.', '',
+      '| cell | run | the vendor\'s run stopped after | why it stopped |', '|---|---|---|---|');
+    for (const c of stoppedCells) for (const s of c.account.vendorStopped) out.push(`| ${c.section} ${c.id} | ${s.run} | ${s.after ?? '-'} | ${String(s.reason ?? '-').replace(/\|/g, '\\|')} |`);
+    out.push('');
+  }
 
   // A pass on its own effect whose act threw: a model told the write failed while it worked (ruling 1204's setValue.name).
   const landed = j.thrownButLanded ?? {vendor: [], cua: []};

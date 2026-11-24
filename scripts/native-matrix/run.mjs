@@ -529,9 +529,12 @@ async function placeScenes(ctx) {
 // the guard's cause, as an activation that did not take records its target's (skippedTarget), so the per-cell counts see
 // them (./manifest.mjs manifestOf, the rows the judge expects). With no `guard` (a panel nothing closed, PanelStuck), each
 // is invalid by `why`.
+// Each row also carries the stop (`unrun`: {reason, after}, the row the run stopped after), so the other lane's sample of
+// it is judged NO VERDICT vendorStopped where it rests on this one (./cell-verdict.mjs), never unpaired without a cause.
 function recordUnrun(ctx, plan, guard, why = 'the alert guard refused a harness cell') {
   const have = new Set(ctx.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
-  const mark = guard ? guardRow({category: guard.category, detail: `not run: the run stopped when ${why} (${guard.detail})`}) : {invalid: `not run: the run stopped: ${why}`};
+  const unrun = {reason: guard ? `${why} (${guard.detail})` : why, after: ctx.rows.at(-1)?.id ?? null};
+  const mark = {...(guard ? guardRow({category: guard.category, detail: `not run: the run stopped when ${why} (${guard.detail})`}) : {invalid: `not run: the run stopped: ${why}`}), unrun};
   for (const {section, id, sample, expect} of manifestOf({run: ctx.n, samples: ctx.samples}, plan)) {
     if (have.has(`${section} ${id} ${sample}`)) continue;
     push(ctx, {section, id, engine: ctx.engine, sample, ok: false, ...(section === 'method' ? {regime: id.split('/')[1], expect} : {}), ...mark});
@@ -616,7 +619,7 @@ async function panelCases(ctx, target, plan) {
 // Every frontmost case's timing row (./manifest.mjs: one per case and run), for a case that ended before it was timed
 // (not prepared, its act not sent, its opening skipped or outside the strip): the case row's own marks, so the sample is
 // NO VERDICT by the same cause, never missing (pilot C-2's vendor `chrome/method.drag.select`).
-const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'ownerSitting', 'panelClose', 'error', 'opening']);
+const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'ownerSitting', 'panelClose', 'error', 'opening', 'unrun']);
 
 // A panel's case on its opening. Under ruling 1203's fallback (ctx.panelFallback, ./panels.mjs placePanel: the Open panel
 // clamped short of the strip on a hosted runner) a case whose act sends a pointer event is left to the owner's sitting,

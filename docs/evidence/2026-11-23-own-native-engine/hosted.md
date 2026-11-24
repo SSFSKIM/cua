@@ -1797,6 +1797,13 @@ by the interference oracle, and pressKey's vendor composing otherwise fails its 
 such a run, on both sides, and `sampleCause` makes it NO VERDICT `venue` before any of those rules runs
 (`splitFrameRuns`, review round 2). A split-frame run can never fail C.
 
+Ruling 1214 (after pilot C-4): C's matrix runs chain on the previous run's put-back holding (its record's `putBack`:
+the scenes down, every scene app at 0 running, Finder's run window gone and its windows as at begin, the input source
+restored and read back), not on its PASS, so the cua run goes on after a vendor run that stopped part-way. A cua sample
+judged against the vendor's (a frontmost method row, speed, finding, pressKey) whose vendor sample the stopped run
+never took (`recordUnrun`'s rows, marked `unrun`) is NO VERDICT `vendorStopped`, the stop and the row it came after
+named in the summary; rows judged on cua's own effect are judged as ever.
+
 ### The key-window requirement
 
 Pilot B's diagnostic run (45254955711) read the Electron fixture frontmost with no key window. TextEdit, Finder and

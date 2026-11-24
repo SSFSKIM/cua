@@ -1100,3 +1100,39 @@ test('thrown but landed: compare lists each one per engine with its error name a
     assert.ok(lines.includes(`    vendor ${SET_NAME} (run 1, sample 1): no error name: the vendor write was not confirmed`), lines.join('\n'));
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
+
+// Ruling 1214's consequence: the cua lane runs after a vendor lane that stopped part-way (its put-back held). A cua
+// sample judged against the vendor's (a frontmost method row, speed, finding, pressKey) whose vendor sample was never run
+// because the vendor's run stopped (./run.mjs recordUnrun's rows, marked `unrun`) is NO VERDICT `vendorStopped`, naming
+// the stop and the row the vendor's run stopped after: never a pass on cua's side alone, never read as cua's failure. A
+// row judged on cua's own effect (a background row against the fixture's ground truth) is judged as ever.
+test('a vendor lane stopped part-way: a comparing row after the stop is NO VERDICT vendorStopped on cua, naming the stop; an own-effect row is judged on its own effect', () => {
+  const stop = {reason: 'a held fixture could not be reset (the textedit fixture textedit/concurrent.sheet@electron\'s reset was held)', after: 'textedit/concurrent.sheet@electron'};
+  const unrun = {ok: false, invalid: 'the alert guard refused the cell: nothing of it was sent', alertGuard: {cause: 'keyWindow', detail: `not run: the run stopped when ${stop.reason}`}, unrun: stop};
+  const stopped = (rows, run) => (run === 1 ? rows.map(r => ([CLICK, BACK].includes(r.id) || (r.section === 'speed' && r.id === 'textedit/getAXState') ? {...r, ...unrun} : r)) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: stopped, complete: false}, cua: {axMs: 40}});
+  const click = j.methods.find(x => x.id === CLICK);
+  assert.deepEqual([click.verdict, click.account.cua.noVerdict], ['no-verdict', {vendorStopped: 1}]);
+  assert.deepEqual(click.account.vendorStopped, [{run: 1, reason: stop.reason, after: stop.after}]);
+  const speed = j.cells.find(c => c.section === 'speed' && c.id === 'textedit/getAXState');
+  assert.equal(speed.account.cua.noVerdict.vendorStopped, 2, 'both speed samples of the run');
+  // The own-effect row: cua's samples have their verdicts; a failure on its own effect still fails it.
+  const back = j.methods.find(x => x.id === BACK);
+  assert.deepEqual([back.account.cua.noVerdict, back.cua.valid], [{}, 3]);
+  const failing = judged({vendor: {resolved: 9, axMs: 50, tweak: stopped, complete: false}, cua: {axMs: 40, tweak: (rows, run) => (run === 1 ? set(BACK, {ok: false})(rows) : rows)}});
+  assert.equal(failing.methods.find(x => x.id === BACK).verdict, 'worse');
+  const text = renderSummary(j);
+  assert.match(text, /`vendorStopped` \(cua samples whose vendor sample was never run, the vendor's run having stopped before it: no verdict, never cua's failure\): cua 3;/);
+  assert.ok(text.includes('| vendorStopped 1 |'), 'by cell');
+  assert.ok(text.includes(`| method ${CLICK} | 1 | ${stop.after} | ${stop.reason} |`), text);
+  assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /vendorStopped/, 'named only when a sample has it');
+});
+
+test('a cua sample whose only vendor pair was never run is never a failure of cua\'s: the unproven line names the vendor\'s stop', () => {
+  const stop = {reason: 'the key guard stopped a panel\'s close', after: 'openPanel/frontmost/pressKey.escape'};
+  const unrun = {ok: false, invalid: 'not run: the run stopped: the key guard stopped a panel\'s close', unrun: stop};
+  const all = rows => rows.map(r => (r.id === CLICK ? {...r, ...unrun} : r));
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: all, complete: false}, cua: {axMs: 40}});
+  assert.ok(j.missing.includes(`method: ${CLICK} has no cua sample with a vendor sample to compare: the vendor's run stopped before it (${stop.reason}; after ${stop.after} (run 1, 2, 3))`), j.missing.join('\n'));
+  assert.ok(!j.blocking.some(b => b.includes(CLICK)));
+});

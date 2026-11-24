@@ -38,6 +38,9 @@
 //               Unicode row's failure, the pressKey row, a declared departure) with no vendor sample with a verdict
 //               from the same eligible run (ruling 1116: no valid pair, no verdict); a speed or finding sample outside
 //               the complete run pairs (./cell-verdict.mjs).
+//   vendorStopped  as unpaired, where the vendor's sample of that run was never run because the vendor's run stopped
+//               part-way (its row marked `unrun` by ./run.mjs recordUnrun; ruling 1214's put-back gate lets the cua run
+//               go on after it): the proof missing is the vendor's. A row alone never says it; the judge does.
 
 export const NO_VERDICT_CAUSES = Object.freeze({
   unread: 'front/key readings missing (hosted) or unread, or the alert guard could not read the alert windows\' bounds',
@@ -50,6 +53,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   invalid: 'the harness\'s own invalid reason',
   unmeasured: 'a speed or finding sample not measured (no numeric duration)',
   unpaired: 'no vendor sample with a verdict from the same eligible run (ruling 1116); for speed and finding, outside the complete run pairs',
+  vendorStopped: 'a cua sample judged against the vendor\'s whose vendor sample was never run, the vendor\'s run having stopped part-way before it (ruling 1214): the missing proof is the vendor\'s, never cua\'s failure',
   reference: 'the vendor\'s sample of the run could not be the reference (ruling 1168\'s pointerdown cell: the vendor\'s click did not raise the count by exactly one)',
 });
 

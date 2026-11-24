@@ -7,7 +7,11 @@
 // - No valid pair, no verdict (ruling 1116): where the verdict rests on the vendor's answer (a frontmost method row,
 //   whose reference is the vendor's outcome sample for sample; a fixed-string Unicode row's failure and the pressKey
 //   row; speed and finding, compared; a declared departure) a cua sample with no eligible vendor sample with a verdict
-//   is `unpaired`: it has no verdict, never equal and never worse.
+//   is `unpaired`: it has no verdict, never equal and never worse. Where the vendor's sample of that run was never run
+//   because the vendor's run stopped part-way (./run.mjs recordUnrun's rows, marked `unrun` {reason, after}), the cua
+//   sample is `vendorStopped` instead, the stop and the row it came after kept on the account (`vendorStopped`): the
+//   proof missing is the vendor's, never cua's failure. A row judged on cua's own effect ('own', acceptance) is judged
+//   as ever.
 // - Two failures are equal only as the same failure (./answers.mjs): the same answer, and on a frontmost method row
 //   every effect field its case recorded alike (`equal`). A caret row (#258, #259) asks the same of two passes: its
 //   reading is the field's range on the device, and the same reading is what "equal to the vendor's" means there.
@@ -42,6 +46,10 @@ const causeOf = row => sampleCause(row)?.category ?? null;
 const groupBy = (items, key) => { const out = new Map(); for (const item of items) { const k = key(item); if (!out.has(k)) out.set(k, []); out.get(k).push(item); } return out; };
 const all = () => true;
 const unknown = () => null;
+// The vendor's stop that left its sample of `run` unrun ({reason, after}), or null.
+const stopOf = (vendorRows, run) => vendorRows.find(r => runOf(r) === run && r.unrun)?.unrun ?? null;
+// A cua sample's cause where it has no vendor pair: the vendor's stop, or none to compare with.
+const noPair = (vendorRows, c) => (stopOf(vendorRows, runOf(c)) ? 'vendorStopped' : 'unpaired');
 
 // The complete run pairs: runs whose pair is eligible (`pairable`) and where both sides hold the same samples, as many
 // as `planned(run)` gives (null: as many as the other side; 0: the sides' plans differ), every one with a verdict by its
@@ -70,7 +78,11 @@ export function accountOf(vendorRows, cuaRows, cuaCause, {required = 1, pairable
     return {verdicts: rows.filter(r => !cause(r)).length, runs, byRun, noVerdict};
   };
   const pairRuns = [...completeRuns(vendorRows, cuaRows, causeOf, cuaCause, {pairable, planned})].sort((a, b) => a - b);
-  return {vendor: side(vendorRows, causeOf), cua: side(cuaRows, cuaCause), pairs: pairRuns.length, pairRuns, qualifies: pairRuns.length >= required};
+  // Each run where a cua sample is `vendorStopped`: the vendor's stop, once a run.
+  const stopRuns = [...new Set(cuaRows.filter(r => cuaCause(r) === 'vendorStopped').map(runOf))].sort((a, b) => a - b);
+  const vendorStopped = stopRuns.map(run => ({run, reason: stopOf(vendorRows, run)?.reason ?? null, after: stopOf(vendorRows, run)?.after ?? null}));
+  return {vendor: side(vendorRows, causeOf), cua: side(cuaRows, cuaCause), pairs: pairRuns.length, pairRuns, qualifies: pairRuns.length >= required,
+    ...(vendorStopped.length ? {vendorStopped} : {})};
 }
 
 // A caret row's device reading on its outcome (./caret.mjs caretOutcome: the range it read).
@@ -103,11 +115,11 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     if (c.outcome?.userKept === false) return 'worse';
     if (departure && !acceptance) {
       const {answered, effect} = answeredAs(departure, c);
-      if (answered && !v) return 'unpaired';
+      if (answered && !v) return noPair(vendorRows, c);
       if (answered && vendorAnsweredOk(v) && held(v) && held(c) && effect) return 'declared';
     }
     if (mode === 'own' || acceptance) return 'worse';
-    if (!v) return 'unpaired';
+    if (!v) return noPair(vendorRows, c);
     if (passes(v)) return 'worse';
     if (sameFailure(v, c, {readBack: fixed})) return fixed ? 'shared' : 'equal';
     if (!fixed) return 'worse';
@@ -126,7 +138,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     if (unfit) { outcomes.set(c, 'reference'); unreferenced.push({run: runOf(c), reason: unfit}); continue; }
     // 'reading': a pair missing either side's reading has no verdict (ruling 1141), never a difference.
     if (mode === 'reading' && v && !(hasReading(v) && hasReading(c))) { outcomes.set(c, 'unread'); continue; }
-    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? 'unpaired' : v && !passes(v) && mode !== 'pressKey' ? 'better'
+    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? noPair(vendorRows, c) : v && !passes(v) && mode !== 'pressKey' ? 'better'
       : mode === 'reading' && !sameEffect(v, c) ? 'worse' : 'equal');
     else outcomes.set(c, failed(c, v));
   }
@@ -167,7 +179,7 @@ function measuredRuns(vendorRows, cuaRows, pairable, planned) {
   const runsOf = rows => new Set(rows.filter(r => !causeOf(r) && pairable(runOf(r))).map(runOf));
   const vendorRuns = runsOf(vendorRows);
   const partial = new Set([...runsOf(cuaRows)].filter(n => vendorRuns.has(n)));
-  return {complete, partial, cuaCause: r => causeOf(r) ?? (complete.has(runOf(r)) ? null : 'unpaired')};
+  return {complete, partial, cuaCause: r => causeOf(r) ?? (complete.has(runOf(r)) ? null : noPair(vendorRows, r))};
 }
 const beatOf = (vendor, cua) => (vendor && cua ? cua.median <= BEAT * vendor.median && cua.p95 <= vendor.p95 : null);
 

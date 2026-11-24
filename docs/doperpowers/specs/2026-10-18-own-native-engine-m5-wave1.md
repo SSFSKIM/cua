@@ -288,6 +288,27 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, the input source after pilot C (run 45299196290) and ruling 1188 (the design session; detail in
+  `docs/evidence/2026-11-23-own-native-engine/hosted.md`, "The input source"): matrix-vendor-1 ran its 571 rows and
+  ended INCOMPLETE because the put-back could not restore the per-context preference, unset on a fresh runner, which
+  the input sections had set off; both save-sheet lanes reused the saved record and failed the same way. Ruling 1181
+  now covers it: "unset" is restorable. `scripts/native-matrix/hitoolbox.mjs` `unsetPerContext` reads the domain through
+  cfprefsd (`defaults export`), removes only TextInputGlobalPropertyPerContextInput with plutil, and writes back only
+  the one top-level key, AppleGlobalTextInputProperties (`defaults write <domain> <key> <XML>`, which keeps every
+  value's type). It deletes that key only when the saved record says the dictionary was absent before the run
+  (`perContextDict`) and nothing else is left in it. A record from before this change, with no `perContextDict`, leaves
+  an empty dictionary. There is no domain import and no plist edit. The source and the preference are read back after
+  a 1 s settle and written again where they differ, for at most 3 rounds (`RESTORE_SETTLE_MS`, `RESTORE_ROUNDS`, as
+  Finder's keys). A value that will not hold fails, naming the preference, the owner's value (on, off or unset) and the
+  exact command that sets it back; no System Settings toggle is named. A record left unrestored now refuses the next
+  run's `begin`, naming the record, the owner's values and the commands, so no lane reuses it. Ruling 1188: every
+  input-source selection and every HIToolbox write is hosted only (`assertGithubHosted`). That covers
+  `writePerContext`, `unsetPerContext`, `launchProbe`'s `input-source <id>`, matrix-device's `source
+  save|select|per-context` and `probe input-source`, `saveInputSource`, and the cursor sitting's selection, consent or
+  not. Off a hosted runner the harness only reads. The matrix asks the device first (`source state`): its probe cells
+  and the Latin and Korean conditions run when the owner's source and preference are theirs, and every other row is NO
+  VERDICT `ownerInput`, its cause naming the preference and the value it needed. `summary.mjs` counts those per side.
+  The live harness's input-source check and its paste check's Korean window are NO VERDICT the same way.
 - 2026-11-23, ruling 1181 (the design session, accepting 6c62fa029 after pilot B, run 45285337366): pilot B's vendor
   lane passed, but its Finder take-down left a window of Finder's own: the first take-down closed the run's window and
   its down failed on ShowSidebar's read-back; the retry's teardown activated Finder (`open -a`) with no window on

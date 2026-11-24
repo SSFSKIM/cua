@@ -1975,3 +1975,92 @@ title. `cleanup-prepared` removes it (`scripts/repl-parity/finder-baseline.mjs`)
 - **The venue's TextEdit preferences** stay unrestored: `writeTextEditDefaults` is the only way to write them, and it
   refuses off a GitHub-hosted runner for every key (`venue.test.mjs`).
 
+
+## The input source (pilot C, run 45299196290; rulings 1181 and 1188)
+
+**What pilot C showed.** matrix-vendor-1 ran its 571 rows in 1408 s. It still ended INCOMPLETE: the put-back's
+input-source step reported `perContextRestored: false, perContextWritten: false` and the advice "unset before the run
+and is set now; set … in System Settings". On a fresh runner the owner's com.apple.HIToolbox AppleGlobalTextInputProperties
+TextInputGlobalPropertyPerContextInput is unset. The input sections write it off (`-dict-add … -bool false`), and the
+old restore could only write true or false. Both save-sheet lanes found the record the failed run kept (`savedNow:
+false`), reused it, wrote the preference off again, and failed the same way. Every hosted C run would have failed so.
+
+**"Unset" is restorable (ruling 1181).** `scripts/native-matrix/hitoolbox.mjs` holds every read and write of the
+domain.
+
+- **Saving.** The saved record keeps whether the dictionary existed before the run (`perContextDict`).
+- **Unsetting.** `unsetPerContext` makes the domain as it was:
+  1. It reads the domain through cfprefsd: `defaults export com.apple.HIToolbox -`.
+  2. It extracts the dictionary and removes the one key with plutil: `plutil -extract AppleGlobalTextInputProperties
+     xml1 -o - -`, then `plutil -remove TextInputGlobalPropertyPerContextInput -o - -`.
+  3. It writes back only that top-level key: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties
+     '<the XML>'`. defaults parses an XML property list value, so every remaining value keeps its type: integer, real,
+     date, data and nested collections. `defaults read-type` then confirms the key is still a dictionary.
+  4. When the record says the dictionary was absent before the run and nothing else is left in it, it deletes the key
+     instead: `defaults delete com.apple.HIToolbox AppleGlobalTextInputProperties`.
+- **What it never does.** No other top-level key is written: the input sources the owner may switch during a run
+  stay theirs. There is no domain import and no plist file edit, which cfprefsd's cache would override.
+- **Old records.** A record saved before this change has no `perContextDict`. Restoring it leaves an empty dictionary
+  rather than delete one the owner may have had.
+- **The tests.** `test/native-matrix/hitoolbox.test.mjs` runs the real defaults and plutil against a scratch property
+  list standing in for the domain. It checks that the other nested keys come back byte for byte, that the only write
+  is the one key, that an owner's change to another top-level key during the run survives, and that the delete happens
+  only when the run created the dictionary. It also runs the failure's own command through a shell.
+
+**Read back after a settle.** `restoreInputSource` restores the source and the preference in rounds, as Finder's keys
+are (`RESTORE_SETTLE_MS` 1 s, `RESTORE_ROUNDS` 3). Each round selects the source and writes the preference where
+either differs, waits the settle, and reads both again. It ends at the first round that wrote nothing and read both as
+the owner's, so a successful restore takes one round past its last write. A value the text input system writes back
+late is therefore written again. A restore that does not hold after three rounds fails, naming the preference, the
+owner's value and the exact command that sets it back. It never names a System Settings toggle, which cannot express
+"unset":
+
+- on: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true`
+- off: the same with `-bool false`
+- unset: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties "$(defaults export com.apple.HIToolbox - | plutil -extract AppleGlobalTextInputProperties xml1 -o - - | plutil -remove TextInputGlobalPropertyPerContextInput -o - -)"`.
+  When the dictionary was absent before the run, the command is `defaults delete com.apple.HIToolbox
+  AppleGlobalTextInputProperties` if that key is its only one, otherwise the rewrite above.
+
+**A record a failed run left.** The record is removed only once both values read back. One that stays now refuses
+the next run's `begin` (`scripts/native-matrix/live-device.mjs`). The refusal names the record, the owner's source and
+preference, `node scripts/native-matrix/live-device.mjs input-source-restore` (it reads both back and removes the
+record once they hold), and the commands to set them by hand. No lane runs over it, so a save-sheet lane after a failed
+matrix run fails at begin, naming the record, instead of reusing it. Within one run the first record still wins: the
+input sections and the put-back share it.
+
+**Hosted only (ruling 1188).** The input sources are how the owner types every day, so a restore that misses changes
+their typing in every app. Every selection and every HIToolbox write therefore refuses off a GitHub-hosted runner
+(`assertGithubHosted`), before any defaults, plutil, probe or record is touched:
+
+- `writePerContext` and `unsetPerContext`;
+- `launchProbe` for `input-source <id>`, with or without `--at`; `input-source current` is a read and runs anywhere;
+- matrix-device's `source save|select|per-context` and `probe input-source`;
+- `saveInputSource`;
+- the cursor sitting's selection. The owner's recorded yes no longer switches anything there; the series' own source
+  check decides, as with no yes.
+
+Off a hosted runner the harness only reads:
+
+- The matrix asks the device first (`source state`: whether it may write, and the owner's source, layout and
+  preference). The probe cells run when the owner is on ABC with the preference off. The Latin and Korean conditions
+  run when the owner's source is theirs with the preference off. The mid-switch, composition and per-context
+  conditions switch a source during the row, so they never run there.
+- Every row the owner's values do not allow is NO VERDICT `ownerInput` (`scripts/native-matrix/owner-input.mjs`,
+  `front-key.mjs` `sampleCause`). Its cause names the preference or source and the value the row needed.
+- `summary.mjs` counts `ownerInput` per side in the NO VERDICT line and per cell, so the report shows what the owner's
+  machine could not judge.
+- The live harness's `input-source` check is NO VERDICT. Its paste check's Korean window measures type_text only when
+  the owner is already on Korean 2-Set with the preference off; otherwise type_text is NO VERDICT with its cause.
+- A record found there (one left before this ruling) is only read: it is removed once the owner's values read back as
+  saved, and named otherwise.
+
+**Unproven live:**
+
+- the rewrite and the delete against the real com.apple.HIToolbox domain on a hosted runner, with the text input
+  system running. The tests prove defaults and plutil on a scratch path-domain only;
+- whether the text input system writes the preference late in practice. The settle covers it either way;
+- the off-hosted rows on the owner's Mac.
+
+The next hosted C pilot proves the first. The input sections' restore should read `meta.inputSource.restored: true`.
+The put-back's input-source step should then read `perContextRestored: true` and remove the record, and the save-sheet
+lanes should begin.

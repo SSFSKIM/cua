@@ -97,7 +97,7 @@ test('a trusted sky wrapper is registered by real path; its directory and the ow
   symlinkSync(join(home, 'wrapper-src'), join(dir, 'linked'));
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: join(dir, 'linked', 'services', 'sky.mjs')}});
   assert.deepEqual(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES), {sky: wrapper});
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(wrapper), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR, CUA_API_DIR]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(wrapper), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR]);
   assert.equal(env.CUA_SKY_SERVICE, runtime.paths.skyVendorService);
 });
 
@@ -159,7 +159,7 @@ test('trusted code is only the vendor modules and owned source, never a director
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}});
   const repo = realpathSync(new URL('..', import.meta.url).pathname);
   const trusted = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':');
-  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'sandbox'), join(repo, 'bin'), join(repo, 'src', 'services'), join(repo, 'src', 'secrets'), join(repo, 'src', 'services', 'engine'), join(repo, 'src', 'cua-api')]);
+  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'sandbox'), join(repo, 'bin'), join(repo, 'src', 'services'), join(repo, 'src', 'secrets'), join(repo, 'src', 'services', 'engine')]);
   for (const root of trusted) {
     assert.ok(!(root + '/').startsWith(join(home, 'state') + '/') && !(root + '/').startsWith(join(home, 'run') + '/'), `${root} is runtime-writable state`);
   }
@@ -181,6 +181,20 @@ test('with the sky wrapper registered on macOS, cua\'s engine service directory 
   assert.ok(!unregistered.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(ENGINE_SERVICE_DIR), 'the vendor\'s own service, which imports nothing of cua\'s');
   const browserOnly = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}).env;
   assert.ok(!browserOnly.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(ENGINE_SERVICE_DIR));
+});
+
+// #558, ruling 1186: the Linux facade's line-break rule is a copy in src/cua-api, not shared with the macOS engine
+// service, so the macOS vendor host's trusted worker never gains the facade's directory: with the sky wrapper (and with
+// the browser surface too) its trusted paths are exactly the vendor modules, cua's sandbox and compat executable, the
+// services' directories, src/secrets and the engine service's directory.
+test('the macOS vendor host trusts no src/cua-api, with or without the sky wrapper (#558, ruling 1186)', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  for (const options of [{services: {sky: SKY_SERVICE}}, {surfaces: ['computer', 'browser'], services: {sky: SKY_SERVICE, browser: BROWSER_SERVICE}}, {}]) {
+    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, ...options});
+    const trusted = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':');
+    assert.ok(!trusted.some(dir => dir === CUA_API_DIR || dir.startsWith(`${CUA_API_DIR}/`)), JSON.stringify(trusted));
+    if (options.services?.sky) assert.deepEqual(trusted.slice(0, 6), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR]);
+  }
 });
 
 test('without a store the launch tells the trusted worker why, so a secret reference fails with that reason', t => {
@@ -205,7 +219,7 @@ test('the browser surface registers the trusted browser wrapper and configures c
   // cua's sockets are always listed (none here), so the service looks nowhere else; no network or security override.
   assert.equal(env.BROWSER_USE_BACKEND_PATHS, '');
   assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS']);
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR, CUA_API_DIR, BROWSER_SERVICE_IMPL_DIR]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR, BROWSER_SERVICE_IMPL_DIR]);
 });
 
 test('a browser-only launch has no computer-use service or native helper configuration', t => {

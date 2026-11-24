@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
-import {CASES, casesOf, PANEL_SEARCH} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, casesOf, PANEL_SEARCH, SAVE_PANEL_NAME} from '../../scripts/native-matrix/plan.mjs';
 import {stripCause} from '../../scripts/native-matrix/panels.mjs';
 import {runWith} from './run-doubles.mjs';
 
@@ -357,26 +357,85 @@ test('a Save sheet placed through its parent document: recorded via the parent, 
 });
 
 // The design keeps the panel cases on both lanes off a hosted runner too (the owner's sitting): no cell of theirs may
-// ever commit anything, so none sends Return or Enter, types a line break, or presses Save (or OK) in a panel, on either
-// lane, hosted or not.
-test('no panel cell sends Return or Enter, types a line break, or presses Save, on either lane, off a hosted runner included', async () => {
+// ever commit anything, so none sends Return or Enter, types a line break, or presses Save or OK in a panel, on either
+// lane, on a hosted runner and off one (explicit environments; runWith's default is neither said).
+const COMMITS = [/pressKey\(\s*"(Return|Enter|KP_Enter|return|enter)"/, /typeText\(\s*"[^"]*\\n/, /OKButton|"OK"|'OK'|"Save"|'Save'|\bSaveButton\b/];
+test('no panel cell sends Return or Enter, types a line break, or presses Save or OK, on either lane, hosted and off a hosted runner', async () => {
   const plan = {id: 'test', frontmost: ['openPanel', 'savePanel'], speed: true, finding: false, background: [{driven: 'openPanel', user: 'finder'}], launch: []};
+  const acted = (calls, act) => calls.filter(c => c.code.includes('__m.threw = null') && c.code.includes(act)).length;
   for (const engine of ['vendor', 'cua']) {
-    for (const alerts of [[], ALERTS]) {
+    for (const [where, env, alerts] of [['hosted', {RUNNER_ENVIRONMENT: 'github-hosted'}, ALERTS], ['off hosted', {}, []]]) {
+      const what = `${engine}, ${where}`;
       const calls = [];
-      const dev = panelDevice({alerts, escape: false});
-      const {result} = await runWith({engine, plan, calls, cell: dev.cell, ops: dev.ops});
-      assert.equal(result.complete, true, `${engine}: ${result.problems.join('; ')}`);
-      assert.ok(calls.length > 10);
-      for (const {code} of calls) {
-        assert.doesNotMatch(code, /pressKey\(\s*"(Return|Enter|KP_Enter|return|enter)"/, engine);
-        assert.doesNotMatch(code, /typeText\(\s*"[^"]*\\n/, engine);
-        assert.doesNotMatch(code, /OKButton|"Save"|'Save'|\bSaveButton\b/, engine);
-      }
+      const dev = panelDevice({alerts});
+      const {result} = await runWith({engine, plan, env, calls, cell: dev.cell, ops: dev.ops});
+      assert.equal(result.complete, true, `${what}: ${result.problems.join('; ')}`);
+      assert.equal(result.meta.hosted, where === 'hosted', what);
+      // All four of ruling 1196's panel cases ran: each one's act was sent.
+      assert.equal(acted(calls, 'await __app.pressKey("Escape");'), 2, `${what}: the Open panel's and the Save sheet's Escape`);
+      assert.equal(acted(calls, `typeText(${JSON.stringify(PANEL_SEARCH)})`), 1, `${what}: the search typing`);
+      assert.equal(acted(calls, `typeText(${JSON.stringify(SAVE_PANEL_NAME)})`), 1, `${what}: the name typing`);
+      for (const {code} of calls) for (const commit of COMMITS) assert.doesNotMatch(code, commit, what);
     }
   }
 });
 
+// The same cells executed against a stand-in TextEdit whose panel records every key, text, value and click it is sent:
+// the openers, each case's prepare, act and check, and the harness's close cells. Nothing but the opening keys and
+// Escape is pressed, nothing but the two tokens typed, nothing but emptying written, and only the panel's fields and its
+// Cancel are clicked.
+const AsyncFunction = (async () => {}).constructor;
+async function runCell(text, apps) {
+  let out = '';
+  globalThis.__apps = apps;
+  try { await new AsyncFunction('cua', 'nodeRepl', text)({}, {write: s => { out += s; }}); } finally { delete globalThis.__apps; }
+  return out;
+}
+function standInTextEdit() {
+  const sent = {keys: [], texts: [], values: [], clicks: []};
+  let up = null, value = '', focused = null;
+  const CANCEL = 3;
+  const render = () => {
+    const field = `${value ? `, Value: ${value}` : ''}`;
+    if (up === 'open') return [`Window: "Open", App: TextEdit.`, '0 standard window ID: open-panel', `\t1 search text field (settable) Description: Search${field}`, `\t${CANCEL} button Cancel`, '',
+      `The focused UI element is ${focused ?? 0} ${focused === 1 ? 'search text field' : 'standard window'}`].join('\n');
+    if (up === 'save') return [`Window: "Untitled", App: TextEdit.`, '0 standard window Untitled', '\t1 sheet ID: save-panel', `\t\t2 text field (settable) ID: saveAsNameTextField${field}`, `\t\t${CANCEL} button Cancel`, '',
+      `The focused UI element is ${focused ?? 0} ${focused === 2 ? 'text field' : 'standard window'}`].join('\n');
+    return 'Window: "Untitled", App: TextEdit.\n0 standard window Untitled\n\t1 text entry area (settable) ID: First Text View\n';
+  };
+  const app = {
+    async getAXState() { return render(); },
+    async pressKey(k) { sent.keys.push(k); if (k === 'super+o') up = 'open'; if (k === 'super+s') up = 'save'; if (k === 'Escape') { up = null; value = ''; focused = null; } },
+    async typeText(t) { sent.texts.push(t); value += t; },
+    async setValue(i, v) { sent.values.push([i, v]); value = v; },
+    async click(i) { sent.clicks.push(i); if (i === CANCEL) { up = null; value = ''; focused = null; } else focused = i; },
+  };
+  return {app, sent, open: () => { up = 'open'; }};
+}
+test('the panel cells executed against a stand-in TextEdit press, type, write and click nothing that could commit', async () => {
+  const {closePanelClickCell, closePanelKeyCell, panelGoneCell, caseCells} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const {SAVE_SHEET_OPEN_CELL} = await import('../../scripts/native-matrix/probe-plan.mjs');
+  const {app, sent, open} = standInTextEdit();
+  const apps = {textedit: app};
+  globalThis.__sheetDoc = 'Untitled';
+  try {
+    // The Open panel is opened in the stand-in itself (OPEN_PANEL's ⌘O needs the run's scene document in front; its
+    // source is in the scan above); the Save sheet by its own opener.
+    for (const [target, opener] of [['openPanel', null], ['savePanel', SAVE_SHEET_OPEN_CELL]]) {
+      for (const c of casesOf(target, 'frontmost')) {
+        if (opener) await runCell(opener, apps); else open();
+        const cells = caseCells(target, c);
+        for (const cell of [cells.prepare, cells.act, cells.check]) await runCell(cell, apps);
+        for (const cell of [closePanelKeyCell(target), closePanelClickCell(target), panelGoneCell(target)]) await runCell(cell, apps);
+      }
+    }
+  } finally { delete globalThis.__sheetDoc; delete globalThis.__m; }
+  assert.deepEqual([...new Set(sent.keys)].sort(), ['Escape', 'super+s']);
+  assert.deepEqual([...new Set(sent.texts)].sort(), [PANEL_SEARCH, SAVE_PANEL_NAME].sort(), 'both typing cases typed their token');
+  assert.ok(sent.values.every(([, v]) => v === ''), JSON.stringify(sent.values));
+  assert.ok(sent.clicks.every(i => [1, 2, 3].includes(i)), `only the fields and Cancel: ${JSON.stringify(sent.clicks)}`);
+  assert.ok(sent.texts.every(t => !/[\r\n]/.test(t)));
+});
 // Re-review, finding 4: two windows that both qualify for one opening do not tell which is the panel. On a hosted runner
 // the placement is recorded ambiguous, nothing is moved, and the case and its timing are NO VERDICT venue, unsent; the
 // close still covers both candidates.

@@ -224,15 +224,16 @@ for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"
 }
 
 // Fix wave 1: a common lane failed (a fresh home's module tree) under each vendor source. The error is that lane's, and
-// the last line keeps the common blocker and names the retired selection besides (§2.2).
-for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"engine": "vendor" in engine.json', false, true], ['both', true, true]]) {
-  test(`a common lane fails under ${label}: its error is the install's, and the last line names both the blocker and the retired selection`, async t => {
+// the last line keeps the common blocker and names the retired selection besides (§2.2). Fix wave 2: with
+// CUA_REPL_HOST=vendor too, whose guard refuses a session before its engine, the note is still the engine setting's.
+for (const host of [undefined, 'vendor']) for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"engine": "vendor" in engine.json', false, true], ['both', true, true]]) {
+  test(`a common lane fails under ${label}${host ? ' and CUA_REPL_HOST=vendor' : ''}: its error is the install's, and the last line names both the blocker and the retired selection`, async t => {
     const home = scratchHome(t);
     const user = scratchUserHome(t);
     const settings = settingsOf(user);
     if (file) { mkdirSync(dirname(settings), {recursive: true}); writeFileSync(settings, JSON.stringify({engine: 'vendor'})); }
     const named = [...(env ? ['CUA_NATIVE_ENGINE=vendor'] : []), ...(file ? [`"engine": "vendor" in ${settings}`] : [])].join(' and ');
-    const setting = {HOME: user, ...(env ? {CUA_NATIVE_ENGINE: 'vendor'} : {})};
+    const setting = {HOME: user, ...(env ? {CUA_NATIVE_ENGINE: 'vendor'} : {}), ...(host ? {CUA_REPL_HOST: host} : {})};
     const {calls, deps} = installers(home, {down: new Set(['modules'])});
     deps.env = setting;
     const {status, report} = await installJson(deps);
@@ -240,6 +241,7 @@ for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"
     assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine'], 'every step ran');
     assert.equal(report.error.code, 'download_failed', 'the failed lane\'s error');
     assert.match(report.error.message, /^cua's module tree was not installed: /);
+    assert.doesNotMatch(JSON.stringify(report.sessions.why.computer), /CUA_REPL_HOST/, 'the note is the engine setting\'s, not the host guard\'s');
     assert.deepEqual(opened(report), {browser: false, computer: false});
     assert.equal(report.sessions.why.browser.code, 'runtime_not_installed');
     assert.equal(report.sessions.why.computer.code, 'engine_retired');

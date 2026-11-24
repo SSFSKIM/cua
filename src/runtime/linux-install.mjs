@@ -176,7 +176,8 @@ function readiness({home, env, host, installer, resolveOwnNode, linuxHelper, eng
   };
   const node = once(resolveOwnNode);   // a connection resolves its Node once
   const select = (ambient, surfaces) => replHostFor({platform: 'linux', arch: host.arch, surfaces, ambient, home, resolveOwnNode: node, engine});
-  const selected = settingOf(env)?.engine ?? null;
+  const setting = settingOf(env);
+  const selected = setting?.engine ?? null;
   const common = opens('browser', () => {
     const {sandbox} = settingsFrom(env, {platform: 'linux'});
     resolveRuntime({home, host});
@@ -185,8 +186,9 @@ function readiness({home, env, host, installer, resolveOwnNode, linuxHelper, eng
   });
   if (!common) {
     // A vendor selection is refused whatever else blocks the sessions (F10, §2.2): the last line names it beside the
-    // shared blocker. The selection refuses before it asks for Node, so this resolves nothing else.
-    if (selected === 'vendor') opens('computer', () => select(env, ['computer']));
+    // shared blocker, from the engine setting itself, since a session's own selection may refuse first for another
+    // reason (CUA_REPL_HOST=vendor's guard).
+    if (selected === 'vendor') why.computer = refusal(retiredEngine({setting, env, cuaHome: () => realHome(home)}));
     return {browser: false, computer: false, engine: selected, why};
   }
   // serve refuses a CUA_BROWSER_BACKENDS it cannot use when the browser is among its surfaces, and only then.

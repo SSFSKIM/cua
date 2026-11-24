@@ -424,6 +424,18 @@ test('#212\'s Go To field under a selection is not focused unless the dialog is 
   two.state.dialog = true; two.state.path = C7_REMEMBERED; two.state.selected = true;
   const twoAx = two.observe().replace(/(\n\t+\d+ text field[^\n]*ID: PathTextField[^\n]*)/, '$1\n\t99 text field Other');
   assert.deepEqual([savePanelReading(twoAx, C5_CONTROLS).fieldFocused, savePanelReading(twoAx, C5_CONTROLS).focusVia], [false, null]);
+  // Review minor M1: the selection must be the path field's whole value. Another root's selection (the Save sheet's
+  // name field, "Untitled" selected) beside a lone Go To dialog says nothing of the path field's focus.
+  const other = realSavePanel({remembered: C7_REMEMBERED});
+  other.state.dialog = true; other.state.path = C7_REMEMBERED; other.state.selected = true;
+  const ownAx = other.observe();
+  assert.match(ownAx, /\nSelected text: /);
+  assert.equal(savePanelReading(ownAx, C5_CONTROLS).focusVia, 'selection', 'the whole remembered path selected');
+  const otherAx = ownAx.replace(/\nSelected text: [\s\S]*$/, '\nSelected text: ```\nUntitled\n```\n');
+  assert.deepEqual([savePanelReading(otherAx, C5_CONTROLS).fieldFocused, savePanelReading(otherAx, C5_CONTROLS).focusVia], [false, null]);
+  // Part of the path selected is not the remembered path selected whole either.
+  const partAx = ownAx.replace(/\nSelected text: [\s\S]*$/, '\nSelected text: ```\ncua-212-save-vendor\n```\n');
+  assert.equal(savePanelReading(partAx, C5_CONTROLS).focusVia, null);
 });
 
 // Ruling 1219 (s1) and ruling 1220's first condition: every exit after super+shift+g closes the Go To dialog inside the

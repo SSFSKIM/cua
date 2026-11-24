@@ -355,8 +355,10 @@ export function headOf(content) {
 // inside it and the path field inside that, whether the field is the focused element and its value; the location
 // pop-up inside the panel and outside the dialog, and the folder it names (its value, else its bare title).
 // The field is focused when the trailer names it (`focusVia` 'focus'), or (C-7, ruling 1226) when the trailer shows a
-// selection in its place and nothing else can hold it: the Go To dialog a root of the observation and the path field
-// its only text field (`focusVia` 'selection'; macOS reopens Go To with its last path selected, and typing replaces it).
+// selection in its place and nothing else can hold it: the Go To dialog a root of the observation, the path field its
+// only text field, and the selection the field's whole value (`focusVia` 'selection'; macOS reopens Go To with its last
+// path selected, and typing replaces it; another root's selection, the Save sheet's "Untitled", is not the field's). The
+// selection is compared here only; its text never leaves.
 // -> {panel, goTo, field, fieldFocused, focusVia, fieldValue, location, locationName}.
 export function savePanelReading(ax, controls) {
   const panel = controlIndexOf(ax, controls.panel);
@@ -370,9 +372,10 @@ export function savePanelReading(ax, controls) {
   const role = controls.goToField.role;
   const fields = goTo === null ? [] : elementLines(ax).filter(l => (l.content === role || l.content.startsWith(`${role} `)) && isInside(ax, l.index, goTo));
   const onlyField = goTo !== null && parentIndexOf(ax, goTo) === null && fields.length === 1 && fields[0].index === field;
-  const focusVia = field === null ? null : focusedIndexOf(ax) === field ? 'focus' : onlyField && selectedTextOf(ax) !== null ? 'selection' : null;
-  return {panel, goTo, field, fieldFocused: focusVia !== null, focusVia, fieldValue: field === null ? null : clean(valueOfIndex(ax, field)),
-    location, locationName: named};
+  const fieldValue = field === null ? null : clean(valueOfIndex(ax, field));
+  const wholeSelected = Boolean(fieldValue) && clean(selectedTextOf(ax)) === fieldValue;
+  const focusVia = field === null ? null : focusedIndexOf(ax) === field ? 'focus' : onlyField && wholeSelected ? 'selection' : null;
+  return {panel, goTo, field, fieldFocused: focusVia !== null, focusVia, fieldValue, location, locationName: named};
 }
 // The panel's structure for a pilot's reading of SAVE_PANEL_CONTROLS: the trailer's kind and, for at most 80 element
 // lines, the index, depth, parent, `ID:` part, role word and bare title (`headOf`) and whether it is focused. No value

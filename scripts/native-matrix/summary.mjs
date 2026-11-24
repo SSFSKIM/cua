@@ -459,10 +459,13 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // Ruling 1219 (h5): a cua sample that failed not interfering alongside its own paired vendor sample blocks nothing; what
   // moved decides its kind, and none of the kinds is a pass (sharedInterferenceOf). Ruling 1222: a defect with its ticket,
   // or the venue's on its recorded evidence, is not judged; anything else of it is missing proof.
+  // Every shared pair leaves blocking (both engines failed it: no verdict on cua's side), whatever its kind; only the
+  // not-judged ones leave the verdict, and the rest are missing proof below.
   const {shared: sharedInterference, cuaKeys: sharedKeys} = sharedInterferenceOf(rows, applicable, knownDefects);
   const cuaFailed = judgedRows('cua').filter(r => interferenceFailed(r) && !sharedKeys.has(pairKey(r)));
   const interferencePass = interference.cua.rows > 0 && cuaFailed.length === 0 && interference.cua.declared.length === 0;
-  const sharedEntries = sharedInterference.map(sharedEntryOf).filter(Boolean);
+  const sharedEntryFor = new Map(sharedInterference.map(s => [s, sharedEntryOf(s)]));
+  const sharedEntries = [...sharedEntryFor.values()].filter(Boolean);
   // Every not-judged entry under ruling 1222's condition: one with neither a ticket nor evidence is missing proof.
   const refusedNotJudged = [...notJudgedRows, ...sharedEntries].map(entry => [entry, notJudgedRefusal(entry)]).filter(([, why]) => why);
   const notJudged = [...notJudgedRows, ...sharedEntries].filter(entry => !refusedNotJudged.some(([e]) => e === entry));
@@ -506,7 +509,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     ...(interference.cua.rows === 0 ? ['not interfering: no background row was judged on cua'] : []),
     ...speed.filter(s => !s.partial.vendor || !s.partial.cua).map(s => `speed: ${s.id} has no measure on one engine`),
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
-    ...sharedInterference.filter(s => !sharedEntries.some(e => e.id === s.id)).map(s => `not interfering: ${s.id} failed on both engines (${s.kind}), NO VERDICT on cua: ticket to be registered`),
+    ...sharedInterference.filter(s => !sharedEntryFor.get(s)).map(s => `not interfering: ${s.id} failed on both engines (${s.kind}), NO VERDICT on cua: ticket to be registered`),
     ...refusedNotJudged.map(([e, why]) => `not judged without a ticket or recorded evidence: ${e.section} ${e.id} (${e.condition}): ${why}; ${e.cause}`),
   ];
   const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
@@ -808,33 +811,45 @@ const knownDefect = (section, id) => (KNOWN_DEFECTS[`${section} ${id}`] ? ` (kno
 // the venue's by default (fix wave I3).
 // A cua sample is shared only with its own paired vendor sample, the same row, run and sample, as ruling 1144's shared
 // limits pair (fix wave I2): a vendor failure elsewhere in the cell excuses nothing. Only samples the oracle judges
-// (`applicable`: no sampleCause) pair or feed what moved. -> {shared: [{id, kind: 'defect'|'venue'|'unread', moved, seen,
-// ticket, samples, evidence}], cuaKeys: Set(pairKey)}.
+// (`applicable`: no sampleCause) pair or feed what moved. Each pair is classified on its two samples alone, never by
+// the cell (the verification review): a defect when either moved the person's state; the venue's only when each of the
+// two has evidence of its own (one side's evidence explains nothing of the other's failure); else unread. The pairs are
+// then grouped by row and kind. -> {shared: [{id, kind: 'defect'|'venue'|'unread', moved, seen, ticket, samples,
+// evidence}], cuaKeys: Set(pairKey) of every shared pair}.
 function sharedInterferenceOf(rows, applicable, knownDefects = KNOWN_DEFECTS) {
   const failing = engine => rows.filter(r => r.engine === engine && applicable(r) && r.interference && interferenceFailed(r));
   const vendorFailed = new Map(failing('vendor').map(r => [pairKey(r), r]));
-  const pairs = failing('cua').filter(c => vendorFailed.has(pairKey(c))).map(c => [c, vendorFailed.get(pairKey(c))]);
-  const shared = [...groupBy(pairs, ([c]) => c.id)].sort(([a], [b]) => a.localeCompare(b)).map(([id, list]) => {
-    const moved = new Set(), seen = new Set(), evidence = [];
-    for (const r of [...list.map(([c]) => c), ...list.map(([, v]) => v)]) {
-      const i = r.interference;
-      if (i.frontmost === false) moved.add('the front app');
-      if (i.focus === false) moved.add('the focus');
-      if (i.activations > 0) moved.add('an activation');
-      if (i.topChange?.userWindowMoved) moved.add('the user window');
-      if (r.outcome?.userKept === false || r.outcome?.userLanded === false) moved.add('the input');
-      const at = field => evidence.push({row: r.id, engine: r.engine, run: runOf(r), sample: r.sample ?? runOf(r), field});
-      // A target window above the user's (`windowOrder.after`) is what came over it; else `topChange` says, or nothing does.
-      if (i.windowOrder?.after === true) { seen.add('a target window above the user\'s'); at('interference.windowOrder.after'); }
-      else if (i.topWindow === false && !i.topChange?.userWindowMoved) {
-        seen.add(i.topChange ? 'the top window (another window over the user\'s)' : 'the top window (what came over it not recorded)');
-        if (i.topChange) at('interference.topChange');
-      }
-      if (i.route4) seen.add('route 4');
-    }
-    return {id, kind: moved.size ? 'defect' : evidence.length ? 'venue' : 'unread', moved: [...moved], seen: [...seen], ticket: knownDefects[`interference ${id}`] ?? null, samples: list.length, evidence};
+  const pairs = failing('cua').filter(c => vendorFailed.has(pairKey(c))).map(c => pairOf(c, vendorFailed.get(pairKey(c))));
+  const order = ['defect', 'venue', 'unread'];
+  const shared = [...groupBy(pairs, p => `${p.id}\u0000${order.indexOf(p.kind)}`)].sort(([a], [b]) => a.localeCompare(b)).map(([, list]) => {
+    const {id, kind} = list[0], union = key => [...new Set(list.flatMap(p => p[key]))];
+    return {id, kind, moved: union('moved'), seen: union('seen'), ticket: knownDefects[`interference ${id}`] ?? null, samples: list.length, evidence: list.flatMap(p => p.evidence)};
   });
-  return {shared, cuaKeys: new Set(pairs.map(([c]) => pairKey(c)))};
+  return {shared, cuaKeys: new Set(pairs.map(p => p.key))};
+}
+// One shared pair (a cua sample and its paired vendor sample) read on those two alone. -> {id, key, kind, moved, seen,
+// evidence}.
+function pairOf(c, v) {
+  const moved = new Set(), seen = new Set(), evidence = [];
+  let explained = 0;
+  for (const r of [c, v]) {
+    const i = r.interference;
+    if (i.frontmost === false) moved.add('the front app');
+    if (i.focus === false) moved.add('the focus');
+    if (i.activations > 0) moved.add('an activation');
+    if (i.topChange?.userWindowMoved) moved.add('the user window');
+    if (r.outcome?.userKept === false || r.outcome?.userLanded === false) moved.add('the input');
+    const at = field => { evidence.push({row: r.id, engine: r.engine, run: runOf(r), sample: r.sample ?? runOf(r), field}); explained += 1; };
+    // A target window above the user's (`windowOrder.after`) is what came over it; else `topChange` says, or nothing does.
+    if (i.windowOrder?.after === true) { seen.add('a target window above the user\'s'); at('interference.windowOrder.after'); }
+    else if (i.topWindow === false && !i.topChange?.userWindowMoved) {
+      seen.add(i.topChange ? 'the top window (another window over the user\'s)' : 'the top window (what came over it not recorded)');
+      if (i.topChange) at('interference.topChange');
+    }
+    if (i.route4) seen.add('route 4');
+  }
+  const kind = moved.size ? 'defect' : explained === 2 ? 'venue' : 'unread';
+  return {id: c.id, key: pairKey(c), kind, moved: [...moved], seen: [...seen], evidence: kind === 'venue' ? evidence : []};
 }
 // A sample's pairing key: its row, run and sample (ruling 1144's pairing).
 const pairKey = r => `${r.id}\u0000${runOf(r)}\u0000${r.sample ?? runOf(r)}`;

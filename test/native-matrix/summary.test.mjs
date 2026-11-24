@@ -1356,3 +1356,25 @@ test('the Korean pressKey row: each engine against 가 alone, a cua 가 counted 
   const latinAlone = judgeCell('pressKey', [sample(LATIN, 'vendor', 1, false, {invalid: 'x'})], [sample(LATIN, 'cua', 1, true)]);
   assert.equal(latinAlone.account.cua.noVerdict.unpaired, 1);
 });
+
+// Verification review: each shared pair is classified on its own cua sample and its paired vendor sample, never by the
+// cell. One pair's recorded evidence makes that pair the venue's and no other: a pair with nothing recorded (route 4
+// alone) is unread, missing proof, whatever another pair of the row showed.
+test('shared interference per pair: one pair with windowOrder evidence is the venue\'s, not judged; another with route 4 alone is unread, missing', () => {
+  const over = {ok: false, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false, windowOrder: {before: false, after: true}};
+  const route4 = {ok: false, frontmost: true, topWindow: true, focus: true, activations: 0, route4: true};
+  const byRun = (rows, r) => (r === 1 ? set(BACK, {interference: over})(rows) : r === 2 ? set(BACK, {interference: route4})(rows) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: byRun}, cua: {axMs: 40, tweak: byRun}});
+  assert.deepEqual(j.sharedInterference.map(s => [s.id, s.kind, s.samples]), [[BACK, 'venue', 1], [BACK, 'unread', 1]]);
+  const venue = j.notJudged.find(n => n.id === BACK);
+  assert.equal(venue.condition, 'sharedVenue');
+  assert.deepEqual(venue.evidence.map(e => [e.engine, e.run, e.field]), [['cua', 1, 'interference.windowOrder.after'], ['vendor', 1, 'interference.windowOrder.after']]);
+  assert.ok(j.missing.includes(`not interfering: ${BACK} failed on both engines (unread), NO VERDICT on cua: ticket to be registered`), j.missing.join('\n'));
+  assert.ok(!j.blocking.some(b => b.includes(BACK)), 'shared on both engines: missing proof, not cua\'s failure');
+  assert.equal(j.verdict, 'NO VERDICT');
+  // Within a pair, evidence on one side alone does not explain the other's failure: unread.
+  const half = (rows, r, engine) => (r === 1 ? set(BACK, {interference: engine === 'cua' ? over : route4})(rows) : rows);
+  const split = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, r) => half(rows, r, 'vendor')}, cua: {axMs: 40, tweak: (rows, r) => half(rows, r, 'cua')}});
+  assert.deepEqual(split.sharedInterference.map(s => [s.kind, s.samples]), [['unread', 1]]);
+  assert.ok(!split.notJudged.some(n => n.id === BACK));
+});

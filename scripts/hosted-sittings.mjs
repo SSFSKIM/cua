@@ -33,6 +33,10 @@
 //       Sitting C's key-route diagnostic, its last step (scripts/hosted-sittings/key-route.mjs, ruling 1198): where each
 //       engine's Escape lands while TextEdit's Open panel is focused; key-route.json and key-route.md in <dir>, which
 //       `run` appends to sitting.md. Exit 0 recorded, 1 a cleanup failure (named in the record), 2 refused.
+//   node scripts/hosted-sittings.mjs witness-tap --out <file>
+//       Sitting C's step before its matrix runs (scripts/hosted-sittings/witness-tap.mjs, ruling 1225): R3's witness tap
+//       app built and granted Input Monitoring alone, the engines' TCC rows read around it, recorded to <file>. Exit 0
+//       recorded (a tap not ready included: its cells stay NO VERDICT), 1 the engines' rows changed or unread, 2 refused.
 import {spawnSync} from 'node:child_process';
 import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -49,6 +53,7 @@ import {execStep, jobStartedOf, renderSitting, runSitting} from './hosted-sittin
 import {hostedSetup} from './hosted-sittings/setup.mjs';
 import {runOnboarding} from './hosted-sittings/onboarding.mjs';
 import {keyRouteIo, runKeyRoute} from './hosted-sittings/key-route.mjs';
+import {runWitnessTap, witnessTapIo} from './hosted-sittings/witness-tap.mjs';
 import {stepSections} from './hosted-sittings/key-route-report.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
 import {readScreenAtEnd} from './hosted-sittings/display-mode.mjs';
@@ -228,6 +233,11 @@ async function main(argv) {
       const options = {approvedRuntime: resolve(values['approved-runtime']), approvedEngine: resolve(values['approved-engine']), sitting: values.sitting, out: resolve(values.out)};
       return runKeyRoute(options, keyRouteIo(options));
     }
+    case 'witness-tap': {
+      // Refused off a GitHub-hosted runner inside, before anything is read, built or granted.
+      if (!values.out) usage('witness-tap --out <file>');
+      return runWitnessTap({out: resolve(values.out)}, witnessTapIo({write: (path, text) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, text); }}));
+    }
     case 'onboarding': {
       if (!values.out) usage('onboarding --out <file>');
       // Saved after every stage and before cleanup (the driver's `save`), so a cleanup that never ends loses nothing.
@@ -237,7 +247,7 @@ async function main(argv) {
       await new Promise(done => process.stdout.write(json({complete: record.complete, problem: record.problem, cleanup: record.cleanup, stages: record.stages.map(stage => stage.id)}), done));
       return record.complete ? 0 : 1;
     }
-    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down | onboarding | key-route (see this file\'s header)');
+    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down | onboarding | key-route | witness-tap (see this file\'s header)');
   }
   return 2;
 }

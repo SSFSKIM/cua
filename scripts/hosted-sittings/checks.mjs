@@ -45,6 +45,8 @@
 //   diagnostic   C's key-route diagnostic (ruling 1198, ./key-route.mjs): INFO with what its record (`report`) holds, so
 //                it never changes the sitting's verdict, whatever the engines did; a cleanup failure is a FAIL naming
 //                each, and a record not written is a FAIL too (its cleanup unconfirmed)
+//   witnessTap   R3's witness tap readied before C's matrix runs (ruling 1225, ./witness-tap.mjs): INFO, the tap ready or
+//                why not (its cells then NO VERDICT); FAIL when its record is missing or the engines' TCC rows changed
 // deps: {exit, logText() (the step's log), readJson(path) (null when unreadable), exists(path)}. -> [status, reason].
 import {HOMES} from '../accept/macos-selection.mjs';
 import {isFixtureCheck} from '../accept/textedit.mjs';
@@ -54,6 +56,7 @@ import {classifyAttestedRecord} from '../probe/lib.mjs';
 import {keyRouteSummary} from './key-route-report.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
 import {frameAsymmetry} from './venue.mjs';
+import {witnessTapSummary} from './witness-tap.mjs';
 
 // A sample's causes that leave its proof missing, not failed: the key-window requirement's refusal (keyWindow, ruling
 // 1169's addition) among them.
@@ -195,6 +198,14 @@ export const CHECKS = Object.freeze({
     if (!report) return ['FAIL', `the diagnostic's record ${step.report} was not written (exit ${exit}): its cleanup is unconfirmed`];
     if (report.cleanup?.ok !== true) return ['FAIL', `cleanup: ${(report.cleanup?.failures ?? []).join('; ') || 'not confirmed'}`];
     return ['INFO', `a diagnostic, recorded: ${keyRouteSummary(report)}`];
+  },
+  // R3's witness tap readied before C's matrix runs (ruling 1225, ./witness-tap.mjs): INFO, the tap ready or why not;
+  // FAIL only when its record is missing or its cleanup (the engines' TCC rows unchanged) is not confirmed.
+  witnessTap(step, {exit, readJson}) {
+    const report = readJson(step.report);
+    if (!report) return ['FAIL', `the witness tap's record ${step.report} was not written (exit ${exit})`];
+    if (report.cleanup?.ok !== true) return ['FAIL', `cleanup: ${(report.cleanup?.failures ?? []).join('; ') || 'not confirmed'}`];
+    return ['INFO', witnessTapSummary(report)];
   },
   acceptance(step, {exit, readJson}) {
     if (exit === 0) return ['PASS', null];

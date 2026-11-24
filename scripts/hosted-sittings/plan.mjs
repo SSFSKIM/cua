@@ -104,6 +104,10 @@ function sittingC(ctx) {
   // scenes up afresh. A run whose put-back did not hold, or that wrote no record, skips the rest, naming why. The next
   // run's own preflight still refuses a screen a run left. A's runs and B's cua lane still chain on PASS. The save-sheet
   // cells stay unchained: their own preflight refuses a screen a run left.
+  // R3's witness (ruling 1225): its tap app built and granted Input Monitoring before the first run, so each run's
+  // judged cells can be tapped (../native-matrix/witness.mjs). Not ready, the runs still go, their R3 cells NO VERDICT.
+  steps.push({id: 'witness-tap', label: 'R3\'s witness tap built and granted Input Monitoring (ruling 1225)', kind: 'diagnostic', check: 'witnessTap',
+    report: `${ctx.out}/witness-tap.json`, argv: ['node', 'scripts/hosted-sittings.mjs', 'witness-tap', '--out', `${ctx.out}/witness-tap.json`]});
   const runSteps = [];
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
     const before = runSteps.at(-1);

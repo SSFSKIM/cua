@@ -1,5 +1,5 @@
 {
- "home": "/tmp/c168-fb-pddO8G/fallback/home/cua",
+ "home": "/tmp/c168-fb-96t9lT/fallback/home/cua",
  "kind": "unrecorded",
  "reason": "engine_unrecorded",
  "remedy": "node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine",
@@ -39,7 +39,7 @@
     "samples": 4,
     "observed": [],
     "uninspectable": [],
-    "stderr": "cua: the default engine (cua) selects cua's own engine, and no record says what the engine installed in this cua home (/tmp/c168-fb-pddO8G/fallback/home/cua/engine/linux/cua-engine) is: its install.json is absent, unreadable or another file's: run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine` [engine_unrecorded]\n  a `cua` from another checkout installs that checkout's engine, not this one's\n"
+    "stderr": "cua: the default engine (cua) selects cua's own engine, and no record says what the engine installed in this cua home (/tmp/c168-fb-96t9lT/fallback/home/cua/engine/linux/cua-engine) is: its install.json is absent, unreadable or another file's: run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine` [engine_unrecorded]\n  a `cua` from another checkout installs that checkout's engine, not this one's\n"
    }
   }
  ],

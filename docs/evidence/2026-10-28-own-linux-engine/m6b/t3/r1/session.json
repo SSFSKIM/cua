@@ -5,17 +5,17 @@
     "scripts/linux-engine-gate/suites.sh",
     "inner-parity"
   ],
-  "started": "2026-11-24T13:38:57.667Z",
+  "started": "2026-11-24T14:41:18.532Z",
   "display": ":1",
-  "server": 836028,
-  "bus": "unix:path=/tmp/c168-r1-YEmhoe/parity/desktop/session/bus/dbus-VaA376K9je,guid=597119ea9a68b338c118508b6b059371",
-  "busPid": 836035,
-  "a11y": "unix:path=/run/user/501/at-spi/bus_1,guid=efcd455db47d88340bd2eb8e6b059371",
-  "openbox": 836049,
+  "server": 954707,
+  "bus": "unix:path=/tmp/c168-r1-IkBAgh/parity/desktop/session/bus/dbus-FARy0g0Xcw,guid=8290a98d53b18899fff7793f6b05a20e",
+  "busPid": 954714,
+  "a11y": "unix:path=/run/user/501/at-spi/bus_1,guid=82ab1e4c4b7882c54014a1d36b05a20e",
+  "openbox": 954729,
   "environment": {
     "DISPLAY": ":1",
-    "XAUTHORITY": "/tmp/cua171-no-xauthority-836021-d953d6dd04a0",
-    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c168-r1-YEmhoe/parity/desktop/session/bus/dbus-VaA376K9je,guid=597119ea9a68b338c118508b6b059371",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-954700-8683da8c16bc",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c168-r1-IkBAgh/parity/desktop/session/bus/dbus-FARy0g0Xcw,guid=8290a98d53b18899fff7793f6b05a20e",
     "XDG_RUNTIME_DIR": "/run/user/501",
     "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop"
   },
@@ -31,11 +31,11 @@
     "clean": true,
     "reason": null
   },
-  "finished": "2026-11-24T13:42:11.144Z",
+  "finished": "2026-11-24T14:44:17.106Z",
   "ended": [
     {
       "what": "openbox",
-      "pid": 836049
+      "pid": 954729
     }
   ]
 }

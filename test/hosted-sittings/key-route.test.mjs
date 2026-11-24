@@ -369,12 +369,17 @@ test('the section: per engine the Escape\'s posted and receiving pids and the pa
   assert.match(md, /^\| 0 \| AXTextField \| 500 \| 700 \| com\.apple\.appkit\.xpc\.openAndSavePanelService \| prohibited \| yes \|$/m);
   // cua's keyboardTarget as merged by #582 (KeyTarget.swift), and in a column of its own the public AXUIElementGetPid
   // owner it posted to before (C-4's report printed that one as the keyboardTarget while the tap saw the service's pid).
-  assert.match(md, /^\| cua's keyboardTarget \(native\/engine\/Sources\/Engine\/KeyTarget\.swift:95, #582\) \| the focused element's public AXUIElementGetPid owner \(cua's target before #582\) \| the focused element's ActualPid \| the selected ancestor \(the static reading's walk\) \| the static reading's rule \|$/m);
+  assert.match(md, /^\| cua's keyboardTarget \(native\/engine\/Sources\/Engine\/KeyTarget\.swift:95, #582\), predicted from the observed chain \| the focused element's public AXUIElementGetPid owner \(cua's target before #582\) \| the focused element's ActualPid \| the selected ancestor \(the static reading's walk\) \| the static reading's rule \|$/m);
   assert.match(md, /^\| 700 \| 500 \| 700 \| depth 0, pid 700 \| 700 \|$/m);
   assert.doesNotMatch(md, /Input\.swift:1014/);
-  // A reading from before the merged mirror (no public column) shows the column unread, never the old value as cua's.
-  const old = renderKeyRoute({...report, engines: {vendor: {...report.engines.vendor, keyRoute: {...report.engines.vendor.keyRoute, ax: {...ax, cuaPublicPidTarget: undefined}}}}});
-  assert.match(old, /^\| 700 \| - \| 700 \| depth 0, pid 700 \| 700 \|$/m);
+  // Review of b12c7121a..2a2dd8dd6, finding 3: pilot C-4's own reading (key-route.json, cua's lane, trimmed), written
+  // before the mirror: its cuaKeyboardTarget is the public pid, shown as such, the merged prediction unread.
+  const c4 = {trusted: true, pid: 5401, actualPidAvailable: true, actualPid: 5460, cuaKeyboardTarget: 5401, selectedAncestor: {depth: 0, pid: 5460}, staticReadingTarget: 5460,
+    chain: [{actualPid: 5460, depth: 0, pid: 5401, role: 'AXList'}, {actualPid: 5460, depth: 1, pid: 5401, role: 'AXScrollArea'}],
+    processes: {5401: {activationPolicy: 'regular', bundleId: 'com.apple.TextEdit', finishedLaunching: true, running: true}, 5460: {activationPolicy: 'prohibited', bundleId: 'com.apple.appkit.xpc.openAndSavePanelService', finishedLaunching: true, running: true}},
+    routes: [{how: 'kCGWindowOwnerPID of each on-screen window whose bounds are the panel\'s AX frame (within 2 pt)', matchesActual: false, matchesSelected: false, pids: [5401], read: true, route: 'windowListAtPanelFrame'}]};
+  const old = renderKeyRoute({...report, engines: {cua: {...report.engines.cua, keyRoute: {...report.engines.cua.keyRoute, ax: c4}}}});
+  assert.match(old, /^\| unread \(read before the mirror\) \| 5401 \| 5460 \| depth 0, pid 5460 \| 5460 \|$/m);
   assert.match(md, /^\| runningApplicationsPanelService \| yes \| 700 \| yes \| yes \|$/m);
   assert.match(md, /^\| windowListAtPanelFrame \| yes \| 500 \| no \| no \|$/m);
   assert.match(md, /^\| axWindowsPanelPid \| no: AXError -25204 \| - \| - \| - \|$/m);

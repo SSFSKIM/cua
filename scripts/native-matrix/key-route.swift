@@ -5,7 +5,7 @@
 //       For the app's AXFocusedUIElement and each AXParent up to the application (at most 64): its role,
 //       AXUIElementGetPid and the private _AXUIElementGetActualPid (dlsym; "unavailable" when the symbol is not found),
 //       and for every pid met its NSRunningApplication's bundle id, activationPolicy and isFinishedLaunching. Then:
-//       `cuaKeyboardTarget`, the pid cua's engine posts keys to since #582 (native/engine/Sources/Engine/KeyTarget.swift:95
+//       `cuaKeyboardTarget`, the pid cua's engine posts keys to since #582, predicted from the observed chain (native/engine/Sources/Engine/KeyTarget.swift:95
 //       keyboardTarget and :67 remoteViewKeyOwner, mirrored here, never imported: the engine is not changed), and
 //       `cuaPublicPidTarget`, the one it posted to before #582 (the focused element's public AXUIElementGetPid, else
 //       the app's), kept apart;
@@ -202,12 +202,12 @@ func read() {
     AXUIElementGetPid(focused, &owner)
     return owner > 0 ? owner : appPid
   }()
-  // cua's engine since #582, mirrored (KeyTarget.swift:95 keyboardTarget, :67 remoteViewKeyOwner, :49
-  // owningProcessKind): from the focused element up its parents, an element whose actual pid is unread or whose process
-  // is no finished-launching running application is passed over; the first that classifies ends the walk, its pid the
-  // target when that process's policy is prohibited and it is not the app's; any other end keeps the public target.
-  // Without the private call the walk is not made. The engine's 250 ms walk budget is not mirrored (this chain stops at
-  // 64 levels, the engine's at 300).
+  // cua's engine since #582: a prediction from the observed chain, not the engine's own answer. It mirrors
+  // KeyTarget.swift:95 keyboardTarget, :67 remoteViewKeyOwner and :49 owningProcessKind: from the focused element up
+  // its parents, an element whose actual pid is unread or whose process is no finished-launching running application is
+  // passed over; the first that classifies ends the walk, its pid the target when that process's policy is prohibited
+  // and it is not the app's; any other end keeps the public target. Without the private call the walk is not made. The
+  // chain it walks stops at AXApplication or 64 entries, without the engine's 250 ms budget and 300-parent bound.
   let cuaTarget: pid_t = {
     guard focused != nil, actualPidFunction != nil else { return publicTarget }
     for row in chain {

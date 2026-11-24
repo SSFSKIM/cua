@@ -50,8 +50,10 @@ async function fileSha256(path) {
   return hash.digest('hex');
 }
 
-// `snapshot` is the private copy of the deb named `deb`.
-async function matchPin(deb, snapshot, pins) {
+// The deb's pin by its length and SHA-256, read from `snapshot`, the private copy of the deb named `deb` -> {pin, sha256};
+// a deb that is no pin's is refused. Exported for the comparator fixture's one-time check
+// (scripts/linux-engine-gate/vendor-fixture-pin.mjs), which asks it only whether a deb is the authenticated one.
+export async function matchPin(deb, snapshot, pins) {
   const fd = openSync(snapshot, 'r');
   let length;
   try { length = fstatSync(fd).size; } finally { closeSync(fd); }
@@ -62,7 +64,7 @@ async function matchPin(deb, snapshot, pins) {
 }
 
 // {start, length} of an ar archive member.
-function arMember(path, member) {
+export function arMember(path, member) {
   const fd = openSync(path, 'r');
   try {
     const size = fstatSync(fd).size;

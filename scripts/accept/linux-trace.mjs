@@ -25,7 +25,9 @@ import {fileURLToPath} from 'node:url';
 /** strace's options for a fixture's traced run, before `-o <file> -- <command>`. */
 // -y decodes each descriptor, AT_FDCWD included, to its path, so a relative path resolves against its base; fchdir,
 // which takes a descriptor, is traced beside the file calls so the working directory is followed.
-export const TRACE_ARGS = ['-f', '-qq', '-y', '-s', '4096', '--pidns-translation', '-e', 'trace=%file,%process,fchdir'];
+// --seccomp-bpf stops the tracee only at the traced calls (#171 M6b, T6): task 168 found a plain `-f`, which stops it at
+// every call, slows a desktop's drags past their bar and unsettles an AT-SPI tree. The calls it shows are the same.
+export const TRACE_ARGS = ['--seccomp-bpf', '-f', '-qq', '-y', '-s', '4096', '--pidns-translation', '-e', 'trace=%file,%process,fchdir'];
 
 const LINE = /^(\d+)\s+(.*)$/;
 const FORKS = /^(?:clone3?|fork|vfork)\(/;
@@ -106,10 +108,15 @@ const fdArg = arg => { const m = /^(AT_FDCWD|-?\d+)(?:<(.*)>)?$/.exec(arg ?? '')
  * for AT_FDCWD and the non-at forms the working directory. What cannot be resolved or read, and a call whose form is not
  * known, is unresolved.
  */
-function callPaths(name, call, cwd) {
-  // The return column: the last `)` followed by `=`, however strace padded it.
+// A call's arguments and where its return column starts (-1 when it has none): the last `)` followed by `=`, however
+// strace padded it.
+function callArgs(call) {
   const close = [...call.matchAll(/\)\s+= /g)].at(-1)?.index ?? -1;
-  const args = splitArgs((close < 0 ? call : call.slice(0, close)).slice(call.indexOf('(') + 1).replace(/\)\s*$/, ''));
+  return {close, args: splitArgs((close < 0 ? call : call.slice(0, close)).slice(call.indexOf('(') + 1).replace(/\)\s*$/, ''))};
+}
+
+function callPaths(name, call, cwd) {
+  const {close, args} = callArgs(call);
   const paths = [];
   let unresolved = 0;
   const take = (path, base) => {
@@ -150,6 +157,48 @@ function callPaths(name, call, cwd) {
   return {paths, unresolved};
 }
 
+// The flags that make an open a write: it may create, truncate or change the file.
+const WRITE_FLAGS = /O_WRONLY|O_RDWR|O_CREAT|O_TRUNC|O_APPEND|O_TMPFILE/;
+// The calls that change what a path names or holds, beside an open for writing.
+const WRITES = new Set(['mkdir', 'mkdirat', 'mknod', 'mknodat', 'symlink', 'symlinkat', 'link', 'linkat', 'chmod', 'fchmodat', 'fchmodat2', 'chown', 'chown32',
+  'lchown', 'lchown32', 'fchownat', 'utime', 'utimes', 'utimensat', 'futimesat', 'truncate', 'truncate64', 'setxattr', 'lsetxattr', 'removexattr', 'lremovexattr', 'creat',
+  'mount', 'umount', 'umount2', 'pivot_root', 'move_mount', 'open_tree', 'swapon', 'swapoff', 'acct', 'chroot', 'quotactl', 'name_to_handle_at', 'fanotify_mark', 'inotify_add_watch']);
+
+/**
+ * What a traced call did to the paths it names, by its name and its flags (#171 M6b, T6: the calls under runtimes/ an
+ * install or a doctor run may make): `exec`; `lstat` (a stat that follows no link: lstat, or the at-forms and statx with
+ * AT_SYMLINK_NOFOLLOW); `stat` (one that follows); `opendir` (a read-only open of a directory); `open` (any other
+ * read-only open); `write` (an open that may create, truncate or change, or a call that changes what a path names or
+ * holds); `unlink`; `rename`; else the call's own name (access, readlink, chdir...).
+ */
+export function callKind(name, call) {
+  const {args} = callArgs(call);
+  if (EXEC.test(`${name}(`)) return 'exec';
+  if (['lstat', 'lstat64', 'oldlstat'].includes(name)) return 'lstat';
+  if (['stat', 'stat64', 'oldstat'].includes(name)) return 'stat';
+  if (['newfstatat', 'fstatat64'].includes(name)) return /AT_SYMLINK_NOFOLLOW/.test(args[3] ?? '') ? 'lstat' : 'stat';
+  if (name === 'statx') return /AT_SYMLINK_NOFOLLOW/.test(args[2] ?? '') ? 'lstat' : 'stat';
+  if (OPENS.has(name)) {
+    const flags = name === 'creat' ? 'O_CREAT' : name === 'open' ? args[1] ?? '' : args[2] ?? '';
+    return WRITE_FLAGS.test(flags) ? 'write' : /O_DIRECTORY/.test(flags) ? 'opendir' : 'open';
+  }
+  if (['unlink', 'unlinkat', 'rmdir'].includes(name)) return 'unlink';
+  if (/^rename/.test(name)) return 'rename';
+  if (WRITES.has(name)) return 'write';
+  return name;
+}
+
+// An exec call's argument vector, each string as strace printed it (execve's second argument, execveat's third), or
+// null when strace did not print it whole.
+export function execArgv(call) {
+  const {args} = callArgs(call);
+  const list = /^execveat\(/.test(call) ? args[2] : args[1];
+  if (!/^\[.*\]$/.test(list ?? '')) return null;
+  const items = splitArgs(list.slice(1, -1));
+  const strings = items.map(pathArg);
+  return strings.some(item => item === null) ? null : strings.map(item => item.replace(/\\(["\\])/g, '$1'));
+}
+
 /**
  * A streaming reader: `line(text)` for each line of the trace, then `summary()`. `home` is the CUA_HOME (or a list of
  * its spellings) whose `runtimes/` is counted; `cwd` is the first process's working directory, inherited by its
@@ -163,7 +212,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
   const roots = [home].flat().map(h => `${h.replace(/\/$/, '')}/runtimes`);
   const inRuntimes = path => roots.some(root => path === root || path.startsWith(`${root}/`));
   const proc = pid => {
-    if (!procs.has(pid)) procs.set(pid, {parent: null, forkedAt: null, execs: [], argv: [], calls: 0, runtimesCalls: 0, unresolved: 0, opened: new Set(), ended: false, cwd: {path: procs.size === 0 ? cwd : null}});
+    if (!procs.has(pid)) procs.set(pid, {parent: null, forkedAt: null, execs: [], argv: [], execList: [], files: [], calls: 0, runtimesCalls: 0, unresolved: 0, opened: new Set(), ended: false, cwd: {path: procs.size === 0 ? cwd : null}});
     return procs.get(pid);
   };
   const finish = (pid, name, call) => {
@@ -186,8 +235,10 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
     const decodedCwd = CWD_DECODED.exec(call)?.[1];
     if (decodedCwd) p.cwd.path = decodedCwd;
     const {paths, unresolved} = callPaths(name, call, p.cwd.path);
-    if (paths.some(inRuntimes)) p.runtimesCalls += 1;
-    else if (unresolved) p.unresolved += 1;
+    if (paths.some(inRuntimes)) {
+      p.runtimesCalls += 1;
+      p.files.push({name, kind: callKind(name, call), paths: paths.filter(inRuntimes), ok: !/\)\s+=\s+-1\s/.test(call)});
+    } else if (unresolved) p.unresolved += 1;
     if (watched && OPENS.has(name) && openedDescriptor(call)) for (const path of paths) if (watched.has(path)) p.opened.add(path);
     if (value === 0 && name === 'chdir') p.cwd.path = paths[0] ?? null;
     if (value === 0 && name === 'fchdir') p.cwd.path = paths[0] ?? null;
@@ -196,6 +247,8 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
       if (value === 0) { p.execs.push(program(call)); p.argv.push(call); p.calls = 0; p.opened = new Set(); }
       // An exec of a program under runtimes/ that failed is still an attempt to launch it.
       else if (paths.some(inRuntimes)) (p.attempts ??= []).push(paths.find(inRuntimes));
+      // Every exec, done or attempted (a lookup along PATH attempts each directory's), with its argument vector.
+      p.execList.push({program: program(call), argv: execArgv(call), ok: value === 0});
       return;
     }
     // exit ends this thread alone; exit_group ends its whole thread group.
@@ -277,8 +330,13 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         if (!name || NO_PATHS.has(name)) continue;
         const q = procs.get(pid);
         const {paths} = callPaths(name, `${start})`, q.cwd.path);
-        if (paths.some(inRuntimes)) q.runtimesCalls += 1;
+        if (paths.some(inRuntimes)) {
+          q.runtimesCalls += 1;
+          q.files.push({name, kind: callKind(name, `${start})`), paths: paths.filter(inRuntimes), ok: null});
+        }
         q.pendingFile = (q.pendingFile ?? 0) + 1;
+        // An unfinished exec is an attempt.
+        if (EXEC.test(`${name}(`)) q.execList.push({program: program(start), argv: execArgv(`${start})`), ok: null});
       }
       pending.clear();
       const servedPids = [...procs.keys()].filter(inServe);
@@ -293,7 +351,19 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         if (head.groupEnded) return true;
         return head.ended && [...procs.values()].filter(q => q.leader === leader).every(q => q.ended);
       };
-      const unended = servedPids.filter(pid => { const q = procs.get(pid); return !q.ended && !groupDone(q.leader ?? pid); }).length;
+      const unendedOf = pids => pids.filter(pid => { const q = procs.get(pid); return !q.ended && !groupDone(q.leader ?? pid); }).length;
+      const unended = unendedOf(servedPids);
+      // The whole trace's, for a traced command with no serve in it (an install, a doctor run).
+      const all = [...procs.values()];
+      const whole = {unresolved: all.reduce((n, p) => n + p.unresolved, 0), pending: all.reduce((n, p) => n + (p.pendingFile ?? 0), 0), unended: unendedOf([...procs.keys()])};
+      whole.complete = whole.unresolved === 0 && whole.pending === 0 && whole.unended === 0;
+      // Every exec in the trace, and the process-path witness: each program a successful exec ran, by path, with its count.
+      const execs = [...procs].flatMap(([pid, q]) => q.execList.map(e => ({pid, ...e, underServe: inServe(pid)})));
+      const counts = new Map();
+      for (const e of execs) if (e.ok) counts.set(e.program, (counts.get(e.program) ?? 0) + 1);
+      const programs = [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, count]) => ({path, count}));
+      // Every call of the whole trace that named a path under runtimes/, with its kind (callKind).
+      const files = [...procs].flatMap(([pid, q]) => q.files.map(f => ({pid, ...f})));
       // What the serve's tree launched, exec by exec: the helper, bubblewrap, an engine, or Node running the REPL host.
       const launched = [];
       for (const pid of servedPids) {
@@ -317,6 +387,10 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         // not be resolved; with any of those the count is incomplete, never a clean zero.
         runtimes: {calls: served.reduce((n, p) => n + p.runtimesCalls, 0), unresolved, pending: pendingFile, unended, complete: unresolved === 0 && pendingFile === 0 && unended === 0},
         launched,
+        whole,
+        execs,
+        programs,
+        files,
       };
     },
   };

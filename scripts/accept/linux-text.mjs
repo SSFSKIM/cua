@@ -9,7 +9,7 @@
 // textarea and address bar, the paste safety cases, the bus trace) is credited from M5 (F10).
 // (E5's read-only rollback onto the vendor's engine went with that engine in #171 M6b.)
 //
-//   node scripts/accept/linux-text.mjs   JSON report on stdout; exit 0 when every step passes
+//   node scripts/accept/linux-text.mjs   JSON report on stdout; exit 0 when every step passes; any argument is refused (exit 2)
 // Its whole GUI footprint is one standalone gedit on an empty file in a directory it creates, ended in `finally`. It
 // refuses to start on display :0 or with no DISPLAY: every run is on a private display.
 import {execFileSync, spawn} from 'node:child_process';
@@ -88,7 +88,24 @@ function accessibilityOracle() {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+/**
+ * The fixture takes no argument -> null, or why `argv` is refused. `--read-only` was E5's rollback onto the vendor's
+ * engine, which went with that engine (#171 M6b): an old invocation is refused by name, before anything starts, and is
+ * never run as the typing witness (fix wave 1).
+ */
+export function argumentProblem(argv) {
+  if (!argv.length) return null;
+  if (argv.includes('--read-only')) return 'linux-text.mjs: --read-only (E5\'s read-only rollback onto the vendor\'s engine) was removed in cua 0.30.0 with that engine; this fixture is the item 6 typing witness and takes no argument';
+  return `linux-text.mjs takes no argument: ${argv.join(' ')}`;
+}
+
 async function main() {
+  const refused = argumentProblem(process.argv.slice(2));
+  if (refused) {
+    console.error(refused);
+    process.exitCode = 2;
+    return;
+  }
   const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
   const home = process.env.CUA_HOME ?? defaultHome();
   const runEntries = () => (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')).sort() : []);

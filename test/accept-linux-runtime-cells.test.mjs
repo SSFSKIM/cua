@@ -98,7 +98,9 @@ test('no cell selects the vendor\'s engine: no vendor cell, no rollback fixture,
   for (const c of CELLS) assert.doesNotMatch(`${c.step} ${c.passing}`, /vendor selection|CUA_NATIVE_ENGINE=vendor|"engine": "vendor"|sky_linux behind/, c.cell);
   assert.deepEqual(Object.keys(FIXTURE_STEPS), ['linux-native', 'linux-text', 'linux-browser-only']);
   assert.equal('vendorEngineProblems' in await import('../scripts/accept/linux-runtime-watch.mjs'), false);
-  assert.doesNotMatch(source('linux-text.mjs'), /--read-only|readOnly/);
+  // linux-text.mjs keeps no read-only branch; it names --read-only only to refuse it (fix wave 1)
+  assert.doesNotMatch(source('linux-text.mjs'), /readOnly/);
+  assert.match((await import('../scripts/accept/linux-text.mjs')).argumentProblem(['--read-only']), /removed in cua 0\.30\.0/);
   const driver = source('linux-runtime.mjs');
   assert.doesNotMatch(driver, /vendorLinuxRuntime|CUA_NATIVE_ENGINE: 'vendor'|engine: 'vendor'|vendorRefused|'rollback'/);
 });

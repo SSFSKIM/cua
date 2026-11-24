@@ -48,7 +48,14 @@ test('the default mode passes only when doctor says the default selected cua\'s 
 const REMEDY = 'node /checkout/bin/cua.mjs install --engine';
 // T1's sentence for the installed engine (src/runtime/launch.mjs linuxEngineFor) and its hint (installer.mjs ENGINE_HINT)
 const HINT = 'a `cua` from another checkout installs that checkout\'s engine, not this one\'s';
-const refusedDoctor = (reason, {status = 'fail', detail = `cua's engine is preferred (the default engine), but sessions here are refused (${reason}): the default engine (cua) selects cua's own engine, and … : run \`${REMEDY}\`; ${HINT}`,
+// T1's sentence for each fallback reason, in the default mode (the source is the default engine)
+const LOOKUP = '/h/engine/linux/cua-engine';
+const SENTENCE = {
+  engine_not_installed: `the default engine (cua) selects cua's own engine, and none is installed in this cua home (${LOOKUP})`,
+  engine_outdated: `the default engine (cua) selects cua's own engine, and the engine installed in this cua home (${LOOKUP}) is 0.4.3, older than 0.4.5, which this cua needs`,
+  engine_unrecorded: `the default engine (cua) selects cua's own engine, and no record says what the engine installed in this cua home (${LOOKUP}) is: its install.json is absent, unreadable or another file's`,
+};
+const refusedDoctor = (reason, {status = 'fail', detail = `cua's engine is preferred (the default engine), but sessions here are refused (${reason}): ${SENTENCE[reason] ?? '…'}: run \`${REMEDY}\`; ${HINT}`,
   selected = null, preferred = {engine: 'cua', reason: 'default'}, refused = reason} = {}) => ({ok: false, checks: [{name: 'repl.host', status: 'pass', detail: '…'}, {name: 'engine', status, detail}],
   engine: {selected, reason: selected === null ? refused : 'default', refused: refused && {code: refused, message: '…'}, preferred, service: selected}});
 
@@ -71,27 +78,45 @@ test('a fallback home passes only when the default prefers cua\'s engine and ref
   assert.match(refusedSelectionProblem(refusedDoctor('engine_outdated'), 'older'), /does not name node .*\/bin\/cua\.mjs install --engine$/);
 });
 
-// Ruling 1212 (#171 M6b): the refusal's one remedy is this cua's installer with --engine, given as `: run \`<it>\``; it
-// offers no vendor engine, no local build, no cargo and no second command. The negatives are the wording before M6b.
+// Ruling 1212 (#171 M6b): the refusal is the default engine's sentence for the home's reason, whole, its one remedy this
+// cua's installer with --engine ending it, then the hint and nothing else. The negatives are the wording before M6b and
+// a second command in another phrasing; the positive controls are the exact sentence, an installer path holding `cargo`
+// (fix wave 1, finding 6) and each of the three reasons.
 const OLD_TAIL = `: run \`${REMEDY}\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`;
-test('a fallback home\'s doctor row gives the one command as its remedy and offers nothing else (1212)', () => {
-  const judge = detail => refusedSelectionProblem(refusedDoctor('engine_outdated', {detail}), 'older', {remedy: REMEDY});
-  const head = 'cua\'s engine is preferred (the default engine), but sessions here are refused (engine_outdated): the default engine (cua) selects cua\'s own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.5, which this cua needs';
+const CARGO_REMEDY = 'node /home/u/cargo-work/cua/bin/cua.mjs install --engine';
+test('a fallback home\'s doctor row is the refusal sentence whole, its one remedy at the end, and offers nothing else (1212)', () => {
+  const judge = (detail, remedy = REMEDY) => refusedSelectionProblem(refusedDoctor('engine_outdated', {detail}), 'older', {remedy});
+  const prefix = 'cua\'s engine is preferred (the default engine), but sessions here are refused (engine_outdated): ';
+  const head = `${prefix}${SENTENCE.engine_outdated}`;
   assert.equal(judge(`${head}: run \`${REMEDY}\`; ${HINT}`), null);
-  assert.equal(judge(`${head}${OLD_TAIL}`), 'doctor\'s engine row offers the vendor engine (CUA_NATIVE_ENGINE=vendor)');
-  assert.equal(judge(`${head}: run \`${REMEDY}\` (or a local build with \`cua engine build\`)`), 'doctor\'s engine row offers a local build (cua engine build)');
-  assert.equal(judge(`${head}: run \`${REMEDY}\`, or cargo build --release`), 'doctor\'s engine row offers a local build (cargo)');
-  assert.equal(judge(`${head}: run \`${REMEDY}\`; ${HINT}; run \`node /checkout/bin/cua.mjs install\``), 'doctor\'s engine row gives a second command');
-  assert.equal(judge(`${head}; install this cua's engine with \`${REMEDY}\``), `doctor's engine row does not give run \`${REMEDY}\` as its remedy`);
+  assert.equal(judge(`${prefix}${SENTENCE.engine_outdated}: run \`${CARGO_REMEDY}\`; ${HINT}`, CARGO_REMEDY), null, 'an installer path holding "cargo" is the remedy itself');
+  for (const [kind, reason] of Object.entries(FALLBACK_HOMES)) assert.equal(refusedSelectionProblem(refusedDoctor(reason), kind, {remedy: REMEDY}), null, kind);
+  const bad = {
+    'the wording before M6b': `${head}${OLD_TAIL}; ${HINT}`,
+    'a local build offered': `${head}: run \`${REMEDY}\` (or a local build with \`cua engine build\`); ${HINT}`,
+    'a second command, "or use"': `${head}: run \`${REMEDY}\`, or use \`cua engine build\`; ${HINT}`,
+    'a second command after the remedy': `${head}: run \`${REMEDY}\`; run \`node /checkout/bin/cua.mjs install\`; ${HINT}`,
+    'a second command before it': `${head}, or use \`cargo build --release\`: run \`${REMEDY}\`; ${HINT}`,
+    'cargo offered after the hint': `${head}: run \`${REMEDY}\`; ${HINT}; or cargo build --release`,
+    'another remedy': `${head}; install this cua's engine with \`${REMEDY}\`; ${HINT}`,
+    'no hint': `${head}: run \`${REMEDY}\``,
+  };
+  for (const [what, detail] of Object.entries(bad)) assert.match(judge(detail), /^doctor's engine row/, what);
+  assert.match(judge(`${head}: run \`${REMEDY}\`, or use \`cua engine build\`; ${HINT}`), /sentence is not the default engine's refusal for engine_outdated ending/);
 });
 
-test('a refused open gives the one command as its remedy and offers nothing else (1212)', () => {
-  const head = 'cua: the default engine (cua) selects cua\'s own engine, and none is installed in this cua home (/h/engine/linux/cua-engine)';
-  const open = stderr => refusedOpenProblem({exit: {code: 1, signal: null}, stderr, answered: false, samples: 3, observed: [], uninspectable: []}, 'none', {remedy: REMEDY});
+test('a refused open is the refusal sentence whole, its one remedy at the end, then the hint and nothing else (1212)', () => {
+  const head = `cua: ${SENTENCE.engine_not_installed}`;
+  const open = (stderr, remedy = REMEDY) => refusedOpenProblem({exit: {code: 1, signal: null}, stderr, answered: false, samples: 3, observed: [], uninspectable: []}, 'none', {remedy});
   assert.equal(open(`${head}: run \`${REMEDY}\` [engine_not_installed]\n  ${HINT}\n`), null);
-  assert.equal(open(`${head}${OLD_TAIL} [engine_not_installed]\n  ${HINT}\n`), 'cua serve\'s refusal offers the vendor engine (CUA_NATIVE_ENGINE=vendor)');
-  assert.equal(open(`${head}: run \`${REMEDY}\` [engine_not_installed]\n  run \`node /checkout/bin/cua.mjs install\`; …\n`), 'cua serve\'s refusal gives a second command');
-  assert.equal(open(`${head}: install it with \`${REMEDY}\` [engine_not_installed]\n`), `cua serve's refusal does not give run \`${REMEDY}\` as its remedy`);
+  assert.equal(open(`cua: ${SENTENCE.engine_not_installed}: run \`${CARGO_REMEDY}\` [engine_not_installed]\n  ${HINT}\n`, CARGO_REMEDY), null, 'an installer path holding "cargo"');
+  for (const [what, stderr] of Object.entries({
+    'the wording before M6b': `${head}${OLD_TAIL} [engine_not_installed]\n  ${HINT}\n`,
+    'a second command, "or use"': `${head}: run \`${REMEDY}\`, or use \`cua engine build\` [engine_not_installed]\n  ${HINT}\n`,
+    'a second command on the hint\'s line': `${head}: run \`${REMEDY}\` [engine_not_installed]\n  run \`node /checkout/bin/cua.mjs install\`; …\n`,
+    'a line after the hint': `${head}: run \`${REMEDY}\` [engine_not_installed]\n  ${HINT}\n  or cargo build --release\n`,
+  })) assert.match(open(stderr), /^cua serve's refusal/, what);
+  assert.match(open(`${head}: install it with \`${REMEDY}\` [engine_not_installed]\n`), /^cua serve's refusal is not/);
 });
 
 // The refused open: `cua serve` exits 1 before it answers anything, saying the reason and the installer, and no engine

@@ -258,10 +258,9 @@ test('#212\'s destination cell fails closed, with no Return, when the Go To dial
   assert.match(result.value.reason, /panel's selected location is not the run's folder/);
 });
 
-test('#212\'s destination cell as shipped is observation only: the controls are unread, so it opens the Go To dialog, records the panel\'s structure, and types nothing', async () => {
-  assert.deepEqual(SAVE_PANEL_CONTROLS, {panel: null, goTo: null, goToField: null, location: null});
+test('#212\'s destination cell with its controls unread is observation only: it opens the Go To dialog, records the panel\'s structure, and types nothing', async () => {
   const {state, app} = savePanelDouble();
-  const {result, made} = await runDestination(app, SAVE_SHEET_DESTINATION_CELL);
+  const {result, made} = await runDestination(app, saveSheetDestinationCell({panel: null, goTo: null, goToField: null, location: null}));
   assert.equal(made, undefined, 'no folder made');
   assert.equal(result?.value?.ready, false);
   assert.match(result.value.reason, /observation only/);
@@ -380,4 +379,15 @@ test('#212\'s destination cell closes the Go To dialog on every exit after super
   const observed = await runDestination(seen.app, saveSheetDestinationCell({panel: null, goTo: null, goToField: null, location: null}));
   assert.match(observed.result.value.reason, /observation only/);
   assert.deepEqual([seen.state.dialog, observed.result.value.goTo], [false, {closed: true, sheetUp: true, escapes: 1}]);
+});
+
+// Ruling 1220 (s4): the controls as C-5 read them, identical on both lanes, are the shipped ones, so C-6 runs #212's
+// destination path; on the Save sheet as C-5 saw it the shipped cell sets the run's folder with the Go To field's Return
+// alone.
+test('#212\'s shipped controls are C-5\'s reading, and the shipped cell sets the destination on the Save sheet as C-5 saw it', async () => {
+  assert.deepEqual(SAVE_PANEL_CONTROLS, C5_CONTROLS);
+  const {state, app} = realSavePanel();
+  const {result, made} = await runDestination(app, SAVE_SHEET_DESTINATION_CELL);
+  assert.deepEqual(result?.value, {ready: true, initialWhere: 'Documents'});
+  assert.deepEqual([state.keys, state.saved, state.location], [['super+shift+g', 'Return'], false, basename(made)]);
 });

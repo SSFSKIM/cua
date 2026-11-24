@@ -274,10 +274,9 @@ return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 // again after a settle, and the run's folder: the sheet still open and the folder empty are the proof that nothing
 // committed it (the probe types two letters, no Return), and a save that did commit lands in the run's folder, not the
 // one the sheet inherited. The cancel is Escape on the sheet (and on the Go To dialog, if left up), the run's folder
-// then removed when empty; the untitled document closes as the sheet variant's does (CLOSE_UNTITLED_CELL). The ids come
-// from #212's report and the keep-or-delete cells, not yet read on a runner's Save sheet, and the Go To dialog's
-// controls are not read at all (SAVE_PANEL_CONTROLS): until a pilot run reads them, the destination cell only observes
-// and the cell never acts.
+// then removed when empty; the untitled document closes as the sheet variant's does (CLOSE_UNTITLED_CELL). The panel's
+// controls are those pilot C-5 read on both lanes (SAVE_PANEL_CONTROLS, ruling 1220), so the destination cell sets the
+// run's folder and the cell acts; nothing is ever saved (rulings 1196, 1199).
 export const SAVE_NAME = 'cua-212-intended';
 // The run's own save folder, made under the runner's temporary directory by the destination cell.
 export const SAVE_DIR_PREFIX = 'cua-212-save-';
@@ -304,10 +303,14 @@ return {opened: globalThis.__saveNameIndex !== null, ...(globalThis.__saveNameIn
 // The Save panel's controls the destination cell must identify, each {id, role}: its identifier and its role word as
 // the observation prints them (the grammar carries no raw role or subrole; TextEdit runs in English). `panel` is the
 // sheet around the name field, `goTo` the Go To dialog inside it, `goToField` the dialog's path field, `location` the
-// panel's pop-up naming the selected folder. None is read on a runner yet, so all are null: the destination cell then
-// only observes (it opens the Go To dialog and records the panel's structure, nothing typed, no Return), the row is
-// invalid and nothing acts. A pilot run's `outcome.observed` is where they are read.
-export const SAVE_PANEL_CONTROLS = Object.freeze({panel: null, goTo: null, goToField: null, location: null});
+// panel's pop-up naming the selected folder. Read in pilot C-5 (save-sheet/{cua,vendor}/run-1, rows[0].outcome.observed,
+// the same on both lanes; ruling 1220): the panel the sheet `save-panel`; the Go To dialog the sheet `GoToWindow`, shown
+// apart from the panel (the observation then the dialog alone); its path field `PathTextField`, the identifier its line
+// prints as its lone part before a value and labelled after, focused on opening; the location the pop-up `where popup`
+// (its title "Where:", its value the folder's name). With any of them null the destination cell only observes (it opens
+// the Go To dialog, records the panel's structure and closes the dialog, nothing typed, no Return).
+export const SAVE_PANEL_CONTROLS = Object.freeze({panel: Object.freeze({id: 'save-panel', role: 'sheet'}), goTo: Object.freeze({id: 'GoToWindow', role: 'sheet'}),
+  goToField: Object.freeze({id: 'PathTextField', role: 'text field'}), location: Object.freeze({id: 'where popup', role: 'pop up button'})});
 
 // The one element whose line begins with the role word `control.role` and carries the identifier `control.id` (its
 // `ID:` part, or its lone part); null when none or more than one does.

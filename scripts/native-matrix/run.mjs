@@ -71,7 +71,7 @@ import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
-import {ownerInputNow} from './owner-input.mjs';
+import {malformedBaseline, ownerInputNow} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
 export {PASTING};
@@ -364,10 +364,14 @@ async function inputSections(ctx, plan) {
   // The sources the runner's setup could not enable (ruling 1189): never selected; the rows needing them are NO VERDICT
   // `venue` (./owner-input.mjs venueInputCause).
   ctx.venueMissing = Array.isArray(state?.venueMissing) ? state.venueMissing : [];
-  if (state?.writable !== true) {
+  // A baseline the restore could not put back (the preference read malformed) is refused before anything is saved or
+  // written, on a hosted runner too: the run only reads, as off one.
+  const unsupported = state?.writable === true ? malformedBaseline(state.perContext) : null;
+  if (state?.writable !== true || unsupported) {
     // The first reading; the probe cells and the Unicode fields read again at each boundary (./owner-input.mjs).
     ownerInputNow(ctx, state, 'start');
-    ctx.meta.inputSource = {written: false, refused: state?.refused ?? 'the device did not say it may write the input source', owner: ctx.ownerInput, perContextOff: ctx.perContextOff, latin: ctx.latin};
+    if (unsupported) ctx.ownerInputWhy = unsupported;
+    ctx.meta.inputSource = {written: false, refused: unsupported ?? state?.refused ?? 'the device did not say it may write the input source', owner: ctx.ownerInput, perContextOff: ctx.perContextOff, latin: ctx.latin};
     await probeCells(ctx, plan);
     if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);
     return;

@@ -308,7 +308,7 @@ function fakeInput({current = ABC, perContext = false, dict = true, select = id 
   return {state, io: {
     savedInputSource: saved, ...at,
     sleep: async () => { state.sleeps += 1; settle(state); },
-    readPerContextDict: () => state.dict,
+    readPerContextState: () => ({dict: state.dict, value: state.perContext}),
     unsetPerContext: ({dictBefore}) => { state.writes.push(`unset (dictBefore ${dictBefore})`); state.perContext = null; if (dictBefore === false) state.dict = false; },
     probe: args => {
       state.probes.push(args.join(' '));
@@ -496,6 +496,15 @@ test('saveInputSource: the record keeps whether the preference\'s dictionary exi
     saveInputSource({io});
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).perContextDict, dict);
   }
+  // The value and the dictionary's presence are saved from one typed read, never two separate exports.
+  const once = join(scratch(), 'input-source.json');
+  const {io: single} = fakeInput({perContext: null, dict: false});
+  let reads = 0;
+  Object.assign(single, {savedInputSource: once, readPerContext: () => { throw new Error('a second, separate read'); },
+    readPerContextState: () => { reads += 1; return {dict: false, value: null}; }});
+  saveInputSource({io: single});
+  const record = JSON.parse(fs.readFileSync(once, 'utf8'));
+  assert.deepEqual([reads, record.perContext, record.perContextDict], [1, null, false]);
   const file = join(scratch(), 'input-source.json');
   const {io} = fakeInput({at: OWNERS_MAC});
   io.savedInputSource = file;

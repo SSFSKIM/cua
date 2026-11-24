@@ -662,6 +662,23 @@ test('probe cells off a hosted runner: run under the owner\'s ABC with the prefe
   assert.deepEqual(validateCellResult(drifted.result), []);
 });
 
+// A baseline the restore could not put back (the owner's preference read malformed) is refused before anything is
+// saved, selected or written, even on a hosted runner: the run only reads, and the rows needing a write are NO VERDICT
+// ownerInput naming why.
+test('probe cells on a hosted runner whose per-context baseline reads malformed: nothing saved, written or selected; NO VERDICT ownerInput naming it', async () => {
+  const malformed = {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'};
+  const ops = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'state'
+    ? {...base(a), answer: {writable: true, current: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US', perContext: malformed, venueMissing: []}} : base(a))};
+  const {steps, result} = await runWith({plan: planOf('concurrent-use', {scene: 'chrome'}), cellName: 'concurrent-use', ops, cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
+  assert.deepEqual(sourceSteps(steps), ['state', 'state'], 'read only: never saved, written, selected or restored');
+  assert.deepEqual(matrixSteps(steps, 'probe'), []);
+  assert.match(result.meta.inputSource.refused, /reads malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\): a restore could not put it back, so nothing is saved, selected or written/);
+  const row = rowOf(result, 'chrome/concurrent@textedit');
+  assert.equal(sampleCause(row).category, 'ownerInput');
+  assert.match(row.ownerInput, /^the owner's per-context input preference .* reads malformed .*; the row needs the per-context input preference .* off, the owner's is malformed/);
+  assert.deepEqual(validateCellResult(result), []);
+});
+
 test('probe cells when the venue could not enable ABC: NO VERDICT venue naming it, ABC never selected, nothing posted', async () => {
   const ops = {matrix: (base, a) => {
     if (a[0] === 'source' && a[1] === 'state') { const out = base(a); return {...out, answer: {...out.answer, venueMissing: ['com.apple.keylayout.ABC']}}; }

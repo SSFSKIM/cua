@@ -23,14 +23,20 @@ export function ownerInputNow(ctx, state, at) {
 }
 
 // What a row needs (`needs`: {source?: id, perContext?: boolean, switch?: what the row switches during it}) against
-// the owner's ({source, perContext}). -> the cause, or null when the owner's values are the row's.
-export function ownerInputCause(owner, needs) {
+// the owner's ({source, perContext}); `why` the run only reads (off a hosted runner, or a baseline the restore could
+// not put back: malformedBaseline). -> the cause, or null when the owner's values are the row's.
+export function ownerInputCause(owner, needs, why = INPUT_WRITES_HOSTED_ONLY) {
   const parts = [];
   if (needs.perContext !== undefined && owner?.perContext !== needs.perContext) parts.push(`${PER_CONTEXT_NAME} ${ownerValueName(needs.perContext)}, the owner's is ${ownerValueName(owner?.perContext ?? null)}`);
   if (needs.source && owner?.source !== needs.source) parts.push(`the input source ${needs.source}, the owner's is ${owner?.source ?? 'unread'}`);
   if (needs.switch) parts.push(needs.switch);
-  return parts.length ? `${INPUT_WRITES_HOSTED_ONLY}; the row needs ${parts.join(', and ')}` : null;
+  return parts.length ? `${why ?? INPUT_WRITES_HOSTED_ONLY}; the row needs ${parts.join(', and ')}` : null;
 }
+// Why a hosted run only reads when the owner's preference reads malformed: the restore never writes a malformed value
+// back (./live-device.mjs restoreInputSource), so a run that changed it could not put it back. -> the refusal, or null.
+export const malformedBaseline = perContext => (perContext?.malformed
+  ? `the owner's ${PER_CONTEXT_NAME.replace(/^the /, '')} reads malformed (${perContext.malformed}): a restore could not put it back, so nothing is saved, selected or written`
+  : null);
 // The sources a row selects that the runner's venue could not enable (ruling 1189: its setup did not read them back
 // as enabled and selectable in TIS's list), named. -> the cause, or null when the venue holds every one.
 export function venueInputCause(missing, needs) {

@@ -47,7 +47,7 @@ export async function unicodeSection(ctx, plan) {
         if (venue) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
         // Off a hosted runner the owner's values are read again at each field: they may have changed since the last.
         if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `unicode ${condition}:${field}`);
-        const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition]) : null;
+        const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition], ctx.ownerInputWhy) : null;
         const unset = condition !== 'perContext' && ctx.perContextOff !== true
           ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
         if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owned)}); continue; }
@@ -84,7 +84,7 @@ export const SELECTS = Object.freeze({latin: [ABC], korean: [KOREAN_2SET], midSw
 // one the venue could not enable, never selected (it does not hold). -> whether it holds.
 function useSource(ctx, id, when) {
   if (ctx.venueMissing?.includes(id)) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not enabled on this runner (ruling 1189)'}); return false; }
-  if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not selected off a hosted runner (ruling 1188)'}); return false; }
+  if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: ctx.ownerInputWhy ?? 'not selected off a hosted runner (ruling 1188)'}); return false; }
   const out = device(ctx, ['source', 'select', '--source', id]);
   const held = out?.selected === true && out.current === id;
   ctx.meta.unicode.readings.push({when, select: id, held, layout: out?.layout ?? null});
@@ -140,7 +140,7 @@ async function frontmostRows(ctx, field, rows, source) {
   const when = `${rows[0].condition}:${field}`;
   const why = source === KOREAN_2SET ? koreanIn(ctx, field, when) : establishSource(ctx, source, when) ? null : notHeld(source, field);
   // Off a hosted runner nothing was selected: a source that did not hold with the field in front is the owner's.
-  const owners = ctx.ownerInput && why === notHeld(source, field) ? `${INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${why}` : null;
+  const owners = ctx.ownerInput && why === notHeld(source, field) ? `${ctx.ownerInputWhy ?? INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${why}` : null;
   if (owners) { for (const r of rows) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owners)}); return; }
   if (why) { for (const r of rows) invalidRow(ctx, r, why); return; }
   for (const r of rows) await caseRow(ctx, field, 'frontmost', unicodeCase(r), options(r));

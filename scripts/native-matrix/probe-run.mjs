@@ -94,7 +94,7 @@ async function sampled(ctx, base, attempt) {
   if (venue) return push(ctx, {...row, ...venueInputMarks(venue)});
   // Off a hosted runner the owner's values are read again at each probe: they may have changed since the last reading.
   if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `probe ${base.id}`);
-  if (ctx.ownerInput && !ctx.latin) return push(ctx, {...row, ...ownerInputMarks(ownerInputCause(ctx.ownerInput, {source: ABC, perContext: false}))});
+  if (ctx.ownerInput && !ctx.latin) return push(ctx, {...row, ...ownerInputMarks(ownerInputCause(ctx.ownerInput, {source: ABC, perContext: false}, ctx.ownerInputWhy))});
   if (!ctx.latin) return push(ctx, {...row, invalid: 'the Latin input source was not selected and read back with the per-context preference off'});
   const retries = [];
   let lead = null;

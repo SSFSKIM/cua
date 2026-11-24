@@ -555,7 +555,9 @@ export function saveInputSource({io}) {
   assertInputWrite('saving the owner\'s input source for a switch', {env: io.env, platform: io.platform});
   const file = io.savedInputSource, existing = readSaved(file);
   if (existing) return {kept: true, saved: existing};
-  const saved = {savedAt: new Date().toISOString(), source: {id: io.probe(['input-source', 'current']).id}, perContext: io.readPerContext(), perContextDict: io.readPerContextDict()};
+  // The preference's value and its dictionary's presence from one typed read, so the baseline is one snapshot.
+  const preference = io.readPerContextState();
+  const saved = {savedAt: new Date().toISOString(), source: {id: io.probe(['input-source', 'current']).id}, perContext: preference.value, perContextDict: preference.dict};
   fs.mkdirSync(dirname(file), {recursive: true});
   fs.writeFileSync(file, `${JSON.stringify(saved)}\n`, {mode: 0o600});
   return {kept: false, saved};
@@ -1176,7 +1178,7 @@ export const defaultIo = run => {
   },
   // The per-context preference (./hitoolbox.mjs): read anywhere, written and unset only on a hosted runner.
   readPerContext: () => readPerContextState().value,
-  readPerContextDict: () => readPerContextState().dict,
+  readPerContextState: () => readPerContextState(),
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),
   keyboardLayout: () => keyboardLayout(),

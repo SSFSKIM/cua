@@ -101,7 +101,7 @@ import {FINDER_BASELINE, bootedAt, clearFinderBaseline, newFinderWindows, readFi
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
-import {readRunnerRecord, venueFramesOf, venueTextEditViewOf} from '../hosted-sittings/runner.mjs';
+import {isGithubHosted, readRunnerRecord, venueFramesOf, venueTextEditViewOf} from '../hosted-sittings/runner.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const TEXTEDIT_BUNDLE_ID = 'com.apple.TextEdit';
@@ -410,6 +410,7 @@ export const defaultIo = ({env = process.env, platform = process.platform} = {})
   finderBaselineFile: FINDER_BASELINE, bootedAt: () => bootedAt(),
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
   venueFrames: () => venueFramesOf(readRunnerRecord(), {env, platform}), venueTextEditView: () => venueTextEditViewOf(readRunnerRecord(), {env, platform}),
+  hosted: () => isGithubHosted(env, platform),
 });
 
 // What the refusal check reads on the device. `sitting`: the lane's sitting (the journal's preparedAt), whose Finder
@@ -646,11 +647,20 @@ const recordOf = (id, run) => {
 // Finder with no window on screen opens a new one (pilot B). That reading also serves the first poll, so Finder's
 // activation costs no extra probe: an activation puts no other process's window above Finder's, so the run's window on
 // top before it is on top after it once Finder is frontmost; but a raise waits for a reading taken after it.
-// -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?, windowOrder?, framePin?}; ok false names what was in front instead and,
+// -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?, windowOrder?, framePin?, toTop?}; ok false names what was in front instead and,
 // for Finder, where the run's window stood (`runWindow`: its place among Finder's on-screen windows, front first, and
 // its bounds; null when it is not among them), nothing guessed.
-export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
-  const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
+// `top` (a user window's activation for a background row; ruling 1221, H2): Finder's path stays as it is, its raise the
+// folder opened again, and is said as `toTop` below; any other scene's also waits, within the
+// same bound, until the run's window is the top layer-0 window, as Finder's does: `open -a` can make the process
+// frontmost with its window not on top. Only when that wait misses, and only on a GitHub-hosted runner, is the run's own
+// window raised (AXRaise through the harness's helper, `io.raiseWindow`; ../native-matrix/panel-ax.swift raise, which
+// refuses off a hosted runner too), once, and read on top within `raiseMs`; off a hosted runner a miss is not ok and
+// nothing is raised. `toTop`: {path 'waited' | 'raised', ms since the activation, topBefore (the top window at the first
+// reading with the process frontmost: its bundle, number and layer, whether it is the run's process's; an owner's Claude
+// or Chrome by name alone), raise? (the helper's answer)}.
+export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250, top = false, raiseMs = 2000}) {
+  const record = recordOf(id, run), finder = sceneOf(id).id === 'finder', waitsTop = top && !finder;
   // The engine's own windows (the agent cursor's display-wide panel, #235, ordered above the window it acts in and never
   // key) are passed over, as every front reading of the harness passes over them; any other process's window counts.
   const skipPids = io.enginePids();
@@ -668,20 +678,28 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
       reason: 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one'});
   }
   io.activateApp(record.app);
-  let readBefore = finder, reads = 0;
-  for (const t0 = io.now(); ;) {
+  let readBefore = finder, reads = 0, topBefore;
+  const t0 = io.now(), isRun = w => w?.ownerPid === record.pid && w.number === record.window.number;
+  const toTop = (path, extra = {}) => ({path, ms: io.now() - t0, topBefore: topBefore ?? null, ...extra});
+  for (;;) {
     frontmost = io.frontmostProcess();
     reads += 1;
     const fresh = !readBefore;
     if (finder && fresh) order = io.windowOrder({skipPids});
     readBefore = false;
-    if (frontmost?.pid === record.pid) {
+    if (frontmost?.pid === record.pid && waitsTop) {
+      order = io.windowOrder({skipPids});
+      if (topBefore === undefined) topBefore = topSeen(order[0], record);
+      if (isRun(order[0])) return finish({scene: id, ok: true, frontmost, reads, toTop: toTop('waited')});
+    } else if (frontmost?.pid === record.pid) {
       if (!finder) return {scene: id, ok: true, frontmost, reads};
       // One CGWindowList snapshot supplies both the top and the run's position. Separate front/per-app reads can
       // disagree; a missing top reading used to be reported as a foreign window without any evidence of one.
       topWindow = order[0] ?? null;
+      if (top && topBefore === undefined) topBefore = topSeen(topWindow, record);
       if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number)
-        return finish({scene: id, ok: true, frontmost, topWindow: {ownerPid: topWindow.ownerPid, number: topWindow.number, bounds: topWindow.bounds}, ...(raised ? {raised} : {})});
+        return finish({scene: id, ok: true, frontmost, topWindow: {ownerPid: topWindow.ownerPid, number: topWindow.number, bounds: topWindow.bounds}, ...(raised ? {raised} : {}),
+          ...(top ? {toTop: toTop(raised ? 'raised' : 'waited')} : {})});
       const index = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
       // Raising is a single attempt, not an exemption: even a run-owned blocker must be gone on a later CG read.
       if (!raised && fresh && index > 0) { io.showFolder(record.app, record.folder); raised = true; }
@@ -690,7 +708,9 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
     await io.sleep(pollMs);
   }
   if (!finder) order = io.windowOrder({skipPids});
-  if (frontmost?.pid !== record.pid) return finish({scene: id, ok: false, frontmost: frontmost ? {bundleId: frontmost.bundleId ?? null} : null, reads, reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`});
+  if (frontmost?.pid !== record.pid) return finish({scene: id, ok: false, frontmost: frontmost ? {bundleId: frontmost.bundleId ?? null} : null, reads, reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`,
+    ...(top ? {toTop: toTop(raised ? 'raised' : 'waited')} : {})});
+  if (waitsTop) return finish(await raisedToTop({record, io, order, isRun, toTop, skipPids, boundMs, pollMs, raiseMs, out: {scene: id, frontmost, reads}}));
   const place = runWindowPlace(order, record);
   const targetIndex = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
   const foreign = targetIndex < 0 ? null : order.slice(0, targetIndex).find(w => w.ownerPid !== record.pid);
@@ -699,8 +719,38 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
     : blocker ? `another process's window is on top: ${blocker.name}${blocker.pid === undefined ? '' : ` (pid ${blocker.pid})`}`
     : `${place.order} other Finder window${place.order === 1 ? ' is' : 's are'} above the run's window`;
   return finish({scene: id, ok: false, frontmost, ...(blocker ? {blocker} : {}), ...(raised ? {raised} : {}), runWindow: place,
-    reason: `the run's Finder is frontmost but its top window is not the run's window: ${reason}`});
+    reason: `the run's Finder is frontmost but its top window is not the run's window: ${reason}`, ...(top ? {toTop: toTop(raised ? 'raised' : 'waited')} : {})});
 }
+// A `top` activation whose wait missed (activateScene): on a hosted runner the run's own window raised once and read on
+// top within `raiseMs`; anywhere else not ok, nothing raised. -> the activation's answer, before `finish`.
+async function raisedToTop({record, io, order, isRun, toTop, skipPids, boundMs, pollMs, raiseMs, out}) {
+  if (isRun(order[0])) return {...out, ok: true, toTop: toTop('waited')};
+  const missed = `the run's window is not the top window within ${boundMs} ms: ${topNamed(order[0], record)} is`;
+  if (io.hosted?.() !== true) return {...out, ok: false, toTop: toTop('waited'), reason: `${missed}; not raised off a GitHub-hosted runner`};
+  const own = order.find(isRun);
+  if (!own?.bounds) return {...out, ok: false, toTop: toTop('waited'), reason: `${missed}; it is not on screen to raise`};
+  if (!io.raiseWindow) return {...out, ok: false, toTop: toTop('waited'), reason: `${missed}; no raise helper was given`};
+  let raise;
+  try { raise = io.raiseWindow(record.pid, [own.bounds.x, own.bounds.y, own.bounds.width, own.bounds.height].join(',')); } catch (error) { raise = {error: String(error.message).slice(0, 160)}; }
+  for (const r0 = io.now(); ;) {
+    await io.sleep(pollMs);
+    order = io.windowOrder({skipPids});
+    if (isRun(order[0])) return {...out, ok: true, toTop: toTop('raised', {raise})};
+    if (io.now() - r0 >= raiseMs) break;
+  }
+  return {...out, ok: false, toTop: toTop('raised', {raise}), reason: `the run's window is not the top window after its raise: ${topNamed(order[0], record)} is`};
+}
+// The top window as `toTop` keeps it, and as a reason names it: an owner's Claude or Chrome by name alone, as the
+// window-order evidence keeps them; any other window by its bundle, number and layer.
+const topSeen = (w, record) => {
+  if (!w) return null;
+  const owned = w.ownerPid === record.pid;
+  return !owned && privateWindowOwner(w) ? {ownerName: w.ownerName ?? 'unknown process'} : {bundleId: w.ownerBundleId ?? null, number: w.number ?? null, layer: w.layer ?? 0, owned};
+};
+const topNamed = (w, record) => {
+  const seen = topSeen(w, record);
+  return !seen ? 'no window' : seen.ownerName ? `${seen.ownerName}'s window` : `${seen.bundleId ?? 'an unnamed process'}'s window ${seen.number}`;
+};
 // The run's Finder window among Finder's document windows (`windows`, as appWindows reads them: {number, bounds,
 // onScreen}), or null when it is gone.
 const runWindowIn = (windows, record) => windows.find(w => w.number === record.window.number) ?? null;
@@ -931,7 +981,7 @@ const runDir = flags => {
   return fs.realpathSync(run);
 };
 
-export async function main(argv) {
+export async function main(argv, {raiseWindow = null} = {}) {
   const {command, positional: [target], flags} = parse(argv);
   switch (command) {
     case 'describe': return describeScenes();
@@ -943,7 +993,10 @@ export async function main(argv) {
     case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
     case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], electronExtra: flags['electron-arg'], layout: flags.layout, page: flags.page,
       sitting: flags['finder-baseline'] ?? null});
-    case 'activate': return activateScene(target, {run: runDir(flags)});
+    case 'activate': {
+      if (flags['top-window'] !== undefined && flags['top-window'] !== 'yes') throw new Error('--top-window yes is the one value');
+      return activateScene(target, {run: runDir(flags), top: flags['top-window'] === 'yes', ...(raiseWindow ? {io: {...defaultIo(), raiseWindow}} : {})});
+    }
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();
     case 'finder-baseline': return finderBaseline(target, {preparedAt: flags['prepared-at']});

@@ -212,7 +212,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
             'per-context': {perContext: args[args.indexOf('--value') + 1] === 'on'}, restore: {sourceRestored: true, perContextRestored: true}}[args[1]] ?? {}, at};
         case 'step':
           if (args[1] === 'activate') { front = records[args[2]] ?? front; focusHash = sha256Hex(''); }
-          return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at,
+          return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true, ...(args.includes('--top-window') ? {toTop: {path: 'waited', ms: 0, topBefore: null}} : {})}, at,
             ...(args[1] === 'activate' ? {frontKey: {front: front?.bundleId ?? null, key: front?.bundleId ?? null}} : {})};
         case 'alerts': return args[1] === 'baseline' ? {baseline: 0} : {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}}, at};
         case 'launched':

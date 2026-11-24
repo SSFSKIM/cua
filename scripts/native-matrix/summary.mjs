@@ -496,7 +496,24 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
-    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), verdict};
+    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), verdict};
+}
+
+// The background rows' user windows by the path they took to the top (ruling 1221, H2; ./steps.mjs keepToTop): per user
+// scene and engine, the rows whose activation's wait found the run's window on top and those it raised there, and the
+// rows still not ok after a raise. Recorded, never judged. -> {counts: [{scene, engine, waited, raised}], afterRaise:
+// [{engine, id}]}.
+export function toTopOf(rows) {
+  const counts = new Map(), afterRaise = [];
+  for (const r of rows) {
+    const path = r.toTop?.path;
+    if (path !== 'waited' && path !== 'raised') continue;
+    const k = `${r.toTop.scene}\u0000${r.engine}`;
+    if (!counts.has(k)) counts.set(k, {scene: r.toTop.scene, engine: r.engine, waited: 0, raised: 0});
+    counts.get(k)[path] += 1;
+    if (path === 'raised' && r.ok !== true) afterRaise.push({engine: r.engine, id: r.id});
+  }
+  return {counts: [...counts.values()].sort((a, b) => a.scene.localeCompare(b.scene) || a.engine.localeCompare(b.engine)), afterRaise};
 }
 
 // The samples of a row judged by its own effect (./plan.mjs OWN_EFFECT_IDS) that passed although the act threw: a write a
@@ -637,6 +654,11 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   }
   out.push('');
 
+  const toTop = j.toTop ?? {counts: [], afterRaise: []};
+  if (toTop.counts.length) {
+    out.push(`- User windows to the top (ruling 1221): ${toTop.counts.map(c => `${c.scene} ${c.engine} waited ${c.waited}, raised ${c.raised}`).join('; ')}`
+      + `${toTop.afterRaise.length ? `; not ok after a raise: ${toTop.afterRaise.map(r => `${r.engine} ${r.id}`).join(', ')}` : ''}.`);
+  }
   for (const s of j.sharedInterference ?? []) out.push(`- ${s.id}: both engines failed; ${s.kind === 'defect' ? `the person's ${s.moved.map(m => m.replace(/^the /, '')).join(', ')} moved: a shared product defect, NO VERDICT on cua, ${s.ticket ? `ticket ${s.ticket}` : 'ticket to be registered'}`
     : s.kind === 'venue' ? `nothing of the person's moved (${s.seen.join(', ')}): the venue's, NO VERDICT on cua` : `the record does not say what moved (${s.seen.join(', ')}): unread, NO VERDICT on cua`} (ruling 1219)`);
   if (j.sharedInterference?.length) out.push('');

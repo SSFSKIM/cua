@@ -75,7 +75,7 @@ import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from
 import {guardCause, sendsPointer} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKeyAt, skippedReadings, step, Stop,
-  guardLane, guardRow, noteGuard, userWindowSeen} from './steps.mjs';
+  activateUser, guardLane, guardRow, keepToTop, noteGuard, userWindowSeen} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {malformedBaseline, ownerInputNow, venueInputMarks} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
@@ -707,8 +707,10 @@ function fillTimings(ctx, target, plan) {
 // A pairing whose driven target is a panel is one opening: its rows carry the opening's id (./panels.mjs tagOpening).
 async function backgroundPairing(ctx, pairing) {
   const from = ctx.rows.length;
+  ctx.toTop = null;
   try { return await pairingRows(ctx, pairing, from); } finally {
     if (isPanelTarget(pairing.driven)) tagOpening(ctx, from, pairingOpening(pairing));
+    keepToTop(ctx, from);
   }
 }
 const pairingOpening = ({driven, user}) => `${driven}/background@${user}`;
@@ -728,7 +730,7 @@ async function pairingRows(ctx, {driven, user}, from) {
       mark(ctx, 'harness', 'windowless-up', up?.at, []);
       if (!Number.isSafeInteger(up?.answer?.pid)) return invalidCases(ctx, driven, 'background', 'the windowless app did not come up', user);
     }
-    const front = activate(ctx, user);
+    const front = activateUser(ctx, user);
     const skipped = notActivated(ctx, user, appsOf(driven, user));
     const r0 = front?.ok && !skipped ? read(ctx, null, {frontKey: true}) : null;
     const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
@@ -831,12 +833,17 @@ async function findingRows(ctx, scene) {
 // (launchCell: the text stays in the cell), the process the engine launched journaled precisely (pid and start time),
 // the oracle read, the outcome read; the launched process quit in a `finally`, whatever failed. The row's outcome (the
 // launch reached the scene's own window) is its `ok`, judged apart from its interference (the oracle).
-async function launchRow(ctx, {scene, user}) {
+async function launchRow(ctx, launch) {
+  const from = ctx.rows.length;
+  ctx.toTop = null;
+  try { return await launchRowOf(ctx, launch); } finally { keepToTop(ctx, from); }
+}
+async function launchRowOf(ctx, {scene, user}) {
   await ctx.checkpoint();
   const key = `row:${ctx.rows.length}`;
   const row = {section: 'launch', id: `${scene}/background/launch@${user}`, engine: ctx.engine, sample: ctx.n, ok: false, scene, user, regime: 'background', method: 'getApp', case: 'launch'};
   const app = ctx.records[scene]?.app;
-  const front = activate(ctx, user);
+  const front = activateUser(ctx, user);
   const skipped = notActivated(ctx, user, [SCENES[scene].bundleId, SCENES[user].bundleId]);
   if (skipped) return push(ctx, {...row, frontKey: skipped});
   if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`, userWindowSeen: userWindowSeen(ctx, user, front, null)});

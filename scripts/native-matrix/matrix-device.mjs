@@ -129,7 +129,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow, sceneWindowOf} from '../hosted-sittings/key-window.mjs';
-import {isGithubHosted, moveRefusal, readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
+import {assertGithubHosted, isGithubHosted, moveRefusal, readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
 import {inputWriteRefusal} from './hitoolbox.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
@@ -785,6 +785,11 @@ export async function main(argv, {io: given = {}} = {}) {
     axState: axStateOf(dir),
     axDocument: (pid, bounds) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['document', String(pid), bounds])),
     panelAx: args => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args)),
+    // A background row's user window raised to the top when its activation's wait missed (ruling 1221, H2), hosted only.
+    raiseWindow: (pid, bounds) => {
+      assertGithubHosted(process.env, process.platform, 'the raise of the run\'s window');
+      return JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), ['raise', String(pid), bounds]));
+    },
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
@@ -821,7 +826,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {
       const from = Date.now();
-      const answer = await (io.scenes ?? scenesMain)(argv.slice(1));
+      const answer = await (io.scenes ?? scenesMain)(argv.slice(1), {raiseWindow: io.raiseWindow});
       const frontKey = positional[0] === 'activate' && SCENES[positional[1]] ? await activationCheck(SCENES[positional[1]].bundleId, io) : null;
       return {answer, at: [from, Date.now()], ...(frontKey ? {frontKey} : {})};
     }

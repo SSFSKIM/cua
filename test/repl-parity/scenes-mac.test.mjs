@@ -1389,6 +1389,85 @@ test('a Finder key that does not read back fails naming the key and the owner\'s
   }
 });
 
+// Ruling 1221 (H2): a user window's activation (`top`) waits within its bound for the run's window on top, as Finder's
+// does; only when the wait misses, and only on a hosted runner, is that window raised (AXRaise, the harness's own
+// helper). The path taken, its time and the top window before are kept.
+const topOrder = te => {
+  const own = {ownerPid: te.pid, ownerBundleId: TEXTEDIT, ownerName: 'TextEdit', number: te.window.number, layer: 0, bounds: {x: 140, y: 100, width: 720, height: 560}};
+  const blocker = {ownerPid: 77, ownerBundleId: 'com.example.other', ownerName: 'Other', number: 31, layer: 0, bounds: {x: 0, y: 0, width: 10, height: 10}};
+  return {own, blocker};
+};
+test('activate with top waits for the run\'s window on top: there within the bound, nothing is raised; the path, its time and the top window before kept', async () => withRun(async run => {
+  const io = fakeDevice();
+  const te = await upScene('textedit', {run, io});
+  const {own, blocker} = topOrder(te);
+  let reads = 0;
+  io.windowOrder = () => (++reads < 3 ? [blocker, own] : [own, blocker]);
+  io.hosted = () => true;
+  io.raiseWindow = (...a) => { io.calls.push(['raise', ...a]); return {trusted: true, found: true, raised: 0}; };
+  const out = await activateScene('textedit', {run, io, top: true});
+  assert.equal(out.ok, true, out.reason);
+  assert.deepEqual(out.toTop, {path: 'waited', ms: 500, topBefore: {bundleId: 'com.example.other', number: 31, layer: 0, owned: false}});
+  assert.deepEqual(io.calls.filter(c => c[0] === 'raise'), []);
+  // Without `top`, the frontmost process alone, as before.
+  const plain = await activateScene('textedit', {run, io});
+  assert.equal(plain.ok, true);
+  assert.equal(plain.toTop, undefined);
+}));
+test('activate with top on a hosted runner: a wait that misses raises the run\'s own window once, at its bounds, and reads it on top after', async () => withRun(async run => {
+  const io = fakeDevice();
+  const te = await upScene('textedit', {run, io});
+  const {own, blocker} = topOrder(te);
+  let raised = false;
+  io.windowOrder = () => (raised ? [own, blocker] : [blocker, own]);
+  io.hosted = () => true;
+  io.raiseWindow = (pid, bounds) => { io.calls.push(['raise', pid, bounds]); raised = true; return {trusted: true, found: true, raised: 0}; };
+  const out = await activateScene('textedit', {run, io, top: true, boundMs: 1000});
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.toTop.path, 'raised');
+  assert.deepEqual(out.toTop.topBefore, {bundleId: 'com.example.other', number: 31, layer: 0, owned: false});
+  assert.ok(out.toTop.ms >= 1000, String(out.toTop.ms));
+  assert.deepEqual(out.toTop.raise, {trusted: true, found: true, raised: 0});
+  assert.deepEqual(io.calls.filter(c => c[0] === 'raise'), [['raise', te.pid, '140,100,720,560']]);
+  // A raise that does not take: still not on top, said, with the path.
+  raised = false;
+  io.raiseWindow = (pid, bounds) => { io.calls.push(['raise', pid, bounds]); return {trusted: true, found: true, raised: 0}; };
+  const stuck = await activateScene('textedit', {run, io, top: true, boundMs: 1000});
+  assert.equal(stuck.ok, false);
+  assert.equal(stuck.toTop.path, 'raised');
+  assert.match(stuck.reason, /the run's window is not the top window after its raise: com\.example\.other's window 31 is/);
+}));
+test('activate with top off a hosted runner: a wait that misses raises nothing and is not ok, the top window named', async () => withRun(async run => {
+  const io = fakeDevice();
+  const te = await upScene('textedit', {run, io});
+  const {own, blocker} = topOrder(te);
+  io.windowOrder = () => [blocker, own];
+  io.hosted = () => false;
+  io.raiseWindow = (...a) => { io.calls.push(['raise', ...a]); return {raised: 0}; };
+  const out = await activateScene('textedit', {run, io, top: true, boundMs: 1000});
+  assert.equal(out.ok, false);
+  assert.deepEqual(out.toTop, {path: 'waited', ms: 1000, topBefore: {bundleId: 'com.example.other', number: 31, layer: 0, owned: false}});
+  assert.match(out.reason, /the run's window is not the top window within 1000 ms: com\.example\.other's window 31 is; not raised off a GitHub-hosted runner/);
+  assert.deepEqual(io.calls.filter(c => c[0] === 'raise'), []);
+  // An owner's Chrome on top is named alone, as the window-order evidence names it.
+  io.windowOrder = () => [{ownerPid: 88, ownerBundleId: 'com.google.Chrome', ownerName: 'Google Chrome', number: 5, layer: 0, bounds: own.bounds}, own];
+  assert.deepEqual((await activateScene('textedit', {run, io, top: true, boundMs: 500})).toTop.topBefore, {ownerName: 'Google Chrome'});
+}));
+test('activate with top on Finder keeps its own path, the reopened folder its raise, and says it as `toTop`', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  const front = await activateScene('finder', {run, io, top: true});
+  assert.equal(front.ok, true);
+  assert.deepEqual(front.toTop, {path: 'waited', ms: 0, topBefore: {bundleId: null, number: finder.window.number, layer: 0, owned: true}});
+  // Another of Finder's windows on top, which the reopened folder does not move: raised, still not ok.
+  io.windows[736].unshift({number: 5, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true});
+  const other = await activateScene('finder', {run, io, top: true});
+  assert.equal(other.ok, false);
+  assert.equal(other.toTop.path, 'raised');
+  assert.deepEqual(other.toTop.topBefore, {bundleId: null, number: 5, layer: 0, owned: true});
+  assert.equal((await activateScene('finder', {run, io})).toTop, undefined, 'only when asked');
+}));
+
 test('activate gives up after its bound when the process never comes to the front, without guessing', async () => withRun(async run => {
   const io = fakeDevice({activates: false});
   await upScene('textedit', {run, io});

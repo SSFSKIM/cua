@@ -50,10 +50,12 @@ export const TEXTEDIT = [SCENES.textedit.bundleId];
 // that follow, until the next. -> the command's answer.
 export function step(ctx, args) {
   const {answer, at, frontKey} = ctx.ops.matrix(['step', ...args, '--run', ctx.run]) ?? {};
-  mark(ctx, 'harness', args.join(':'), at, args[0] === 'activate' ? [SCENES[args[1]].bundleId] : []);
+  mark(ctx, 'harness', (args[0] === 'activate' ? args.slice(0, 2) : args).join(':'), at, args[0] === 'activate' ? [SCENES[args[1]].bundleId] : []);
   if (args[0] === 'activate') {
     const app = SCENES[args[1]].bundleId, seen = keyReading({frontKey});
     ctx.activated = {app, front: seen.front === app, key: seen.key === app, seen};
+    // The user window's path to the top (ruling 1221, H2), in force until the next activation: set by activateUser's.
+    ctx.toTop = answer?.toTop ? {scene: args[1], ...answer.toTop} : null;
     if (answer?.windowOrder) {
       (ctx.meta.activationGuards ??= []).push({scene: args[1], beforeRow: ctx.rows.length, at, ok: answer.ok,
         ...(answer.reason ? {reason: answer.reason} : {}), windowOrder: answer.windowOrder, ...(answer.framePin ? {framePin: answer.framePin} : {})});
@@ -62,6 +64,15 @@ export function step(ctx, args) {
   return answer;
 }
 export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
+// A background row's user window brought to the front (ruling 1221, H2): its activation also waits for the run's window
+// on top, raised on a hosted runner when the wait misses (../repl-parity/scenes-mac.mjs activateScene `top`).
+export const activateUser = (ctx, scene) => step(ctx, ['activate', scene, '--top-window', 'yes']);
+// The rows since `from` of the user window whose path to the top is in force (ctx.toTop) keep it (`toTop`).
+export function keepToTop(ctx, from) {
+  const toTop = ctx.toTop;
+  if (toTop) for (const row of ctx.rows.slice(from)) if (row.user === toTop.scene && row.toTop === undefined) row.toTop = toTop;
+  ctx.toTop = null;
+}
 // The engine under test's roots, for the device to tell its own windows (./matrix-device.mjs enginePids).
 const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
 // `electronMode`: the Electron fixture's accessibility mode as its record last showed it, read with the rest

@@ -14,7 +14,7 @@ import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-resu
 import {isCaretRow, isPointerdownRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
-import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary} from '../../scripts/native-matrix/summary.mjs';
+import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary, toTopOf} from '../../scripts/native-matrix/summary.mjs';
 import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 
 const m = (engine, sample, ok, extra = {}) => ({section: 'method', id: 'textedit/frontmost/click.control', engine, sample, ok, regime: 'frontmost', method: 'click', case: 'control', ...extra});
@@ -1220,4 +1220,17 @@ test('the cells of a known defect are named with their ticket', () => {
   const SEARCH = 'openPanel/frontmost/typeText.search';
   const unprepared = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(SEARCH, {ok: false, invalid: 'not prepared: the field could not be given the focus'})}});
   assert.ok(unprepared.missing.includes(`method: ${SEARCH} has no valid cua sample (known defect #588)`), unprepared.missing.join('\n'));
+});
+
+// Ruling 1221 (H2): the background rows' user windows by the path they took to the top, per scene and engine, and the
+// rows still not ok after a raise.
+test('to the top: background rows counted waited and raised per user scene and engine, the rows not ok after a raise named', () => {
+  const row = (engine, id, user, path, ok = true) => ({section: 'method', engine, id, user, ok, toTop: {scene: user, path, ms: 10, topBefore: null}});
+  const t = toTopOf([row('cua', 'finder/background/a@textedit', 'textedit', 'waited'), row('cua', 'finder/background/b@textedit', 'textedit', 'raised'),
+    row('cua', 'finder/background/c@textedit', 'textedit', 'raised', false), row('vendor', 'chrome/background/a@electron', 'electron', 'waited'), {section: 'method', engine: 'cua', id: 'x', ok: true}]);
+  assert.deepEqual(t, {counts: [{scene: 'electron', engine: 'vendor', waited: 1, raised: 0}, {scene: 'textedit', engine: 'cua', waited: 1, raised: 2}],
+    afterRaise: [{engine: 'cua', id: 'finder/background/c@textedit'}]});
+  const text = renderSummary({...judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}}), toTop: t});
+  assert.match(text, /^- User windows to the top \(ruling 1221\): electron vendor waited 1, raised 0; textedit cua waited 1, raised 2; not ok after a raise: cua finder\/background\/c@textedit\.$/m);
+  assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /User windows to the top/);
 });

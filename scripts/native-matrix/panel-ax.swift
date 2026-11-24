@@ -29,8 +29,13 @@
 //       breadth first (at most 5000 elements, 40 levels); else the window's own AXCancel action.
 //       -> {"trusted", "found", "windows", "via": "cancelButton" | "button" | "action" | null, "pressed", "walked"}:
 //       `pressed` the AXError of the press (0 is success, null when nothing was found to press).
+//   panel-ax raise <pid> <x,y,w,h>
+//       That top-level window (never a sheet) raised: its AXRaise action (ruling 1221, H2: a background row's user
+//       window that its activation left under another, ../repl-parity/scenes-mac.mjs activateScene `top`).
+//       -> {"trusted", "found", "windows", "kind", "raised"}: the AXError of the action (0 is success, null when no
+//       top-level window was at the bounds).
 // Numbers and booleans only: a title is compared inside, never printed.
-// Hosted only (rulings 1188 and 1195): move and cancel write to another app's windows, and element serves only a
+// Hosted only (rulings 1188, 1195 and 1221): move, cancel and raise act on another app's windows, and element serves only a
 // hosted fallback, so each refuses off a GitHub-hosted runner here, before any Accessibility call, however the binary was run (exit 3). It never asks for a grant: an
 // untrusted process answers {"trusted": false} and touches nothing.
 import ApplicationServices
@@ -41,10 +46,10 @@ func emit(_ object: [String: Any]) {
   FileHandle.standardOutput.write(data + Data("\n".utf8))
 }
 let args = CommandLine.arguments
-guard args.count >= 4, ["move", "cancel", "element"].contains(args[1]), let pid = Int32(args[2]),
-      args.count == (args[1] == "cancel" ? 4 : 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
+guard args.count >= 4, ["move", "cancel", "element", "raise"].contains(args[1]), let pid = Int32(args[2]),
+      args.count == (["cancel", "raise"].contains(args[1]) ? 4 : 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
       args[1] != "element" || ["focused", "search", "name"].contains(args[4]) else {
-  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h>\n".utf8))
+  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax raise <pid> <x,y,w,h>\n".utf8))
   exit(64)
 }
 if ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] != "github-hosted" {
@@ -95,6 +100,12 @@ let sheet: AXUIElement? = topLevel != nil ? nil : windows.lazy.compactMap { pare
 }.first
 let window = topLevel ?? sheet
 var answer: [String: Any] = ["trusted": true, "found": window != nil, "windows": windows.count, "kind": sheet != nil ? "sheet" as Any : (topLevel != nil ? "window" as Any : NSNull())]
+
+if args[1] == "raise" {
+  answer["raised"] = topLevel.map { Int(AXUIElementPerformAction($0, kAXRaiseAction as CFString).rawValue) as Any } ?? NSNull()
+  emit(answer)
+  exit(0)
+}
 
 if args[1] == "move" {
   guard let target = rect(args[4]) else { emit(["trusted": true, "found": false, "failed": "frame"]); exit(64) }

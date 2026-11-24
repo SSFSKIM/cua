@@ -86,3 +86,29 @@ test('a user window not in front: the background cells keep what the activation 
       expectedPid: pid, reads: 1, front: {bundleId: 'com.apple.TextEdit', pid}, top, skipped: []}, row.id);
   }
 });
+
+// Ruling 1221 (H2): a background row's user window is activated waiting for the run's window on top (raised only on a
+// hosted runner when the wait misses); every background row keeps the path taken, its time and the top window before.
+test('background rows keep their user window\'s path to the top: the activation asked to wait for it, its answer on each row', async () => {
+  const asked = [];
+  const ops = {matrix: (base, a) => { if (a[0] === 'step' && a[1] === 'activate') asked.push(a.slice(2, a.indexOf('--run'))); return base(a); }};
+  const {result} = await runWith({plan: planOf('background', {scene: 'finder', user: 'textedit'}), ops, slept: []});
+  const rows = result.rows.filter(r => r.id.startsWith('finder/background/') && r.id.endsWith('@textedit'));
+  assert.ok(rows.length > 0);
+  for (const row of rows) assert.deepEqual(row.toTop, {scene: 'textedit', path: 'waited', ms: 0, topBefore: null}, row.id);
+  assert.ok(asked.some(a => a[0] === 'textedit' && a[1] === '--top-window' && a[2] === 'yes'), JSON.stringify(asked));
+  assert.ok(!result.rows.some(r => !r.id.includes('/background/') && r.toTop), 'only background rows');
+});
+test('a background user window whose wait missed off a hosted runner: its rows NO VERDICT, the path kept, nothing raised', async () => {
+  const missed = {scene: 'textedit', ok: false, frontmost: {pid: 1, bundleId: 'com.apple.TextEdit'}, reads: 21,
+    reason: 'the run\'s window is not the top window within 5000 ms: com.example.other\'s window 31 is; not raised off a GitHub-hosted runner',
+    toTop: {path: 'waited', ms: 5000, topBefore: {bundleId: 'com.example.other', number: 31, layer: 0, owned: false}}};
+  const ops = {matrix: (base, a) => (a[0] === 'step' && a[1] === 'activate' && a[2] === 'textedit' && a.includes('--top-window') ? {...base(a), answer: missed} : base(a))};
+  const {result} = await runWith({plan: planOf('background', {scene: 'finder', user: 'textedit'}), ops, slept: []});
+  const rows = result.rows.filter(r => r.id.startsWith('finder/background/') && r.id.endsWith('@textedit'));
+  assert.ok(rows.length > 0);
+  for (const row of rows) {
+    assert.equal(row.invalid, 'the user window (textedit) did not come to the front', row.id);
+    assert.deepEqual(row.toTop, {scene: 'textedit', ...missed.toTop}, row.id);
+  }
+});

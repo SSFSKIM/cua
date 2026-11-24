@@ -152,10 +152,11 @@ test('judgeInterference records what the top window was before and after when it
 
 // Ruling 1223 (R3): C-6's Finder and Chrome concurrent@textedit rows found a 52×22 window of the user TextEdit's own pid on
 // top after the act. Another window of the user app's process on top is no interference only when the user window
-// keeps its number, its bounds and the focus (the focus probe names it at its bounds), the user's input landed, and an
-// event record shows the engine posted nothing to the user app's pid in the cell; then the pass says so. With no such
-// record the row stays failed, what is missing named.
-test('ruling 1223: a top window of the user app\'s own process passes only with the user window kept, the input landed and no post to its pid on record', () => {
+// keeps its number, its bounds and the focus (the focus probe names it at its bounds), the user's input landed, and the
+// witness tap (ruling 1225, ./witness.mjs) shows the engine posted nothing to the user app's pid in the cell; then the
+// pass says so. A witness that did not cover the cell (no tap, a gap in its coverage, its positive control unseen) is
+// NO VERDICT, never a pass or a failure, unless the row fails on something else.
+test('ruling 1223: a top window of the user app\'s own process passes only with the user window kept, the input landed and the witness clean', () => {
   const userWindow = {pid: 11, number: 3};
   const user = {ownerPid: 11, number: 3, bounds: {x: 0, y: 0, width: 500, height: 400}, owned: true};
   const popup = {ownerPid: 11, number: 9, bounds: {x: 40, y: 60, width: 52, height: 22}, owned: true};
@@ -165,18 +166,30 @@ test('ruling 1223: a top window of the user app\'s own process passes only with 
   const kept = {appOwned: true, appPid: 11, named: true, valueHash: 'h'};
   const base = {before: reading(user), after: reading(popup), userPid: 11, scene: 'finder', focus: kept, userLanded: true, userWindow, targets: ['com.apple.finder'],
     order: {before: [entry(user), driven], after: [entry(popup), entry(user), driven]}};
-  const clean = judgeInterference({...base, posts: {source: 'tap', pids: [7]}});
+  const witnessed = {source: 'tap', gaps: [], others: [], probe: 4};
+  const clean = judgeInterference({...base, posts: witnessed});
   assert.equal(clean.ok, true, JSON.stringify(clean));
   assert.equal(clean.topWindowBy, 'user app\'s own window');
   assert.deepEqual(clean.userAppWindow, {pass: true, failed: []});
-  const posted = judgeInterference({...base, posts: {source: 'tap', pids: [7, 11]}});
+  assert.equal(clean.noVerdict, undefined);
+  // A post to the user app's pid from anyone but the simulated person (the probe) fails it.
+  const posted = judgeInterference({...base, posts: {...witnessed, others: [{target: 11, kind: 'keyDown'}]}});
   assert.equal(posted.ok, false);
-  assert.deepEqual(posted.userAppWindow, {pass: false, failed: ['the engine posted to the user app\'s pid in the cell (tap)']});
-  // No record of where the engine posted (the matrix's cells keep none today): failed as before, the record named missing.
+  assert.deepEqual(posted.userAppWindow, {pass: false, failed: ['the engine posted to the user app\'s pid in the cell (tap: 1 event)']});
+  assert.equal(posted.noVerdict, undefined);
+  // No witness (off a hosted runner, or its tap never started) or one with a gap: NO VERDICT, what is missing named.
   const unrecorded = judgeInterference(base);
   assert.equal(unrecorded.ok, false);
-  assert.deepEqual(unrecorded.userAppWindow, {pass: false, failed: [], missing: 'no event record of the pids the engine posted to in the cell'});
+  assert.deepEqual(unrecorded.userAppWindow, {pass: false, failed: [], noVerdict: 'no witness tap covered the cell: where the engine posted is unrecorded'});
+  assert.equal(unrecorded.noVerdict, unrecorded.userAppWindow.noVerdict);
   assert.equal(unrecorded.topWindowBy, undefined);
+  for (const gap of ['the tap started after the cell began', 'the positive control was not seen on the user app\'s pid']) {
+    const r = judgeInterference({...base, posts: {...witnessed, gaps: [gap], others: [{target: 11, kind: 'keyDown'}]}});
+    assert.deepEqual([r.ok, r.noVerdict, r.userAppWindow.failed], [false, gap, []], gap);
+  }
+  // A row failing on something else stays failed whatever the witness: NO VERDICT only where the witness alone decides.
+  const elsewhere = judgeInterference({...base, activations: [{bundleId: 'com.apple.finder'}]});
+  assert.deepEqual([elsewhere.ok, elsewhere.noVerdict], [false, undefined]);
   // Each other condition, alone, fails it.
   const conditions = [
     [{focus: {...kept, named: false}}, 'the user window is not the focused window at its bounds'],
@@ -184,9 +197,12 @@ test('ruling 1223: a top window of the user app\'s own process passes only with 
     [{order: {...base.order, after: [entry(popup), driven]}}, 'the user window\'s number is not in the order after the act'],
   ];
   for (const [over, failure] of conditions) {
-    const r = judgeInterference({...base, posts: {source: 'tap', pids: []}, ...over});
+    const r = judgeInterference({...base, posts: witnessed, ...over});
     assert.equal(r.ok, false, failure);
     assert.ok(r.userAppWindow.failed.includes(failure), JSON.stringify(r.userAppWindow));
+    // A failed condition is a failure even with no witness: never NO VERDICT.
+    const unwitnessed = judgeInterference({...base, ...over});
+    assert.deepEqual([unwitnessed.ok, unwitnessed.noVerdict, unwitnessed.userAppWindow.failed.includes(failure)], [false, undefined, true], failure);
   }
   // Another process's window on top, or the user window itself changed, is not this case.
   assert.equal('userAppWindow' in judgeInterference({...base, after: reading({...popup, ownerPid: 66, owned: false})}), false);

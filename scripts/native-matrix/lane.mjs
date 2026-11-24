@@ -238,11 +238,19 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
     helpers: step('helpers', () => (engine === 'cua' ? `00:00 ${approvedEngine}/Contents/MacOS/cua-engine --probe watch-activations\n00:00 ${approvedEngine}/Contents/MacOS/cua-engine`
       : `00:00 ${home}/runtime/SkyComputerUseService`)),
     // The key-route diagnostic's device (./key-route-device.mjs): the panel read once, the taps seeing nothing, the
-    // panel gone after the Escape.
-    keyRoute: step('key-route', argv => ({at: [clock(), clock()], answer: {
-      read: {trusted: true, pid: records.textedit?.pid ?? null, actualPid: 'unavailable', chain: [], processes: {}, routes: [], cuaKeyboardTarget: records.textedit?.pid ?? null},
-      tap: argv[1] === 'start' ? {launched: true, ready: true, pid: ++pid, listenAccess: true, taps: []} : {exited: true, killed: false, why: 'stop', events: []},
-      panel: {trusted: true, up: false}, cancel: {found: false, closed: true}}[argv[0]] ?? {}})),
+    // panel gone after the Escape. R3's witness (--mode events, ./witness.mjs): its taps up on the pids named, seeing
+    // nothing, the control posted by a helper of its own.
+    keyRoute: step('key-route', argv => {
+      const at = [clock(), clock()], events = argv.includes('events');
+      const taps = argv.flatMap((a, i) => (a === '--pid' && argv[i + 1].includes(':') ? [{label: argv[i + 1].split(':')[0], pid: Number(argv[i + 1].split(':')[1]), created: true}] : []));
+      const tap = argv[1] === 'start' ? {launched: true, ready: true, pid: ++pid, listenAccess: true, taps: events ? taps : [], ...(events ? {startedAt: at[0]} : {})}
+        : events ? {exited: true, killed: false, why: 'stop', logRead: true, ready: true, startedAt: null, stoppedAt: at[1], taps: [], disabled: [], events: []}
+          : {exited: true, killed: false, why: 'stop', events: []};
+      return {at, answer: {
+        read: {trusted: true, pid: records.textedit?.pid ?? null, actualPid: 'unavailable', chain: [], processes: {}, routes: [], cuaKeyboardTarget: records.textedit?.pid ?? null},
+        tap, control: {posted: true, pid: ++pid, kind: 'flagsChanged', at: at[0]},
+        panel: {trusted: true, up: false}, cancel: {found: false, closed: true}}[argv[0]] ?? {}};
+    }),
     journalTo: () => {},
   };
 }

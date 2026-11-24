@@ -17,6 +17,7 @@
 // around the act too (#485).
 import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
+import {noteProbe} from './witness.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, MAY_HAVE_TAKEN_EFFECT,
   NEW_DOCUMENT_CELL, nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith,
@@ -227,6 +228,8 @@ async function userField(ctx, span, user) {
 // recorded for the debounce. -> {scheduled, answer, result: during's}.
 async function withKeystroke(ctx, {window, scene, lead = PROBE_LEAD_MS}, during) {
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(window), '--text', PROBE_TEXT, '--lead', String(lead)]);
+  // The simulated person's pid: its posts to the user app are its own, not the engine's (R3's witness, ./witness.mjs).
+  noteProbe(ctx, started?.pid);
   let result = null, finished = null;
   try { result = await during(started.scheduled); } finally {
     finished = device(ctx, ['probe', 'finish']);
@@ -280,12 +283,10 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
   // A window of the user app's own process on top (ruling 1223, R3; ./oracle.mjs userAppWindow) needs the user's input
-  // landed and an event record of the pids the engine posted to. The cell keeps none: the engine's meta names its route
-  // (2' posts to the driven app's pid as the engine resolved it) and a key target's pid only on a cut-off walk, a claim
-  // and not a record; the one per-pid tap (./key-route-tap.swift) is the key-route diagnostic's, Escape alone. So
-  // `posts` is null and such a row stays failed, the record named missing.
+  // landed and R3's witness of the cell (ruling 1225): the run adds it when its tap is stopped (./run.mjs finishWatch,
+  // ./witness.mjs rowPosts), the row's span then known.
   return span.end(row, {oracle: {before: before.reading, after: after.reading, named: {before: before.frontWindow?.top ?? null, after: after.frontWindow?.top ?? null}, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid,
-    userLanded, posts: null, ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
+    userLanded, ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
 // The window-order oracle's data for a background attempt (./oracle.mjs judgeInterference, #485): the order read before
 // and after its act, the driven app's windows the targets, the user window by its number before the act.

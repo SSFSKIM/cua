@@ -70,7 +70,8 @@ import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs'
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, FOCUS_REASONS, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, panelWindowsIn, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
-import {probeCells, ResetBlocked} from './probe-run.mjs';
+import {PROBE_ROWS, probeCells, ResetBlocked} from './probe-run.mjs';
+import {finishWitness, rowPosts, startWitness} from './witness.mjs';
 import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
 import {guardCause, sendsPointer} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
@@ -243,7 +244,7 @@ async function runOnce(options, io) {
   // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
   // accessibility record already exported (exportElectronMode).
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, venueMissing: [], out: dryRun ? null : dir, electronExported: false};
+    watcher: null, witness: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, venueMissing: [], out: dryRun ? null : dir, electronExported: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -296,6 +297,8 @@ async function runOnce(options, io) {
     const watch = ops.live(['watch', 'start', '--run', run]);
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
+    // R3's witness (ruling 1225, ./witness.mjs): the user app of the concurrent cells tapped from here to the run's end.
+    startWitness(ctx, [...new Set((plan.concurrent ?? []).map(driven => PROBE_ROWS.concurrent(driven).user))]);
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
     ctx.lane = guardLane(ctx, await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile}));
     for (const id of scenes) {
@@ -336,7 +339,9 @@ async function runOnce(options, io) {
     }
     log(`run ${n} stopped: ${error.message}`);
   } finally {
-    if (ctx.watcher !== null) finishWatch(ctx);
+    let witnessed = null;
+    try { witnessed = await finishWitness(ctx); } catch (error) { problems.push(`R3's witness tap could not be finished: ${error.message}`); }
+    if (ctx.watcher !== null) finishWatch(ctx, witnessed);
     if (ctx.lane) { try { await ctx.lane.client.close(); } catch {} }
     quitLaunched(ctx);
     exportElectronMode(ctx);
@@ -479,10 +484,19 @@ function quitLaunched(ctx) {
   } catch (error) { ctx.problems.push(`the run's launched apps could not be quit: ${error.message}`); return null; }
 }
 
+// A row's whole span: every window marked under its key (the attempt's, and its act's inside it). -> [from, to] | null.
+function rowSpan(windows, key) {
+  const own = windows.filter(w => w.kind === 'row' && w.key === key);
+  return own.length ? [Math.min(...own.map(w => w.at[0])), Math.max(...own.map(w => w.at[1]))] : null;
+}
+
 // The watcher's end: its liveness read once more (alive now and the same pid running the probe: alive throughout),
 // then stopped, and every activation it saw accounted for. A dead watcher or a lost record leaves every judged row
 // invalid and the run incomplete; an activation no step accounts for leaves the run incomplete.
-function finishWatch(ctx) {
+// A concurrent row (its oracle carries the user's landing) is judged with R3's witness of its span (`witnessed`,
+// ./witness.mjs rowPosts; null when no tap came up), kept on the row (`witness`, posts by target pid and kind alone); a
+// row R3 alone would decide on a witness with a gap is NO VERDICT (invalid), what is missing named.
+function finishWatch(ctx, witnessed = null) {
   let alive = false, activations = null;
   try { alive = read(ctx).watcher === true; } catch (error) { ctx.problems.push(`the activation watcher's liveness could not be read: ${error.message}`); }
   try { activations = ctx.ops.live(['watch', 'stop', '--run', ctx.run]).activations ?? null; } catch (error) { ctx.problems.push(`the activation watcher could not be read: ${error.message}`); }
@@ -494,7 +508,13 @@ function finishWatch(ctx) {
   const {byRow, accounted, unaccounted} = accountActivations(activations, ctx.windows);
   for (const [key, judged] of ctx.judged) {
     const seen = byRow[key] ?? [];
-    if (judged.oracle) judged.row.interference = judgeInterference({...judged.oracle, activations: seen});
+    if (judged.oracle) {
+      const concurrent = judged.oracle.userLanded !== undefined && judged.oracle.userLanded !== null;
+      const posts = concurrent && witnessed ? rowPosts(witnessed, {userPid: judged.oracle.userPid, at: rowSpan(ctx.windows, key)}) : null;
+      if (posts) judged.row.witness = {gaps: posts.gaps, others: posts.others, probe: posts.probe};
+      judged.row.interference = judgeInterference({...judged.oracle, activations: seen, posts});
+      if (judged.row.interference.noVerdict) judged.row.invalid ??= `R3's witness: ${judged.row.interference.noVerdict}`;
+    }
     else judged.row.activations = seen.length;
   }
   // A row that ended invalid is judged by nothing: what fell in it is kept as that row's, never dropped.

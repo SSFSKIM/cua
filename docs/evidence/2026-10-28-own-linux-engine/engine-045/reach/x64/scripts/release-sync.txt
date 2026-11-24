@@ -1,0 +1,46 @@
+== /Users/new/.local/share/cua-171/m5/out-x64-h10/L4d.pinned-release/run/results.jsonl
+Chrome rows: 460; with release_sync 460; with all three of 0.4.5's fields 460
+
+--- part 1  cua long-left: 100 rows
+  release_sync: 100; all three new fields: 100
+  overran floor_until: 100; their last_step_after_take_ms (sorted): [428.7,443.2,445.6,448.5,449.1,449.4,450.3,450.9,451.6,451.9,452,452.5,452.5,452.6,452.8,452.9,453.3,453.3,453.4,453.6,453.7,453.7,454,454.2,454.6,454.8,454.9,455,455.3,455.5,455.6,456,456.1,456.4,456.5,456.5,456.9,456.9,457.3,457.3,457.3,457.9,458.3,459,459.4,459.5,459.6,459.8,459.9,460,460.1,460.1,460.3,460.6,460.9,461,461,461.2,461.3,461.3,461.3,461.5,461.5,461.5,461.6,461.7,462.1,462.2,462.5,462.9,463,463.2,463.4,463.5,464.9,464.9,465,465,465.1,465.2,465.2,465.2,465.4,466,466.2,466.3,466.5,466.8,467.4,468.2,468.5,468.7,469.5,474.4,483.1,486.8,489.8,497.8,498.6,500.3]
+  not overran: 0; their last_step_after_take_ms –; null on 0
+  schedule: {"after_path":100}; overran rows {"after_path":100}; not overran {}
+  gate open / overran / schedule: {"open/overran/after_path":100}
+  gate open: {"true":100}; when {"outlasted":100}; form {"tail":100}
+  visits_dropped: {"0":100}
+  unconfirmed by cause: {"null":100}
+  motions {"2":100}; added_ms 24.3 / 24.8 / 31 (n 100); past_floor_ms 103 / 135.7 / 178.5 (n 100)
+
+--- part 2  cua plain-long: 300 rows
+  release_sync: 300; all three new fields: 300
+  overran floor_until: 124; their last_step_after_take_ms (sorted): [326,326.1,326.1,326.1,326.1,326.1,326.1,326.1,326.1,326.2,326.2,326.2,326.2,326.2,326.2,326.2,326.3,326.3,326.4,326.4,326.4,326.4,326.4,326.4,326.4,326.5,326.6,326.6,326.6,326.6,326.6,326.6,326.7,326.7,326.7,326.7,326.7,326.8,326.8,326.8,326.8,326.9,326.9,327,327,327,327,327,327.1,327.1,327.1,327.1,327.2,327.3,327.3,327.4,327.5,327.5,327.6,327.7,327.7,327.7,327.8,327.8,327.8,327.8,327.8,327.9,327.9,327.9,327.9,327.9,327.9,328,328,328,328.1,328.1,328.1,328.2,328.2,328.3,328.3,328.6,328.6,328.6,328.6,328.7,328.7,328.8,328.8,328.8,328.9,329,329,329.1,329.1,329.2,329.2,329.3,329.4,329.4,329.4,329.6,329.6,329.6,329.7,329.8,329.8,329.8,329.9,330.2,330.4,330.7,330.9,331,331.6,331.9,332.4,332.5,332.8,332.9,335.3,336.4]
+  not overran: 176; their last_step_after_take_ms 325.2 / 325.4 / 326 (n 176); null on 0
+  schedule: {"after_path":124,"in_floor":176}; overran rows {"after_path":124}; not overran {"in_floor":176}
+  gate open / overran / schedule: {"shut/ended by floor_until/in_floor":176,"shut/overran/after_path":124}
+  gate open: {"false":300}; when {"outlasted":300}; form {"tail":300}
+  visits_dropped: {"0":299,"1":1}
+  unconfirmed by cause: {"null":299,"visit_dropped":1}
+  motions {"1":1,"2":299}; added_ms 21.4 / 24 / 32.9 (n 300); past_floor_ms 0 / 0.1 / 12.3 (n 300)
+
+--- part 2  cua left: 30 rows
+  release_sync: 30; all three new fields: 30
+  overran floor_until: 6; their last_step_after_take_ms (sorted): [326.2,326.4,326.9,327,327.5,328.4]
+  not overran: 24; their last_step_after_take_ms 324.6 / 324.8 / 325.9 (n 24); null on 0
+  schedule: {"after_path":6,"in_floor":24}; overran rows {"after_path":6}; not overran {"in_floor":24}
+  gate open / overran / schedule: {"shut/ended by floor_until/in_floor":24,"shut/overran/after_path":6}
+  gate open: {"false":30}; when {"outlasted":30}; form {"tail":30}
+  visits_dropped: {"0":30}
+  unconfirmed by cause: {"null":30}
+  motions {"2":30}; added_ms 18.9 / 24 / 30.4 (n 30); past_floor_ms 0 / 0.1 / 8.8 (n 30)
+
+--- part 2  cua inzone-out: 30 rows
+  release_sync: 30; all three new fields: 30
+  overran floor_until: 1; their last_step_after_take_ms (sorted): [326.3]
+  not overran: 29; their last_step_after_take_ms 0 / 284.6 / 319 (n 29); null on 0
+  schedule: {"after_path":1,"in_floor":29}; overran rows {"after_path":1}; not overran {"in_floor":29}
+  gate open / overran / schedule: {"shut/ended by floor_until/in_floor":29,"shut/overran/after_path":1}
+  gate open: {"false":30}; when {"outlasted":30}; form {"tail":30}
+  visits_dropped: {"0":30}
+  unconfirmed by cause: {"null":30}
+  motions {"2":30}; added_ms 21.2 / 24 / 27.3 (n 30); past_floor_ms 0 / 0.1 / 3.6 (n 30)

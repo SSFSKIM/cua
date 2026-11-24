@@ -371,11 +371,49 @@ pub(super) struct ReleaseSync<'a> {
 }
 
 /// What the outlasted gate read of a drop's floor and decided (`release_sync::gate`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct GateRead {
     pub(super) open: bool,
     pub(super) keepalives: u32,
     pub(super) last_spaced: bool,
+    /// The path's last step went out after floor_until (`release_sync::overran`, #512): the tail runs after the path.
+    pub(super) overran: bool,
+    /// When that step went out, in ms after the take (negative: before it; None: no step after the press).
+    pub(super) last_step_after_take_ms: Option<f64>,
+}
+
+/// Whether, and why, a drop at the release sync's gate (`gate`; None: no take, or no Chrome drop the engine lets drop)
+/// is answered unconfirmed with option (c)'s notice (`release_sync::unconfirms`): its tail (`synced`) dropped a visit
+/// (#512, ruling 1142 (2)), or the gate opened with option (c) on (`unconfirm_outlasted`).
+pub(super) fn unconfirmed_at_gate(
+    gate: Option<GateRead>,
+    unconfirm_outlasted: bool,
+    synced: Option<&crate::release_sync::Synced>,
+) -> Option<crate::release_sync::Unconfirm> {
+    gate.and_then(|g| crate::release_sync::unconfirms(g.open, unconfirm_outlasted, synced))
+}
+
+/// What confirms a drag's drop at its release (`handle::confirming`: its drop window `confirm`, whether the window
+/// manager takes the activation request, the cursor an Electron source showed), after the hold's extension, and with
+/// `unconfirmed` ([`unconfirmed_at_gate`]) an activation-only drop becomes `Confirming::Outlasted`, answered unconfirmed
+/// with option (c)'s notice.
+pub(super) fn drop_confirming(
+    confirm: Option<Window>,
+    supported: bool,
+    cursor: Option<Option<bool>>,
+    extended_take: bool,
+    unconfirmed: Option<crate::release_sync::Unconfirm>,
+) -> super::handle::Confirming {
+    super::handle::confirming(confirm, supported, cursor)
+        .after_hold(extended_take)
+        .after_outlasted(unconfirmed.is_some())
+}
+
+/// Where a drop's path ended against its take and floor_until (`release_sync::overran`, #512, ruling 1142 (1)).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct PathEnd {
+    pub(super) overran: bool,
+    pub(super) last_step_after_take_ms: Option<f64>,
 }
 
 impl ReleaseSync<'_> {
@@ -394,6 +432,7 @@ impl ReleaseSync<'_> {
         keepalives: u32,
         last_spaced: bool,
         (xtest_step, last): ((i16, i16), (i16, i16)),
+        path_end: PathEnd,
         floor_end: Option<Instant>,
         dwell: Duration,
     ) -> Result<()> {
@@ -402,9 +441,14 @@ impl ReleaseSync<'_> {
             open,
             keepalives,
             last_spaced,
+            overran: path_end.overran,
+            last_step_after_take_ms: path_end.last_step_after_take_ms,
         });
         let step = (!matches!(route, Route::Window(_))).then_some(xtest_step);
-        let schedule = match (self.form, crate::release_sync::Schedule::of(open, floor_end)) {
+        let schedule = match (
+            self.form,
+            crate::release_sync::Schedule::of(open, path_end.overran, floor_end),
+        ) {
             (crate::release_sync::Form::Tail, crate::release_sync::Schedule::InFloor(end)) => {
                 crate::release_sync::Schedule::InFloor(end + dwell)
             }
@@ -599,11 +643,17 @@ fn drag_along(
         // steps are scheduled to: the tail's earlier boundary is no evidence that the path outlasted the floor (ruling
         // 1001)
         let mut floor_spaced_last = false;
+        // when the server acknowledged the path's last step, which a drop's floor_until is held to (#512; F2 as ruled):
+        // the motion is stamped after its checked request returns, and the server dispatches it to the window before
+        // that reply, so the stamp is no earlier than when the window can have had it. A step acknowledged past
+        // floor_until takes the after-path tail, the safe side, though it went out a round trip before
+        let mut last_sent = None;
         // when the sample being sent was due
         let mut due = Instant::now();
         for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
             route.place_again(x, sx, sy)?;
             let sent = Instant::now();
+            last_sent = Some(sent);
             // the cursors read as they come, so each one's image is fetched while it is shown (a read that fails leaves
             // the drag to its floor, `accept_shown`)
             if let Some(cursor) = accept.as_deref_mut() {
@@ -859,12 +909,27 @@ fn drag_along(
             && let Some(sync) = measure.release_sync.as_mut()
         {
             let floor_end = taken.map(|(at, _)| at + after_take).filter(|_| !after_take.is_zero());
+            // the path's last step against floor_until, the take plus the floor's steps (#512, ruling 1142 (1))
+            let path_end = match (taken, last_sent) {
+                (Some((at, _)), Some(sent)) => PathEnd {
+                    overran: crate::release_sync::overran(at, steps_floor, sent),
+                    last_step_after_take_ms: Some(match sent.checked_duration_since(at) {
+                        Some(after) => after.as_secs_f64() * 1000.0,
+                        None => -(at - sent).as_secs_f64() * 1000.0,
+                    }),
+                },
+                _ => PathEnd {
+                    overran: false,
+                    last_step_after_take_ms: None,
+                },
+            };
             sync.at_release(
                 x,
                 route,
                 floor_keepalives,
                 floor_spaced_last,
                 (xtest_step, last),
+                path_end,
                 floor_end,
                 dwell,
             )?;
@@ -1499,7 +1564,10 @@ impl Engine {
         // the outlasted gate's word on a drop whose take was seen (`--stats` `release_sync`): how it decided, the step it
         // ran (past the path's end when it opened, inside the floor when it stayed shut), and whether option (c) answers
         // the drop's activation unconfirmed
-        let outlasted = gate_read.is_some_and(|g| g.open) && self.cfg.dnd_unconfirm_outlasted;
+        // and whether the drop is answered unconfirmed with option (c)'s notice: its tail dropped a visit (#512, ruling
+        // 1142 (2)), or option (c) is on and the gate opened
+        let unconfirmed = unconfirmed_at_gate(gate_read, self.cfg.dnd_unconfirm_outlasted, synced.as_ref());
+        let outlasted = unconfirmed.is_some();
         if let Some(read) = gate_read {
             let mut record = match &synced {
                 Some(synced) => synced.record(sync_when),
@@ -1518,6 +1586,9 @@ impl Engine {
                     .is_some_and(|s| matches!(s.schedule, crate::release_sync::Schedule::InFloor(_)))
             );
             record["unconfirm_outlasted"] = json!(outlasted);
+            record["unconfirmed"] = json!(unconfirmed.map(crate::release_sync::Unconfirm::name));
+            record["overran"] = json!(read.overran);
+            record["last_step_after_take_ms"] = json!(read.last_step_after_take_ms);
             self.extra.insert("release_sync".into(), record);
         }
         if let Some((press, release)) = wall {
@@ -1614,9 +1685,7 @@ impl Engine {
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
-                let confirming = super::handle::confirming(confirm, supported, cursor)
-                    .after_hold(extended_take)
-                    .after_outlasted(outlasted);
+                let confirming = drop_confirming(confirm, supported, cursor, extended_take, unconfirmed);
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
                 let settle_failed_activation = super::handle::activation_over_failed_settle(
                     confirming,
@@ -2104,6 +2173,179 @@ mod tests {
         let settle = settle.expect("settled");
         assert_eq!(settle.rest, BROWSER_REST);
         assert_eq!(settle.record(&[], true)["rest_ms"], json!(30));
+    }
+
+    /// #512's item 1 through `drag_along` itself, on the X display (XTEST on the desktop route, a real `DndWatch`): a
+    /// Chrome drop whose path's last step goes out after floor_until takes the after-path tail, and its record says the
+    /// path overran. Its steps are paced 10 ms apart, slower than the floor schedules them (76 ms over 8 steps): the last
+    /// goes out no sooner than 80 ms after the take, past floor_until (76), whatever the scheduler adds. With no pause it
+    /// also comes short of the floor's end (100) by more than the keepalive, so the floor spaces it and the gate stays
+    /// shut; a pause can open the gate instead, which schedules the tail after the path too, so the test holds the
+    /// overrun and the schedule, not the gate (the gate shut is `release_sync`'s constructed rows).
+    /// `overran` stubbed false fails it either way.
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_drag_s_overrun_is_its_last_sample_against_floor_until() {
+        use crate::release_sync::{Form, Schedule, When};
+        use x11rb::protocol::xproto::{CreateWindowAux, WindowClass};
+
+        let mut engine = Engine::new(crate::default_config()).unwrap();
+        let x = &mut engine.x;
+        let source = x.conn.generate_id().unwrap();
+        x.conn
+            .create_window(
+                x11rb::COPY_DEPTH_FROM_PARENT,
+                source,
+                x.root,
+                0,
+                0,
+                10,
+                10,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                0,
+                &CreateWindowAux::new(),
+            )
+            .unwrap()
+            .check()
+            .unwrap();
+        let mut watch = DndWatch::start(x, source).unwrap();
+        let xdnd = x.atom("XdndSelection");
+        x.conn
+            .set_selection_owner(source, xdnd, x11rb::CURRENT_TIME)
+            .unwrap()
+            .check()
+            .unwrap();
+        let screen = {
+            let s = &x.conn.setup().roots[0];
+            (s.width_in_pixels, s.height_in_pixels)
+        };
+        let mut desktop = Desktop::new(Duration::ZERO, Duration::ZERO);
+        let mut route = Route::Desktop(&mut desktop, None);
+        let pressing = press_ack(None, None, x, &mut route, None).unwrap().unwrap();
+        let take_hold = TakeHold {
+            bound: Duration::from_millis(500),
+            source,
+            ping: false,
+            browser: Err("a test's source".into()),
+        };
+        let pacing = DragPacing {
+            step: Duration::from_millis(10),
+            elapsed: false,
+            rest: Duration::ZERO,
+            held_step: Duration::ZERO,
+            held_rest: Duration::ZERO,
+            press: Duration::ZERO,
+            release: Duration::ZERO,
+            held_lead_pause: false,
+        };
+        let after_take = Duration::from_millis(100);
+        let (mut wall, mut accept_record, mut at_release, mut gate, mut synced) = (None, None, None, None, None);
+        let (mut held_for_take, mut hold_way, mut scheduled) = (None, None, None);
+        drag_along(
+            x,
+            &mut route,
+            &[],
+            &[(100, 100), (108, 100)],
+            &pacing,
+            None,
+            Some(&mut watch),
+            Some(&take_hold),
+            &mut held_for_take,
+            &mut hold_way,
+            after_take,
+            &mut scheduled,
+            None,
+            pressing,
+            None,
+            None,
+            DragMeasure {
+                wall: &mut wall,
+                accept_record: &mut accept_record,
+                drop_cursor: None,
+                at_release: &mut at_release,
+                settle: None,
+                settle_rest: Duration::ZERO,
+                release_point: None,
+                drop_window_at_release: None,
+                release_sync: Some(ReleaseSync {
+                    form: Form::Tail,
+                    when: When::Outlasted,
+                    gate: &mut gate,
+                    synced: &mut synced,
+                    screen: Some(screen),
+                }),
+            },
+        )
+        .unwrap();
+        let _ = x.conn.destroy_window(source);
+        let held = held_for_take.expect("the hold's record");
+        assert_eq!(held["floor_until_ms"], json!(76.0), "{held}");
+        let gate = gate.expect("the gate read");
+        assert!(gate.overran, "{gate:?}");
+        let after = gate
+            .last_step_after_take_ms
+            .expect("the take came before the last step");
+        assert!(after > 76.0, "{after} ms");
+        let synced = synced.expect("the tail ran");
+        assert_eq!(synced.schedule, Schedule::AfterPath, "{synced:?}");
+        assert_eq!((synced.motions, synced.visits_dropped), (4, 0));
+    }
+
+    /// #512's fail-closed rule through the drag's own confirmation decision (ruling 1142 (2)): a Chrome drop whose
+    /// in-floor tail dropped a visit, its gate shut and option (c) off, whose only confirmation is Chrome's activation
+    /// request, is answered unconfirmed at once with option (c)'s notice; the same drop with no visit dropped is still
+    /// confirmed by the activation.
+    #[test]
+    fn a_dropped_visit_turns_an_activation_only_drop_into_option_c_s_unconfirmed_answer() {
+        use super::super::handle::Confirming;
+        use crate::release_sync::{Form, Schedule, Synced};
+        let shut = GateRead {
+            open: false,
+            keepalives: 0,
+            last_spaced: true,
+            overran: false,
+            last_step_after_take_ms: Some(320.0),
+        };
+        let tail = |visits_dropped| Synced {
+            form: Form::Tail,
+            schedule: Schedule::InFloor(Instant::now()),
+            motions: 4 - 2 * visits_dropped,
+            visits_dropped,
+            added: Duration::from_millis(24),
+            past_floor: Some(Duration::ZERO),
+        };
+        let chrome = Some(18_874_370);
+        let decide = |synced: &Synced| {
+            let unconfirmed = unconfirmed_at_gate(Some(shut), false, Some(synced));
+            drop_confirming(chrome, true, None, false, unconfirmed)
+        };
+        let dropped = decide(&tail(1));
+        assert_eq!(dropped, Confirming::Outlasted);
+        assert!(dropped.unconfirmed(), "answered unconfirmed at once, not waited for");
+        let end = dropped.unconfirmed_end(None);
+        assert_eq!(end, crate::dnd::WatchEnd::Outlasted);
+        let notice = crate::dnd::pending_notice("Google Chrome", &end);
+        assert!(
+            notice.starts_with(
+                "Pending from your last drag, an unconfirmed drop: your drag into Google Chrome began a drag and drop \
+                 and went on past the engine's settle time"
+            ),
+            "{notice}"
+        );
+        // nothing dropped: the activation still confirms it, as in 0.4.4
+        assert_eq!(decide(&tail(0)), Confirming::Activation(18_874_370));
+        // and a drop with no gate read (no take) is left as it is
+        assert_eq!(
+            drop_confirming(
+                chrome,
+                true,
+                None,
+                false,
+                unconfirmed_at_gate(None, false, Some(&tail(1)))
+            ),
+            Confirming::Activation(18_874_370)
+        );
     }
 
     #[test]

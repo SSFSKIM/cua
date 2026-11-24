@@ -122,6 +122,108 @@ fn read_text(engine: &mut Engine, window: u64) -> Option<String> {
     text_value(&state["ax_tree"])
 }
 
+/// The Node that reads the engine's answers as a third-party client would (#572): `CUA171_NODE`, else `node` on PATH, at
+/// major 24 or later, whose `readline` ends a line at U+2028 and U+2029. None (said on stderr) where there is none, unless
+/// the run sets `CUA171_NODE_TESTS=required` (the engine-linux gate, which puts Node 24 on PATH): then it fails.
+fn node_24() -> Option<String> {
+    let node = std::env::var("CUA171_NODE").unwrap_or_else(|_| "node".into());
+    let major = Command::new(&node)
+        .args(["-p", "process.versions.node.split('.')[0]"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse::<u32>().ok());
+    if major.is_some_and(|major| major >= 24) {
+        return Some(node);
+    }
+    assert!(
+        std::env::var("CUA171_NODE_TESTS").as_deref() != Ok("required"),
+        "Node 24 or later is not on PATH (found {major:?}), which this run requires (CUA171_NODE_TESTS=required)"
+    );
+    eprintln!("skipped: Node 24 or later is not on PATH (found {major:?})");
+    None
+}
+
+/// A Node 24+ `readline` reader of a JSONL stream on its stdin, as a third-party client of the engine reads it: how
+/// many lines it read, how many parsed, and every string in the parsed values that holds U+2028.
+const READLINE_READER: &str = r#"
+const readline = require('node:readline');
+const lines = [];
+readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+  .on('line', (line) => lines.push(line))
+  .on('close', () => {
+    const parsed = lines.flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+    const names = [];
+    const walk = (v) => {
+      if (typeof v === 'string') { if (v.includes(String.fromCharCode(0x2028))) names.push(v); }
+      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+    };
+    parsed.forEach(walk);
+    process.stdout.write(JSON.stringify({ lines: lines.length, parsed: parsed.length, names }));
+  });
+"#;
+
+/// #572 (ruling 1192): a window whose accessible name holds U+2028 is read through the engine, and its answer reaches a
+/// Node 24+ `readline` reader as one line that parses, the name intact. Before 0.4.5 the engine wrote the character raw
+/// and `readline` cut the answer in two (#565).
+#[test]
+fn an_at_spi_name_with_a_line_separator_reaches_a_node_readline_reader_as_one_line() {
+    let Some(node) = node_24() else { return };
+    let mut engine = Engine::start();
+    let window = Window::open(INITIAL_TEXT, &format!("ls{}", '\u{2028}'));
+    assert!(window.title.contains('\u{2028}'));
+    let id = poll("the window is listed", || {
+        let windows = engine.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    let request = json!({"window": {"id": id}, "include_screenshot": false});
+    // the window's accessible name, its title, on the bus before the reader's engine asks
+    poll("the window's accessible name is on the bus", || {
+        let state = engine.request("get_window_state", request.clone()).ok()?;
+        (state["ax_tree_source"] == json!("at_spi") && state.to_string().contains(&window.title)).then_some(())
+    });
+    // a second engine whose answers go straight to the reader
+    let mut answering = Command::new(support::engine_bin())
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let reader = Command::new(&node)
+        .args(["-e", READLINE_READER])
+        .stdin(Stdio::from(answering.stdout.take().unwrap()))
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = answering.stdin.take().unwrap();
+    writeln!(
+        stdin,
+        "{}",
+        json!({"id": 1, "command": "get_window_state", "input": request})
+    )
+    .unwrap();
+    drop(stdin);
+    let read = reader.wait_with_output().unwrap();
+    let _ = answering.wait();
+    let read: Value = serde_json::from_slice(&read.stdout).unwrap();
+    assert_eq!(read["lines"], json!(1), "{read}");
+    assert_eq!(read["parsed"], json!(1), "{read}");
+    assert!(
+        read["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|name| name == &json!(window.title)),
+        "the name intact: {read}"
+    );
+}
+
 /// A pixel is light above this luma and dark at or below it: every pixel is one or the other.
 const LUMA_SPLIT: u8 = 128;
 /// The fewest dark pixels the text window's capture may have. The live window (480x320, `INITIAL_TEXT` and one typed

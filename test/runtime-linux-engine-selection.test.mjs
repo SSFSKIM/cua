@@ -112,9 +112,9 @@ test('either selection takes an installed engine at or above MIN_ENGINE_VERSION 
   each((reason, run) => assert.deepEqual(run(), cua(reason), `${reason}, at MIN_ENGINE_VERSION`));
   recordedIn(home, '9.0.0');
   each((reason, run) => assert.deepEqual(run(), cua(reason), `${reason}, ahead`));
-  // the releases below the minimum (0.4.4): 0.3.0, 0.4.0 to 0.4.2, the earlier pins, and 0.4.3, which the released
+  // the releases below the minimum (0.4.5): 0.3.0, 0.4.0 to 0.4.3, the earlier pins, and 0.4.4, which the released
   // plugin pins; each is what a home that installed it holds after the update
-  for (const version of ['0.3.0', '0.4.0', '0.4.1', '0.4.2', '0.4.3']) {
+  for (const version of ['0.3.0', '0.4.0', '0.4.1', '0.4.2', '0.4.3', '0.4.4']) {
     assert.ok(isOlder(version, MIN_ENGINE_VERSION), `the minimum is past ${version}`);
     recordedIn(home, version);
     each((reason, run) => assert.throws(run, error => error.code === 'engine_outdated' && error.message.includes(`${version}, older than ${MIN_ENGINE_VERSION}`)

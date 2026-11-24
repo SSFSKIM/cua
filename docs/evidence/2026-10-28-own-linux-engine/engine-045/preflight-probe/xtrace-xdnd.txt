@@ -1,0 +1,169 @@
+# Chrome's X traffic during the probe's three drags (xtrace between Chrome and the private Xvfb), grepped
+## requests or events naming an Xdnd atom, other than InternAtom and its replies
+1540:000:<:00fa: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x129("XdndAware") type=0x4("ATOM") data=0x5("BITMAP");
+1545:000:>:00fd: Event PropertyNotify(28) window=0x00400002 atom=0x129("XdndAware") time=0x8a677948 state=NewValue(0x00)
+1740:000:<:0152: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400011 property=0x129("XdndAware") type=0x4("ATOM") data=0x5("BITMAP");
+1745:000:>:0154: Event PropertyNotify(28) window=0x00400011 atom=0x129("XdndAware") time=0x8a677ef8 state=NewValue(0x00)
+1773:000:<:015f: 16: Request(22): SetSelectionOwner owner=0x00400010 selection=0xe6("XdndSelection") time=0x8a677efa
+1774:000:<:0160:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+1776:000:<:0161: 36: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x126("XdndActionList") type=0x4("ATOM") data=0x123("XdndActionCopy"),0x127("XdndActionMove"),0x125("XdndActionLink");
+1782:000:>:0166: Event PropertyNotify(28) window=0x00400002 atom=0x126("XdndActionList") time=0x8a677efa state=NewValue(0x00)
+1942:000:<:01c3: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+1944:000:<:01c4: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+1946:000:<:01c5: 48: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x132("XdndTypeList") type=0x4("ATOM") data=0x11c("UTF8_STRING"),0x1f("STRING"),0x118("TEXT"),0x17c("text/plain"),0x172("chromium/x-renderer-taint"),0x198("chromium/x-drag-id");
+1948:000:>:01c6: Event PropertyNotify(28) window=0x00400002 atom=0x132("XdndTypeList") time=0x8a677efe state=NewValue(0x00)
+2005:000:<:01e3: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2007:000:<:01e4: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2009:000:<:01e5:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2056:000:<:01fa: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2058:000:<:01fb: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2060:000:<:01fc:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2107:000:<:0211: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2109:000:<:0212: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2111:000:<:0213:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2158:000:<:0228: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2160:000:<:0229: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2162:000:<:022a:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2209:000:<:023f: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2211:000:<:0240: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2213:000:<:0241:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2260:000:<:0256: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2262:000:<:0257: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2264:000:<:0258:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2311:000:<:026d: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2313:000:<:026e: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2315:000:<:026f:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2358:000:<:0284: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2360:000:<:0285: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2362:000:<:0286:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2417:000:<:02a6: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2419:000:<:02a7: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2421:000:<:02a8:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2424:000:<:02a9: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2426:000:<:02aa: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2428:000:<:02ab:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2471:000:<:02c0: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2473:000:<:02c1: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2475:000:<:02c2:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2517:000:<:02d7: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2519:000:<:02d8: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2521:000:<:02d9:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2526:000:<:02dc:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2549:000:<:02e9: 12: Request(19): DeleteProperty window=0x00400002 property=0x126("XdndActionList")
+2550:000:<:02ea: 12: Request(19): DeleteProperty window=0x00400002 property=0x12a("XdndDirectSave0")
+2556:000:<:02f0:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2557:000:>:02f0: Event PropertyNotify(28) window=0x00400002 atom=0x126("XdndActionList") time=0x8a678390 state=Deleted(0x01)
+2578:000:>:02f4: Event PropertyNotify(28) window=0x00400011 atom=0x129("XdndAware") time=0x8a678394 state=Deleted(0x01)
+2666:000:<:031b: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x0040002f property=0x129("XdndAware") type=0x4("ATOM") data=0x5("BITMAP");
+2671:000:>:031d: Event PropertyNotify(28) window=0x0040002f atom=0x129("XdndAware") time=0x8a67885f state=NewValue(0x00)
+2700:000:<:0328: 16: Request(22): SetSelectionOwner owner=0x0040002e selection=0xe6("XdndSelection") time=0x8a678860
+2701:000:<:0329:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2703:000:<:032a: 36: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x126("XdndActionList") type=0x4("ATOM") data=0x123("XdndActionCopy"),0x127("XdndActionMove"),0x125("XdndActionLink");
+2709:000:>:032f: Event PropertyNotify(28) window=0x00400002 atom=0x126("XdndActionList") time=0x8a678861 state=NewValue(0x00)
+2764:000:<:034c: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2769:000:<:034d: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2774:000:<:034e: 48: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x132("XdndTypeList") type=0x4("ATOM") data=0x11c("UTF8_STRING"),0x1f("STRING"),0x118("TEXT"),0x17c("text/plain"),0x172("chromium/x-renderer-taint"),0x198("chromium/x-drag-id");
+2776:000:>:034f: Event PropertyNotify(28) window=0x00400002 atom=0x132("XdndTypeList") time=0x8a678864 state=NewValue(0x00)
+2833:000:<:036c: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2835:000:<:036d: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2837:000:<:036e:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2884:000:<:0383: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2886:000:<:0384: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2888:000:<:0385:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2935:000:<:039a: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2937:000:<:039b: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2939:000:<:039c:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+2988:000:<:03b1: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2990:000:<:03b2: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+2992:000:<:03b3:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3039:000:<:03c8: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3041:000:<:03c9: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3043:000:<:03ca:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3090:000:<:03df: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3092:000:<:03e0: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3094:000:<:03e1:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3139:000:<:03f6: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3141:000:<:03f7: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3143:000:<:03f8:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3186:000:<:040d: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3188:000:<:040e: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3190:000:<:040f:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3237:000:<:0426: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3239:000:<:0427: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3241:000:<:0428:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3244:000:<:0429: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3246:000:<:042a: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3248:000:<:042b:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3291:000:<:0440: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3293:000:<:0441: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3295:000:<:0442:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3338:000:<:0457: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3340:000:<:0458: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3342:000:<:0459:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3387:000:<:0470: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3389:000:<:0471: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3391:000:<:0472:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3394:000:<:0473:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3412:000:<:0480: 12: Request(19): DeleteProperty window=0x00400002 property=0x126("XdndActionList")
+3413:000:<:0481: 12: Request(19): DeleteProperty window=0x00400002 property=0x12a("XdndDirectSave0")
+3419:000:<:0487:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3420:000:>:0487: Event PropertyNotify(28) window=0x00400002 atom=0x126("XdndActionList") time=0x8a678d33 state=Deleted(0x01)
+3449:000:>:048d: Event PropertyNotify(28) window=0x0040002f atom=0x129("XdndAware") time=0x8a678d34 state=Deleted(0x01)
+3526:000:<:04ad: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x0040003f property=0x129("XdndAware") type=0x4("ATOM") data=0x5("BITMAP");
+3531:000:>:04af: Event PropertyNotify(28) window=0x0040003f atom=0x129("XdndAware") time=0x8a679201 state=NewValue(0x00)
+3560:000:<:04ba: 16: Request(22): SetSelectionOwner owner=0x0040003e selection=0xe6("XdndSelection") time=0x8a679202
+3561:000:<:04bb:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3563:000:<:04bc: 36: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x126("XdndActionList") type=0x4("ATOM") data=0x123("XdndActionCopy"),0x127("XdndActionMove"),0x125("XdndActionLink");
+3569:000:>:04c1: Event PropertyNotify(28) window=0x00400002 atom=0x126("XdndActionList") time=0x8a679203 state=NewValue(0x00)
+3624:000:<:04de: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3627:000:<:04df: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3633:000:<:04e0: 48: Request(18): ChangeProperty mode=Replace(0x00) window=0x00400002 property=0x132("XdndTypeList") type=0x4("ATOM") data=0x11c("UTF8_STRING"),0x1f("STRING"),0x118("TEXT"),0x17c("text/plain"),0x172("chromium/x-renderer-taint"),0x198("chromium/x-drag-id");
+3637:000:>:04e2: Event PropertyNotify(28) window=0x00400002 atom=0x132("XdndTypeList") time=0x8a679205 state=NewValue(0x00)
+3695:000:<:04fe: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3697:000:<:04ff: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3699:000:<:0500:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3746:000:<:0515: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3748:000:<:0516: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3750:000:<:0517:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3797:000:<:052c: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3799:000:<:052d: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3801:000:<:052e:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3848:000:<:0543: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3850:000:<:0544: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3852:000:<:0545:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3901:000:<:055a: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3903:000:<:055b: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3905:000:<:055c:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3952:000:<:0571: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3954:000:<:0572: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+3956:000:<:0573:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+3999:000:<:0588: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4001:000:<:0589: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4003:000:<:058a:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4046:000:<:059f: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4048:000:<:05a0: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4050:000:<:05a1:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4095:000:<:05b8: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4097:000:<:05b9: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4099:000:<:05ba:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4102:000:<:05bb: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4104:000:<:05bc: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4106:000:<:05bd:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4149:000:<:05d2: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4151:000:<:05d3: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4153:000:<:05d4:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4196:000:<:05e9: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x130("XdndProxy") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4198:000:<:05ea: 24: Request(20): GetProperty delete=false(0x00) window=0x00400002 property=0x129("XdndAware") type=any(0x0) long-offset=0x00000000 long-length=0x00000001
+4200:000:<:05eb:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4246:000:<:0602:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4264:000:<:060f: 12: Request(19): DeleteProperty window=0x00400002 property=0x126("XdndActionList")
+4265:000:<:0610: 12: Request(19): DeleteProperty window=0x00400002 property=0x12a("XdndDirectSave0")
+4271:000:<:0616:  8: Request(23): GetSelectionOwner atom=0xe6("XdndSelection")
+4272:000:>:0616: Event PropertyNotify(28) window=0x00400002 atom=0x126("XdndActionList") time=0x8a679540 state=Deleted(0x01)
+4301:000:>:061c: Event PropertyNotify(28) window=0x0040003f atom=0x129("XdndAware") time=0x8a679541 state=Deleted(0x01)
+## lines naming an Xdnd atom: 269: atom interning, properties (XdndAware, XdndActionList, XdndTypeList, XdndProxy), the XdndSelection take; no ClientMessage among them (no SendEvent of an Xdnd message: the three below are UnmapNotify)
+## SendEvent requests
+000:<:02ee: 44: Request(25): SendEvent propagate=false(0x00) destination=0x000001ff event-mask=SubstructureNotify,SubstructureRedirect UnmapNotify(18) event=0x000001ff window=0x00400011 from-configure=false(0x00)
+000:<:0485: 44: Request(25): SendEvent propagate=false(0x00) destination=0x000001ff event-mask=SubstructureNotify,SubstructureRedirect UnmapNotify(18) event=0x000001ff window=0x0040002f from-configure=false(0x00)
+000:<:0614: 44: Request(25): SendEvent propagate=false(0x00) destination=0x000001ff event-mask=SubstructureNotify,SubstructureRedirect UnmapNotify(18) event=0x000001ff window=0x0040003f from-configure=false(0x00)
+## total trace lines: 4418

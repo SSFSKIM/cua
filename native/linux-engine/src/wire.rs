@@ -61,10 +61,21 @@ impl Response {
         self
     }
 
-    /// One line, no trailing newline.
+    /// One line, no trailing newline ([`jsonl`]).
     pub fn to_line(&self) -> String {
-        serde_json::to_string(self).expect("a response always serializes")
+        jsonl(self)
     }
+}
+
+/// One JSONL line of `value`, no trailing newline, as every line the engine writes is (its answers on stdout, its
+/// `--stats` lines on stderr): JSON with U+2028 and U+2029 written as the escapes `\u2028` and `\u2029`, the same JSON
+/// value. Node 24+'s `readline` ends a line at either character, so a reader built on it would cut a raw one's message
+/// in two (#572, #565, ruling 1192). Both can occur only inside a JSON string, where the escape is the same text.
+pub fn jsonl(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value)
+        .expect("a line always serializes")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
 }
 
 /// What one stdin line means.
@@ -359,6 +370,24 @@ pub fn not_available(command: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// #572 (ruling 1192): a line holding U+2028 or U+2029 in a string writes each as its escape, so it is one line to
+    /// a reader that splits at them, and reads back as the same value: an answer, and a `--stats` line's value.
+    #[test]
+    fn every_jsonl_line_escapes_ls_and_ps_and_reads_back_the_same_value() {
+        let name = format!("a{}b{}c", '\u{2028}', '\u{2029}');
+        let answer = Response::success(json!(1), json!({ "name": name }));
+        let stats = json!({ "stats": { "id": 1, "window": { "title": name } } });
+        for (line, value) in [
+            (answer.to_line(), serde_json::to_value(&answer).unwrap()),
+            (jsonl(&stats), stats.clone()),
+        ] {
+            assert!(!line.contains('\u{2028}') && !line.contains('\u{2029}'), "{line:?}");
+            assert!(line.contains("a\\u2028b\\u2029c"), "{line:?}");
+            assert!(!line.contains('\n'), "{line:?}");
+            assert_eq!(serde_json::from_str::<Value>(&line).unwrap(), value);
+        }
+    }
 
     #[test]
     fn response_keys_are_in_the_vendor_order() {

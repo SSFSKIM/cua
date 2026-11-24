@@ -174,6 +174,29 @@ test('Korean counts only on its layout after the target is refocused: a selectio
     JSON.stringify(raw.result.rows[0]));
 });
 
+// Off a hosted runner nothing is selected, so a source that reads otherwise during the refocus is the owner's switch:
+// NO VERDICT ownerInput. A refocus whose activation failed is not: it stays a generic invalid row.
+test('off a hosted runner: a source switched during the Korean refocus is NO VERDICT ownerInput; a failed refocus activation stays invalid', async () => {
+  const plan = {...planOf('korean', {scene: 'textedit'}), unicode: {fields: ['textedit'], conditions: ['korean']}};
+  const owner = {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', ...KOREAN, perContext: false};
+  const run = ({readAfterRefocus = KOREAN, refocusFails = false}) => {
+    let reads = 0;
+    return runWith({plan, cellName: 'korean', ops: {matrix: (base, a) => {
+      if (a[0] === 'source' && a[1] === 'state') return {...base(a), answer: owner};
+      if (a[0] === 'source' && a[1] === 'current') { reads += 1; return {...base(a), answer: reads === 1 ? KOREAN : readAfterRefocus}; }
+      // Only the refocus fails: the activation away from textedit once its source was read.
+      if (refocusFails && reads > 0 && a[0] === 'step' && a[1] === 'activate' && a[2] !== 'textedit') { const out = base(a); return {...out, answer: {...out.answer, ok: false, reason: 'did not come to the front'}}; }
+      return base(a);
+    }}});
+  };
+  const switched = await run({readAfterRefocus: LATIN});
+  assert.ok(switched.result.rows.length > 0 && switched.result.rows.every(r => sampleCause(r).category === 'ownerInput'), JSON.stringify(switched.result.rows[0]));
+  assert.match(switched.result.rows[0].ownerInput, /ruling 1188.*; the row needs the input source com\.apple\.inputmethod\.Korean\.2SetKorean, and the source read com\.apple\.keylayout\.ABC in textedit after its refocus$/);
+  assert.deepEqual(sources(switched.steps).filter(s => !['current', 'state'].includes(s)), [], 'nothing selected');
+  const failed = await run({refocusFails: true});
+  assert.ok(failed.result.rows.length > 0 && failed.result.rows.every(r => !r.ownerInput && /^textedit could not be refocused after the Korean source was selected/.test(r.invalid)), JSON.stringify(failed.result.rows[0]));
+});
+
 test('the per-context condition reads the driven scene\'s source again for a while after bringing it back, since the switch follows the activation', async () => {
   const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['perContext']}};
   // Chrome's context reads Latin on the first reading after it comes back, Korean on the second.
@@ -404,7 +427,7 @@ test('off a hosted runner the owner\'s values are read again at each field: a ch
   const late = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops: inside});
   const latin = late.result.rows.filter(r => r.condition === 'latin');
   assert.ok(latin.length > 0 && latin.every(r => sampleCause(r).category === 'ownerInput'), JSON.stringify(latin[0]));
-  assert.match(latin[0].ownerInput, /ruling 1188.*; the row needs the input source com\.apple\.keylayout\.ABC, and the Latin source did not hold with textedit in front$/);
+  assert.match(latin[0].ownerInput, /ruling 1188.*; the row needs the input source com\.apple\.keylayout\.ABC, and the source read com\.apple\.inputmethod\.Korean\.2SetKorean with textedit in front$/);
 });
 
 // Ruling 1189: a source the runner's setup could not enable is never selected; every row selecting it is NO VERDICT

@@ -1,0 +1,24 @@
+development run, not a release gate (task 160, the linux-engine 0.4.5 candidate of publish=false run 45321559071 (task 132's script): chrome t147-left, e045, alternating, load 2)
+[1123/202916.491460:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/203048.574844:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/203221.610476:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/203354.855157:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/203526.733008:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/203659.500870:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/203830.979618:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/204002.379847:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/204135.190878:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+[1123/204307.365791:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/204438.209657:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+[1123/204610.579520:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)

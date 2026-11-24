@@ -11,7 +11,7 @@ import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {TEXT_FIELDS} from '../../scripts/native-matrix/plan.mjs';
 import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS,
-  SAVE_PANEL_CONTROLS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell,
+  SAVE_PANEL_CONTROLS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, savePanelStructure, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell,
   KEYSTROKE_GATE_CLOSED, keystrokeGate} from '../../scripts/native-matrix/probe-plan.mjs';
 import {rowIndexOfName, valueOfIndex, indexOfId} from '../../scripts/native-matrix/matrix-text.mjs';
 import {advanceNumbering, NOTE, render} from '../../src/services/engine/render.mjs';
@@ -208,9 +208,9 @@ const runDestination = async (app, code) => {
 };
 // The success exit as every other (C-6): ready, the initial location, the Go To dialog's close record (nothing to close)
 // and the last observation, the Save sheet's own with the dialog gone.
-const assertReady = value => {
+const assertReady = (value, goToField = {focusVia: 'focus', prefilled: {present: false, length: 0}}) => {
   const {lastObservation, ...rest} = value ?? {};
-  assert.deepEqual(rest, {ready: true, initialWhere: 'Documents', goTo: {closed: true, sheetUp: true, escapes: 0, closeClicked: false}});
+  assert.deepEqual(rest, {ready: true, initialWhere: 'Documents', goTo: {closed: true, sheetUp: true, escapes: 0, closeClicked: false}, goToField});
   assert.ok(lastObservation.count > 0 && lastObservation.lines.some(l => l.id === 'saveAsNameTextField'), JSON.stringify(lastObservation));
   assert.ok(!lastObservation.lines.some(l => /go-to-field|PathTextField/.test(`${l.id} ${l.head}`)), 'the dialog gone');
 };
@@ -328,8 +328,8 @@ test('a keystroke probe\'s gate, as KeystrokeProbe.swift answers it: at its firs
 // observation's root is the sheet itself; with the Go To dialog up the observation shows the dialog alone (GoToWindow,
 // its PathTextField focused), the Save sheet absent from it. `closes`: whether Escape closes the dialog; `closeButton`:
 // whether a click on its CloseButton does. Escape with no dialog up cancels the Save sheet.
-const realSavePanel = ({closes = true, navigates = true, closeButton = true} = {}) => {
-  const state = {dialog: false, sheet: true, name: 'Untitled', path: '', location: 'Documents', keys: [], typed: [], clicks: [], saved: false};
+const realSavePanel = ({closes = true, navigates = true, closeButton = true, remembered = null, menu = false, replaces = true} = {}) => {
+  const state = {dialog: false, sheet: true, name: 'Untitled', path: '', location: 'Documents', keys: [], typed: [], clicks: [], saved: false, selected: false};
   const nodes = () => (state.dialog ? [
     axNode('g', 0, 'AXSheet', {roleDescription: 'sheet', identifier: 'GoToWindow', description: 'Go to Folder'}),
     axNode('gt', 1, 'AXStaticText', {roleDescription: 'text', value: 'Go to Folder'}),
@@ -342,16 +342,23 @@ const realSavePanel = ({closes = true, navigates = true, closeButton = true} = {
     axNode('cancel', 1, 'AXButton', {roleDescription: 'button', title: 'Cancel', identifier: 'CancelButton'}),
     axNode('save', 1, 'AXButton', {roleDescription: 'button', title: 'Save', identifier: 'OKButton'}),
   ]);
-  const observe = () => { const s = axSkyshot(nodes(), {focused: state.dialog ? 'gf' : 'n'}); return render(s, advanceNumbering(null, s)); };
+  // C-7's observation also carried TextEdit's menu bar, a root of its own beside the dialog.
+  const menuBar = menu ? [axNode('mb', 0, 'AXMenuBar', {roleDescription: 'menu bar'}),
+    ...['TextEdit', 'File', 'Edit', 'Format', 'View', 'Window', 'Help'].map((title, i) => axNode(`mi${i}`, 1, 'AXMenuBarItem', {roleDescription: 'menu bar item', title}))] : [];
+  const observe = () => {
+    const s = axSkyshot(nodes(), {focused: state.dialog ? 'gf' : 'n', menuBar, ...(state.dialog && state.selected && state.path ? {selectedText: state.path} : {})});
+    return render(s, advanceNumbering(null, s));
+  };
   const app = {
     getAXState: async () => observe(),
     pressKey: async key => {
       state.keys.push(key);
-      if (key === 'super+shift+g') state.dialog = true;
+      if (key === 'super+shift+g') { state.dialog = true; if (remembered) { state.path = remembered; state.selected = true; } }
       else if (key === 'Escape') { if (state.dialog) { if (closes) state.dialog = false; } else state.sheet = false; }
       else if (key === 'Return') { if (state.dialog) { if (navigates) state.location = basename(state.path); state.dialog = false; } else state.saved = true; }
     },
-    typeText: async text => { state.typed.push(text); if (state.dialog) state.path = text; else state.name = text; },
+    // Typing replaces a selection, as a text field does (`replaces` false: appended after it, which must fail closed).
+    typeText: async text => { state.typed.push(text); if (state.dialog) { state.path = state.selected && !replaces ? state.path + text : text; state.selected = false; } else state.name = text; },
     click: async index => { state.clicks.push(index); if (state.dialog && closeButton && index === controlIndexOf(observe(), {id: 'CloseButton', role: 'button'})) state.dialog = false; },
   };
   return {state, app, observe};
@@ -365,6 +372,58 @@ test('#212\'s destination on the Save sheet as C-5 saw it: the Go To dialog show
   assertReady(result?.value);
   assert.deepEqual(state.keys, ['super+shift+g', 'Return'], 'the one Return, into the Go To field');
   assert.deepEqual([state.location, state.saved, state.name, state.typed], [basename(made), false, 'Untitled', [made]]);
+});
+
+// C-7 (ruling 1226): cua's row failed "field not focused within 3 s". The vendor's lane, run first, typed its folder into
+// Go To, which macOS remembers: cua's dialog opened with that path in the field, selected, and the trailer showed the
+// selection in place of the focused element, so no line read focused. Under a selection the field counts as focused
+// only when the Go To dialog is a root of the observation, its path field its only text field; typing then replaces
+// the selection, and the exact-path check before the Return is unchanged. Whether it opened pre-filled is recorded by
+// its length alone, never its text.
+const C7_REMEMBERED = '/private/var/folders/zz/T/cua-212-save-vendor';
+test('#212\'s Go To field under the selection of a remembered path (C-7) reads focused through the selection, and the destination reaches ready', async () => {
+  const {state, app, observe} = realSavePanel({remembered: C7_REMEMBERED, menu: true});
+  state.dialog = true; state.path = C7_REMEMBERED; state.selected = true;
+  const ax = observe();
+  // C-7's cua observation: GoToWindow, CloseButton, PathTextField and the menu bar, the trailer a selection, no line focused.
+  const structure = savePanelStructure(ax);
+  assert.equal(structure.trailer, 'selectedText');
+  // (C-7 kept the structure, not the text: the dialog's root and its path field by their IDs, the CloseButton beside it.)
+  assert.deepEqual(structure.lines.filter(l => l.id).map(l => [l.id, l.head, l.parent]), [['GoToWindow', 'sheet', null], ['PathTextField', 'text field', 0]]);
+  assert.ok(structure.lines.some(l => l.parent === 0 && /CloseButton/.test(`${l.id} ${l.head}`)));
+  assert.ok(structure.lines.some(l => l.head === 'menu bar' && l.parent === null) && !structure.lines.some(l => l.focused));
+  const reading = savePanelReading(ax, C5_CONTROLS);
+  assert.deepEqual([reading.fieldFocused, reading.focusVia], [true, 'selection']);
+  state.dialog = false; state.selected = false; state.path = '';
+  const {result, made} = await runDestination(app, saveSheetDestinationCell(C5_CONTROLS));
+  assertReady(result?.value, {focusVia: 'selection', prefilled: {present: true, length: C7_REMEMBERED.length}});
+  assert.ok(!JSON.stringify(result.value).includes(C7_REMEMBERED), 'the remembered path never leaves the cell');
+  assert.deepEqual([state.keys, state.typed, state.location, state.saved], [['super+shift+g', 'Return'], [made], basename(made), false]);
+  // Typing that does not replace the selection leaves the field holding more than the path: no Return, as before.
+  const appended = realSavePanel({remembered: C7_REMEMBERED, replaces: false});
+  const kept = await runDestination(appended.app, saveSheetDestinationCell(C5_CONTROLS));
+  assert.equal(kept.result.value.reason, 'the path was not in the Go To dialog\'s focused field alone');
+  assert.ok(!appended.state.keys.includes('Return'));
+});
+
+test('#212\'s Go To field under a selection is not focused unless the dialog is a root and the path field its only text field', () => {
+  const {state, observe} = realSavePanel();
+  // The Save sheet itself (another root) with a selection: its name field is never read as the Go To field.
+  state.dialog = false;
+  const sheetAx = observe().replace(/\n\nThe focused UI element is [\s\S]*$/, '\n\nSelected text: ```\nUntitled\n```\n');
+  assert.deepEqual([savePanelReading(sheetAx, C5_CONTROLS).fieldFocused, savePanelReading(sheetAx, C5_CONTROLS).focusVia], [false, null]);
+  // The Go To dialog inside the save panel (not a root): a selection says nothing of its field's focus.
+  const nested = savePanelDouble();
+  nested.state.dialog = true; nested.state.focus = 'name';
+  const nestedAx = nested.observe().replace(/\n\nThe focused UI element is [\s\S]*$/, '\n\nSelected text: ```\nx\n```\n');
+  const inside = savePanelReading(nestedAx, CONTROLS);
+  assert.ok(inside.field !== null, 'the field identified');
+  assert.deepEqual([inside.fieldFocused, inside.focusVia], [false, null]);
+  // The dialog a root but holding a second text field: which one the selection is in is unknown.
+  const two = realSavePanel({remembered: C7_REMEMBERED});
+  two.state.dialog = true; two.state.path = C7_REMEMBERED; two.state.selected = true;
+  const twoAx = two.observe().replace(/(\n\t+\d+ text field[^\n]*ID: PathTextField[^\n]*)/, '$1\n\t99 text field Other');
+  assert.deepEqual([savePanelReading(twoAx, C5_CONTROLS).fieldFocused, savePanelReading(twoAx, C5_CONTROLS).focusVia], [false, null]);
 });
 
 // Ruling 1219 (s1) and ruling 1220's first condition: every exit after super+shift+g closes the Go To dialog inside the

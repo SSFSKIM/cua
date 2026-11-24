@@ -581,8 +581,8 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   // What the destination cell kept, on every exit (C-6): whether the Go To dialog closed in the cell (ruling 1219, s1),
   // the panel's structure on the observation it was judged on, which part of the Go To reading failed, a throw, and the
   // observation-only form's two structures.
-  const {observed, goTo, threw, identification, lastObservation} = destination?.value ?? {};
-  const kept = Object.fromEntries(Object.entries({observed, goTo, threw, identification, lastObservation}).filter(([, v]) => v !== undefined && v !== null));
+  const {observed, goTo, goToField, threw, identification, lastObservation} = destination?.value ?? {};
+  const kept = Object.fromEntries(Object.entries({observed, goTo, goToField, threw, identification, lastObservation}).filter(([, v]) => v !== undefined && v !== null));
   // From here every exit cancels the sheet and reads the unsaved proof before its row is recorded (C-6), so a row that
   // never reached the act's check still says what the run's folder held and whether anything was saved. A save found so
   // (a file at the cancel, a document on disk) is the harness's, surfaced loudly: a FAIL naming it, the exit's own

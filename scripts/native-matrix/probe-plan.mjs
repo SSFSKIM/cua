@@ -15,7 +15,7 @@ import {cell} from '../native-baseline/cells.mjs';
 import {FINDER_TYPING_NAME} from '../repl-parity/scenes-mac.mjs';
 import {INTERVENTION_DEBOUNCE_MS} from './live-device.mjs';
 import {prelude} from './matrix-cells.mjs';
-import {elementLines, focusedIndexOf, lineOfIndex, parentIndexOf, sha256Hex, valueOfIndex} from './matrix-text.mjs';
+import {elementLines, focusedIndexOf, lineOfIndex, parentIndexOf, selectedTextOf, sha256Hex, valueOfIndex} from './matrix-text.mjs';
 import {FOCUS_REASONS, PANEL_UP, TEXT_FIELDS, TYPED} from './plan.mjs';
 
 const j = JSON.stringify;
@@ -353,8 +353,11 @@ export function headOf(content) {
 }
 // The save panel as the destination cell reads it (`controls`, SAVE_PANEL_CONTROLS' shape): the panel; the Go To dialog
 // inside it and the path field inside that, whether the field is the focused element and its value; the location
-// pop-up inside the panel and outside the dialog, and the folder it names (its value, else its bare title). ->
-// {panel, goTo, field, fieldFocused, fieldValue, location, locationName}.
+// pop-up inside the panel and outside the dialog, and the folder it names (its value, else its bare title).
+// The field is focused when the trailer names it (`focusVia` 'focus'), or (C-7, ruling 1226) when the trailer shows a
+// selection in its place and nothing else can hold it: the Go To dialog a root of the observation and the path field
+// its only text field (`focusVia` 'selection'; macOS reopens Go To with its last path selected, and typing replaces it).
+// -> {panel, goTo, field, fieldFocused, focusVia, fieldValue, location, locationName}.
 export function savePanelReading(ax, controls) {
   const panel = controlIndexOf(ax, controls.panel);
   // The Go To dialog inside the panel, or where Accessibility shows it apart (TextEdit's, C-5: the observation then the
@@ -364,7 +367,11 @@ export function savePanelReading(ax, controls) {
   const location = [controlIndexOf(ax, controls.location)].find(at => isInside(ax, at, panel) && !isInside(ax, at, goTo)) ?? null;
   const clean = text => (text === null || text === undefined ? null : String(text).replace(/\*\*/g, ''));
   const named = location === null ? null : clean(valueOfIndex(ax, location)) ?? (headOf(lineOfIndex(ax, location)).slice(controls.location.role.length).trim() || null);
-  return {panel, goTo, field, fieldFocused: field !== null && focusedIndexOf(ax) === field, fieldValue: field === null ? null : clean(valueOfIndex(ax, field)),
+  const role = controls.goToField.role;
+  const fields = goTo === null ? [] : elementLines(ax).filter(l => (l.content === role || l.content.startsWith(`${role} `)) && isInside(ax, l.index, goTo));
+  const onlyField = goTo !== null && parentIndexOf(ax, goTo) === null && fields.length === 1 && fields[0].index === field;
+  const focusVia = field === null ? null : focusedIndexOf(ax) === field ? 'focus' : onlyField && selectedTextOf(ax) !== null ? 'selection' : null;
+  return {panel, goTo, field, fieldFocused: focusVia !== null, focusVia, fieldValue: field === null ? null : clean(valueOfIndex(ax, field)),
     location, locationName: named};
 }
 // The panel's structure for a pilot's reading of SAVE_PANEL_CONTROLS: the trailer's kind and, for at most 80 element
@@ -393,8 +400,11 @@ export function savePanelStructure(ax) {
 // `threw` the throw. The panel's location before the Go To (`initialWhere`) is kept: where the document would have been
 // saved (ruling 1220). Every exit, the ready one and those before super+shift+g included, carries `goTo` and the panel's
 // structure on the observation it was judged on (`lastObservation`, savePanelStructure); a dialog or field not identified
-// says which (`identification`: goTo not found, field not found, or field not focused within 3 s).
-// -> {ready, initialWhere, goTo, lastObservation} or {ready: false, reason, goTo, lastObservation, identification?, observed?, threw?}.
+// says which (`identification`: goTo not found, field not found, or field not focused within 3 s). Once the field is read
+// focused, every exit says how (`goToField.focusVia`: 'focus', or 'selection' under a remembered path, C-7) and whether
+// it opened pre-filled (`goToField.prefilled`: {present, length}, its value's length, else its selection's; never text).
+// -> {ready, initialWhere, goTo, goToField, lastObservation} or {ready: false, reason, goTo, lastObservation, goToField?,
+// identification?, observed?, threw?}.
 export const saveSheetDestinationCell = (controls = SAVE_PANEL_CONTROLS) => cell(`${prelude('textedit')}
 // cua-matrix-cell: savesheet.destination
 ${saveSheet}
@@ -425,7 +435,8 @@ const __out = async result => {
 };
 // Every exit, the ready one included, ends through __out with the observation it was judged on (C-6: a failed
 // identification kept nothing to say which control did not match), taken before the dialog is closed.
-const __exit = result => __out({...result, lastObservation: savePanelStructure(ax)});
+let __goToField = null;
+const __exit = result => __out({...result, ...(__goToField ? {goToField: __goToField} : {}), lastObservation: savePanelStructure(ax)});
 // Everything after super+shift+g ends there, a throw included (fix wave I4: typeText answering typeUnconfirmed, a key or
 // an observation throwing), the throw said on the result.
 const __afterGoTo = async steps => {
@@ -455,6 +466,8 @@ return __afterGoTo(async () => {
     const identification = __r.goTo === null ? "goTo not found" : __r.field === null ? "field not found" : "field not focused within 3 s";
     return {ready: false, reason: "the Go To dialog and its focused path field were not identified (" + identification + ")", identification};
   }
+  const __prefill = [...(__r.fieldValue ?? selectedTextOf(ax) ?? "")].length;
+  __goToField = {focusVia: __r.focusVia, prefilled: {present: __prefill > 0, length: __prefill}};
   await __app.typeText(__dir);
   ax = await observe(); __r = savePanelReading(ax, __controls);
   if (!__r.fieldFocused || __r.fieldValue !== __dir || (__saveSheet(ax) && __named(ax) !== __name)) return {ready: false, reason: "the path was not in the Go To dialog's focused field alone"};

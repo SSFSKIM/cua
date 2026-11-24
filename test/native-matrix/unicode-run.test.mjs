@@ -107,6 +107,7 @@ test('a composition the user window did not show, or a per-context context that 
   assert.ok(perContext.length > 0);
   for (const r of perContext) {
     assert.match(r.venueInput, /^the per-context preference read on, but the driven scene's context did not read Korean after its reactivation \(the source read com\.apple\.keylayout\.ABC/);
+    assert.match(r.venueInput, /\(#577: the scene apps launch before the per-context preference is written\)$/, 'its ticket cited');
     assert.equal(r.invalid, r.venueInput);
     assert.equal(sampleCause(r).category, 'venue');
   }

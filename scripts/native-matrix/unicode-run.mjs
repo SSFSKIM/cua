@@ -301,7 +301,7 @@ async function perContextRows(ctx, field, rows) {
   // not hold is the venue's, never a sample against an engine (NO VERDICT `venue`). A scene that did not come back to the
   // front read nothing: invalid.
   const marks = back?.ok === true
-    ? venueInputMarks(`the per-context preference read on, but the driven scene's context did not read Korean after its reactivation (${readBack}, ${reads} reads): the condition did not hold on this venue`)
+    ? venueInputMarks(`the per-context preference read on, but the driven scene's context did not read Korean after its reactivation (${readBack}, ${reads} reads): the condition did not hold on this venue (#577: the scene apps launch before the per-context preference is written)`)
     : {ok: false, invalid: 'the driven scene was not brought back to the front to read its context: the condition is not shown to have held'};
   if (!held) for (const row of done) if (!row.invalid) Object.assign(row, marks);
 }

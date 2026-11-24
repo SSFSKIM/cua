@@ -79,6 +79,8 @@ test('the Open panel opened over the alerts is moved into the strip by the devic
     for (const a of dev.placed) assert.deepEqual([flag(a, 'scene'), flag(a, 'window'), flag(a, 'frame')], ['openPanel', '994', '22,80,800,448']);
     assert.equal(result.meta.placement.panel.length, openings);
     for (const p of result.meta.placement.panel) assert.deepEqual([p.target, p.number, p.from, p.readBack, p.moved, p.inStrip], ['openPanel', 994, CENTRED, STRIP, true, true]);
+    // Ruling 1199: the 880-wide panel was resized as well as moved, and its record says so.
+    for (const p of result.meta.placement.panel) assert.deepEqual(p.resized, {from: CENTRED, to: STRIP});
     // Its cells ran, none refused by the guard, none NO VERDICT venue.
     for (const row of panelRows(result)) assert.deepEqual([row.alertGuard, row.venueInput], [undefined, undefined], `${engine} ${row.id}`);
     assert.ok(sent(calls, HARNESS_CANCEL) === false, 'Escape closed every opening: no harness Cancel click');

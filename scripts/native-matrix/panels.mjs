@@ -8,8 +8,9 @@
 // TextEdit's pid) or as the panel service's own, is moved into the strip left of the alerts (stripCause) by the
 // harness's device side (./matrix-device.mjs place, ./panel-ax.swift: AXSize then AXPosition, never the engine under
 // test), to the venue's panel frame, and read back from the window list. A panel already in the strip is not moved.
-// Each opening is kept in meta.placement.panel ({beforeRow, target, number, from, to?, readBack?, matched?, ax?, moved,
-// inStrip, reason?}, or {beforeRow, target, unread | found: false}); a read-back that misses the strip makes the case
+// Each opening is kept in meta.placement.panel ({beforeRow, target, number, from, to?, resized?: {from, to} (ruling 1199:
+// the frame asked is another size, so the panel was resized as well as moved), readBack?, matched?, ax?, moved, inStrip,
+// reason?}, or {beforeRow, target, unread | found: false}); a read-back that misses the strip makes the case
 // on that opening NO VERDICT `venue`, naming where it stood. Off a hosted runner nothing is moved: the device refuses it.
 //
 // The close (ruling 1195), one rule on both lanes: Escape under the key guard; when that did not close it, its Cancel
@@ -108,7 +109,9 @@ async function placePanel(ctx, target, known) {
       let answer;
       try { answer = device(ctx, ['place', '--scene', target, '--window', String(w.number), '--frame', frameArg(to)]); } catch (error) { answer = {error: String(error.message).slice(0, 200)}; }
       if (isRect(answer?.readBack)) at = answer.readBack;
-      Object.assign(entry, {to, readBack: answer?.readBack ?? null, matched: answer?.matched === true, ...(answer?.ax ? {ax: answer.ax} : {}), ...(Number.isSafeInteger(answer?.pid) ? {pid: answer.pid} : {}),
+      // Ruling 1199: a move that also asks another size (the system's 880-wide panel never fits the strip) says so.
+      const resized = to.width !== w.bounds.width || to.height !== w.bounds.height ? {resized: {from: w.bounds, to}} : {};
+      Object.assign(entry, {to, ...resized, readBack: answer?.readBack ?? null, matched: answer?.matched === true, ...(answer?.ax ? {ax: answer.ax} : {}), ...(Number.isSafeInteger(answer?.pid) ? {pid: answer.pid} : {}),
         ...(answer?.refused ? {reason: `the move was refused: ${answer.refused}`} : answer?.error ? {reason: `the move failed: ${answer.error}`} : {})});
     }
     const missed = stripCause(at, alerts);

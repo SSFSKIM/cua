@@ -2183,6 +2183,13 @@ never the engine under test. Each opening is in `meta.placement.panel` with its 
 read-back and whether it stands in the strip. A read-back outside the strip makes that opening's case NO VERDICT
 `venue`. Off a hosted runner the helper refuses before any Accessibility call.
 
+**Resized, not only moved (ruling 1199).** The system's 880-wide panel never fits the 822-point strip, so the move
+also changes its size, to the venue's panel frame (80,80 720x440). Ruling 1199 accepts that, on hosted runners only. An
+opening whose asked frame has another size records `resized: {from: <the system's frame>, to: <the venue's frame>}`
+beside `to` and its read-back in `meta.placement.panel`. sitting.md's read-back table (`renderReadBack`) shows such a
+panel as "resized from 880x448 to 720x440", adding "the size not read back" when the read-back kept another size. The
+panel's cells are therefore judged on a panel smaller than the one the system draws, alike on both lanes.
+
 **Escape on cua's lane.** In C-2 cua's Escape ran unrefused and did not close the Open panel. Its Cancel click was
 then refused by the alert guard (beforeRow 74 and 76) and the run stopped at 518 of 571 rows; the vendor's Escape
 closed it every time. The close is now one rule on both lanes: Escape, the Cancel click, then the device's
@@ -2213,7 +2220,8 @@ service's field takes keys is answered by `savePanel/frontmost/typeText.name`.
 - **Per-context (54 rows a side in C-2).** The preference read on and the driven scene's Korean held after its refocus,
   but its context read ABC after the reactivation. The mini's holds 3 and 10 read the same, so this is not the hosted
   image. A likely cause is that apps launched before the preference was written do not take it up; this is unverified.
-  These rows are now NO VERDICT `venue`, naming the read-back. They were already out of every verdict.
+  These rows are now NO VERDICT `venue`, naming the read-back and citing #577 (P3), the ticket for running the scene
+  apps after the preference is written. They were already out of every verdict.
 - **Composition with TextEdit as the user window (18 rows).** The field read no ㄱ after the probe's r (`composed:
   false`, 4 reads), while the Electron field's group with TextEdit as user composed in C-2 and on the mini. The rows
   stay invalid and now name what the field read (`raw key`, `empty`, `other`, `unread`; `read` in the reading). The

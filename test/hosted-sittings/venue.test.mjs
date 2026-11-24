@@ -360,6 +360,22 @@ test('the read-back of TextEdit and the Open panel per step: planned against act
   assert.match(renderReadBack([]), /No TextEdit window or Open panel was read back/);
 });
 
+// Ruling 1199: a panel the matrix resized to fit the strip (the system's 880x448 to the venue's frame), not only moved,
+// says so where sitting.md shows its placement, with whether its read-back took the size.
+test('the read-back of a panel the run resized: the row carries the resize and the table says it was resized, from and to', () => {
+  const venue = venueRecord({alerts: ALERTS, displays: [DISPLAY], placed: hostedFrames(ALERTS, [DISPLAY]), textEdit: null});
+  const centred = rect(520, 162, 880, 448), placed = rect(80, 80, 720, 440);
+  const resizedPanel = (readBack, extra = {}) => ({complete: true, meta: {placement: {alerts: [], scenes: {}, panel: [
+    {beforeRow: 3, target: 'openPanel', number: 994, from: centred, to: placed, readBack, matched: true, moved: true, inStrip: true, resized: {from: centred, to: placed}, ...extra}]}}});
+  const rows = readBackRows([{step: 'matrix-cua-1', record: resizedPanel(placed)}, {step: 'matrix-vendor-1', record: resizedPanel(rect(80, 80, 880, 448))}], venue);
+  assert.deepEqual(rows[0], {step: 'matrix-cua-1', window: 'openPanel#1', planned: placed, actual: placed, overlap: false, resized: {from: centred, to: placed}});
+  const md = renderReadBack(rows);
+  assert.match(md, /^\| matrix-cua-1 \| openPanel#1 \| 80,80 720x440 \| 80,80 720x440, resized from 880x448 to 720x440 \| no \|$/m);
+  assert.match(md, /^\| matrix-vendor-1 \| openPanel#1 \| 80,80 720x440 \| 80,80 880x448, resized from 880x448 to 720x440, the size not read back \| yes \|$/m);
+  // A panel only moved, or not placed at all, says nothing of a resize.
+  assert.doesNotMatch(renderReadBack(readBackRows([{step: 'matrix-cua-1', record: matrix(rect(22, 60, 800, 760))}], venue)), /^\|.*resized/m);
+});
+
 // Ruling 1168's pointerdown pair ("Pointer target" and "Pointer downs", fixtures/scene-page.mjs POINTERDOWN_INLINE) sits
 // inline after Apply. The page has no stylesheet, so the user agent lays it out from the content area's top left, the
 // same in any window wide enough for its lines; the mini's golden tree (Chrome at 1000x760 with an infobar under its

@@ -322,22 +322,34 @@ export function readBackRows(records, venue) {
   const sceneDocument = window => view !== null && (window === 'textedit' || window.startsWith('textedit/'));
   const out = [];
   for (const {step, record} of records) {
+    const resizes = panelResizes(record);
     for (const [window, actual] of Object.entries(sceneFrames(record))) {
       const kind = /(?:^|\/)(textedit|openPanel)(?:#\d+)?$/.exec(window)?.[1];
       if (!kind) continue;
       const planned = kind === 'openPanel' ? venue?.frames?.openPanel ?? null : sceneDocument(window) ? `view ${view.width}x${view.height}, ${edge}` : `WidthInChars ${width}, ${edge}`;
-      out.push({step, window, planned, actual, overlap: alerts.some(a => overlaps(a, actual))});
+      out.push({step, window, planned, actual, overlap: alerts.some(a => overlaps(a, actual)), ...(resizes[window] ? {resized: resizes[window]} : {})});
     }
   }
+  return out;
+}
+// The matrix's panels resized as well as moved (ruling 1199; ../native-matrix/panels.mjs), by sceneFrames' keys.
+// -> {key: {from, to}}.
+function panelResizes(record) {
+  const panel = (record?.meta ?? record ?? {}).placement?.panel;
+  const out = {};
+  if (Array.isArray(panel)) panel.forEach((entry, i) => { if (entry?.resized && standing(entry)) out[`openPanel#${i + 1}`] = entry.resized; });
   return out;
 }
 export function renderReadBack(rows) {
   const head = ['## TextEdit and the Open panel, read back (ruling 1169)', ''];
   if (!rows.length) return [...head, 'No TextEdit window or Open panel was read back in this sitting\'s records.', ''].join('\n');
   const text = v => (v === null ? 'unplanned' : typeof v === 'string' ? v : rectText(v));
-  return [...head, 'Where each step\'s TextEdit windows and Open panels stood, against what the venue planned, and whether an alert the venue read overlapped them (the alert guard then refused the cells there).', '',
+  const size = r => `${r.width}x${r.height}`;
+  // A panel the run resized to fit the strip says so beside where it stood, and whether its read-back has that size.
+  const actual = r => `${rectText(r.actual)}${r.resized ? `, resized from ${size(r.resized.from)} to ${size(r.resized.to)}${size(r.actual) === size(r.resized.to) ? '' : ', the size not read back'}` : ''}`;
+  return [...head, 'Where each step\'s TextEdit windows and Open panels stood, against what the venue planned, and whether an alert the venue read overlapped them (the alert guard then refused the cells there). A panel the run resized as well as moved (ruling 1199) says so.', '',
     '| step | window | planned | actual | overlaps an alert |', '|---|---|---|---|---|',
-    ...rows.map(r => `| ${r.step} | ${r.window} | ${text(r.planned)} | ${rectText(r.actual)} | ${r.overlap ? 'yes' : 'no'} |`), ''].join('\n');
+    ...rows.map(r => `| ${r.step} | ${r.window} | ${text(r.planned)} | ${actual(r)} | ${r.overlap ? 'yes' : 'no'} |`), ''].join('\n');
 }
 const sameFrame = (a, b) => ['x', 'y', 'width', 'height'].every(k => a?.[k] === b?.[k]);
 // Why a pair's sides were not measured on one frame: each key both read whose frames differ. -> the reason, or null.

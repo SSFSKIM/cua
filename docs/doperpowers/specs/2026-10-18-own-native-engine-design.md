@@ -396,8 +396,9 @@ execute  {method: string, args: object, deadlineUnixMilliseconds: number, lineag
           "no longer valid" sentence; the deadline is checked on receipt and cancels a settle or launch wait still running when it
           passes. An element-targeted method carries args.element: token, the service's translation of the facade's element_index)
 status   {} → {engineVersion, build, accessibility: boolean, screenRecording: boolean, inputMonitoring: boolean, canPostHid: boolean, socket: string, pid: number, bundlePath: string, connections: number,
-          holders: [{pid: number | null, label: string | null}]}
-         (connections = open connections other than the requesting one, so `connections > 0` means "someone else"; shutdown's "busy" uses the same count;
+          holders: [{pid: number | null, label: string | null}], actualPid: boolean}
+         (actualPid: whether `_AXUIElementGetActualPid` resolved, so keys reach a remote-view panel's service, #582;
+         connections = open connections other than the requesting one, so `connections > 0` means "someone else"; shutdown's "busy" uses the same count;
           holders (#237) names them in accept order: the peer's pid read at accept (LOCAL_PEERPID) and the session's label from its cursor
           requests (at most 64 characters, client-asserted), each null when unknown; an engine before #237 sends no holders;
           inputMonitoring is the non-prompting listen preflight, CGPreflightListenEventAccess, the intervention tap's grant, read for doctor and
@@ -8978,6 +8979,65 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - Its interface: `loadModuleLock`, `moduleClosure`, `installModuleTree`, `readModuleTree`, `checkModuleTree`, `verifyModuleTree` (src/runtime/module-tree.mjs), with `provenance.json` keyed by target. darwin is added as a target with no schema change.
   - **One departure from N L204:** it isn't installed by `npm ci`. cua fetches each tarball of the closure itself and checks its length and SHA-512 against a lock authenticated at pin time against the vendor archive's `.pnpm/lock.yaml` (`scripts/modules-pin.mjs`). The managed Node carries no npm, and cua controls what a tarball may write.
   - See `docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-preflight.md` (§4.2, F1) and the Linux spec's Decision Log (M6a).
+- Decision (#582, ruling 1202, 2026-11-23, `fix/582-remote-view-keys` from 0d4c5990): **keys go to a remote-view
+  panel's service, found as the vendor finds it, with the private `_AXUIElementGetActualPid`.** An Open or Save panel is
+  drawn by com.apple.appkit.xpc.openAndSavePanelService, and every element of it answers the app's pid to the public
+  AXUIElementGetPid, so `keyboardTarget` posted press_key's, type_text's and paste's keys to the app, which never passed
+  them on. C-3 (run 45339840861) showed it: the vendor's Escape went to the service and closed the panel, cua's went to
+  TextEdit and did not; at depths 0 to 5 of the focused element's ancestors the private call answered the service (its
+  activation policy prohibited), at the AXWindow and AXApplication both calls answered TextEdit.
+  - The route (KeyTarget.swift), as the pinned helper's `targetForKeyboardEvent` → `outOfProcessTarget(for:appPID:)` →
+    `ProcessType.containingElement(for:ofTypes:)` does (`R/F-helper-logic.md` §5.7, its static set decoded for this
+    entry): from the app's focused element itself up its AXParent chain, each element's actual pid is read; a failed read,
+    or a pid with no finished-launching running application, passes the element over; the first element whose process
+    classifies ends the walk. Its pid becomes the keys' target only when that process's activation policy is prohibited
+    and it is not the app's pid; a regular or accessory process, the app's own included, ends the walk with no switch.
+    The keys are posted with CGEventPostToPid as before. With no switch, or no focused element, the target is main's.
+  - Choices the reading left open: the depth bound counts the focused element and 300 parents (`maxDepth: 300,
+    includingSelf: true`; whether the vendor's 300 includes the element itself was not read, and no real chain is near
+    it); the parent read is AXParent (`parentChain`'s own read was not decoded); with no switch cua keeps main's answer,
+    the focused element's public owner, rather than the vendor's app pid, which is the same pid in every case observed
+    (C-3 read the app's pid at every depth). One refinement of the ruling's wording, taken from the reading: the walk
+    does not look past the first classified owner for a prohibited one, so a focused element the app itself serves keeps
+    the keys whatever lies above it, as the vendor's does.
+  - Why the private call and not a public heuristic: a heuristic that guesses wrong posts keys to the wrong process,
+    which is worse than main's no-op, and every public route C-3 probed (the window list at the panel, the frontmost and
+    focused windows and applications, the system-wide focused element) answered TextEdit; only NSRunningApplication by
+    the service's bundle id reached it, which is a guess about which panel is focused. The private call answers the
+    question directly and is the vendor's own. It is resolved with dlsym (`ActualPid.resolve`), never linked.
+  - The fallback: when the symbol does not resolve, no walk is made and the keys go where main sends them. `status`
+    carries `actualPid` (true or false), and doctor's engine row says "keys reach remote-view panels such as Open and
+    Save" when true and warns, naming `_AXUIElementGetActualPid` unavailable and what then fails, when false; an engine
+    older than the field adds nothing. The seam is `ActualPid.resolve(lookup)` and the engine's `KeyTargetReads`, whose
+    `actualPid` a test sets to nil.
+  - With #538 and #258: nothing about activation or refusal moves; only the pid the key events are posted to does. Every
+    decision before the post stays the bound app's: press_key's route (`believesItHasFocus(pid)`), its focus hold and a
+    forced route 3 (`FakeActivation` for the app's primary window), type_text's per-context source check
+    (`frontmostPid() != pid`), the paste's route-3 activation, its delivery guard and the 3a predicate (whose key-focus
+    process already counted the keys' target beside the app). #538's refusal reads the front only for a pointer
+    (`deliver(pointer: true)`), and keys never take that path, so a key for the service is never refused because the
+    service is not the frontmost app; nor is the service ever activated, which its prohibited policy rules out and the
+    vendor never attempts (it enforces the app's active state for the selection's window, then posts to the target).
+    #258's frontmost carrier is a click's and is untouched. What does move with the target: the forbidden-list check
+    now reads the service's bundle ids (not forbidden), and the intervention detector drives the service's pid for the
+    app, as the spec's Input section intended for a panel served by another process.
+  - `engineVersion` 0.2.0 → 0.2.1 (Version.swift alone, which the bundle, the client and the gate read).
+    `scripts/engine-version-check.mjs` is not on main, so no gate ran it.
+  - The proof: `KeyTargetTests` (9: C-3's chain picks the service; unread and unknown owners passed over; a regular
+    different owner is not picked and ends the walk; the app's own element ends it whatever lies above; a looping chain
+    stops at the element and 300 parents; the target's fallbacks; the symbol resolves on the suite's macOS and is forced
+    missing by the lookup; the missing symbol posts as main and `status.actualPid` reads false; the engine's
+    `keyboardTarget`, which press_key, type_text and paste all take their target from, answers the service through its
+    reads) and `PasteActivationTests.testThePastesKeysGoToTheRemoteViewServiceAndItsActivationToTheApp` (paste and
+    type_text's paste route: every key event to the service, the activation's events to the app, no refusal). press_key
+    and keyed type_text cannot be driven in a unit test (live app resolution and the Accessibility grant); both post
+    through `EventPoster.toProcess` to `keyboardTarget`'s answer. Doctor's row has its test with the field true, false,
+    absent and from another engine. 1781 swift tests (1 skipped), 0 failures.
+  - Live, still to prove (nothing GUI runs on this Mac): on a hosted C after feat/117-m5 merges main, the judged cells
+    `openPanel/frontmost/pressKey.escape`, `openPanel/frontmost/typeText.search`, `savePanel/frontmost/pressKey.escape`
+    and `savePanel/frontmost/typeText.name` pass on cua as on the vendor, and the key-route diagnostic shows cua posting
+    to the panel service. Other remote-view UI (share sheets, print panels) is unverified either way.
+  Date/Author: 2026-11-23, cursor235's builder for #582.
 
 ## Outcomes & Retrospective
 

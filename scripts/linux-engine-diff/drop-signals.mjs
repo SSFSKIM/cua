@@ -336,6 +336,33 @@ function frameOn(id) {
  * the line, or its counter, is missing. Never the engine's last counter of any line (`Engine.dropSettles`): a lost line
  * would leave that counter stale (the review of 4e0ba0a9, P1 2).
  */
+/**
+ * The drop's `release_sync` record (#512, ruling 1142 (4)): a drag's, at its `--stats` line's top, else a handle end's,
+ * in its `handle` record; null where the engine wrote none. A row carries it, so a counted row shows whether its tail
+ * ran, where (`schedule`), whether its path overran floor_until (`overran`) and why it was answered unconfirmed.
+ */
+export const releaseSyncOf = (stats) => stats?.release_sync ?? stats?.handle?.release_sync ?? null;
+
+/**
+ * A drop's records from the engine's `--stats` line at and after its release, in a row's order: the after-release
+ * watch's, the tail before the release (`releaseSyncOf`, #512's item 4) and an Electron drop's cursor at the release (a
+ * drag's `drop_cursor`, a handle's in its record).
+ */
+export const releaseRecords = (stats) => ({
+  after_release: stats.after_release,
+  release_sync: releaseSyncOf(stats),
+  drop_cursor: stats.drop_cursor ?? stats.handle?.drop_cursor,
+});
+
+/**
+ * The row of a trial whose aim was refused: it sent no input, so it is recorded unexercised, with why (the review of
+ * 1317cc35, P2 4), and with no engine record (`release_sync` null, as a row whose engine wrote none).
+ */
+export const refusedAimRow = ({ load, family, named, lane, cell, base, cover, i, block, cold, aim, before }) => ({
+  kind: 'drop-signal', load, family, lane, cell, base, cover, i, end: null, block, cold, skipped: aim.refused,
+  named: { id: named.id, x: named.x, y: named.y, aim }, before, after: before, release_sync: null,
+});
+
 export const counterOf = (reply) => ({ from: Number.isInteger(reply?.id) ? reply.id : null, counter: Number.isInteger(reply?.stats?.drop_settles?.entered) ? reply.stats.drop_settles : null });
 
 /** A fresh engine's counter, before its first request: it has entered no settle since it started. */
@@ -925,7 +952,7 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const aim = namedLane ? await namedAim(ctx, path) : undefined;
   // a refused aim sends no input: the trial is recorded unexercised, with why (the review of 1317cc35, P2 4)
   if (aim?.refused) {
-    const row = { kind: 'drop-signal', load: ctx.load, family: ctx.family, lane, cell, base, cover, i, end: null, block: spec.block, cold, skipped: aim.refused, named: { id: ctx.named.id, x: ctx.named.x, y: ctx.named.y, aim }, before, after: before };
+    const row = refusedAimRow({ load: ctx.load, family: ctx.family, named: ctx.named, lane, cell, base, cover, i, block: spec.block, cold, aim, before });
     emit(row);
     return { row, after: before };
   }
@@ -1011,9 +1038,9 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     outcome: T14_SOURCE[base] ? t14Outcome(base, before, after) : dragOutcome(base, before, after, { i, rangeEnd }),
     notice,
     next,
-    after_release: stats.after_release,
-    // Electron's drop: the drag loop's cursor read at the release (a drag's `drop_cursor`, a handle's in its record)
-    drop_cursor: stats.drop_cursor ?? stats.handle?.drop_cursor,
+    // the after-release watch's record, the tail before the release (#512's item 4) and an Electron drop's cursor at
+    // the release
+    ...releaseRecords(stats),
     // how many settles the drop's requests entered, the engine's count (`settleCount`): the judge's evidence that one ran
     settle_count,
     handle: handled ? { ...stats.handle, end: value.end } : undefined,

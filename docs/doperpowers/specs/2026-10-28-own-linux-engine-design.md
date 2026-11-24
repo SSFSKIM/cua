@@ -2890,6 +2890,51 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - F10's credit holds. 0.4.4's diff touches only the drop path: 8 files, two of them beyond the pre-flight's list, read and found text-neutral. H's engine tree equals the tag, and the pin hashes equal the assets. The service's diff from da7585c3 is MIN 0.4.4 and F9's remedy only.
     - Serve start to first answer, head minus the older cua, median of 20: −41, +22 and +5 ms.
 
+- Decision (2026-11-24, the owner's, carried by the design session; ruling 1193): **the soak that gates M6b ends once 0.4.5 has run clean. That means 0.4.5's counted reach passes on x64 and on arm64, and no regression appears on the Linux homes. M6b starts as soon as 0.4.5 merges, with no further go.**
+  - The owner decided this knowing that after M6b there is no switch back to the vendor engine on Linux: `CUA_NATIVE_ENGINE=vendor` is refused as `engine_retired`.
+  - **0.4.5 (1193 R1–R3).** It carries #512 (items 1, 2 and 4, with item 3 decided in its pre-flight from the engine code and one probe) and #572. #497 stays out, so the reach measures one change to the drop path.
+    - The reach is H1, H2, L4a, and L4d at 993's bar, on both arches, on private displays.
+    - arm64's ×300 development measurement and its counted reach run on dc-linux171arm-996d before its lease ends (about 2026-11-26T01:00Z, not extended). The hosted ubuntu-24.04-arm runner is the fallback, and the pre-flight checks it.
+  - **M6b's forks (1193).**
+    - (a) The two Linux deb records stay as pin-time provenance beside `runtime/modules/`, the authenticator `scripts/modules-pin.mjs` needs. They are never installable, and a test shows that install, doctor and launch can't reach them. Authenticating a bump with npm's registry signatures is #574, a later ticket shared with #117 M6.
+    - (b) `cua install` on Linux removes only the vendor release that its own install record says it placed, verified against that record, and reports the removal with its size.
+      - It deletes nothing else under `runtimes/`. A `runtimes/` entry it didn't place is named in the report and left in place.
+      - Doctor shows nothing for a removed release.
+    - (c) The `engine_retired` sentence is as "Retirement (M6b)" says.
+  Date/Author: 2026-11-24, linux171 (plan-executor), recording the owner's decision and ruling 1193.
+
+- Decision (2026-11-24, linux-engine 0.4.5; rulings 1194 and its F2 clarification): **0.4.5 is built to its pre-flight (docs/doperpowers/specs/2026-10-28-own-linux-engine-045-preflight.md, F1–F7 as written). "The path's last step" in item 1 is the instant the X server acknowledged the path's last motion, not the instant the engine issued it.**
+  - **Why the acknowledgement.** Task 159's review read F2's "went out" as the send, and asked for the stamp to be taken before the engine waits for the checked reply (pointer.rs, `place_again`).
+    - The X server delivers the motion to Chrome before it replies, so the acknowledgement is an upper bound on when Chrome can have it. A stamp at the send is a lower bound, and could miss a real overrun by the round trip.
+    - So a path whose last motion is sent before floor_until (326 ms after the take) and acknowledged after it takes the after-path tail. That costs about 25 ms on that row, and it is the safe side of #512.
+    - The acknowledgement can only come later than the send, so it can only add overruns, never miss one.
+  - **The development bar holds (task 160; evidence on `engine-045-x300`, 8e0f7d889).** t14-floor `left` ×300 at arm64 twice the load, on the publish=false candidate of e85ebd379 (run 45321559071), gave 0 false oks: 300 honest, all answered unconfirmed, with 0 landed, 0 stale and 0 activations after the release.
+    - 35 rows had their path's last step 0.1–24.0 ms past floor_until (median 6.0) and took the after-path tail that item 1 adds. Task 147's three false oks, at +7.2, +8.8 and +12.7 ms, fall in that range.
+    - Those rows released 8 ms later at the median and 25 ms at p95, against 0.4.4's comparable rows.
+    - No row dropped a visit, so item 2 went unexercised live; its unit test drives the drag's own decision.
+    - The 95% upper bound on the false-ok rate is 1.0%, against 3 in 260 before the fix.
+  - **Item 3 is declined for 0.4.5 (F1).** The engine sees Chrome's leave cursor, but it can't use it: it never knows the drop zone, a genuine drop also ends with no leave, and Chrome's Xdnd status never crosses X. The question is #575.
+  Date/Author: 2026-11-24, linux171 (plan-executor); the F2 reading accepted by the design session.
+
+- Decision (2026-11-24, linux-engine 0.4.5's counted reach; rulings 1193, 1194, 1200 and 1201): **0.4.5 passes its reach on both arches at H10 = 2c66966bd: H1, H2, L4a, and L4d at 993's bar. This is the first measurement of the shipped bytes, and it meets the counted-reach half of the owner's soak condition (1193).**
+  - **x64** (task 162; evidence `engine-045/reach/x64/`, fa14e9bd7):
+    - H1, H2 and L4a: 560 of 560 settled Electron drags at `rest_ms` 30, with 0 false oks and 0 stale.
+    - L4d: every Chrome cell had 0 false oks and 0 stale. long-left was 100 honest, plain-long 300 landed, left 30 honest and inzone-out 30 honest; Electron was 30 of 30 exercised.
+  - **arm64** (task 163, on the arm VM dc-linux171arm-996d; evidence `engine-045/reach/arm64/`, d8f81cd2f):
+    - H1, H2 and L4a: 560 of 560 at 30 ms. H2 had one #365 hung-sink drop on the handle lane, and L4a one zone-truth mismatch on `left`; both are findings, not fails.
+    - L4d: the same as x64, 0 false oks and 0 stale on every Chrome cell.
+  - **release_sync on all 920 Chrome rows.** Item 1's after-path tail ran:
+    - x64: on 124 of 300 plain-long rows, 6 of 30 left and 1 of 30 inzone-out;
+    - arm64: on 216 plain-long and 20 left. On arm64, 28 and 5 of those rows were moved there by item 1 alone, the gate shut.
+  - **Item 2's measured residual (for #575).** Item 2 is a dropped tail visit answered unconfirmed.
+    - It fired once on x64: plain-long #268, a drop that landed and was answered `unconfirmed: visit_dropped`.
+    - That's 1 in 300 landed long drops on x64, and 0 in 300 on arm64.
+    - It fired on no row of the arm64 ×300 (task 160) and no false-ok-shaped row anywhere.
+    - That is the designed fail-closed cost: a real drop answered with the read-the-page notice.
+  - **Shipped with (1201):** #580 (the review's two P2s and two P3s, for the next engine release) and #581 (an arm64 clipboard test hang in a release build). Until #580 ships, a red on the option (c) live test is rerun once and counted under #444.
+  - **The homes (1200, #579).** Every Linux home on 0.4.4 is refused until `cua install --engine` runs there. dc-linux171-1e68's own home was brought to the plugin's pins on 11-24 as #579's first live case.
+  Date/Author: 2026-11-24, linux171 (plan-executor).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

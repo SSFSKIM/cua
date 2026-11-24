@@ -1,0 +1,5 @@
+raw U+2028 / U+2029, plain: 2 file(s)
+/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t162-x64/docs/evidence/2026-10-28-own-linux-engine/engine-045/reach/x64/out/L4d.pinned-release/order.jsonl.gz
+/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t162-x64/docs/evidence/2026-10-28-own-linux-engine/engine-045/reach/x64/out/H2.pinned-release/order.jsonl.gz
+raw U+2028 / U+2029, text files only (grep -I): 0 file(s)
+raw U+2028 / U+2029, gz: 0 file(s)

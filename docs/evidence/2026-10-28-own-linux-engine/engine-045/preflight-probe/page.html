@@ -1,0 +1,12 @@
+<!doctype html>
+<html><body style="margin:0">
+<div id="src" draggable="true" style="position:absolute;left:0;top:0;width:200px;height:600px;background:#c33"></div>
+<div id="zone" style="position:absolute;left:400px;top:0;width:200px;height:600px;background:#3c3"></div>
+<script>
+const zone = document.getElementById('zone');
+zone.addEventListener('dragover', (e) => e.preventDefault());
+zone.addEventListener('drop', (e) => { e.preventDefault(); document.title = 'dropped ' + (+document.title.split(' ')[1] + 1 || 1); });
+document.getElementById('src').addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', 'x'));
+document.title = 'ready';
+</script>
+</body></html>

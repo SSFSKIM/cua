@@ -667,7 +667,10 @@ impl Engine {
             for (key, value) in std::mem::take(&mut self.extra) {
                 record.insert(key, value);
             }
-            eprintln!("{}", super::standalone_stats_line(record, &self.drop_settles));
+            eprintln!(
+                "{}",
+                crate::wire::jsonl(&super::standalone_stats_line(record, &self.drop_settles))
+            );
         }
         self.extra = request_extra;
         self.expired_handle = Some((released.app.clone(), released.at));
@@ -730,7 +733,10 @@ impl Engine {
             for (key, value) in std::mem::take(&mut self.extra) {
                 record.insert(key, value);
             }
-            eprintln!("{}", super::standalone_stats_line(record, &self.drop_settles));
+            eprintln!(
+                "{}",
+                crate::wire::jsonl(&super::standalone_stats_line(record, &self.drop_settles))
+            );
         }
         self.extra = request_extra;
         self.expired_handle = Some((app.clone(), fired.pointer));

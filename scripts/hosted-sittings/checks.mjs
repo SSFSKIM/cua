@@ -21,14 +21,16 @@
 //                FAIL, NO VERDICT (proof is missing) or OWNER (the owner's calls remain); none printed is a runtime error
 //   report       a report-writing step (C's summary): its `report` file written; its exit is the verdict the judge step
 //                gives
-//   observation  #212's observation-only cell: every run it asked for (`records`) recorded complete, and a sample of
-//                `observe` among them holding the observation (the Save panel's structure, panelObserved) passes;
-//                samples with no verdict (./native-matrix/front-key.mjs: activation, unread, alert) and none observed is
-//                NO VERDICT; a run missing or incomplete is a runtime error whatever it observed (its observations stay in
-//                its record, uncertified), and anything else is a driver failure; each run's attestations as `record`'s.
-//                Every record is classed before the step's status (recordFinding), by one precedence whatever their order:
-//                another engine, then a reset the alert held, then a missing or incomplete run, then a complete run that
-//                shows no engine; the other records' findings follow in the reason
+//   saveSheet    #212's save-sheet cell: every run it asked for (`records`) recorded complete, and each sample of `row`
+//                judged as the matrix recorded it (saveSheetRow): a sample with no verdict (front-key.mjs sampleCause:
+//                activation, unread, alert, keyWindow) or an invalid one is NO VERDICT naming why; one that passed
+//                passes; any other fails, naming its findings (probe-plan.mjs saveSheetFindings, as the row kept them).
+//                The step is FAIL when a sample failed, else NO VERDICT when one had none, else PASS; its reason says,
+//                for every sample, its status, the run's folder, the unsaved proof and the Go To dialog's close. A run
+//                missing or incomplete is a runtime error; each run's attestations as `record`'s. Every record is classed
+//                before the samples (recordFinding), by one precedence whatever their order: another engine, then a
+//                reset the alert held, then a missing or incomplete run, then a complete run that shows no engine; the
+//                other records' findings follow in the reason
 //   selection    sitting E's lane: the expected exit, with the judge's own report (`report`, removed before the step,
 //                so it is this run's) of `lane` holding an observation of every home (macos-selection.mjs HOMES),
 //                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
@@ -47,6 +49,7 @@
 import {HOMES} from '../accept/macos-selection.mjs';
 import {isFixtureCheck} from '../accept/textedit.mjs';
 import {sampleCause} from '../native-matrix/front-key.mjs';
+import {saveSheetFindings} from '../native-matrix/probe-plan.mjs';
 import {classifyAttestedRecord} from '../probe/lib.mjs';
 import {keyRouteSummary} from './key-route-report.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
@@ -81,9 +84,32 @@ const PRE_FLIP = Object.freeze({selected: 'vendor', reason: 'default', host: 've
 const expectedHome = (kind, flipped) => (!flipped ? PRE_FLIP : HOMES[kind].expect === 'cua' ? {selected: 'cua', reason: 'default', host: 'cua', hostReason: 'cua_engine'}
   : {selected: 'vendor', reason: HOMES[kind].expect, host: 'vendor', hostReason: HOMES[kind].expect});
 const selectionWords = s => `the ${s.selected} engine (${s.reason}) on the ${s.host} host (${s.hostReason})`;
-// #212's observation: the Save panel's structure as the destination cell read it (probe-plan.mjs savePanelStructure,
-// before or after the Go To dialog), at least one element line of it.
-const panelObserved = observed => [observed?.before, observed?.after].some(s => s?.count > 0 && Array.isArray(s.lines) && s.lines.length > 0);
+// One of #212's samples as the step reads it (`label` names its engine, run and sample): no verdict for a sampleCause
+// the step holds as such or an invalid row, the row's ok otherwise, a failure naming its findings; then what it showed.
+// -> {status, text}.
+function saveSheetRow(row, label) {
+  const o = row.outcome ?? {}, shown = saveSheetShown(o), cause = sampleCause(row);
+  if (cause && NO_VERDICT_CAUSES.has(cause.category)) return {status: 'NO VERDICT', text: `${label} NO VERDICT (${cause.category}: ${cause.detail ?? 'no detail'})${shown}`};
+  if (row.invalid) return {status: 'NO VERDICT', text: `${label} NO VERDICT (${row.invalid})${shown}`};
+  if (row.ok === true) return {status: 'PASS', text: `${label} PASS${shown}`};
+  const findings = Array.isArray(o.findings) ? o.findings : saveSheetFindings(o, row.engine);
+  return {status: 'FAIL', text: `${label} FAIL (${findings.length ? findings.join('; ') : 'ok false, no finding named'})${shown}`};
+}
+// What a sample kept, each part only when the row holds it: the run's folder (after the act, else as the cancel found
+// it), the unsaved proof (AXDocument and AXEdited, or why unread), and the Go To dialog's close in the destination cell
+// with the part of its reading that failed.
+function saveSheetShown(o) {
+  const folder = files => (files.length ? `held ${files.join(', ')}` : 'empty');
+  const parts = [];
+  if (Array.isArray(o.destinationFiles)) parts.push(`the run's folder ${folder(o.destinationFiles)}`);
+  else if (Array.isArray(o.cancel?.destinationFiles)) parts.push(`the run's folder ${folder(o.cancel.destinationFiles)} at the cancel`);
+  else if (o.cancel || 'destinationFiles' in o) parts.push('the run\'s folder unread');
+  if (o.unsaved?.unread) parts.push(`unsaved unread (${o.unsaved.unread})`);
+  else if (o.unsaved) parts.push(`AXDocument ${o.unsaved.document === true ? 'names a file' : o.unsaved.document === false ? 'none' : 'unread'}, AXEdited ${o.unsaved.edited} (${o.unsaved.editedFrom ?? 'unnamed'})`);
+  const steps = o.goTo ? [`Escape ${o.goTo.escapes}x`, ...(o.goTo.closeClicked ? ['CloseButton clicked'] : []), ...(o.identification ? [o.identification] : [])].join('; ') : null;
+  parts.push(o.goTo ? `Go To ${o.goTo.closed ? 'closed' : 'left up'} (${steps})` : 'Go To not recorded');
+  return `; ${parts.join('; ')}`;
+}
 // A run the matrix stopped because the capture alert held its fixture's reset too (../native-matrix/probe-run.mjs
 // resetHeldFixture, `blockedBy: 'alert'`, or `unread` when the alert guard could not read the screen): its proof is
 // missing, not failed. -> the reason, or null for any other stop.
@@ -147,26 +173,21 @@ export const CHECKS = Object.freeze({
   },
   report: (step, {exit, exists}) => (exists(step.report) ? ['PASS', exit === 0 ? null : `written; exit ${exit} is its verdict, which the judge step gives`]
     : ['FAIL', `runtime error: no report at ${step.report} (exit ${exit})`]),
-  observation(step, {exit, readJson}) {
+  saveSheet(step, {exit, readJson}) {
     const runs = step.records.map(path => ({path, record: readJson(path)}));
-    const rows = runs.flatMap(({record}) => (record?.rows ?? []).filter(row => row.id === step.observe).map(row => ({...row, hosted: record.meta?.hosted === true})));
-    const seen = rows.filter(row => panelObserved(row.outcome?.observed)).length;
-    const kept = seen ? `; ${seen} panel observation${seen > 1 ? 's' : ''} kept in the records` : '';
     // Every record classed first, then the step's status by precedence, so the records' order changes nothing.
     const findings = runs.map(run => recordFinding(step, run, exit)).filter(Boolean).sort((x, y) => x.rank - y.rank);
     if (findings.length) {
       const [first, ...others] = findings;
-      return [first.status, `${first.reason}${others.length ? `; also: ${others.map(f => f.reason).join('; ')}` : ''}${kept}`];
+      return [first.status, `${first.reason}${others.length ? `; also: ${others.map(f => f.reason).join('; ')}` : ''}`];
     }
-    const empty = runs.find(run => !(run.record.rows ?? []).some(row => row.id === step.observe));
-    if (empty) return ['FAIL', `driver failure: no ${step.observe} sample recorded in ${empty.path}`];
-    if (seen) return ['PASS', `the Save panel's structure observed in ${seen} of ${rows.length} samples over ${runs.length} run${runs.length > 1 ? 's' : ''}`];
-    const causes = rows.map(row => sampleCause(row));
-    if (causes.every(c => c && NO_VERDICT_CAUSES.has(c.category))) {
-      const counts = Object.entries(causes.reduce((n, c) => ({...n, [c.category]: (n[c.category] ?? 0) + 1}), {}));
-      return ['NO VERDICT', `no sample observed: ${counts.map(([category, n]) => `${category} ${n}`).join(', ')}`];
-    }
-    return ['FAIL', `driver failure: no observation recorded (${rows.find(row => row.invalid)?.invalid ?? 'no reason recorded'})`];
+    const empty = runs.find(run => !(run.record.rows ?? []).some(row => row.id === step.row));
+    if (empty) return ['FAIL', `driver failure: no ${step.row} sample recorded in ${empty.path}`];
+    const judged = runs.flatMap(({path, record}) => record.rows.filter(row => row.id === step.row)
+      .map(row => saveSheetRow({...row, hosted: record.meta?.hosted === true}, `${row.engine} ${/run-\d+/.exec(path)?.[0] ?? path} sample ${row.sample}`)));
+    const status = ['FAIL', 'NO VERDICT', 'PASS'].find(s => judged.some(j => j.status === s));
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    return [status, `${plural(judged.length, 'sample')} over ${plural(runs.length, 'run')}: ${judged.map(j => j.text).join(' | ')}`];
   },
   onboarding: (step, {exit, readJson}) => judgeOnboarding(readJson(step.record), {path: step.record, exit, engine: step.engine}),
   diagnostic(step, {exit, readJson}) {

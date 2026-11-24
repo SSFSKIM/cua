@@ -29,7 +29,7 @@ test('six sittings, A to F, each one plan for one job', () => {
 // engine of its side, the one the run pins; #216's witness is read by the verdict it prints, NO VERDICT kept as such.
 test('ruling 1149: every step that reads a run\'s record names the engine its side pins, and B\'s lanes are read by their records', () => {
   for (const s of ['a', 'b', 'c']) for (const pilot of [false, true]) {
-    const reading = plan(s, {pilot}).steps.filter(step => ['record', 'observation'].includes(step.check));
+    const reading = plan(s, {pilot}).steps.filter(step => ['record', 'saveSheet'].includes(step.check));
     assert.ok(reading.length > 0, s);
     for (const step of reading) assert.equal(step.engine, argOf(step, '--engine'), `${s} ${step.id}`);
   }
@@ -131,9 +131,9 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
     [['summary', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/summary.md'], ['compare', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/comparison.md']]);
   assert.deepEqual(full.counts, ['/w/out/vendor', '/w/out/cua', '/w/out/save-sheet']);
   assert.equal(full.pilotReads, false);
-  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.records?.[0] ?? s.report ?? null, s.observe ?? null, s.pilotNoVerdict ?? false]), [
+  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.records?.[0] ?? s.report ?? null, s.row ?? null, s.pilotNoVerdict ?? false]), [
     ['record', '/w/out/cua/run-2/result.json', null, false],
-    ['observation', '/w/out/save-sheet/vendor/run-1/result.json', 'textedit/intervention.saveSheet', false],
+    ['saveSheet', '/w/out/save-sheet/vendor/run-1/result.json', 'textedit/intervention.saveSheet', false],
     ['report', '/w/out/summary.md', null, false],
     ['verdict', null, null, true]]);
   // Each run needs the one before it, through the alternation: a run that left a scene up fails, and the next is SKIP

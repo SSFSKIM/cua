@@ -20,7 +20,7 @@ import {userWindowOf} from './oracle.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, MAY_HAVE_TAKEN_EFFECT,
   NEW_DOCUMENT_CELL, nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith,
-  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, scheduledActCell, SHEET_FOLLOW_MS,
+  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, saveSheetFindings, scheduledActCell, SHEET_FOLLOW_MS,
   SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, STOPPED_PART_WAY, USER_CHANGED,
 } from './probe-plan.mjs';
 import {ABC} from './live-checks.mjs';
@@ -601,15 +601,16 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const effectsNamed = stopped && value.message.includes(MAY_HAVE_TAKEN_EFFECT);
   const sheetOpen = check.value?.sheetOpen === true;
   const files = Array.isArray(check.value?.destinationFiles) ? check.value.destinationFiles : null;
-  const destinationEmpty = files !== null && files.length === 0;
   const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
   const savedSeen = unsaved.document === true || unsaved.edited === false;
-  const row = {ok: sheetOpen && destinationEmpty && unsaved.document === false && unsaved.edited === true && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
-    outcome: {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
+  const outcome = {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
       initialWhere, ...kept, ...unsavedOutcome(unsaved),
       threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, leadMs: preMs,
       postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt: Number.isFinite(receivedAt) ? receivedAt : null, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
-      postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null}};
+      postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null};
+  // The row's verdict is its findings' (probe-plan.mjs saveSheetFindings), kept on it so a reader names them as judged.
+  const findings = saveSheetFindings(outcome, ctx.engine);
+  const row = {ok: findings.length === 0, inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey, outcome: {...outcome, findings}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (cua ? responseWindowValidity(postedAt, receivedAt, value.endAt) : postValidity(postedAt, intervalOf(ctx.engine, act)));
   // Committed: a finding whatever the timing, recorded with why the timing alone would not have judged it; never retried.
   if (!sheetOpen || files?.length || savedSeen) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why ?? (cua ? stopValidity(value, stopped) : null)}}, {cleanup});

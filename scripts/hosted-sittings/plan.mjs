@@ -113,8 +113,8 @@ function sittingC(ctx) {
       ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/run-${i}/result.json`} : {}), argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
   }
   // #212's cell asks for its runs (one in the pilot), and its check reads every one of their records.
-  for (const engine of ['vendor', 'cua']) steps.push({id: `save-sheet-${engine}`, label: `#212's save-sheet cell (observation-only) on ${engine}`, kind: 'run',
-    check: 'observation', records: Array.from({length: runs}, (_, i) => `${ctx.out}/save-sheet/${engine}/run-${i + 1}/result.json`), observe: 'textedit/intervention.saveSheet', engine,
+  for (const engine of ['vendor', 'cua']) steps.push({id: `save-sheet-${engine}`, label: `#212's save-sheet cell on ${engine}`, kind: 'run',
+    check: 'saveSheet', records: Array.from({length: runs}, (_, i) => `${ctx.out}/save-sheet/${engine}/run-${i + 1}/result.json`), row: 'textedit/intervention.saveSheet', engine,
     argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`, '--runs', String(runs))});
   steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
   steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', pilotNoVerdict: true, argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});

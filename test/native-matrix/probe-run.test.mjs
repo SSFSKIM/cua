@@ -784,6 +784,7 @@ test('#212\'s row proves nothing saved on TextEdit\'s own window after the cance
   const clean = rowOf((await run({ok: true, number: 1, found: true, document: false, edited: true, editedFrom: 'window'})).result, SAVE_SHEET);
   assert.equal(clean.ok, true, JSON.stringify(clean));
   assert.deepEqual(clean.outcome.unsaved, {document: false, edited: true, editedFrom: 'window'});
+  assert.deepEqual(clean.outcome.findings, [], 'the row\'s ok is its findings\'');
   assert.equal(clean.outcome.defaultSaves, undefined);
   assert.deepEqual(order.slice(0, 3), ['savesheet.check', 'savesheet.cancel', `document:${UNTITLED}`], 'the run\'s own untitled window read after the cancel');
   order.length = 0;
@@ -791,6 +792,7 @@ test('#212\'s row proves nothing saved on TextEdit\'s own window after the cance
   assert.equal(saved.ok, false);
   assert.equal(saved.invalid, undefined, 'a save is a finding, not a missing proof');
   assert.deepEqual(saved.outcome.unsaved, {document: true, edited: false, editedFrom: 'window'});
+  assert.ok(saved.outcome.findings.includes('a document on disk behind TextEdit\'s window (AXDocument names a file)'), JSON.stringify(saved.outcome.findings));
   order.length = 0;
   const unread = rowOf((await run({ok: false, number: 1, reason: 'the reader is not trusted for Accessibility'})).result, SAVE_SHEET);
   assert.equal(unread.ok, false);

@@ -177,6 +177,8 @@ const savePanelDouble = ({goTo = 'opens', typing = 'focused', navigates = true, 
       if (key === 'super+shift+g') {
         if (goTo === 'list') state.rows.push('Recents');
         else { state.dialog = true; state.focus = goTo === 'opens' ? 'goTo' : 'name'; }
+      } else if (key === 'Escape') {
+        if (state.dialog) { state.dialog = false; state.focus = 'name'; }
       } else if (key === 'Return') {
         if (state.focus === 'goTo') {
           if (navigates) state.location = basename(state.path); else state.rows.push(basename(state.path));
@@ -222,7 +224,7 @@ test('#212\'s save panel: each control is the one element with its identifier an
 test('#212\'s destination cell: the Go To dialog and its focused field identified before typing and again before Return; the panel\'s location then names the run\'s folder', async () => {
   const {state, app} = savePanelDouble();
   const {result, made} = await runDestination(app, saveSheetDestinationCell(CONTROLS));
-  assert.deepEqual(result?.value, {ready: true});
+  assert.deepEqual(result?.value, {ready: true, initialWhere: 'Documents'});
   assert.match(basename(made), /^cua-212-save-/);
   assert.deepEqual(state.keys, ['super+shift+g', 'Return']);
   assert.deepEqual(state.typed, [made]);
@@ -245,6 +247,9 @@ test('#212\'s destination cell fails closed, with no Return, when the Go To dial
     assert.ok(!state.keys.includes('Return'), `${label}: no Return`);
     assert.equal(state.saved, false, label);
     assert.equal(state.typed.length, typed, label);
+    // Ruling 1219 (s1): the Go To dialog closed inside the cell on its way out, the Save sheet still up.
+    assert.equal(state.dialog, false, `${label}: the Go To dialog closed in the cell`);
+    assert.deepEqual(result.value.goTo, {closed: true, sheetUp: true, escapes: state.keys.filter(k => k === 'Escape').length}, label);
   }
   // The dialog's Return that leaves the folder only as a listing entry: the panel's location is what is read.
   const {state, app} = savePanelDouble({navigates: false});
@@ -309,4 +314,70 @@ test('a keystroke probe\'s gate, as KeystrokeProbe.swift answers it: at its firs
   assert.equal(keystrokeGate({error: KEYSTROKE_GATE_CLOSED}).at, 'first');
   assert.equal(keystrokeGate({postedAt: 1, aborted: true, units: 3}).at, 'during');
   for (const answer of [{postedAt: 1, units: 3}, {error: 'a key event could not be created'}, null, undefined]) assert.equal(keystrokeGate(answer), null, JSON.stringify(answer));
+});
+
+// TextEdit's Save sheet as C-5 observed it on both lanes (save-sheet/{cua,vendor}/run-1 rows[0].outcome.observed): the
+// observation's root is the sheet itself; with the Go To dialog up the observation shows the dialog alone (GoToWindow,
+// its PathTextField focused), the Save sheet absent from it. `closes`: whether Escape closes the dialog.
+const realSavePanel = ({closes = true, navigates = true} = {}) => {
+  const state = {dialog: false, name: 'Untitled', path: '', location: 'Documents', keys: [], typed: [], saved: false};
+  const nodes = () => (state.dialog ? [
+    axNode('g', 0, 'AXSheet', {roleDescription: 'sheet', identifier: 'GoToWindow', description: 'Go to Folder'}),
+    axNode('gt', 1, 'AXStaticText', {roleDescription: 'text', value: 'Go to Folder'}),
+    axNode('gc', 1, 'AXButton', {roleDescription: 'button', identifier: 'CloseButton', flags: {focusable: true}}),
+    axNode('gf', 1, 'AXTextField', {roleDescription: 'text field', identifier: 'PathTextField', value: state.path || null, flags: {settable: true, focusable: true}}),
+  ] : [
+    axNode('p', 0, 'AXSheet', {roleDescription: 'sheet', identifier: 'save-panel'}),
+    axNode('wp', 1, 'AXPopUpButton', {roleDescription: 'pop up button', title: 'Where:', identifier: 'where popup', value: state.location}),
+    axNode('n', 1, 'AXTextField', {roleDescription: 'text field', identifier: 'saveAsNameTextField', value: state.name, flags: {settable: true}}),
+    axNode('cancel', 1, 'AXButton', {roleDescription: 'button', title: 'Cancel', identifier: 'CancelButton'}),
+    axNode('save', 1, 'AXButton', {roleDescription: 'button', title: 'Save', identifier: 'OKButton'}),
+  ]);
+  const observe = () => { const s = axSkyshot(nodes(), {focused: state.dialog ? 'gf' : 'n'}); return render(s, advanceNumbering(null, s)); };
+  const app = {
+    getAXState: async () => observe(),
+    pressKey: async key => {
+      state.keys.push(key);
+      if (key === 'super+shift+g') state.dialog = true;
+      else if (key === 'Escape') { if (state.dialog && closes) state.dialog = false; }
+      else if (key === 'Return') { if (state.dialog) { if (navigates) state.location = basename(state.path); state.dialog = false; } else state.saved = true; }
+    },
+    typeText: async text => { state.typed.push(text); if (state.dialog) state.path = text; else state.name = text; },
+  };
+  return {state, app, observe};
+};
+const C5_CONTROLS = Object.freeze({panel: {id: 'save-panel', role: 'sheet'}, goTo: {id: 'GoToWindow', role: 'sheet'},
+  goToField: {id: 'PathTextField', role: 'text field'}, location: {id: 'where popup', role: 'pop up button'}});
+
+test('#212\'s destination on the Save sheet as C-5 saw it: the Go To dialog shown apart, its path field the only Return\'s, the location read back', async () => {
+  const {state, app} = realSavePanel();
+  const {result, made} = await runDestination(app, saveSheetDestinationCell(C5_CONTROLS));
+  assert.deepEqual(result?.value, {ready: true, initialWhere: 'Documents'});
+  assert.deepEqual(state.keys, ['super+shift+g', 'Return'], 'the one Return, into the Go To field');
+  assert.deepEqual([state.location, state.saved, state.name, state.typed], [basename(made), false, 'Untitled', [made]]);
+});
+
+// Ruling 1219 (s1) and ruling 1220's first condition: every exit after super+shift+g closes the Go To dialog inside the
+// cell (Escape while it is up, the Save sheet left up), and one that would not close is said on the result.
+test('#212\'s destination cell closes the Go To dialog on every exit after super+shift+g, and says when it would not', async () => {
+  const noFolder = {...C5_CONTROLS, location: {id: 'where popup', role: 'pop up button'}};
+  const {state, app} = realSavePanel({navigates: false});
+  const {result} = await runDestination(app, saveSheetDestinationCell(noFolder));
+  assert.match(result.value.reason, /panel's selected location is not the run's folder/);
+  assert.deepEqual([state.dialog, state.saved], [false, false]);
+  // The dialog's field never identified (its role word not the one read): out at once, the dialog closed with Escape.
+  const unread = realSavePanel();
+  const missed = await runDestination(unread.app, saveSheetDestinationCell({...C5_CONTROLS, goToField: {id: 'PathTextField', role: 'search field'}}));
+  assert.match(missed.result.value.reason, /Go To dialog and its focused path field were not identified/);
+  assert.deepEqual([unread.state.dialog, unread.state.keys, missed.result.value.goTo], [false, ['super+shift+g', 'Escape'], {closed: true, sheetUp: true, escapes: 1}]);
+  // Escape that does not close it: three presses, then said, never a Return.
+  const stuck = realSavePanel({closes: false});
+  const left = await runDestination(stuck.app, saveSheetDestinationCell({...C5_CONTROLS, goToField: {id: 'PathTextField', role: 'search field'}}));
+  assert.deepEqual(left.result.value.goTo, {closed: false, sheetUp: false, escapes: 3});
+  assert.ok(!stuck.state.keys.includes('Return'));
+  // The observation-only form (controls unread) closes it too.
+  const seen = realSavePanel();
+  const observed = await runDestination(seen.app, saveSheetDestinationCell({panel: null, goTo: null, goToField: null, location: null}));
+  assert.match(observed.result.value.reason, /observation only/);
+  assert.deepEqual([seen.state.dialog, observed.result.value.goTo], [false, {closed: true, sheetUp: true, escapes: 1}]);
 });

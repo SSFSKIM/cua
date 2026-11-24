@@ -699,3 +699,35 @@ test('probe cells when the venue could not enable ABC: NO VERDICT venue naming i
   assert.match(row.venueInput, /could not enable com\.apple\.keylayout\.ABC .*ruling 1189/);
   assert.deepEqual(validateCellResult(result), []);
 });
+
+// Ruling 1220's fourth condition: a failure anywhere on #212's destination path decides that row alone. The Go To dialog
+// that would not close is said on the row; the run goes on to its next row, with no stop and no ResetBlocked.
+test('#212\'s destination failing with the Go To dialog left up decides its row alone; the run goes on', async () => {
+  const destination = {ready: false, reason: 'the Go To dialog and its focused path field were not identified', goTo: {closed: false, sheetUp: false, escapes: 3}};
+  const plan = {...planOf('intervention-save-sheet'), intervention: ['saveSheet', 'fires'], id: 'x'};
+  const {result} = await runWith({plan, cellName: 'intervention-save-sheet', cell: saveCells({destination})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.equal(row.invalid, 'the Save sheet\'s destination was not set to the run\'s folder (the Go To dialog and its focused path field were not identified; the Go To dialog would not close)');
+  assert.deepEqual(row.outcome.goTo, destination.goTo);
+  assert.ok(result.rows.some(r => r.id === 'textedit/intervention.fires'), 'the next row ran');
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.complete, true);
+});
+
+// Ruling 1220's third condition: nothing is saved, and the row proves it at the run's folder and where an untitled
+// document would land by default (read on the device before the destination and after the check, keyed on SAVE_NAME).
+test('#212\'s row checks the default save locations: a file there under the intended name fails the row', async () => {
+  let checked = false;
+  const savedOps = appear => ({matrix: (base, a) => (a[0] === 'saved'
+    ? {answer: {dirs: {documents: checked && appear ? ['cua-212-intended.rtf'] : [], desktop: [], icloudTextEdit: [], icloudDrive: null}}, at: [1, 2]} : base(a))});
+  const cell = c => { if (tagOf(c) === 'savesheet.check') checked = true; return saveCells()(c); };
+  const clean = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell, ops: savedOps(false)});
+  const ok = rowOf(clean.result, SAVE_SHEET);
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.deepEqual(ok.outcome.defaultSaves, {appeared: [], unread: ['icloudDrive']});
+  checked = false;
+  const saved = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell, ops: savedOps(true)});
+  const failed = rowOf(saved.result, SAVE_SHEET);
+  assert.equal(failed.ok, false);
+  assert.deepEqual(failed.outcome.defaultSaves.appeared, ['documents/cua-212-intended.rtf']);
+});

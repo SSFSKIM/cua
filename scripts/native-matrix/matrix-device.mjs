@@ -49,6 +49,9 @@
 //       asked `--with hit`: the element at its centre, the post-refusal diagnostic's system-wide hit-test): where a key
 //       case's input lands when its panel could not be placed in the strip (./steps.mjs elementGuardCause; ruling 1203's
 //       fallback). Hosted only -> {answer: {frame: null, refused}, at} off a runner
+//   saved --run <dir> --name <prefix>
+//       the default save folders' entries under the intended name (savedNamed; #212's row, ruling 1220), hosted only
+//       -> {answer: {dirs}, at}
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -235,6 +238,22 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
     out.electronMode = latest && {enabled: latest.enabled, at: latest.at};
   }
   return {...out, at};
+}
+
+// Where an untitled TextEdit document would be saved by default (ruling 1220, #212's row): the account's Documents and
+// Desktop, iCloud Drive's TextEdit folder and its root; for each, the entries whose name begins with `name` (the intended
+// name, so nothing else of the folder leaves), [] for a folder that does not exist, null for one that could not be read.
+// Read on a GitHub-hosted runner only, never an owner's Mac. io: {env?, platform?, home?, readdir?}. -> {dirs} | {dirs:
+// null, refused}.
+export const DEFAULT_SAVE_DIRS = Object.freeze({documents: 'Documents', desktop: 'Desktop', icloudTextEdit: 'Library/Mobile Documents/com~apple~TextEdit/Documents',
+  icloudDrive: 'Library/Mobile Documents/com~apple~CloudDocs'});
+export function savedNamed(name, io = {}) {
+  if (!/^[\w.-]+$/.test(name ?? '') || name.startsWith('.')) throw new Error('saved needs --name <the intended name>');
+  if (!isGithubHosted(io.env ?? process.env, io.platform ?? process.platform)) return {dirs: null, refused: 'saved reads the default save folders on a GitHub-hosted runner only'};
+  const home = io.home ?? homedir(), readdir = io.readdir ?? fs.readdirSync;
+  return {dirs: Object.fromEntries(Object.entries(DEFAULT_SAVE_DIRS).map(([key, rel]) => {
+    try { return [key, readdir(join(home, rel)).filter(n => n.startsWith(name)).slice(0, 10)]; } catch (error) { return [key, error?.code === 'ENOENT' ? [] : null]; }
+  }))};
 }
 
 // The front-window probe's top window and the windows it passed over (see read). -> {top, skipped}.
@@ -810,6 +829,7 @@ export async function main(argv, {io: given = {}} = {}) {
       return timed(() => probeStart({kind: positional[0], window: flags.window, text: flags.text, mode: flags.mode, id: flags.source, lead: Number(flags.lead)}, io));
     case 'source': return timed(() => source(positional[0], {id: flags.source, value: flags.value}, io));
     case 'load': return timed(() => deviceLoad());
+    case 'saved': return timed(() => savedNamed(flags.name, io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

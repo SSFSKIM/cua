@@ -20,7 +20,7 @@ import {userWindowOf} from './oracle.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, MAY_HAVE_TAKEN_EFFECT,
   NEW_DOCUMENT_CELL, nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith,
-  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, scheduledActCell, SHEET_FOLLOW_MS,
+  SAVE_NAME, SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, scheduledActCell, SHEET_FOLLOW_MS,
   SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, STOPPED_PART_WAY, USER_CHANGED,
 } from './probe-plan.mjs';
 import {ABC} from './live-checks.mjs';
@@ -553,13 +553,17 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   if (!typed?.ok || typed.value?.typed !== true) return span.end(untypedRow(ctx, typed), {cleanup});
   const sheet = await keys(SAVE_SHEET_OPEN_CELL, ['super+s']);
   if (!sheet?.ok || sheet.value?.opened !== true) return unprepared(`the Save sheet did not open (${sheet?.error ?? sheet?.value?.reason ?? 'not sent'})`);
+  const savedBefore = defaultSaves(ctx);
   const destination = await keys(SAVE_SHEET_DESTINATION_CELL, ['super+shift+g', 'typeText', 'Return']);
   if (!destination?.ok || destination.value?.ready !== true) {
-    // Until the panel's controls are read (probe-plan.mjs SAVE_PANEL_CONTROLS) the cell only observes: what it saw rides on the row.
-    const observed = destination?.value?.observed;
-    return span.end({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'})`,
-      ...(observed ? {outcome: {observed}} : {})}, {cleanup});
+    // Until the panel's controls are read (probe-plan.mjs SAVE_PANEL_CONTROLS) the cell only observes: what it saw rides
+    // on the row, as does whether the Go To dialog closed in the cell (ruling 1219, s1). The row alone is decided.
+    const {observed, goTo} = destination?.value ?? {};
+    const left = goTo?.closed === false ? '; the Go To dialog would not close' : '';
+    return span.end({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'}${left})`,
+      ...(observed || goTo ? {outcome: {...(observed ? {observed} : {}), ...(goTo ? {goTo} : {})}} : {})}, {cleanup});
   }
+  const initialWhere = typeof destination.value.initialWhere === 'string' ? destination.value.initialWhere.slice(0, 80) : null;
   const ready = read(ctx, null, {frontKey: true});
   const window = userWindowOf(ready.reading, ctx.records[scene].pid);
   if (!window) return unprepared(`${scene}'s window was not in front`);
@@ -585,15 +589,18 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const sheetOpen = check.value?.sheetOpen === true;
   const files = Array.isArray(check.value?.destinationFiles) ? check.value.destinationFiles : null;
   const destinationEmpty = files !== null && files.length === 0;
+  // Where the document would have landed by default (ruling 1220): a file there under the intended name is a save.
+  const saves = savesAppeared(savedBefore, defaultSaves(ctx));
   const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
-  const row = {ok: sheetOpen && destinationEmpty && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
+  const row = {ok: sheetOpen && destinationEmpty && !saves.appeared.length && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
     outcome: {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
+      initialWhere, defaultSaves: saves,
       threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, leadMs: preMs,
       postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt: Number.isFinite(receivedAt) ? receivedAt : null, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
       postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (cua ? responseWindowValidity(postedAt, receivedAt, value.endAt) : postValidity(postedAt, intervalOf(ctx.engine, act)));
   // Committed: a finding whatever the timing, recorded with why the timing alone would not have judged it; never retried.
-  if (!sheetOpen || files?.length) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why ?? (cua ? stopValidity(value, stopped) : null)}}, {cleanup});
+  if (!sheetOpen || files?.length || saves.appeared.length) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why ?? (cua ? stopValidity(value, stopped) : null)}}, {cleanup});
   if (files === null) return span.end({...row, ok: false, invalid: 'the run\'s save folder could not be read after the act'}, {cleanup});
   // The next call moved by the miss: the post aimed SAVE_SHEET_AIM_MS after the receipt.
   const next = postAfterReceiptMs === null ? preMs : Math.min(PROBE_LEAD_MS - 1_000, Math.max(-1_000, preMs - (postAfterReceiptMs - SAVE_SHEET_AIM_MS)));
@@ -602,6 +609,24 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const stop = cua ? stopValidity(value, stopped) : null;
   if (stop) return span.end({...row, ok: false, invalid: stop}, {retry: true, lead: next, cleanup});
   return span.end(row, {cleanup});
+}
+// The default save folders' entries under the intended name, read on the device (./matrix-device.mjs savedNamed): {dirs}
+// or null when the read failed.
+function defaultSaves(ctx) {
+  try { return device(ctx, ['saved', '--name', SAVE_NAME]) ?? null; } catch (error) { if (error instanceof Stop) throw error; return null; }
+}
+// What appeared between two readings, as folder/name, and the folders either reading could not read (recorded, never
+// judged: the run's own folder is the sheet's destination, and the Return never reaches the sheet). -> {appeared, unread}.
+function savesAppeared(before, after) {
+  const appeared = [], unread = [];
+  const keys = [...new Set([...Object.keys(before?.dirs ?? {}), ...Object.keys(after?.dirs ?? {})])];
+  if (!before?.dirs || !after?.dirs) return {appeared, unread: before?.dirs || after?.dirs ? keys : ['all']};
+  for (const dir of keys) {
+    const was = before.dirs[dir], now = after.dirs[dir];
+    if (!Array.isArray(was) || !Array.isArray(now)) { unread.push(dir); continue; }
+    for (const name of now) if (!was.includes(name)) appeared.push(`${dir}/${name}`);
+  }
+  return {appeared, unread};
 }
 // cua's lane: the probe's post after the engine received the request and before the cell had its response. -> null,
 // or why the sample says nothing.

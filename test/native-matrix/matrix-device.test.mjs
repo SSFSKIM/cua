@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import * as matrixDevice from '../../scripts/native-matrix/matrix-device.mjs';
 import {alerts, compiled, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 // A GitHub-hosted runner's environment, where the input source may be written (ruling 1188); the owner's Mac's.
@@ -562,4 +563,16 @@ test('read: the vendor\'s overlay is passed over as cua\'s cursor is; each skip 
   const unowned = {...io(), enginePids: () => []};
   assert.deepEqual(read({approvedRuntime: '/R'}, unowned).frontWindow, {top: {owned: false, bundleId: 'com.openai.sky.CUAService', number: 77, ownerPid: 41, layer: 0}, skipped: []});
   assert.deepEqual(read({approvedRuntime: '/R'}, {...unowned, env: {}}).frontWindow, {top: {owned: false, bundleId: 'com.openai.sky.CUAService', number: null, ownerPid: null, layer: 0}, skipped: []});
+});
+
+// Ruling 1220: where an untitled TextEdit document would be saved by default, read on a hosted device alone, only the
+// entries named for the intended name leaving it.
+test('saved: the default save folders\' entries under the intended name, a missing folder empty, an unreadable one null; hosted only', () => {
+  const {savedNamed} = matrixDevice;
+  const listing = {'/h/Documents': ['cua-212-intended.rtf', 'Owner notes.rtf'], '/h/Desktop': ['x']};
+  const readdir = dir => { if (dir in listing) return listing[dir]; const error = new Error('x'); error.code = dir.includes('CloudDocs') ? 'EPERM' : 'ENOENT'; throw error; };
+  const hosted = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', home: '/h', readdir};
+  assert.deepEqual(savedNamed('cua-212-intended', hosted), {dirs: {documents: ['cua-212-intended.rtf'], desktop: [], icloudTextEdit: [], icloudDrive: null}});
+  assert.deepEqual(savedNamed('cua-212-intended', {...hosted, env: {}}), {dirs: null, refused: 'saved reads the default save folders on a GitHub-hosted runner only'});
+  assert.throws(() => savedNamed('../x', hosted), /--name/);
 });

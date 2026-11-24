@@ -516,7 +516,42 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
-    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full), verdict};
+    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
+    firstLane: firstLaneSplitOf(full), verdict};
+}
+
+// Ruling 1226: a sitting alternates which lane runs first by run (meta.laneOrder), so state one lane leaves for the
+// other (C-7: Go To reopened on the vendor's path) shows. Every failed sample (its own check, or not interfering) and
+// every sample without a verdict (sampleCause), per cell and engine, counted by the lane that ran first in its run.
+// Recorded, never judged. `results`: [{result}] of any cell (the sitting report passes the save-sheet's too).
+// -> {runs: {vendor, cua} (runs by their first lane), cells: [{section, id, engine, failed: {vendor, cua}, noVerdict: {vendor, cua}}]}.
+export function firstLaneSplitOf(results) {
+  const runs = {vendor: 0, cua: 0}, cells = new Map();
+  for (const {result} of results) {
+    const first = result.meta?.laneOrder?.first;
+    if (first !== 'vendor' && first !== 'cua') continue;
+    runs[first] += 1;
+    for (const row of result.rows ?? []) {
+      const cause = sampleCause({...row, hosted: result.meta?.hosted === true});
+      const failed = !cause && (row.ok === false || row.interference?.ok === false);
+      if (!cause && !failed) continue;
+      const key = `${row.section} ${row.id} ${row.engine}`;
+      if (!cells.has(key)) cells.set(key, {section: row.section, id: row.id, engine: row.engine, failed: {vendor: 0, cua: 0}, noVerdict: {vendor: 0, cua: 0}});
+      cells.get(key)[cause ? 'noVerdict' : 'failed'][first] += 1;
+    }
+  }
+  const order = c => `${c.section} ${c.id} ${c.engine}`;
+  return {runs, cells: [...cells.values()].sort((a, b) => order(a).localeCompare(order(b)))};
+}
+// The split as a report section, nothing when no run recorded its order. -> [line].
+export function renderFirstLaneSplit(split) {
+  if (!split || split.runs.vendor + split.runs.cua === 0) return [];
+  const sum = (kind, first) => split.cells.reduce((n, c) => n + c[kind][first], 0);
+  return ['## By the lane that ran first (ruling 1226)', '',
+    `Runs by the lane that ran first in their run number: vendor first ${split.runs.vendor}, cua first ${split.runs.cua}. Failed samples: ${sum('failed', 'vendor')} in vendor-first runs, `
+      + `${sum('failed', 'cua')} in cua-first runs; samples without a verdict: ${sum('noVerdict', 'vendor')} and ${sum('noVerdict', 'cua')}. Recorded, never judged.`, '',
+    ...(split.cells.length ? ['| cell | engine | failed, vendor first | failed, cua first | no verdict, vendor first | no verdict, cua first |', '|---|---|---|---|---|---|',
+      ...split.cells.map(c => `| ${c.section} ${c.id} | ${c.engine} | ${c.failed.vendor} | ${c.failed.cua} | ${c.noVerdict.vendor} | ${c.noVerdict.cua} |`), ''] : [])];
 }
 
 // R3's witness per full run that recorded one (ruling 1225, ./witness.mjs): its positive control's result per tapped
@@ -697,6 +732,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     out.push('');
   }
 
+  out.push(...renderFirstLaneSplit(j.firstLane));
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {
     const list = j.speed.filter(s => s.scene === scene);

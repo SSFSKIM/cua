@@ -14,7 +14,7 @@ import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-resu
 import {isCaretRow, isPointerdownRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
-import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary, toTopOf, witnessOf} from '../../scripts/native-matrix/summary.mjs';
+import {firstLaneSplitOf, judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderFirstLaneSplit, renderSummary, toTopOf, witnessOf} from '../../scripts/native-matrix/summary.mjs';
 import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {NOT_JUDGED_RULES, notJudgedRefusal} from '../../scripts/native-matrix/not-judged.mjs';
 
@@ -1290,6 +1290,29 @@ test('R3\'s witness: each run\'s control result and the rows it left NO VERDICT,
   assert.match(text, /^- R3's witness \(ruling 1225\): the control seen in 4 of 6 runs; NOT seen: cua run 2 \(textedit\); no witness: cua run 3 \(off a GitHub-hosted runner: no witness tap \(ruling 1225\)\); 1 row\(s\) NO VERDICT on it\.$/m);
   assert.deepEqual(witnessOf([]), []);
   assert.doesNotMatch(renderSummary(judged()), /R3's witness/);
+});
+
+// Ruling 1226: a sitting alternates which lane runs first by run, and the report splits every failed and every
+// no-verdict sample by it, per cell and engine, so state one lane leaves for the other shows and cannot systematically
+// favour one engine.
+test('ruling 1226: every failed and no-verdict sample split by which lane ran first in its run', () => {
+  const firstOf = run => (run % 2 === 1 ? 'vendor' : 'cua');
+  const order = engine => run => ({laneOrder: {first: firstOf(run), position: firstOf(run) === engine ? 1 : 2}});
+  const j = judged({
+    vendor: {meta: order('vendor'), tweak: (rows, run) => (run === 1 ? set(CLICK, {invalid: 'not in front'})(rows) : rows)},
+    cua: {meta: order('cua'), tweak: (rows, run) => (run === 2 ? set(CLICK, {ok: false})(set(BACK, {interference: {ok: false, frontmost: false, topWindow: true, focus: true, activations: 0, route4: false}})(rows)) : rows)},
+  });
+  const click = j.firstLane.cells.filter(c => c.id === CLICK);
+  assert.deepEqual(click.map(c => [c.engine, c.failed, c.noVerdict]), [
+    ['cua', {vendor: 0, cua: 1}, {vendor: 0, cua: 0}],
+    ['vendor', {vendor: 0, cua: 0}, {vendor: 1, cua: 0}]]);
+  assert.deepEqual(j.firstLane.cells.find(c => c.id === BACK && c.engine === 'cua').failed, {vendor: 0, cua: 1}, 'a not-interfering failure counts as failed');
+  assert.deepEqual(j.firstLane.runs, {vendor: 4, cua: 2}, 'runs by their first lane, both sides counted');
+  const text = renderSummary(j);
+  assert.match(text, /^## By the lane that ran first \(ruling 1226\)$/m);
+  assert.match(text, new RegExp(`^\\| method ${CLICK.replace(/[./]/g, c => `\\${c}`)} \\| cua \\| 0 \\| 1 \\| 0 \\| 0 \\|$`, 'm'));
+  assert.deepEqual(renderFirstLaneSplit(firstLaneSplitOf([])), [], 'nothing when no run recorded its order');
+  assert.doesNotMatch(renderSummary(judged()), /By the lane that ran first/);
 });
 
 // Fix wave I2 and I3: a cua failure is shared only with its own paired vendor sample's (the same run and sample, as

@@ -42,7 +42,7 @@ import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFi
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
-import {judge, readResults, renderNotJudged} from './native-matrix/summary.mjs';
+import {firstLaneSplitOf, judge, readResults, renderFirstLaneSplit, renderNotJudged} from './native-matrix/summary.mjs';
 import {hostedApprove} from './hosted-sittings/approve.mjs';
 import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowObserved} from './hosted-sittings/counts.mjs';
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
@@ -112,6 +112,8 @@ async function runCommand(sitting, values) {
     parts.push('## Per-cell counts', '', counts, ...(problems.length ? ['Unread results: ' + problems.join('; '), ''] : []));
     // What the judge leaves out of the verdict, each with its reason and its ticket or evidence (ruling 1222).
     parts.push(...renderNotJudged(judge(results, problems)));
+    // Every failed and no-verdict sample of every run, the save-sheet's included, by the lane that ran first (ruling 1226).
+    parts.push(...renderFirstLaneSplit(firstLaneSplitOf(results)));
     if (plan.pilotReads) {
       const timingFile = join(out, 'focus-timing.json');
       const reads = renderPilotReads(pilotReads(results, {focusTiming: existsSync(timingFile) ? JSON.parse(readFileSync(timingFile, 'utf8')) : null}));

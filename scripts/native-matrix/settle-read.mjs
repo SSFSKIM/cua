@@ -10,10 +10,12 @@ const SETTLE_POLL_MS = 100;
 // The loop as cell source. `find`: the field's index as an expression over `ax`; `done`: whether the value read so far
 // (`__value`) is the expected one, as an expression. The clock is monotonic and starts when the first read completes; no
 // read starts once the cap has passed, and one that returns after it is not taken (`__late`): the last value read inside
-// the cap is the one left. A field missing from a read ends the cell {invalid}. Leaves `__value` (the last value read
-// inside the cap), `__reads`, `__from` and `__last` (the first and last reads' times), `__late`, and `__trail` (each
-// read taken: {ms after the first, value}; the value stays in the cell unless the row's own outcome says otherwise).
-export const settleRead = ({find, done}) => `let __value = null, __from = null, __since = null, __last = null, __reads = 0, __late = false;
+// the cap is the one left. A field missing from a read ends the cell {invalid}, or with `missing: 'unread'` ends the loop
+// with `__missing` set and that read in the trail as {ms, value: null}, the row's own outcome then saying the final value
+// was unread. Leaves `__value` (the last value read inside the cap, null when none), `__reads`, `__from` and `__last`
+// (the first and last reads' times), `__late`, `__missing`, and `__trail` (each read taken: {ms after the first,
+// value}; the value stays in the cell unless the row's own outcome says otherwise).
+export const settleRead = ({find, done, missing = 'invalid'}) => `let __value = null, __from = null, __since = null, __last = null, __reads = 0, __late = false, __missing = false;
 const __trail = [];
 for (;;) {
   const ax = await observe();
@@ -22,7 +24,7 @@ for (;;) {
   if (__from !== null && __at - __from > ${SETTLE_CAP_MS}) { __late = true; break; }
   __last = __at; __from ??= __last; __reads++;
   const __index = ${find};
-  if (__index === null) return {invalid: "the field is not in the text"};
+  if (__index === null) ${missing === 'unread' ? '{ __missing = true; __trail.push({ms: Math.round(__last - __from), value: null}); break; }' : 'return {invalid: "the field is not in the text"};'}
   const __now = plain(valueOfIndex(ax, __index) ?? "");
   __trail.push({ms: Math.round(__last - __from), value: __now});
   if (__now !== __value) { __value = __now; __since = __last; }

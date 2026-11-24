@@ -392,10 +392,16 @@ return {ok: !panel(ax) && inFront(ax), outcome: {closed: !panel(ax), documentInF
 // The Save sheet's name written through the lane's own facade (ruling 1204): pilot C-3's vendor setValue("") on the name
 // field returned without throwing while the next observation still read the old value. The fixed string, which the
 // prepare checks the field does not already hold, is written, then read back by the settle (./settle-read.mjs) until
-// it reads the string or holds still. The outcome: whether setValue returned (`returnedOk`), each read's time with its
-// value's length and first characters (fixture text), the settle's length, and the final value's length, hash and
-// first characters; `failure` names a write that returned while the field read as it was before.
-const panelSetValue = (target, kase, field, value, what) => ({method: 'setValue', case: kase, expect: 'outcome', regimes: ['frontmost'],
+// it reads the string or holds still. Judged by its effect on the name, on both engines alike (parity, as every
+// frontmost method row): it passes when the final value is the string, whether or not setValue threw
+// (`ownEffect`: ./matrix-cells.mjs keeps this outcome and adds the thrown reply beside it, never the target's watched
+// state in place of the name's). The final value's evidence is its length, its SHA-256 and its first 16 characters,
+// never the whole value (`final: 'unread'` when the field left the text, with no value at all); `unchanged` whether it
+// is the value the prepare read; `failure` names a write that returned while the field kept its value. Kept apart as
+// diagnostics, outside what two samples' failures are compared by (`trace`, ./answers.mjs): each read's time with its
+// value's length and first 16 characters, the settle's length and whether a read came after its cap; `returnedOk`
+// is the answer's, compared as the answer.
+const panelSetValue = (target, kase, field, value, what) => ({method: 'setValue', case: kase, expect: 'outcome', regimes: ['frontmost'], ownEffect: true,
   prepare: `const ax = await observe();
 if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
 const index = ${field};
@@ -405,11 +411,13 @@ if (before === ${j(value)}) return {ready: false, reason: "the field already hol
 __m.index = index; __m.before = {length: before.length, hash: sha256Hex(before)};
 return {ready: true};`,
   act: `await __app.setValue(__m.index, ${j(value)});`,
-  check: `${settleRead({find: field, done: `__value === ${j(value)}`})}
-const written = __value === ${j(value)}, hash = sha256Hex(__value), returnedOk = __m.threw === null;
-const unchanged = hash === __m.before.hash;
-return {ok: written, outcome: {written, returnedOk, unchanged, length: __value.length, hash, prefix: __value.slice(0, 16), settleMs: Math.round(__last - __from),
-  reads: __trail.map(r => ({ms: r.ms, length: r.value.length, prefix: r.value.slice(0, 16)})), ...(__late ? {late: true} : {}),
+  check: `${settleRead({find: field, done: `__value === ${j(value)}`, missing: 'unread'})}
+const returnedOk = __m.threw === null;
+const trace = {reads: __trail.map(r => ({ms: r.ms, length: r.value === null ? null : r.value.length, prefix: r.value === null ? null : r.value.slice(0, 16)})),
+  settleMs: __from === null ? null : Math.round(__last - __from), ...(__late ? {late: true} : {}), ...(__missing ? {missing: true} : {})};
+if (__missing || __value === null) return {ok: false, outcome: {written: false, final: "unread", returnedOk, trace}};
+const written = __value === ${j(value)}, hash = sha256Hex(__value), unchanged = hash === __m.before.hash;
+return {ok: written, outcome: {written, final: "read", unchanged, length: __value.length, hash, prefix: __value.slice(0, 16), returnedOk, trace,
   ...(!written && returnedOk && unchanged ? {failure: "setValue returned ok, the field did not change"} : {})}};`});
 
 // The Save sheet of an untitled document (⌘N, then ⌘S: ./panels.mjs), never saved: no Return is sent.

@@ -19,8 +19,10 @@ export const UNCONFIRMED_NAMES = Object.freeze(['clickUnconfirmed', 'typeUnconfi
 export const kindOfName = name => (REFUSAL_NAMES.includes(name) ? 'refused' : UNCONFIRMED_NAMES.includes(name) ? 'unconfirmed' : null);
 
 const PREFIX = /^Computer Use server error -?\d+: /;
-// The keys of an outcome that record the answer rather than the effect.
-const ANSWER_KEYS = new Set(['threw', 'errorName', 'message', 'refused', 'expected', 'stopped', 'sentenceAgrees', 'sentenceEntered', 'entered', 'retries']);
+// The keys of an outcome that record the answer rather than the effect, and those a cell keeps as diagnostics only
+// (`trace`: the Save sheet setValue's reads with their times, its settle's length; ruling 1204): never compared as effect.
+const ANSWER_KEYS = new Set(['threw', 'errorName', 'message', 'refused', 'expected', 'stopped', 'sentenceAgrees', 'sentenceEntered', 'entered', 'retries', 'returnedOk']);
+const DIAGNOSTIC_KEYS = new Set(['trace']);
 
 // -> {kind, name, sentence}.
 export function answerOf(row) {
@@ -49,7 +51,7 @@ export function sameReadBack(v, c) {
 // outcome, the answer's keys apart) equal on both, numbers and names as well as booleans (Finder selecting no row is
 // not Finder selecting two). Nothing recorded is no proof.
 export function sameEffect(v, c) {
-  const effect = row => Object.fromEntries(Object.entries(row?.outcome ?? {}).filter(([k]) => !ANSWER_KEYS.has(k)));
+  const effect = row => Object.fromEntries(Object.entries(row?.outcome ?? {}).filter(([k]) => !ANSWER_KEYS.has(k) && !DIAGNOSTIC_KEYS.has(k)));
   const a = effect(v), b = effect(c);
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
   return keys.length > 0 && keys.every(k => JSON.stringify(a[k]) === JSON.stringify(b[k]));

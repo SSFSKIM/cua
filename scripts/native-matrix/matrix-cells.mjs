@@ -86,6 +86,8 @@ return {actMs, at: [__from, Date.now()], threw: __m.threw !== null};`),
 const __m = globalThis.__m;
 if (!__m?.ready) return {invalid: "the case was not prepared"};
 const __r = await (async () => {${c.check}\n})();
+${c.expect === 'outcome' && c.ownEffect ? `// A case judged by its own effect (./plan.mjs ownEffect): its outcome and verdict kept, the thrown reply beside them.
+if (__m.threw !== null && __r?.outcome) return {...__r, outcome: {...__r.outcome, effect: __r.ok === true, threw: __m.threw, errorName: __m.errorName}};` : ''}
 ${c.expect === 'outcome' ? `// An outcome case whose action threw fails, whatever the state reads; what it read is kept for the judge.
 if (__m.threw !== null) {
   ${watched ? `const __unchanged = typeof __m.watched === "string" && ${watched} === __m.watched;` : ''}

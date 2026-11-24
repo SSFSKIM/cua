@@ -417,7 +417,9 @@ async function runCell(text, apps) {
 // shows the selected text in place of the focused element, as the renderer does.
 // `elsewhere`: the sheet opens with another control (4) focused, holding the name's own text selected, and a click on the
 // name field does not take (review finding 5).
-function standInTextEdit({saveName = '', writes = true, elsewhere = false} = {}) {
+// `write`: how setValue lands, given the value and {set(text), close()}; it may throw (by default it sets the value
+// when `writes`).
+function standInTextEdit({saveName = '', writes = true, elsewhere = false, write = null} = {}) {
   const sent = {keys: [], texts: [], values: [], selections: [], clicks: []};
   let up = null, value = '', focused = null, selected = null;
   const CANCEL = 3;
@@ -441,7 +443,11 @@ function standInTextEdit({saveName = '', writes = true, elsewhere = false} = {})
       if (k === 'Escape') close();
     },
     async typeText(t) { sent.texts.push(t); value = selected !== null ? value.replace(selected, t) : value + t; selected = null; },
-    async setValue(i, v) { sent.values.push([i, v]); if (writes) { value = v; selected = null; } },
+    async setValue(i, v) {
+      sent.values.push([i, v]);
+      if (write) return write(v, {set: text => { value = text; selected = null; }, close});
+      if (writes) { value = v; selected = null; }
+    },
     async selectText(i, t) { sent.selections.push([i, t]); if (i === focused && value.includes(t)) selected = t; },
     async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else if (!elsewhere) { focused = i; selected = null; } },
   };
@@ -527,14 +533,50 @@ test('the Save sheet\'s setValue.name: a write that takes passes; one that retur
   const o = took.check.outcome;
   assert.deepEqual([o.written, o.returnedOk, o.unchanged, o.length, o.prefix, o.failure], [true, true, false, SAVE_PANEL_VALUE.length, SAVE_PANEL_VALUE, undefined]);
   assert.match(o.hash, /^[0-9a-f]{64}$/);
-  assert.ok(o.reads.length >= 1 && o.reads.every(r => Number.isInteger(r.ms) && Number.isInteger(r.length)) && o.reads.at(-1).prefix === SAVE_PANEL_VALUE, JSON.stringify(o.reads));
-  assert.ok(Number.isInteger(o.settleMs) && o.settleMs < 500);
+  assert.equal(o.final, 'read');
+  // The trace: diagnostics apart from the compared fields.
+  assert.ok(o.trace.reads.length >= 1 && o.trace.reads.every(r => Number.isInteger(r.ms) && Number.isInteger(r.length)) && o.trace.reads.at(-1).prefix === SAVE_PANEL_VALUE, JSON.stringify(o.trace));
+  assert.ok(Number.isInteger(o.trace.settleMs) && o.trace.settleMs < 500);
+  assert.deepEqual(['reads', 'settleMs', 'late'].filter(k => k in o), [], 'no timing beside the effect');
   const kept = (await standInCases(standInTextEdit({saveName: 'Untitled', writes: false}))).find(r => r.case === 'setValue.name');
   const k = kept.check.outcome;
   assert.equal(kept.check.ok, false);
   assert.deepEqual([k.written, k.returnedOk, k.unchanged, k.prefix, k.failure], [false, true, true, 'Untitled', 'setValue returned ok, the field did not change']);
   // The settle waited for the value to hold still before judging it.
-  assert.ok(k.settleMs >= 500 && k.reads.length > 1, JSON.stringify(k));
+  assert.ok(k.trace.settleMs >= 500 && k.trace.reads.length > 1, JSON.stringify(k));
+});
+// Final review, item 1: the trace's times never make two failures differ. Two engines that both returned and both left
+// the name as it was fail the same way (parity), however their reads were timed; another read-back is another failure.
+test('setValue.name: equal failures with different timings are the same failure; another read-back is not', async () => {
+  const {sameFailure} = await import('../../scripts/native-matrix/answers.mjs');
+  const kept = (await standInCases(standInTextEdit({saveName: 'Untitled', writes: false}))).find(r => r.case === 'setValue.name');
+  const vendor = {ok: false, outcome: kept.check.outcome};
+  const cua = {ok: false, outcome: {...kept.check.outcome, trace: {reads: [{ms: 0, length: 8, prefix: 'Untitled'}, {ms: 101, length: 8, prefix: 'Untitled'}], settleMs: 611, late: true}}};
+  assert.notDeepEqual(vendor.outcome.trace, cua.outcome.trace);
+  assert.equal(sameFailure(vendor, cua), true);
+  const partial = (await standInCases(standInTextEdit({saveName: 'Untitled', write: (v, {set}) => set(v.slice(0, 9))}))).find(r => r.case === 'setValue.name');
+  assert.equal(sameFailure(vendor, {ok: false, outcome: partial.check.outcome}), false);
+  // The pressKey rows share the settle: their failures compare by the read-back's hash alone (ruling 1144), so their
+  // `reads`, `settleMs` and `late` never made two of them differ.
+  const pressed = extra => ({ok: false, outcome: {exact: false, nfcEqual: false, length: 1, expectedLength: 1, hash: 'a'.repeat(64), ...extra}});
+  assert.equal(sameFailure(pressed({reads: 3, settleMs: 512}), pressed({reads: 9, settleMs: 1990, late: true}), {readBack: true}), true);
+});
+// Final review, item 2: a setValue that threw is measured by its effect on the name, the thrown reply kept beside it.
+test('setValue.name thrown: landed passes, a partial change fails as changed, a field gone keeps the answer and trace, unread', async () => {
+  const thrown = write => standInCases(standInTextEdit({saveName: 'Untitled', write})).then(rows => rows.find(r => r.case === 'setValue.name').check);
+  const landed = await thrown((v, {set}) => { set(v); throw new Error('the write was not confirmed'); });
+  assert.equal(landed.ok, true, JSON.stringify(landed));
+  assert.deepEqual([landed.outcome.written, landed.outcome.unchanged, landed.outcome.returnedOk, landed.outcome.threw, landed.outcome.effect], [true, false, false, 'the write was not confirmed', true]);
+  const partial = await thrown((v, {set}) => { set(v.slice(0, 9)); throw new Error('stopped part-way'); });
+  assert.equal(partial.ok, false);
+  assert.deepEqual([partial.outcome.written, partial.outcome.unchanged, partial.outcome.prefix, partial.outcome.threw, partial.outcome.failure], [false, false, 'CUAMATRIX', 'stopped part-way', undefined]);
+  const gone = await thrown((v, {close}) => { close(); throw new Error('the sheet went away'); });
+  assert.equal(gone.ok, false);
+  assert.deepEqual([gone.outcome.written, gone.outcome.final, gone.outcome.returnedOk, gone.outcome.threw, gone.outcome.trace.missing], [false, 'unread', false, 'the sheet went away', true]);
+  assert.deepEqual([gone.outcome.trace.reads.at(-1).length, 'hash' in gone.outcome], [null, false]);
+  // Returned and gone: the answer and the trace kept all the same.
+  const quiet = await thrown((v, {close}) => { close(); });
+  assert.deepEqual([quiet.ok, quiet.outcome.final, quiet.outcome.returnedOk, quiet.outcome.trace.missing], [false, 'unread', true, true]);
 });
 test('a field whose value the prepare cannot select whole is not prepared, by a reason that says so, nothing typed', async () => {
   const stand = standInTextEdit({saveName: 'Untitled'});

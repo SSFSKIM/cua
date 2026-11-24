@@ -2949,6 +2949,28 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Engine installs stay manual (the owner, 1211; #579 closed by #585).** Nothing in M6b installs or updates an engine by itself.
   Date/Author: 2026-11-24, linux171 (plan-executor).
 
+- Decision (2026-11-24, M6b's pre-flight review; rulings 1215 and 1216, superseding 1193 (b)): **M6b reports the vendor's Linux tree and does not remove it. The refusals are source-aware, with one install command.**
+  - **Why (b′).** The pre-flight's adversarial review found three P1s in the planned removal:
+    1. The old installer's record holds the archive's hash, not the tree's, so it can't prove the tree is cua's.
+    2. The retry protocol could delete a different directory.
+    3. A failed first M6b install would delete the runtime that the kept pointer still names. A rename also doesn't stop a running pre-#115 host (#135's hazard).
+    A destructive migration to reclaim about 211 MB per home isn't worth those risks. Keeping an old checkout working on a failed upgrade is worth more than the disk.
+  - **What (b′) is.**
+    - `cua install` and doctor name the vendor tree only when its install record says cua placed it. They give its path, its size, and that nothing reads it since this release.
+    - Doctor's row is informational and never fails.
+    - A tree with no record behind it is not named as cua's.
+    - The sentence gives the path to delete by hand, and cua runs no deletion. Forks F3 and F4 fall away.
+    - An opt-in removal is #586, a later ticket carrying the three P1s as its requirements.
+  - **The refusals (1215; 1216 on the override).**
+    - The bump is minor, 0.30.0. Every refusal names one install command, `node <checkout>/bin/cua.mjs install --engine`. `cua engine build` stays in the README's engine section only.
+    - Each sentence first gives the prerequisite for the source that selected it: unset CUA_LINUX_ENGINE_BIN; unset CUA_NATIVE_ENGINE; remove `engine` from engine.json, or name both in precedence order. Then comes that command. The prerequisite is a precondition, not a second remedy.
+    - Install with vendor selected runs every step, then exits nonzero `engine_retired`, saying what to unset and that the install otherwise completed. One test per source pins each sentence.
+  - **The other forks.**
+    - F5: the deb records go to `runtime/provenance/`, trimmed to what the pin-time reader needs, a narrowly validated lockfile member path included, and are proved end to end through the new reader.
+    - F6, F8, F9 and F11 as recommended.
+    - F7 is a development-only exception, kept out of product entry points. Both arches' full vendor release trees are preserved and hash-checked outside any cua home, and one differential step runs on the relocated fixture alone.
+  Date/Author: 2026-11-24, linux171 (plan-executor), recording the design session's rulings.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

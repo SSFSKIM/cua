@@ -2916,6 +2916,25 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Item 3 is declined for 0.4.5 (F1).** The engine sees Chrome's leave cursor, but it can't use it: it never knows the drop zone, a genuine drop also ends with no leave, and Chrome's Xdnd status never crosses X. The question is #575.
   Date/Author: 2026-11-24, linux171 (plan-executor); the F2 reading accepted by the design session.
 
+- Decision (2026-11-24, linux-engine 0.4.5's counted reach; rulings 1193, 1194, 1200 and 1201): **0.4.5 passes its reach on both arches at H10 = 2c66966bd: H1, H2, L4a, and L4d at 993's bar. This is the first measurement of the shipped bytes, and it meets the counted-reach half of the owner's soak condition (1193).**
+  - **x64** (task 162; evidence `engine-045/reach/x64/`, fa14e9bd7):
+    - H1, H2 and L4a: 560 of 560 settled Electron drags at `rest_ms` 30, with 0 false oks and 0 stale.
+    - L4d: every Chrome cell had 0 false oks and 0 stale. long-left was 100 honest, plain-long 300 landed, left 30 honest and inzone-out 30 honest; Electron was 30 of 30 exercised.
+  - **arm64** (task 163, on the arm VM dc-linux171arm-996d; evidence `engine-045/reach/arm64/`, d8f81cd2f):
+    - H1, H2 and L4a: 560 of 560 at 30 ms. H2 had one #365 hung-sink drop on the handle lane, and L4a one zone-truth mismatch on `left`; both are findings, not fails.
+    - L4d: the same as x64, 0 false oks and 0 stale on every Chrome cell.
+  - **release_sync on all 920 Chrome rows.** Item 1's after-path tail ran:
+    - x64: on 124 of 300 plain-long rows, 6 of 30 left and 1 of 30 inzone-out;
+    - arm64: on 216 plain-long and 20 left. On arm64, 28 and 5 of those rows were moved there by item 1 alone, the gate shut.
+  - **Item 2's measured residual (for #575).** Item 2 is a dropped tail visit answered unconfirmed.
+    - It fired once on x64: plain-long #268, a drop that landed and was answered `unconfirmed: visit_dropped`.
+    - That's 1 in 300 landed long drops on x64, and 0 in 300 on arm64.
+    - It fired on no row of the arm64 ×300 (task 160) and no false-ok-shaped row anywhere.
+    - That is the designed fail-closed cost: a real drop answered with the read-the-page notice.
+  - **Shipped with (1201):** #580 (the review's two P2s and two P3s, for the next engine release) and #581 (an arm64 clipboard test hang in a release build). Until #580 ships, a red on the option (c) live test is rerun once and counted under #444.
+  - **The homes (1200, #579).** Every Linux home on 0.4.4 is refused until `cua install --engine` runs there. dc-linux171-1e68's own home was brought to the plugin's pins on 11-24 as #579's first live case.
+  Date/Author: 2026-11-24, linux171 (plan-executor).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -1,7 +1,7 @@
 // The vendor's tree kept out of every own lookup (#171 M6a; the pre-flight's §3.3, §3.5): the Node lookup and the engine
 // lookup (src/runtime/launch.mjs), the sandbox helper's path and the scoped preflight's walk of the engine's lookup path
 // (src/runtime/sandbox.mjs), and the git the secret store's project lookup runs (src/secrets/project.mjs).
-import {accessSync, constants, lstatSync, readlinkSync, statSync} from 'node:fs';
+import {accessSync, constants, lstatSync, readdirSync, readlinkSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {realHome} from './layout.mjs';
 
@@ -64,13 +64,17 @@ export function executableOutsideVendorTree(command, pathVariable, home) {
   return null;
 }
 
-// The roots of the vendor's tree of the cua home `home`: <home>/runtimes as spelled, under the home's real path, and
-// where each of those resolves, when it exists, by the same kernel-faithful walk (guarding nothing). Finding that reads
-// the runtimes entry itself (its lstat, and its target when it is a link) and the directories it leads through, never
-// anything inside the tree.
+// The roots of the vendor's tree of the cua home `home`: <home>/runtimes as spelled and under the home's real path, and,
+// where that entry is a symbolic link, where it resolves by the same kernel-faithful walk (guarding nothing). Whether
+// it is a link is read from the home's own listing, so a home whose runtimes/ is a directory, or absent, has nothing
+// at or under it named by any call (the live judge counts the entry itself, the pre-flight's §3.5); only a link is
+// read, its target walked, and nothing inside the tree.
 function vendorTreeRoots(home) {
   const spelled = [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
-  return [...new Set([...spelled, ...spelled.map(root => outsideVendorTree(root).real).filter(Boolean)])];
+  const isLink = root => {
+    try { return readdirSync(dirname(root), {withFileTypes: true}).some(entry => entry.name === 'runtimes' && entry.isSymbolicLink()); } catch { return false; }
+  };
+  return [...new Set([...spelled, ...spelled.filter(isLink).map(root => outsideVendorTree(root).real).filter(Boolean)])];
 }
 // A path's components as the kernel walks them: empty ones dropped, and a trailing slash kept as the `.` it means.
 const pathComponents = path => [...path.split('/').filter(part => part !== ''), ...(path.endsWith('/') && path.replace(/\/+$/, '') !== '' ? ['.'] : [])];

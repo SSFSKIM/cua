@@ -75,6 +75,8 @@ function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'downlo
   const stub = (name, body) => { writeFileSync(join(bin, name), `#!/usr/bin/env bash\nprintf '${name} %s\\n' "$*" >>'${log}'\n${body}\n`); chmodSync(join(bin, name), 0o755); };
   stub('cua', 'if [[ "$1" == install ]]; then printf \'%s\\n\' "$CUA_INSTALL_JSON"; exit "$CUA_INSTALL_EXIT"; fi; exit 0');
   stub('curl', 'echo "curl: (6) Could not resolve host" >&2; exit 6');
+  // GNU's `sha256sum -c --status` as the script calls it (the VM's coreutils; macOS's sha256sum takes other flags)
+  stub('sha256sum', 'read -r want file; got="$(node -e \'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))\' "$file")" || exit 1; [[ "$got" == "$want" ]]');
   const script = `source '${dir}cua-provision.sh'
 cache='${cache}' home='${home}' state='${state}' checkout='${checkout}' CUA_DEB='${deb}' CUA_DEB_WAIT=5
 as_user() { HOME='${home}' "$@"; }

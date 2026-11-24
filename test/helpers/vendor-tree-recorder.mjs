@@ -99,11 +99,14 @@ export const within = (path, root) => { const rel = relative(root, path); return
 // kernel resolves it (a tree relocated to another volume behind a link).
 export const treeRoots = home => [...new Set([join(home, 'runtimes'), realOrNull(join(home, 'runtimes'))].filter(Boolean))];
 
-// What of `seen` touched the vendor's tree of `home`: a path under a root, as written or as reached. The root itself
-// counts too, but for the lstat and readlink the guard (src/runtime/vendor-tree.mjs) takes of it to find where the tree
-// lies: they read the entry, not the tree.
+// What of `seen` touched the vendor's tree of `home`: a path under a root or the root itself, as written or as reached,
+// as the live cell's judge counts them (scripts/accept/linux-trace.mjs). Only where <home>/runtimes is a link (a tree
+// relocated to another volume) are the lstat and readlink of the roots let pass: the guard (src/runtime/vendor-tree.mjs)
+// reads that link to find where the tree lies, and nothing inside it.
+const isLink = path => { try { return fs.lstatSync(path).isSymbolicLink(); } catch { return false; } };
 export function inVendorTree(seen, home) {
   const roots = treeRoots(home);
+  const relocated = isLink(join(home, 'runtimes'));
   return seen.filter(({call, path, reached: at}) => [path, at].some(p => roots.some(root => within(p, root)
-    && !(roots.includes(p) && /^(?:lstatSync|readlinkSync)$/.test(call)))));
+    && !(relocated && roots.includes(p) && /^(?:lstatSync|readlinkSync)$/.test(call)))));
 }

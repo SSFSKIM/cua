@@ -278,8 +278,13 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   const why = probeProblem(probe.answer) ?? postValidity(postedAt, interval);
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
+  // A window of the user app's own process on top (ruling 1223, R3; ./oracle.mjs userAppWindow) needs the user's input
+  // landed and an event record of the pids the engine posted to. The cell keeps none: the engine's meta names its route
+  // (2' posts to the driven app's pid as the engine resolved it) and a key target's pid only on a cut-off walk, a claim
+  // and not a record; the one per-pid tap (./key-route-tap.swift) is the key-route diagnostic's, Escape alone. So
+  // `posts` is null and such a row stays failed, the record named missing.
   return span.end(row, {oracle: {before: before.reading, after: after.reading, named: {before: before.frontWindow?.top ?? null, after: after.frontWindow?.top ?? null}, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid,
-    ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
+    userLanded, posts: null, ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
 // The window-order oracle's data for a background attempt (./oracle.mjs judgeInterference, #485): the order read before
 // and after its act, the driven app's windows the targets, the user window by its number before the act.

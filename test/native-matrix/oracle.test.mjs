@@ -149,3 +149,46 @@ test('judgeInterference records what the top window was before and after when it
   assert.equal(moved.topChange.userWindowMoved, true);
   assert.equal('topChange' in judgeInterference({before: reading(user), after: reading(user), userPid: 11, scene: 'finder'}), false);
 });
+
+// Ruling 1223 (R3): C-6's Finder and Chrome concurrent@textedit rows found a 52×22 window of the user TextEdit's own pid on
+// top after the act. Another window of the user app's process on top is no interference only when the user window
+// keeps its number, its bounds and the focus (the focus probe names it at its bounds), the user's input landed, and an
+// event record shows the engine posted nothing to the user app's pid in the cell; then the pass says so. With no such
+// record the row stays failed, what is missing named.
+test('ruling 1223: a top window of the user app\'s own process passes only with the user window kept, the input landed and no post to its pid on record', () => {
+  const userWindow = {pid: 11, number: 3};
+  const user = {ownerPid: 11, number: 3, bounds: {x: 0, y: 0, width: 500, height: 400}, owned: true};
+  const popup = {ownerPid: 11, number: 9, bounds: {x: 40, y: 60, width: 52, height: 22}, owned: true};
+  const reading = topWindow => ({frontmost: {pid: 11, bundleId: 'com.apple.TextEdit', owned: true}, topWindow});
+  const entry = (w, bundleId = 'com.apple.TextEdit') => ({owned: true, pid: w.ownerPid, number: w.number, bundleId, layer: 0});
+  const driven = {owned: true, pid: 7, number: 4, bundleId: 'com.apple.finder', layer: 0};
+  const kept = {appOwned: true, appPid: 11, named: true, valueHash: 'h'};
+  const base = {before: reading(user), after: reading(popup), userPid: 11, scene: 'finder', focus: kept, userLanded: true, userWindow, targets: ['com.apple.finder'],
+    order: {before: [entry(user), driven], after: [entry(popup), entry(user), driven]}};
+  const clean = judgeInterference({...base, posts: {source: 'tap', pids: [7]}});
+  assert.equal(clean.ok, true, JSON.stringify(clean));
+  assert.equal(clean.topWindowBy, 'user app\'s own window');
+  assert.deepEqual(clean.userAppWindow, {pass: true, failed: []});
+  const posted = judgeInterference({...base, posts: {source: 'tap', pids: [7, 11]}});
+  assert.equal(posted.ok, false);
+  assert.deepEqual(posted.userAppWindow, {pass: false, failed: ['the engine posted to the user app\'s pid in the cell (tap)']});
+  // No record of where the engine posted (the matrix's cells keep none today): failed as before, the record named missing.
+  const unrecorded = judgeInterference(base);
+  assert.equal(unrecorded.ok, false);
+  assert.deepEqual(unrecorded.userAppWindow, {pass: false, failed: [], missing: 'no event record of the pids the engine posted to in the cell'});
+  assert.equal(unrecorded.topWindowBy, undefined);
+  // Each other condition, alone, fails it.
+  const conditions = [
+    [{focus: {...kept, named: false}}, 'the user window is not the focused window at its bounds'],
+    [{userLanded: false}, 'the user\'s input did not land'],
+    [{order: {...base.order, after: [entry(popup), driven]}}, 'the user window\'s number is not in the order after the act'],
+  ];
+  for (const [over, failure] of conditions) {
+    const r = judgeInterference({...base, posts: {source: 'tap', pids: []}, ...over});
+    assert.equal(r.ok, false, failure);
+    assert.ok(r.userAppWindow.failed.includes(failure), JSON.stringify(r.userAppWindow));
+  }
+  // Another process's window on top, or the user window itself changed, is not this case.
+  assert.equal('userAppWindow' in judgeInterference({...base, after: reading({...popup, ownerPid: 66, owned: false})}), false);
+  assert.equal('userAppWindow' in judgeInterference({...base, after: reading({...user, bounds: {x: 5, y: 0, width: 500, height: 400}})}), false);
+});

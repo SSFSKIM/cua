@@ -102,6 +102,24 @@ export function targetAbove(order, targets, userWindow) {
   return at < 0 && !above ? null : above;
 }
 
+// Ruling 1223 (R3): the top window changed to another window of the user app's own process (C-6: a 52x22 window of
+// the user TextEdit's pid over Finder's and Chrome's concurrent@textedit rows). It is no interference only when all hold:
+// the user window still in the order by its number and still the focused window at its bounds (the focus probe names
+// a window by its pid and bounds, within a point), the user's input landed, and an event record (`posts`) shows the
+// engine posted nothing to the user app's pid in the cell. No such record, and the row stays as it was, what is missing
+// named. -> null when the top window is not such a window, else {pass, failed, missing?}.
+function userAppWindow({same, after, userPid, userWindow, order, focusKept, userLanded, posts}) {
+  const top = after?.topWindow;
+  if (same.topWindow || top?.owned !== true || userPid === null || top.ownerPid !== userPid || !Number.isInteger(userWindow?.number) || top.number === userWindow.number) return null;
+  const failed = [];
+  if (!(Array.isArray(order?.after) && order.after.some(w => w?.owned === true && w.pid === userPid && w.number === userWindow.number))) failed.push('the user window\'s number is not in the order after the act');
+  if (focusKept !== true) failed.push('the user window is not the focused window at its bounds');
+  if (userLanded !== true) failed.push('the user\'s input did not land');
+  if (posts && (posts.pids ?? []).includes(userPid)) failed.push(`the engine posted to the user app's pid in the cell (${posts.source})`);
+  const missing = posts ? null : 'no event record of the pids the engine posted to in the cell';
+  return {pass: failed.length === 0 && !missing, failed, ...(missing ? {missing} : {})};
+}
+
 // One row's oracle. `scene`: the driven scene (its family decides route 4's acceptance); `launched`: the bundle id a
 // launch-path row brought up, whose own activation is declared for the owner rather than counted as a pass; `focus`:
 // the `--probe focus` reading after the action, naming the user window (./matrix-device.mjs ownedFocus), which must
@@ -116,12 +134,15 @@ export function targetAbove(order, targets, userWindow) {
 // `topChange` (ruling 1219, h5): when the top window changed, what it was before and after (the run's own by pid, number
 // and bounds; another app's by its bundle) and whether the user's own window moved (the same process on top, another
 // window or other bounds), so a judge tells the person's window moving from another window over it. Never judged here.
+// `userLanded`: whether the user's own input landed (a concurrent row's); `posts` {source, pids}: an event record of the
+// pids the engine posted to in the cell, null when none was kept (userAppWindow).
 export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, focus = null, userPid = null, accepted = OWNER_ACCEPTED,
-  order = null, targets = [], userWindow = null, named = null}) {
+  order = null, targets = [], userWindow = null, named = null, userLanded = null, posts = null}) {
   const same = sameFront(before, after);
   const focusKept = focus === null ? null : focus.appOwned === true && focus.appPid === userPid && focus.named === true;
   const windowOrder = order === null ? null : {before: targetAbove(order.before, targets, userWindow), after: targetAbove(order.after, targets, userWindow)};
-  const frontmost = same.frontmost, topWindow = same.topWindow && focusKept !== false && (windowOrder === null || windowOrder.after === false);
+  const ownApp = userAppWindow({same, after, userPid, userWindow, order, focusKept, userLanded, posts});
+  const frontmost = same.frontmost, topWindow = (same.topWindow || ownApp?.pass === true) && focusKept !== false && (windowOrder === null || windowOrder.after === false);
   const family = SCENES[scene]?.family ?? null;
   // One action's route, or every route of a row made of several actions (the sheet variant's).
   const route4 = (Array.isArray(inputRoute) ? inputRoute : [inputRoute]).includes(4);
@@ -136,7 +157,8 @@ export function judgeInterference({before, after, activations = [], inputRoute =
   const topChange = same.topWindow ? null : {before: describe(before?.topWindow, named?.before), after: describe(after?.topWindow, named?.after),
     userWindowMoved: userTop(before?.topWindow) && userTop(after?.topWindow)};
   const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, ...(focus?.unnamed ? {focusUnnamed: focus.unnamed} : {}), activations: activations.length, route4,
-    ...(windowOrder ? {windowOrder} : {}), ...(topChange ? {topChange} : {})};
+    ...(windowOrder ? {windowOrder} : {}), ...(topChange ? {topChange} : {}), ...(ownApp ? {userAppWindow: ownApp} : {}),
+    ...(ok && ownApp?.pass ? {topWindowBy: 'user app\'s own window'} : {})};
   if (own.length && !selfAccepted && frontmost && topWindow && others.length === 0)
     return {...out, declared: {kind: 'self-activating', cause: `${launched} activated at its launch: the family's own activation, recorded for the owner's acceptance`}};
   if (route4Accepted) return {...out, declared: {kind: 'route4-accepted', cause: `route 4 on ${family}, a family the owner accepted`}};

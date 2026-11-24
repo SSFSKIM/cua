@@ -71,3 +71,19 @@ An earlier x64 attempt stopped at the driver's preconditions with `CUA_HOME is u
 symbolic link to the worktree. `linux-runtime-env.sh` computed its directory logically, so node did not run
 `linux-runtime-env.mjs`'s main block, the wrapper exported nothing, and the command would have run in the caller's
 homes. The wrapper now resolves physical paths (34290bec5).
+
+## After fix wave 1: x64 again (`fw1-x64/runtime.json`)
+
+Fix wave 1 (7dad594a9) changed what some cells do on a host:
+
+- U2 now runs `cua install --json` after the plain install, from the same state.
+- U3 now snapshots the managed parts.
+- U4 and U5 now read both commands' whole output.
+- E0 now runs `file -bL`.
+- Every whole-trace judge now needs its root command.
+
+So the full selection ran once more on x64 at **7dad594a9**, 18:13 to 18:32 UTC, with 2 samples a side. E0 to E3 and U0 to
+U5 all passed, `acceptance: true`.
+
+The hosted legs were not re-run: the fix wave's instruction is that a fix changing what a cell does re-runs on x64
+only.

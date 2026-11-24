@@ -32,6 +32,14 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 | 9 | T11a | The default-selection mode, failing while the macOS default is the vendor's |
 | 10 | T11b | The flip: `darwin: 'cua'`, its mirrors, tests and docs (PF §7). Stays on the branch, unmerged |
 
+**Sitting C's last step: the key-route diagnostic (ruling 1198).** After C's counted lanes and their judges, one step
+(`key-route`, kind `diagnostic`) runs a lane per engine whose only section opens TextEdit's Open panel, reads the AX
+half on the device, watches one `pressKey("Escape")` with listen-only taps and closes the panel by Accessibility when
+the Escape did not. Its record (`key-route/key-route.json`) and section (appended to sitting.md) are what the P1 engine
+ticket on cua's key routing rests on. It is INFO, never C's verdict, save a named cleanup failure. What only the hosted
+run proves: that the tap app's own row is the one TCC asks (its readiness reports `listenAccess`), that the per-pid
+taps see a CGEventPostToPid post, and the pids themselves.
+
 **The owner's sitting (PF §5, O1 to O6): a prerequisite this wave adds.** #560 lands first: the device side's read of
 the hosted venue is bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), beside the direct
 `RUNNER_ENVIRONMENT=github-hosted` checks every hosted-only write already makes. Until #560 is on the branch the owner
@@ -288,6 +296,28 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1198 (the design session, after pilot C-2): sitting C gains a key-route diagnostic as its own
+  last step, after the counted lanes (matrix, save-sheet) and their judges, never among judged cells. In C-2 the
+  vendor's `pressKey("Escape")` closed TextEdit's Open panel (drawn by com.apple.appkit.xpc.openAndSavePanelService)
+  and cua's did not. The static reading of the pinned vendor binary says the vendor posts keys with CGEventPostToPid to
+  a pid found by walking the focused element's AXParent chain with the private `_AXUIElementGetActualPid`, switching to
+  an ancestor's owner when it differs from the app's and its activation policy is prohibited; cua's engine posts to
+  the app's focused element's public AXUIElementGetPid (`Input.swift:1014` keyboardTarget, then `postToPid`). The
+  step (`scripts/hosted-sittings/key-route.mjs`) records, per engine through its own matrix lane (the `key-route`
+  cell, `scripts/native-matrix/key-route-run.mjs`): the AX ancestor table (role, GetPid, ActualPid or "unavailable",
+  the owner's activation policy and isFinishedLaunching), cua's keyboardTarget mirrored (the engine unchanged), the
+  static reading's predicted pid, every public route to the panel's pid against ActualPid (the window list at the
+  panel's frame and under its centre, the frontmost window's owner, runningApplications of the panel service, the
+  AXWindow's and the focused window's GetPid, the system-wide focused element and application, the frontmost
+  application), and one Escape watched by listen-only CGEventTapCreateForPid taps on TextEdit and the panel service
+  (fields 40 and 41, which tap), with the panel's state after it read by the device. Input Monitoring is granted to
+  the diagnostic's own tap app alone (`io.github.ssfskim.cua.key-route-tap`, a background-only app ad-hoc signed on
+  the runner and launched through LaunchServices so it is its own responsible process), through the hosted kit's
+  one TCC writer under O0 (`grantDiagnosticListen`); the engines' rows are read before and after and must not change.
+  Its status is INFO and never C's verdict; a cleanup failure (the engines' rows changed or unread, a panel or tap
+  left, TextEdit still running) is a FAIL naming each. Off a GitHub-hosted runner it refuses before it reads, builds,
+  writes or opens anything. Each lane opens its own TextEdit, so the AX half is read once per lane, before its press
+  (the brief's "once before the presses" read per engine), and the panel is opened afresh between the engines.
 - 2026-11-23, ruling 1189 (the design session, after pilot C, run 45299196290): a fresh hosted image enables U.S.
   alone, so every Latin and Korean selection in pilot C read the US layout back. All 230 input rows (the 5 probe-cell
   rows and the 225 unicode rows) were invalid. Setup gains an `input sources` step, after `textedit defaults`

@@ -68,6 +68,9 @@ paths come from the runner's record, so `plan` only works on a runner after setu
   - The pilot first runs `focus-timing`.
   - Per-cell counts go to `counts.md`. The pilot's readings go to `pilot-reads.md`.
   - Acceptance 3's keystroke witness and the window-order oracle are rows of the full plan.
+  - Last, in both forms, the key-route diagnostic (ruling 1198; "The key-route diagnostic" below):
+    `node scripts/hosted-sittings.mjs key-route --approved-runtime <record's install> --approved-engine <record's engine> --sitting hosted-<run>-c --out $OUT/sitting/key-route`.
+    INFO, never C's verdict, save a named cleanup failure; its section is appended to sitting.md.
 - **D** (Acceptance 1 in its hosted form, 2, 8 and 9, and #216).
   - `CUA_HOME=<scratch>/cua-accept CUA_NATIVE_ENGINE=vendor node bin/cua.mjs install --json`.
   - Then `node scripts/accept-native.mjs --engine cua --live-textedit --live-secrets --items 1,2,3,4,5,6,7,8,10,11,12,13 --report $OUT/sitting/acceptance.json`.
@@ -2161,4 +2164,64 @@ invalid at once:
 Pilot C's matrix-vendor-1 took 1408 s with those rows invalid. From the measured rows' cost (method rows about 0.47 s
 of wall each, speed rows about 0.44 s) and the probes' launches (about 1 to 2 s each), expect roughly 3 to 6 minutes
 more per run, so a full C sitting grows by about 20 to 35 minutes. That is an estimate until the next pilot measures it.
+
+## The key-route diagnostic (ruling 1198)
+
+Pilot C-2: on the vendor's lane `pressKey("Escape")` closed TextEdit's Open panel (drawn by
+com.apple.appkit.xpc.openAndSavePanelService); on cua's it did not. The static reading of the pinned vendor binary says
+the vendor walks the focused element's AXParent chain with the private `_AXUIElementGetActualPid` and posts to an
+ancestor's owner when it differs from the app's and is activation-policy prohibited; cua's engine posts to the app's
+focused element's public AXUIElementGetPid (`native/engine/Sources/Engine/Input.swift:1014`). A P1 engine ticket rests
+on what this step records. It is sitting C's last step, after the counted lanes and their judges.
+
+**What it does** (`scripts/hosted-sittings/key-route.mjs`):
+
+1. Refuses off a GitHub-hosted macOS runner, before it reads, builds, writes or opens anything.
+2. Reads the two engines' TCC rows (`tcc.mjs engineRows`, every column a grant writes).
+3. Builds the tap app (`scripts/native-matrix/key-route-tap.swift` into
+   `~/Library/Caches/cua-harness/key-route/KeyRouteTap.app`, `io.github.ssfskim.cua.key-route-tap`, background-only,
+   ad-hoc signed) and grants it Input Monitoring alone through the hosted kit's one TCC writer under O0
+   (`grantDiagnosticListen`). Neither engine gets a row. A tap not built or granted is recorded and the lanes still run.
+4. For vendor, then cua: `native-matrix cell key-route` on that engine's own lane
+   (`scripts/native-matrix/key-route-run.mjs`). The run brings TextEdit up and binds it as every matrix run does, then
+   opens the Open panel by ⌘O under the key guard (the matrix's own `OPEN_PANEL`), and:
+   - reads the AX half on the device (`key-route-device.mjs read`, `key-route.swift read`): the focused element's
+     AXParent chain with role, AXUIElementGetPid and `_AXUIElementGetActualPid` (dlsym; "unavailable" without it), each
+     owner's activation policy and isFinishedLaunching; cua's keyboardTarget mirrored; the static reading's predicted
+     pid; and every public route to the panel's pid against ActualPid: the window list at the panel's frame and under
+     its centre, the frontmost window's owner, `runningApplications(withBundleIdentifier:)` of the panel service, the
+     focused element's AXWindow's and the app's AXFocusedWindow's GetPid, the system-wide focused element and
+     application, NSWorkspace's frontmost application;
+   - starts the tap app through LaunchServices (`open -n -g -a`, so it is its own responsible process) with
+     listen-only `CGEventTapCreateForPid` taps on TextEdit and each panel service instance (and the focused element's
+     ActualPid when it is neither), logging Escape keyDowns only, with fields 40 and 41 and the tap that saw each;
+   - sends one `pressKey("Escape")` through the lane under the key guard (`KEY_ROUTE_ESCAPE`), stops the taps;
+   - reads the panel on the device (its AXIdentifier `open-panel`, and the window list at its frame) and, when it is
+     still up, cancels it by Accessibility (its Cancel button; never an engine, never a pointer event); a panel still
+     up after that stops the lane, named.
+   The lane's put-back quits TextEdit. Each lane opens its own TextEdit, so the AX half is read on each, before its
+   press, and the panel is opened afresh between the engines.
+5. Reads the engines' rows again and compares them; then checks what it opened: the tap app (stopped if it still
+   runs, then read again), TextEdit, any panel service window on screen.
+6. Writes `key-route/key-route.json` (the artifact) and `key-route/key-route.md` (appended to sitting.md) whatever
+   happened.
+
+**Its status.** The `diagnostic` check gives INFO with a one-line summary per engine (where the Escape was posted, by
+whom, which tap saw it, whether the panel closed), never C's verdict. A cleanup failure is a FAIL naming each: the
+engines' rows changed or unread, a lane's panel or tap left, the tap still running, TextEdit still running, a panel
+window on screen, or no record written.
+
+**Proven by unit tests** (`test/hosted-sittings/key-route.test.mjs`, `test/native-matrix/key-route.test.mjs`): the
+plan's step and its place; the check and its effect on the sitting's verdict; the refusal off a hosted runner, at the
+function and at the command, with nothing read or written; the order of the orchestrator's calls; every TCC write is
+the tap app's Input Monitoring row and none names an engine; the engines' rows compared; each cleanup failure named;
+the lane's order (⌘O, the AX half, the taps, the Escape, the taps stopped, the panel read, the AX cancel only when
+needed) on the matrix's run doubles; the device side's refusals, the tap's launch, stop and kill, the tap app's build.
+
+**Unproven until a hosted run:**
+
+- whether TCC asks the tap app's own row (its readiness reports `CGPreflightListenEventAccess` as `listenAccess`; the
+  section notes a tap with no access), and whether its per-pid taps see an event CGEventPostToPid posted;
+- whether `_AXUIElementGetActualPid` resolves by dlsym on macOS 27 (else "unavailable" throughout);
+- the pids themselves, which are the point.
 

@@ -638,8 +638,8 @@ const ownerSittingMarks = detail => ({ok: false, ownerSitting: detail, invalid: 
 const unfocusedRow = row => typeof row?.invalid === 'string' && row.invalid.startsWith('not prepared: ') && Object.values(FOCUS_REASONS).some(r => row.invalid.includes(r));
 const FIELD_ELEMENTS = Object.freeze({openPanel: {kind: 'search', is: e => e?.subrole === 'AXSearchField'}, savePanel: {kind: 'name', is: e => e?.identifier === 'saveAsNameTextField'}});
 const sameFrame = (a, b) => Boolean(a && b) && ['x', 'y', 'width', 'height'].every(k => Math.abs(a[k] - b[k]) <= 2);
-function panelElementRead(ctx, window, element) {
-  try { return device(ctx, ['panel', 'element', '--window', String(window), '--element', element]); } catch (error) {
+function panelElementRead(ctx, window, element, {hit = false} = {}) {
+  try { return device(ctx, ['panel', 'element', '--window', String(window), '--element', element, ...(hit ? ['--with', 'hit'] : [])]); } catch (error) {
     if (error instanceof Stop) throw error;
     return {refused: String(error?.message ?? error).split('\n')[0].slice(0, 160)};
   }
@@ -652,10 +652,18 @@ function deviceFocusOf(ctx, target) {
   const focused = {inWindow: answer?.inWindow ?? null, frame: answer?.frame ?? null, ...(answer?.focusedElement ?? {role: null, subrole: null, identifier: null})};
   const known = FIELD_ELEMENTS[target];
   if (!known) return focused;
-  const field = panelElementRead(ctx, windows[0], known.kind);
+  const field = panelElementRead(ctx, windows[0], known.kind, {hit: true});
   if (field?.refused) return {...focused, field: {kind: known.kind, unread: field.refused}, fieldFocused: null};
-  return {...focused, field: {kind: known.kind, frame: field?.frame ?? null, hit: field?.hit ?? null},
-    fieldFocused: answer?.inWindow === true && (known.is(answer.focusedElement) || sameFrame(answer.frame, field?.frame))};
+  return {...focused, field: {kind: known.kind, frame: field?.frame ?? null, hit: field?.hit ?? null}, fieldFocused: fieldFocusedOf(answer, field, known)};
+}
+// Whether the panel's focused element is the case's field: true on its identity (subrole or AXIdentifier) or its frame;
+// false only where the device proves otherwise (the focus outside the panel, or in it at a frame other than the
+// field's); null where the focus or the field was not read, so a blind read is never counted a missed click.
+function fieldFocusedOf(answer, field, known) {
+  if (answer?.inWindow === false) return false;
+  if (answer?.inWindow !== true) return null;
+  if (known.is(answer.focusedElement) || sameFrame(answer.frame, field?.frame)) return true;
+  return answer.frame && field?.frame ? false : null;
 }
 async function panelCase(ctx, target, regime, c, options = {}) {
   const row = await panelCaseRow(ctx, target, regime, c, options);

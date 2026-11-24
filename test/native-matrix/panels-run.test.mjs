@@ -66,7 +66,7 @@ function panelDevice({moves = true, escape = true, click = true, ax = true, aler
     }
     // The device's reading of the panel's window (`panel state`), and its AX cancel.
     if (a[0] === 'panel' && a[1] === 'state') { states.push(a); return {answer: {state: unread ? 'unread' : open ? 'open' : 'closed'}, at: [1, 2]}; }
-    if (a[0] === 'panel' && a[1] === 'element') { elementReads.push(flag(a, 'element')); return {answer: {found: true, frame: elements[flag(a, 'element')] ?? null, inWindow: true, pid: 300}, at: [1, 2]}; }
+    if (a[0] === 'panel' && a[1] === 'element') { elementReads.push(`${flag(a, 'element')}${a.includes('--with') ? `+${flag(a, 'with')}` : ''}`); return {answer: {found: true, frame: elements[flag(a, 'element')] ?? null, inWindow: true, pid: 300}, at: [1, 2]}; }
     if (a[0] === 'panel') { cancelled.push(a); if (ax) open = false; return {answer: {found: true, via: 'cancelButton', pressed: 0, closed: !open, state: open ? 'open' : 'closed', pid: 300}, at: [1, 2]}; }
     const out = base(a);
     if (!isGuardRead(a)) return foreign && a[0] === 'read' && out.reading ? {...out, reading: {...out.reading, frontmost: foreign === 'unread' ? null : OTHER_FRONT}} : out;
@@ -624,6 +624,8 @@ test('a clamped panel takes the fallback: its key cells clear of the alerts run,
     // The search typing's click on its field checked on the field, its keys on the focused element; the judged Escape's
     // on the focused element, and so the close's Escape after each of the five openings (review finding 4).
     assert.deepEqual([dev.elementReads.filter(e => e === 'search').length, dev.elementReads.filter(e => e === 'focused').length], [1, 2 + 5], engine);
+    // The guard's reads never ask for the system-wide hit-test: that is the post-refusal diagnostic's alone (fix wave).
+    assert.deepEqual(dev.elementReads.filter(e => e.includes('+')), [], engine);
     assert.ok(result.meta.elementGuards.every(g => g.cause === undefined && g.frame.x === FIELD.x));
     // The click cases: NO VERDICT ownerSitting, their act never sent; their timing row with them.
     for (const id of ['openPanel/frontmost/click.cancel', 'openPanel/background/click.cancel@finder']) {
@@ -748,7 +750,7 @@ test('a panel typing row not prepared for the focus keeps the prepare\'s reading
   const asked = [];
   const matrix = (base, a) => {
     if (a[0] !== 'panel' || a[1] !== 'element') return dev.ops.matrix(base, a);
-    asked.push(flag(a, 'element'));
+    asked.push(`${flag(a, 'element')}${a.includes('--with') ? `+${flag(a, 'with')}` : ''}`);
     return {answer: flag(a, 'element') === 'focused' ? {found: true, frame: rect(10, 100, 300, 200), inWindow: true, pid: 300, focusedElement} : {found: true, frame: field, inWindow: null, pid: 300, hit}, at: [1, 2]};
   };
   const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}});
@@ -757,7 +759,7 @@ test('a panel typing row not prepared for the focus keeps the prepare\'s reading
   assert.deepEqual(row.prepareSeen, seen);
   // (a) the click missed: the device's focus is elsewhere, the field's centre hits the field itself.
   assert.deepEqual(row.deviceFocus, {inWindow: true, frame: rect(10, 100, 300, 200), ...focusedElement, field: {kind: 'search', frame: field, hit}, fieldFocused: false});
-  assert.deepEqual(asked, ['focused', 'search']);
+  assert.deepEqual(asked, ['focused', 'search+hit'], 'the diagnostic asks for the hit at the field\'s centre');
   // Only that row reads it: a row prepared reads nothing more.
   assert.equal(result.rows.filter(r => r.deviceFocus).length, 1);
 });
@@ -810,4 +812,29 @@ test('a prepare ready but its focus rejected by the verdict keeps the field, the
   assert.match(row.invalid, /^not prepared: the field could not be given the focus/);
   assert.deepEqual(row.prepareSeen, {field: 1, trailer: 'masked', engineIndex: 4});
   assert.equal(row.deviceFocus.role, 'AXOutline');
+});
+
+// Fix wave (review of ruling 1214's diagnostic): `fieldFocused` is false only when the device proves the focus is not the
+// field (the focused element outside the panel, or in it at a frame the field's frame differs from); where the focus or
+// the field's identity was not read it is null, so the three cases stay apart and a blind read is never a missed click.
+test('the device\'s fieldFocused: true, false, or null where the focus or the field was not read', async () => {
+  const seen = {before: {field: 1, focused: 0, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: 0, reading: 'unfocused'}};
+  const field = rect(560, 96, 220, 22), elsewhere = rect(10, 100, 300, 200), outline = {role: 'AXOutline', subrole: null, identifier: null};
+  const fieldFocusedOf = async (focused, searched) => {
+    const dev = panelDevice({alerts: []});
+    const cell = code => (code.includes('__m.ready = __r?.ready') && code.includes(FOCUS_REASONS.unfocused) && code.includes('the Open panel is not up')
+      ? {ready: false, reason: FOCUS_REASONS.unfocused, seen} : dev.cell(code));
+    const matrix = (base, a) => (a[0] === 'panel' && a[1] === 'element'
+      ? {answer: {found: true, pid: 300, ...(flag(a, 'element') === 'focused' ? focused : searched)}, at: [1, 2]} : dev.ops.matrix(base, a));
+    const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}});
+    return result.rows.find(r => r.id === 'openPanel/frontmost/typeText.search').deviceFocus.fieldFocused;
+  };
+  const found = {frame: field, inWindow: null};
+  assert.equal(await fieldFocusedOf({frame: elsewhere, inWindow: true, focusedElement: outline}, found), false, 'focused elsewhere in the panel');
+  assert.equal(await fieldFocusedOf({frame: null, inWindow: false, focusedElement: outline}, found), false, 'focused outside the panel');
+  assert.equal(await fieldFocusedOf({frame: field, inWindow: true, focusedElement: {role: 'AXTextField', subrole: 'AXSearchField', identifier: null}}, found), true);
+  // Unread: no focused element read, the focused element's frame unread, or the field not found.
+  assert.equal(await fieldFocusedOf({frame: null, inWindow: null}, found), null, 'no focused element read');
+  assert.equal(await fieldFocusedOf({frame: null, inWindow: true, focusedElement: outline}, found), null, 'the focused element\'s frame unread');
+  assert.equal(await fieldFocusedOf({frame: elsewhere, inWindow: true, focusedElement: outline}, {frame: null, inWindow: null}), null, 'the field not found');
 });

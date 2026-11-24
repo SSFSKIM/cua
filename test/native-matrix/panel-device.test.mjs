@@ -189,9 +189,15 @@ test('panel element search|name: the field\'s frame and the element at its centr
     const field = rect(560, 96, 220, 22), hit = {role: 'AXTextField', subrole: null, identifier: 'saveAsNameTextField', isField: true};
     const asked = [];
     const io = {...HOSTED, screen: () => ({windows: [DOCUMENT, panelOf(rect(0, 80, 880, 448))], displays: [rect(0, 0, 1920, 1080)]}),
-      panelAx: args => { asked.push(args[3]); return {trusted: true, found: true, windows: 2, kind: 'window', element: args[3], inWindow: null, frame: field, walked: 9, hit}; }};
-    const out = await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'name'], {io});
+      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 2, kind: 'window', element: args[3], inWindow: null, frame: field, walked: 9, ...(args[4] === 'hit' ? {hit} : {})}; }};
+    const out = await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'name', '--with', 'hit'], {io});
     assert.deepEqual(out.answer, {found: true, frame: field, inWindow: null, pid: 300, hit});
-    assert.deepEqual(asked, ['name']);
+    assert.deepEqual(asked, [['element', '300', '0,80,880,448', 'name', 'hit']]);
+    // The system-wide hit-test is asked for only with `--with hit` (the post-refusal diagnostic), never by the guard's
+    // plain read; `hit` is the one reading `--with` names here.
+    await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'search'], {io});
+    assert.deepEqual(asked.at(-1), ['element', '300', '0,80,880,448', 'search']);
+    await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'search', '--with', 'front-key'], {io}), /--with hit/);
+    await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused', '--with', 'hit'], {io}), /--with hit/);
   });
 });

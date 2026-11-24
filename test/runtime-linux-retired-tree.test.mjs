@@ -162,6 +162,9 @@ test('the size is a lstat walk: a hard-linked pair once, a link by its own lengt
 test('a directory over the walk\'s bound is not enumerated past it', t => {
   const home = scratchHome(t);
   const {root} = plantRetiredRelease(home);
+  // the release holds its record and one directory of 300 entries, so the count of reads does not hang on the order a
+  // filesystem lists them in
+  rmSync(join(root, 'cua_node'), {recursive: true});
   mkdirSync(join(root, 'many'));
   for (let i = 0; i < 300; i++) writeFileSync(join(root, 'many', `f${i}`), '');
   const read = Dir.prototype.readSync;
@@ -170,8 +173,8 @@ test('a directory over the walk\'s bound is not enumerated past it', t => {
   let report;
   try { report = retiredTrees({home, maxEntries: 20}); } finally { Dir.prototype.readSync = read; }
   assert.equal(report.trees[0].bytes, null);
-  // the 21st entry stops it; the other reads are the end of the few directories walked before 'many'
-  assert.ok(reads > 0 && reads <= 30, `entries read one at a time: ${reads}, of more than 300`);
+  // the 21st entry stops it: two entries and the end of the release, then 19 of many/'s
+  assert.ok(reads > 0 && reads <= 22, `entries read one at a time: ${reads}, of more than 300`);
   assert.match(report.lines[0], /its size could not be measured \(too_many_entries\)/);
 });
 

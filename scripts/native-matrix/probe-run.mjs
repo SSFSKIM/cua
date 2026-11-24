@@ -25,7 +25,7 @@ import {
 } from './probe-plan.mjs';
 import {ABC} from './live-checks.mjs';
 import {requeryCell} from './matrix-cells.mjs';
-import {ownerInputCause, ownerInputMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
+import {ownerInputCause, ownerInputMarks, ownerInputNow, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
@@ -92,6 +92,8 @@ async function sampled(ctx, base, attempt) {
   const row = {...base, engine: ctx.engine, sample: ctx.n, ok: false};
   const venue = venueInputCause(ctx.venueMissing, [ABC]);
   if (venue) return push(ctx, {...row, ...venueInputMarks(venue)});
+  // Off a hosted runner the owner's values are read again at each probe: they may have changed since the last reading.
+  if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `probe ${base.id}`);
   if (ctx.ownerInput && !ctx.latin) return push(ctx, {...row, ...ownerInputMarks(ownerInputCause(ctx.ownerInput, {source: ABC, perContext: false}))});
   if (!ctx.latin) return push(ctx, {...row, invalid: 'the Latin input source was not selected and read back with the per-context preference off'});
   const retries = [];

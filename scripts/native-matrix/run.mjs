@@ -71,6 +71,7 @@ import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
+import {ownerInputNow} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
 export {PASTING};
@@ -364,9 +365,8 @@ async function inputSections(ctx, plan) {
   // `venue` (./owner-input.mjs venueInputCause).
   ctx.venueMissing = Array.isArray(state?.venueMissing) ? state.venueMissing : [];
   if (state?.writable !== true) {
-    ctx.ownerInput = {source: state?.current ?? null, perContext: state?.perContext ?? null};
-    ctx.perContextOff = ctx.ownerInput.perContext === false;
-    ctx.latin = ctx.perContextOff && ctx.ownerInput.source === ABC;
+    // The first reading; the probe cells and the Unicode fields read again at each boundary (./owner-input.mjs).
+    ownerInputNow(ctx, state, 'start');
     ctx.meta.inputSource = {written: false, refused: state?.refused ?? 'the device did not say it may write the input source', owner: ctx.ownerInput, perContextOff: ctx.perContextOff, latin: ctx.latin};
     await probeCells(ctx, plan);
     if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);

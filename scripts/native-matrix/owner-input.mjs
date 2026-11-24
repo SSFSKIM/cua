@@ -5,6 +5,22 @@
 // what the owner's machine could not judge. On a hosted runner, a source its setup could not enable makes the rows
 // needing it NO VERDICT `venue` the same way (ruling 1189).
 import {INPUT_WRITES_HOSTED_ONLY, PER_CONTEXT_NAME, ownerValueName} from './hitoolbox.mjs';
+import {ABC} from './live-checks.mjs';
+
+// The owner's values off a hosted runner, from the device's `source state` answer just read. The run reads them at its
+// start and again at each probe or field boundary, since the owner may switch either during a run: a row is held
+// against what reads at its boundary, never the first reading. A change is kept in `ctx.meta.inputSource.drift`
+// ({at, from, to}); the first reading stays in `meta.inputSource` as it was read. Sets ctx.ownerInput, perContextOff
+// and latin. -> the owner's values now.
+export function ownerInputNow(ctx, state, at) {
+  const now = {source: state?.current ?? null, perContext: state?.perContext ?? null};
+  const before = ctx.ownerInput;
+  if (before && JSON.stringify(before) !== JSON.stringify(now)) (ctx.meta.inputSource.drift ??= []).push({at, from: before, to: now});
+  ctx.ownerInput = now;
+  ctx.perContextOff = now.perContext === false;
+  ctx.latin = ctx.perContextOff && now.source === ABC;
+  return now;
+}
 
 // What a row needs (`needs`: {source?: id, perContext?: boolean, switch?: what the row switches during it}) against
 // the owner's ({source, perContext}). -> the cause, or null when the owner's values are the row's.

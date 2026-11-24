@@ -19,7 +19,8 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {ownerInputCause, ownerInputMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
+import {ownerInputCause, ownerInputMarks, ownerInputNow, venueInputCause, venueInputMarks} from './owner-input.mjs';
+import {INPUT_WRITES_HOSTED_ONLY} from './hitoolbox.mjs';
 import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
@@ -38,15 +39,17 @@ export async function unicodeSection(ctx, plan) {
       const mine = rows.filter(r => r.condition === condition);
       if (!mine.length) continue;
       const source = ['korean', 'composing'].includes(condition) ? KOREAN_2SET : ABC;
-      const unset = condition !== 'perContext' && ctx.perContextOff !== true
-        ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
-      const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition]) : null;
       const venue = venueInputCause(ctx.venueMissing, SELECTS[condition]);
       for (const field of plan.fields) {
         const ofField = mine.filter(r => r.field === field);
         if (!ofField.length) continue;
         await ctx.checkpoint();
         if (venue) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
+        // Off a hosted runner the owner's values are read again at each field: they may have changed since the last.
+        if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `unicode ${condition}:${field}`);
+        const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition]) : null;
+        const unset = condition !== 'perContext' && ctx.perContextOff !== true
+          ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
         if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owned)}); continue; }
         if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
         if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
@@ -136,6 +139,9 @@ async function frontmostRows(ctx, field, rows, source) {
   if (!front?.ok) { for (const r of rows) invalidRow(ctx, r, `${field} did not come to the front (${front?.reason ?? 'no answer'})`); return; }
   const when = `${rows[0].condition}:${field}`;
   const why = source === KOREAN_2SET ? koreanIn(ctx, field, when) : establishSource(ctx, source, when) ? null : notHeld(source, field);
+  // Off a hosted runner nothing was selected: a source that did not hold with the field in front is the owner's.
+  const owners = ctx.ownerInput && why === notHeld(source, field) ? `${INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${why}` : null;
+  if (owners) { for (const r of rows) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owners)}); return; }
   if (why) { for (const r of rows) invalidRow(ctx, r, why); return; }
   for (const r of rows) await caseRow(ctx, field, 'frontmost', unicodeCase(r), options(r));
 }

@@ -635,15 +635,31 @@ test('probe cells off a hosted runner: run under the owner\'s ABC with the prefe
   const plan = planOf('concurrent-use', {scene: 'chrome'});
   const latin = await runWith({plan, cellName: 'concurrent-use', ops: offHosted({source: 'com.apple.keylayout.ABC', perContext: false}), cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
   assert.equal(latin.code, 0, JSON.stringify(latin.result.problems));
-  assert.deepEqual(sourceSteps(latin.steps), ['state']);
-  assert.deepEqual([rowOf(latin.result, 'chrome/concurrent@textedit').ok, latin.result.meta.inputSource.latin], [true, true]);
+  assert.deepEqual(sourceSteps(latin.steps), ['state', 'state'], 'read at the start and again at the probe');
+  assert.deepEqual([rowOf(latin.result, 'chrome/concurrent@textedit').ok, latin.result.meta.inputSource.latin, latin.result.meta.inputSource.drift], [true, true, undefined]);
   const other = await runWith({plan, cellName: 'concurrent-use', ops: offHosted({source: 'com.apple.keylayout.US', perContext: null}), cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
-  assert.deepEqual(sourceSteps(other.steps), ['state']);
+  assert.deepEqual(sourceSteps(other.steps), ['state', 'state']);
   assert.deepEqual(matrixSteps(other.steps, 'probe'), [], 'nothing posted');
   const row = rowOf(other.result, 'chrome/concurrent@textedit');
   assert.equal(sampleCause(row).category, 'ownerInput');
   assert.match(row.ownerInput, /ruling 1188.*the row needs the per-context input preference \(.*\) off, the owner's is unset, and the input source com\.apple\.keylayout\.ABC, the owner's is com\.apple\.keylayout\.US$/);
   assert.deepEqual(validateCellResult(other.result), []);
+  // The owner switched to Korean after the run's first reading: the probe's own reading decides, the change is kept,
+  // and the row is NO VERDICT ownerInput, never a generic invalid one and never posted.
+  let reads = 0;
+  const drifting = {matrix: (base, a) => {
+    if (!(a[0] === 'source' && a[1] === 'state')) return base(a);
+    reads += 1;
+    return {...base(a), answer: {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', current: reads === 1 ? 'com.apple.keylayout.ABC' : 'com.apple.inputmethod.Korean.2SetKorean', perContext: false}};
+  }};
+  const drifted = await runWith({plan, cellName: 'concurrent-use', ops: drifting, cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
+  assert.deepEqual(matrixSteps(drifted.steps, 'probe'), [], 'nothing posted');
+  const moved = rowOf(drifted.result, 'chrome/concurrent@textedit');
+  assert.equal(sampleCause(moved).category, 'ownerInput');
+  assert.match(moved.ownerInput, /the row needs the input source com\.apple\.keylayout\.ABC, the owner's is com\.apple\.inputmethod\.Korean\.2SetKorean$/);
+  assert.deepEqual(drifted.result.meta.inputSource.drift, [{at: 'probe chrome/concurrent@textedit', from: {source: 'com.apple.keylayout.ABC', perContext: false}, to: {source: 'com.apple.inputmethod.Korean.2SetKorean', perContext: false}}]);
+  assert.equal(drifted.result.meta.inputSource.latin, true, 'the first reading stays as it was read');
+  assert.deepEqual(validateCellResult(drifted.result), []);
 });
 
 test('probe cells when the venue could not enable ABC: NO VERDICT venue naming it, ABC never selected, nothing posted', async () => {

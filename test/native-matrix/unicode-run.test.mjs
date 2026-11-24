@@ -356,7 +356,7 @@ test('off a hosted runner: the rows the owner\'s source allows run; the rest are
   const {code, steps, result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops});
   assert.equal(code, 0, JSON.stringify(result.problems));
   assert.deepEqual(validateCellResult(result), []);
-  assert.deepEqual(sources(steps).filter(s => s !== 'current'), ['state'], 'never saved, selected, written or restored');
+  assert.deepEqual(sources(steps).filter(s => !['current', 'state'].includes(s)), [], 'never saved, selected, written or restored: only read');
   assert.deepEqual(matrixSteps(steps, 'probe').filter(a => a[1] === 'input-source'), [], 'no switch scheduled');
   assert.deepEqual(result.meta.inputSource, {written: false, refused: owner.refused, owner: {source: KOREAN_2SET, perContext: false}, perContextOff: true, latin: false});
   const byCondition = c => result.rows.filter(r => r.condition === c);
@@ -371,6 +371,40 @@ test('off a hosted runner: the rows the owner\'s source allows run; the rest are
   assert.match(byCondition('latin')[0].ownerInput, /the row needs the input source com\.apple\.keylayout\.ABC, the owner's is com\.apple\.inputmethod\.Korean\.2SetKorean$/);
   assert.match(byCondition('midSwitch')[0].ownerInput, /the row needs the input source switched to com\.apple\.inputmethod\.Korean\.2SetKorean during its typing$/);
   assert.match(byCondition('perContext')[0].ownerInput, /the per-context input preference \(com\.apple\.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput\) on, the owner's is off, and /);
+});
+
+// The owner may switch during a run: off a hosted runner each field's rows are held against a reading taken at that
+// field, never the run's first. Here the owner is on Korean at the start and on ABC from the first field on: the Latin
+// rows run, the Korean ones are NO VERDICT ownerInput naming ABC, and the change is kept.
+test('off a hosted runner the owner\'s values are read again at each field: a change is followed and kept, and its rows are NO VERDICT ownerInput', async () => {
+  let reads = 0, current = KOREAN;
+  const ops = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'state') {
+      reads += 1;
+      if (reads > 1) current = LATIN;
+      return {...base(a), answer: {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', ...current, perContext: false}};
+    }
+    return a[0] === 'source' && a[1] === 'current' ? {...base(a), answer: current} : base(a);
+  }};
+  const {code, steps, result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops});
+  assert.equal(code, 0, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  const byCondition = c => result.rows.filter(r => r.condition === c);
+  const fields = new Set(result.rows.map(r => `${r.condition}:${r.scene}`)).size;
+  assert.equal(sources(steps).filter(s => s === 'state').length, 1 + fields, 'the start, then once at each condition\'s field');
+  assert.ok(byCondition('latin').length > 0 && byCondition('latin').every(r => r.ok === true && !r.ownerInput), JSON.stringify(byCondition('latin')[0]));
+  assert.ok(byCondition('korean').length > 0 && byCondition('korean').every(r => sampleCause(r).category === 'ownerInput'));
+  assert.match(byCondition('korean')[0].ownerInput, /the row needs the input source com\.apple\.inputmethod\.Korean\.2SetKorean, the owner's is com\.apple\.keylayout\.ABC$/);
+  assert.deepEqual(result.meta.inputSource.drift, [{at: `unicode latin:${byCondition('latin')[0].scene}`, from: {source: KOREAN_2SET, perContext: false}, to: {source: LATIN.current, perContext: false}}]);
+  assert.deepEqual(sources(steps).filter(s => !['current', 'state'].includes(s)), [], 'never saved, selected, written or restored');
+  // A change inside the field, after its boundary's reading: the source read with the field in front decides, and the
+  // rows are NO VERDICT ownerInput, not a generic invalid one.
+  const inside = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'state' ? {...base(a), answer: {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', ...LATIN, perContext: false}}
+    : a[0] === 'source' && a[1] === 'current' ? {...base(a), answer: KOREAN} : base(a))};
+  const late = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops: inside});
+  const latin = late.result.rows.filter(r => r.condition === 'latin');
+  assert.ok(latin.length > 0 && latin.every(r => sampleCause(r).category === 'ownerInput'), JSON.stringify(latin[0]));
+  assert.match(latin[0].ownerInput, /ruling 1188.*; the row needs the input source com\.apple\.keylayout\.ABC, and the Latin source did not hold with textedit in front$/);
 });
 
 // Ruling 1189: a source the runner's setup could not enable is never selected; every row selecting it is NO VERDICT

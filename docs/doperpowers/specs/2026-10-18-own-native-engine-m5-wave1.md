@@ -36,7 +36,8 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 (`key-route`, kind `diagnostic`) runs a lane per engine whose only section opens TextEdit's Open panel, reads the AX
 half on the device, watches one `pressKey("Escape")` with listen-only taps and closes the panel by Accessibility when
 the Escape did not. Its record (`key-route/key-route.json`) and section (appended to sitting.md) are what the P1 engine
-ticket on cua's key routing rests on. It is INFO, never C's verdict, save a named cleanup failure. What only the hosted
+ticket on cua's key routing rests on. It is INFO, never C's verdict, save a named cleanup failure; hosted only at
+every entry point (the step, the matrix cell, the device commands, the AX helper, the tap app). What only the hosted
 run proves: that the tap app's own row is the one TCC asks (its readiness reports `listenAccess`), that the per-pid
 taps see a CGEventPostToPid post, and the pids themselves.
 
@@ -318,6 +319,24 @@ session's to add on `docs/117-progress`).
   left, TextEdit still running) is a FAIL naming each. Off a GitHub-hosted runner it refuses before it reads, builds,
   writes or opens anything. Each lane opens its own TextEdit, so the AX half is read once per lane, before its press
   (the brief's "once before the presses" read per engine), and the panel is opened afresh between the engines.
+  After its review (same day): hosted-only at every entry point, not only the sitting step: `native-matrix.mjs cell
+  key-route` refuses off a hosted macOS runner before it begins or writes anything and, on one, before any scene comes
+  up unless the device attests this job's run (`meta.runner`); every device command (`key-route-device.mjs`) and the
+  AX helper (`key-route.swift`, exit 3) refuse off it before any read, compile or Accessibility call; the tap app,
+  which `open` launches without its caller's environment, runs only with a one-use admission (a fresh nonce in the
+  run's `key-route/tap.admission`, at most 60 s old) the guarded launcher writes, and a hard deadline armed first. The
+  Escape's attribution reads the taps' events inside the press's own device-clock window only (50 ms before, 500 ms
+  after; the rest kept apart, uncounted), prints a pid field the event did not carry as "unavailable", never 0, and
+  tells a tap that failed (not launched, not ready, no Input Monitoring, a tap not created, its log unread) from one
+  that saw nothing. The AX half also names the selected ancestor, compares each route with it (`matchesSelected`) and
+  marks a route it could not read as unread; the taps also watch the selected ancestor's pid when no other tap does.
+  The panel is closed only on a reading that says it is gone (the device's after the Escape, or the AX cancel's own),
+  and the cancel is tried whatever the reading before it did. A lane's missing result, put-back not held or approved
+  home not cleaned (a refused lane aside) is a named failure. The engines' TCC rows are snapshotted losslessly (every
+  column the access table has, compared as a multiset and with the columns); tccd may rewrite a column of an engine's
+  row by itself during the step, which would show as a change, a FAIL to be read rather than trusted. Each lane is
+  bounded (20 min, then SIGTERM, 3 min for its put-back, then SIGKILL) and the step too (45 min, 5 held back for its
+  cleanup and report; a lane with under 5 min left is skipped, recorded).
 - 2026-11-23, ruling 1189 (the design session, after pilot C, run 45299196290): a fresh hosted image enables U.S.
   alone, so every Latin and Korean selection in pilot C read the US layout back. All 230 input rows (the 5 probe-cell
   rows and the 225 unicode rows) were invalid. Setup gains an `input sources` step, after `textedit defaults`

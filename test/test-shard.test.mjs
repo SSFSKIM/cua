@@ -26,12 +26,16 @@ function fixture(files, script = 'node --test "test/**/*.test.mjs"') {
 }
 const PASSING = "import { test } from 'node:test';\ntest('passes', () => {});\n";
 const FAILING = "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('fails', () => assert.fail('no'));\n";
+// A test file that records its own name, one line, in the file the MARKS variable names, then passes.
+const marking = (name) => `import { appendFileSync } from 'node:fs';\nimport { test } from 'node:test';\n`
+  + `appendFileSync(process.env.MARKS, ${JSON.stringify(`${name}\n`)});\ntest('passes', () => {});\n`;
 // The child must not report into this file's own run (NODE_TEST_CONTEXT makes a nested `node --test` a child reporter).
-function run(root, ...args) {
-  const env = { ...process.env };
+function runWith(root, extraEnv, ...args) {
+  const env = { ...process.env, ...extraEnv };
   delete env.NODE_TEST_CONTEXT;
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: root, encoding: 'utf8', env, timeout: 60_000 });
 }
+const run = (root, ...args) => runWith(root, {}, ...args);
 
 test("the shards of this repository's npm test run every file npm test runs, each once, and none is empty", () => {
   const files = npmTestFiles(REPO);
@@ -77,6 +81,39 @@ test('a shard runs its files and only them, and exits as node --test does', () =
     const second = run(root, '2/2');
     assert.equal(second.status, 1, second.stdout + second.stderr);
     assert.match(second.stderr, /shard 2\/2: 1 of 3 files/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a file name with glob characters runs as itself, in the shard that owns it', () => {
+  const bracketed = 'test/widget-[ab].test.mjs';
+  const root = fixture({ 'test/a.test.mjs': PASSING, [bracketed]: FAILING, 'test/z.test.mjs': PASSING });
+  try {
+    // sorted: test/a, test/widget-[ab], test/z -> shard 2 of 2 holds the bracketed file
+    const first = run(root, '1/2');
+    assert.equal(first.status, 0, first.stdout + first.stderr);
+    const second = run(root, '2/2');
+    assert.equal(second.status, 1, `the bracketed file ran:\n${second.stdout}${second.stderr}`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("across the shards of a fixture every file runs exactly once, as many as each shard's progress line says", () => {
+  const names = ['test/a.test.mjs', 'test/b.test.mjs', 'test/widget-[ab].test.mjs', 'test/sub/c.test.mjs', 'test/sub/deep/d.test.mjs',
+    'test/e f.test.mjs', 'test/g.test.mjs'];
+  const root = fixture(Object.fromEntries(names.map((name) => [name, marking(name)])));
+  try {
+    for (const total of [1, 2, 3, 7]) {
+      const ran = [];
+      for (let index = 1; index <= total; index += 1) {
+        const marks = join(root, `marks-${total}-${index}`);
+        const result = runWith(root, { MARKS: marks }, `${index}/${total}`);
+        assert.equal(result.status, 0, `${index}/${total}: ${result.stdout}${result.stderr}`);
+        const mine = readFileSync(marks, 'utf8').split('\n').filter(Boolean);
+        assert.match(result.stderr, new RegExp(`shard ${index}/${total}: ${mine.length} of ${names.length} files`), `${index}/${total}: the progress line`);
+        assert.deepEqual([...mine].sort(), shardFiles(names, index, total), `${index}/${total}: the script's deal is Node's`);
+        ran.push(...mine);
+      }
+      assert.deepEqual(ran.sort(), [...names].sort(), `${total} shards: every file once`);
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -12,11 +12,12 @@ setup:
   fetch_depth: 0      # browser-parity and repl-parity tests read committed evidence revisions
 gates:
   # npm test, as two jobs: on GitHub's slower hosted macOS machines the suite alone takes 11 to 14 minutes (2026-11-24,
-  # 16 runs; the faster machines take 5), and seats wait on it several times a day. scripts/test-shard.mjs runs every
-  # second file of the files package.json's `test` script names (the plain `node --test "<pattern>"` form, which
-  # scripts/repl-parity/coverage.mjs reads too), so the two shards run what npm test runs, each file once, and a shard
-  # that selects no file fails. Neither gate has `paths` or `on`: every run selects both, and the verdict needs both
-  # (test/test-shard.test.mjs holds this file to that). The engine's Swift unit suite
+  # 16 runs; the faster machines take 5), and seats wait on it several times a day. scripts/test-shard.mjs runs
+  # `node --test --test-shard=<index>/<total>` on the pattern of package.json's `test` script (the plain
+  # `node --test "<pattern>"` form, which scripts/repl-parity/coverage.mjs reads too), so Node selects the files and
+  # the two shards run what npm test runs, each file once, and a shard that selects no file fails. Neither gate has
+  # `paths` or `on`: every run selects both, and the verdict needs both (test/test-shard.test.mjs holds this file to
+  # that). The engine's Swift unit suite
   # (test/native-engine-units.test.mjs, in whichever shard its place in the sorted list gives it) skips itself when the
   # run also selected engine-swift (CI_KIT_GATES), which runs the same suite. test-2 then runs the Linux engine
   # harness's suite again through its cleanup check (test/linux-engine-diff/suite-check.mjs: no process or scratch

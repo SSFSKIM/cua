@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// One shard of `npm test`, for CI: `node scripts/test-shard.mjs <index>/<total>` runs `node --test` on every
-// <total>-th file of the files `npm test` runs, from the <index>-th on. The `npm test` suite takes 11 to 14 minutes on
-// GitHub's slower hosted macOS machines (2026-11-24, 16 runs), so ci-kit's test-1 and test-2 gates run it as two jobs.
+// One shard of `npm test`, for CI: `node scripts/test-shard.mjs <index>/<total>` runs
+// `node --test --test-shard=<index>/<total> "<pattern>"`, the pattern of package.json's own `test` script (the plain
+// `node --test "<pattern>"` form that scripts/repl-parity/coverage.mjs reads too), so Node discovers and selects the
+// files exactly as `npm test` discovers them, and a file name with glob characters runs as itself. The `npm test` suite
+// takes 11 to 14 minutes on GitHub's slower hosted macOS machines (2026-11-24, 16 runs), so ci-kit's test-1 and test-2
+// gates run it as two jobs.
 //
-// The files are read from package.json's own `test` script, the plain `node --test "<pattern>"` form that
-// scripts/repl-parity/coverage.mjs reads too, so the shards together run what `npm test` runs and nothing else; sorted
-// by path, so every shard of one checkout sees the same list. A shard that selects no file exits 2: an empty
-// `node --test` passes, and a gate must not.
+// The script globs the pattern itself only to print the shard's file count and to exit 2 when its share is empty: an
+// empty `node --test` passes, and a gate must not. That share is Node's deal (the sorted files, round-robin: position
+// % total === index - 1), which test/test-shard.test.mjs holds the script's own to.
 
 import { spawnSync } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
@@ -52,7 +54,7 @@ function main([spec]) {
     return 2;
   }
   console.error(`test-shard: shard ${spec}: ${mine.length} of ${files.length} files`);
-  const result = spawnSync(process.execPath, ['--test', ...mine], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, ['--test', `--test-shard=${shard.index}/${shard.total}`, npmTestPattern(process.cwd())], { stdio: 'inherit' });
   if (result.error) console.error(`test-shard: ${result.error.message}`);
   return result.status ?? 1;
 }

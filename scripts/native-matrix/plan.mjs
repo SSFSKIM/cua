@@ -354,14 +354,18 @@ return {ok: closed && front, outcome: {closed, documentInFront: front}};`});
 // field's focus is established first and kept as the row's focus reading (`__m.focus`, judged by focusVerdict: cua's own
 // focused index where it reports one, else the trailer, which a selection masks), and the selection is always made on
 // the field itself, never taken from a trailer that may show another control's (review finding 5): a focus not proven
-// on the field leaves the row not prepared, no typing sent.
+// on the field leaves the row not prepared, no typing sent. A prepare refused for the focus says what it read before and
+// after its click (`seen`: the field's index, the trailer's focused index and the reading; pilot C-4's vendor rows kept
+// none of it), and the run reads the panel's focused element on the device beside it (./run.mjs panelCase).
 const panelTyping = (target, kase, field, text, what) => ({method: 'typeText', case: kase, expect: 'outcome', keys: ['typeText'], regimes: ['frontmost'],
   prepare: `let ax = await observe();
 if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
 let index = ${field};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-if (focusReading(ax, index) !== "focused") { await __app.click(index); ax = await observe(); index = ${field}; }
-if (index === null || focusReading(ax, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)}};
+const __seen = {before: {field: index, focused: focusedIndexOf(ax), reading: focusReading(ax, index)}, clicked: false};
+if (focusReading(ax, index) !== "focused") { await __app.click(index); __seen.clicked = true; ax = await observe(); index = ${field}; }
+if (index === null || focusReading(ax, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)},
+  seen: {...__seen, after: {field: index, focused: focusedIndexOf(ax), reading: index === null ? null : focusReading(ax, index)}}};
 const trailer = focusReading(ax, index);
 const value = plain(valueOfIndex(ax, index) ?? "");
 if (value !== "") { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }

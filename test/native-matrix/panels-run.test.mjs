@@ -715,3 +715,39 @@ test('an opening with two candidate windows: ambiguous, nothing moved, its case 
   assert.ok(!sent(calls, CASE_ESCAPE) && !calls.some(c => c.code.includes(PANEL_SEARCH)), 'no case act was sent');
   assert.equal(result.complete, true, result.problems.join('; '));
 });
+
+// Pilot C-4: the vendor's openPanel/frontmost/typeText.search and savePanel/frontmost/typeText.name were "not prepared:
+// the field could not be given the focus", and the row kept nothing of what the prepare saw: whether its click missed
+// the field or the trailer cannot see the panel service's focused element could not be told apart. A prepare that
+// refuses for the focus now says what it read before and after its click (indices and readings only), and the run reads
+// the panel's focused element on the device, outside either engine (`panel element --element focused`: its role,
+// subrole and AXIdentifier), so the next sitting tells the two apart.
+test('a panel typing prepare refused for the focus says what it read before and after its click', async () => {
+  const {caseCells} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const stand = standInTextEdit({elsewhere: true});
+  stand.open();
+  let prepare;
+  try { prepare = (await runCell(caseCells('openPanel', CASES.openPanel.find(c => c.method === 'typeText' && c.case === 'search')).prepare, {textedit: stand.app})).value; }
+  finally { delete globalThis.__m; }
+  assert.equal(prepare.ready, false);
+  assert.equal(prepare.reason, FOCUS_REASONS.unfocused);
+  assert.deepEqual(prepare.seen, {before: {field: 1, focused: 0, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: 0, reading: 'unfocused'}});
+  assert.deepEqual(stand.sent.texts, [], 'nothing typed');
+});
+
+test('a panel typing row not prepared for the focus keeps the prepare\'s readings and the device\'s focused element', async () => {
+  const seen = {before: {field: 1, focused: 0, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: 0, reading: 'unfocused'}};
+  const dev = panelDevice({alerts: []});
+  const cell = code => (code.includes('__m.ready = __r?.ready') && code.includes(FOCUS_REASONS.unfocused) && code.includes('the Open panel is not up')
+    ? {ready: false, reason: FOCUS_REASONS.unfocused, seen} : dev.cell(code));
+  const focusedElement = {role: 'AXOutline', subrole: null, identifier: 'ListView'};
+  const matrix = (base, a) => (a[0] === 'panel' && a[1] === 'element'
+    ? {answer: {found: true, frame: rect(10, 100, 300, 200), inWindow: true, pid: 300, focusedElement}, at: [1, 2]} : dev.ops.matrix(base, a));
+  const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}});
+  const row = result.rows.find(r => r.id === 'openPanel/frontmost/typeText.search');
+  assert.equal(row.invalid, `not prepared: ${FOCUS_REASONS.unfocused}`);
+  assert.deepEqual(row.prepareSeen, seen);
+  assert.deepEqual(row.deviceFocus, {inWindow: true, frame: rect(10, 100, 300, 200), ...focusedElement});
+  // Only that row reads it: a row prepared reads nothing more.
+  assert.equal(result.rows.filter(r => r.deviceFocus).length, 1);
+});

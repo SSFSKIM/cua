@@ -442,7 +442,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   keep('prepare', prepared);
   if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
   if (Array.isArray(prepared.value?.prepared)) row.prepared = prepared.value.prepared;
-  if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
+  if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`, ...(prepared.value?.seen ? {prepareSeen: prepared.value.seen} : {})});
   // A prepare that needs its field focused: judged by the observation's own focus where the engine reports it (#188).
   if (prepared.value.focus) {
     const verdict = focusVerdict(prepared.value.focus, prepared.engine?.observation ?? null);

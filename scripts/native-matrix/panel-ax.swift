@@ -15,8 +15,11 @@
 //       A read, no write: the frame of an element of that window (or sheet), where the alert guard checks a key case's
 //       input lands when the panel could not be placed clear of the alerts (ruling 1203's fallback): `focused`, the
 //       app's AXFocusedUIElement when it lies in that window; `search`, its first AXSearchField (breadth first, as
-//       cancel walks). -> {"trusted", "found", "windows", "kind", "element", "inWindow", "frame", "walked"}: `frame`
-//       null when no such element was found or its frame unread.
+//       cancel walks). -> {"trusted", "found", "windows", "kind", "element", "inWindow", "frame", "walked",
+//       "focusedElement"?}: `frame` null when no such element was found or its frame unread; for `focused`,
+//       `focusedElement` names the app's focused element wherever it lies ({"role", "subrole", "identifier"}: its
+//       AXIdentifier, an app's constant, cut at 80 characters; null when there is none), pilot C-4's question of
+//       whether a panel field the trailer showed unfocused held the focus.
 //   panel-ax cancel <pid> <x,y,w,h>
 //       That window (or sheet, found as `move` finds it) cancelled: its AXCancelButton pressed; else the first AXButton titled Cancel (or 취소) under it,
 //       breadth first (at most 5000 elements, 40 levels); else the window's own AXCancel action.
@@ -135,8 +138,11 @@ if args[1] == "element" {
   var found: AXUIElement? = nil, inWindow: Any = NSNull()
   if let window {
     if args[4] == "focused" {
+      answer["focusedElement"] = NSNull()
       if let raw = read(app, kAXFocusedUIElementAttribute), CFGetTypeID(raw) == AXUIElementGetTypeID() {
         let focused = raw as! AXUIElement
+        let named = { (attribute: String) -> Any in (read(focused, attribute) as? String).map { String($0.prefix(80)) as Any } ?? NSNull() }
+        answer["focusedElement"] = ["role": named(kAXRoleAttribute), "subrole": named(kAXSubroleAttribute), "identifier": named(kAXIdentifierAttribute)]
         // In the panel: its own window is the panel's, or (a sheet's) it is found under the panel.
         let own = read(focused, kAXWindowAttribute)
         let inside = (own.map { CFEqual($0, window) } ?? false) || CFEqual(focused, window) || walk(window, { CFEqual($0, focused) }) != nil

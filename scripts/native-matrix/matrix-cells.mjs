@@ -6,7 +6,8 @@
 // A method case (./plan.mjs) is three cells, because the facade's response meta carries only its last call's
 // `cua/inputRoute` (src/services/engine/service.mjs resets the per-call keys at each call):
 //   prepare  resets `globalThis.__m`, observes, finds the case's element by name and returns {ready} or {ready: false, reason},
-//            with the steps it states (`prepared`, ./plan.mjs) and its field's focus reading (`focus`) when it has them
+//            with the steps it states (`prepared`, ./plan.mjs) and its field's focus reading (`focus`) when it has them,
+//            and a refusal with what it read on the way (`seen`, small and value-free) when it says
 //   act      exactly one facade call, so the act's `_meta` carries that call's route; the device clock around it
 //            (`at`, attributing the activations watcher's events to the row) and the call's own time (`actMs`)
 //   check    observes and returns {ok, outcome}, or {invalid} when the case was not prepared; an outcome case whose act
@@ -72,7 +73,8 @@ __m.ready = __r?.ready === true;
 ${watched ? `if (__m.ready) __m.watched = ${watched};` : ''}
 const __prepared = [...__m.prepared, ...(Array.isArray(__r?.prepared) ? __r.prepared : [])].map(s => String(s).slice(0, 80));
 const __stated = {...(__m.ready && __m.focus ? {focus: __m.focus} : {}), ...(__prepared.length ? {prepared: __prepared} : {})};
-return __m.ready ? {ready: true, ...__stated} : {ready: false, reason: String(__r?.reason ?? "not ready").slice(0, 200), ...__stated};`),
+const __seen = __r?.seen && typeof __r.seen === "object" && JSON.stringify(__r.seen).length <= 600 ? {seen: __r.seen} : {};
+return __m.ready ? {ready: true, ...__stated} : {ready: false, reason: String(__r?.reason ?? "not ready").slice(0, 200), ...__stated, ...__seen};`),
     act: cell(`${head}
 const __m = globalThis.__m;
 if (!__m?.ready) throw new Error("the case was not prepared; nothing was sent");

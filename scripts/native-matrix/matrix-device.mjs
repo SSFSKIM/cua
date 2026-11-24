@@ -44,7 +44,8 @@
 //       unread}, at}: what decides each step of a panel's close (./panels.mjs closePanel)
 //   panel element --run <dir> --window <number> --element focused|search
 //       the frame of the known panel's focused element (in that window) or its search field, read by the same helper
-//       with no write -> {answer: {found, frame, inWindow, pid}, at} (`frame` null when unread): where a key case's
+//       with no write -> {answer: {found, frame, inWindow, pid, focusedElement?}, at} (`frame` null when unread;
+//       `focusedElement`, for focused: the app's focused element's role, subrole and AXIdentifier): where a key case's
 //       input lands when its panel could not be placed in the strip (./steps.mjs elementGuardCause; ruling 1203's
 //       fallback). Hosted only -> {answer: {frame: null, refused}, at} off a runner
 //   text-range --run <dir> --scene <id>
@@ -343,7 +344,10 @@ export function panelElement({window, element}, io) {
   const shown = panelWindowOf(io, window);
   const ax = io.panelAx(['element', String(shown.ownerPid), rectArg(shown.bounds), element]);
   const frame = ax?.frame && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(ax.frame[k])) ? ax.frame : null;
-  return {found: ax?.found === true, frame, inWindow: ax?.inWindow ?? null, pid: shown.ownerPid};
+  const named = v => (typeof v === 'string' ? v.slice(0, 80) : null);
+  const el = ax?.focusedElement;
+  return {found: ax?.found === true, frame, inWindow: ax?.inWindow ?? null, pid: shown.ownerPid,
+    ...(el && typeof el === 'object' ? {focusedElement: {role: named(el.role), subrole: named(el.subrole), identifier: named(el.identifier)}} : {})};
 }
 // The window list read with no write (allowed anywhere, as the alert guard's reads are): whether the known panel's
 // window is on screen (`open`), gone (`closed`), or the list was not read (`unread`), never gone for a list unread. The

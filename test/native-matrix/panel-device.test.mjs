@@ -170,3 +170,15 @@ test('the AX helper\'s move writes AXPosition alone: no write of AXSize anywhere
   const writes = [...source.matchAll(/AXUIElementSetAttributeValue\(\s*\w+\s*,\s*(\w+)/g)].map(m => m[1]);
   assert.deepEqual([...new Set(writes)], ['kAXPositionAttribute']);
 });
+
+// Pilot C-4: the focused element's reading names it (role, subrole, AXIdentifier), whether or not it lies in the panel.
+test('panel element focused: the focused element\'s role, subrole and identifier ride on the answer', async () => {
+  await withRun(async dir => {
+    const field = rect(560, 96, 220, 22);
+    const io = {...HOSTED, screen: () => ({windows: [DOCUMENT, panelOf(rect(0, 80, 880, 448))], displays: [rect(0, 0, 1920, 1080)]}),
+      panelAx: () => ({trusted: true, found: true, windows: 2, kind: 'window', element: 'focused', inWindow: true, frame: field, walked: 9,
+        focusedElement: {role: 'AXTextField', subrole: null, identifier: 'saveAsNameTextField'}})};
+    const out = await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused'], {io});
+    assert.deepEqual(out.answer, {found: true, frame: field, inWindow: true, pid: 300, focusedElement: {role: 'AXTextField', subrole: null, identifier: 'saveAsNameTextField'}});
+  });
+});

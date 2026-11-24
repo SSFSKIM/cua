@@ -68,7 +68,7 @@ import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {caseCells, findingCell, launchCell, launchCheckCell, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
-import {caseId, casesOf, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {caseId, casesOf, FOCUS_REASONS, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
@@ -624,7 +624,28 @@ const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertH
 // input lands on (ctx.elementGuard, ./steps.mjs elementGuardCause); any other case (the panel's observation) runs as
 // ever.
 const ownerSittingMarks = detail => ({ok: false, ownerSitting: detail, invalid: detail});
+// A panel case not prepared for its field's focus (pilot C-4) keeps the device's reading of the panel's focused element
+// beside the prepare's own (`deviceFocus`: whether it lies in the panel, its frame, role, subrole and AXIdentifier, read
+// outside either engine by ./panel-ax.swift; or why it was not read): a click that missed the field and a trailer that
+// cannot see the panel service's focused element read differently there.
+const unfocusedRow = row => typeof row?.invalid === 'string' && row.invalid.startsWith('not prepared: ') && Object.values(FOCUS_REASONS).some(r => row.invalid.includes(r));
+function deviceFocusOf(ctx) {
+  const windows = ctx.panelWindows ?? [];
+  if (windows.length !== 1) return {unread: windows.length ? `${windows.length} panel windows` : 'the panel\'s window is not known'};
+  let answer;
+  try { answer = device(ctx, ['panel', 'element', '--window', String(windows[0]), '--element', 'focused']); } catch (error) {
+    if (error instanceof Stop) throw error;
+    return {unread: String(error?.message ?? error).split('\n')[0].slice(0, 160)};
+  }
+  if (answer?.refused) return {unread: answer.refused};
+  return {inWindow: answer?.inWindow ?? null, frame: answer?.frame ?? null, ...(answer?.focusedElement ?? {role: null, subrole: null, identifier: null})};
+}
 async function panelCase(ctx, target, regime, c, options = {}) {
+  const row = await panelCaseRow(ctx, target, regime, c, options);
+  if (unfocusedRow(row)) row.deviceFocus = deviceFocusOf(ctx);
+  return row;
+}
+async function panelCaseRow(ctx, target, regime, c, options) {
   const fallback = ctx.panelFallback;
   if (!fallback) return caseRow(ctx, target, regime, c, options);
   if (sendsPointer(caseCells(target, c).act)) {

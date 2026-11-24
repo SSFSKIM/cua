@@ -8,7 +8,6 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../../scripts/native-matrix/live-checks.mjs';
 import {CASES} from '../../scripts/native-matrix/plan.mjs';
-import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {matrixSteps, names, runWith} from './run-doubles.mjs';
 
@@ -186,68 +185,8 @@ test('the Unicode rows: a field\'s focus click the guard refused leaves its rows
   assert.deepEqual(result.problems, [], 'no refusal stopped the run');
 });
 
-// The Open panel and the pilots' alerts (pilot A: about x 382-671, y 118-511 on 1920x1080). `escape`: whether Escape
-// closes the panel; `clear`: whether it opens clear of the alert (its saved frame, the venue's, honoured) or under it.
-// The frame probe moves Finder windows only, so the panel is never moved; the scenes stand where their launch put them
-// (the venue's frames), here clear of the alert.
-const PILOT = rect(382, 118, 289, 393), PANEL_AT = rect(300, 100, 800, 500), PANEL_SAVED = rect(679, 100, 720, 440), LAUNCHED = rect(679, 100, 800, 600);
-// The harness's own Cancel click (./matrix-cells.mjs CLOSE_PANEL), told from the case's.
-const HARNESS_CANCEL = 'if (index !== null) await __app.click(index);';
-const PANEL_PLAN = {id: 'test', frontmost: ['openPanel', 'electron'], speed: false, finding: false, background: [], launch: []};
-function panelRun({escape = true, clear = true} = {}) {
-  let open = false;
-  const panelAt = clear ? PANEL_SAVED : PANEL_AT;
-  const placed = [];
-  const cell = code => {
-    if (code.includes('pressKey("super+o")')) { open = true; return {opened: true}; }
-    if (code.includes('pressKey("Escape")')) { if (escape) open = false; return {closed: escape}; }
-    if (code.includes(HARNESS_CANCEL)) { open = false; return {closed: true}; }
-    return null;
-  };
-  const matrix = (base, a) => {
-    if (a[0] === 'place') placed.push(a);
-    const out = base(a);
-    if (!isGuardRead(a)) return out;
-    return {...out, alertBounds: {...out.alertBounds, alerts: [{number: 90, layer: 0, bounds: PILOT}],
-      windows: [...out.alertBounds.windows.map(w => ({...w, bounds: LAUNCHED})), ...(open ? [{scene: 'openPanel', number: 77, recorded: false, bounds: panelAt}] : [])]}};
-  };
-  return {cell, ops: {matrix}, placed};
-}
-
-test('the Open panel opened clear of the pilots\' alerts after ⌘O is recorded where it stands, its Cancel sent, and closed by Escape under the key guard', async () => {
-  const calls = [];
-  const {cell, ops, placed} = panelRun();
-  const {result} = await runWith({plan: PANEL_PLAN, calls, cell, ops});
-  assert.equal(result.complete, true, result.problems.join('; '));
-  assert.deepEqual(placed, [], 'nothing is asked of the frame probe: the panel and the scenes stand clear');
-  assert.deepEqual(result.meta.placement.panel, [{beforeRow: 0, number: 77, from: PANEL_SAVED, moved: false}]);
-  assert.deepEqual(result.meta.placement.scenes.electron, {from: LAUNCHED, moved: false});
-  assert.equal(rowOf(result, 'openPanel/frontmost/click.cancel').alertGuard, undefined);
-  assert.ok(sent(calls, 'pressKey("Escape")') && !sent(calls, HARNESS_CANCEL), 'closed by key, its Cancel never clicked by the harness');
-  assert.equal(rowOf(result, 'electron/frontmost/click.point').alertGuard, undefined, 'the targets after it ran');
-});
-
-test('a panel under the alert, which the frame probe cannot move, nor closed by key: its Cancel refused stops the run, and every sample it planned after is NO VERDICT alert', async () => {
-  const calls = [];
-  const {cell, ops, placed} = panelRun({escape: false, clear: false});
-  const {result} = await runWith({plan: PANEL_PLAN, calls, cell, ops});
-  assert.equal(rowOf(result, 'openPanel/frontmost/click.cancel').alertGuard.cause, 'alert');
-  assert.deepEqual(placed, []);
-  assert.deepEqual([result.meta.placement.panel[0].moved, result.meta.placement.panel[0].from], [false, PANEL_AT]);
-  assert.match(result.meta.placement.panel[0].reason, /the frame probe moves Finder windows only: the openPanel window stays where it was read/);
-  assert.ok(!sent(calls, HARNESS_CANCEL), 'the harness\'s Cancel click refused, never sent');
-  assert.equal(result.complete, false);
-  assert.equal(result.meta.alertGuardStop.cause, 'alert');
-  assert.ok(result.problems.some(p => /nothing sent: .* \(the alert guard, ruling 1154\)/.test(p)));
-  // Every planned sample is there: the Electron fixture's never ran, each NO VERDICT alert on this side.
-  const planned = manifestOf({run: 1, samples: 2}, PANEL_PLAN);
-  const have = new Set(result.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
-  assert.deepEqual(planned.filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`)), []);
-  const unrun = result.rows.filter(r => r.id.startsWith('electron/'));
-  assert.equal(unrun.length, planned.filter(e => e.id.startsWith('electron/')).length);
-  assert.ok(unrun.every(r => r.engine === 'cua' && sampleCause(r).category === 'alert' && /not run/.test(r.alertGuard.detail)));
-  assert.deepEqual(validateCellResult(result), []);
-});
+// The Open panel and the Save sheet under the alerts: their placement in the strip and their close are ./panels-run.test.mjs's
+// (rulings 1195, 1196).
 
 test('a fixture whose cleanup the guard refused for an unread screen is kept blocked by `unread`, its real cause', async () => {
   const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', ops: alertsBy(() => null)});

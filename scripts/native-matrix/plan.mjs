@@ -35,10 +35,14 @@ export const METHODS = Object.freeze(['getAXState', 'listApps', 'click', 'drag',
 // The facade's names against the engine's (the summary prints the engine's, the spec's 11).
 export const ENGINE_METHOD = Object.freeze({getAXState: 'get_app_state', listApps: 'list_apps', click: 'click', drag: 'drag', paste: 'paste',
   performSecondaryAction: 'perform_secondary_action', pressKey: 'press_key', scroll: 'scroll', selectText: 'select_text', setValue: 'set_value', typeText: 'type_text'});
-// The matrix's targets: the four scenes, TextEdit's Open panel (served out of process) and the windowless app.
-export const TARGETS = Object.freeze(['textedit', 'finder', 'chrome', 'electron', 'openPanel', 'windowless']);
-// The scene each target drives (the Open panel is TextEdit's; the windowless app is no scene's).
-export const SCENE_OF = Object.freeze({textedit: 'textedit', finder: 'finder', chrome: 'chrome', electron: 'electron', openPanel: 'textedit', windowless: null});
+// The matrix's targets: the four scenes, TextEdit's Open panel and Save sheet (both served out of process) and the
+// windowless app.
+export const TARGETS = Object.freeze(['textedit', 'finder', 'chrome', 'electron', 'openPanel', 'savePanel', 'windowless']);
+// The scene each target drives (the panels are TextEdit's; the windowless app is no scene's).
+export const SCENE_OF = Object.freeze({textedit: 'textedit', finder: 'finder', chrome: 'chrome', electron: 'electron', openPanel: 'textedit', savePanel: 'textedit', windowless: null});
+// The panel targets: each opening of one is placed and closed by the harness (./panels.mjs), never measured as a scene.
+export const PANEL_TARGETS = Object.freeze(['openPanel', 'savePanel']);
+export const isPanelTarget = target => PANEL_TARGETS.includes(target);
 // The windowless app (./matrix-device.mjs WINDOWLESS builds and launches it).
 export const WINDOWLESS_BUNDLE_ID = 'io.github.ssfskim.cua.fixture.windowless';
 
@@ -299,12 +303,58 @@ return {ok: after !== null && after > __m.before, outcome: {moved: after !== nul
     watch: `[selectedTextOf(ax), valueOfIndex(ax, ${TEXT_AREA})]`, sentence: REFUSALS.invalidIndex}),
 ];
 
-// ---- TextEdit's Open panel (served out of process; opened by the run's ⌘O, ./run.mjs) ----------------------------------
+// ---- TextEdit's Open panel and Save sheet (served out of process; each case on an opening of its own, ./panels.mjs) ----
+
+// Whether a panel is up in an observation `ax`, as cell source: the Open panel by its window's ID (./matrix-cells.mjs
+// `panel`); the Save sheet by its name field, told from the keep-or-delete sheet by its missing Delete button.
+export const PANEL_UP = Object.freeze({openPanel: 'panel(ax)', savePanel: '(/ID: saveAsNameTextField\\b/.test(ax) && !/ID: DontSaveButton\\b/.test(ax))'});
+// What the panels' typing cases type (ruling 1196): an upper-case token, which no autocorrection rewrites and no file
+// of the runner's matches; the search field's and the Save sheet's name field's.
+export const PANEL_SEARCH = 'CUAMATRIXPANEL';
+export const SAVE_PANEL_NAME = 'CUAMATRIXNAME';
+// The Open panel's search field: a text field whose line names a search (its role word, placeholder or description).
+const SEARCH_FIELD = 'elementLines(ax).find(l => /^(?:search )?(?:text field|search field)\\b/.test(l.content) && /search|검색/i.test(l.content))?.index ?? null';
+// The Save sheet's name field (ID saveAsNameTextField, as #212's report names it).
+const NAME_FIELD = '((m => (m ? Number(m[1]) : null))(/^[~+-]?\\t*(\\d+) [^\\n]*ID: saveAsNameTextField\\b/m.exec(ax)))';
+// A panel's Escape (ruling 1196: whether a key reaches a panel drawn by the panel service): it must be gone afterwards,
+// TextEdit's own window (`front`, as cell source) in front again.
+const panelEscape = (target, front, what) => ({method: 'pressKey', case: 'escape', expect: 'outcome', keys: ['Escape'], regimes: ['frontmost'],
+  prepare: `const ax = await observe();
+if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
+return {ready: true};`,
+  act: 'await __app.pressKey("Escape");',
+  check: `let ax = await observe();
+for (const end = Date.now() + 5000; ${PANEL_UP[target]} && Date.now() < end;) ax = await observe();
+const closed = !${PANEL_UP[target]}, front = ${front};
+return {ok: closed && front, outcome: {closed, documentInFront: front}};`});
+// A panel's typing (ruling 1196): `field` (cell source over `ax`) emptied by value and focused by the prepare, the text
+// typed, then read back, awaited up to 3 s; only whether it read back and its length leave the cell.
+const panelTyping = (target, kase, field, text, what) => ({method: 'typeText', case: kase, expect: 'outcome', keys: ['typeText'], regimes: ['frontmost'],
+  prepare: `let ax = await observe();
+if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
+let index = ${field};
+if (index === null) return {ready: false, reason: "the field is not in the text"};
+if (plain(valueOfIndex(ax, index) ?? "") !== "") { await __app.setValue(index, ""); ax = await observe(); index = ${field}; __m.prepared.push("field emptied"); }
+if (index !== null && focusedIndexOf(ax) !== index) { await __app.click(index); ax = await observe(); index = ${field}; }
+if (index === null || plain(valueOfIndex(ax, index) ?? "") !== "") return {ready: false, reason: "the field could not be emptied"};
+if (focusedIndexOf(ax) !== index) return {ready: false, reason: "the field could not be focused"};
+return {ready: true};`,
+  act: `await __app.typeText(${j(text)});`,
+  check: `let ax = await observe(), value = null;
+for (const end = Date.now() + 3000; ; ax = await observe()) {
+  const index = ${field};
+  value = index === null ? null : plain(valueOfIndex(ax, index) ?? "");
+  if (value === ${j(text)} || Date.now() >= end) break;
+}
+const readBack = value === ${j(text)};
+return {ok: readBack, outcome: {readBack, length: value === null ? null : value.length, up: ${PANEL_UP[target]}}};`});
 
 const openPanel = [
   {method: 'getAXState', case: 'panel', expect: 'outcome', prepare: 'return {ready: true};',
     act: '__m.ax = await __app.getAXState({emit: false, disableDiffing: true});',
     check: 'const ax = __m.ax ?? "";\nreturn {ok: panel(ax), outcome: {panel: panel(ax), elements: elementLines(ax).length}};'},
+  panelTyping('openPanel', 'search', SEARCH_FIELD, PANEL_SEARCH, 'the Open panel'),
+  panelEscape('openPanel', 'inFront(ax)', 'the Open panel'),
   {method: 'click', case: 'cancel', expect: 'outcome',
     prepare: `const ax = await observe();
 if (!panel(ax)) return {ready: false, reason: "the Open panel is not the app's front window"};
@@ -315,6 +365,12 @@ __m.index = index; return {ready: true};`,
     check: `let ax = await observe();
 for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await observe();
 return {ok: !panel(ax) && inFront(ax), outcome: {closed: !panel(ax), documentInFront: inFront(ax)}};`},
+];
+
+// The Save sheet of an untitled document (⌘N, then ⌘S: ./panels.mjs), never saved: no Return is sent.
+const savePanel = [
+  panelEscape('savePanel', 'typeof globalThis.__sheetDoc === "string" && windowTitleOf(ax) === globalThis.__sheetDoc', 'the Save sheet'),
+  panelTyping('savePanel', 'name', NAME_FIELD, SAVE_PANEL_NAME, 'the Save sheet'),
 ];
 
 // ---- Finder -------------------------------------------------------------------------------------------------------------
@@ -574,7 +630,7 @@ const windowless = [
 return {ok: refusedAs(${j(REFUSALS.noWindow)}) && unbound, outcome: {refused: __m.threw !== null, expected: refusedAs(${j(REFUSALS.noWindow)}), unbound, errorName: __m.errorName, message: __m.threw}};`},
 ];
 
-export const CASES = Object.freeze({textedit, finder, chrome, electron, openPanel, windowless});
+export const CASES = Object.freeze({textedit, finder, chrome, electron, openPanel, savePanel, windowless});
 // A target's cases in one regime: every case but those that name other regimes (`regimes`, the caret cases').
 export const casesOf = (target, regime) => CASES[target].filter(c => !c.regimes || c.regimes.includes(regime));
 // A case as the run sends it, grounded on the frame its scene's window was launched at (ruling 1169): `frames` the venue's
@@ -603,6 +659,7 @@ const SCENE_FIELD = id => `valueOfIndex(ax, indexOfTarget(ax, ${j(id)}))`;
 export const WATCHED = Object.freeze({
   textedit: `[selectedTextOf(ax), focusedIndexOf(ax), plain(valueOfIndex(ax, ${TEXT_FIELDS_TEXTEDIT}) ?? ""), scrollBarValueBeside(ax, ${TEXT_FIELDS_TEXTEDIT}), valueOfIndex(ax, indexOfPart(ax, "Description", "align center"))]`,
   openPanel: '[panel(ax), inFront(ax)]',
+  savePanel: `[${PANEL_UP.savePanel}, windowTitleOf(ax) === globalThis.__sheetDoc]`,
   finder: `[selectedIndexesOf(ax), focusedIndexOf(ax), showingOf(ax, ${LIST})]`,
   chrome: `[selectedTextOf(ax), focusedIndexOf(ax), ${['Scene notes', 'Scene name', 'Scene option'].map(SCENE_FIELD).join(', ')}, elementLines(ax).filter(l => parentIndexOf(ax, l.index) === ${named('Scene status')}).map(l => l.content), ${pointerDowns}]`,
   electron: `[selectedTextOf(ax), focusedIndexOf(ax), selectedIndexesOf(ax), ${SCENE_FIELD('Fixture text')}, ${pressed}, ${pointerDowns}]`,
@@ -630,8 +687,10 @@ export const NOT_APPLICABLE = Object.freeze({
     scroll: 'the fixture\'s list of six fits its box: nothing to scroll',
     performSecondaryAction: 'no control in the fixture advertises a secondary action',
   },
-  openPanel: Object.fromEntries(['listApps', 'drag', 'paste', 'performSecondaryAction', 'pressKey', 'scroll', 'selectText', 'setValue', 'typeText']
-    .map(method => [method, 'the Open panel is observed and its Cancel clicked; it lists the owner\'s files, so nothing is typed, selected or scrolled in it'])),
+  openPanel: Object.fromEntries(['listApps', 'drag', 'paste', 'performSecondaryAction', 'scroll', 'selectText', 'setValue']
+    .map(method => [method, 'the Open panel is observed, searched for a token no file matches, closed by Escape and by its Cancel; it lists the owner\'s files, so nothing in its listing is selected, scrolled or written'])),
+  savePanel: Object.fromEntries(METHODS.filter(m => !['pressKey', 'typeText'].includes(m))
+    .map(method => [method, 'the Save sheet\'s cells are its Escape and its name field\'s typing (ruling 1196); it is never saved'])),
   windowless: Object.fromEntries(METHODS.filter(m => m !== 'getAXState')
     .map(method => [method, 'an app with no window refuses its observation, so no element exists for any other method'])),
 });
@@ -657,7 +716,7 @@ export const isAcceptance3 = (target, regime, c, user) => regime === 'background
 // are each driven behind two user windows).
 export const caseId = (target, regime, c, user = null) => `${target}/${regime}/${c.method}.${c.case}${user ? `@${user}` : ''}`;
 // A frontmost case's own timing row (section 'speed'): part 5's "each method cell", one per run.
-export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`;
+export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${{openPanel: 'panel.', savePanel: 'savePanel.'}[target] ?? ''}${c.method}.${c.case}`;
 // The method rows judged by the device's reading of the field's caret beside the vendor's (#258, #259; ./caret.mjs).
 export const CARET_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c.caret).map(c => caseId(target, 'frontmost', c))));
 export const isCaretRow = id => CARET_ROWS.includes(id);

@@ -15,7 +15,9 @@
 //   4. the activation watcher started (`watch start`, its pid kept), the lane connected (./lane.mjs), every scene bound
 //      by path with its window brought to the front first, so the bind's text (getApp emits it) is the run's own window
 //   5. the frontmost regime: each target's app activated (a harness step), its speed cells (getAXState, getScreenshot,
-//      listApps; --samples each) and finding-elements cell, then its method cases (./plan.mjs)
+//      listApps; --samples each) and finding-elements cell, then its method cases (./plan.mjs); TextEdit's Open panel
+//      and Save sheet each case on an opening of its own, placed in the strip and closed by the harness (./panels.mjs);
+//      every case's timing row written, a case that ended untimed NO VERDICT by its own cause (fillTimings)
 //   6. the background regime: per pairing the user scene activated, its window read as the user window, and each case
 //      of the driven target run with the oracle's reading before and after the act (./matrix-device.mjs read, the focus
 //      probe after); keys only through the key guard's user-window case; a paste or typeText act only between two alert
@@ -61,17 +63,18 @@ import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs
 import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
-import {CLOSE_PANEL, CLOSE_PANEL_KEY, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
+import {findingCell, launchCell, launchCheckCell, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
-import {caseId, casesOf, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {caseId, casesOf, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {closePanel, closeUntitledDocument, openPanelOf, PanelStuck, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
-import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
-  TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
+import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKeyAt, skippedReadings, step, Stop,
+  guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
-import {malformedBaseline, ownerInputNow} from './owner-input.mjs';
+import {malformedBaseline, ownerInputNow, venueInputMarks} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
 export {PASTING};
@@ -85,7 +88,7 @@ const SCENE_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
 // The whole matrix, and what each registry cell runs of it (./registry.mjs). `id` names the plan in every result
 // (meta.planId); only a 'full' plan's results count toward the verdict (./summary.mjs).
 export const FULL_PLAN = Object.freeze({
-  id: 'full', frontmost: ['textedit', 'openPanel', 'finder', 'chrome', 'electron'], speed: true, finding: true,
+  id: 'full', frontmost: ['textedit', 'openPanel', 'savePanel', 'finder', 'chrome', 'electron'], speed: true, finding: true,
   background: [...BACKGROUND_PAIRINGS, {driven: 'openPanel', user: 'finder'}, {driven: 'windowless', user: 'finder'}],
   // The probe cells (./probe-run.mjs) and the Korean and Unicode matrix (./unicode-run.mjs), between the background
   // regime and the launch path (which leaves its scene down).
@@ -108,14 +111,14 @@ export function planOf(kind, {scene = null, user = null} = {}) {
   return {...plan, id};
 }
 function narrowed(kind, {scene, user}) {
-  // --scene names a target exactly: textedit is the document, openPanel its Open panel.
+  // --scene names a target exactly: textedit is the document, openPanel its Open panel, savePanel its Save sheet.
   const front = t => !scene || t === scene;
   const back = p => (!scene || p.driven === scene) && (!user || p.user === user);
   switch (kind) {
     case 'matrix': return {...FULL_PLAN, frontmost: FULL_PLAN.frontmost.filter(front), background: FULL_PLAN.background.filter(back), launch: FULL_PLAN.launch.filter(l => !scene || l.scene === scene)};
     case 'method': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(front), background: FULL_PLAN.background.filter(back)};
-    case 'speed': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => t !== 'openPanel' && front(t)), speed: true, onlyMeasures: true};
-    case 'finding': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => t !== 'openPanel' && front(t)), finding: true, onlyMeasures: true};
+    case 'speed': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => !isPanelTarget(t) && front(t)), speed: true, onlyMeasures: true};
+    case 'finding': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => !isPanelTarget(t) && front(t)), finding: true, onlyMeasures: true};
     case 'background': return {...EMPTY_PLAN, background: FULL_PLAN.background.filter(back)};
     case 'launch': return {...EMPTY_PLAN, launch: FULL_PLAN.launch.filter(l => !scene || l.scene === scene)};
     // The probe cells: concurrent use narrows to a driven scene (its user window is TextEdit's), the others are one each.
@@ -305,8 +308,8 @@ async function runOnce(options, io) {
     complete = true;
   } catch (error) {
     problems.push(error instanceof Stop ? `stopped: ${error.message}` : error.message);
-    // A harness cell (no row of its own: the Open panel's Cancel, a fixture's reset) the alert guard refused stops the
-    // run rather than click where an alert is: its proof is missing, not failed (../hosted-sittings/checks.mjs).
+    // A harness cell (no row of its own: a fixture's reset, the Save sheet's untitled document) the alert guard refused
+    // stops the run rather than click where an alert is: its proof is missing, not failed (../hosted-sittings/checks.mjs).
     if (error instanceof AlertGuarded) {
       meta.alertGuardStop = {cause: error.guard.category, detail: error.guard.detail};
       recordUnrun(ctx, plan, error.guard);
@@ -314,6 +317,9 @@ async function runOnce(options, io) {
       // A held fixture's reset the alert held, or the guard refused (./probe-run.mjs resetHeldFixture; T8e review, Minor
       // 2): its samples after are NO VERDICT by that cause too, never missing.
       recordUnrun(ctx, plan, error.guard, 'a held fixture could not be reset');
+    } else if (error instanceof PanelStuck) {
+      // A panel nothing closed (./panels.mjs closePanel, ruling 1195): its samples after are recorded, invalid by it.
+      recordUnrun(ctx, plan, null, error.message);
     }
     log(`run ${n} stopped: ${error.message}`);
   } finally {
@@ -506,29 +512,13 @@ async function placeScenes(ctx) {
   ctx.meta.placement = placed.unread ? {unread: true} : {alerts: placed.alerts, scenes: Object.fromEntries(placed.windows.map(w => [w.scene, placedEntry(w)]))};
 }
 
-// The Open panel, just opened, recorded against the alerts as the scenes are (placeScenes): the frame probe moves Finder
-// windows only, so its window (the service's, by its number) stays where it was read, each opening kept in
-// meta.placement.panel ({beforeRow, number, from, moved, reason?} (to, matched, readBack and pid should the probe ever
-// move it), or {beforeRow, unread}).
-async function placePanel(ctx) {
-  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
-  const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;
-  const pids = new Map();
-  const placed = await placeWindows(bounds, {select: w => w.scene === 'openPanel', move: ({number, frame}) => {
-    const answer = device(ctx, ['place', '--scene', 'openPanel', '--window', String(number), '--frame', frameArg(frame)]);
-    pids.set(number, answer?.pid ?? null);
-    return answer;
-  }});
-  if (placed.unread) { kept.push({beforeRow, unread: true}); return; }
-  for (const w of placed.windows) kept.push({beforeRow, number: w.number, ...placedEntry(w), ...(w.moved ? {pid: pids.get(w.number) ?? null} : {})});
-}
-
 // A run the alert guard stopped (a harness cell refused): every sample its plan still had to take recorded NO VERDICT by
 // the guard's cause, as an activation that did not take records its target's (skippedTarget), so the per-cell counts see
-// them (./manifest.mjs manifestOf, the rows the judge expects).
+// them (./manifest.mjs manifestOf, the rows the judge expects). With no `guard` (a panel nothing closed, PanelStuck), each
+// is invalid by `why`.
 function recordUnrun(ctx, plan, guard, why = 'the alert guard refused a harness cell') {
   const have = new Set(ctx.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
-  const mark = guardRow({category: guard.category, detail: `not run: the run stopped when ${why} (${guard.detail})`});
+  const mark = guard ? guardRow({category: guard.category, detail: `not run: the run stopped when ${why} (${guard.detail})`}) : {invalid: `not run: the run stopped: ${why}`};
   for (const {section, id, sample, expect} of manifestOf({run: ctx.n, samples: ctx.samples}, plan)) {
     if (have.has(`${section} ${id} ${sample}`)) continue;
     push(ctx, {section, id, engine: ctx.engine, sample, ok: false, ...(section === 'method' ? {regime: id.split('/')[1], expect} : {}), ...mark});
@@ -539,9 +529,10 @@ function recordUnrun(ctx, plan, guard, why = 'the alert guard refused a harness 
 
 // Every case of a target left invalid for one reason (its precondition could not be set up).
 const invalidCases = (ctx, target, regime, reason, user = null) => caseRows(ctx, target, regime, {invalid: reason}, user);
-// Every case of a target pushed with `extra` (its invalid reason, or the readings of an activation that did not take).
-const caseRows = (ctx, target, regime, extra, user = null) => {
-  for (const c of casesOf(target, regime)) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
+// Every case of a target (or those of `cases`) pushed with `extra` (its invalid reason, or the readings of an activation
+// that did not take).
+const caseRows = (ctx, target, regime, extra, user = null, cases = casesOf(target, regime)) => {
+  for (const c of cases) push(ctx, {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene: SCENE_OF[target], target, regime,
     method: c.method, case: c.case, expect: c.expect, ...(user ? {user} : {}), ...extra});
 };
 // Every sample a frontmost target planned, skipped because its activation did not take front and key (./steps.mjs
@@ -552,75 +543,80 @@ function skippedTarget(ctx, target, plan, frontKey, held = {}) {
   const scene = SCENE_OF[target], measured = {...frontKey, apps: [SCENES[scene].bundleId]};
   if (!plan.onlyMeasures) caseRows(ctx, target, 'frontmost', {frontKey, ...held});
   if (plan.speed && !plan.onlyMeasures) for (const c of casesOf(target, 'frontmost')) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: false, frontKey, ...held});
-  if (target === 'openPanel') return;
+  if (isPanelTarget(target)) return;
   if (plan.speed) for (const op of SPEED_OPS) for (let i = 1; i <= ctx.samples; i++)
     push(ctx, {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene, frontKey: measured});
   if (plan.finding) for (const id of [...SCENES[scene].targets.map(t => `target.${t.id}`), 'lines', 'ids'])
     push(ctx, {section: 'finding', id: `${scene}/${id}`, engine: ctx.engine, sample: ctx.n, ok: false, scene, frontKey: measured});
 }
 
-// The Open panel opened from the run's document (⌘O, under the key guard with TextEdit's process in front). -> null,
-// {skipped: readings} when TextEdit's activation did not take front and key (`apps` the cells' own) or, on a hosted run,
-// replayd's capture alert held ⌘O (`held` its mark, so the panel's rows are NO VERDICT whatever is read after; ruling
-// 1141), or {problem}.
-async function openPanel(ctx, apps) {
-  const front = activate(ctx, 'textedit');
-  const skipped = notActivated(ctx, 'textedit', apps);
-  if (skipped) return {skipped};
-  if (!front?.ok) return {problem: `TextEdit did not come to the front (${front?.reason ?? 'no answer'})`};
-  let opened;
-  try { opened = await sendKeys(ctx, OPEN_PANEL, ['super+o'], {scene: 'textedit', front: read(ctx)}); } catch (error) {
-    if (!(error instanceof AlertHeld)) throw error;
-    return {skipped: {apps, activate: activationOf(ctx, SCENES.textedit.bundleId), before: error.reading, after: readKey(ctx)}, held: error.row};
-  }
-  if (opened === null) return {problem: 'the key guard did not send ⌘O'};
-  if (!opened.ok || !opened.value?.opened) return {problem: `the Open panel did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
-  // TextEdit's focused window is the panel until closePanel: no key-window check meanwhile (./steps.mjs keyWindowScene).
-  ctx.panelOpen = true;
-  await placePanel(ctx);
-  return null;
-}
-
 async function frontmostTarget(ctx, target, plan) {
+  if (isPanelTarget(target)) await panelTarget(ctx, target, plan);
+  else await sceneTarget(ctx, target, plan);
+  fillTimings(ctx, target, plan);
+}
+async function sceneTarget(ctx, target, plan) {
   const scene = SCENE_OF[target];
-  if (target === 'openPanel') {
-    const failed = await openPanel(ctx, appsOf(target));
-    if (failed?.skipped) return skippedTarget(ctx, target, plan, failed.skipped, failed.held);
-    if (failed) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', failed.problem); return; }
-  } else {
-    const front = activate(ctx, scene);
-    const skipped = notActivated(ctx, scene, appsOf(target));
-    if (skipped) return skippedTarget(ctx, target, plan, skipped);
-    if (!front?.ok) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', `the scene did not come to the front (${front?.reason ?? 'no answer'})`); return; }
-    if (plan.speed) await speedCells(ctx, scene);
-    if (plan.finding) await findingRows(ctx, scene);
-  }
+  const front = activate(ctx, scene);
+  const skipped = notActivated(ctx, scene, appsOf(target));
+  if (skipped) return skippedTarget(ctx, target, plan, skipped);
+  if (!front?.ok) { if (!plan.onlyMeasures) invalidCases(ctx, target, 'frontmost', `the scene did not come to the front (${front?.reason ?? 'no answer'})`); return; }
+  if (plan.speed) await speedCells(ctx, scene);
+  if (plan.finding) await findingRows(ctx, scene);
   if (!plan.onlyMeasures) for (const c of casesOf(target, 'frontmost')) await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
-  if (target === 'openPanel') await closePanel(ctx);
 }
 
-// The panel closed after its cases: by Escape under the key guard, and only when that did not close it (the key held,
-// skipped, or not taken by the out-of-process panel) by its Cancel, a click under the alert guard (ruling 1154), whose
-// refusal stops the run (runOnce records the samples it would still have taken). After the background pairing the user
-// window (Finder's) is in front, where the key guard would skip Escape: `activateFirst` brings TextEdit to the front
-// first, its cases done by then (T8e review, Minor 1).
-async function closePanel(ctx, {activateFirst = false} = {}) {
-  if (activateFirst) activate(ctx, 'textedit');
-  let keyed = null;
-  try { keyed = await sendKeys(ctx, CLOSE_PANEL_KEY, ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'}); } catch (error) {
-    if (!(error instanceof AlertHeld)) throw error;
+// A panel target (./panels.mjs): each case on an opening of its own, placed in the strip and closed by the harness, so a
+// case that closes the panel (its Escape, its Cancel) leaves the next one a panel of its own. An opening outside the
+// strip leaves its case NO VERDICT `venue` (ruling 1195), unsent. The Save sheet's untitled document is made once before
+// its cases and closed after them.
+async function panelTarget(ctx, target, plan) {
+  if (plan.onlyMeasures) return;
+  const apps = appsOf(target);
+  if (target === 'savePanel') {
+    const made = await untitledDocument(ctx, apps);
+    if (made?.skipped) return skippedTarget(ctx, target, plan, made.skipped, made.held);
+    if (made) return invalidCases(ctx, target, 'frontmost', made.problem);
   }
-  if (keyed?.ok && keyed.value?.closed) { ctx.panelOpen = false; return; }
-  const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL, {apps: TEXTEDIT});
-  if (!closed.ok || !closed.value?.closed) throw new Stop('TextEdit\'s Open panel stayed open after its cases');
-  ctx.panelOpen = false;
+  for (const c of casesOf(target, 'frontmost')) {
+    await ctx.checkpoint();
+    const from = ctx.rows.length;
+    const opened = await openPanelOf(ctx, target, apps);
+    if (opened?.skipped) caseRows(ctx, target, 'frontmost', {frontKey: opened.skipped, ...opened.held}, null, [c]);
+    else if (opened?.problem) caseRows(ctx, target, 'frontmost', {invalid: opened.problem}, null, [c]);
+    else if (opened?.venue) caseRows(ctx, target, 'frontmost', venueInputMarks(opened.venue), null, [c]);
+    else await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
+    if (ctx.panelOpen) await closePanel(ctx, target, {from});
+  }
+  if (target === 'savePanel') await closeUntitledDocument(ctx);
+}
+
+// Every frontmost case's timing row (./manifest.mjs: one per case and run), for a case that ended before it was timed
+// (not prepared, its act not sent, its opening skipped or outside the strip): the case row's own marks, so the sample is
+// NO VERDICT by the same cause, never missing (pilot C-2's vendor `chrome/method.drag.select`).
+const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'panelClose', 'error']);
+function fillTimings(ctx, target, plan) {
+  if (!plan.speed || plan.onlyMeasures) return;
+  const timed = new Set(ctx.rows.filter(r => r.section === 'speed' && r.sample === ctx.n).map(r => r.id));
+  for (const c of casesOf(target, 'frontmost')) {
+    const id = methodTimingId(target, c);
+    if (timed.has(id)) continue;
+    const row = ctx.rows.findLast(r => r.section === 'method' && r.id === caseId(target, 'frontmost', c) && r.sample === ctx.n);
+    const marks = row ? Object.fromEntries(TIMING_MARKS.filter(k => row[k] !== undefined).map(k => [k, row[k]])) : {};
+    push(ctx, {section: 'speed', id, engine: ctx.engine, sample: ctx.n, ok: false, ...marks, ...(marks.invalid || marks.frontKey ? {} : {invalid: 'the case was not timed'})});
+  }
 }
 
 async function backgroundPairing(ctx, {driven, user}) {
+  const from = ctx.rows.length;
   if (driven === 'openPanel') {
-    const failed = await openPanel(ctx, appsOf(driven, user));
+    const failed = await openPanelOf(ctx, driven, appsOf(driven, user));
     if (failed?.skipped) return caseRows(ctx, driven, 'background', {frontKey: failed.skipped, ...failed.held}, user);
-    if (failed) return invalidCases(ctx, driven, 'background', failed.problem, user);
+    if (failed?.problem) return invalidCases(ctx, driven, 'background', failed.problem, user);
+    if (failed?.venue) {
+      caseRows(ctx, driven, 'background', venueInputMarks(failed.venue), user);
+      return closePanel(ctx, driven, {from});
+    }
   }
   try {
     if (driven === 'windowless') {
@@ -638,7 +634,7 @@ async function backgroundPairing(ctx, {driven, user}) {
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
   }
-  if (driven === 'openPanel') await closePanel(ctx, {activateFirst: true});
+  if (driven === 'openPanel' && ctx.panelOpen) await closePanel(ctx, driven, {from, activateFirst: true});
 }
 
 // The speed ops, each the baseline's own cell (./manifest.mjs SPEED_OPS names them).

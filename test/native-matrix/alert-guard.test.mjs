@@ -196,13 +196,16 @@ test('place: the scene\'s recorded window moved by the frame probe and read back
     assert.equal((await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'], {io: {...HOSTED_DEVICE, probe: probe(rect(22, 120, 720, 560))}})).answer.matched, false);
     await assert.rejects(main(['place', '--run', dir, '--scene', 'chrome', '--frame', '0,0,1,1'], {io: {...HOSTED_DEVICE, probe: probe(to)}}), /names no scene/);
     await assert.rejects(main(['place', '--run', dir, '--scene', 'electron', '--frame', '0,0'], {io: {...HOSTED_DEVICE, probe: probe(to)}}), /x,y,w,h/);
-    // The Open panel: its window found by number on screen, the service's pid from the list.
+    // The Open panel: its window found by number on screen, the service's pid from the list, moved by the harness's own
+    // AX helper, never the engine's frame probe (./panel-device.test.mjs has the rest).
     asked.length = 0;
-    const screen = () => ({windows: [{ownerPid: 12, ownerName: 'Open and Save Panel Service', ownerBundleId: null, layer: 0, number: 77, name: null, bounds: rect(300, 100, 800, 500)}]});
-    const panel = await main(['place', '--run', dir, '--scene', 'openPanel', '--window', '77', '--frame', '679,100,800,500'], {io: {...HOSTED_DEVICE, probe: probe(rect(679, 100, 800, 500)), screen}});
-    assert.deepEqual(panel.answer, {requested: rect(679, 100, 800, 500), readBack: rect(679, 100, 800, 500), matched: true, exitStatus: 0, pid: 12});
-    assert.deepEqual(asked, [['window-frame', '--pid', '12', '--window', '77', '--frame', '679,100,800,500']]);
-    await assert.rejects(main(['place', '--run', dir, '--scene', 'openPanel', '--window', '78', '--frame', '0,0,1,1'], {io: {...HOSTED_DEVICE, probe: probe(to), screen}}), /no Open panel window/);
+    let at = rect(300, 100, 800, 500);
+    const screen = () => ({windows: [{ownerPid: 12, ownerName: 'Open and Save Panel Service', ownerBundleId: null, layer: 0, number: 77, name: null, bounds: at}]});
+    const panelAx = args => { at = rect(679, 100, 800, 500); return {trusted: true, found: true, size: 0, position: 0, readBack: at, args}; };
+    const panel = await main(['place', '--run', dir, '--scene', 'openPanel', '--window', '77', '--frame', '679,100,800,500'], {io: {...HOSTED_DEVICE, probe: probe(to), screen, panelAx}});
+    assert.deepEqual([panel.answer.readBack, panel.answer.matched, panel.answer.pid], [rect(679, 100, 800, 500), true, 12]);
+    assert.deepEqual(asked, [], 'the engine\'s frame probe is not asked for a panel');
+    await assert.rejects(main(['place', '--run', dir, '--scene', 'openPanel', '--window', '78', '--frame', '0,0,1,1'], {io: {...HOSTED_DEVICE, probe: probe(to), screen, panelAx}}), /no panel window/);
     // Off a GitHub-hosted runner (the mini's session) the move is refused before anything is read or asked of the probe.
     for (const off of [{env: {}, platform: 'darwin'}, {env: HOSTED_DEVICE.env, platform: 'linux'}]) {
       const refused = await main(['place', '--run', dir, '--scene', 'electron', '--frame', '22,100,720,560'],

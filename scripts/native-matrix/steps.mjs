@@ -12,7 +12,7 @@ import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
-import {ACCEPTANCE_3, caseId, focusVerdict, groundCase, isAcceptance3, methodTimingId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {ACCEPTANCE_3, caseId, focusVerdict, groundCase, isAcceptance3, isPanelTarget, methodTimingId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {keystrokeGate, probeProblem, WITNESS_FILES, WITNESS_LEAD_MS, WITNESS_PREPARE_CELL, witnessCheckCell} from './probe-plan.mjs';
 
 // The acts that may paste (type_text's paste route included): each sent only between two alert checks.
@@ -220,7 +220,7 @@ export {PANEL_SERVICE};
 // A target's app (a scene, the Open panel's TextEdit, the windowless app), by bundle id.
 export const bundleOf = target => (target === 'windowless' ? WINDOWLESS_BUNDLE_ID : SCENES[SCENE_OF[target] ?? target].bundleId);
 // The target's own windows' apps, for the window-order oracle (#485): its app's and, for the Open panel, its service's.
-export const targetsOf = target => [bundleOf(target), ...(target === 'openPanel' ? [PANEL_SERVICE] : [])];
+export const targetsOf = target => [bundleOf(target), ...(isPanelTarget(target) ? [PANEL_SERVICE] : [])];
 // The apps a cell itself puts on screen (./front-key.mjs `apps`): its target's and, behind a user window, the user's.
 export const appsOf = (target, user = null) => [...new Set([...targetsOf(target), ...(user ? [SCENES[user].bundleId] : [])])];
 // A reading's front and key applications, bundle ids (null when unread).
@@ -256,7 +256,7 @@ export const errorNameOf = (act, caught = act?.value?.errorName ?? null) => act?
 export function drivenFront(ctx, target, {keys = false} = {}) {
   const scene = SCENE_OF[target] ?? target, app = SCENES[scene].bundleId, keyWindow = keys ? keyWindowScene(ctx, scene) : null;
   const r = read(ctx, null, {frontKey: true, keyWindow});
-  if (target === 'openPanel' || (r?.frontKey?.front === app && r?.frontKey?.key === app)) return r;
+  if (isPanelTarget(target) || (r?.frontKey?.front === app && r?.frontKey?.key === app)) return r;
   activate(ctx, scene);
   return read(ctx, null, {frontKey: true, keyWindow});
 }

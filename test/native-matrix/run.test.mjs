@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {dryOps} from '../../scripts/native-matrix/lane.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
-import {CASES} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, casesOf} from '../../scripts/native-matrix/plan.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {cleanupMatrix, FULL_PLAN, PASTING, planOf} from '../../scripts/native-matrix/run.mjs';
 import {runnerRecord} from '../../scripts/hosted-sittings/runner.mjs';
@@ -271,13 +271,15 @@ test('on a hosted run ⌘O held by the capture alert leaves every Open-panel row
   assert.deepEqual(validateCellResult(r.result), []);
   const rows = r.result.rows.filter(x => x.target === 'openPanel' && x.section === 'method');
   assert.deepEqual([...new Set(rows.map(x => x.regime))].sort(), ['background', 'frontmost']);
-  assert.equal(rows.length, 2 * CASES.openPanel.length);
+  // Each frontmost case on an opening of its own (../../scripts/native-matrix/panels.mjs), the background pairing's cases on one.
+  const frontmost = casesOf('openPanel', 'frontmost').length;
+  assert.equal(rows.length, frontmost + casesOf('openPanel', 'background').length);
   for (const row of rows) {
     assert.deepEqual(sampleCause({...row, hosted: true}), {category: 'alert', detail: `${UNC} in front at the key guard; super+o held`}, row.id);
     assert.deepEqual([row.ok, row.frontKey.before.front, row.invalid], [false, UNC, 'the key guard held the action\'s keys: replayd\'s capture alert in front'], row.id);
   }
   assert.notEqual(r.result.verdict, 'fail');
-  assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), [['super+o', true], ['super+o', true]]);
+  assert.deepEqual(r.result.meta.keySkipped.map(k => [k.keys.join('+'), k.held]), Array.from({length: frontmost + 1}, () => ['super+o', true]));
 });
 
 // T8e review, Minor 1: after the background pairing (openPanel@finder) Finder's user window is in front, where the key

@@ -104,6 +104,9 @@ export function sampleCause(row) {
   if (row.ownerInput) return {category: 'ownerInput', detail: row.ownerInput};
   if (row.alertHeld) return {category: 'alert', detail: `${row.alertHeld.front} in front at the key guard; ${row.alertHeld.keys.join(', ')} held`};
   if (row.alertGuard) return {category: row.alertGuard.cause, detail: `the alert guard: ${row.alertGuard.detail}`};
+  // A row of a panel's opening whose close did not take (./panels.mjs closePanel, ruling 1195): by the refusal's cause,
+  // or `invalid` when the close was merely ineffective.
+  if (row.panelClose) return {category: row.panelClose.cause, detail: `the panel's close: ${row.panelClose.detail}`};
   const readings = row.frontKey === undefined && row.invalid ? null : frontKeyCause(row.frontKey, {hosted: row.hosted === true});
   if (readings) return readings;
   if (row.invalid) return {category: 'invalid', detail: row.invalid};

@@ -18,7 +18,7 @@ import {cell} from '../native-baseline/cells.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {indexOfRowCell} from '../repl-parity/scenes-mac-text.mjs';
 import {EMBEDDED} from './matrix-text.mjs';
-import {SCENE_OF, WATCHED} from './plan.mjs';
+import {PANEL_UP, SCENE_OF, WATCHED} from './plan.mjs';
 
 const j = JSON.stringify;
 // The secondary action no element advertises: performing it resolves the element's index on either engine and does
@@ -161,23 +161,32 @@ await __app.pressKey("super+o");
 for (const end = Date.now() + 10000; !panel(ax) && Date.now() < end;) ax = await observe();
 return {opened: panel(ax)};`);
 
-// The panel closed by the harness when its case did not close it, first by Escape (a key cell, sent under the key guard:
-// a key the alert guard holds is never a click on the alert, ruling 1154), awaited. The panel is served out of process
-// and may take no key sent to TextEdit; then CLOSE_PANEL clicks its Cancel, under the alert guard. -> {closed}.
-export const CLOSE_PANEL_KEY = cell(`${prelude('textedit')}
+// A panel (`target`: openPanel or savePanel, ./plan.mjs PANEL_UP) closed by the harness when its case did not close it,
+// first by Escape (a key cell, sent under the key guard: a key the alert guard holds is never a click on the alert,
+// ruling 1154), awaited. The panel is served out of process and may take no key sent to TextEdit; then
+// closePanelClickCell clicks its Cancel, under the alert guard; then the device's own AX close (./panels.mjs
+// closePanel). -> {closed}.
+export const closePanelKeyCell = target => cell(`${prelude('textedit')}
 let ax = await observe();
-if (!panel(ax)) return {closed: true};
+if (!${PANEL_UP[target]}) return {closed: true};
 await __app.pressKey("Escape");
-for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await observe();
-return {closed: !panel(ax)};`);
+for (const end = Date.now() + 5000; ${PANEL_UP[target]} && Date.now() < end;) ax = await observe();
+return {closed: !${PANEL_UP[target]}};`);
 // The panel's Cancel clicked when Escape did not close it. -> {closed}.
-export const CLOSE_PANEL = cell(`${prelude('textedit')}
+export const closePanelClickCell = target => cell(`${prelude('textedit')}
 let ax = await observe();
-if (!panel(ax)) return {closed: true};
+if (!${PANEL_UP[target]}) return {closed: true};
 const index = indexOfTarget(ax, "Cancel") ?? indexOfTarget(ax, "취소");
 if (index !== null) await __app.click(index);
-for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await observe();
-return {closed: !panel(ax)};`);
+for (const end = Date.now() + 5000; ${PANEL_UP[target]} && Date.now() < end;) ax = await observe();
+return {closed: !${PANEL_UP[target]}};`);
+// Whether the panel is gone (after the device's AX close), observed until it is or 5 s pass. -> {closed}.
+export const panelGoneCell = target => cell(`${prelude('textedit')}
+let ax = await observe();
+for (const end = Date.now() + 5000; ${PANEL_UP[target]} && Date.now() < end;) ax = await observe();
+return {closed: !${PANEL_UP[target]}};`);
+export const CLOSE_PANEL_KEY = closePanelKeyCell('openPanel');
+export const CLOSE_PANEL = closePanelClickCell('openPanel');
 
 // The launch path's act (part 4): the scene's app, not running, observed by its path through the engine's own call
 // (`cua.computer.get_app_state`, what getApp makes, without getApp's emission of the text), which must bring it up

@@ -203,9 +203,10 @@ const GROUNDING = {
   finder: 'element-addressed rows; the height is the mini\'s, so the same rows are visible',
   textedit: 'fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare\'s clicks proving each end',
   textEditDocument: 'the window\'s size only: the file is the mini\'s with the view size inserted, so its text and attribute runs are the mini\'s (textutil\'s text and HTML of both files are equal, test/repl-parity/scenes-mac.test.mjs); the cells\' fractions and rows hold as for TextEdit\'s preferences; the wide page stays wider than the window (its 200% zoom)',
-  openPanel: 'element-addressed (its Cancel, A\'s New Document): the frame decides only whether the guard refuses them',
+  openPanel: 'element-addressed (its Cancel, its search field, the Save sheet\'s name field, A\'s New Document): the frame decides only whether the guard refuses them; on a hosted runner the matrix moves each opening into the strip by Accessibility (ruling 1195), and a read-back outside it is NO VERDICT venue',
 };
-const PANEL_CELLS = ['openPanel/frontmost/getAXState.panel', 'openPanel/frontmost/click.cancel', 'openPanel/background/getAXState.panel@finder', 'openPanel/background/click.cancel@finder',
+const PANEL_CELLS = ['openPanel/frontmost/getAXState.panel', 'openPanel/frontmost/typeText.search', 'openPanel/frontmost/pressKey.escape', 'openPanel/frontmost/click.cancel',
+  'openPanel/background/getAXState.panel@finder', 'openPanel/background/click.cancel@finder', 'savePanel/frontmost/pressKey.escape', 'savePanel/frontmost/typeText.name',
   'native-baseline setup.newDocument (the panel at TextEdit\'s launch, where one shows: the mini\'s)'];
 const cellsOf = scene => [...framedCells(scene).map(c => c.id), NATIVE_MAC[scene]];
 const WIDE_PAGE_CELL = 'hscroll/textedit-wide-page/right (the wide-page layout: its page wider than the window)';

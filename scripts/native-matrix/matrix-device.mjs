@@ -24,11 +24,19 @@
 //       app holds its recorded window as its own key window (`ownKey`, ../hosted-sittings/key-window.mjs: the key-window
 //       requirement of ruling 1169's addition, ../hosted-sittings/alert-guard.mjs keyWindowCause)
 //   place --run <dir> --scene <id> --frame <x,y,w,h> [--window <number>]
-//       the scene's recorded window (with --scene openPanel, the Open panel's window of that number) moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
+//       the scene's recorded window moved to the frame by the approved bundle's `--probe window-frame` (as Finder's frame
 //       is pinned, ./goldens-device.mjs), read back -> {answer: {requested, readBack, matched, exitStatus}, at}: the run's
-//       placement of a window clear of the alerts (./run.mjs placeScenes). A move is a hosted-only write: off a
-//       GitHub-hosted runner (this process's RUNNER_ENVIRONMENT) nothing is read or moved -> {answer: {requested,
-//       readBack: null, matched: false, exitStatus: null, refused}, at} (../hosted-sittings/runner.mjs moveRefusal)
+//       placement of a window clear of the alerts (./run.mjs placeScenes). With --scene openPanel or savePanel, the
+//       panel's window of that number moved by the harness's own AX helper (./panel-ax.swift; ruling 1195) and read back
+//       from the window list -> {answer: {requested, readBack, matched, exitStatus: null, pid, ax}, at} (./panels.mjs
+//       placePanel). A move is a hosted-only write: off a GitHub-hosted runner (this process's RUNNER_ENVIRONMENT)
+//       nothing is read or moved -> {answer: {requested, readBack: null, matched: false, exitStatus: null, refused}, at}
+//       (../hosted-sittings/runner.mjs moveRefusal)
+//   panel cancel --run <dir> --window <number>
+//       the known panel's window cancelled by the same helper (its Cancel pressed by Accessibility: no pointer event)
+//       and awaited gone from the window list -> {answer: {found, via, pressed, closed, pid}, at}: the run's last
+//       close of a panel neither Escape nor its Cancel click closed (./panels.mjs closePanel; ruling 1195). Hosted only
+//       -> {answer: {closed: false, refused}, at} off a runner
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -119,6 +127,7 @@ import {parseAccessibilityRecord} from './residue-checks.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('./system-windows.swift', import.meta.url));
+const PANEL_AX_SCRIPT = fileURLToPath(new URL('./panel-ax.swift', import.meta.url));
 // The scenes the launch path covers (part 4: the engine can launch them into their fixed state).
 // The scenes whose launch path the matrix runs: the Electron fixture alone. TextEdit's is not run on a shared Mac (the
 // spec's Decision Log, M2b.2 review): its first observation would capture the owner's restored windows or its iCloud
@@ -230,31 +239,65 @@ export function sceneKeyWindow(scene, io) {
   return ownKeyWindow(windows, {scene, pid: record.pid, number: SCENES[scene]?.process === 'run' ? null : record.window.number}, io.axState);
 }
 
-// The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, or for `openPanel` the panel's window
-// numbered `window` (its service's pid read from the window list), moved by the frame probe and read back.
-// io: {state(), probe(args), screen(), env?, platform?}. -> {requested, readBack, matched, exitStatus, pid?}. A move is
-// a hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by default) nothing is read
-// or asked of the probe: {requested, readBack: null, matched: false, exitStatus: null, refused}.
+// The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, moved by the frame probe and read
+// back; or for a panel (`openPanel`, `savePanel`) the panel's window numbered `window` (panelWindowOf), moved by the
+// harness's own AX helper (./panel-ax.swift: AXSize then AXPosition, never the engine under test, whose probe moves Finder
+// windows only) and read back from the window list, the frame the alert guard reads (rulings 1195, 1196).
+// io: {state(), probe(args), screen(), panelAx(args), env?, platform?}. -> {requested, readBack, matched, exitStatus,
+// pid?, ax?}. A move is a hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by
+// default) nothing is read or asked of the probe or the helper: {requested, readBack: null, matched: false, exitStatus:
+// null, refused}.
 export function placeScene({scene, frame, window = null}, io) {
   const parts = String(frame ?? '').split(',').map(Number);
   if (parts.length !== 4 || !parts.every(Number.isFinite)) throw new Error('--frame needs x,y,w,h');
   const requested = Object.fromEntries(['x', 'y', 'width', 'height'].map((k, i) => [k, parts[i]]));
   const refused = moveRefusal(io, requested);
   if (refused) return refused;
-  let pid, number;
-  if (scene === 'openPanel') {
-    const shown = (io.screen()?.windows ?? []).find(w => isPanelWindow(w) && w.number === Number(window));
-    if (!shown) throw new Error(`--window names no Open panel window on screen (${window})`);
-    [pid, number] = [shown.ownerPid, shown.number];
-  } else {
-    const record = io.state().scenes?.[scene];
-    if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
-    [pid, number] = [record.pid, record.window.number];
+  const matches = readBack => ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]);
+  if (PANEL_SCENES.includes(scene)) {
+    const shown = panelWindowOf(io, window);
+    const ax = io.panelAx(['move', String(shown.ownerPid), rectArg(shown.bounds), parts.join(',')]);
+    const readBack = panelWindowOf(io, window, {gone: true})?.bounds ?? null;
+    return {requested, readBack, matched: matches(readBack), exitStatus: null, pid: shown.ownerPid,
+      ax: {trusted: ax?.trusted === true, found: ax?.found === true, size: ax?.size ?? null, position: ax?.position ?? null, readBack: ax?.readBack ?? null}};
   }
-  const out = io.probe(['window-frame', '--pid', String(pid), '--window', String(number), '--frame', parts.join(',')]);
+  const record = io.state().scenes?.[scene];
+  if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
+  const out = io.probe(['window-frame', '--pid', String(record.pid), '--window', String(record.window.number), '--frame', parts.join(',')]);
   const readBack = out?.readBack ?? null;
-  return {requested, readBack, matched: out?.matched === true && ['x', 'y', 'width', 'height'].every(k => readBack?.[k] === requested[k]), exitStatus: out?.exitStatus ?? null,
-    ...(scene === 'openPanel' ? {pid} : {})};
+  return {requested, readBack, matched: out?.matched === true && matches(readBack), exitStatus: out?.exitStatus ?? null};
+}
+// The matrix's panel targets (./plan.mjs): TextEdit's Open panel and its Save sheet.
+export const PANEL_SCENES = Object.freeze(['openPanel', 'savePanel']);
+const rectArg = b => [b.x, b.y, b.width, b.height].join(',');
+// A panel's window on screen by its number: the Open and Save panel service's own, or a window of the run's TextEdit
+// that is not its recorded document (macOS 27 lists the panel under TextEdit's pid: pilot C-2's "textedit window 994").
+// `gone`: null when it is not on screen, else that is an error. -> the window-list entry.
+function panelWindowOf(io, window, {gone = false} = {}) {
+  const textedit = io.state().scenes?.textedit ?? null;
+  const shown = (io.screen()?.windows ?? []).find(w => w.number === Number(window)
+    && (isPanelWindow(w) || (Number.isSafeInteger(textedit?.pid) && w.ownerPid === textedit.pid && w.number !== textedit.window?.number)));
+  if (shown || gone) return shown ?? null;
+  throw new Error(`--window names no panel window on screen (${window}): the panel service's, or one of the run's TextEdit other than its document`);
+}
+// The known panel cancelled on the device by the harness's AX helper (./panel-ax.swift cancel: its AXCancelButton, a
+// Cancel button under it, or its AXCancel action; no pointer event, nothing the alert guard refuses; ruling 1195), then
+// awaited gone from the window list, up to PANEL_GONE_READS reads PANEL_GONE_MS apart. Hosted only, as every panel write.
+// io: {state(), screen(), panelAx(args), sleep(ms), env?, platform?}. -> {found, via, pressed, closed, pid} | {found:
+// false, closed: true} (already gone) | {closed: false, refused} off a hosted runner.
+export const PANEL_GONE_READS = 10, PANEL_GONE_MS = 300;
+export async function cancelPanel({window}, io) {
+  const refused = moveRefusal(io, null);
+  if (refused) return {closed: false, refused: refused.refused};
+  const shown = panelWindowOf(io, window, {gone: true});
+  if (!shown) return {found: false, closed: true};
+  const ax = io.panelAx(['cancel', String(shown.ownerPid), rectArg(shown.bounds)]);
+  let closed = false;
+  for (let n = 0; n < PANEL_GONE_READS && !closed; n++) {
+    if (n) await io.sleep(PANEL_GONE_MS);
+    closed = panelWindowOf(io, window, {gone: true}) === null;
+  }
+  return {found: ax?.found === true, via: ax?.via ?? null, pressed: ax?.pressed ?? null, closed, pid: shown.ownerPid};
 }
 
 // A bundle id as it may leave the device, or null.
@@ -618,7 +661,7 @@ function parse(argv) {
 export const axStateOf = (dir, {exec = run, compile = compiled} = {}) => axStateReader(args => exec(compile(AX_STATE_SCRIPT, dir), args));
 // The readings `read --with` adds.
 const READ_WITH = Object.freeze(['front-key', 'window-order', 'alert-bounds']);
-const USAGE = 'usage: matrix-device.mjs compile|read|text-range|place|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|text-range|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -634,6 +677,7 @@ export async function main(argv, {io: given = {}} = {}) {
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
     screen: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])),
     axState: axStateOf(dir),
+    panelAx: args => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args)),
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
@@ -646,7 +690,8 @@ export async function main(argv, {io: given = {}} = {}) {
   const roots = {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null};
   if (flags.hosted !== undefined && flags.hosted !== 'yes') throw new Error('--hosted yes is the one value');
   switch (command) {
-    case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir)), axState: basename(compiled(AX_STATE_SCRIPT, dir))};
+    case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir)), axState: basename(compiled(AX_STATE_SCRIPT, dir)),
+      panelAx: basename(compiled(PANEL_AX_SCRIPT, dir))};
     case 'read': {
       if (flags['electron-mode'] !== undefined && flags['electron-mode'] !== 'latest') throw new Error('--electron-mode latest is the one reading');
       const also = flags.with === undefined ? [] : flags.with.split(',');
@@ -658,6 +703,9 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'electron-mode': return electronModeRecord(io);
     case 'text-range': return timed(() => textRange(flags.scene, io));
     case 'place': return timed(() => placeScene({scene: flags.scene, frame: flags.frame, window: flags.window ?? null}, io));
+    case 'panel':
+      if (positional[0] === 'cancel') return timed(() => cancelPanel({window: flags.window}, io));
+      throw new Error(USAGE);
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {
       const from = Date.now();

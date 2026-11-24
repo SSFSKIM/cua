@@ -75,16 +75,17 @@ async function resetHeldFixture(ctx) {
   if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
   if (!failed) return;
   const reason = String(failed.message ?? failed).slice(0, 300);
-  const message = `the ${held.scene} fixture ${held.entry.row} left${stuckGoTo(held.row)} (its cleanup ${heldByText(held.heldBy)}) could not be reset: ${reason}; the run stopped collecting evidence`;
+  const message = `${stuckGoTo(held.row)}the ${held.scene} fixture ${held.entry.row} left (its cleanup ${heldByText(held.heldBy)}) could not be reset: ${reason}; the run stopped collecting evidence`;
   if (held.entry.blockedBy) throw new ResetBlocked(message, {category: held.entry.blockedBy, detail: `the ${held.scene} fixture ${held.entry.row}'s reset was held (${reason})`});
   throw new Stop(message);
 }
 // #212's Go To dialog that survived every step its destination cell took (ruling 1221): the one way a dialog left up can
-// stop the run, named with each step and its result. It leads the stop's text, which a CellResult bounds (cell-result.mjs).
+// stop the run, named with each step and its result. It leads the stop's text (fix wave M7), which a CellResult bounds
+// (cell-result.mjs). The Save sheet's cancel is not reachable while the dialog holds the focus (probe-plan.mjs, I7).
 function stuckGoTo(row) {
   const g = row?.outcome?.goTo;
   if (!g || g.closed !== false) return '';
-  return ` with the Go To dialog up through every step its cell tried (Escape ${g.escapes}x: still up; its CloseButton: ${g.closeClicked ? 'clicked, still up' : 'not found'}; the Save sheet's cancel: ${g.sheetCancelled ? 'done' : 'still up'})`;
+  return `the Go To dialog stayed up through each step its cell tried (Escape ${g.escapes}x, still up; CloseButton ${g.closeClicked ? 'clicked, still up' : 'not found'}; the Save sheet's cancel unreachable behind it): `;
 }
 // The guard that held a fixture's cleanup, from the held cause's category (ruling 1219, s2: C-5's key-window refusal was
 // named the capture alert's).
@@ -564,10 +565,10 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   if (!destination?.ok || destination.value?.ready !== true) {
     // Until the panel's controls are read (probe-plan.mjs SAVE_PANEL_CONTROLS) the cell only observes: what it saw rides
     // on the row, as does whether the Go To dialog closed in the cell (ruling 1219, s1). The row alone is decided.
-    const {observed, goTo} = destination?.value ?? {};
+    const {observed, goTo, threw} = destination?.value ?? {};
     const left = goTo?.closed === false ? '; the Go To dialog would not close' : '';
     return span.end({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'}${left})`,
-      ...(observed || goTo ? {outcome: {...(observed ? {observed} : {}), ...(goTo ? {goTo} : {})}} : {})}, {cleanup});
+      ...(observed || goTo || threw ? {outcome: {...(observed ? {observed} : {}), ...(goTo ? {goTo} : {}), ...(threw ? {threw} : {})}} : {})}, {cleanup});
   }
   const initialWhere = typeof destination.value.initialWhere === 'string' ? destination.value.initialWhere.slice(0, 80) : null;
   const ready = read(ctx, null, {frontKey: true});

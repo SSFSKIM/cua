@@ -249,7 +249,7 @@ test('#212\'s destination cell fails closed, with no Return, when the Go To dial
     assert.equal(state.typed.length, typed, label);
     // Ruling 1219 (s1): the Go To dialog closed inside the cell on its way out, the Save sheet still up.
     assert.equal(state.dialog, false, `${label}: the Go To dialog closed in the cell`);
-    assert.deepEqual(result.value.goTo, {closed: true, sheetUp: true, escapes: state.keys.filter(k => k === 'Escape').length, closeClicked: false, sheetCancelled: false}, label);
+    assert.deepEqual(result.value.goTo, {closed: true, sheetUp: true, escapes: state.keys.filter(k => k === 'Escape').length, closeClicked: false}, label);
   }
   // The dialog's Return that leaves the folder only as a listing entry: the panel's location is what is read.
   const {state, app} = savePanelDouble({navigates: false});
@@ -370,24 +370,46 @@ test('#212\'s destination cell closes the Go To dialog on every exit after super
   const unread = realSavePanel();
   const missed = await runDestination(unread.app, saveSheetDestinationCell({...C5_CONTROLS, goToField: {id: 'PathTextField', role: 'search field'}}));
   assert.match(missed.result.value.reason, /Go To dialog and its focused path field were not identified/);
-  assert.deepEqual([unread.state.dialog, unread.state.keys, missed.result.value.goTo], [false, ['super+shift+g', 'Escape'], {closed: true, sheetUp: true, escapes: 1, closeClicked: false, sheetCancelled: false}]);
+  assert.deepEqual([unread.state.dialog, unread.state.keys, missed.result.value.goTo], [false, ['super+shift+g', 'Escape'], {closed: true, sheetUp: true, escapes: 1, closeClicked: false}]);
   // Ruling 1221 (F1): Escape that does not close it, three presses, then the dialog's CloseButton, in the same cell.
   const unescaped = realSavePanel({closes: false});
   const clicked = await runDestination(unescaped.app, saveSheetDestinationCell({...C5_CONTROLS, goToField: {id: 'PathTextField', role: 'search field'}}));
-  assert.deepEqual(clicked.result.value.goTo, {closed: true, sheetUp: true, escapes: 3, closeClicked: true, sheetCancelled: false});
+  assert.deepEqual(clicked.result.value.goTo, {closed: true, sheetUp: true, escapes: 3, closeClicked: true});
   assert.deepEqual([unescaped.state.dialog, unescaped.state.sheet, unescaped.state.clicks.length], [false, true, 1]);
-  // Neither closes it: the Save sheet cancelled as SAVE_SHEET_CANCEL_CELL cancels it (Escape while it or the dialog is up),
-  // and said; never a Return.
+  // Neither closes it (fix wave I7): the Save sheet's own cancel is not reachable while the dialog holds the focus (a
+  // sheet on the Save sheet takes its keys and clicks, and the observation shows the dialog alone), so it is said, not
+  // tried; whether the Save sheet is still up is unknown (null) while only the dialog is seen. Never a Return.
   const stuck = realSavePanel({closes: false, closeButton: false});
   const left = await runDestination(stuck.app, saveSheetDestinationCell({...C5_CONTROLS, goToField: {id: 'PathTextField', role: 'search field'}}));
-  assert.deepEqual(left.result.value.goTo, {closed: false, sheetUp: false, escapes: 3, closeClicked: true, sheetCancelled: false});
-  assert.deepEqual(stuck.state.keys.filter(k => k === 'Escape').length, 6, 'three for the dialog, three for the sheet');
+  assert.deepEqual(left.result.value.goTo, {closed: false, sheetUp: null, escapes: 3, closeClicked: true, sheetCancel: 'unreachable'});
+  assert.deepEqual(stuck.state.keys.filter(k => k === 'Escape').length, 3, 'the dialog\'s three, no more');
   assert.ok(!stuck.state.keys.includes('Return'));
   // The observation-only form (controls unread) closes it too.
   const seen = realSavePanel();
   const observed = await runDestination(seen.app, saveSheetDestinationCell({panel: null, goTo: null, goToField: null, location: null}));
   assert.match(observed.result.value.reason, /observation only/);
-  assert.deepEqual([seen.state.dialog, observed.result.value.goTo], [false, {closed: true, sheetUp: true, escapes: 1, closeClicked: false, sheetCancelled: false}]);
+  assert.deepEqual([seen.state.dialog, observed.result.value.goTo], [false, {closed: true, sheetUp: true, escapes: 1, closeClicked: false}]);
+});
+
+// Fix wave I4: a throw after super+shift+g (typeText answering typeUnconfirmed, a key or an observation throwing) ends
+// through the same close as every other exit: the dialog closed in the cell, the throw said on the result, no Return.
+test('#212\'s destination cell closes the Go To dialog when a step after super+shift+g throws, and says the throw', async () => {
+  const thrown = realSavePanel();
+  thrown.app.typeText = async text => { thrown.state.typed.push(text); const error = new Error('the typed text did not read back'); error.name = 'typeUnconfirmed'; throw error; };
+  const {result} = await runDestination(thrown.app, saveSheetDestinationCell(C5_CONTROLS));
+  assert.equal(result.value.ready, false);
+  assert.equal(result.value.reason, 'the cell threw after super+shift+g: typeUnconfirmed');
+  assert.deepEqual(result.value.threw, {name: 'typeUnconfirmed', message: 'the typed text did not read back'});
+  assert.deepEqual(result.value.goTo, {closed: true, sheetUp: true, escapes: 1, closeClicked: false});
+  assert.deepEqual([thrown.state.dialog, thrown.state.saved], [false, false]);
+  assert.ok(!thrown.state.keys.includes('Return'));
+  // The observation-only form too.
+  const seen = realSavePanel();
+  const press = seen.app.pressKey;
+  seen.app.pressKey = async key => { await press(key); if (key === 'super+shift+g') throw new Error('the key was not confirmed'); };
+  const observed = await runDestination(seen.app, saveSheetDestinationCell({panel: null, goTo: null, goToField: null, location: null}));
+  assert.equal(observed.result.value.reason, 'the cell threw after super+shift+g: Error');
+  assert.deepEqual([seen.state.dialog, observed.result.value.goTo.closed], [false, true]);
 });
 
 // Ruling 1220 (s4): the controls as C-5 read them, identical on both lanes, are the shipped ones, so C-6 runs #212's

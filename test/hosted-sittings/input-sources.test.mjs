@@ -4,7 +4,9 @@
 // The helper is an injected exec here: nothing touches this Mac's input sources.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ABC, KOREAN_2SET, KOREAN_IM, READ_ROUNDS, enableInputSources, inputSourcesDetail, inputSourcesRecord, preferenceLists} from '../../scripts/hosted-sittings/input-sources.mjs';
+import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+import {ABC, INPUT_SOURCES_SCRIPT, KOREAN_2SET, KOREAN_IM, READ_ROUNDS, enableInputSources, inputSourcesDetail, inputSourcesRecord, preferenceLists} from '../../scripts/hosted-sittings/input-sources.mjs';
 import {runnerRecord, venueInputMissingOf} from '../../scripts/hosted-sittings/runner.mjs';
 import {renderVenue} from '../../scripts/hosted-sittings/venue.mjs';
 
@@ -18,6 +20,25 @@ test('off a GitHub-hosted runner it refuses before the helper, TIS or defaults i
     await assert.rejects(enableInputSources({...at, exec: (...args) => { calls.push(args); return answer({}); }, sleep: async () => {}}), /refused/);
     assert.deepEqual(calls, []);
   }
+});
+
+// The helper is a CLI a person can run by hand, so its own write boundary refuses too: `enable` off a GitHub-hosted
+// runner stops before any TIS call. The id here is one no Mac has installed, so even a guard that failed could enable
+// nothing on this Mac; `list` stays a read anywhere.
+test('the helper\'s enable refuses off a GitHub-hosted runner before TIS is called; list stays a read anywhere', {skip: process.platform !== 'darwin'}, () => {
+  const {RUNNER_ENVIRONMENT, ...offHosted} = process.env;
+  const run = (args, env) => spawnSync('swift', [INPUT_SOURCES_SCRIPT, ...args], {encoding: 'utf8', env, timeout: 120_000});
+  const refused = run(['enable', 'com.example.cua.not-installed'], offHosted);
+  assert.equal(refused.status, 3, refused.stderr);
+  assert.equal(refused.stdout, '', 'no answer: nothing enabled, nothing read');
+  assert.match(refused.stderr, /input-sources enable: refused: it runs only on a GitHub-hosted runner \(RUNNER_ENVIRONMENT=github-hosted\)/);
+  const listed = run(['list', 'com.example.cua.not-installed'], offHosted);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.deepEqual(JSON.parse(listed.stdout).readings, [{id: 'com.example.cua.not-installed', installed: false}]);
+  // The refusal precedes every TIS call in the source, so `enable` reaches none of them off a hosted runner.
+  const source = readFileSync(INPUT_SOURCES_SCRIPT, 'utf8');
+  const guard = source.indexOf('RUNNER_ENVIRONMENT'), main = source.indexOf('let args = Array(CommandLine.arguments');
+  assert.ok(guard > main && guard < source.indexOf('TISEnableInputSource(source)') && guard < source.indexOf('out["readings"]'), 'the guard runs before the enable loop and the reading');
 });
 
 test('the read-back: each selectable source enabled and selectable in TIS\'s list, the mode only with its input method; both readings kept', async () => {

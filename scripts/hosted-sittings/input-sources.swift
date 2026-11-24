@@ -48,6 +48,12 @@ guard let command = args.first, ["list", "enable"].contains(command), args.count
   exit(2)
 }
 let ids = Array(args.dropFirst())
+// Hosted only (rulings 1188 and 1189): the input sources are how the owner types every day, so `enable` refuses off a
+// GitHub-hosted runner here, at the write itself, before any TIS call, however the script was run. `list` is a read.
+if command == "enable" && ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] != "github-hosted" {
+  FileHandle.standardError.write("input-sources enable: refused: it runs only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted), never on a Mac of the owner's\n".data(using: .utf8)!)
+  exit(3)
+}
 var out: [String: Any] = [:]
 if command == "enable" {
   out["enabled"] = ids.map { id -> [String: Any] in

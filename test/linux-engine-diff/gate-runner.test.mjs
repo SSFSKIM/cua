@@ -290,6 +290,10 @@ test("the vendor builds come from the architecture's comparator fixture, never f
   // the fixture is the only way: no flag names a vendor build or client by path
   for (const flag of ['--vendor', '--vendor-js']) assert.throws(() => parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', flag, '/v/mine'], { arch: 'x64', env: {} }), /unknown argument/, flag);
   assert.equal(parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', '--newest', '/n/sky_linux_x64'], { arch: 'x64', env: {} }).newest, '/n/sky_linux_x64');
+  // the command a step's record and `print` give carries a fixture or newest build named by flag, so it reruns the same
+  const named = parseGateArgs(['run', 'E1', '--candidate', '/c', '--out', '/o', '--dev', '--vendor-fixture', '/f/x64', '--newest', '/n/sky_linux_x64'], { arch: 'x64', env: {} });
+  assert.match(launchCommand(stepNamed('E1'), named, ROOT), / --dev --vendor-fixture \/f\/x64 --newest \/n\/sky_linux_x64$/);
+  assert.doesNotMatch(launchCommand(stepNamed('E1'), parseGateArgs(['run', 'E1', '--candidate', '/c', '--out', '/o', '--dev'], { arch: 'x64', env: {} }), ROOT), /--vendor-fixture|--newest/, 'the defaults are not spelled out');
 });
 
 test('the steps that run a vendor build or the client take the fixture; the facade suites, the settle and the engine stop do not', () => {

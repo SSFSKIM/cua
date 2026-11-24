@@ -343,7 +343,10 @@ export function launchCommand(step, a, root = REPO_ROOT) {
     return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
-  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : []), ...(a.engineStats ? ['--engine-stats'] : [])]);
+  // a fixture or newest build named by flag is spelled out, so the command reruns the same step; the defaults are not
+  const defaults = defaultsFor(a.arch ?? process.arch);
+  const named = [...(a.vendorFixture && a.vendorFixture !== defaults.vendorFixture ? ['--vendor-fixture', a.vendorFixture] : []), ...(a.newest && a.newest !== defaults.newest ? ['--newest', a.newest] : [])];
+  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : []), ...(a.engineStats ? ['--engine-stats'] : []), ...named]);
 }
 
 /** `--list`: every step's minutes, display, load and what it covers, its command, and the totals. */

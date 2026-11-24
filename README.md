@@ -1268,7 +1268,7 @@ engine, below):
 - **cua's own engine, `cua-engine`** (#171; `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`): a
   static binary built from `native/linux-engine/` for x86-64 and arm64, with no shared libraries. The release workflow
   `.github/workflows/linux-engine.yml` builds it, tests it and attests its build provenance, and
-  `runtime/engine/linux-engine.json` pins its version (0.4.4), URLs and SHA-256s. `cua install` fetches the asset for
+  `runtime/engine/linux-engine.json` pins its version (0.4.5), URLs and SHA-256s. `cua install` fetches the asset for
   this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` makes that step
   required, so a failed engine download fails the command (cua's own Linux runtime, below). cua's own Linux service
   (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript runs for the computer surface. It is the default.
@@ -1465,14 +1465,14 @@ lack of `DISPLAY`.
 
 Since #171 M6a every Linux session, browser-only ones included, runs from four parts that `cua install` places under
 `CUA_HOME`, none of them OpenAI's. `runtime/linux-runtime.json` names them, and the runtime's release is made from
-them, `cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d` on x64 today, so a change to any part is a new release.
+them, `cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mb71dc1f8185d` on x64 today, so a change to any part is a new release.
 
 | Part | In `CUA_HOME` | Pinned in | Needed by | What a session accepts | Named stand-in |
 |---|---|---|---|---|---|
 | The module tree: the packages cells import (`playwright`, `sharp`, `pngjs`, `jpeg-js`, `pixelmatch`) and `classic-level`, which `cua profiles bind` loads, with their dependencies: 23 packages | `modules/<lock hash>/` | `runtime/modules/` | every session | this cua's tree, whole | none |
 | Node 24.22.0, which cua's own REPL host runs on | `node/<version>/` | `runtime/releases/node/` | every session | a Node cua installed, its bytes as recorded, at 24 or later | `CUA_NODE` |
 | The sandbox helper, `codex-linux-sandbox` (`rust-v0.163.0`; The sandbox, above) | `sandbox/<tag>/` | `runtime/sandbox/linux-sandbox.json` | every session but a `CUA_SHIM_SANDBOX=disabled` one | the pinned helper's bytes, checked at every launch | `CUA_SHIM_SANDBOX=disabled`, which runs none |
-| cua's engine, `cua-engine` 0.4.4 | `engine/linux/cua-engine` | `runtime/engine/linux-engine.json` | computer sessions on cua's engine | a release cua installed, at 0.4.4 or later | `CUA_LINUX_ENGINE_BIN`, for the development harnesses; a local build from `cua engine build` |
+| cua's engine, `cua-engine` 0.4.5 | `engine/linux/cua-engine` | `runtime/engine/linux-engine.json` | computer sessions on cua's engine | a release cua installed, at 0.4.5 or later | `CUA_LINUX_ENGINE_BIN`, for the development harnesses; a local build from `cua engine build` |
 
 A part that is missing, damaged or below that minimum refuses the session when it opens, and the refusal names this
 cua's installer by its absolute path: `runtime_not_installed` (no module tree of this cua's lock, or no Node),
@@ -1518,7 +1518,7 @@ computer, engine, alternate, why}`, where `why` holds each refusal in its own wo
 their lock hash, version or tag, which an install never replaces, so an open session keeps those it opened with. The
 engine is one file, `engine/linux/cua-engine`, which an install of another version replaces in one rename: a running
 engine keeps running, but an open session runs whichever file is there the next time it starts its engine, after an
-idle stop for one. cua's service asks every engine it starts for its version first and refuses one older than 0.4.4,
+idle stop for one. cua's service asks every engine it starts for its version first and refuses one older than 0.4.5,
 so what runs is always an engine this cua can drive, though not always the one the session opened with.
 
 **Updating.** The update that brought this runtime, and any later one that moves the module tree or the sandbox
@@ -1531,14 +1531,14 @@ helper or raises the engine's minimum, needs one install in each Linux home, wit
 sessions, and `"engine": "cua"` in `~/.config/cua/engine.json` selects it for every session of the account; the
 variable wins over the file. `vendor` in either selects the vendor engine. With neither set, a session gets the default,
 which is cua's engine. Selected either way, cua's engine runs only when the installed one is at least the version this
-cua needs (0.4.4), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its
+cua needs (0.4.5), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its
 SHA-256 is the file's. A home with no engine of cua's, with an older one, or with one its `install.json` does not match
 has its computer sessions refused when they open (`engine_not_installed`, `engine_outdated`, `engine_unrecorded`), the
 sentence naming this cua's installer with `--engine`, and `cua doctor`'s `engine` row fails the same way. No session
 falls back to the vendor engine. A connection resolves its engine once, when it opens, and keeps it for every launch
 after (an install in between may still replace the file: cua's own Linux runtime, above). cua's service checks the
 version again each time it starts the engine: one older than this cua needs is refused there, with ``cua-engine
-<found> is older than 0.4.4, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine` ``, where `<this
+<found> is older than 0.4.5, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine` ``, where `<this
 cua>` is the checkout or plugin copy that runs the session. `CUA_LINUX_ENGINE_BIN` names another engine file
 in place of the installed one, for the development harnesses only: its `--version` is read once when a session opens
 and held to the same minimum.

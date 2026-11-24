@@ -32,6 +32,7 @@ import {basename, dirname, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {encodeFrame, FrameDecoder, socketPathFor} from '../client.mjs';
 import {engineBuild, engineVersion} from '../assemble.mjs';
+import {assertInputWrite, selectsSource} from '../../../native-matrix/hitoolbox.mjs';
 
 export const APPROVED_ENGINE = join(homedir(), 'Library', 'Application Support', 'cua', 'engine', 'cua Engine.app');
 const RPC_TIMEOUT_MS = {approve: 120_000};
@@ -154,9 +155,13 @@ export function watchStop(pid, dir, {kill = process.kill} = {}) {
 
 function setTimeoutSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 
-// The approved bundle's `--probe input-source <arg>` as its own instance; -> the probe's JSON.
-export function inputSource(bundle, arg, {exec = execFileSync} = {}) {
+// The approved bundle's `--probe input-source <arg>` as its own instance; -> the probe's JSON. Reading `current` runs
+// anywhere; selecting a source is hosted only (ruling 1188: the input sources are how the owner types every day), so
+// off a GitHub-hosted runner it refuses before the probe launches. The native probe does not check where it runs
+// (#567), so this caller must.
+export function inputSource(bundle, arg, {exec = execFileSync, env, platform} = {}) {
   if (!/^(current|[A-Za-z0-9._-]+)$/.test(arg)) throw new Error('input-source takes current or an input source id');
+  if (selectsSource(['input-source', arg])) assertInputWrite('selecting an input source through the spike\'s probe', {env, platform});
   const scratch = fs.mkdtempSync(join(tmpdir(), 'cua-engine-probe-'));
   try {
     const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');

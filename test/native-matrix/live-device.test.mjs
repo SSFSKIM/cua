@@ -436,7 +436,7 @@ test('restoreInputSource: a value that will not stay fails after the bounded rou
   const commands = {
     on: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true',
     off: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool false',
-    unset: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties "$(defaults export com.apple.HIToolbox - | plutil -extract AppleGlobalTextInputProperties xml1 -o - - | plutil -remove TextInputGlobalPropertyPerContextInput -o - -)"',
+    unset: 'sh scripts/native-matrix/unset-per-context.sh (in the harness checkout)',
   };
   for (const [name, owner] of [['on', true], ['off', false], ['unset', null]]) {
     const file = join(scratch(), 'input-source.json');
@@ -452,6 +452,40 @@ test('restoreInputSource: a value that will not stay fails after the bounded rou
     assert.doesNotMatch(out.reason, /System Settings/);
     assert.equal(fs.existsSync(file), true, 'the record stays, so the next run refuses naming it');
   }
+});
+
+// A restore whose read, write or probe throws keeps the record and still names the owner's values and the commands.
+test('restoreInputSource: a restore that throws keeps the record and names the owner\'s source, value and the command that sets it', async () => {
+  for (const [what, breakIo] of [['the unset', io => { io.unsetPerContext = () => { throw new Error('could not unset the per-context input preference: exit 1'); }; }],
+    ['the read', io => { io.readPerContext = () => { throw new Error('could not read the per-context input preference: cfprefsd'); }; }]]) {
+    const file = join(scratch(), 'input-source.json');
+    fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: null, perContextDict: false}));
+    const {io} = fakeInput({perContext: true});
+    io.savedInputSource = file;
+    breakIo(io);
+    const out = await restoreInputSource({io});
+    assert.deepEqual([out.sourceRestored, out.perContextRestored], [false, false], what);
+    assert.match(out.error, /could not (unset|read) the per-context input preference/);
+    assert.ok(out.reason.includes(`the owner's input source is ${ABC}: select it in the menu bar's input menu; the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) is the owner's unset: set it back with sh scripts/native-matrix/unset-per-context.sh --delete-if-empty (in the harness checkout)`), out.reason);
+    assert.equal(fs.existsSync(file), true, `${what}: the record stays`);
+  }
+});
+
+// A value saved malformed (a string where the dictionary belongs) is never "unset" and never written: it holds only as
+// it was read.
+test('restoreInputSource: an owner\'s malformed value is never written; it holds only while it reads as saved', async () => {
+  const malformed = {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'};
+  const file = join(scratch(), 'input-source.json');
+  fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: malformed, perContextDict: true}));
+  const changed = fakeInput({perContext: false});
+  changed.io.savedInputSource = file;
+  const out = await restoreInputSource({io: changed.io});
+  assert.deepEqual([out.perContextRestored, out.perContextWritten, changed.state.writes], [false, false, []]);
+  assert.match(out.reason, /owner's value, malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\) \(it reads after 3 rounds off\): set it back with none: .* by hand/);
+  const held = fakeInput({perContext: {...malformed}});
+  held.io.savedInputSource = file;
+  const ok = await restoreInputSource({io: held.io});
+  assert.deepEqual([ok.perContextRestored, ok.reason, held.state.writes, fs.existsSync(file)], [true, undefined, [], false]);
 });
 
 test('saveInputSource: the record keeps whether the preference\'s dictionary existed; off a hosted runner nothing is saved', async () => {
@@ -483,7 +517,7 @@ test('off a hosted runner: the input-source check selects nothing and is NO VERD
   const differs = await restoreInputSource({io});
   assert.deepEqual([differs.sourceRestored, differs.perContextRestored, differs.perContextWritten], [false, false, false]);
   assert.match(differs.skipped, /ruling 1188/);
-  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with defaults write com\.apple\.HIToolbox AppleGlobalTextInputProperties "\$\(defaults export/);
+  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with sh scripts\/native-matrix\/unset-per-context\.sh \(in the harness checkout\)/);
   assert.equal(fs.existsSync(io.savedInputSource), true);
   Object.assign(state, {current: ABC, perContext: null});
   const holds = await restoreInputSource({io});
@@ -528,7 +562,7 @@ test('begin: an input-source record a run left unrestored refuses the next run, 
   const out = await begin({run, commit: 'c1', io});
   assert.equal(out.refusals.length, 1);
   assert.ok(out.refusals[0].startsWith(`an input-source record a run left unrestored, ${savedInputSource}: the owner's input source com.apple.keylayout.US and the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) unset; before begin, run on the device: node scripts/native-matrix/live-device.mjs input-source-restore`), out.refusals[0]);
-  assert.match(out.refusals[0], /defaults delete com\.apple\.HIToolbox AppleGlobalTextInputProperties when/);
+  assert.match(out.refusals[0], /set the preference with sh scripts\/native-matrix\/unset-per-context\.sh --delete-if-empty \(in the harness checkout\), then remove the record/);
   assert.deepEqual(calls, [], 'nothing saved, the engine untouched');
   assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false);
   fs.rmSync(savedInputSource);

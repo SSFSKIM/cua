@@ -343,7 +343,7 @@ export async function pasteCheck({record, user, client, io, screenshots}) {
     if (steps.inputSource?.written) {
       const restored = await restoreInputSource({io, keep: true});
       steps.inputSource.restored = restored.sourceRestored === true && restored.perContextRestored === true;
-      steps.inputSource.perContext.restored = io.readPerContext();
+      steps.inputSource.perContext.restored = restored.read?.perContext ?? null;
     }
     steps.clipboard = {typesUnchanged: io.clipboard() === before};
   }
@@ -585,39 +585,51 @@ export async function inputSourceCheck({io}) {
 // removing just its key, ./hitoolbox.mjs unsetPerContext), both read back after a settle (RESTORE_SETTLE_MS) and
 // written again where they differ, until one settled reading needs no write, for at most RESTORE_ROUNDS rounds, as
 // Finder's keys are (scenes-mac restoreFinder): the text input system can write after the restore's write landed. The
-// record is removed only once both hold. One that does not read back names the preference, the owner's value and how
-// to set it back. Off a hosted runner nothing is written (ruling 1188): a record there (one left before that ruling)
-// is removed once the owner's values read back as saved, and named otherwise.
+// record is removed only once both hold. One that does not read back, or a restore that throws, names the preference,
+// the owner's value and how to set it back. An owner's value saved malformed is never written: it holds only if it
+// still reads as saved. Off a hosted runner nothing is written (ruling 1188): a record there (one left before that
+// ruling) is removed once the owner's values read back as saved, and named otherwise.
 export async function restoreInputSource({io, keep = false}) {
   const saved = readSaved(io.savedInputSource);
   if (!saved) return {saved: false};
   const source = restoreTarget(saved), owner = saved.perContext ?? null, dictBefore = saved.perContextDict;
   const refused = inputRefusal(io);
+  const bySource = 'select it in the menu bar\'s input menu', byCommand = `set it back with ${perContextCommand(owner, {dictBefore})}`;
   let out;
-  if (refused) {
-    const now = ownerInput(io);
-    out = {source, sourceRestored: now.source === source, perContextRestored: now.perContext === owner, perContextWritten: false, rounds: 0, read: now};
-    if (!out.sourceRestored || !out.perContextRestored) out.skipped = `not restored: ${refused}`;
-  } else {
-    // A probe that would not exit may still switch the source: nothing is restored behind it (the record stays).
-    const stuck = io.probeStuck?.();
-    if (stuck) return {source, sourceRestored: false, perContextRestored: false, perContextWritten: false, skipped: `not restored: ${stuck}`};
-    out = await settleInput({io, source, owner, dictBefore});
+  try {
+    if (refused) {
+      const now = ownerInput(io);
+      out = {source, sourceRestored: now.source === source, perContextRestored: samePerContext(now.perContext, owner), perContextWritten: false, rounds: 0, read: now};
+      if (!out.sourceRestored || !out.perContextRestored) out.skipped = `not restored: ${refused}`;
+    } else {
+      // A probe that would not exit may still switch the source: nothing is restored behind it (the record stays).
+      const stuck = io.probeStuck?.();
+      if (stuck) return {source, sourceRestored: false, perContextRestored: false, perContextWritten: false, skipped: `not restored: ${stuck}`};
+      out = await settleInput({io, source, owner, dictBefore});
+    }
+  } catch (error) {
+    // The record stays, and the reason carries what a person needs to put both back by hand.
+    const why = String(error.message).slice(0, 300);
+    return {source, sourceRestored: false, perContextRestored: false, error: why,
+      reason: `the restore stopped (${why}): the owner's input source is ${source}: ${bySource}; ${PER_CONTEXT_NAME} is the owner's ${ownerValueName(owner)}: ${byCommand}`};
   }
   if (out.sourceRestored && out.perContextRestored && !keep) fs.rmSync(io.savedInputSource, {force: true});
   const after = refused ? 'reads' : `reads after ${out.rounds} round${out.rounds === 1 ? '' : 's'}`;
-  const reasons = [...(out.sourceRestored ? [] : [`the input source did not read back as the owner's, ${source} (it ${after} ${out.read.source ?? 'nothing'}): select it in the menu bar's input menu`]),
-    ...(out.perContextRestored ? [] : [`${PER_CONTEXT_NAME} did not read back as the owner's value, ${ownerValueName(owner)} (it ${after} ${ownerValueName(out.read.perContext)}): set it back with ${perContextCommand(owner, {dictBefore})}`])];
+  const reasons = [...(out.sourceRestored ? [] : [`the input source did not read back as the owner's, ${source} (it ${after} ${out.read.source ?? 'nothing'}): ${bySource}`]),
+    ...(out.perContextRestored ? [] : [`${PER_CONTEXT_NAME} did not read back as the owner's value, ${ownerValueName(owner)} (it ${after} ${ownerValueName(out.read.perContext)}): ${byCommand}`])];
   return {...out, ...(reasons.length ? {reason: reasons.join('; ')} : {})};
 }
-// The rounds: each selects the source and writes the preference where they differ, waits the settle and reads both
-// again; it ends at the first round that wrote nothing and read both as the owner's, or after RESTORE_ROUNDS rounds,
-// whatever the last reading says. -> {source, sourceRestored, perContextRestored, perContextWritten, rounds, read}.
+// Whether a reading is the owner's value: on, off and unset by identity, a malformed value by what made it malformed.
+const samePerContext = (read, owner) => (owner?.malformed ? read?.malformed === owner.malformed : read === owner);
+// The rounds: each selects the source and writes the preference where they differ (never a malformed owner's value),
+// waits the settle and reads both again; it ends at the first round that wrote nothing and read both as the owner's, or
+// after RESTORE_ROUNDS rounds, whatever the last reading says.
+// -> {source, sourceRestored, perContextRestored, perContextWritten, rounds, read}.
 async function settleInput({io, source, owner, dictBefore}) {
   let read = ownerInput(io), perContextWritten = false, rounds = 0;
   for (;;) {
     rounds += 1;
-    const selectSource = read.source !== source, writePreference = read.perContext !== owner;
+    const selectSource = read.source !== source, writePreference = !owner?.malformed && !samePerContext(read.perContext, owner);
     if (selectSource) io.probe(['input-source', source]);
     if (writePreference) {
       if (owner === null) io.unsetPerContext({dictBefore}); else io.writePerContext(owner);
@@ -625,9 +637,9 @@ async function settleInput({io, source, owner, dictBefore}) {
     }
     await io.sleep(RESTORE_SETTLE_MS);
     read = ownerInput(io);
-    if ((!selectSource && !writePreference && read.source === source && read.perContext === owner) || rounds === RESTORE_ROUNDS) break;
+    if ((!selectSource && !writePreference && read.source === source && samePerContext(read.perContext, owner)) || rounds === RESTORE_ROUNDS) break;
   }
-  return {source, sourceRestored: read.source === source, perContextRestored: read.perContext === owner, perContextWritten, rounds, read};
+  return {source, sourceRestored: read.source === source, perContextRestored: samePerContext(read.perContext, owner), perContextWritten, rounds, read};
 }
 
 // ---- Begin and put back ----------------------------------------------------------------------------------------------

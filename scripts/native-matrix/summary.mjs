@@ -523,14 +523,20 @@ export function judge(results, problems = [], {departures: entries = readDepartu
 // Ruling 1226: a sitting alternates which lane runs first by run (meta.laneOrder), so state one lane leaves for the
 // other (C-7: Go To reopened on the vendor's path) shows. Every failed sample (its own check, or not interfering) and
 // every sample without a verdict (sampleCause), per cell and engine, counted by the lane that ran first in its run.
-// Recorded, never judged. `results`: [{result}] of any cell (the sitting report passes the save-sheet's too).
-// -> {runs: {vendor, cua} (runs by their first lane), cells: [{section, id, engine, failed: {vendor, cua}, noVerdict: {vendor, cua}}]}.
+// Recorded, never judged. `results`: [{result}] of any cell (the sitting report passes the save-sheet's too, so a run
+// number has up to four records): `runs` counts run numbers, each once under the first lane its records name. Every
+// record of a run number must name the same first lane; a number whose records disagree is in `disagree`, with what
+// each record says (and counted under each lane named).
+// -> {runs: {vendor, cua}, disagree: [{run, sides: [{engine, cell, first}]}], cells: [{section, id, engine, failed: {vendor, cua}, noVerdict: {vendor, cua}}]}.
 export function firstLaneSplitOf(results) {
-  const runs = {vendor: 0, cua: 0}, cells = new Map();
+  const numbers = {vendor: new Set(), cua: new Set()}, sides = new Map(), cells = new Map();
   for (const {result} of results) {
     const first = result.meta?.laneOrder?.first;
     if (first !== 'vendor' && first !== 'cua') continue;
-    runs[first] += 1;
+    const run = result.meta?.run ?? null;
+    numbers[first].add(run);
+    if (!sides.has(run)) sides.set(run, []);
+    sides.get(run).push({engine: result.lanes?.[0]?.engine ?? null, cell: result.cell ?? null, first});
     for (const row of result.rows ?? []) {
       const cause = sampleCause({...row, hosted: result.meta?.hosted === true});
       const failed = !cause && (row.ok === false || row.interference?.ok === false);
@@ -541,15 +547,18 @@ export function firstLaneSplitOf(results) {
     }
   }
   const order = c => `${c.section} ${c.id} ${c.engine}`;
-  return {runs, cells: [...cells.values()].sort((a, b) => order(a).localeCompare(order(b)))};
+  return {runs: {vendor: numbers.vendor.size, cua: numbers.cua.size},
+    disagree: [...sides].filter(([, list]) => new Set(list.map(x => x.first)).size > 1).map(([run, list]) => ({run, sides: list})),
+    cells: [...cells.values()].sort((a, b) => order(a).localeCompare(order(b)))};
 }
 // The split as a report section, nothing when no run recorded its order. -> [line].
 export function renderFirstLaneSplit(split) {
   if (!split || split.runs.vendor + split.runs.cua === 0) return [];
   const sum = (kind, first) => split.cells.reduce((n, c) => n + c[kind][first], 0);
   return ['## By the lane that ran first (ruling 1226)', '',
-    `Runs by the lane that ran first in their run number: vendor first ${split.runs.vendor}, cua first ${split.runs.cua}. Failed samples: ${sum('failed', 'vendor')} in vendor-first runs, `
+    `Run numbers by the lane that ran first: vendor first ${split.runs.vendor}, cua first ${split.runs.cua}. Failed samples: ${sum('failed', 'vendor')} in vendor-first runs, `
       + `${sum('failed', 'cua')} in cua-first runs; samples without a verdict: ${sum('noVerdict', 'vendor')} and ${sum('noVerdict', 'cua')}. Recorded, never judged.`, '',
+    ...(split.disagree ?? []).flatMap(d => [`The records of run ${d.run} disagree on the lane that ran first: ${d.sides.map(x => `${x.engine}'s ${x.cell} ${x.first}`).join(', ')}.`, '']),
     ...(split.cells.length ? ['| cell | engine | failed, vendor first | failed, cua first | no verdict, vendor first | no verdict, cua first |', '|---|---|---|---|---|---|',
       ...split.cells.map(c => `| ${c.section} ${c.id} | ${c.engine} | ${c.failed.vendor} | ${c.failed.cua} | ${c.noVerdict.vendor} | ${c.noVerdict.cua} |`), ''] : [])];
 }

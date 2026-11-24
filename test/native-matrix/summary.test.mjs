@@ -1307,12 +1307,33 @@ test('ruling 1226: every failed and no-verdict sample split by which lane ran fi
     ['cua', {vendor: 0, cua: 1}, {vendor: 0, cua: 0}],
     ['vendor', {vendor: 0, cua: 0}, {vendor: 1, cua: 0}]]);
   assert.deepEqual(j.firstLane.cells.find(c => c.id === BACK && c.engine === 'cua').failed, {vendor: 0, cua: 1}, 'a not-interfering failure counts as failed');
-  assert.deepEqual(j.firstLane.runs, {vendor: 4, cua: 2}, 'runs by their first lane, both sides counted');
+  assert.deepEqual(j.firstLane.runs, {vendor: 2, cua: 1}, 'run numbers by their first lane: both sides of a number are one run (review minor M3)');
+  assert.deepEqual(j.firstLane.disagree, []);
   const text = renderSummary(j);
   assert.match(text, /^## By the lane that ran first \(ruling 1226\)$/m);
   assert.match(text, new RegExp(`^\\| method ${CLICK.replace(/[./]/g, c => `\\${c}`)} \\| cua \\| 0 \\| 1 \\| 0 \\| 0 \\|$`, 'm'));
   assert.deepEqual(renderFirstLaneSplit(firstLaneSplitOf([])), [], 'nothing when no run recorded its order');
   assert.doesNotMatch(renderSummary(judged()), /By the lane that ran first/);
+});
+
+// Review minors M3 and M4: the sitting report passes the save-sheet's results beside the matrix's, so a run number has
+// up to four records; it is counted once, by its first lane. Every record of a run number must name the same first
+// lane; a number whose records disagree is named, with what each record says.
+test('ruling 1226: the split counts run numbers, not records, and names a run number whose records disagree on the first lane', () => {
+  const record = (cell, engine, run, first) => ({result: {cell, lanes: [{engine}], meta: {run, laneOrder: {first, position: first === engine ? 1 : 2}}, rows: []}});
+  const agreeing = [1, 2, 3].flatMap(run => ['vendor', 'cua'].flatMap(engine => ['non-interference', 'intervention-save-sheet'].map(cell => record(cell, engine, run, run % 2 ? 'vendor' : 'cua'))));
+  const split = firstLaneSplitOf(agreeing);
+  assert.deepEqual([split.runs, split.disagree], [{vendor: 2, cua: 1}, []]);
+  const text = renderFirstLaneSplit(split).join('\n');
+  assert.match(text, /^Run numbers by the lane that ran first: vendor first 2, cua first 1\./m);
+  assert.doesNotMatch(text, /disagree/);
+  const off = agreeing.map(r => (r.result.meta.run === 2 && r.result.lanes[0].engine === 'cua' && r.result.cell === 'intervention-save-sheet' ? record('intervention-save-sheet', 'cua', 2, 'vendor') : r));
+  const disagreeing = firstLaneSplitOf(off);
+  assert.deepEqual(disagreeing.disagree, [{run: 2, sides: [
+    {engine: 'vendor', cell: 'non-interference', first: 'cua'}, {engine: 'vendor', cell: 'intervention-save-sheet', first: 'cua'},
+    {engine: 'cua', cell: 'non-interference', first: 'cua'}, {engine: 'cua', cell: 'intervention-save-sheet', first: 'vendor'}]}]);
+  assert.match(renderFirstLaneSplit(disagreeing).join('\n'),
+    /^The records of run 2 disagree on the lane that ran first: vendor's non-interference cua, vendor's intervention-save-sheet cua, cua's non-interference cua, cua's intervention-save-sheet vendor\.$/m);
 });
 
 // Fix wave I2 and I3: a cua failure is shared only with its own paired vendor sample's (the same run and sample, as

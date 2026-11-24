@@ -171,7 +171,7 @@ export async function makeVm(t, {script} = {}) {
   return vm;
 }
 
-// The provisioner of cua 0.30.0 on, as the fake VM `vm` runs it.
+// This checkout's provisioner, cua 0.30.0's (makeVm and repos remap it for the fake VM).
 export const newProvisioner = () => readFileSync(join(deployDir, 'cua-provision.sh'), 'utf8');
 
 // The repositories of one test, for the VM `vm`: the operator's checkout (`operator`, branch main) and the VM's source,

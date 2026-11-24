@@ -87,3 +87,14 @@ U5 all passed, `acceptance: true`.
 
 The hosted legs were not re-run: the fix wave's instruction is that a fix changing what a cell does re-runs on x64
 only.
+
+## After fix wave 2: x64 again (`fw2-x64/runtime.json`)
+
+Fix wave 2 (9d6156ef9) changed three things a cell does on a host:
+
+- U2's `--json` install is traced and judged by the call judge.
+- The driver enforces a fresh, run-owned `CUA_HOME`.
+- E3 creates `engine.json` with `O_EXCL` and removes only that file.
+
+The full selection ran once more on x64 at **9d6156ef9**, 18:45 to 19:03 UTC, with 2 samples a side. E0 to E3 and U0 to U5 all
+passed, `acceptance: true`. The hosted legs were not re-run.

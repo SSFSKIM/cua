@@ -311,6 +311,27 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-24, ruling 1225 (the design session): R3's third condition gets its witness, a listen-only event tap around
+  the concurrent cells. Ruling 1198's tap app gains `--mode events`.
+  - **Granting.** Input Monitoring is granted to the tap binary alone through tcc.mjs (`grantDiagnosticListen`, behind
+    `assertGithubHosted`), in sitting C's new `witness-tap` step before the matrix lanes. The engines' rows are read
+    before and after, and the step FAILs if they changed.
+  - **What it records.** The tap (kCGEventTapOptionListenOnly) runs on the user app's pid (TextEdit) for the hosted
+    run. It records only `{label, tapPid, kind, target, source, at}` and its own start, stop and disables. Never
+    characters or keycodes: these are artifacts of a public repository.
+  - **Positive control.** After the last cell, one modifier-free flagsChanged is posted with CGEventPostToPid to each
+    tapped pid. It must appear under that pid.
+  - **Telling posts apart.** The source pid tells the probe's own typing (its pid noted at each start) and the control
+    from anything else, and anything else counts as the engine's. A row whose probe typing the tap did not see has a
+    gap, so the separation is checked in every cell, not assumed.
+  - **Verdict.**
+    - The other three conditions failing fails the row.
+    - A gap leaves the row NO VERDICT (invalid "R3's witness: …"), where R3 alone would decide it. Gaps are: no tap,
+      record unread, no access, the span not covered, a disable inside the span, the control unseen, the probe
+      unseen.
+    - Another post to the user pid in the span fails the row.
+    - Otherwise the row passes as "user app's own window".
+  - Off hosted, nothing is tapped and these rows stay NO VERDICT. The summary reports the control per run.
 - 2026-11-24, ruling 1223 (the design session, after pilot C-6, 45408876276). C-6 confirmed ruling 1221's cause.
   Every TextEdit or Electron user window that missed the wait had Finder's window on top. The raise fixed it: the
   background cells @textedit and @electron went from 0 of 28 valid per lane to 27 of 28, with no raise failed.

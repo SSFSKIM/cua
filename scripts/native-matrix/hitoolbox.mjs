@@ -79,7 +79,9 @@ export const UNSET_SCRIPT = fileURLToPath(new URL('./unset-per-context.sh', impo
 export function unsetPerContext({dictBefore, exec = run, env, platform, domain = HITOOLBOX} = {}) {
   assertInputWrite('unsetting the per-context input preference', {env, platform});
   let out;
-  try { out = exec('/bin/sh', [UNSET_SCRIPT, ...(dictBefore === false ? ['--delete-if-empty'] : []), domain]).trim(); } catch (error) {
+  // The script guards itself too (hosted or --manual-recovery): it gets the environment this call was judged on.
+  const scriptEnv = {...process.env, ...(env ?? {})};
+  try { out = exec('/bin/sh', [UNSET_SCRIPT, ...(dictBefore === false ? ['--delete-if-empty'] : []), domain], {env: scriptEnv}).trim(); } catch (error) {
     throw new Error(`could not unset ${PER_CONTEXT_NAME}: ${failure(error)}`);
   }
   if (!['none', 'rewritten', 'deleted'].includes(out)) throw new Error(`could not unset ${PER_CONTEXT_NAME}: the script printed ${JSON.stringify(out.slice(0, 80))}`);

@@ -136,16 +136,17 @@ test('the unset is safe to repeat and fails closed: already unset writes nothing
   for (const [tools, why] of failures) {
     const d = scratchDomain(plist(`${SOURCES}${withKey('<true/>', OTHERS)}`));
     const was = d.exported();
-    const exec = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: {...process.env, ...tools}});
+    const exec = (cmd, args, options) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: {...options.env, ...tools}});
     assert.throws(() => unsetPerContext({dictBefore: false, domain: d.file, exec, ...HOSTED}), why);
     assert.equal(d.exported(), was, `nothing written: ${Object.values(tools)[0]}`);
   }
 });
 
-// The script is a CLI a person can run, so it guards the real domain itself: off a GitHub-hosted runner a plain run
-// refuses before any defaults call, and only the owner's explicit `--manual-recovery` reaches the real domain. The
-// defaults here is a recorder that never delegates, so not even a guard that failed could touch this Mac's domain.
-test('the script refuses the real domain off a hosted runner unless asked for manual recovery; scratch path domains stay allowed', {skip: !darwin}, () => {
+// The script is a CLI a person can run, so it guards every write itself: off a GitHub-hosted runner a plain run
+// refuses before any defaults call, whatever the domain's spelling (its name, or a path, which may be the owner's own
+// plist), and only the owner's explicit `--manual-recovery` writes there. The defaults here is a recorder that never
+// delegates, so not even a guard that failed could touch this Mac's domain.
+test('the script refuses off a hosted runner, by domain name or by path, unless asked for manual recovery', {skip: !darwin}, () => {
   const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-hitoolbox-')));
   scratches.push(dir);
   const log = join(dir, 'calls'), recorder = join(dir, 'defaults');
@@ -153,20 +154,24 @@ test('the script refuses the real domain off a hosted runner unless asked for ma
   const {RUNNER_ENVIRONMENT, ...offHosted} = process.env;
   const run = (args, env = offHosted) => spawnSync('/bin/sh', [UNSET_SCRIPT, ...args], {encoding: 'utf8', env: {...env, UNSET_DEFAULTS: recorder}});
   const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : []);
-  for (const args of [[], ['--delete-if-empty'], [HITOOLBOX], ['--delete-if-empty', HITOOLBOX]]) {
+  const ownersPlist = join(process.env.HOME ?? '/Users/owner', 'Library/Preferences/com.apple.HIToolbox.plist');
+  const scratchPlist = join(dir, 'hitoolbox.plist');
+  for (const args of [[], ['--delete-if-empty'], [HITOOLBOX], ['--delete-if-empty', HITOOLBOX], [ownersPlist], [scratchPlist]]) {
     const refused = run(args);
     assert.equal(refused.status, 2, `${args.join(' ')}: ${refused.stderr}`);
-    assert.match(refused.stderr, /refused: off a GitHub-hosted runner .*com\.apple\.HIToolbox.*--manual-recovery/);
+    assert.match(refused.stderr, /refused: off a GitHub-hosted runner the harness never writes .*\(ruling 1188\).*--manual-recovery/);
     assert.deepEqual(calls(), [], 'no defaults call');
   }
   // The owner's own recovery, and a hosted runner's run, reach the domain (here, the recorder).
   assert.equal(run(['--manual-recovery', '--delete-if-empty']).status, 1);
   assert.equal(run([], {...offHosted, RUNNER_ENVIRONMENT: 'github-hosted'}).status, 1);
   assert.deepEqual(calls(), ['export com.apple.HIToolbox -', 'export com.apple.HIToolbox -']);
-  // A scratch path domain is a test's, never the owner's: allowed anywhere.
+  // A test's scratch domain runs only as a hosted runner's or in the manual mode, like any other.
   const d = scratchDomain(plist(`${SOURCES}${withKey('<true/>', OTHERS)}`));
-  const scratch = spawnSync('/bin/sh', [UNSET_SCRIPT, d.file], {encoding: 'utf8', env: offHosted});
-  assert.deepEqual([scratch.status, scratch.stdout.trim()], [0, 'rewritten'], scratch.stderr);
+  const plain = spawnSync('/bin/sh', [UNSET_SCRIPT, d.file], {encoding: 'utf8', env: offHosted});
+  assert.equal(plain.status, 2, plain.stderr);
+  const manual = spawnSync('/bin/sh', [UNSET_SCRIPT, '--manual-recovery', d.file], {encoding: 'utf8', env: offHosted});
+  assert.deepEqual([manual.status, manual.stdout.trim()], [0, 'rewritten'], manual.stderr);
 });
 
 test('on and off are written into the dictionary, keeping its other keys', {skip: !darwin}, () => {

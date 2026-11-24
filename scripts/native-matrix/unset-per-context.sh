@@ -2,9 +2,9 @@
 # The per-context input preference put back to "unset" (rulings 1181 and 1188; ./hitoolbox.mjs unsetPerContext runs
 # this on a hosted runner, and a restore that did not hold names it for a person to run by hand):
 #   sh scripts/native-matrix/unset-per-context.sh [--manual-recovery] [--delete-if-empty] [<domain>]
-# Hosted only (ruling 1188): against the real domain it refuses off a GitHub-hosted runner, before any defaults call,
-# unless run with --manual-recovery, the owner's own recovery after a restore that did not hold (the command a
-# failure names). A scratch path domain (tests) is never the owner's and runs anywhere.
+# Hosted only (ruling 1188): off a GitHub-hosted runner it refuses before any defaults call, whatever the domain (a
+# path may be the owner's own plist), unless run with --manual-recovery, the owner's own recovery after a restore that
+# did not hold (the command a failure names). Tests on a scratch path pass RUNNER_ENVIRONMENT or the mode.
 # It removes TextInputGlobalPropertyPerContextInput from com.apple.HIToolbox's AppleGlobalTextInputProperties and
 # writes back only that one top-level key, typed, through cfprefsd (defaults). With --delete-if-empty (the dictionary
 # was absent before the run) a dictionary left empty is deleted instead. It fails closed: an export, extraction or
@@ -24,13 +24,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 domain=${1:-com.apple.HIToolbox}
-case $domain in
-  /*) ;;
-  *) if [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ] && [ "$manual_recovery" != yes ]; then
-       echo "unset-per-context: refused: off a GitHub-hosted runner the harness never writes $domain (ruling 1188); the owner's own recovery runs with --manual-recovery" >&2
-       exit 2
-     fi ;;
-esac
+# Whatever the domain's spelling: a path may be the owner's own plist, which defaults writes as the domain.
+if [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ] && [ "$manual_recovery" != yes ]; then
+  echo "unset-per-context: refused: off a GitHub-hosted runner the harness never writes $domain (ruling 1188); the owner's own recovery runs with --manual-recovery" >&2
+  exit 2
+fi
 dict=AppleGlobalTextInputProperties
 key=TextInputGlobalPropertyPerContextInput
 defaults=${UNSET_DEFAULTS:-/usr/bin/defaults}

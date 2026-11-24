@@ -95,12 +95,13 @@ const defaultAlive = pid => {
   try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
 };
 
-// Removes the sessions whose recorded owner is gone. Returns what it found: {swept: [{session, pid}], live: [{session,
-// pid}], unowned: [entry names with no readable record], failed: [{session, pid, errors}]}.
 // The pid a session record at `path` holds, read only from a regular file, opened without following a link or blocking
-// and read to a bound (#171 M6b: a record that is a link, into the vendor's tree or anywhere, is no record, and what it
-// leads to is never opened) -> the number, or NaN.
+// (#171 M6b: a record that is a link, into the vendor's tree or anywhere, is no record, and what it leads to is never
+// opened), and read to its end or past the bound, however short each read -> the number, or NaN. Only a whole record as
+// claimRunSession writes it, the pid and its newline, is one: a record still being written, or anything else, is not, so the
+// sweep never takes a prefix of a pid for an owner that is gone.
 const RECORD_MAX_BYTES = 64;
+const WHOLE_RECORD = /^[1-9][0-9]*\n$/;
 function recordedPid(path) {
   let fd;
   try {
@@ -108,11 +109,15 @@ function recordedPid(path) {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     if (!fstatSync(fd).isFile()) return NaN;
     const buffer = Buffer.alloc(RECORD_MAX_BYTES + 1);
-    const length = readSync(fd, buffer, 0, buffer.length, 0);
-    return length > RECORD_MAX_BYTES ? NaN : Number(buffer.subarray(0, length).toString('utf8').trim());
+    let length = 0;
+    for (let n; length < buffer.length && (n = readSync(fd, buffer, length, buffer.length - length, length)) > 0;) length += n;
+    const text = buffer.subarray(0, length).toString('utf8');
+    return length <= RECORD_MAX_BYTES && WHOLE_RECORD.test(text) ? Number(text.slice(0, -1)) : NaN;
   } catch { return NaN; } finally { if (fd !== undefined) closeSync(fd); }
 }
 
+// Removes the sessions whose recorded owner is gone. Returns what it found: {swept: [{session, pid}], live: [{session,
+// pid}], unowned: [entry names with no readable record], failed: [{session, pid, errors}]}.
 export function sweepRun(home, {alive = defaultAlive} = {}) {
   const {run} = homeLayout(realHome(home));
   assertSessionParents(dirname(run));

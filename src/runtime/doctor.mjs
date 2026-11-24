@@ -340,22 +340,23 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   // deny list its kernel would get: a layout whose deny targets overlap, or whose store cannot be listed, is refused in
   // scoped and default alike.
   const session = join(owned.run, 'session');
-  // On Linux every path of the home this row resolves by its real path is kept out of the vendor's tree first, before
-  // the deny list or the protected paths are normalized: the deny list's state/, remote/, chrome/ and run/ (with the
-  // session directory), and the scoped check's protected directories and state/codex. One that leads there is named, and
-  // nothing there is resolved (#171 M6b). The five a launch's preflight refuses (sandbox.mjs
-  // assertHomeRootsOutsideVendorTree) are said as it says them.
-  if (linux) {
-    const preflight = [owned.node, owned.staging, owned.sandbox, owned.engine, owned.modules];
-    for (const root of [...preflight, join(owned.home, 'state'), owned.codexHome, join(owned.home, 'remote'), join(owned.home, 'chrome'), join(session, 'tmp')]) {
+  // On Linux every path of the home this row resolves by its real path is kept out of the vendor's tree before it is
+  // normalized, each just before the check that resolves it: the deny list's state/, remote/, chrome/ and run/ (with the
+  // session directory) here, in scoped and default alike; the scoped check's protected directories and state/codex just
+  // before that check, which default mode never makes. One that leads there is named, and nothing there is resolved
+  // (#171 M6b).
+  const intoTree = (roots, said) => {
+    if (!linux) return null;
+    for (const root of roots) {
       const at = outsideVendorTree(root, owned.home);
-      if (!at.lead) continue;
-      const remedy = `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``;
-      return result('sandbox', 'fail', preflight.includes(root)
-        ? `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the scoped sandbox protects it by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict): ${remedy}`
-        : `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the sandbox's check takes it by its real path, which is not resolved there, so the sandbox is not checked: ${remedy}`);
+      if (at.lead) return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: ${said(root)}: `
+        + `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``);
     }
-  }
+    return null;
+  };
+  const unchecked = () => 'the sandbox\'s check takes it by its real path, which is not resolved there, so the sandbox is not checked';
+  const denied = intoTree([join(owned.home, 'state'), join(owned.home, 'remote'), join(owned.home, 'chrome'), join(session, 'tmp')], unchecked);
+  if (denied) return denied;
   let deny;
   try {
     const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
@@ -371,6 +372,12 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const workerNetwork = ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)';
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read and write nowhere, so profile labels, screenshots and other features that need scratch space fail; '
     + (computer ? `cells have no network${workerNetwork}` : 'neither has the network'));
+  // The five a launch's preflight refuses in scoped mode (sandbox.mjs assertHomeRootsOutsideVendorTree), said as it says
+  // them, and state/codex.
+  const preflight = [owned.node, owned.staging, owned.sandbox, owned.engine, owned.modules];
+  const guarded = intoTree([...preflight, owned.codexHome], root => (preflight.includes(root)
+    ? 'the scoped sandbox protects it by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict)' : unchecked()));
+  if (guarded) return guarded;
   // On Linux the module tree is not trusted code (nothing trusted imports from it) but cua's module trees are protected
   // all the same, as a launch protects them (#171 M6a).
   const conflicts = sandboxConflicts({

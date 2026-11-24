@@ -487,7 +487,7 @@ function releaseState(root) {
 }
 
 // Doctor whole over the home, with the release's report `retired` (a stub, or the real one when undefined).
-const doctorOf = (h, retired) => inspectRuntime({home: h.home, env: {HOME: h.ambient.HOME, DISPLAY: ':9'}, host: LINUX, verifySignatures: () => assert.fail('codesign'),
+const doctorOf = (h, retired, env = {}) => inspectRuntime({home: h.home, env: {HOME: h.ambient.HOME, DISPLAY: ':9', ...env}, host: LINUX, verifySignatures: () => assert.fail('codesign'),
   inspectHelper: () => assert.fail('the native socket helper'), inspectSecrets: async () => ({dir: '/nowhere', exists: false}),
   inspectLinux: async () => [], inspectChrome: async () => [], inspectAgent: async () => [], readLinuxCapabilities: async () => null, ...(retired ? {retired} : {})});
 
@@ -603,6 +603,25 @@ test('the replay: each linked part through the whole of doctor and of install, t
       }
     }
     assert.deepEqual(releaseState(h.release), before, `${name}: the release is as it was`);
+  }
+});
+
+// Fix wave 2: the scoped check's paths are guarded where that check runs, so a default-mode doctor claims no refusal a
+// default-mode launch does not make (its preflight of the home's roots is scoped's alone), and reads nothing there.
+test('doctor\'s sandbox row with staging/ linked into the tree: scoped names the refusal; default claims none and reads nothing there', async t => {
+  const h = wholeHome(t);
+  linkIntoTree(h, join(h.home, 'staging'));
+  for (const mode of ['scoped', 'default']) {
+    const {value, seen} = await recordedRun(() => doctorOf(h, NO_RETIRED, {CUA_SHIM_SANDBOX: mode}));
+    assert.deepEqual(inVendorTree(seen, h.home), [], mode);
+    const row = value.checks.find(c => c.name === 'sandbox');
+    if (mode === 'scoped') {
+      assert.equal(row.status, 'fail');
+      assert.ok(row.detail.includes('cua serve refuses to start like this (sandbox_conflict)') && row.detail.includes(`move ${join(h.home, 'staging')} aside`), row.detail);
+    } else {
+      assert.equal(row.status, 'pass', row.detail);
+      assert.doesNotMatch(row.detail, /refuses|vendor's tree/);
+    }
   }
 });
 

@@ -29,6 +29,7 @@
 // never came) writes that sentence, and a newline, as the cell's state output, so the model reads it though the drag
 // resolves to nothing, as before. A drag without one writes nothing.
 import {image, one_screenshot, positive_pixels, require_plain_text, text} from './display.mjs';
+import {escapeLineBreaks} from './line-breaks.mjs';
 
 // The causes of `truncated`, in the order the line names them.
 const TRUNCATION_CAUSES = [['nodes', 'over the element limit'], ['depth', 'below the depth limit'], ['failed', 'unreadable']];
@@ -42,8 +43,10 @@ function truncation(truncated) {
   return `\nAccessibility tree truncated: at least ${total} elements not shown (${reason})`;
 }
 
-// A state's pending drag notice as its first line, with the newline that puts the rest after it, or ''.
-const pending = notice => (typeof notice === 'string' && notice !== '' ? `${notice}\n` : '');
+// A state's pending drag notice as its first line, with the newline that puts the rest after it, or ''. The notice
+// names the app the drag went into by a name the app itself sets (its GTK application id or WM_CLASS), so its line
+// breaks print escaped as the tree's do (#558, ruling 1178; ./line-breaks.mjs), and it stays one line.
+const pending = notice => (typeof notice === 'string' && notice !== '' ? `${escapeLineBreaks(notice)}\n` : '');
 
 export function bind_linux_app(sky, window) {
   async function windowState({include_screenshot}) {

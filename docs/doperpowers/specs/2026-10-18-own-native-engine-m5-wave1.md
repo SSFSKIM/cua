@@ -302,6 +302,15 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-24, ruling 1219 (the design session, after pilot C-5), the Korean `r k`: the Korean pressKey rows
+  (`chrome/korean/pressKey.rk`, `electron/korean/pressKey.rk`, and TextEdit's for consistency) are judged against
+  ruling 1119's oracle, 가, on each engine, not cua against the vendor (`judgeCell`'s `expected`,
+  `scripts/native-matrix/cell-verdict.mjs`; `summary.mjs` passes it for the Korean condition). cua reading 가 passes;
+  the vendor settling stably on ㄱ fails the vendor and is no cua block: the row is listed under "What changes for a
+  user" as a declared departure where cua is right (`oracleDepartures`). A Latin pressKey row keeps ruling 1119's rule
+  (the engines must compose alike). Evidence, C-5: the vendor read ㄱ for Chrome's and Electron's Korean row, settled
+  after 3 and 4 reads (614 and 663 ms), and 가 for TextEdit's; cua read 가 on all three at its first read. C-2's vendor
+  read the same (ㄱ for Chrome and Electron, 가 for TextEdit; cua's lane was held by the alert guard there).
 - 2026-11-23, ruling 1198 (the design session, after pilot C-2): sitting C gains a key-route diagnostic as its own
   last step, after the counted lanes (matrix, save-sheet) and their judges, never among judged cells. In C-2 the
   vendor's `pressKey("Escape")` closed TextEdit's Open panel (drawn by com.apple.appkit.xpc.openAndSavePanelService)

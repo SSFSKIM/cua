@@ -444,34 +444,42 @@ test('an excluded mark on any row but a per-context one takes nothing out: the r
 });
 
 // #189, ruling 1119: pressKey is judged on raw outcomes; a declaration carried on its evidence excuses nothing.
-test('a pressKey row is judged on its raw outcomes: a declaration on its evidence is missing proof, and a wrong vendor sample fails it even with no valid cua sample', () => {
+test('a pressKey row is judged on its raw outcomes: a declaration on its evidence is missing proof; a wrong vendor sample fails a Latin row, the Korean row judged against its oracle', () => {
   const KEYS = 'textedit/korean/pressKey.rk', declared = {kind: 'composition', cause: 'composes otherwise'};
   const vendorDeclared = judged({vendor: {axMs: 50, resolved: 9, tweak: set(KEYS, {ok: false, declared})}, cua: {axMs: 40}});
-  assert.equal(vendorDeclared.verdict, 'FAIL');
-  assert.ok(vendorDeclared.blocking.includes(`unicode: ${KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), vendorDeclared.blocking.join('\n'));
+  // Ruling 1219: the Korean row is judged against its oracle on each engine; the vendor's own failure blocks nothing.
+  assert.ok(!vendorDeclared.blocking.some(b => b.includes(KEYS)), vendorDeclared.blocking.join('\n'));
   assert.ok(vendorDeclared.missing.includes(`unicode: ${KEYS} on vendor (sample 1) carries a declaration, which no pressKey row may (ruling 1119): its raw outcome is judged`), vendorDeclared.missing.join('\n'));
   assert.ok(!vendorDeclared.owner.some(o => o.includes(KEYS)), 'never the owner\'s to read');
   const cuaDeclared = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, declared})}});
   assert.ok(cuaDeclared.blocking.includes(`unicode: ${KEYS} failed on cua`), cuaDeclared.blocking.join('\n'));
   const cuaInvalid = judged({vendor: {axMs: 50, resolved: 9, tweak: set(KEYS, {ok: false})}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, invalid: 'not engaged'})}});
-  assert.equal(cuaInvalid.verdict, 'FAIL');
-  assert.ok(cuaInvalid.blocking.includes(`unicode: ${KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), cuaInvalid.blocking.join('\n'));
+  assert.ok(!cuaInvalid.blocking.some(b => b.includes(KEYS)), 'no valid cua sample: no verdict, and the vendor\'s failure is its own');
+  // A Latin pressKey row keeps ruling 1119's rule: the vendor composing otherwise fails it.
+  const LATIN_KEYS = 'textedit/latin/pressKey.rk';
+  const latin = judged({vendor: {axMs: 50, resolved: 9, tweak: set(LATIN_KEYS, {ok: false, outcome: {exact: false}})}, cua: {axMs: 40}});
+  assert.ok(latin.blocking.includes(`unicode: ${LATIN_KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), latin.blocking.join('\n'));
 });
 
 // #189, ruling 1119: a Korean row counts only with 2-Set engaged; without it the row has no verdict, never a pass. If
 // the vendor's lane composes differently the row fails and cannot be declared.
-test('the Korean pressKey row: no valid cua sample is NO VERDICT, and the vendor composing otherwise fails it', () => {
+test('the Korean pressKey row: no valid cua sample is NO VERDICT, and the vendor composing otherwise is the vendor\'s own failure (ruling 1219)', () => {
   const KEYS = 'textedit/korean/pressKey.rk';
   const unengaged = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, invalid: 'the Korean source did not engage in textedit after its refocus'})}});
   assert.deepEqual([unengaged.verdict, unengaged.blocking], ['NO VERDICT', []]);
   assert.ok(unengaged.missing.includes(`unicode: ${KEYS} has no valid cua sample`), unengaged.missing.join('\n'));
   const composedOtherwise = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KEYS, {ok: false, outcome: {exact: false}})}});
   assert.ok(composedOtherwise.blocking.includes(`unicode: ${KEYS} failed on cua`));
-  // The vendor's lane composing otherwise (rk where cua composed 가) fails the row: the engines differ, which no
-  // declaration covers. Another Unicode row the vendor failed stays better for cua.
+  // Ruling 1219: the vendor's lane settling on ㄱ where cua composed 가 fails the vendor against ruling 1119's oracle, never
+  // cua: the row is a declared departure where cua is right, listed, and blocks nothing. Another Unicode row the vendor
+  // failed stays better for cua.
   const vendorOtherwise = judged({vendor: {axMs: 50, resolved: 9, tweak: rows => set(KOREAN, {ok: false})(set(KEYS, {ok: false, outcome: {exact: false}})(rows))}, cua: {axMs: 40}});
-  assert.equal(vendorOtherwise.verdict, 'FAIL');
-  assert.ok(vendorOtherwise.blocking.includes(`unicode: ${KEYS} composes otherwise on the vendor: the engines differ (ruling 1119)`), vendorOtherwise.blocking.join('\n'));
+  assert.ok(!vendorOtherwise.blocking.some(b => b.includes(KEYS)), vendorOtherwise.blocking.join('\n'));
+  const keysCell = vendorOtherwise.unicode.find(u => u.id === KEYS);
+  assert.equal(keysCell.verdict, 'better');
+  assert.deepEqual(keysCell.oracle, {expected: '가', cuaRight: 3, vendorWrong: 3});
+  assert.deepEqual(vendorOtherwise.oracleDepartures, [{section: 'unicode', id: KEYS, expected: '가', cuaRight: 3, vendorWrong: 3}]);
+  assert.ok(renderSummary(vendorOtherwise).includes(`- unicode ${KEYS}: judged against ruling 1119's oracle 가 on each engine (ruling 1219): cua read it in 3 sample(s), the vendor composed otherwise in 3; a declared departure where cua is right, the vendor's own failure and no cua block`), renderSummary(vendorOtherwise));
   assert.equal(vendorOtherwise.unicode.find(u => u.id === KOREAN).verdict, 'better');
   assert.ok(!vendorOtherwise.blocking.some(b => b.includes(KOREAN)));
   const vendorUnengaged = judged({vendor: {axMs: 50, resolved: 9, tweak: set(KEYS, {ok: false, invalid: 'not engaged'})}, cua: {axMs: 40}});
@@ -574,7 +582,7 @@ test('a split-frame run can never fail the matrix: the user\'s value, own and ac
   const inRun1 = patch => (rows, run) => (run === 1 ? patch(rows) : rows);
   const changed = {ok: false, outcome: {exact: false, length: 0, expectedLength: 5, hash: 'h0', userKept: false, unchanged: true, threw: 'the text did not read back after typing', errorName: 'typeUnconfirmed'}};
   const interfered = {interference: {ok: false, frontmost: false, topWindow: true, activations: 1, route4: false}};
-  const PRESS_KEY = 'textedit/korean/pressKey.rk', vendorComposed = {ok: false, outcome: {exact: false}};
+  const PRESS_KEY = 'textedit/latin/pressKey.rk', vendorComposed = {ok: false, outcome: {exact: false}};
   const cases = [
     ['the user\'s value', {cua: inRun1(set(COMPOSING, changed))}, `unicode: ${COMPOSING} failed on cua`],
     ['an own row', {cua: inRun1(set(BACK, {ok: false}))}, `method: ${BACK} is worse on cua`],

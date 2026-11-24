@@ -110,7 +110,10 @@ const VERDICTS = ['worse', 'equal', 'better', 'honest', 'declared', 'shared'];
 // `ownEffect`: a frontmost row judged by its own effect (./plan.mjs OWN_EFFECT_IDS): compared with the vendor's as any
 // reference row, but where the vendor's sample of the run was never run because its run stopped (ruling 1214), the cua
 // sample is judged on its own effect ('own') rather than left `vendorStopped`.
-export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false, reference = null, ownEffect = false} = {}) {
+// `expected`: a pressKey row judged against its oracle on each engine (ruling 1219: the Korean r k's 가, ruling 1119's
+// oracle): cua's sample that reads it passes, better where its vendor pair did not; the vendor composing otherwise fails
+// the vendor alone, never the row (no `differs`); the cell says so (`oracle`: {expected, cuaRight, vendorWrong}).
+export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false, reference = null, ownEffect = false, expected = null} = {}) {
   const vendorByRun = groupBy(vendorRows.filter(r => !causeOf(r) && pairable(runOf(r))), runOf);
   const held = r => !oracle(r) || r.interference?.ok === true;
   const fixed = mode === 'absolute' || mode === 'pressKey';
@@ -145,7 +148,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     if (unfit) { outcomes.set(c, 'reference'); unreferenced.push({run: runOf(c), reason: unfit}); continue; }
     // 'reading': a pair missing either side's reading has no verdict (ruling 1141), never a difference.
     if (mode === 'reading' && v && !(hasReading(v) && hasReading(c))) { outcomes.set(c, 'unread'); continue; }
-    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? (ownAfterStop(c) ? 'equal' : noPair(vendorRows, c)) : v && !passes(v) && mode !== 'pressKey' ? 'better'
+    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? (ownAfterStop(c) ? 'equal' : noPair(vendorRows, c)) : v && !passes(v) && (mode !== 'pressKey' || expected !== null) ? 'better'
       : mode === 'reading' && !sameEffect(v, c) ? 'worse' : 'equal');
     else outcomes.set(c, failed(c, v));
   }
@@ -156,7 +159,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
   // pressKey: a vendor sample with a verdict that composed otherwise fails the row, unless cua's sample of its run
   // failed the same way (ruling 1119 with 1144).
   const sharedRuns = new Set(counted.filter(r => outcomes.get(r) === 'shared').map(runOf));
-  const differs = mode === 'pressKey' && !has('worse') && vendorCounted.some(r => !passes(r) && !sharedRuns.has(runOf(r)));
+  const differs = mode === 'pressKey' && expected === null && !has('worse') && vendorCounted.some(r => !passes(r) && !sharedRuns.has(runOf(r)));
   const verdict = has('worse') || differs ? 'worse' : !counted.length || !account.qualifies ? 'no-verdict'
     : has('declared') ? 'declared' : has('shared') ? 'shared' : has('better') || has('honest') ? 'better' : 'equal';
   const tally = (rows, rowsAll) => ({ok: rows.filter(passes).length, valid: rows.length, invalid: rowsAll.length - rows.length});
@@ -166,6 +169,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
   return {verdict, vendor: tally(vendorCounted, vendorRows), cua: tally(counted, cuaRows), declared: of('declared').length,
     shared: of('shared').map(r => ({run: runOf(r), answer: answerOf(r), length: r.outcome?.length ?? null, expectedLength: r.outcome?.expectedLength ?? null})),
     honest: of('honest').map(r => ({run: runOf(r), ...notes.get(r)})), routes, account, ...(differs ? {differs: true} : {}),
+    ...(expected !== null ? {oracle: {expected, cuaRight: of('better').length, vendorWrong: vendorCounted.filter(r => !passes(r)).length}} : {}),
     ...(unreferenced.length ? {unreferenced} : {})};
 }
 
@@ -175,7 +179,8 @@ export const judgeMethod = (regime, vendorRows, cuaRows, options) => judgeCell(r
 // pressKey's r k (ruling 1119): composed by the active input method, so judged on the raw outcomes of both engines,
 // never on a declaration. A counted cua sample that did not read the expected text fails the row unless its vendor pair
 // failed the same way; a vendor sample with a verdict that did not, the engines composing differently, fails it too
-// (`differs`), whatever cua's samples were.
+// (`differs`), whatever cua's samples were. Under Korean (`expected` 가, ruling 1219) each engine is judged against the
+// oracle instead, and the vendor's failure is its own.
 export const judgePressKey = (vendorRows, cuaRows, options) => judgeCell('pressKey', vendorRows, cuaRows, options);
 
 // A measured row's observations (speed, finding): the complete run pairs, which the official measure and the verdict

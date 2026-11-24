@@ -53,7 +53,8 @@
 //   expected string, a failure compared with its paired vendor sample (ruling 1144); the mid-switch row against its own
 //   measured prefix. The pressKey row
 //   (r k, ruling 1119) is judged on both engines' raw outcomes (./cell-verdict.mjs judgePressKey), and no departure may
-//   name it.
+//   name it; under Korean each engine is judged against ruling 1119's oracle 가 (ruling 1219), so the vendor composing
+//   otherwise fails the vendor alone, listed as a declared departure where cua is right.
 // - Not judged (./not-judged.mjs, ruling 1119: the per-context rows, by section and condition): outside the manifest and
 //   every judgment, listed with their cause under "Not judged".
 // - Any other cell (the settle cell, M2a's residue): each cell's verdict per engine as its rows give it
@@ -83,7 +84,7 @@ import {ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OW
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
-import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, PRESS_KEY, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
 import {frameAsymmetry, panelFrameSplits} from '../hosted-sittings/venue.mjs';
 import {classifyAttestation, classifyAttestedRecord} from '../probe/lib.mjs';
@@ -386,7 +387,9 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     for (const [id, list] of groupBy(rows.filter(r => sections.includes(r.section)), r => r.id)) {
       const section = list[0].section;
       const mode = section !== 'unicode' || isMidSwitchRow(id) ? 'own' : isPressKeyRow(id) ? 'pressKey' : 'absolute';
-      out.push({id, section, ...judgeCell(mode, ...sides(list), options(section)(id))});
+      // Ruling 1219: the Korean r k is judged against ruling 1119's oracle (가) on each engine, not cua against the vendor.
+      const korean = mode === 'pressKey' && id.includes('/korean/') ? {expected: PRESS_KEY.expected.korean} : {};
+      out.push({id, section, ...judgeCell(mode, ...sides(list), {...options(section)(id), ...korean})});
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
   };
@@ -399,6 +402,9 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const applied = judgedCells.filter(c => c.declared > 0).map(c => ({...byRow.get(`${c.section} ${c.id}`), samples: c.declared}));
   // cua refusing or answering unconfirmed where the vendor gave a false ok (ruling 1144): better, listed beside them.
   const honest = judgedCells.filter(c => c.honest.length).map(c => ({section: c.section, id: c.id, cua: c.honest[0].cua, samples: c.honest.length}));
+  // The rows judged against an oracle where cua read it and the vendor did not (ruling 1219): a declared departure
+  // where cua is right, listed, never blocking.
+  const oracleDepartures = judgedCells.filter(c => c.oracle && c.oracle.cuaRight > 0 && c.oracle.vendorWrong > 0).map(c => ({section: c.section, id: c.id, ...c.oracle}));
   // The shared limits (ruling 1144): each observation by its own cause (the answer both gave, on one scene and method)
   // and priority, then each cause's rows; each cause is a ticket for the design session to register (a shared false ok
   // P2 or higher, an honest shared failure P3).
@@ -485,7 +491,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, shared, cells, others, owner,
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), verdict};
 }
 
@@ -630,7 +636,8 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push('## What changes for a user', '', 'The places where cua refuses or answers unconfirmed where the vendor answered ok (R3), each declared with its Decision Log entry; nothing else can be here.', '');
   if (j.departures.length) for (const d of j.departures) out.push(`- ${d.section} ${d.id}: the vendor answered ok, cua ${d.cua.answer} ("${d.cua.sentence}") in ${d.samples} sample(s); ${d.decision}`);
   for (const h of j.honest) out.push(`- ${h.section} ${h.id}: the vendor answered ok with other text (a false ok), cua answered ${h.cua.kind} (${h.cua.name}) in ${h.samples} sample(s): better, no entry needed`);
-  if (!j.departures.length && !j.honest.length) out.push('No declared departure was observed in these runs.');
+  for (const o of j.oracleDepartures ?? []) out.push(`- ${o.section} ${o.id}: judged against ruling 1119's oracle ${o.expected} on each engine (ruling 1219): cua read it in ${o.cuaRight} sample(s), the vendor composed otherwise in ${o.vendorWrong}; a declared departure where cua is right, the vendor's own failure and no cua block`);
+  if (!j.departures.length && !j.honest.length && !j.oracleDepartures?.length) out.push('No declared departure was observed in these runs.');
   out.push('');
 
   if (j.shared.length) {

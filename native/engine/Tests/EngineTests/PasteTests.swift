@@ -1954,8 +1954,9 @@ extension PasteActivationTests {
     pasteboard.userCopies("the owner's")
     let meta = try pasteToItsEnd("x", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
                                  reread: { KeyTarget(pid: self.target, walkCutOff: true) })
-    XCTAssertTrue(meta.keyTargetCutOff)
-    XCTAssertEqual(keyInputResult(meta, note: nil, app: "TextEdit")["note"] as? String, keyTargetCutOffNotice(app: "TextEdit"))
+    XCTAssertEqual(meta.keyTargetCutOff, target)
+    XCTAssertEqual(keyInputResult(meta, note: nil, appPid: target, appName: "TextEdit")["note"] as? String,
+                   keyTargetCutOffNotice(destination: "TextEdit"))
   }
 
   /// Ruling 1206: a deadline that passes during the paste's activation refuses the paste before the pasteboard and any key.

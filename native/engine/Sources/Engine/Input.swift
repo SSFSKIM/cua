@@ -107,8 +107,9 @@ struct InputMeta {
   var fieldFocus: TextEntryFocusRecord?
   /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
   var note: String? = nil
-  /// #582 (ruling 1207): the keys' final read was cut off at the walk's time budget; their result carries the notice.
-  var keyTargetCutOff = false
+  /// #582 (rulings 1207 and 1210): the pid the keys went to when their final read's walk was cut off at its time budget;
+  /// their result, or an error after they were posted, carries the notice (`keyTargetCutOffNotice`).
+  var keyTargetCutOff: pid_t? = nil
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
   var coordinateClick: CoordinateClickRecord?
   /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
@@ -189,6 +190,8 @@ struct InputMeta {
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
+    // Only once keys were posted: a refusal before them claims nothing about where keys went.
+    if let keyTargetCutOff, startedAt != nil { wire["keyTargetCutOff"] = ["pid": Int(keyTargetCutOff)] }
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
@@ -841,9 +844,11 @@ extension Engine {
     let forced = try spikeRouteArg(args, usable: InputRoute.synthesized)
 
     var meta = InputMeta(context)
+    var named: (pid: pid_t, name: String)?
     do {
       let app = try resolveApp(args)
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
+      named = (pid, app.displayName)  // an error after the keys were posted names where they went
       try requireAccessibility()
       let guarding = interventionGuard(app: app, pid: pid, requestApp: args["app"] as? String, connection: context.connection)
       meta.apply(guarding)
@@ -863,15 +868,15 @@ extension Engine {
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       // #582 (ruling 1206): the keys go to the process serving the focused element once the activation has run.
       let keys = try signposted("pressKey.finalKeyTarget") { try finalKeyTarget(application, pid: pid, app: app, context: context) }
-      meta.keyTargetCutOff = keys.walkCutOff
+      meta.keyTargetCutOff = keys.walkCutOff ? keys.pid : nil
       let poster = EventPoster.toProcess(keys.pid, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
       defer { if meta.startedAt != nil { recentKeys.record(pid: pid) } }  // its effect may land after a type_text's snapshot
       try refuseLateKeys(deadline: context.deadline)  // past the deadline nothing is posted late
       try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
-      return keyInputResult(meta, note: nil, app: app.displayName)
+      return keyInputResult(meta, note: nil, appPid: pid, appName: app.displayName)
     } catch let error as EngineError {
-      throw withMeta(error, meta)
+      throw named.map { keyInputError(error, meta, appPid: $0.pid, appName: $0.name) } ?? withMeta(error, meta)
     }
   }
 
@@ -892,9 +897,11 @@ extension Engine {
     let forced = try spikeRouteArg(args, usable: InputRoute.synthesized)
 
     var meta = InputMeta(context)
+    var named: (pid: pid_t, name: String)?
     do {
       let app = try resolveApp(args)
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
+      named = (pid, app.displayName)  // an error after the keys were posted names where they went
       try requireAccessibility()
       let guarding = interventionGuard(app: app, pid: pid, requestApp: args["app"] as? String, connection: context.connection)
       meta.apply(guarding)
@@ -923,7 +930,7 @@ extension Engine {
                                        reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
                                          bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
                                        meta: &meta)
-        return keyInputResult(meta, note: note, app: app.displayName)
+        return keyInputResult(meta, note: note, appPid: pid, appName: app.displayName)
       case .keyed: break
       }
       guard let layout = KeyLayout.current() else {
@@ -934,7 +941,7 @@ extension Engine {
       defer { _ = release?() }  // an inputSourceChanged mid-typing ends a forced activation's lease too
       // #582 (ruling 1206): the keys go to the process serving the focused element once the activation has run.
       let keys = try finalKeyTarget(application, pid: pid, app: app, context: context)
-      meta.keyTargetCutOff = keys.walkCutOff
+      meta.keyTargetCutOff = keys.walkCutOff ? keys.pid : nil
       let target = keys.pid
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       var posted = false
@@ -958,9 +965,9 @@ extension Engine {
                           pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
                           meta: &meta)
       // #414: a password field's success carries what its length confirmation proves (`readbackLengthNote`).
-      return keyInputResult(meta, note: meta.note, app: app.displayName)
+      return keyInputResult(meta, note: meta.note, appPid: pid, appName: app.displayName)
     } catch let error as EngineError {
-      throw withMeta(error, meta)
+      throw named.map { keyInputError(error, meta, appPid: $0.pid, appName: $0.name) } ?? withMeta(error, meta)
     }
   }
 

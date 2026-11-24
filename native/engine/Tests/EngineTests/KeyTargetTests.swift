@@ -272,17 +272,101 @@ final class KeyTargetTests: XCTestCase {
     XCTAssertEqual(quick.target(tree.application, appPid: app), KeyTarget(pid: app, walkCutOff: false), "the app's window ends it in time")
   }
 
-  /// Ruling 1207: a key input whose final read was cut off carries the notice in its note, the text a model reads (the
-  /// service puts a press_key's, type_text's or paste's note in the tool result), after the method's own note.
-  func testACutOffWalkPutsItsNoticeInTheReply() {
+  /// Ruling 1210: a parent read that answers nothing once the budget is spent (its messaging timeout fired) is a cut-off,
+  /// not the chain's end; a quick nil is the chain's end. The pid answered is the same either way: the flag changes no
+  /// routing.
+  func testATimedOutParentReadIsACutOffAndLeavesTheTargetUnchanged() {
+    let tree = FakeAXTree(app: app, service: service)
+    tree.actual[0] = gone
+    var clock = 0.0
+    var timedOut = tree.reads
+    timedOut.now = { clock }
+    timedOut.parent = { _, left in clock += left; return nil }  // the read takes all the time left and answers nothing
+    var ended = tree.reads
+    ended.now = { clock }
+    ended.parent = { _, _ in nil }  // the chain's real end
+    let cut = timedOut.target(tree.application, appPid: app)
+    clock = 0
+    let end = ended.target(tree.application, appPid: app)
+    XCTAssertEqual(cut, KeyTarget(pid: app, walkCutOff: true))
+    XCTAssertEqual(end, KeyTarget(pid: app, walkCutOff: false))
+    XCTAssertEqual(cut.pid, end.pid, "the flag changes no routing")
+
+    // The generic walk answers nil both ways, and only the timed-out read reports the cut-off.
+    var cutOffs = 0
+    clock = 0
+    XCTAssertNil(remoteViewKeyOwner(of: 0, appPid: app, parent: { _, left in clock += left; return nil }, actualPid: { _ in self.gone },
+                                    kind: kind, leftMs: { 250 - clock }, cutOff: { cutOffs += 1 }))
+    XCTAssertEqual(cutOffs, 1)
+    clock = 0
+    XCTAssertNil(remoteViewKeyOwner(of: 0, appPid: app, parent: { _, _ in nil }, actualPid: { _ in self.gone },
+                                    kind: kind, leftMs: { 250 - clock }, cutOff: { cutOffs += 1 }))
+    XCTAssertEqual(cutOffs, 1, "a quick nil is the chain's end")
+  }
+
+  /// Rulings 1207 and 1210: the notice names where the keys went, the app by its name when that is the public owner,
+  /// else the owner process by its localized name, else its bundle id, else its pid.
+  func testTheNoticeNamesWhereTheKeysWent() {
+    let none: (pid_t) -> (name: String?, bundleIdentifier: String?) = { _ in (nil, nil) }
+    XCTAssertEqual(keyDestinationName(app, appPid: app, appName: "TextEdit", running: { _ in ("Other", nil) }), "TextEdit")
+    XCTAssertEqual(keyDestinationName(other, appPid: app, appName: "TextEdit", running: { _ in ("Helper", "com.example.helper") }), "Helper")
+    XCTAssertEqual(keyDestinationName(other, appPid: app, appName: "TextEdit", running: { _ in (nil, "com.example.helper") }), "com.example.helper")
+    XCTAssertEqual(keyDestinationName(other, appPid: app, appName: "TextEdit", running: none), "process 888")
+    XCTAssertEqual(keyTargetCutOffNotice(destination: "TextEdit"),
+                   "The check for an Open or Save panel timed out, so the keys went to TextEdit by ordinary routing and may not have reached such a panel.")
+    XCTAssertEqual(keyTargetCutOffNotice(destination: "Helper"),
+                   "The check for an Open or Save panel timed out, so the keys went to Helper by ordinary routing and may not have reached such a panel.")
+  }
+
+  /// The notice reaches a result only once keys were posted after a cut-off final read, first in the note, and in the
+  /// meta; with no cut-off, or nothing posted, neither.
+  func testACutOffWalkPutsItsNoticeInTheReplyOnceKeysWerePosted() {
     var meta = InputMeta(context())
-    XCTAssertNil(keyInputResult(meta, note: nil, app: "TextEdit")["note"])
-    XCTAssertEqual(keyInputResult(meta, note: "own", app: "TextEdit")["note"] as? String, "own")
-    meta.keyTargetCutOff = true
-    let notice = "The check for a remote-view panel (such as an Open or Save panel) that serves the focused field was cut off at its time budget, so the keys went to TextEdit and may not have reached such a panel. Observe the app with get_app_state before relying on them."
-    XCTAssertEqual(keyInputResult(meta, note: nil, app: "TextEdit")["note"] as? String, notice)
-    XCTAssertEqual(keyInputResult(meta, note: "own", app: "TextEdit")["note"] as? String, "own " + notice)
-    XCTAssertNotNil(keyInputResult(meta, note: nil, app: "TextEdit")["meta"])
+    XCTAssertNil(keyInputResult(meta, note: nil, appPid: app, appName: "TextEdit")["note"])
+    XCTAssertEqual(keyInputResult(meta, note: "own", appPid: app, appName: "TextEdit")["note"] as? String, "own")
+    meta.keyTargetCutOff = app
+    XCTAssertNil(keyInputResult(meta, note: nil, appPid: app, appName: "TextEdit")["note"], "nothing posted: no notice")
+    XCTAssertNil(meta.wire["keyTargetCutOff"], "nor its meta")
+    meta.startedAt = 1
+    let notice = keyTargetCutOffNotice(destination: "TextEdit")
+    XCTAssertEqual(keyInputResult(meta, note: nil, appPid: app, appName: "TextEdit")["note"] as? String, notice)
+    XCTAssertEqual(keyInputResult(meta, note: "own", appPid: app, appName: "TextEdit")["note"] as? String, notice + " own")
+    XCTAssertEqual((keyInputResult(meta, note: nil, appPid: app, appName: "TextEdit")["meta"] as? [String: Any])?["keyTargetCutOff"] as? NSDictionary,
+                   ["pid": Int(app)])
+  }
+
+  /// Ruling 1210: within the service's 500-character note. The notice with the real password-field note fits whole for
+  /// TextEdit; with a destination long enough to pass 500 the notice still leads, so the service's cut falls inside the
+  /// method's note and never in the notice.
+  func testTheNoticeAndThePasswordFieldNoteFitTheServicesLimit() throws {
+    var meta = InputMeta(context())
+    meta.keyTargetCutOff = app
+    meta.startedAt = 1
+    let note = try XCTUnwrap(keyInputResult(meta, note: readbackLengthNote, appPid: app, appName: "TextEdit")["note"] as? String)
+    XCTAssertLessThanOrEqual(note.count, 500, "\(note.count) characters")
+    XCTAssertEqual(note, keyTargetCutOffNotice(destination: "TextEdit") + " " + readbackLengthNote)
+    let long = String(repeating: "Long Application Name ", count: 3)
+    let longNote = try XCTUnwrap(keyInputResult(meta, note: readbackLengthNote, appPid: app, appName: long)["note"] as? String)
+    XCTAssertGreaterThan(longNote.count, 500)
+    XCTAssertTrue(String(longNote.prefix(500)).hasPrefix(keyTargetCutOffNotice(destination: long)), "the notice whole within the cut")
+  }
+
+  /// Ruling 1210: an error after keys were posted following a cut-off final read carries the notice after its own
+  /// sentence (a typeUnconfirmed after typed text, a ⌘V that timed out); a refusal before any key does not.
+  func testAnErrorAfterThePostCarriesTheNoticeAndARefusalBeforeItDoesNot() {
+    var meta = InputMeta(context())
+    meta.keyTargetCutOff = other
+    let named: (pid_t) -> (name: String?, bundleIdentifier: String?) = { _ in ("Helper", nil) }
+    let refused = keyInputError(keysDeadlinePassed, meta, appPid: app, appName: "TextEdit", running: named)
+    XCTAssertEqual(refused.message, keysDeadlinePassed.message, "nothing posted: no claim about where keys went")
+    XCTAssertNil((refused.extra["meta"] as? [String: Any])?["keyTargetCutOff"])
+    meta.startedAt = 1
+    let unconfirmed = EngineError(name: "typeUnconfirmed", "typeUnconfirmed: the field did not read back the text.")
+    let after = keyInputError(unconfirmed, meta, appPid: app, appName: "TextEdit", running: named)
+    XCTAssertEqual(after.message, unconfirmed.message + " " + keyTargetCutOffNotice(destination: "Helper"))
+    XCTAssertEqual(after.errorName, "typeUnconfirmed")
+    XCTAssertEqual(after.code, unconfirmed.code)
+    XCTAssertEqual((after.extra["meta"] as? [String: Any])?["keyTargetCutOff"] as? NSDictionary, ["pid": Int(other)])
   }
 
   private let textEdit = ResolvedApp(appPath: "/System/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)

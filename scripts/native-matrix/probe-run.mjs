@@ -562,18 +562,23 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const sheet = await keys(SAVE_SHEET_OPEN_CELL, ['super+s']);
   if (!sheet?.ok || sheet.value?.opened !== true) return unprepared(`the Save sheet did not open (${sheet?.error ?? sheet?.value?.reason ?? 'not sent'})`);
   const destination = await keys(SAVE_SHEET_DESTINATION_CELL, ['super+shift+g', 'typeText', 'Return']);
+  // What the destination cell kept, on every exit (C-6): whether the Go To dialog closed in the cell (ruling 1219, s1),
+  // the panel's structure on the observation it was judged on, which part of the Go To reading failed, a throw, and the
+  // observation-only form's two structures.
+  const {observed, goTo, threw, identification, lastObservation} = destination?.value ?? {};
+  const kept = Object.fromEntries(Object.entries({observed, goTo, threw, identification, lastObservation}).filter(([, v]) => v !== undefined && v !== null));
+  // From here every exit cancels the sheet and reads the unsaved proof before its row is recorded (C-6), so a row that
+  // never reached the act's check still says what the run's folder held and whether anything was saved.
+  const proved = async row => span.end({...row, outcome: {...row.outcome, ...unsavedOutcome(await unsavedProof(ctx, keys))}}, {cleanup});
   if (!destination?.ok || destination.value?.ready !== true) {
-    // Until the panel's controls are read (probe-plan.mjs SAVE_PANEL_CONTROLS) the cell only observes: what it saw rides
-    // on the row, as does whether the Go To dialog closed in the cell (ruling 1219, s1). The row alone is decided.
-    const {observed, goTo, threw} = destination?.value ?? {};
+    // A failure on the destination path decides the row alone (ruling 1220's fourth condition).
     const left = goTo?.closed === false ? '; the Go To dialog would not close' : '';
-    return span.end({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'}${left})`,
-      ...(observed || goTo || threw ? {outcome: {...(observed ? {observed} : {}), ...(goTo ? {goTo} : {}), ...(threw ? {threw} : {})}} : {})}, {cleanup});
+    return proved({invalid: `the Save sheet's destination was not set to the run's folder (${destination?.error ?? destination?.value?.reason ?? 'not sent'}${left})`, outcome: kept});
   }
   const initialWhere = typeof destination.value.initialWhere === 'string' ? destination.value.initialWhere.slice(0, 80) : null;
   const ready = read(ctx, null, {frontKey: true});
   const window = userWindowOf(ready.reading, ctx.records[scene].pid);
-  if (!window) return unprepared(`${scene}'s window was not in front`);
+  if (!window) return proved({invalid: `${scene}'s window was not in front`, outcome: kept});
   const readings = {apps: [app], activate: activationOf(ctx, app), before: keyReading(ready)};
   alertCheck(ctx, `before ${id}`);
   // A set_value posts no key, so it goes without the key guard, as the sheet variant's follow-up click does.
@@ -581,8 +586,8 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const act = probe.result;
   alertCheck(ctx, `after ${id}`);
   const check = act?.ok ? span.add(await ctx.lane.js(SAVE_SHEET_CHECK_CELL)) : null;
-  if (!act?.ok) return span.end({invalid: 'the act cell failed', ...(act?.error ? {error: act.error} : {})}, {cleanup});
-  if (!check?.ok) return span.end({invalid: 'the sheet could not be read after the act', ...(check?.error ? {error: check.error} : {})}, {cleanup});
+  if (!act?.ok) return proved({invalid: 'the act cell failed', ...(act?.error ? {error: act.error} : {}), outcome: kept});
+  if (!check?.ok) return proved({invalid: 'the sheet could not be read after the act', ...(check?.error ? {error: check.error} : {}), outcome: kept});
   const frontKey = readingsAfter(ctx, readings);
   const unsaved = await unsavedProof(ctx, keys);
   const cua = ctx.engine === 'cua';
@@ -601,7 +606,7 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const savedSeen = unsaved.document === true || unsaved.edited === false;
   const row = {ok: sheetOpen && destinationEmpty && unsaved.document === false && unsaved.edited === true && (cua ? agree && effectsNamed : true), inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
     outcome: {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
-      initialWhere, unsaved: unsaved.reading,
+      initialWhere, ...kept, ...unsavedOutcome(unsaved),
       threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, leadMs: preMs,
       postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt: Number.isFinite(receivedAt) ? receivedAt : null, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
       postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null}};
@@ -622,25 +627,33 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
 // condition): the debounce out, the sheet cancelled as the cleanup cancels it (which then finds none), and the untitled
 // window the run opened read by Accessibility (./matrix-device.mjs documentState): no document on disk behind it and its
 // edits still unsaved. No folder but the run's own is read, so a hosted run asks for no protected folder. The initial
-// "Where" is a display name and stays recorded only. A cancel the guard held, or a reading not taken, leaves the proof
-// unread (`unread`, why). -> {document, edited, reading, unread?}.
+// "Where" is a display name and stays recorded only. A cancel the guard held or refused, or a reading not taken, leaves
+// the proof unread (`unread`, why): a refusal that persists is the cleanup's to raise, once the row is recorded. The
+// cancel's own answer is kept (`cancel`: {cancelled, destinationRemoved, destinationFiles}, the run's folder as the
+// cancel found it), null when it gave none. -> {document, edited, reading, cancel, unread?}.
 async function unsavedProof(ctx, keys) {
-  const none = unread => ({document: null, edited: null, reading: null, unread});
+  let cancel = null;
+  const none = unread => ({document: null, edited: null, reading: null, cancel, unread});
   try {
     await quiet(ctx, 'textedit');
     const cancelled = await keys(SAVE_SHEET_CANCEL_CELL, ['Escape']);
+    if (cancelled?.ok && cancelled.value) {
+      const {cancelled: done = null, destinationRemoved = null, destinationFiles = null} = cancelled.value;
+      cancel = {cancelled: done, destinationRemoved, destinationFiles};
+    }
     if (!cancelled?.ok || cancelled.value?.cancelled !== true) return none(`the Save sheet was not cancelled first (${!cancelled ? 'not sent' : !cancelled.ok ? `the cell failed: ${String(cancelled.error ?? '').slice(0, 160)}` : 'the sheet still up'})`);
   } catch (error) {
-    if (!(error instanceof AlertHeld)) throw error;
-    return none(`the Save sheet's cancel was held (${String(error.message).slice(0, 160)})`);
+    return none(`the Save sheet's cancel was ${error instanceof AlertHeld ? 'held' : 'refused'} (${String(error.message).slice(0, 160)})`);
   }
   const number = ctx.ownWindow?.scene === 'textedit' ? ctx.ownWindow.number : null;
   if (number === null) return none('TextEdit\'s own window is not known');
   let read = null;
   try { read = device(ctx, ['document', '--scene', 'textedit', '--window', String(number)]); } catch (error) { if (error instanceof Stop) throw error; read = {ok: false, reason: String(error.message).slice(0, 160)}; }
   if (read?.ok !== true) return none(`TextEdit's own window could not be read (${read?.reason ?? 'no answer'})`);
-  return {document: read.document, edited: read.edited, reading: {document: read.document, edited: read.edited, editedFrom: read.editedFrom ?? null}};
+  return {document: read.document, edited: read.edited, cancel, reading: {document: read.document, edited: read.edited, editedFrom: read.editedFrom ?? null}};
 }
+// The proof as a row keeps it: the reading, else why it is unread, and the cancel's answer.
+const unsavedOutcome = unsaved => ({unsaved: unsaved.reading ?? {unread: unsaved.unread}, cancel: unsaved.cancel});
 // cua's lane: the probe's post after the engine received the request and before the cell had its response. -> null,
 // or why the sample says nothing.
 function responseWindowValidity(postedAt, receivedAt, endAt) {

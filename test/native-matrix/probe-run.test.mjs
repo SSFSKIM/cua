@@ -299,9 +299,9 @@ const REFUSED_FIRST = `${REFUSED}${STILL_INTERACTING}${TEXTEDIT}'. Wait 5 second
 const saveAct = (c, {threw = STOPPED, receipt = 5, response = 3_000, interruption = threw ? {phase: 'inFlight', effects: ['value']} : undefined} = {}) => ({
   ...acted(c, {threw, errorName: threw ? 'Error' : null, interval: null, meta: {'cua/receivedAt': atOf(c) + receipt, ...(interruption ? {'cua/interruption': interruption} : {})}}),
   endAt: atOf(c) + response});
-const saveCells = ({act = saveAct, check = {sheetOpen: true, nameWritten: true, destinationFiles: []}, destination = null, cleanup = null} = {}) => c => (
+const saveCells = ({act = saveAct, check = {sheetOpen: true, nameWritten: true, destinationFiles: []}, destination = null, cleanup = null, cancel = null} = {}) => c => (
   tagOf(c) === 'savesheet.act' ? act(c) : tagOf(c) === 'savesheet.check' ? check : tagOf(c) === 'savesheet.destination' ? destination
-    : tagOf(c) === 'sheet.cleanup' ? cleanup : null);
+    : tagOf(c) === 'sheet.cleanup' ? cleanup : tagOf(c) === 'savesheet.cancel' ? cancel : null);
 
 test('#212\'s save sheet: super+n, the text typed and super+s under the key guard, set_value on the sheet\'s name field at the probe\'s time; a stop part-way naming what may have taken effect, the sheet still open, passes', async () => {
   const calls = [];
@@ -795,4 +795,42 @@ test('#212\'s row proves nothing saved on TextEdit\'s own window after the cance
   const unread = rowOf((await run({ok: false, number: 1, reason: 'the reader is not trusted for Accessibility'})).result, SAVE_SHEET);
   assert.equal(unread.ok, false);
   assert.equal(unread.invalid, 'nothing saved was not proved: TextEdit\'s own window could not be read (the reader is not trusted for Accessibility)');
+});
+
+// C-6: every exit of #212's destination cell carries its Go To close record and the observation it was judged on, the
+// ready one included; and once the destination cell ran, an exit before the act's check still cancels the sheet first, so
+// its row carries the cancel's temp-folder result and the unsaved proof (cua's C-6 row carried neither).
+const LAST_OBSERVATION = {trailer: 'focused', count: 4, lines: [{index: 0, depth: 0, parent: null, id: 'GoToWindow', head: 'sheet', focused: false}]};
+const CANCELLED = {cancelled: true, destinationRemoved: true, destinationFiles: []};
+test('#212\'s ready destination keeps its Go To close record and last observation on the row', async () => {
+  const destination = {ready: true, initialWhere: 'Documents', goTo: {closed: true, sheetUp: true, escapes: 0, closeClicked: false}, lastObservation: LAST_OBSERVATION};
+  const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({destination, cancel: CANCELLED})});
+  const row = rowOf(result, SAVE_SHEET);
+  assert.equal(row.ok, true, JSON.stringify(row));
+  assert.deepEqual([row.outcome.goTo, row.outcome.lastObservation, row.outcome.cancel], [destination.goTo, LAST_OBSERVATION, CANCELLED]);
+});
+test('#212\'s exits after the destination cell carry the cancel\'s temp-folder result and the unsaved proof', async () => {
+  // C-6's cua row: the Go To dialog's path field not identified, the dialog closed by one Escape.
+  const destination = {ready: false, reason: 'the Go To dialog and its focused path field were not identified (field not found)', identification: 'field not found',
+    goTo: {closed: true, sheetUp: true, escapes: 1, closeClicked: false}, lastObservation: LAST_OBSERVATION};
+  const calls = [];
+  const failed = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', calls, cell: saveCells({destination, cancel: CANCELLED})});
+  const row = rowOf(failed.result, SAVE_SHEET);
+  assert.equal(row.invalid, 'the Save sheet\'s destination was not set to the run\'s folder (the Go To dialog and its focused path field were not identified (field not found))');
+  assert.deepEqual({goTo: row.outcome.goTo, lastObservation: row.outcome.lastObservation, identification: row.outcome.identification},
+    {goTo: destination.goTo, lastObservation: LAST_OBSERVATION, identification: 'field not found'});
+  assert.deepEqual([row.outcome.unsaved, row.outcome.cancel], [{document: false, edited: true, editedFrom: 'window'}, CANCELLED]);
+  assert.deepEqual(calls.map(c => tagOf(c.code)).filter(t => /^(sheet|savesheet)\./.test(t)), ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.destination', 'savesheet.cancel', 'savesheet.cancel', 'sheet.cleanup']);
+  assert.equal(failed.result.verdict, 'no-verdict');
+  // The act cell failing: the same, a file the cancel found in the run's folder kept.
+  const found = {cancelled: true, destinationRemoved: false, destinationFiles: ['cua-212-intended.rtf']};
+  const act = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: () => ({cellError: 'boom'}), cancel: found})});
+  const unacted = rowOf(act.result, SAVE_SHEET);
+  assert.match(unacted.invalid, /^the act cell failed/);
+  assert.deepEqual([unacted.outcome.unsaved, unacted.outcome.cancel], [{document: false, edited: true, editedFrom: 'window'}, found]);
+  // The cancel that did not take leaves the proof unread, said on the row.
+  const held = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({destination, cancel: {cancelled: false, destinationRemoved: null, destinationFiles: null}})});
+  const unread = rowOf(held.result, SAVE_SHEET);
+  assert.deepEqual(unread.outcome.unsaved, {unread: 'the Save sheet was not cancelled first (the sheet still up)'});
+  assert.deepEqual(unread.outcome.cancel, {cancelled: false, destinationRemoved: null, destinationFiles: null});
 });

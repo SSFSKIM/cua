@@ -373,7 +373,10 @@ export function savePanelStructure(ax) {
 // cleanup's refusal stopped C-5's save-sheet runs), a throw included: Escape while it is up, at most three times, each
 // awaited, then its CloseButton, the Save sheet left for the cleanup; `goTo` says what was tried and whether it closed,
 // `threw` the throw. The panel's location before the Go To (`initialWhere`) is kept: where the document would have been
-// saved (ruling 1220). -> {ready, initialWhere} or {ready: false, reason, observed?, goTo?, threw?}.
+// saved (ruling 1220). Every exit, the ready one and those before super+shift+g included, carries `goTo` and the panel's
+// structure on the observation it was judged on (`lastObservation`, savePanelStructure); a dialog or field not identified
+// says which (`identification`: goTo not found, field not found, or field not focused within 3 s).
+// -> {ready, initialWhere, goTo, lastObservation} or {ready: false, reason, goTo, lastObservation, identification?, observed?, threw?}.
 export const saveSheetDestinationCell = (controls = SAVE_PANEL_CONTROLS) => cell(`${prelude('textedit')}
 // cua-matrix-cell: savesheet.destination
 ${saveSheet}
@@ -381,8 +384,6 @@ ${[controlIndexOf, isInside, headOf, savePanelReading, savePanelStructure].map(f
 const __controls = ${j(controls)};
 const __named = ax => { const i = __nameField(ax); return i === null ? null : plain(valueOfIndex(ax, i) ?? ""); };
 let ax = await observe();
-if (!__saveSheet(ax)) return {ready: false, reason: "the Save sheet was not up"};
-const __name = __named(ax), __before = ax;
 const __identified = ["panel", "goTo", "goToField", "location"].every(k => typeof __controls[k]?.id === "string" && typeof __controls[k]?.role === "string");
 const __goToUp = a => (__identified ? controlIndexOf(a, __controls.goTo) !== null : !__saveSheet(a) || /\bGoToWindow\b/.test(a));
 // Out of the cell with the Go To dialog closed, every step in this one dispatch (rulings 1219 and 1221): Escape while it
@@ -404,29 +405,38 @@ const __out = async result => {
   const up = __goToUp(a), sheetUp = __saveSheet(a) ? true : up ? null : false;
   return {...result, goTo: {closed: !up, sheetUp, escapes, closeClicked, ...(up ? {sheetCancel: "unreachable"} : {})}};
 };
-// Everything after super+shift+g ends through __out, a throw included (fix wave I4: typeText answering typeUnconfirmed,
-// a key or an observation throwing), the throw said on the result.
+// Every exit, the ready one included, ends through __out with the observation it was judged on (C-6: a failed
+// identification kept nothing to say which control did not match), taken before the dialog is closed.
+const __exit = result => __out({...result, lastObservation: savePanelStructure(ax)});
+// Everything after super+shift+g ends there, a throw included (fix wave I4: typeText answering typeUnconfirmed, a key or
+// an observation throwing), the throw said on the result.
 const __afterGoTo = async steps => {
   let result;
   try { result = await steps(); } catch (error) {
     result = {ready: false, reason: \`the cell threw after super+shift+g: \${error?.name ?? "Error"}\`, threw: {name: error?.name ?? null, message: String(error?.message ?? error).slice(0, 200)}};
   }
-  return result.ready ? result : __out(result);
+  return __exit(result);
 };
+if (!__saveSheet(ax)) return __exit({ready: false, reason: "the Save sheet was not up"});
+const __name = __named(ax), __before = ax;
 if (!__identified) return __afterGoTo(async () => {
   await __app.pressKey("super+shift+g");
   for (const end = Date.now() + 3000; ax === __before && Date.now() < end;) ax = await observe();
   return {ready: false, reason: "the save panel's controls are not identified yet: observation only, nothing typed and no Return", observed: {before: savePanelStructure(__before), after: savePanelStructure(ax)}};
 });
 let __r = savePanelReading(ax, __controls);
-if (__r.panel === null || !isInside(ax, __nameField(ax), __r.panel)) return {ready: false, reason: "the save panel was not identified around the name field"};
+if (__r.panel === null || !isInside(ax, __nameField(ax), __r.panel)) return __exit({ready: false, reason: "the save panel was not identified around the name field"});
 const __initialWhere = __r.locationName;
 const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
 const __dir = globalThis.__saveDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), ${j(SAVE_DIR_PREFIX)}));
 return __afterGoTo(async () => {
   await __app.pressKey("super+shift+g");
   for (const end = Date.now() + 3000; !__r.fieldFocused && Date.now() < end;) { ax = await observe(); __r = savePanelReading(ax, __controls); }
-  if (!__r.fieldFocused) return {ready: false, reason: "the Go To dialog and its focused path field were not identified"};
+  if (!__r.fieldFocused) {
+    // Which part of the reading failed: the dialog, its path field inside it, or the field's focus.
+    const identification = __r.goTo === null ? "goTo not found" : __r.field === null ? "field not found" : "field not focused within 3 s";
+    return {ready: false, reason: "the Go To dialog and its focused path field were not identified (" + identification + ")", identification};
+  }
   await __app.typeText(__dir);
   ax = await observe(); __r = savePanelReading(ax, __controls);
   if (!__r.fieldFocused || __r.fieldValue !== __dir || (__saveSheet(ax) && __named(ax) !== __name)) return {ready: false, reason: "the path was not in the Go To dialog's focused field alone"};
@@ -453,8 +463,9 @@ const fs = await import("node:fs");
 let destinationFiles = null;
 try { if (typeof globalThis.__saveDir === "string") destinationFiles = fs.readdirSync(globalThis.__saveDir).slice(0, 10); } catch {}
 return {sheetOpen: __saveSheet(ax), nameWritten: __index !== null && plain(valueOfIndex(ax, __index) ?? "").startsWith(${j(SAVE_NAME)}), destinationFiles};`);
-// Escape on the Save sheet (once more for a Go To dialog left up), the sheet awaited gone, then the run's folder removed
-// when it is empty (a file in it is left as found). -> {cancelled, destinationRemoved}.
+// Escape on the Save sheet (once more for a Go To dialog left up), the sheet awaited gone, then the run's folder's
+// entries read (at most ten; null unread or no folder) and the folder removed when it is empty (a file in it is left as
+// found). -> {cancelled, destinationRemoved, destinationFiles}.
 export const SAVE_SHEET_CANCEL_CELL = cell(`${prelude('textedit')}
 // cua-matrix-cell: savesheet.cancel
 ${saveSheet}
@@ -463,12 +474,13 @@ for (let n = 0; n < 3 && __saveSheet(ax); n++) {
   await __app.pressKey("Escape");
   for (const end = Date.now() + 2000; __saveSheet(ax) && Date.now() < end;) ax = await observe();
 }
-let destinationRemoved = null;
+let destinationRemoved = null, destinationFiles = null;
 if (typeof globalThis.__saveDir === "string") {
   const fs = await import("node:fs");
+  try { destinationFiles = fs.readdirSync(globalThis.__saveDir).slice(0, 10); } catch {}
   try { fs.rmdirSync(globalThis.__saveDir); globalThis.__saveDir = null; destinationRemoved = true; } catch { destinationRemoved = false; }
 }
-return {cancelled: !__saveSheet(ax), destinationRemoved};`);
+return {cancelled: !__saveSheet(ax), destinationRemoved, destinationFiles};`);
 
 // ---- Acceptance 3's keystroke witness ---------------------------------------------------------------------------------
 // In TextEdit's background click with Finder's window in front (./plan.mjs isAcceptance3), after the click and its check:

@@ -4,13 +4,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync, readdirSync, rmdirSync} from 'node:fs';
-import {basename} from 'node:path';
+import {mkdtempSync, readFileSync, readdirSync, realpathSync, rmdirSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {TEXT_FIELDS} from '../../scripts/native-matrix/plan.mjs';
 import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS,
-  SAVE_PANEL_CONTROLS, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell,
+  SAVE_PANEL_CONTROLS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_DESTINATION_CELL, controlIndexOf, savePanelReading, saveSheetDestinationCell, WITNESS_FILES, WITNESS_PREPARE_CELL, witnessCheckCell,
   KEYSTROKE_GATE_CLOSED, keystrokeGate} from '../../scripts/native-matrix/probe-plan.mjs';
 import {rowIndexOfName, valueOfIndex, indexOfId} from '../../scripts/native-matrix/matrix-text.mjs';
 import {advanceNumbering, NOTE, render} from '../../src/services/engine/render.mjs';
@@ -205,6 +206,14 @@ const runDestination = async (app, code) => {
   if (typeof made === 'string') rmdirSync(made);
   return {result: parseCell(output.join('\n')), made};
 };
+// The success exit as every other (C-6): ready, the initial location, the Go To dialog's close record (nothing to close)
+// and the last observation, the Save sheet's own with the dialog gone.
+const assertReady = value => {
+  const {lastObservation, ...rest} = value ?? {};
+  assert.deepEqual(rest, {ready: true, initialWhere: 'Documents', goTo: {closed: true, sheetUp: true, escapes: 0, closeClicked: false}});
+  assert.ok(lastObservation.count > 0 && lastObservation.lines.some(l => l.id === 'saveAsNameTextField'), JSON.stringify(lastObservation));
+  assert.ok(!lastObservation.lines.some(l => /go-to-field|PathTextField/.test(`${l.id} ${l.head}`)), 'the dialog gone');
+};
 
 test('#212\'s save panel: each control is the one element with its identifier and role word, placed inside its parent; the location named by the pop-up, not a row', () => {
   const {state, observe} = savePanelDouble();
@@ -224,7 +233,7 @@ test('#212\'s save panel: each control is the one element with its identifier an
 test('#212\'s destination cell: the Go To dialog and its focused field identified before typing and again before Return; the panel\'s location then names the run\'s folder', async () => {
   const {state, app} = savePanelDouble();
   const {result, made} = await runDestination(app, saveSheetDestinationCell(CONTROLS));
-  assert.deepEqual(result?.value, {ready: true, initialWhere: 'Documents'});
+  assertReady(result?.value);
   assert.match(basename(made), /^cua-212-save-/);
   assert.deepEqual(state.keys, ['super+shift+g', 'Return']);
   assert.deepEqual(state.typed, [made]);
@@ -353,7 +362,7 @@ const C5_CONTROLS = Object.freeze({panel: {id: 'save-panel', role: 'sheet'}, goT
 test('#212\'s destination on the Save sheet as C-5 saw it: the Go To dialog shown apart, its path field the only Return\'s, the location read back', async () => {
   const {state, app} = realSavePanel();
   const {result, made} = await runDestination(app, saveSheetDestinationCell(C5_CONTROLS));
-  assert.deepEqual(result?.value, {ready: true, initialWhere: 'Documents'});
+  assertReady(result?.value);
   assert.deepEqual(state.keys, ['super+shift+g', 'Return'], 'the one Return, into the Go To field');
   assert.deepEqual([state.location, state.saved, state.name, state.typed], [basename(made), false, 'Untitled', [made]]);
 });
@@ -391,6 +400,56 @@ test('#212\'s destination cell closes the Go To dialog on every exit after super
   assert.deepEqual([seen.state.dialog, observed.result.value.goTo], [false, {closed: true, sheetUp: true, escapes: 1, closeClicked: false}]);
 });
 
+// C-6: cua's row failed "the Go To dialog and its focused path field were not identified" with nothing kept to say which
+// control did not match. That exit names the part of the reading that failed and keeps the observation it failed on,
+// taken before the dialog is closed; every other exit keeps its last observation too, one before super+shift+g included.
+test('#212\'s destination cell says which part of the Go To reading failed, and every exit keeps its last observation', async () => {
+  const parts = [
+    {label: 'no dialog, a list row instead', run: () => savePanelDouble({goTo: 'list'}), controls: CONTROLS, part: 'goTo not found'},
+    {label: 'an identifier two fields carry', run: () => savePanelDouble({duplicateField: true}), controls: CONTROLS, part: 'field not found', shows: 'fixture-go-to-field'},
+    {label: 'the field\'s role word not the one read', run: () => realSavePanel(), controls: {...C5_CONTROLS, goToField: {id: 'PathTextField', role: 'search field'}}, part: 'field not found', shows: 'PathTextField'},
+    {label: 'the dialog up, the focus left on the name field', run: () => savePanelDouble({goTo: 'unfocused'}), controls: CONTROLS, part: 'field not focused within 3 s', shows: 'fixture-go-to-field'},
+  ];
+  for (const {label, run, controls, part, shows} of parts) {
+    const {app} = run();
+    const {result} = await runDestination(app, saveSheetDestinationCell(controls));
+    assert.equal(result.value.identification, part, label);
+    assert.equal(result.value.reason, `the Go To dialog and its focused path field were not identified (${part})`, label);
+    assert.ok(result.value.lastObservation.count > 0, label);
+    if (shows) assert.ok(result.value.lastObservation.lines.some(l => l.id === shows || l.head.endsWith(` ${shows}`)), `${label}: the observation the reading failed on, the dialog up`);
+  }
+  // A failure after the dialog closed keeps the observation it was judged on.
+  const {app} = realSavePanel({navigates: false});
+  const {result} = await runDestination(app, saveSheetDestinationCell(C5_CONTROLS));
+  assert.match(result.value.reason, /panel's selected location is not the run's folder/);
+  assert.equal(result.value.identification, undefined);
+  assert.ok(result.value.lastObservation.lines.some(l => l.id === 'where popup'));
+  // Before super+shift+g: the Save sheet not up. No key is sent; the close record says there was nothing to close.
+  const gone = realSavePanel();
+  gone.state.sheet = false;
+  const early = await runDestination(gone.app, saveSheetDestinationCell(C5_CONTROLS));
+  assert.equal(early.result.value.reason, 'the Save sheet was not up');
+  assert.deepEqual([gone.state.keys, early.result.value.goTo], [[], {closed: true, sheetUp: false, escapes: 0, closeClicked: false}]);
+  assert.ok(early.result.value.lastObservation.count > 0);
+});
+
+// The cancel's temp-folder result (C-6): the run's folder's entries as the cancel found them, then removed only empty, so
+// an exit that never reached the act's check still says whether anything landed in it.
+test('#212\'s cancel says what the run\'s folder held before removing it empty', async () => {
+  for (const files of [[], ['cua-212-intended.rtf']]) {
+    const dir = mkdtempSync(join(realpathSync(tmpdir()), 'cua-212-cancel-'));
+    for (const f of files) writeFileSync(join(dir, f), '');
+    const {state, app} = realSavePanel();
+    globalThis.__apps = {textedit: app};
+    globalThis.__saveDir = dir;
+    const output = [];
+    try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', SAVE_SHEET_CANCEL_CELL)({write: t => output.push(t)}); }
+    finally { delete globalThis.__apps; delete globalThis.__saveDir; rmSync(dir, {recursive: true, force: true}); }
+    assert.deepEqual(parseCell(output.join('\n'))?.value, {cancelled: true, destinationRemoved: files.length === 0, destinationFiles: files});
+    assert.equal(state.sheet, false);
+  }
+});
+
 // Fix wave I4: a throw after super+shift+g (typeText answering typeUnconfirmed, a key or an observation throwing) ends
 // through the same close as every other exit: the dialog closed in the cell, the throw said on the result, no Return.
 test('#212\'s destination cell closes the Go To dialog when a step after super+shift+g throws, and says the throw', async () => {
@@ -419,6 +478,6 @@ test('#212\'s shipped controls are C-5\'s reading, and the shipped cell sets the
   assert.deepEqual(SAVE_PANEL_CONTROLS, C5_CONTROLS);
   const {state, app} = realSavePanel();
   const {result, made} = await runDestination(app, SAVE_SHEET_DESTINATION_CELL);
-  assert.deepEqual(result?.value, {ready: true, initialWhere: 'Documents'});
+  assertReady(result?.value);
   assert.deepEqual([state.keys, state.saved, state.location], [['super+shift+g', 'Return'], false, basename(made)]);
 });

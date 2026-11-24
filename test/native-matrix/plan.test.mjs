@@ -398,6 +398,18 @@ test('a selection an earlier row left in the field is cleared as a stated step, 
   assert.deepEqual(app.calls, [['click', 5]]);
 });
 
+// Ruling 1204: the clear is named only when the read-back shows the field empty; one that did not take is stated as
+// attempted, with what the field still read, and the selection still masking the trailer is the row's reason.
+test('a clear that does not take is stated as attempted, never as emptied', async () => {
+  const {app, state} = electronField({value: 'alpha one\nbravo two', press: true});
+  state.selected = 'bravo';
+  app.setValue = async () => {};
+  const prepared = await run(caseCells('electron', casesOf('electron', 'pressKey', 'tab')).prepare, {apps: {electron: app}});
+  delete globalThis.__m;
+  assert.deepEqual(prepared.value.prepared, ['emptying attempted to clear a selection, the field still read 19 characters']);
+  assert.ok(!prepared.value.prepared.includes(CLEARED));
+});
+
 test('rows no longer depend on the selection an earlier row left: Electron\'s selectText then paste, in one field', async () => {
   const {app} = electronField({value: 'alpha one', press: true});
   const select = await runCase('electron', 'electron', app, 'selectText', 'text');

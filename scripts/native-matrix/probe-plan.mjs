@@ -141,7 +141,12 @@ const __find = ax => ${TEXT_FIELDS[scene]};
 let __index = __find(ax);
 if (__index === null) return {ready: false, reason: "the field is not in the text"};
 const __prepared = [];
-if (plain(valueOfIndex(ax, __index) ?? "") !== "") { await __app.setValue(__index, ""); ax = await observe(); __index = __find(ax); __prepared.push("field emptied"); }
+if (plain(valueOfIndex(ax, __index) ?? "") !== "") {
+  await __app.setValue(__index, ""); ax = await observe(); __index = __find(ax);
+  // Named emptied only on a read-back that shows it empty (ruling 1204); else what the read-back showed.
+  const __left = __index === null ? null : plain(valueOfIndex(ax, __index) ?? "").length;
+  __prepared.push(__left === 0 ? "field emptied" : __left === null ? "emptying attempted, the field no longer in the text" : "emptying attempted, the field still read " + __left + " characters");
+}
 if (__index !== null && focusedIndexOf(ax) !== __index) { await __app.click(__index); ax = await observe(); __index = __find(ax); }
 const __empty = __index !== null && plain(valueOfIndex(ax, __index) ?? "") === "", __focus = __index === null ? "unfocused" : focusReading(ax, __index);
 const __stated = __prepared.length ? {prepared: __prepared} : {};

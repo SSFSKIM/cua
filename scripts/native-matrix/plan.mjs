@@ -90,12 +90,18 @@ export const FOCUS_REASONS = Object.freeze({
 // cua's click on it, keeps an existing selection where a posted click places a caret; writing the same value back does
 // not collapse it). Whether cua's click should keep the selection is a question of its own, not this harness's.
 const CLEARED = 'field emptied to clear a selection';
+// Ruling 1204: the clear is named done only on a read-back that shows the field empty; else the attempt and what it read.
+const CLEAR_ATTEMPTED = 'emptying attempted to clear a selection';
 // The field `index` (in `now`) given the focus: a click when the trailer does not show the field focused; with
 // `clear`, the stated clear when a selection still masks the trailer after it. A field the unmasked trailer shows
 // unfocused is not ready; otherwise the reading ('focused' or 'masked') is left in `__m.focus` for the row's verdict,
 // which reads the observation's own focus where the engine reports one.
 const focusOn = ({clear}) => `if (focusReading(now, index) !== "focused") { await __app.click(index); now = await observe(); }
-${clear ? `if (focusReading(now, index) === "masked") { await __app.setValue(index, ""); now = await observe(); __m.prepared.push(${j(CLEARED)}); }` : ''}
+${clear ? `if (focusReading(now, index) === "masked") {
+  await __app.setValue(index, ""); now = await observe();
+  const left = plain(valueOfIndex(now, index) ?? "").length;
+  __m.prepared.push(left === 0 ? ${j(CLEARED)} : ${j(`${CLEAR_ATTEMPTED}, the field still read `)} + left + " characters");
+}` : ''}
 if (focusReading(now, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)}};
 __m.focus = {index, trailer: focusReading(now, index)};`;
 // The row's verdict on a prepare's focus reading `focus` ({index, trailer}), given the engine's meta of the prepare's

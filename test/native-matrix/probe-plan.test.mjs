@@ -88,6 +88,16 @@ const runPrepared = async (scene, app) => {
   return parseCell(output.join('\n'));
 };
 
+// Ruling 1204: "field emptied" only on a read-back that shows the field empty; an emptying that did not take is its own
+// fact, never named emptied (pilot C-3: a setValue("") that returned and left the field's value).
+test('an emptying the read-back shows did not take is recorded as attempted, with what the field still read; never as emptied', async () => {
+  const {state, app} = textEditDouble({value: 'abc', focused: true});
+  app.setValue = async index => { state.sets.push(index); };
+  const result = await runPrepared('textedit', app);
+  assert.deepEqual(result?.value, {ready: false, reason: 'the field could not be emptied', prepared: ['emptying attempted, the field still read 3 characters']});
+  assert.deepEqual(state.sets, [2]);
+});
+
 test('TextEdit: the text view stays findable once emptied (its identifier then prints as the line\'s lone, unlabelled part)', async () => {
   const empty = textEditDouble({value: '', focused: true}).app;
   assert.match(await empty.getAXState(), /^\t\t2 text entry area \(settable\) First Text View$/m, 'the renderer\'s lone-part rule');
@@ -120,11 +130,12 @@ test('Chrome and Electron prepare and read back as before, the preparation chang
   assert.equal(TEXT_FIELDS.chrome, 'indexOfTarget(ax, "Scene notes")');
   assert.equal(TEXT_FIELDS.electron, 'indexOfTarget(ax, "Fixture text")');
   // The bodies' sources as of 38ecfa07, before the TextEdit locator changed; the preparation's since #188, which names
-  // the emptying in its result and reports a trailer a selection masks as its own reason (the same calls, in the same
-  // order); the read-back against an expected string's since ruling 1144, which keeps its hash in the outcome.
+  // the emptying in its result (since ruling 1204 only on a read-back that shows it, else the attempt) and reports a
+  // trailer a selection masks as its own reason (the same calls, in the same order); the read-back against an expected
+  // string's since ruling 1144, which keeps its hash in the outcome.
   assert.deepEqual(['chrome', 'electron'].map(s => [sha(emptyField(s)), sha(fieldCheck(s, 'x')), sha(fieldCheck(s, null))]), [
-    ['e8b238e9385f95ec', 'ba26236b926131f5', '5cf0e282ecc58ddc'],
-    ['3c254c5f5131ca19', 'f40c0db49b99d2af', 'bb2fde8b360fdc61'],
+    ['735cf29f53d52925', 'ba26236b926131f5', '5cf0e282ecc58ddc'],
+    ['70db33972a1a1611', 'f40c0db49b99d2af', 'bb2fde8b360fdc61'],
   ]);
 });
 

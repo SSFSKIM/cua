@@ -544,10 +544,14 @@ return {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(
 // for the field and tall enough to show it, the mini's 1000x760 and the hosted runner's 800x760 alike (ruling 1169). Only
 // the window's size, which turns window points into the screenshot's pixels (and whose shape the prepare checks), follows
 // the frame, so the layout is grounded on the frame the run launched Chrome at (groundCase), never the mini's scaled. The
-// prepare's harness click at each end still proves the points land in the field before anything is dragged.
+// prepare's harness click at each end still proves the points land in the field before anything is dragged. Behind a
+// user window those clicks would be background clicks on a web page, which cua refuses by design (backgroundClickRefused,
+// C-7, ruling 1226): the prepare runs with Chrome in front (`prepareInFront`, ./steps.mjs caseRow), the user window
+// brought back before the drag, which is sent behind it as before.
 export const CHROME_DRAG_POINTS = Object.freeze({from: Object.freeze([24, 192]), to: Object.freeze([200, 237])});
 export const chromeDragLayout = ({width, height}) => ({window: [width, height], ...CHROME_DRAG_POINTS});
-const chromeDrag = frame => ({...dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: chromeDragLayout(frame)}), framed: 'window points', ground: chromeDrag});
+const chromeDrag = frame => ({...dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: chromeDragLayout(frame)}), framed: 'window points', ground: chromeDrag,
+  prepareInFront: true});
 const chrome = [
   tree(`ax => { const page = ${named('Scene notes')} !== null && ${named('Apply')} !== null; return {ok: page, outcome: {page}}; }`),
   listApps('chrome'),

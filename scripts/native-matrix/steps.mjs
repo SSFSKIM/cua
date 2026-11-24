@@ -489,6 +489,13 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
     if (meta) (row.engineMeta ??= {})[phase] = meta;
   };
   const electron = scene === 'electron';
+  // A background case whose prepare must not click behind the user window (`prepareInFront`, Chrome's drag: its harness
+  // clicks would be background web clicks, which cua refuses by design): prepared with its scene in front, the user
+  // window brought back before the act by userFront, as every background act's is.
+  if (regime === 'background' && c.prepareInFront) {
+    const front = activate(ctx, scene);
+    if (!front?.ok || !activated(ctx, SCENES[scene].bundleId)) return done({invalid: `${scene} did not come to the front for its prepare`});
+  }
   let prepared;
   try { prepared = span(await ctx.lane.js(cells.prepare)); } catch (error) {
     if (!(error instanceof AlertGuarded)) throw error;

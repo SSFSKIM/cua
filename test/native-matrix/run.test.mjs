@@ -478,3 +478,34 @@ test('the matrix retains bind and refusal guard snapshots in row-indexed evidenc
   assert.deepEqual(result.meta.activationGuards.map(g => ({scene: g.scene, beforeRow: g.beforeRow, ok: g.ok, windowOrder: g.windowOrder})),
     [{scene: 'finder', beforeRow: 0, ok: false, windowOrder}]);
 });
+
+// C-7 (ruling 1226): chrome/background/drag.select@textedit's prepare clicks each end of the drag to prove it lands in
+// the field; behind the user window that is a background click on a web page, which cua refuses by design
+// (backgroundClickRefused), so the prepare, not the cell, failed on cua. The prepare now runs with Chrome in front, the
+// user window brought back before the act; the act (a drag behind TextEdit) and its check are unchanged. The engine
+// under test refuses any prepare click while the web scene is behind here, as cua does.
+test('Chrome\'s background drag prepares with Chrome in front, then the user window comes back before the drag', async () => {
+  const order = [];
+  let front = null;
+  const ops = {matrix: (base, a) => {
+    if (a[0] === 'step' && a[1] === 'activate') { front = a[2]; order.push(`activate ${a[2]}`); }
+    return base(a);
+  }};
+  const prepare = c => c.includes('a point of the drag is not in the field'), drag = c => c.includes('await __app.drag(__m.from, __m.to);');
+  const {result} = await runWith({plan: planOf('background', {scene: 'chrome', user: 'textedit'}), ops,
+    lane: code => {
+      if (prepare(code)) { order.push(`prepare (${front} in front)`); if (front !== 'chrome') throw new Error('Computer Use server error -10005: Google Chrome for Testing\'s web page does not accept a background click'); }
+      if (drag(code)) order.push(`drag (${front} in front)`);
+    }});
+  const row = result.rows.find(r => r.id === 'chrome/background/drag.select@textedit');
+  assert.equal(row.invalid, undefined, JSON.stringify(row));
+  const at = order.indexOf('prepare (chrome in front)');
+  assert.ok(at > 0, order.join(' | '));
+  assert.deepEqual(order.slice(at - 1, at + 3), ['activate chrome', 'prepare (chrome in front)', 'activate textedit', 'drag (textedit in front)']);
+  // No other background case of the pairing activates Chrome: its prepares run behind the user window as before. (The
+  // run's setup binds each scene in front first; the pairing starts at the user window's activation after that.)
+  const pairing = order.indexOf('activate textedit', order.indexOf('activate chrome') + 1);
+  assert.deepEqual(order.slice(pairing).filter(o => o.startsWith('activate')), ['activate textedit', 'activate chrome', 'activate textedit'], order.join(' | '));
+  // The case carries the flag; it takes effect behind a user window only.
+  assert.equal(CASES.chrome.find(c => c.method === 'drag' && c.case === 'select').prepareInFront, true);
+});

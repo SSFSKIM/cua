@@ -4,7 +4,9 @@ cua's own Linux native engine for #171, built against
 `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md` and the behaviour specification
 `docs/doperpowers/research/2026-10-28-own-linux-engine/sky-linux-behaviour.md`. It speaks the vendor helper's wire: one
 JSON request per line on stdin, `{id, command, input}`, one response per line on stdout,
-`{id, ok, output, error, restart}`.
+`{id, ok, output, error, restart}`. Since 0.4.5 every line it writes, its answers and its `--stats` lines, carries
+U+2028 and U+2029 as the escapes `\u2028` and `\u2029` (the same JSON value), so a reader that ends a line at either,
+as Node 24's `readline` does, reads each answer as one line (#572, `wire::jsonl`).
 
 M1a builds it up from M0's spike. It answers every command of the pinned helper but text and clipboard:
 `list_windows`, `list_apps`, `get_window_state` (the tree, `query`, `include_screenshot`) and `get_screenshot` (the
@@ -340,7 +342,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   fill to there (`release_sync::steps_floor`), and the tail's visits come 16 and 8 ms before the floor's end, the
   release at the end as before (ruling 1001): a visit whose time has passed when the tail reaches it, or whose wakeup
   comes later than 4 ms before the release (`release_sync::VISIT_CUTOFF`), is dropped (`--stats`
-  `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. A release dwell (Gecko's
+  `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. Since 0.4.5 (#512, ruling
+  1142): a drop whose path's last step went out after the 326 ms (`floor_until`), by any margin, takes the tail after
+  its path as an open gate's does, though its gate stays shut (`release_sync.overran`, with
+  `last_step_after_take_ms`); and a drop whose tail still dropped a visit is answered unconfirmed with option (c)'s
+  notice whatever option (c)'s switch says (`release_sync.unconfirmed`: `visit_dropped`, or `outlasted` for option (c)
+  itself). The engine can see Chrome's drag cursor but not which of the page's places accept a drop, nor Chrome's
+  status for each position, which stays in its process, so it cannot hold the drop to the page's own leave (task 158's
+  probe). A release dwell (Gecko's
   30 ms, reached by a foreground drag named for Firefox that presses into Chrome) stays on top of the floor, as
   before. The 326 ms only schedules: the gate judges the path against the 350 ms floor. A floor that spread a path's
   steps 1.45 ms apart still ended on steps far shorter than Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
@@ -354,7 +363,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   interrupted tail (`interrupted_unconfirmed`).
   It has no gate (a handle has no floor); `--drag-dnd-release-sync off` restores the earlier end, and `--stats`
   `handle.release_sync` records whether it ran and why not. The residual bound, measured on 0.4.3 and carried by
-  0.4.4, whose Chrome long-drag path is unchanged: no false ok in 200 measured long Chrome drags at arm64 twice the load
+  0.4.4 and 0.4.5, whose Chrome long-drag path is unchanged: no false ok in 200 measured long Chrome drags at arm64 twice the load
   (95% upper bound 1.5%). Electron's drops (settled, below),
   guarded drags and the release at the accept are unchanged. Option (c), which answers such a drop unconfirmed when
   Chrome's activation request is its only confirmation (`Pending from your last drag, an unconfirmed drop: your drag
